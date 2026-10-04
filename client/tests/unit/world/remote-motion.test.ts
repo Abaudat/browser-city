@@ -235,3 +235,36 @@ describe("facingOf", () => {
     expect(facingOf(0, 0, "left")).toEqual({ facing: "left", moving: false });
   });
 });
+
+describe("RemoteMotion buffer edges", () => {
+  const cfg = config(HZ.value);
+
+  it("knows nobody it has not heard of", () => {
+    expect(new RemoteMotion(cfg).poseAt("nobody", 0)).toBeUndefined();
+    expect(new RemoteMotion(cfg).bufferedSamples("nobody")).toBe(0);
+  });
+
+  it("a sample for a stamp already held replaces it, and a late-arriving older one is placed by its stamp", () => {
+    const m = new RemoteMotion(cfg);
+    m.upsert("a", { tMs: 2000, x: 2, y: 0, floor: 0 });
+    m.upsert("a", { tMs: 2000, x: 3, y: 0, floor: 0 });
+    m.upsert("a", { tMs: 1000, x: 1, y: 0, floor: 0 });
+    expect(m.bufferedSamples("a")).toBe(2);
+    expect(m.poseAt("a", 0)?.x).toBe(1);
+    expect(m.poseAt("a", 100_000)?.x).toBe(3);
+  });
+
+  it("holds the first sample until the delayed clock reaches it", () => {
+    const m = new RemoteMotion(cfg);
+    m.upsert("a", { tMs: 5000, x: 1, y: 0, floor: 0 });
+    m.upsert("a", { tMs: 5000 + cfg.periodMs, x: 1.1, y: 0, floor: 0 });
+    expect(m.poseAt("a", 5000 + cfg.delayMs - 1)?.x).toBe(1);
+  });
+
+  it("drops samples the clock has passed, keeping the bracket", () => {
+    const m = new RemoteMotion(cfg);
+    for (let i = 0; i < 6; i++) m.upsert("a", { tMs: 1000 + i * 10, x: i, y: 0, floor: 0 });
+    m.poseAt("a", 1025 + cfg.delayMs);
+    expect(m.bufferedSamples("a")).toBe(4);
+  });
+});

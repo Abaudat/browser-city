@@ -64,8 +64,8 @@ export class RemoteMotion {
       this.buffers.set(id, buf);
     }
     let at = buf.length;
-    while (at > 0 && (buf[at - 1]?.tMs ?? 0) > sample.tMs) at--;
-    if (at > 0 && buf[at - 1]?.tMs === sample.tMs) buf[at - 1] = sample;
+    while (at > 0 && stampAt(buf, at - 1) > sample.tMs) at--;
+    if (at > 0 && stampAt(buf, at - 1) === sample.tMs) buf[at - 1] = sample;
     else buf.splice(at, 0, sample);
     if (buf.length > this.config.maxSamples) buf.splice(0, buf.length - this.config.maxSamples);
   }
@@ -85,19 +85,18 @@ export class RemoteMotion {
   /** Where `id` is drawn when the server clock reads `serverNowMs`. */
   poseAt(id: string, serverNowMs: number): RemotePose | undefined {
     const buf = this.buffers.get(id);
-    const first = buf?.[0];
-    const last = buf?.[(buf?.length ?? 0) - 1];
-    if (!buf || !first || !last) return undefined;
+    if (!buf || buf.length === 0) return undefined;
+    const first = buf[0] as RemoteSample;
+    const last = buf[buf.length - 1] as RemoteSample;
     const t = serverNowMs - this.config.delayMs;
     if (t <= first.tMs) return pose(first);
     if (t >= last.tMs) return pose(last);
     let i = 0;
-    while ((buf[i + 1]?.tMs ?? Number.POSITIVE_INFINITY) <= t) i++;
+    // `t < last.tMs`, so the loop stops before the last sample.
+    while (stampAt(buf, i + 1) <= t) i++;
     // Samples before the bracket can never be drawn again.
     if (i > 0) buf.splice(0, i);
-    const a = buf[0];
-    const b = buf[1];
-    if (!a || !b) return pose(last);
+    const [a, b] = [buf[0], buf[1]] as [RemoteSample, RemoteSample];
     if (a.floor !== b.floor) return pose(a);
     if (Math.hypot(b.x - a.x, b.y - a.y) > this.config.snapCells) return pose(a);
     const gap = b.tMs - a.tMs;
@@ -107,6 +106,10 @@ export class RemoteMotion {
     const u = (t - start) / (b.tMs - start);
     return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, floor: a.floor };
   }
+}
+
+function stampAt(buf: readonly RemoteSample[], i: number): number {
+  return (buf[i] as RemoteSample).tMs;
 }
 
 function pose(s: RemoteSample): RemotePose {
