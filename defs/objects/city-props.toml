@@ -187,9 +187,7 @@ archetype = "underfoot_flat"
 # Five treads, nosings 2 native px lower each, the first at 5 and the last at
 # 34 px from the open (east) edge (story 15.15): an actor on the flight is
 # drawn along that ramp.
-flight_drop_px = 8
-flight_from_px = 5
-flight_to_px = 34
+flight = { drop_px = 8, from_px = 5, to_px = 34 }
 tags = ["stairs", "underfoot", "fixture"]
 
 # Not `upright`: seen from the side, its foot is already its cell's south
@@ -233,9 +231,7 @@ width = 2
 height = 2
 # Four nosings, 1 native px apart, the first at 5 and the last at 29 px from
 # the open (west) edge (story 15.15); the top rows of the art step 3 -> 0.
-flight_drop_px = 3
-flight_from_px = 5
-flight_to_px = 29
+flight = { drop_px = 3, from_px = 5, to_px = 29 }
 tags = ["stairs", "underfoot", "fixture"]
 
 # The flight's south handrail: upright, so its own `objects` row with a

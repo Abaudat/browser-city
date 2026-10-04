@@ -37,7 +37,6 @@ import {
   PLAYER_STABLE_ID,
   PLAYER_START,
   RELEASE_LAG,
-  STAIRS_X,
   STAIRS_Y,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_FOOTPRINT,
@@ -48,8 +47,6 @@ import {
   STREET_EXIT_Y,
   STREET_PROPS,
   STREET_TRANSITIONS,
-  type StreetWalkSegment,
-  SUBWAY_ENTRANCE_X0,
   SUBWAY_FLOOR,
   streetNearRailingPressRoute,
   streetPlacedRows,
@@ -62,6 +59,7 @@ import {
 } from "../unit/test-street/golden";
 import {
   committedDefs,
+  flightWalkRoute,
   platformWestRestX,
   propCells,
   shopfrontExitRestY,
@@ -485,31 +483,6 @@ interface FlightSample {
   streetCulled: boolean;
 }
 
-type ArrowKey = "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft";
-
-/** Holds `key` until the player's position meets `until`, through the one
- * walk helper: the key is released inside the page on the frame the
- * condition is first seen, so a hold never overshoots by a Node round trip. */
-async function holdUntil(
-  page: Page,
-  key: ArrowKey,
-  until: { axis: "x" | "y"; atLeast?: number; atMost?: number },
-): Promise<void> {
-  const segment: StreetWalkSegment =
-    until.atLeast !== undefined
-      ? {
-          label: `hold-${key}`,
-          key,
-          until: { kind: `${until.axis}-at-least`, value: until.atLeast },
-        }
-      : {
-          label: `hold-${key}`,
-          key,
-          until: { kind: `${until.axis}-at-most`, value: until.atMost ?? 0 },
-        };
-  await walkRealSegment(page, segment);
-}
-
 /** The canvas's top-left pixel: the world's background, outside any drawable. */
 async function backgroundPixel(page: Page): Promise<number[]> {
   const png = PNG.sync.read(await canvasOf(page).screenshot());
@@ -533,7 +506,7 @@ test.describe("story 15.15: the flight offset, mounted", () => {
       tile,
     );
     const index = new FlightIndex(flights, config);
-    const inputs = streetWalkInputs();
+    const _inputs = streetWalkInputs();
     mkdirSync(FLIGHT_SHOT_DIR, { recursive: true });
     // Video is recorded for this one test only (a describe cannot switch it
     // on: it costs every other spec), by its own context, at the page's own
@@ -576,58 +549,29 @@ test.describe("story 15.15: the flight offset, mounted", () => {
         await canvasOf(page).screenshot({ path: join(FLIGHT_SHOT_DIR, `${name}.png`) });
       };
       const settle = () => page.waitForTimeout(150);
-      // Stops short of the anchor cell, whose entry is the cut.
-      const lastWalkableStreetX = STAIRS_X + 1.9;
+      // The stills, by the route's own segment labels.
+      const stillAfter: Record<string, string> = {
+        "south-edge-mid-flight": "02-south-edge-mid-flight",
+        "south-edge-last-walkable": "03-south-edge-last-walkable",
+        "north-edge-last-walkable": "04-north-edge-last-walkable",
+        "down-the-subway-stairs": "05-platform-landing-after-descent",
+        "platform-west-rest": "06-platform-floor-at-rest",
+        "platform-last-walkable": "07-platform-last-walkable",
+        "up-the-platform-stairs": "08-street-tread-after-ascent",
+        "out-onto-the-pavement": "09-pavement-after-ascent",
+      };
 
       const backgroundBefore = await backgroundPixel(page);
       await still("01-pavement-start");
-      for (const segment of streetSubwayApproachRoute(inputs)) {
-        if (segment.label === "down-the-subway-stairs") {
-          // The south edge of the tread path (the near railing's face), down
-          // the flight and back; then the north edge likewise. Sunk feet must
-          // never show over the pavement south of the well.
-          await holdUntil(page, "ArrowDown", { axis: "y", atLeast: inputs.nearRailingRestY });
-          await holdUntil(page, "ArrowLeft", { axis: "x", atMost: STAIRS_X + 2.4 });
-          await settle();
-          await still("02-south-edge-mid-flight");
-          // A reversal mid-flight.
-          await holdUntil(page, "ArrowRight", { axis: "x", atLeast: STAIRS_X + 3.3 });
-          await holdUntil(page, "ArrowLeft", { axis: "x", atMost: lastWalkableStreetX });
-          await settle();
-          await still("03-south-edge-last-walkable");
-          await holdUntil(page, "ArrowRight", { axis: "x", atLeast: STAIRS_X + 3.3 });
-          // The path's north edge: the first row the route walks the treads on.
-          await holdUntil(page, "ArrowUp", { axis: "y", atMost: inputs.subwayTreadRowY + 0.15 });
-          await holdUntil(page, "ArrowLeft", { axis: "x", atMost: lastWalkableStreetX });
-          await settle();
-          await still("04-north-edge-last-walkable");
-        }
+      for (const segment of flightWalkRoute()) {
         await walkRealSegment(page, segment);
+        const name = stillAfter[segment.label];
+        if (name) {
+          await settle();
+          await still(name);
+        }
       }
-      await settle();
-      await still("05-platform-landing-after-descent");
       const restX = platformWestRestX();
-      await page.keyboard.down("ArrowLeft");
-      await page.waitForFunction(
-        (x) => Math.abs((window.__bc?.playerPosition?.x ?? Infinity) - x) < 1e-6,
-        restX,
-        { timeout: 15_000 },
-      );
-      await page.keyboard.up("ArrowLeft");
-      await still("06-platform-floor-at-rest");
-      // The highest walkable point before the platform's cut.
-      await holdUntil(page, "ArrowRight", { axis: "x", atLeast: PLATFORM_UP_ANCHOR_X - 0.6 });
-      await settle();
-      await still("07-platform-last-walkable");
-      await holdUntil(page, "ArrowLeft", { axis: "x", atMost: PLATFORM_UP_ANCHOR_X - 1.4 });
-      await walkTo(page, "ArrowRight", { x: STREET_EXIT_X + 0.5, y: STREET_EXIT_Y + 0.5 });
-      await settle();
-      await still("08-street-tread-after-ascent");
-      // The ascent continues out onto the pavement.
-      await holdUntil(page, "ArrowRight", { axis: "x", atLeast: SUBWAY_ENTRANCE_X0 + 0.5 });
-      await holdUntil(page, "ArrowUp", { axis: "y", atMost: STAIRS_Y - 1.5 });
-      await settle();
-      await still("09-pavement-after-ascent");
       const backgroundAfter = await backgroundPixel(page);
       expect(backgroundAfter, "the street's surround is restored after the climb").toEqual(
         backgroundBefore,

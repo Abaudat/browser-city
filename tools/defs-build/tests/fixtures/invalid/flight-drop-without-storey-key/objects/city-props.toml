@@ -6,7 +6,5 @@ layer = "furniture"
 sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }
 width = 1
 height = 1
-flight_drop_px = 8
-flight_from_px = 5
-flight_to_px = 34
+flight = { drop_px = 8, from_px = 5, to_px = 34 }
 tags = ["underfoot", "fixture"]

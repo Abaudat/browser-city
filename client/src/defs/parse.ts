@@ -23,6 +23,7 @@ import type {
   DenominationDef,
   EyesDef,
   Family,
+  FlightDef,
   HairstyleDef,
   ItemDef,
   ObjectDef,
@@ -203,6 +204,23 @@ function parseAtlasPage(value: unknown, path: string): AtlasPageDef {
   };
 }
 
+/** A flight (FR182): all three fields, `fromPx < toPx` -- the way `defs-build`
+ * refuses a partial or inverted table. Absent or null is no flight. */
+function parseNullableFlight(value: unknown, path: string): FlightDef | undefined {
+  if (value === undefined || value === null) return undefined;
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["drop_px", "from_px", "to_px"], path);
+  const flight = {
+    dropPx: expectU32(obj.drop_px, `${path}.drop_px`),
+    fromPx: expectU32(obj.from_px, `${path}.from_px`),
+    toPx: expectU32(obj.to_px, `${path}.to_px`),
+  };
+  if (flight.fromPx >= flight.toPx) {
+    fail(`${path}: from_px ${flight.fromPx} is not below to_px ${flight.toPx}`);
+  }
+  return flight;
+}
+
 function parseObject(value: unknown, path: string): ObjectDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(
@@ -218,9 +236,7 @@ function parseObject(value: unknown, path: string): ObjectDef {
       "height",
       "collider",
       "interact_at",
-      "flight_drop_px",
-      "flight_from_px",
-      "flight_to_px",
+      "flight",
       "window",
       "tags",
     ],
@@ -229,14 +245,7 @@ function parseObject(value: unknown, path: string): ObjectDef {
   const collider = parseNullableCollider(obj.collider, `${path}.collider`);
   const interactAt = parseNullableCollider(obj.interact_at, `${path}.interact_at`);
   const tags = expectU32Array(obj.tags, `${path}.tags`);
-  const flightDropPx =
-    obj.flight_drop_px === undefined || obj.flight_drop_px === null
-      ? undefined
-      : expectU32(obj.flight_drop_px, `${path}.flight_drop_px`);
-  const optionalU32 = (value: unknown, at: string): number | undefined =>
-    value === undefined || value === null ? undefined : expectU32(value, at);
-  const flightFromPx = optionalU32(obj.flight_from_px, `${path}.flight_from_px`);
-  const flightToPx = optionalU32(obj.flight_to_px, `${path}.flight_to_px`);
+  const flight = parseNullableFlight(obj.flight, `${path}.flight`);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
@@ -250,9 +259,7 @@ function parseObject(value: unknown, path: string): ObjectDef {
     tags,
     ...(collider ? { collider } : {}),
     ...(interactAt ? { interactAt } : {}),
-    ...(flightDropPx !== undefined ? { flightDropPx } : {}),
-    ...(flightFromPx !== undefined ? { flightFromPx } : {}),
-    ...(flightToPx !== undefined ? { flightToPx } : {}),
+    ...(flight ? { flight } : {}),
   };
 }
 

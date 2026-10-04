@@ -4,7 +4,7 @@
 // reaches the running client through here -- nothing hand-types a rect
 // that `defs/objects` already declares.
 
-import type { Defs, ObjectDef } from "../defs/types";
+import type { Defs, FlightDef, ObjectDef } from "../defs/types";
 import type { ColliderRectSubcells, ColliderSource } from "./collision-grid";
 
 /** Everything the derived indexes and a pick need from one `defs/`
@@ -16,10 +16,8 @@ import type { ColliderRectSubcells, ColliderSource } from "./collision-grid";
  * from different data. */
 export interface ObjectSource extends ColliderSource {
   readonly interactAt?: ColliderRectSubcells;
-  /** FR182: the drawn drop of a flight, native pixels. */
-  readonly flightDropPx?: number;
-  readonly flightFromPx?: number;
-  readonly flightToPx?: number;
+  /** FR182: a flight's drop and ramp, native pixels. */
+  readonly flight?: FlightDef;
 }
 
 /** Keyed by `ObjectDef.id`, which is what a `placed_object` row's `defId`
@@ -37,9 +35,7 @@ export function objectDefsById(defs: Defs): ReadonlyMap<number, ObjectSource> {
         height: object.height,
         ...(object.collider ? { collider: object.collider } : {}),
         ...(object.interactAt ? { interactAt: object.interactAt } : {}),
-        ...(object.flightDropPx !== undefined ? { flightDropPx: object.flightDropPx } : {}),
-        ...(object.flightFromPx !== undefined ? { flightFromPx: object.flightFromPx } : {}),
-        ...(object.flightToPx !== undefined ? { flightToPx: object.flightToPx } : {}),
+        ...(object.flight ? { flight: object.flight } : {}),
       },
     ]),
   );

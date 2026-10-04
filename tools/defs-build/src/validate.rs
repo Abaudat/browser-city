@@ -1327,9 +1327,7 @@ struct LoweredObjectEntry {
     interact_at: Option<Located<RawColliderRect>>,
     window: bool,
     tags: Vec<String>,
-    flight_drop_px: Option<Located<u32>>,
-    flight_from_px: Option<u32>,
-    flight_to_px: Option<u32>,
+    flight: Option<Located<RawFlight>>,
 }
 
 /// Turns an archetype's own `collider_inset` into a concrete
@@ -1496,9 +1494,7 @@ fn lower_object(
         interact_at: e.interact_at.clone(),
         window: e.window,
         tags: e.tags.clone(),
-        flight_drop_px: e.flight_drop_px.clone(),
-        flight_from_px: e.flight_from_px,
-        flight_to_px: e.flight_to_px,
+        flight: e.flight.clone(),
     })
 }
 
@@ -2217,10 +2213,12 @@ fn check_object_footprint_cap(entries: &[LoweredObjectEntry]) -> Result<(), Defs
     Ok(())
 }
 
-/// Story 15.15: a declared `flight_drop_px` is `1..=render.storey_height_px`
-/// and is refused on an object that declares a `collider` (a flight is
-/// walked over, never blocking).
-fn check_object_flight_drop(
+/// Story 15.15: a declared `flight` has `drop_px` in
+/// `1..=render.storey_height_px`, `from_px < to_px`, a ramp that fits some
+/// axis of the footprint (`to_px <= max(width, height) * tile_size_px`), and
+/// is refused on an object that declares a `collider` (a flight is walked
+/// over, never blocking).
+fn check_object_flight(
     entries: &[LoweredObjectEntry],
     balance: &[BalanceEntry],
 ) -> Result<(), DefsError> {
@@ -2229,45 +2227,40 @@ fn check_object_flight_drop(
         .find(|b| b.key.value == "render.storey_height_px")
         .map(|b| b.value.value as u32);
     for e in entries {
-        let Some(drop) = &e.flight_drop_px else {
-            if e.flight_from_px.is_some() || e.flight_to_px.is_some() {
-                return Err(DefsError::new(
-                    &e.path,
-                    e.key.line,
-                    e.key.col,
-                    format!(
-                        "object '{}' declares flight_from_px/flight_to_px without flight_drop_px",
-                        e.key.value
-                    ),
-                ));
-            }
+        let Some(flight) = &e.flight else {
             continue;
         };
-        let at = |message: String| DefsError::new(&e.path, drop.line, drop.col, message);
+        let f = flight.value;
+        let at = |message: String| DefsError::new(&e.path, flight.line, flight.col, message);
         let Some(storey) = storey else {
             return Err(at(format!(
-                "object '{}' declares flight_drop_px but no 'render.storey_height_px' balance key exists to bound it",
+                "object '{}' declares a flight but no 'render.storey_height_px' balance key exists to bound it",
                 e.key.value
             )));
         };
-        if drop.value == 0 || drop.value > storey {
+        if f.drop_px == 0 || f.drop_px > storey {
             return Err(at(format!(
-                "object '{}' flight_drop_px {} is outside 1..=render.storey_height_px ({storey})",
-                e.key.value, drop.value
+                "object '{}' flight drop_px {} is outside 1..=render.storey_height_px ({storey})",
+                e.key.value, f.drop_px
             )));
         }
-        match (e.flight_from_px, e.flight_to_px) {
-            (Some(from), Some(to)) if from < to => {}
-            _ => {
-                return Err(at(format!(
-                    "object '{}' declares flight_drop_px without flight_from_px < flight_to_px",
-                    e.key.value
-                )));
-            }
+        if f.from_px >= f.to_px {
+            return Err(at(format!(
+                "object '{}' flight from_px {} is not below to_px {}",
+                e.key.value, f.from_px, f.to_px
+            )));
+        }
+        let tile = find_tile_size_px(balance).unwrap_or(0);
+        let longest = e.width.max(e.height) * tile;
+        if f.to_px > longest {
+            return Err(at(format!(
+                "object '{}' flight to_px {} leaves its footprint ({longest} px on its longest axis)",
+                e.key.value, f.to_px
+            )));
         }
         if e.collider.is_some() {
             return Err(at(format!(
-                "object '{}' declares both flight_drop_px and a collider -- a flight is walked over, never blocking",
+                "object '{}' declares both a flight and a collider -- a flight is walked over, never blocking",
                 e.key.value
             )));
         }
@@ -2830,7 +2823,7 @@ pub fn validate(
     // rejection above (name, layer, footprint cap, collider/interact_at
     // geometry, sprite) gets its own chance to fire on a fixture built to
     // exercise it before this generic catch-all ever runs.
-    check_object_flight_drop(&lowered_objects, &raw.balance)?;
+    check_object_flight(&lowered_objects, &raw.balance)?;
     check_object_walkability_tag(&lowered_objects)?;
     // Story 2.9: after every other object-level rejection, same
     // reasoning as `check_object_walkability_tag`'s own placement.
@@ -2976,9 +2969,11 @@ pub fn validate(
                 window: o.window,
                 tags: resolve_object_tags(&o.path, &o.key, &o.tags, &tag_ids)
                     .expect("tags already validated"),
-                flight_drop_px: o.flight_drop_px.as_ref().map(|d| d.value),
-                flight_from_px: o.flight_from_px,
-                flight_to_px: o.flight_to_px,
+                flight: o.flight.as_ref().map(|f| FlightDef {
+                    drop_px: f.value.drop_px,
+                    from_px: f.value.from_px,
+                    to_px: f.value.to_px,
+                }),
             }
         })
         .collect();

@@ -53,6 +53,15 @@ export interface AtlasPageDef {
   readonly height: number;
 }
 
+/** A flight's declaration (FR182), native pixels: how far its drawn treads
+ * descend, and where the first and the last drawn nosing sit from the
+ * footprint's open edge along the walked axis. */
+export interface FlightDef {
+  readonly dropPx: number;
+  readonly fromPx: number;
+  readonly toPx: number;
+}
+
 export interface ObjectDef {
   readonly id: number;
   readonly key: string;
@@ -80,14 +89,9 @@ export interface ObjectDef {
    * Absent means this object declares no interaction at all -- there is
    * no separate `interactable` flag anywhere. */
   readonly interactAt?: ColliderRect;
-  /** Story 15.15 (FR182): how far this flight's drawn treads descend, in
-   * native pixels -- the one place that fact lives. Absent means the object
-   * is not a flight. Client-only: the server never learns it. */
-  readonly flightDropPx?: number;
-  /** Where the first and last drawn nosing sit, native pixels from the
-   * footprint's open edge; declared with `flightDropPx`. */
-  readonly flightFromPx?: number;
-  readonly flightToPx?: number;
+  /** Story 15.15 (FR182): a flight of stairs. Absent means the object is
+   * not one. Client-only: the server never learns it. */
+  readonly flight?: FlightDef;
   /** Story 1.7 (FR121): a window wall tile draws semi-transparently
    * (`render.window_alpha`) and retracts like any other front wall. */
   readonly window: boolean;

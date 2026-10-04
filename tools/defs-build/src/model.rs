@@ -230,6 +230,16 @@ pub const UNDERFOOT_TAG_KEY: &str = "underfoot";
 /// the foot an archetype declares with `foot = true`.
 pub const UPRIGHT_TAG_KEY: &str = "upright";
 
+/// Story 15.15: one flight's declaration. All three fields are required,
+/// so a partial table is a parse error.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawFlight {
+    pub drop_px: u32,
+    pub from_px: u32,
+    pub to_px: u32,
+}
+
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RawColliderRect {
@@ -342,17 +352,11 @@ pub struct RawObject {
     /// archetype at all.
     #[serde(default)]
     pub archetype: Option<Spanned<String>>,
-    /// Story 15.15: how far this flight's drawn treads descend (native
-    /// pixels). Client-only; refused on an object with a `collider`.
+    /// Story 15.15: a flight of stairs -- how far its drawn treads
+    /// descend and where the first and last drawn nosing sit. Client-only;
+    /// refused on an object with a `collider`.
     #[serde(default)]
-    pub flight_drop_px: Option<Spanned<u32>>,
-    /// Story 15.15: where along the walked axis (native pixels from the
-    /// footprint's open edge) the first and last drawn nosing sit; the
-    /// ramp runs between them. Declared together with `flight_drop_px`.
-    #[serde(default)]
-    pub flight_from_px: Option<u32>,
-    #[serde(default)]
-    pub flight_to_px: Option<u32>,
+    pub flight: Option<Spanned<RawFlight>>,
     /// Story 1.9 (FR148): where a player must stand to interact with this
     /// object -- a half-open integer rect in sub-cells relative to the
     /// same north-west sub-cell origin a `collider` uses. Unlike a
@@ -1050,10 +1054,8 @@ pub struct ObjectEntry {
     pub interact_at: Option<Located<RawColliderRect>>,
     pub window: bool,
     pub tags: Vec<String>,
-    /// Story 15.15: see [`RawObject::flight_drop_px`].
-    pub flight_drop_px: Option<Located<u32>>,
-    pub flight_from_px: Option<u32>,
-    pub flight_to_px: Option<u32>,
+    /// Story 15.15: see [`RawObject::flight`].
+    pub flight: Option<Located<RawFlight>>,
     /// Story 2.3 (AC3): the archetype key this object names, if any --
     /// resolved and consumed by `validate.rs`'s lowering step, never read
     /// past it.
@@ -1370,6 +1372,15 @@ pub struct SpriteRect {
     pub h: u32,
 }
 
+/// A flight's resolved declaration, native pixels: the drop, and where the
+/// first and last nosing sit from the footprint's open edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FlightDef {
+    pub drop_px: u32,
+    pub from_px: u32,
+    pub to_px: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectDef {
     pub id: u32,
@@ -1388,12 +1399,8 @@ pub struct ObjectDef {
     /// Resolved tag ids (story 2.10, FR111), sorted and deduplicated --
     /// the engine's only vocabulary, never a literal key past this point.
     pub tags: Vec<u32>,
-    /// Story 15.15: how far this flight's drawn treads descend, in native
-    /// pixels (`1..=render.storey_height_px`). Client-only: emitted into
-    /// `defs.json`, never into `sim::generated::defs`.
-    pub flight_drop_px: Option<u32>,
-    pub flight_from_px: Option<u32>,
-    pub flight_to_px: Option<u32>,
+    /// Story 15.15: client-only (`defs.json`, never `sim::generated::defs`).
+    pub flight: Option<FlightDef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -46,8 +46,8 @@ const TRANSITIONS: readonly TransitionSpec[] = [
   { x: 20, y: 2, floor: -1, targetX: 11, targetY: 5, targetFloor: 0 },
 ];
 const SOURCES = new Map([
-  [1, { width: 3, height: 1, flightDropPx: 8, flightFromPx: 0, flightToPx: 32 }],
-  [2, { width: 2, height: 2, flightDropPx: 4, flightFromPx: 0, flightToPx: 16 }],
+  [1, { width: 3, height: 1, flight: { dropPx: 8, fromPx: 0, toPx: 32 } }],
+  [2, { width: 2, height: 2, flight: { dropPx: 4, fromPx: 0, toPx: 16 } }],
   [3, { width: 1, height: 1 }],
 ]);
 const STREET_ROW = { defId: 1, x: 10, y: 5, floor: 0 };
@@ -116,15 +116,13 @@ describe("flight offset (FR182)", () => {
               { defId: 2, x: 20 - length + 1, y: 3, floor: -1 },
             ],
             new Map([
-              [1, { width: 3, height: 1, flightDropPx: drop, flightFromPx: 0, flightToPx: 32 }],
+              [1, { width: 3, height: 1, flight: { dropPx: drop, fromPx: 0, toPx: 32 } }],
               [
                 2,
                 {
                   width: length,
                   height: 2,
-                  flightDropPx: drop,
-                  flightFromPx: 0,
-                  flightToPx: (length - 1) * TILE,
+                  flight: { dropPx: drop, fromPx: 0, toPx: (length - 1) * TILE },
                 },
               ],
             ]),
@@ -241,9 +239,7 @@ describe("a flight on any axis (FR182)", () => {
         {
           width: street.width,
           height: street.height,
-          flightDropPx: 8,
-          flightFromPx: 0,
-          flightToPx: 32,
+          flight: { dropPx: 8, fromPx: 0, toPx: 32 },
         },
       ],
       [
@@ -251,9 +247,7 @@ describe("a flight on any axis (FR182)", () => {
         {
           width: platform.width,
           height: platform.height,
-          flightDropPx: 4,
-          flightFromPx: 0,
-          flightToPx: 16,
+          flight: { dropPx: 4, fromPx: 0, toPx: 16 },
         },
       ],
     ]);
@@ -261,7 +255,7 @@ describe("a flight on any axis (FR182)", () => {
   }
 
   for (const { name, d } of AXES) {
-    it(`walking ${name}: zero at the open edge, the signed drop at the anchor cell's near edge, flat beyond`, () => {
+    it(`walking ${name} (from_px 0, to_px at the anchor cell's near edge): zero at the open edge, the signed drop at to_px, flat beyond`, () => {
       const { A, R, transitions, placed, sources } = pair(d);
       const index = new FlightIndex(
         buildFlights(transitions, placed, sources, STOREY, TILE),
@@ -299,12 +293,53 @@ describe("a flight on any axis (FR182)", () => {
 });
 
 describe("flight construction (FR182)", () => {
+  it("refuses a ramp that leaves the footprint along the walked axis", () => {
+    expect(() =>
+      buildFlights(
+        TRANSITIONS,
+        [STREET_ROW, PLATFORM_ROW],
+        new Map([
+          [1, { width: 3, height: 1, flight: { dropPx: 8, fromPx: 0, toPx: 49 } }],
+          [2, { width: 2, height: 2, flight: { dropPx: 4, fromPx: 0, toPx: 16 } }],
+        ]),
+        STOREY,
+        TILE,
+      ),
+    ).toThrow(/leaves its footprint/);
+  });
+
+  it("is flat before `from`, flat after `to`, and exactly linear between, on both signs", () => {
+    const sources = new Map([
+      [1, { width: 3, height: 1, flight: { dropPx: 8, fromPx: 8, toPx: 24 } }],
+      [2, { width: 2, height: 2, flight: { dropPx: 4, fromPx: 4, toPx: 12 } }],
+    ]);
+    const index = new FlightIndex(
+      buildFlights(TRANSITIONS, [STREET_ROW, PLATFORM_ROW], sources, STOREY, TILE),
+      config,
+    );
+    // Street: open edge x = 13, walking west; `px` native pixels from it.
+    const street = (px: number) => index.offsetPx(13 - px / TILE, 5.9, 0);
+    expect(street(0)).toBe(0);
+    expect(street(8)).toBe(0); // the first nosing
+    expect(street(16)).toBe(4); // exactly the midpoint
+    expect(street(24)).toBe(8); // the last nosing
+    expect(street(30)).toBe(8); // flat after, short of the anchor cell's edge
+    expect(street(40)).toBe(8);
+    // Platform: open edge x = 19, walking east; the drop is negative.
+    const platform = (px: number) => index.offsetPx(19 + px / TILE, 2.9, -1);
+    expect(platform(0)).toBe(0);
+    expect(platform(4)).toBe(0);
+    expect(platform(8)).toBe(-2);
+    expect(platform(12)).toBe(-4);
+    expect(platform(16)).toBe(-4);
+  });
+
   it("refuses a flight shorter than two cells along its axis", () => {
     expect(() =>
       buildFlights(
         TRANSITIONS,
         [{ defId: 1, x: 10, y: 5, floor: 0 }],
-        new Map([[1, { width: 1, height: 1, flightDropPx: 8, flightFromPx: 0, flightToPx: 8 }]]),
+        new Map([[1, { width: 1, height: 1, flight: { dropPx: 8, fromPx: 0, toPx: 8 } }]]),
         STOREY,
         TILE,
       ),
@@ -351,7 +386,7 @@ describe("the street's own flights (conformance)", () => {
 
   it("takes each drop from the declared art, signed toward the target floor", () => {
     const declared = new Map(
-      defs.objects.filter((o) => o.flightDropPx !== undefined).map((o) => [o.key, o.flightDropPx]),
+      defs.objects.filter((o) => o.flight !== undefined).map((o) => [o.key, o.flight?.dropPx]),
     );
     expect([...declared.keys()].sort()).toEqual(["platform_stair_flight", "stairwell_treads"]);
     expect(flights.find((f) => f.floor === 0)?.dropPx).toBe(declared.get("stairwell_treads"));
@@ -465,8 +500,7 @@ describe("the street's own flights (conformance)", () => {
 
 // The nosings, measured from the art (Artie): the sprite-relative x of each
 // tread's centre and the sheet row of its top. A flight's declared ramp must
-// run through them -- a wrong `flight_drop_px` / `flight_from_px` /
-// `flight_to_px`, or a new flight sheet, fails here by name.
+// run through them -- a wrong `flight` table, or a new flight sheet, fails here by name.
 const NOSINGS: Record<string, { fromOpenEdge: "east" | "west"; xs: number[]; rows: number[] }> = {
   stairwell_treads: {
     fromOpenEdge: "east",
@@ -491,6 +525,13 @@ describe("a flight's ramp follows the drawn nosings (FR182)", () => {
     TILE,
   );
   const index = new FlightIndex(flights, config);
+
+  it("every def that declares a flight has a nosing line to be checked against", () => {
+    const missing = defs.objects
+      .filter((o) => o.flight !== undefined && !(o.key in NOSINGS))
+      .map((o) => o.key);
+    expect(missing, `flight defs with no NOSINGS entry: ${missing.join(", ")}`).toEqual([]);
+  });
 
   for (const [key, nosing] of Object.entries(NOSINGS)) {
     it(`${key}: the offset at every walkable point is within 1 native px of the nosing line`, () => {
@@ -552,6 +593,6 @@ describe("a flight's ramp follows the drawn nosings (FR182)", () => {
     };
     const first = top(0);
     const last = top(object.sprite.w - 1);
-    expect(first - last).toBe(object.flightDropPx);
+    expect(first - last).toBe(object.flight?.dropPx);
   });
 });

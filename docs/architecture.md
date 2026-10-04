@@ -840,7 +840,16 @@ subtracts `floor * storey_height_px`, and a drawable on a storey above the
 viewer's own must never sort as though it were on that floor because of
 it.
 
-An actor on a flight is drawn with a flight offset (`render/flight-offset.ts`), a pure function of its position. A flight is the footprint of the placed object under a `floor_transition` anchor whose def declares `flight_drop_px` (JSON-only). The offset is zero at `flight_from_px` and `flight_drop_px` at `flight_to_px` (the first and last drawn nosing, from the footprint's open edge), linear between, flat outside, signed toward the target floor; the floor change takes whatever is left. It is summed with the floor offset inside `worldPointPx` and exists nowhere else: not in the sort key, collision, walk state or picking.
+An actor on a flight is drawn with a flight offset
+(`render/flight-offset.ts`), a pure function of its position. A flight is
+the footprint of the placed object under a `floor_transition` anchor whose
+def declares a `flight` (`flight.drop_px`, `flight.from_px`,
+`flight.to_px`; JSON-only). The offset is zero at `flight.from_px` and
+`flight.drop_px` at `flight.to_px` (the first and last drawn nosing, from
+the footprint's open edge), linear between, flat outside, signed toward
+the target floor; the floor change takes whatever is left. It is summed
+with the floor offset inside `worldPointPx` and exists nowhere else: not
+in the sort key, collision, walk state or picking.
 
 Only a test-street row with no `object_def` reads its art straight out of
 the repo-root `ModernTileset/` at runtime (`new URL(..., import.meta.url)`

@@ -486,19 +486,30 @@ describe("parseDefs", () => {
     expect(parseDefs(payload).objects[0]?.interactAt).toBeUndefined();
   });
 
-  it("parses a present flight_drop_px and leaves an absent or null one undefined (FR182)", () => {
+  it("parses a present flight table and leaves an absent or null one undefined (FR182)", () => {
     const payload = validPayload();
     const base = (payload.objects as Record<string, unknown>[])[0] as Record<string, unknown>;
-    payload.objects = [{ ...base, flight_drop_px: 8, flight_from_px: 5, flight_to_px: 34 }];
-    expect(parseDefs(payload).objects[0]?.flightDropPx).toBe(8);
-    expect(parseDefs(payload).objects[0]?.flightFromPx).toBe(5);
-    expect(parseDefs(payload).objects[0]?.flightToPx).toBe(34);
-    payload.objects = [{ ...base, flight_drop_px: null }];
-    expect(parseDefs(payload).objects[0]?.flightDropPx).toBeUndefined();
+    payload.objects = [{ ...base, flight: { drop_px: 8, from_px: 5, to_px: 34 } }];
+    expect(parseDefs(payload).objects[0]?.flight).toEqual({ dropPx: 8, fromPx: 5, toPx: 34 });
+    payload.objects = [{ ...base, flight: null }];
+    expect(parseDefs(payload).objects[0]?.flight).toBeUndefined();
     payload.objects = [base];
-    expect(parseDefs(payload).objects[0]?.flightDropPx).toBeUndefined();
-    payload.objects = [{ ...base, flight_drop_px: -1 }];
-    expect(() => parseDefs(payload)).toThrow(DefsParseError);
+    expect(parseDefs(payload).objects[0]?.flight).toBeUndefined();
+  });
+
+  it("refuses a partial, inverted, negative or unknown-field flight table (FR182)", () => {
+    const payload = validPayload();
+    const base = (payload.objects as Record<string, unknown>[])[0] as Record<string, unknown>;
+    for (const flight of [
+      { drop_px: 8, from_px: 5 },
+      { drop_px: 8, from_px: 34, to_px: 5 },
+      { drop_px: 8, from_px: 5, to_px: 5 },
+      { drop_px: -1, from_px: 5, to_px: 34 },
+      { drop_px: 8, from_px: 5, to_px: 34, extra: 1 },
+    ]) {
+      payload.objects = [{ ...base, flight }];
+      expect(() => parseDefs(payload)).toThrow(DefsParseError);
+    }
   });
 
   it("rejects a zero-area interact_at (FR148)", () => {

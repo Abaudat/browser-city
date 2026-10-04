@@ -1,3 +1,4 @@
+import type { FlightDef } from "../defs/types";
 import { footprintCells, footprintOrigin } from "../world/footprint";
 import { bodyRect, type MovementConfig } from "../world/movement";
 import {
@@ -21,13 +22,8 @@ import { floorOffsetPx } from "./screen-position";
 export interface FlightSource {
   readonly width: number;
   readonly height: number;
-  /** Native pixels the drawn treads descend (`flight_drop_px`). */
-  readonly flightDropPx?: number;
-  /** Native pixels from the footprint's open edge to the first and the
-   * last drawn nosing (`flight_from_px` / `flight_to_px`): the ramp
-   * runs between them and is flat outside. */
-  readonly flightFromPx?: number;
-  readonly flightToPx?: number;
+  /** The def's `flight` table; absent means not a flight. */
+  readonly flight?: FlightDef;
 }
 
 /** A placed row, as far as a flight is concerned. */
@@ -39,7 +35,7 @@ export interface PlacedFlightRow {
 }
 
 /** One flight: the footprint of the placed object under a transition's
- * anchor whose def declares `flight_drop_px`. */
+ * anchor whose def has a `flight` table. */
 export interface Flight {
   readonly floor: number;
   /** The footprint, in whole cells, half-open (`x1`/`y1` exclusive). */
@@ -87,7 +83,7 @@ export function buildFlights(
         const source = sources.get(row.defId);
         return (
           row.floor === anchor.floor &&
-          source?.flightDropPx !== undefined &&
+          source?.flight !== undefined &&
           footprintCells(row.x, row.y, source).some((c) => c.x === anchor.x && c.y === anchor.y)
         );
       });
@@ -97,11 +93,8 @@ export function buildFlights(
       }
       const row = covering[0];
       const source = row ? sources.get(row.defId) : undefined;
-      if (!row || !source || source.flightDropPx === undefined) continue;
-      const { flightFromPx: from, flightToPx: to } = source;
-      if (from === undefined || to === undefined || from >= to) {
-        throw new Error(`buildFlights: the flight at ${where} declares no ramp from < to`);
-      }
+      if (!row || !source || !source.flight) continue;
+      const { dropPx, fromPx, toPx } = source.flight;
 
       const origin = footprintOrigin(row.x, row.y, source);
       const x1 = origin.x + source.width;
@@ -115,7 +108,7 @@ export function buildFlights(
       // footprint value, the anchor cell must hold its highest cell.
       const lo = alongX ? (dir.x > 0 ? origin.x : -x1) : dir.y > 0 ? origin.y : -y1;
       const hi = lo + length;
-      if (to > length * tileSizePx) {
+      if (toPx > length * tileSizePx) {
         throw new Error(`buildFlights: the ramp of the flight at ${where} leaves its footprint`);
       }
       // The anchor cell's near edge on that axis (a cell spans one unit).
@@ -141,9 +134,9 @@ export function buildFlights(
         y1,
         dirX: dir.x,
         dirY: dir.y,
-        startS: lo + from / tileSizePx,
-        fullS: lo + to / tileSizePx,
-        dropPx: sign * source.flightDropPx + 0,
+        startS: lo + fromPx / tileSizePx,
+        fullS: lo + toPx / tileSizePx,
+        dropPx: sign * dropPx + 0,
       });
     }
   }
