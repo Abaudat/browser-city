@@ -557,9 +557,9 @@ describe("RegionController", () => {
   });
 });
 
-// A 10,000-step walk is CPU-bound (about a second here, four times that on a
-// loaded coverage runner); the default 5 s is a budget it has no business
-// racing, the same stated bound `camera-scroll.test.ts` gives its walk.
+// The 10,000-step session length is the property under test, so the work
+// cannot shrink. CI worst case under coverage: 5.26 s (run 37219562625); 60 s
+// is over 10x that, the same stated bound `camera-scroll.test.ts` gives its walk.
 const LONG_WALK_TIMEOUT_MS = 60_000;
 
 describe("a long session never accumulates what it left behind", {
@@ -596,6 +596,7 @@ describe("a long session never accumulates what it left behind", {
       seed = (seed * 1103515245 + 12345) & 0x7fffffff;
       return seed / 0x7fffffff;
     };
+    let worst = 0;
     for (let step = 0; step < 10_000; step++) {
       // A biased random walk plus a rare teleport.
       x += Math.round((rnd() - 0.45) * 40);
@@ -619,8 +620,13 @@ describe("a long session never accumulates what it left behind", {
           }
         }
       }
-      expect(grid.allocatedChunkCount()).toBeLessThanOrEqual(bound);
-      expect(footprints.allocatedChunkCount()).toBeLessThanOrEqual(bound);
+      const g = grid.allocatedChunkCount();
+      const f = footprints.allocatedChunkCount();
+      if (g > bound || f > bound) {
+        throw new Error(`step ${step}: grid ${g} / footprints ${f} > ${bound}`);
+      }
+      worst = Math.max(worst, g, f);
     }
+    expect(worst).toBeLessThanOrEqual(bound);
   });
 });

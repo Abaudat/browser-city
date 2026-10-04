@@ -261,55 +261,64 @@ describe("crowd placement through worldPointPx", () => {
   // whole screen pixels, monotone along each straight leg, and even steps
   // (at most one screen pixel apart) -- the same steadiness the camera's
   // own `inv_camera_scroll_tracks_continuous_walk` holds the world to.
-  it("moves a walker in whole, monotone, even screen-pixel steps along each leg", () => {
-    fc.assert(
-      fc.property(
-        fc.double({ min: 0, max: 100, noNaN: true }),
-        fc.double({ min: 0, max: 100, noNaN: true }),
-        fc.double({ min: 0, max: 10_000, noNaN: true }),
-        fc.oneof(fc.constant(1000 / 60), fc.integer({ min: 8, max: 34 })),
-        fc.constantFrom(ZOOM, 1, 2, 4),
-        fc.constantFrom(tile, 8, 16, 32),
-        (startX, startY, startMS, deltaMS, zoom, tileSizePx) => {
-          const frames = Array.from({ length: 600 }, (_, k) => {
-            const pose = walkerPoseAt(startX, startY, startMS + k * deltaMS);
-            return { pose, px: crowdScreenPx(pose.x, pose.y, tileSizePx, zoom) };
-          });
-          for (const { px } of frames) {
-            expect(Math.abs(px.x * zoom - Math.round(px.x * zoom))).toBeLessThan(1e-6);
-            expect(Math.abs(px.y * zoom - Math.round(px.y * zoom))).toBeLessThan(1e-6);
-          }
-          // Steps between consecutive frames on the same leg, in screen px.
-          const legSteps: { dx: number; dy: number; direction: string }[][] = [[]];
-          for (let k = 1; k < frames.length; k++) {
-            const prev = frames[k - 1];
-            const cur = frames[k];
-            if (!prev || !cur) continue;
-            if (prev.pose.direction !== cur.pose.direction) {
-              legSteps.push([]);
-              continue;
-            }
-            legSteps[legSteps.length - 1]?.push({
-              dx: Math.round((cur.px.x - prev.px.x) * zoom),
-              dy: Math.round((cur.px.y - prev.px.y) * zoom),
-              direction: cur.pose.direction,
+  // 200 cases of 600 frames: the case count is the property under test, so the
+  // work cannot shrink. About 1 s here; 60 s is the stated cap, over 10x any CI
+  // worst case under coverage (check-unit-test-durations.sh flags a test above 30%).
+  const WALK_PROPERTY_TIMEOUT_MS = 60_000;
+  it(
+    "moves a walker in whole, monotone, even screen-pixel steps along each leg",
+    () => {
+      fc.assert(
+        fc.property(
+          fc.double({ min: 0, max: 100, noNaN: true }),
+          fc.double({ min: 0, max: 100, noNaN: true }),
+          fc.double({ min: 0, max: 10_000, noNaN: true }),
+          fc.oneof(fc.constant(1000 / 60), fc.integer({ min: 8, max: 34 })),
+          fc.constantFrom(ZOOM, 1, 2, 4),
+          fc.constantFrom(tile, 8, 16, 32),
+          (startX, startY, startMS, deltaMS, zoom, tileSizePx) => {
+            const frames = Array.from({ length: 600 }, (_, k) => {
+              const pose = walkerPoseAt(startX, startY, startMS + k * deltaMS);
+              return { pose, px: crowdScreenPx(pose.x, pose.y, tileSizePx, zoom) };
             });
-          }
-          for (const steps of legSteps) {
-            if (steps.length === 0) continue;
-            const horizontal = steps[0]?.direction === "right" || steps[0]?.direction === "left";
-            const sign = steps[0]?.direction === "right" || steps[0]?.direction === "down" ? 1 : -1;
-            const along = steps.map((s) => (horizontal ? s.dx : s.dy) * sign);
-            const across = steps.map((s) => (horizontal ? s.dy : s.dx));
-            expect(Math.min(...along)).toBeGreaterThanOrEqual(0);
-            expect(Math.max(...along) - Math.min(...along)).toBeLessThanOrEqual(1);
-            expect(across.every((a) => a === 0)).toBe(true);
-          }
-        },
-      ),
-      { numRuns: 200 },
-    );
-  });
+            for (const { px } of frames) {
+              expect(Math.abs(px.x * zoom - Math.round(px.x * zoom))).toBeLessThan(1e-6);
+              expect(Math.abs(px.y * zoom - Math.round(px.y * zoom))).toBeLessThan(1e-6);
+            }
+            // Steps between consecutive frames on the same leg, in screen px.
+            const legSteps: { dx: number; dy: number; direction: string }[][] = [[]];
+            for (let k = 1; k < frames.length; k++) {
+              const prev = frames[k - 1];
+              const cur = frames[k];
+              if (!prev || !cur) continue;
+              if (prev.pose.direction !== cur.pose.direction) {
+                legSteps.push([]);
+                continue;
+              }
+              legSteps[legSteps.length - 1]?.push({
+                dx: Math.round((cur.px.x - prev.px.x) * zoom),
+                dy: Math.round((cur.px.y - prev.px.y) * zoom),
+                direction: cur.pose.direction,
+              });
+            }
+            for (const steps of legSteps) {
+              if (steps.length === 0) continue;
+              const horizontal = steps[0]?.direction === "right" || steps[0]?.direction === "left";
+              const sign =
+                steps[0]?.direction === "right" || steps[0]?.direction === "down" ? 1 : -1;
+              const along = steps.map((s) => (horizontal ? s.dx : s.dy) * sign);
+              const across = steps.map((s) => (horizontal ? s.dy : s.dx));
+              expect(Math.min(...along)).toBeGreaterThanOrEqual(0);
+              expect(Math.max(...along) - Math.min(...along)).toBeLessThanOrEqual(1);
+              expect(across.every((a) => a === 0)).toBe(true);
+            }
+          },
+        ),
+        { numRuns: 200 },
+      );
+    },
+    WALK_PROPERTY_TIMEOUT_MS,
+  );
 
   it("refuses a non-integer zoom", () => {
     expect(() => crowdScreenPx(1, 1, 16, 2.5)).toThrow(/zoom/);

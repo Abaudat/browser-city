@@ -472,19 +472,36 @@ describe("the street's own flights (conformance)", () => {
     const slope = Math.max(
       ...flights.map((f) => Math.abs(f.dropPx) / ((f.fullS - f.startS) * sub)),
     );
+    const w = 46 * sub;
+    const h = 26 * sub;
     let nonZero = 0;
+    let pairs = 0;
     for (const floor of [0, SUBWAY_FLOOR]) {
-      for (let cx = 0; cx < 46 * sub; cx++) {
-        for (let feet = 0; feet < 26 * sub; feet++) {
+      // Each position's clearance and offset once, then compare neighbours.
+      const clear = new Uint8Array(w * h);
+      const offset = new Float64Array(w * h);
+      for (let cx = 0; cx < w; cx++) {
+        for (let feet = 0; feet < h; feet++) {
           if (!isBodyClear(world, config, floor, cx, feet)) continue;
-          const here = index.offsetPx(cx / sub, feet / sub, floor);
+          clear[cx * h + feet] = 1;
+          offset[cx * h + feet] = index.offsetPx(cx / sub, feet / sub, floor);
+        }
+      }
+      for (let cx = 0; cx < w; cx++) {
+        for (let feet = 0; feet < h; feet++) {
+          const i = cx * h + feet;
+          if (!clear[i]) continue;
+          const here = offset[i];
           if (here !== 0) nonZero++;
           for (const [nx, ny] of [
             [cx + 1, feet],
             [cx, feet + 1],
           ] as const) {
-            if (!isBodyClear(world, config, floor, nx, ny)) continue;
-            const there = index.offsetPx(nx / sub, ny / sub, floor);
+            // Neighbours past the grid edge are computed directly (a thin border).
+            const inside = nx < w && ny < h;
+            if (inside ? !clear[nx * h + ny] : !isBodyClear(world, config, floor, nx, ny)) continue;
+            pairs++;
+            const there = inside ? offset[nx * h + ny] : index.offsetPx(nx / sub, ny / sub, floor);
             if (Math.abs(there - here) > slope + 1e-9) {
               throw new Error(
                 `floor ${floor}: (${cx}, ${feet}) -> (${nx}, ${ny}) jumps ${there - here} sub-cell units`,
@@ -494,6 +511,8 @@ describe("the street's own flights (conformance)", () => {
         }
       }
     }
+    // The exhaustive scan compares exactly this many adjacent pairs.
+    expect(pairs).toBe(1_141_946);
     expect(nonZero).toBeGreaterThan(0);
   });
 });

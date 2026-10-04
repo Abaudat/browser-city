@@ -252,7 +252,14 @@ function gridForPair(
   };
 }
 
-describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and any deltaMs in range, walking the entry direction then the reverse direction lands back on the original cell, with no bounce", () => {
+// The default 100 cases are the property under test, so the work cannot
+// shrink. About 1.3 s here; 60 s is the stated cap, over 10x any CI worst case
+// under coverage (check-unit-test-durations.sh flags a test above 30%).
+const ROUND_TRIP_TIMEOUT_MS = 60_000;
+
+describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and any deltaMs in range, walking the entry direction then the reverse direction lands back on the original cell, with no bounce", {
+  timeout: ROUND_TRIP_TIMEOUT_MS,
+}, () => {
   it("inv_transition_pairs_round_trip", () => {
     const probe = sizeProbe({ min: 1, max: 20 });
     fc.assert(
