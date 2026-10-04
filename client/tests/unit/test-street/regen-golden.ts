@@ -16,7 +16,7 @@ import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-rank
 import { FIRST_POOL_RANK, LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import { CROWD_FLOOR } from "../../../src/test-street/citizens";
-import { buildPlayerDrawable, buildPropDrawables } from "../../../src/test-street/drawables";
+import { buildCharacterDrawable, buildPropDrawables } from "../../../src/test-street/drawables";
 import {
   LAMPPOST_CELL,
   PLATFORM_LANDING_X,
@@ -55,7 +55,7 @@ const props = () =>
   });
 
 function orderAt(x: number, y: number, floor: number): string[] {
-  const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
+  const player = buildCharacterDrawable(rankOf("characters"), x, y, floor);
   // Flat-pass drawables are never pool members: `window.__bc.renderOrder`
   // (and so this golden) lists the pool only.
   return sortAcrossFloors([...props(), player], (d) => d)
@@ -68,7 +68,7 @@ const GROUND_FLOORS = [...new Set(STREET_GROUND_TILES.map((tiles) => tiles.floor
 );
 
 function visibilityAt(x: number, y: number, floor: number): Record<string, string> {
-  const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
+  const player = buildCharacterDrawable(rankOf("characters"), x, y, floor);
   const viewer: VisibilityViewer = {
     floor,
     buildingId: ownership.ownershipAt(cellOf(x), cellOf(y), floor).buildingId,

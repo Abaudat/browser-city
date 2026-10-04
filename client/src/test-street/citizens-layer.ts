@@ -15,7 +15,10 @@
 // other real-Pixi adapters it composes.
 
 import { Container, Sprite, type Texture } from "pixi.js";
-import type { Defs, Family } from "../defs/types";
+import type { Defs } from "../defs/types";
+import { CitizenBody, type CitizenFrame, createCitizenFrame } from "../l3/citizen";
+import { type L3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
+import type { Walkability } from "../l3/micro-path";
 import type {
   AppearanceTextureCache,
   CompositeFrames,
@@ -34,13 +37,16 @@ import {
   buildWalkerFixture,
   CROWD_FLOOR,
   plazaBounds,
-  UNIFORMED_WALKER_ID,
-  WALKER_ID,
-  walkerPoseAt,
+  WALKER_SPECS,
 } from "./citizens";
 import { comparePipelineVsStack } from "./compare-pipeline-vs-stack";
+import { Timetable } from "./timetable";
 
-const WALKER_IDS: readonly string[] = [WALKER_ID, UNIFORMED_WALKER_ID];
+/** What the walking citizens need from L3: tile walkability and the dials. */
+export interface WalkerSource {
+  readonly walk: Walkability;
+  readonly config: L3Config;
+}
 
 export interface CitizensLayerHandle {
   /** One opaque id per distinct `CompositeFrames` instance actually
@@ -56,35 +62,43 @@ export interface CitizensLayerHandle {
     direction: string,
     frame: number,
   ): Promise<{ pipeline: PixelSnapshot; stack: PixelSnapshot }>;
-  /** Advances every walking citizen -- called from `scene.ts`'s own
-   * ticker, never a second ticker registered here (one driver of
-   * frame-by-frame state). */
-  update(deltaMS: number): void;
+  /** Poses every walking citizen at city time `cityMilliminutes` -- called
+   * from `scene.ts`'s own ticker, never a second ticker registered here
+   * (one driver of frame-by-frame state). */
+  update(cityMilliminutes: number): void;
+  /** What each walking citizen's body says about itself (the L3 overlay). */
+  l3Bodies(): readonly {
+    readonly id: string;
+    readonly x: number;
+    readonly y: number;
+    readonly floor: number;
+    readonly fallbacks: number;
+    readonly paceOutOfBand: boolean;
+  }[];
 }
 
 interface WalkerState {
   readonly sprite: Sprite;
   readonly frames: CompositeFrames;
-  readonly family: Family;
-  readonly startX: number;
-  readonly startY: number;
-  elapsedMS: number;
+  readonly timetable: Timetable;
+  readonly body: CitizenBody;
+  readonly frame: CitizenFrame;
 }
 
-function advanceWalker(
-  walker: WalkerState,
-  deltaMS: number,
+function poseWalker(
+  state: WalkerState,
+  cityMilliminutes: number,
   tileSizePx: number,
   storeyHeightPx: number,
   zoom: number,
 ): void {
-  walker.elapsedMS += deltaMS;
-  const pose = walkerPoseAt(walker.startX, walker.startY, walker.elapsedMS);
-  const px = worldPointPx(pose.x, pose.y, CROWD_FLOOR, tileSizePx, storeyHeightPx, zoom, 0);
-  walker.sprite.x = px.x;
-  walker.sprite.y = px.y;
-  walker.sprite.zIndex = pose.y;
-  walker.sprite.texture = walker.frames.frame("walk", pose.direction, pose.frameIndex);
+  const { frame, sprite, frames } = state;
+  state.body.frameAt(state.timetable.stateAt(cityMilliminutes), cityMilliminutes, frame);
+  const px = worldPointPx(frame.x, frame.y, CROWD_FLOOR, tileSizePx, storeyHeightPx, zoom, 0);
+  sprite.x = px.x;
+  sprite.y = px.y;
+  sprite.zIndex = frame.y;
+  sprite.texture = frames.frame(frame.animation, frame.direction, frame.frameIndex);
 }
 
 export async function mountCitizensLayer(
@@ -97,6 +111,7 @@ export async function mountCitizensLayer(
   sidewalkTexture: Texture,
   atlasBaseUrl: string,
   identicalTuples = false,
+  l3: WalkerSource,
 ): Promise<CitizensLayerHandle> {
   // The crowd's own pavement, painted before the citizens so it sits
   // underneath them -- real `ModernTileset` sidewalk tiles, the same
@@ -176,22 +191,31 @@ export async function mountCitizensLayer(
       sprite.zIndex = fixture.gridY;
       layer.addChild(sprite);
 
-      if (WALKER_IDS.includes(fixture.id)) {
+      const spec = WALKER_SPECS[fixture.id];
+      if (spec) {
+        const path = pathConfigOf(l3.config);
         walkers.set(fixture.id, {
           sprite,
           frames,
-          family: body.family,
-          startX: fixture.gridX,
-          startY: fixture.gridY,
-          elapsedMS: 0,
+          timetable: new Timetable(spec, l3.config, l3.walk, path),
+          body: new CitizenBody(
+            l3.walk,
+            path,
+            {
+              strideCells: l3.config.strideCells,
+              framesPerCycle: walkFramesPerCycle(defs, body.family),
+            },
+            fixture.id,
+          ),
+          frame: createCitizenFrame(),
         });
       }
     }),
   );
 
-  function update(deltaMS: number): void {
+  function update(cityMilliminutes: number): void {
     for (const walker of walkers.values()) {
-      advanceWalker(walker, deltaMS, tileSizePx, storeyHeightPx, zoom);
+      poseWalker(walker, cityMilliminutes, tileSizePx, storeyHeightPx, zoom);
     }
   }
 
@@ -233,5 +257,21 @@ export async function mountCitizensLayer(
     distinctTextureCount: nextTextureId,
     compareForE2e,
     update,
+    l3Bodies: () => {
+      const out = [];
+      const msPerMilliminute = l3.config.realMsPerCityMinute / 1000;
+      for (const [id, walker] of walkers) {
+        const report = walker.body.diagnostics(msPerMilliminute, l3.config);
+        if (!report) continue;
+        out.push({
+          id,
+          x: walker.frame.x,
+          y: walker.frame.y,
+          floor: walker.frame.floor,
+          ...report,
+        });
+      }
+      return out;
+    },
   };
 }

@@ -1,0 +1,50 @@
+# L3 bodies (FR63, FR64, NFR23, story 5.1): client-side micro pathing, pace
+# and gait for instantiated citizens. Time is authoritative; these dials
+# describe what a leg issued to L3 should look like, never a clamp on it.
+
+[[balance]]
+# A leg whose required pace is outside canonical walking speed +/- this
+# percentage is a defect in whoever issued the leg.
+key = "l3.walk_pace_band_percent"
+value = 15
+min = 1
+max = 50
+
+[[balance]]
+# The longest a body may stand still between depart and arrive, in real ms.
+key = "l3.stall_bound_ms"
+value = 250
+min = 1
+max = 5000
+
+[[balance]]
+# A body is never at its destination earlier than this many milliminutes
+# before the leg's arrival instant.
+key = "l3.early_arrival_bound_milliminutes"
+value = 0
+min = 0
+max = 1000
+
+[[balance]]
+# A leg's micro-path search is bounded to its two waypoints' bounding box
+# inflated by this many cells.
+key = "l3.path_box_margin_cells"
+value = 6
+min = 1
+max = 64
+
+[[balance]]
+# Node expansions one micro-path search may spend before the leg is walked
+# as a straight segment.
+key = "l3.path_node_budget"
+value = 4096
+min = 64
+max = 1000000
+
+[[balance]]
+# A micro-path search box larger than this many cells is refused (a typed
+# failure, the leg is walked straight) before anything is allocated.
+key = "l3.path_max_cells"
+value = 65536
+min = 64
+max = 16777216

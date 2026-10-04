@@ -52,3 +52,14 @@ export function cityTime(
     realMsIntoMinute: Number(intoMinute),
   };
 }
+
+/** In-city time since the epoch in milliminutes (a thousandth of a city
+ * minute), fractional: the timeline L3 legs are written on. */
+export function cityMilliminutes(
+  epochMicros: bigint,
+  nowMicros: bigint,
+  realMsPerCityMinute: number,
+  speed: number,
+): number {
+  return (Number(nowMicros - epochMicros) * speed) / realMsPerCityMinute;
+}

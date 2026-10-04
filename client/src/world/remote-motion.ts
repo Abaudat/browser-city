@@ -124,15 +124,3 @@ function stampAt(buf: readonly RemoteSample[], i: number): number {
 function pose(s: RemoteSample): RemotePose {
   return { x: s.x, y: s.y, floor: s.floor };
 }
-
-/** The way a remote player faces, read from its motion alone -- the server
- * stores no facing. `previous` holds while it stands still. */
-export function facingOf(
-  dx: number,
-  dy: number,
-  previous: string,
-): { facing: string; moving: boolean } {
-  if (dx === 0 && dy === 0) return { facing: previous, moving: false };
-  if (Math.abs(dx) >= Math.abs(dy)) return { facing: dx > 0 ? "right" : "left", moving: true };
-  return { facing: dy > 0 ? "down" : "up", moving: true };
-}

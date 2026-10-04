@@ -82,6 +82,7 @@ export function conformanceView(): DebugWorldView {
     pool: () => POOL,
     orderOf: (id) => POOL.findIndex((d) => d.stableId === id),
     viewerBody: () => PLAYER_BODY,
+    l3Bodies: () => [],
   };
 }
 
@@ -123,6 +124,10 @@ export function countingView(inner: DebugWorldView): {
       viewerBody: () => {
         reads++;
         return inner.viewerBody();
+      },
+      l3Bodies: () => {
+        reads++;
+        return inner.l3Bodies();
       },
     },
   };

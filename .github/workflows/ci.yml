@@ -608,6 +608,8 @@ jobs:
         run: bash ../scripts/ci/check-subscription-shape.sh
       - name: scripted e2e walks go through one helper, with one release-lag bound
         run: bash ../scripts/ci/check-one-walk-helper.sh
+      - name: story 5.1 FR63/NFR23, L3 reaches only itself and the defs types; net/ never reaches l3/
+        run: bash ../scripts/ci/check-l3-boundary.sh
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: client/.nvmrc

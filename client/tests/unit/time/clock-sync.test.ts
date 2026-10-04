@@ -116,6 +116,8 @@ describe("startClockSync", () => {
     expect(serverClock.nowMicros()).toBe(1_000_000n + 10_000n);
     fail = false;
     await sync.syncNow();
+    // A small correction is slewed, not stepped: it has caught up a while later.
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(serverClock.nowMicros()).toBeGreaterThanOrEqual(2_000_000n);
     sync.stop();
   });
@@ -161,5 +163,17 @@ describe("CityClock", () => {
     expect(city.now()?.minute).toBe(1);
     city.setClock(EPOCH, 10);
     expect(city.now()?.minute).toBe(10);
+  });
+});
+
+describe("CityClock.nowMilliminutes", () => {
+  it("is undefined until the clock can tell time, then counts from the epoch", () => {
+    const serverClock = new ServerClock(() => 0);
+    const city = new CityClock(serverClock);
+    city.setRate(RATE);
+    city.setClock(EPOCH, 1);
+    expect(city.nowMilliminutes()).toBeUndefined();
+    serverClock.observe(0, 0, EPOCH + BigInt(RATE) * 1000n);
+    expect(city.nowMilliminutes()).toBe(1000);
   });
 });

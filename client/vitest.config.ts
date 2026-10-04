@@ -16,6 +16,7 @@ export default defineConfig({
         "src/test-street/**",
         "src/world/**",
         "src/input/**",
+        "src/l3/**",
         "src/ui/**",
         "src/settings/**",
         "src/time/**",

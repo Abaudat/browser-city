@@ -34,6 +34,8 @@ import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
+import { CitizenBody, createCitizenFrame } from "../l3/citizen";
+import { loadL3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import type { AppearanceTuple } from "../render/appearance/composite";
 import {
@@ -60,6 +62,7 @@ import {
   stepAndTransition,
 } from "../world/floor-walk";
 import { bodyRect, type MovementConfig } from "../world/movement";
+import { npcWalkability } from "../world/npc-walkable";
 import { buildObjectDefIndex, type ObjectSource, objectDefById } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { isBodyClear, isCellStandable } from "../world/standable";
@@ -67,20 +70,24 @@ import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
 import { ASSET_URLS, type PixelRect } from "./assets";
-import { buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
+import { buildCommuterAppearanceTuple, buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
 import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
+import { COMMUTER_ID, COMMUTER_SPEC, COMMUTER_STABLE_ID } from "./commuter";
 import {
-  buildPlayerDrawable,
+  buildCharacterDrawable,
   buildPropDrawables,
   isDefPropDrawable,
   type PropDrawable,
   type PropDrawableByAsset,
-  updatePlayerDrawable,
+  updateCharacterDrawable,
 } from "./drawables";
 import {
+  isDefStreetProp,
+  LAMPPOST_DEF_ID,
   PLAYER_START,
   STREET_BUILDING_AREAS,
   STREET_GROUND_TILES,
+  STREET_PROPS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
   type StreetGroundTiles,
@@ -92,6 +99,7 @@ import {
   type RemotePlayersLayer,
   type RemotePlayersWiring,
 } from "./remote-players-layer";
+import { Timetable } from "./timetable";
 
 /** A plain, single-tile interior floor swatch cropped from the same
  * Room Builder sheet family as the walls -- real art, never a new PNG,
@@ -278,6 +286,10 @@ export interface MountStreetSceneOptions {
    * timing between mount and screenshot, which no baseline could ever
    * match twice. Absent (or `false`) means the crowd walks normally. */
   readonly startWithCrowdFrozen?: boolean;
+  /** City time since the epoch in milliminutes, or `undefined` while the
+   * clock cannot tell it. Every L3 body is posed from this and nothing
+   * else; with no reading, no body is drawn. */
+  readonly cityMilliminutes?: () => number | undefined;
   /** Story 2.7 (Quentin's direction): collapses the street crowd's own
    * distinct-per-citizen appearance tuples down to one shared tuple per
    * family, same count and positions -- exists solely so `test-street.
@@ -286,6 +298,41 @@ export interface MountStreetSceneOptions {
    * fixture module. Absent (or `false`) means the crowd's own tuples
    * stay distinct, exactly as they always have. */
   readonly crowdIdenticalTuples?: boolean;
+}
+
+/** One L3 body as the debug tooling reads it. */
+export interface L3BodyReport {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  readonly floor: number;
+  /** Segments walked straight for want of a path. */
+  readonly fallbacks: number;
+  /** Some segment is walked outside the walking-pace band. */
+  readonly paceOutOfBand: boolean;
+}
+
+export interface CommuterDrawn {
+  /** City time this frame was posed at, in milliminutes. */
+  readonly cityMilli: number;
+  readonly legKey: number;
+  readonly departAt: number;
+  readonly arriveAt: number;
+  /** Cells walked along the current leg. */
+  readonly distance: number;
+  /** Where the body is, in cells. */
+  readonly x: number;
+  readonly y: number;
+  readonly floor: number;
+  /** Where the commuter and the lamppost came out in the street floor's applied depth order. */
+  readonly orderIndex: number;
+  readonly lamppostOrderIndex: number;
+  /** The sprite's own drawn position, in stage pixels. */
+  readonly screenX: number;
+  readonly screenY: number;
+  readonly animation: string;
+  readonly direction: string;
+  readonly frameIndex: number;
 }
 
 export interface StreetSceneHandle {
@@ -326,6 +373,12 @@ export interface StreetSceneHandle {
    * (Quentin's direction: a follow-camera proof must never check its own
    * implementation). */
   playerScreenBounds(): { x: number; y: number; width: number; height: number };
+  /** The commuter as last drawn, or `undefined` while it is not on screen
+   * (no clock, or the crowd frozen). A getter read fresh each call, for
+   * `l3-walk.spec.ts`'s per-frame sampling. */
+  commuterDrawn(): CommuterDrawn | undefined;
+  /** What each live L3 body says about itself, for the debug tooling. */
+  l3Bodies(): readonly L3BodyReport[];
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
   /** Live-updates the FR173 highlight dial (0-100) -- re-applies
@@ -724,6 +777,7 @@ export async function mountStreetScene(
     onWorldReady,
     onHighlightChange,
     startWithCrowdFrozen,
+    cityMilliminutes,
     crowdIdenticalTuples,
     highlightStrength,
   } = options;
@@ -925,7 +979,7 @@ export async function mountStreetScene(
     app.ticker,
   );
 
-  const playerDrawable = buildPlayerDrawable(
+  const playerDrawable = buildCharacterDrawable(
     rankOf(layerCodeByName("characters")),
     walk.x,
     walk.y,
@@ -939,7 +993,12 @@ export async function mountStreetScene(
   // match a crowd member's tuple reuses that texture too (AC5).
   const appearanceCache = new AppearanceTextureCache(defs, atlasBaseUrl);
   const playerTuple = buildPlayerAppearanceTuple(defs);
-  const playerFrames = await appearanceCache.acquire(playerTuple);
+  // The commuter's look is acquired alongside the player's: one round of
+  // character-page fetches, not two.
+  const [playerFrames, commuterFrames] = await Promise.all([
+    appearanceCache.acquire(playerTuple),
+    crowdFrozen ? undefined : appearanceCache.acquire(buildCommuterAppearanceTuple(defs)),
+  ]);
   const playerSprite = new Sprite(playerFrames.frame("idle", "down", 0));
   playerSprite.anchor.set(0.5, 1);
   positionSprite(
@@ -1016,10 +1075,16 @@ export async function mountStreetScene(
     highlightApplier.refresh();
   }
 
+  /** Pool members that sort and draw like any other but are not part of the
+   * reported, golden-pinned order: bodies that move with the clock. */
+  const unreportedIds = new Set<bigint>();
+
   function rebuildRenderOrder(): void {
     renderOrder.length = 0;
     for (const floor of stacks.floors()) {
-      for (const id of orderByFloor.get(floor) ?? []) renderOrder.push(id);
+      for (const id of orderByFloor.get(floor) ?? []) {
+        if (!unreportedIds.has(id)) renderOrder.push(id);
+      }
     }
   }
 
@@ -1256,6 +1321,111 @@ export async function mountStreetScene(
   ];
   const allVisibilityMembers: VisibilityMember[] = namedVisibilityMembers.map((n) => n.member);
 
+  // Story 5.1: the commuter -- one L3 body on the pavement, a member of the
+  // street floor's depth-sorted pool on the `characters` rank and of
+  // visibility, positioned through the same `positionSprite` as the player.
+  // Absent from `renderOrder`, `poolDrawables` and the visibility report so
+  // no pinned order or baseline moves; absent altogether while the crowd is
+  // frozen for a screenshot. Posed from city time alone: no clock, no body.
+  const l3Config = loadL3Config(defs);
+  const npcWalk = npcWalkability(worldIndex);
+  const l3Path = pathConfigOf(l3Config);
+  const msPerMilliminute = l3Config.realMsPerCityMinute / 1000;
+  let updateCommuter: (cityMilli: number | undefined) => void = () => {};
+  let commuterDrawn: () => CommuterDrawn | undefined = () => undefined;
+  let commuterDiagnostics: () => readonly L3BodyReport[] = () => [];
+  if (commuterFrames) {
+    const timetable = new Timetable(COMMUTER_SPEC, l3Config, npcWalk, l3Path);
+    const citizen = new CitizenBody(
+      npcWalk,
+      l3Path,
+      {
+        strideCells: l3Config.strideCells,
+        framesPerCycle: walkFramesPerCycle(defs, "adult"),
+      },
+      COMMUTER_ID,
+    );
+    const frame = createCitizenFrame();
+    const lamppostId = STREET_PROPS.find(
+      (prop) => isDefStreetProp(prop) && prop.defId === LAMPPOST_DEF_ID,
+    )?.id;
+    const home = COMMUTER_SPEC.out[0];
+    if (!home) throw new Error("scene: the commuter timetable has no route");
+    const drawable = buildCharacterDrawable(
+      rankOf(layerCodeByName("characters")),
+      home.x + 0.5,
+      home.y + 0.5,
+      home.floor,
+      COMMUTER_STABLE_ID,
+      "commuter",
+    );
+    const sprite = new Sprite(commuterFrames.frame("idle", COMMUTER_SPEC.homeFacing, 0));
+    sprite.anchor.set(0.5, 1);
+    sprite.renderable = false;
+    const entry: PoolEntry = { drawable, view: sprite, label: "commuter" };
+    poolMembersOf(home.floor).push(entry);
+    unreportedIds.add(COMMUTER_STABLE_ID);
+    allVisibilityMembers.push({ drawable, view: sprite });
+    reorderFloor(home.floor);
+    let drawn: Omit<CommuterDrawn, "orderIndex" | "lamppostOrderIndex"> | undefined;
+    commuterDrawn = () => {
+      if (!drawn) return undefined;
+      const order = orderByFloor.get(drawn.floor) ?? [];
+      return {
+        ...drawn,
+        orderIndex: order.indexOf(COMMUTER_STABLE_ID),
+        lamppostOrderIndex: lamppostId === undefined ? -1 : order.lastIndexOf(lamppostId),
+      };
+    };
+    commuterDiagnostics = () => {
+      const report = citizen.diagnostics(msPerMilliminute, l3Config);
+      if (!report || !drawn) return [];
+      return [{ id: COMMUTER_ID, x: drawn.x, y: drawn.y, floor: drawn.floor, ...report }];
+    };
+    let lastSortY = drawable.y;
+    let lastSortX = drawable.x;
+    updateCommuter = (cityMilli) => {
+      sprite.renderable = cityMilli !== undefined;
+      if (cityMilli === undefined) {
+        drawn = undefined;
+        return;
+      }
+      citizen.frameAt(timetable.stateAt(cityMilli), cityMilli, frame);
+      sprite.texture = commuterFrames.frame(frame.animation, frame.direction, frame.frameIndex);
+      updateCharacterDrawable(drawable, frame.x, frame.y, frame.floor);
+      positionSprite(
+        sprite,
+        frame.x,
+        frame.y,
+        frame.floor,
+        tileSizePx,
+        storeyHeightPx,
+        0,
+        flights.offsetPx(frame.x, frame.y, frame.floor),
+      );
+      drawn = {
+        cityMilli,
+        legKey: frame.legKey,
+        departAt: frame.departAt,
+        arriveAt: frame.arriveAt,
+        distance: frame.distance,
+        x: frame.x,
+        y: frame.y,
+        floor: frame.floor,
+        screenX: sprite.x,
+        screenY: sprite.y,
+        animation: frame.animation,
+        direction: frame.direction,
+        frameIndex: frame.frameIndex,
+      };
+      if (drawable.x !== lastSortX || drawable.y !== lastSortY) {
+        lastSortX = drawable.x;
+        lastSortY = drawable.y;
+        reorderFloor(frame.floor);
+      }
+    };
+  }
+
   // Story 15.8's mount-time guard (Tim's direction, cycle 1): `FloorStacks`
   // is the one code that ever attaches anything under `world`, so it owns
   // the check of its own whole tree -- every child of `world` is one of
@@ -1453,7 +1623,7 @@ export async function mountStreetScene(
 
     onPlayerMove?.(walk.x, walk.y, walk.floor);
 
-    updatePlayerDrawable(playerDrawable, walk.x, walk.y, walk.floor);
+    updateCharacterDrawable(playerDrawable, walk.x, walk.y, walk.floor);
     playerFlightOffsetPx = flights.offsetPx(walk.x, walk.y, walk.floor);
     positionSprite(
       playerSprite,
@@ -1552,6 +1722,7 @@ export async function mountStreetScene(
     textureFor("sidewalk", textures),
     atlasBaseUrl,
     crowdIdenticalTuples ?? false,
+    { walk: npcWalk, config: l3Config },
   );
   // Story 4.4: the other players, in the same floor-0 container, advanced
   // from the same ticker below.
@@ -1584,9 +1755,13 @@ export async function mountStreetScene(
   // `startWithCrowdFrozen`) is the one exception: a screenshot test needs
   // every citizen pinned at its initial pose, never this scene's own
   // concern otherwise.
-  app.ticker.add((ticker) => {
-    if (!crowdFrozen) citizensLayer.update(ticker.deltaMS);
-    remotePlayers?.update(ticker.deltaMS);
+  app.ticker.add(() => {
+    if (!crowdFrozen) {
+      const cityMilli = cityMilliminutes?.();
+      if (cityMilli !== undefined) citizensLayer.update(cityMilli);
+      updateCommuter(cityMilli);
+    }
+    remotePlayers?.update();
   });
 
   // Story 2.7 (Tim's direction): a composite page re-uploads at most
@@ -1645,6 +1820,8 @@ export async function mountStreetScene(
     remotePlayers,
     distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache),
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
+    commuterDrawn: () => commuterDrawn(),
+    l3Bodies: () => [...commuterDiagnostics(), ...citizensLayer.l3Bodies()],
     playerScreenBounds: () => {
       const b = playerSprite.getBounds();
       return { x: b.x, y: b.y, width: b.width, height: b.height };
