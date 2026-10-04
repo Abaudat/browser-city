@@ -70,7 +70,7 @@ if [ "${#OUTSIDE[@]}" -gt 0 ]; then
     [ -n "$hit" ] || continue
     fail "$hit draws a sized arbitrary with no stated maximum"
   done < <(awk '
-    { sub(/$/, "") }
+    { sub(/\r$/, "") }
     /^[[:space:]]*(\/\/|\/\*|\*)/ { next }
     {
       line = $0; rest = line
