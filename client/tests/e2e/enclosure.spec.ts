@@ -48,6 +48,7 @@ import {
   STREET_EXIT_Y,
   STREET_PROPS,
   STREET_TRANSITIONS,
+  type StreetWalkSegment,
   SUBWAY_ENTRANCE_X0,
   SUBWAY_FLOOR,
   streetNearRailingPressRoute,
@@ -486,26 +487,27 @@ interface FlightSample {
 
 type ArrowKey = "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft";
 
-/** Holds `key` until the player's position meets `until`, in the page. */
+/** Holds `key` until the player's position meets `until`, through the one
+ * walk helper: the key is released inside the page on the frame the
+ * condition is first seen, so a hold never overshoots by a Node round trip. */
 async function holdUntil(
   page: Page,
   key: ArrowKey,
   until: { axis: "x" | "y"; atLeast?: number; atMost?: number },
 ): Promise<void> {
-  await page.keyboard.down(key);
-  try {
-    await page.waitForFunction(
-      ({ axis, atLeast, atMost }) => {
-        const v = window.__bc?.playerPosition?.[axis];
-        if (v === undefined) return false;
-        return (atLeast === undefined || v >= atLeast) && (atMost === undefined || v <= atMost);
-      },
-      until,
-      { timeout: 15_000 },
-    );
-  } finally {
-    await page.keyboard.up(key);
-  }
+  const segment: StreetWalkSegment =
+    until.atLeast !== undefined
+      ? {
+          label: `hold-${key}`,
+          key,
+          until: { kind: `${until.axis}-at-least`, value: until.atLeast },
+        }
+      : {
+          label: `hold-${key}`,
+          key,
+          until: { kind: `${until.axis}-at-most`, value: until.atMost ?? 0 },
+        };
+  await walkRealSegment(page, segment);
 }
 
 /** The canvas's top-left pixel: the world's background, outside any drawable. */
