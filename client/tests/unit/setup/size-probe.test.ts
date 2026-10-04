@@ -45,20 +45,32 @@ describe("sizeProbe (NFR51)", () => {
     expect(() => p.expectReached(2)).toThrow(/default ceiling/);
   });
 
-  it("over records every value its arbitrary generates", () => {
-    const p = sizeProbe({ min: 0, max: 40 });
+  // Bounds that hold for every draw: max(seen) is in [11, 40] and max(seen) + 1 in [12, 41],
+  // so both stay strictly inside (ceiling 10, stated 41] and neither guard can fire.
+  // Keep that true when editing the arbitrary or the probe bounds.
+  const canary = (seed?: number): void => {
+    const p = sizeProbe({ min: 11, max: 41, ceiling: 10 });
     const seen: number[] = [];
     fc.assert(
       fc.property(
-        p.over(fc.array(fc.integer(), { maxLength: 40 }), (a) => a.length),
+        p.over(fc.array(fc.integer(), { minLength: 11, maxLength: 40 }), (a) => a.length),
         (a) => {
           seen.push(a.length);
         },
       ),
-      { numRuns: 30 },
+      seed === undefined ? { numRuns: 30 } : { numRuns: 30, seed },
     );
-    expect(seen.length).toBeGreaterThanOrEqual(30);
+    expect(seen.length).toBe(30);
     expect(() => p.expectReached(Math.max(...seen))).not.toThrow();
-    expect(() => p.expectReached(Math.max(...seen) + 1)).toThrow(/largest of/);
+    expect(() => p.expectReached(Math.max(...seen) + 1)).toThrow(`largest of ${seen.length} cases`);
+  };
+
+  it("over records every value its arbitrary generates", () => {
+    canary();
+  });
+
+  // Seeds 1, 2, 3 and 7 are the original reproducers of the flake.
+  it("over records every value under each of seeds 1..200", () => {
+    for (let seed = 1; seed <= 200; seed++) canary(seed);
   });
 });
