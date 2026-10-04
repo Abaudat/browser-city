@@ -197,10 +197,10 @@ export function startSupervisor<C>(deps: SupervisorDeps<C>): Supervisor<C> {
       if (settled) return;
       settled = true;
       probing = false;
-      deps.clearTimer(deadline);
+      deps.clearTimer(probeTimer);
       if (!alive && forGeneration === generation && !stopped) supersede();
     };
-    const deadline = deps.setTimer(() => settle(false), PROBE_TIMEOUT_MS);
+    const probeTimer = deps.setTimer(() => settle(false), PROBE_TIMEOUT_MS);
     deps.probe(target).then(
       () => settle(true),
       () => settle(false),
