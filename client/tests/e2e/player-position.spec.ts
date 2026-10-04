@@ -15,9 +15,8 @@ import { fileURLToPath } from "node:url";
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
-import type { StreetWalkSegment } from "../../src/test-street/fixture";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
-import { walkRealSegment } from "./walk-support";
+import { walkRealCells } from "./walk-support";
 
 const DEFS = parseDefs(
   JSON.parse(
@@ -68,15 +67,6 @@ function frames(page: Page, n: number): Promise<void> {
   );
 }
 
-async function walk(page: Page, label: string, cells: number, east: boolean): Promise<void> {
-  const here = await page.evaluate(() => window.__bc?.playerPosition);
-  if (!here) throw new Error("no player position");
-  const segment: StreetWalkSegment = east
-    ? { label, key: "ArrowRight", until: { kind: "x-at-least", value: here.x + cells } }
-    : { label, key: "ArrowLeft", until: { kind: "x-at-most", value: here.x - cells } };
-  await walkRealSegment(page, segment);
-}
-
 test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a standing player costs nothing", async ({
   browser,
 }) => {
@@ -87,7 +77,7 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   // A page with no character puts no position write on the wire, walking or
   // not: every deployed visitor is in this state, and a refused call is
   // uncounted by the `position` class, so only the wire can show it.
-  await walk(a.page, "hop", HOP_CELLS, true);
+  await walkRealCells(a.page, "hop", HOP_CELLS, true);
   await frames(a.page, 90);
   expect(a.sends()).toBe(0);
 
@@ -117,7 +107,7 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   await b.page.evaluate(() => window.__bc?.remotePlayers?.startTrace());
   const sendsBefore = a.sends();
   const startedAt = Date.now();
-  await walk(a.page, "east", WALK_CELLS, true);
+  await walkRealCells(a.page, "east", WALK_CELLS, true);
   const walkMs = Date.now() - startedAt;
 
   // B converges to A's own rest position within one quantum.
