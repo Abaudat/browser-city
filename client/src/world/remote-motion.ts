@@ -64,8 +64,8 @@ export class RemoteMotion {
       this.buffers.set(id, buf);
     }
     let at = buf.length;
-    while (at > 0 && buf[at - 1].tMs > sample.tMs) at--;
-    if (at > 0 && buf[at - 1].tMs === sample.tMs) buf[at - 1] = sample;
+    while (at > 0 && (buf[at - 1]?.tMs ?? 0) > sample.tMs) at--;
+    if (at > 0 && buf[at - 1]?.tMs === sample.tMs) buf[at - 1] = sample;
     else buf.splice(at, 0, sample);
     if (buf.length > this.config.maxSamples) buf.splice(0, buf.length - this.config.maxSamples);
   }
@@ -85,22 +85,24 @@ export class RemoteMotion {
   /** Where `id` is drawn when the server clock reads `serverNowMs`. */
   poseAt(id: string, serverNowMs: number): RemotePose | undefined {
     const buf = this.buffers.get(id);
-    if (!buf || buf.length === 0) return undefined;
+    const first = buf?.[0];
+    const last = buf?.[(buf?.length ?? 0) - 1];
+    if (!buf || !first || !last) return undefined;
     const t = serverNowMs - this.config.delayMs;
-    const first = buf[0];
-    const last = buf[buf.length - 1];
     if (t <= first.tMs) return pose(first);
     if (t >= last.tMs) return pose(last);
     let i = 0;
-    while (buf[i + 1].tMs <= t) i++;
+    while ((buf[i + 1]?.tMs ?? Number.POSITIVE_INFINITY) <= t) i++;
     // Samples before the bracket can never be drawn again.
     if (i > 0) buf.splice(0, i);
     const a = buf[0];
     const b = buf[1];
+    if (!a || !b) return pose(last);
     if (a.floor !== b.floor) return pose(a);
     if (Math.hypot(b.x - a.x, b.y - a.y) > this.config.snapCells) return pose(a);
     const gap = b.tMs - a.tMs;
-    const start = gap > REMOTE_DELAY_PERIODS * this.config.periodMs ? b.tMs - this.config.periodMs : a.tMs;
+    const start =
+      gap > REMOTE_DELAY_PERIODS * this.config.periodMs ? b.tMs - this.config.periodMs : a.tMs;
     if (t < start) return pose(a);
     const u = (t - start) / (b.tMs - start);
     return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, floor: a.floor };
@@ -109,4 +111,16 @@ export class RemoteMotion {
 
 function pose(s: RemoteSample): RemotePose {
   return { x: s.x, y: s.y, floor: s.floor };
+}
+
+/** The way a remote player faces, read from its motion alone -- the server
+ * stores no facing. `previous` holds while it stands still. */
+export function facingOf(
+  dx: number,
+  dy: number,
+  previous: string,
+): { facing: string; moving: boolean } {
+  if (dx === 0 && dy === 0) return { facing: previous, moving: false };
+  if (Math.abs(dx) >= Math.abs(dy)) return { facing: dx > 0 ? "right" : "left", moving: true };
+  return { facing: dy > 0 ? "down" : "up", moving: true };
 }

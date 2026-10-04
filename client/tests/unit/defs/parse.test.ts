@@ -15,6 +15,7 @@ function validPayload(): Record<string, unknown> {
     generated_by: "tools/defs-build -- do not edit by hand",
     defs_version: "abc123",
     collider_subcells_per_cell: 16,
+    position_units_per_cell: 256,
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
     min_floor: -1,

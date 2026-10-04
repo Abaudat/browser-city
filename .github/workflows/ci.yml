@@ -354,6 +354,8 @@ jobs:
         run: bash ../scripts/ci/check-author-construction.sh
       - name: story 4.5 FR142, only tables/identity.rs reaches a character from a caller
         run: bash ../scripts/ci/check-character-identity-path.sh
+      - name: story 4.4 FR138, one home for the player_position accessor and for the position reducer call
+        run: bash ../scripts/ci/check-player-position-path.sh
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
@@ -529,6 +531,10 @@ jobs:
       # never 3987-3995 -- same job, same reasoning as the steps above.
       - name: story 4.3 FR136, a chunk-equality subscription returns exactly its chunk, anonymously
         run: bash scripts/ci/check-interest-region.sh
+      # Story 4.4: its own disposable local instance and port (3998), never
+      # 3987-3997 -- same job, same reasoning as the steps above.
+      - name: story 4.4 FR138, one durable position row per character, written only by its owner
+        run: bash scripts/ci/check-player-position.sh
       # Story 4.5: its own disposable local instance and port (3997),
       # never 3987-3996 -- same job, same reasoning as the steps above.
       - name: story 4.5, identity create and link proven with real distinct identities
@@ -646,6 +652,10 @@ jobs:
         run: bash ../scripts/ci/check-boot-budget-report-current.sh
       - name: story 4.2 AC2, no reducer call under render/, world/ or test-street/, or inside any ticker.add callback
         run: bash ../scripts/ci/check-no-frame-rate-reducers.sh
+      - name: story 4.4 NFR32, the client calls exactly the allow-listed reducers and procedures
+        run: bash ../scripts/ci/check-client-write-allowlist.sh
+      - name: story 4.4, a spec with a pixel baseline never opts in to remote players
+        run: bash ../scripts/ci/check-e2e-remote-players-isolation.sh
 
   client-build:
     name: client-build

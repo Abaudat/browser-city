@@ -49,7 +49,9 @@ describe("position quantisation", () => {
         // The cell and chunk of the quantised value are those of the float.
         expect(q.x).toBe(cellOf(x));
         expect(q.y).toBe(cellOf(y));
-        expect(chunkKey(cellOf(back.x), cellOf(back.y), floor)).toBe(chunkKey(cellOf(x), cellOf(y), floor));
+        expect(chunkKey(cellOf(back.x), cellOf(back.y), floor)).toBe(
+          chunkKey(cellOf(x), cellOf(y), floor),
+        );
       }),
       { numRuns: 500 },
     );
@@ -104,7 +106,7 @@ describe("position quantisation", () => {
             colliders.map((c, i) => [i, { width: 100000, height: 1, collider: c }] as const),
           );
           const grid = new CollisionGrid(sub, defsMap);
-          colliders.forEach((_, i) =>
+          for (let i = 0; i < colliders.length; i++) {
             grid.insert({
               objectId: BigInt(i + 1),
               defId: i,
@@ -114,8 +116,8 @@ describe("position quantisation", () => {
               layer: 0,
               orientation: 0,
               chunkKey: 0n,
-            }),
-          );
+            });
+          }
           let pos: Vec2 = { x: 100, y: 100 };
           for (const { dx, dy, ms } of inputs) {
             pos = step(pos, { x: dx, y: dy }, ms, grid, 0, CONFIG);

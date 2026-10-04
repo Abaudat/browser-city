@@ -198,6 +198,7 @@ vi.mock("../../src/net/bindings", () => ({
     buildingArea: fakeTable("building_area"),
     roomArea: fakeTable("room_area"),
     actorLocation: fakeTable("actor_location"),
+    playerPosition: fakeTable("player_position"),
   },
 }));
 
@@ -339,6 +340,7 @@ describe("connect", () => {
         "buildingArea",
         "roomArea",
         "actorLocation",
+        "playerPosition",
       ]) {
         db[t] = {
           onInsert: (cb: (ctx: unknown, row: { chunkKey: bigint }) => void) => {
@@ -366,9 +368,10 @@ describe("connect", () => {
         "buildingArea",
         "floorTransition",
         "placedObject",
+        "playerPosition",
         "roomArea",
       ]);
-      expect(inserted).toHaveLength(5);
+      expect(inserted).toHaveLength(6);
       for (const t of registered) delete db[t];
     });
   });

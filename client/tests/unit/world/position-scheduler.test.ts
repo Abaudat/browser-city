@@ -53,41 +53,46 @@ const walkArb = fc.record({
 function violations(factory: Factory): Set<string> {
   const out = new Set<string>();
   fc.assert(
-    fc.property(framesArb, walkArb, fc.constantFrom(...RATES), (moveTimes, { moving, stride }, hz) => {
-      const period = 1000 / hz;
-      // The walker stops after `moving` frames; the display keeps drawing
-      // for two more periods, so a trailing edge has frames to ride on.
-      const times = [...moveTimes];
-      const last = times[times.length - 1] ?? 0;
-      for (let t = last + 1000 / 60; t <= last + 2 * period; t += 1000 / 60) times.push(t);
-      const sends: { t: number; p: WirePosition }[] = [];
-      let now = 0;
-      const s = factory(period, (p) => sends.push({ t: now, p }));
-      let x = 0;
-      let rest = pos(0);
-      const moveFrames = Math.min(moving, moveTimes.length);
-      times.forEach((t, i) => {
-        now = t;
-        if (i < moveFrames) x += stride;
-        rest = pos(x);
-        s.tick(t, rest);
-      });
-      // inv_position_send_rate_never_exceeds_dial
-      for (let i = 0; i < sends.length; i++) {
-        for (let j = i; j < sends.length; j++) {
-          const w = sends[j].t - sends[i].t;
-          if (j - i + 1 > (w / 1000) * hz + 1 + 1e-9) out.add("rate");
+    fc.property(
+      framesArb,
+      walkArb,
+      fc.constantFrom(...RATES),
+      (moveTimes, { moving, stride }, hz) => {
+        const period = 1000 / hz;
+        // The walker stops after `moving` frames; the display keeps drawing
+        // for two more periods, so a trailing edge has frames to ride on.
+        const times = [...moveTimes];
+        const last = times[times.length - 1] ?? 0;
+        for (let t = last + 1000 / 60; t <= last + 2 * period; t += 1000 / 60) times.push(t);
+        const sends: { t: number; p: WirePosition }[] = [];
+        let now = 0;
+        const s = factory(period, (p) => sends.push({ t: now, p }));
+        let x = 0;
+        let rest = pos(0);
+        const moveFrames = Math.min(moving, moveTimes.length);
+        times.forEach((t, i) => {
+          now = t;
+          if (i < moveFrames) x += stride;
+          rest = pos(x);
+          s.tick(t, rest);
+        });
+        // inv_position_send_rate_never_exceeds_dial
+        for (let i = 0; i < sends.length; i++) {
+          for (let j = i; j < sends.length; j++) {
+            const w = sends[j].t - sends[i].t;
+            if (j - i + 1 > (w / 1000) * hz + 1 + 1e-9) out.add("rate");
+          }
         }
-      }
-      // inv_idle_player_sends_nothing: the rest position is sent once.
-      if (sends.filter((e) => e.p.x === rest.x).length > 1) out.add("idle");
-      // inv_last_position_always_lands: within one period of the last
-      // movement, plus the frame that carries it.
-      const maxGap = Math.max(...times.map((t, i) => (i === 0 ? 0 : t - times[i - 1])));
-      const landed = sends.find((e) => e.p.x === rest.x);
-      const stopAt = times[moveFrames - 1] ?? 0;
-      if (!landed || landed.t - stopAt > period + maxGap + 1e-9) out.add("last");
-    }),
+        // inv_idle_player_sends_nothing: the rest position is sent once.
+        if (sends.filter((e) => e.p.x === rest.x).length > 1) out.add("idle");
+        // inv_last_position_always_lands: within one period of the last
+        // movement, plus the frame that carries it.
+        const maxGap = Math.max(...times.map((t, i) => (i === 0 ? 0 : t - times[i - 1])));
+        const landed = sends.find((e) => e.p.x === rest.x);
+        const stopAt = times[moveFrames - 1] ?? 0;
+        if (!landed || landed.t - stopAt > period + maxGap + 1e-9) out.add("last");
+      },
+    ),
     { numRuns: 150 },
   );
   return out;

@@ -569,10 +569,7 @@ export function parseDefs(data: unknown): Defs {
     root.collider_subcells_per_cell,
     "$.collider_subcells_per_cell",
   );
-  const positionUnitsPerCell = expectU32(
-    root.position_units_per_cell,
-    "$.position_units_per_cell",
-  );
+  const positionUnitsPerCell = expectU32(root.position_units_per_cell, "$.position_units_per_cell");
   const interactAtMaxReachCells = expectU32(
     root.interact_at_max_reach_cells,
     "$.interact_at_max_reach_cells",

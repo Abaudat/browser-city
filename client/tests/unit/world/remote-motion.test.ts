@@ -7,16 +7,17 @@ import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { parseDefs } from "../../../src/defs/parse";
-import { quantise } from "../../../src/world/position-codec";
 import { loadMovementConfig } from "../../../src/world/movement-config";
+import { quantise } from "../../../src/world/position-codec";
 import { createPositionScheduler } from "../../../src/world/position-scheduler";
 import {
+  facingOf,
   REMOTE_MAX_SAMPLES,
-  remoteDelayMs,
   REMOTE_SNAP_CELLS,
   REMOTE_SPEED_TOLERANCE,
-  type RemoteMotionConfig,
   RemoteMotion,
+  type RemoteMotionConfig,
+  remoteDelayMs,
 } from "../../../src/world/remote-motion";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -121,16 +122,22 @@ describe("RemoteMotion", () => {
           let t = 0;
           let x = 0;
           let dir = 1;
+          let lastStamp = 0;
+          let lastAt = 0;
           const sender = createPositionScheduler(period, (p) => {
-            const stamp = t + rand() * jitter;
+            // One ordered socket: the server stamps, and the client receives,
+            // in the order the player sent.
+            const stamp = Math.max(lastStamp, t + rand() * jitter);
+            lastStamp = stamp;
+            const at = Math.max(lastAt, stamp + rand() * lagMax * lagUnit);
+            lastAt = at;
             arrivals.push({
-              at: stamp + rand() * lagMax * lagUnit,
+              at,
               tMs: stamp,
               x: p.x + p.fracX / defs.positionUnitsPerCell,
             });
           });
-          const offer = () =>
-            sender.tick(t, quantise(x, 0, 0, defs.positionUnitsPerCell));
+          const offer = () => sender.tick(t, quantise(x, 0, 0, defs.positionUnitsPerCell));
           for (const f of walkFrames) {
             t += f.dt;
             dir = f.turn;
@@ -216,5 +223,15 @@ describe("RemoteMotion", () => {
     expect(jump).toBeGreaterThan(
       WALK_CELLS_PER_MS * oneFrame * (1 + REMOTE_SPEED_TOLERANCE) + 2 / defs.positionUnitsPerCell,
     );
+  });
+});
+
+describe("facingOf", () => {
+  it("reads facing from motion and holds it at rest", () => {
+    expect(facingOf(1, 0.2, "down")).toEqual({ facing: "right", moving: true });
+    expect(facingOf(-1, 0.2, "down")).toEqual({ facing: "left", moving: true });
+    expect(facingOf(0.1, -1, "down")).toEqual({ facing: "up", moving: true });
+    expect(facingOf(0.1, 1, "up")).toEqual({ facing: "down", moving: true });
+    expect(facingOf(0, 0, "left")).toEqual({ facing: "left", moving: false });
   });
 });
