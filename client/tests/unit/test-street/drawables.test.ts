@@ -18,7 +18,10 @@ import {
   updatePlayerDrawable,
 } from "../../../src/test-street/drawables";
 import {
-  BRIDGE_DECK_Y,
+  BRIDGE_FLIGHT_X0,
+  BRIDGE_FOOT_TILES,
+  BRIDGE_FOOT_Y,
+  BRIDGE_UP_ANCHOR_Y,
   BRIDGE_X1,
   INTERIOR_FLOOR_TILES,
   INTERIOR_FLOOR_TILES_B,
@@ -411,6 +414,14 @@ describe("the player can never walk off the drawn world", () => {
     INTERIOR_FLOOR_TILES_B,
     SIDEWALK_TILES,
     SUBWAY_ENTRANCE_TILES,
+    BRIDGE_FOOT_TILES,
+    // The street flight's own treads: drawn ground a walker climbs.
+    {
+      x0: BRIDGE_FLIGHT_X0,
+      y0: BRIDGE_UP_ANCHOR_Y,
+      x1: BRIDGE_X1 + 1,
+      y1: BRIDGE_FOOT_Y,
+    },
   ].map((tiles) => ({
     left: tiles.x0 * TILE_SIZE_PX,
     right: tiles.x1 * TILE_SIZE_PX,
@@ -578,7 +589,7 @@ describe("the player can never walk off the drawn world", () => {
   // specifically, not only the general walk from the shop -- a hole in
   // the boundary ring there must fail here, at unit speed, rather than
   // only ever showing up as a wrong-looking screenshot.
-  it("stays on the pavement for any input sequence starting under the bridge's own east end", () => {
+  it("stays on the pavement for any input sequence starting at the flight's own foot", () => {
     const probe = sizeProbe({ min: 1, max: 400 });
     fc.assert(
       fc.property(
@@ -594,7 +605,7 @@ describe("the player can never walk off the drawn world", () => {
           (a) => a.length,
         ),
         (inputs) => {
-          let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_DECK_Y + 0.5 };
+          let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_FOOT_Y + 0.5 };
           expect(isOnDrawnGround(pos)).toBe(true);
           for (const { dx, dy, deltaMs } of inputs) {
             pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
@@ -634,18 +645,18 @@ describe("the player can never walk off the drawn world", () => {
     inputs: readonly (readonly [number, number, number])[],
     world = grid,
   ): Vec2 => {
-    let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_DECK_Y + 0.5 };
+    let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_FOOT_Y + 0.5 };
     for (const [dx, dy, deltaMs] of inputs) {
       pos = step(pos, { x: dx, y: dy }, deltaMs, world, PLAYER_START.floor, config);
     }
     return pos;
   };
 
-  it("the walk from under the bridge's east end that enters the subway entrance's top strip stays on drawn ground", () => {
+  it("the walk from the flight's foot that enters the subway entrance's top strip stays on drawn ground", () => {
     expect(isOnDrawnGround(walkFromBridgeEnd(BRIDGE_EAST_END_WALK))).toBe(true);
   });
 
-  it("negative control: with the boundary ring removed, walking south from under the bridge leaves the drawn ground", () => {
+  it("negative control: with the boundary ring removed, walking south from the flight's foot leaves the drawn ground", () => {
     const boundaryIds = new Set(STREET_BOUNDARY.map((rect) => streetDefId(rect.id)));
     const open = new WorldIndex(config.subcellsPerCell, streetObjectSources());
     for (const row of streetPlacedRows()) {
@@ -656,8 +667,8 @@ describe("the player can never walk off the drawn world", () => {
     expect(isOnDrawnGround(walkFromBridgeEnd(south, open))).toBe(false);
   });
 
-  it("walking straight east from under the bridge stops at the world's own edge, still on the pavement", () => {
-    let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_DECK_Y + 0.5 };
+  it("walking straight east along the flight's foot row stops at the world's own edge, still on the pavement", () => {
+    let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_FOOT_Y + 0.5 };
     for (let i = 0; i < 400; i++) {
       pos = step(pos, { x: 1, y: 0 }, 16, grid, PLAYER_START.floor, config);
     }
@@ -855,14 +866,14 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
     }
   });
 
-  it("the manhole covers and the doormat are on the flat ground-objects pass; the stairs and bin are not", () => {
+  it("the manhole covers, the doormat and the footbridge flights are on the flat ground-objects pass; the stairs' abutment and bin are not", () => {
     const props = buildStreetProps();
-    for (const id of [116n, 117n, 119n, 120n]) {
+    for (const id of [116n, 117n, 119n, 120n, 85n, 86n]) {
       expect(props.find((p) => p.stableId === id)?.layerCode).toBe(
         layerCodeByName("ground_objects"),
       );
     }
-    for (const id of [80n, 15n]) {
+    for (const id of [82n, 15n]) {
       const p = props.find((q) => q.stableId === id);
       expect(p && passOfLayer(p.layerCode)).toBe("pool");
     }

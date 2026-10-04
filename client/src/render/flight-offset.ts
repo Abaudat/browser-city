@@ -62,7 +62,8 @@ export interface Flight {
  * object's def, the sign from `floorOffsetPx` of the two floors. An anchor
  * no flight object covers has no flight; two objects on one anchor, an
  * anchor that is not the footprint's far end, or a flight shorter than two
- * cells along its axis is an error.
+ * cells along its axis is an error. Every anchor of a flight wider than one
+ * cell resolves that one flight.
  */
 export function buildFlights(
   transitions: readonly TransitionSpec[],
@@ -73,6 +74,9 @@ export function buildFlights(
 ): readonly Flight[] {
   const { pairings } = pairTransitions(transitions);
   const flights: Flight[] = [];
+  // A flight wider than one cell is anchored in every column: each of its
+  // anchors resolves the one flight, once.
+  const built = new Set<PlacedFlightRow>();
   for (const pairing of pairings) {
     const sides = [
       { anchor: pairing.forward, dir: forwardOpenNeighbor(pairing).direction },
@@ -94,6 +98,8 @@ export function buildFlights(
       const row = covering[0];
       const source = row ? sources.get(row.defId) : undefined;
       if (!row || !source || !source.flight) continue;
+      if (built.has(row)) continue;
+      built.add(row);
       const { dropPx, fromPx, toPx } = source.flight;
 
       const origin = footprintOrigin(row.x, row.y, source);
@@ -132,8 +138,8 @@ export function buildFlights(
         y0: origin.y,
         x1,
         y1,
-        dirX: dir.x,
-        dirY: dir.y,
+        dirX: dir.x + 0,
+        dirY: dir.y + 0,
         startS: lo + fromPx / tileSizePx,
         fullS: lo + toPx / tileSizePx,
         dropPx: sign * dropPx + 0,

@@ -24,7 +24,9 @@ import {
   BRIDGE_DECK_DEF_ID,
   BRIDGE_DECK_WIDTH,
   BRIDGE_DECK_Y,
+  BRIDGE_FLIGHT_X0,
   BRIDGE_FLOOR,
+  BRIDGE_FOOT_Y,
   BRIDGE_UNDER_PILLAR_X,
   BRIDGE_X0,
   BRIDGE_X1,
@@ -147,9 +149,11 @@ describe("the hand-laid test street (AC1, AC2)", () => {
       // own rest collider (story 1.13, cycle 3) -- so its dead centre is
       // not standable, even though the walk still passes beside it. The
       // checkpoint's other rest, the curb, sits west of the bridge's own
-      // span entirely (`BRIDGE_UNDER_CURB_X`'s own doc comment says why),
-      // so every other column under the span is untouched by either.
-      if (x === BRIDGE_UNDER_PILLAR_X) continue;
+      // span entirely (`BRIDGE_UNDER_CURB_X`'s own doc comment says why).
+      // The flight's own columns are the stairs' abutment on the street:
+      // drawn and closed (story 15.19). Every other column under the span
+      // is untouched.
+      if (x === BRIDGE_UNDER_PILLAR_X || x >= BRIDGE_FLIGHT_X0) continue;
       expect(isCellStandable(world, config, x, BRIDGE_DECK_Y, PLAYER_START.floor)).toBe(true);
     }
     // Story 2.13 (Tim's direction): no `repeat` axis -- `bridge_deck` is a
@@ -313,19 +317,20 @@ describe("the scripted walk (AC3)", () => {
     expect(lateUnder.floor).toBe(onTimeUnder.floor);
   });
 
-  it("continues past the bridge's own east end to reach the stairs up", () => {
-    // This segment's own threshold sits past the up-transition's own
-    // anchor column, so holding the key through it climbs onto the deck
-    // mid-segment (the ordinary case) -- the next segment ("on-the-bridge-
-    // deck") is what actually asserts the climb happened.
-    const east = at("east-of-the-bridge");
-    expect(east.floor).toBe(BRIDGE_FLOOR);
-    expect(east.x).toBeGreaterThan(BRIDGE_X1);
+  it("walks the flight's foot row to the flight, on the street's own floor", () => {
+    const foot = at("east-of-the-bridge");
+    expect(foot.floor).toBe(PLAYER_START.floor);
+    expect(foot.cellY).toBe(BRIDGE_FOOT_Y);
+    expect(foot.x).toBeGreaterThan(BRIDGE_FLIGHT_X0);
   });
 
-  it("climbs onto the deck by a transition and comes back down to the street", () => {
+  it("climbs onto the deck by a transition, walks it end to end and comes back down to the street", () => {
     expect(at("on-the-bridge-deck").floor).toBe(BRIDGE_FLOOR);
+    expect(at("west-along-the-deck").floor).toBe(BRIDGE_FLOOR);
+    expect(at("west-along-the-deck").x).toBeLessThanOrEqual(BRIDGE_X0 + 0.5);
+    expect(at("east-along-the-deck").floor).toBe(BRIDGE_FLOOR);
     expect(at("back-on-the-street").floor).toBe(PLAYER_START.floor);
+    expect(at("off-onto-the-foot-row").cellY).toBe(BRIDGE_FOOT_Y);
   });
 
   it("walks a whole lap, and lands back where the lap started, so laps chain", () => {
@@ -334,12 +339,12 @@ describe("the scripted walk (AC3)", () => {
     // time round -- and must never wander onto a floor it did not mean
     // to visit.
     const lap = streetBridgeLapRoute();
-    const first = simulateStreetWalk(lap, { start: at("back-on-the-street") });
+    const first = simulateStreetWalk(lap, { start: at("off-onto-the-foot-row") });
     const home = first[first.length - 1]?.state;
     if (!home) throw new Error("the lap produced no checkpoints");
     expect(home.floor).toBe(PLAYER_START.floor);
-    expect(home.cellX).toBe(at("back-on-the-street").cellX);
-    expect(home.cellY).toBe(at("back-on-the-street").cellY);
+    expect(home.cellX).toBe(at("off-onto-the-foot-row").cellX);
+    expect(home.cellY).toBe(at("off-onto-the-foot-row").cellY);
 
     const second = simulateStreetWalk(lap, { start: home });
     const secondHome = second[second.length - 1]?.state;

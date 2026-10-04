@@ -152,10 +152,13 @@ export const WALL_SEGMENT_DEF_ID = 6;
  * four-cell walkable span with no collider at all, so the street below
  * it is unobstructed (FR117/FR128). */
 export const BRIDGE_DECK_DEF_ID = 7;
-/** `defs/objects/city-props.toml`'s own `foot_stairs` id (story 1.13): a
- * walkable flight of steps. Which floors it joins is a `floor_transition`
- * row anchored on its cell, never a field on the prop. */
-export const FOOT_STAIRS_DEF_ID = 8;
+/** The footbridge's three `defs/objects` rows (story 15.19): the street flight
+ * and the deck flight (each a `flight`) and the closed abutment under the
+ * deck. Which floors the flights join is a `floor_transition` row per column,
+ * never a field on the prop. */
+export const BRIDGE_STAIRS_STREET_DEF_ID = 20;
+export const BRIDGE_STAIRS_DECK_DEF_ID = 21;
+export const BRIDGE_STAIRS_ABUTMENT_DEF_ID = 22;
 /** The street stairwell's four `defs/objects` rows (`stairwell_top_railing`,
  * `stairwell_treads`, `stairwell_well`, `stairwell_bottom_railing`): the
  * player walks between the railings. */
@@ -359,23 +362,31 @@ export const BRIDGE_UNDER_PILLAR_X = BRIDGE_X0 + 1;
 /** The row south of the underpass. */
 export const BRIDGE_UNDER_EXIT_Y = BRIDGE_DECK_Y + 1;
 
-/** Where the street-level stairs stand: the pavement row south of the
- * deck's own east end. Entering this cell climbs onto the deck. */
-export const BRIDGE_UP_ANCHOR_X = BRIDGE_X1;
-export const BRIDGE_UP_ANCHOR_Y = BRIDGE_DECK_Y + 1;
+/** The footbridge's one flight (story 15.19), at the deck's east end: two
+ * columns wide, walked along y -- north up from the pavement, south back
+ * down -- and drawn as one front-on staircase of `BRIDGE_FLIGHT_DEPTH` rows
+ * per floor on the same cells: the street's flight under the deck's, the
+ * deck's one storey up. */
+export const BRIDGE_FLIGHT_WIDTH = 2;
+export const BRIDGE_FLIGHT_DEPTH = 2;
+export const BRIDGE_FLIGHT_X0 = BRIDGE_X1 - BRIDGE_FLIGHT_WIDTH + 1;
 
-/** Where the deck's own down-stairs stand: one cell west of the
- * up-stairs' own landing. */
-export const BRIDGE_DOWN_ANCHOR_X = BRIDGE_X1 - 1;
-export const BRIDGE_DOWN_ANCHOR_Y = BRIDGE_DECK_Y;
+/** The flight's top row, on both floors: entering it from the street climbs
+ * onto the deck, and the deck flight's descent lands on it. */
+export const BRIDGE_UP_ANCHOR_Y = BRIDGE_DECK_Y + 1;
+/** The flight's bottom row: the street flight's first tread, and the deck
+ * flight's last cell, where entering it walks back down. */
+export const BRIDGE_DOWN_ANCHOR_Y = BRIDGE_UP_ANCHOR_Y + BRIDGE_FLIGHT_DEPTH - 1;
+/** The pavement row at the flight's foot, where a walker steps on and off. */
+export const BRIDGE_FOOT_Y = BRIDGE_DOWN_ANCHOR_Y + 1;
 
 /** The floor transition data (Tim's `world/transitions.ts` port): entering
  * the stairwell cell on the street lands on the platform; entering the
  * up-stairs' own anchor cell returns to the street, one cell beside the
- * stairwell. The footbridge's own two rows are the same shape, one storey
- * up. Never a boolean on the stairs prop -- a `floor_transition`-shaped
- * row, anchor cell to target cell, exactly like the server's own
- * model. */
+ * stairwell. The footbridge's are the same shape, one pair per column of its
+ * flight, one storey up. Never a boolean on the stairs prop -- a
+ * `floor_transition`-shaped row, anchor cell to target cell, exactly like the
+ * server's own model. */
 export const STREET_TRANSITIONS: readonly TransitionSpec[] = [
   {
     x: STAIRS_X,
@@ -393,22 +404,26 @@ export const STREET_TRANSITIONS: readonly TransitionSpec[] = [
     targetY: STREET_EXIT_Y,
     targetFloor: STREET_FLOOR,
   },
-  {
-    x: BRIDGE_UP_ANCHOR_X,
-    y: BRIDGE_UP_ANCHOR_Y,
-    floor: STREET_FLOOR,
-    targetX: BRIDGE_X1,
-    targetY: BRIDGE_DECK_Y,
-    targetFloor: BRIDGE_FLOOR,
-  },
-  {
-    x: BRIDGE_DOWN_ANCHOR_X,
-    y: BRIDGE_DOWN_ANCHOR_Y,
-    floor: BRIDGE_FLOOR,
-    targetX: BRIDGE_DOWN_ANCHOR_X,
-    targetY: BRIDGE_DECK_Y + 1,
-    targetFloor: STREET_FLOOR,
-  },
+  ...Array.from({ length: BRIDGE_FLIGHT_WIDTH }, (_, column) => BRIDGE_FLIGHT_X0 + column).flatMap(
+    (x): readonly TransitionSpec[] => [
+      {
+        x,
+        y: BRIDGE_UP_ANCHOR_Y,
+        floor: STREET_FLOOR,
+        targetX: x,
+        targetY: BRIDGE_UP_ANCHOR_Y,
+        targetFloor: BRIDGE_FLOOR,
+      },
+      {
+        x,
+        y: BRIDGE_DOWN_ANCHOR_Y,
+        floor: BRIDGE_FLOOR,
+        targetX: x,
+        targetY: BRIDGE_DOWN_ANCHOR_Y,
+        targetFloor: STREET_FLOOR,
+      },
+    ],
+  ),
 ];
 
 /** The ownership areas the street's own `OwnershipIndex` is built from
@@ -796,24 +811,50 @@ const STREET_PROP_LIST: StreetProp[] = [
     layer: "walls" as const,
     defId: WALL_SEGMENT_DEF_ID,
   })),
-  // The stairs at each end: walkable props (no collider in `defs/`),
-  // each the physical thing a `floor_transition` row is anchored on.
+  // The one flight, at the deck's east end (story 15.19): the street's
+  // flight and the deck's, flat on the ground and anchored on the
+  // flight's bottom row, each two rows deep -- one front-on staircase on two
+  // floors. A walker is drawn over its treads on every frame.
   {
-    id: 80n,
-    x: BRIDGE_UP_ANCHOR_X,
-    y: BRIDGE_UP_ANCHOR_Y,
+    id: 85n,
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_DOWN_ANCHOR_Y,
     floor: STREET_FLOOR,
-    layer: "objects",
-    defId: FOOT_STAIRS_DEF_ID,
+    layer: "ground_objects",
+    defId: BRIDGE_STAIRS_STREET_DEF_ID,
   },
   {
-    id: 81n,
-    x: BRIDGE_DOWN_ANCHOR_X,
+    id: 86n,
+    x: BRIDGE_FLIGHT_X0,
     y: BRIDGE_DOWN_ANCHOR_Y,
     floor: BRIDGE_FLOOR,
-    layer: "objects",
-    defId: FOOT_STAIRS_DEF_ID,
+    layer: "ground_objects",
+    defId: BRIDGE_STAIRS_DECK_DEF_ID,
   },
+  // The deck's stairs draw over the two street rows above the flight, so
+  // those are drawn and closed on the street: the stair's abutment, one row
+  // under the deck's own and one beside it.
+  ...[BRIDGE_DECK_Y - 1, BRIDGE_DECK_Y].map((y, index) => ({
+    id: BigInt(82 + index),
+    x: BRIDGE_FLIGHT_X0,
+    y,
+    floor: STREET_FLOOR,
+    layer: "objects" as const,
+    defId: BRIDGE_STAIRS_ABUTMENT_DEF_ID,
+  })),
+  // The street flight's west side: a post on each of its rows, so the flight
+  // is entered by its foot and the pavement beside it stays open (a body is
+  // wider than the gap between a post and the flight).
+  ...[BRIDGE_UP_ANCHOR_Y, BRIDGE_DOWN_ANCHOR_Y].map((y, index) => ({
+    id: BigInt(87 + index),
+    assetKey: "bollard",
+    x: BRIDGE_FLIGHT_X0 - 1,
+    y,
+    floor: STREET_FLOOR,
+    layer: "objects" as const,
+    solid: true as const,
+    collider: BOLLARD_COLLIDER,
+  })),
 
   {
     id: 64n,
@@ -893,12 +934,13 @@ const STREET_PROP_LIST: StreetProp[] = [
     solid: true,
     collider: BOLLARD_COLLIDER,
   },
-  // A second manhole cover, one row south, for leaving the underpass
-  // again -- decoration only.
+  // A second manhole cover, one row south and one column west of the pillar
+  // (the post beside the flight stands on the cell south of it), for leaving
+  // the underpass again -- decoration only.
   {
     id: 119n,
     assetKey: "manhole",
-    x: BRIDGE_UNDER_PILLAR_X,
+    x: BRIDGE_UNDER_PILLAR_X - 1,
     y: BRIDGE_UNDER_EXIT_Y,
     floor: STREET_FLOOR,
     layer: "ground_objects",
@@ -951,9 +993,16 @@ export interface StreetBoundaryRect {
  * `drawables.test.ts` proves it closed by walking the real resolver
  * against it. The platform (floor -1) is closed by its own walls. */
 export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
-  // West and east of the pavement (anchored at the span's south end).
+  // West and east of the pavement (anchored at the span's south end); the
+  // east edge runs on past the pavement to the flight's foot row.
   { id: 101n, x: 0, y: PAVEMENT_Y1 + 1, width: 1, height: 4 },
-  { id: 102n, x: 21, y: PAVEMENT_Y1 + 1, width: 1, height: 4 },
+  {
+    id: 102n,
+    x: 21,
+    y: BRIDGE_FOOT_Y,
+    width: 1,
+    height: BRIDGE_FOOT_Y - SOUTH_WALL_Y + 1,
+  },
   // South of the pavement, west of the stairwell: the finial row and the
   // top railing's own row (the railing collides at its foot only, so a
   // body can walk along its open strip and out past the well's west end).
@@ -967,22 +1016,16 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
     width: 21 - (EAST_WALL_X_B + 1),
     height: 1,
   },
-  // Around the subway entrance: west of the treads, east of and below the
-  // entrance cells, and the pavement's south edge east of them.
+  // Around the subway entrance: west of the treads and below the entrance
+  // cells. East of them the pavement runs on, along the footbridge flight's
+  // foot row; its south edge is closed below.
   { id: 130n, x: STAIRWELL_X0 - 1, y: STAIRS_Y, width: 1, height: 1 },
   {
-    id: 131n,
-    x: SUBWAY_ENTRANCE_X1 + 1,
-    y: STAIRWELL_Y0,
-    width: 21 - (SUBWAY_ENTRANCE_X1 + 1),
-    height: 1,
-  },
-  {
     id: 132n,
-    x: SUBWAY_ENTRANCE_X1 + 1,
-    y: STAIRS_Y,
-    width: 1,
-    height: STAIRS_Y - STAIRWELL_Y0,
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_FOOT_Y + 1,
+    width: BRIDGE_FLIGHT_WIDTH,
+    height: 1,
   },
   {
     id: 133n,
@@ -991,19 +1034,44 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
     width: SUBWAY_ENTRANCE_X1 - SUBWAY_ENTRANCE_X0 + 1,
     height: 1,
   },
-  // The footbridge's own ring, one storey up: the deck is the only
-  // standable thing on `BRIDGE_FLOOR`. Its north side is the parapet.
+  // The footbridge's own ring, one storey up: the deck and its flight are the
+  // only standable things on `BRIDGE_FLOOR`. Its north side is the parapet.
   // The south rail is solid across its last two sub-cells only, so a
   // walker leaning on it stays inside the deck's own row (see
-  // `collider` above).
+  // `collider` above); it opens across the flight's columns.
   {
     id: 110n,
     x: BRIDGE_X0 - 1,
     y: BRIDGE_DECK_Y,
-    width: BRIDGE_DECK_WIDTH + 2,
+    width: BRIDGE_FLIGHT_X0 - (BRIDGE_X0 - 1),
     height: 1,
     floor: BRIDGE_FLOOR,
-    collider: { x0: 0, y0: 14, x1: (BRIDGE_DECK_WIDTH + 2) * 16, y1: 16 },
+    collider: { x0: 0, y0: 14, x1: (BRIDGE_FLIGHT_X0 - (BRIDGE_X0 - 1)) * 16, y1: 16 },
+  },
+  // Either side of the deck's flight and below it.
+  {
+    id: 134n,
+    x: BRIDGE_FLIGHT_X0 - 1,
+    y: BRIDGE_DOWN_ANCHOR_Y,
+    width: 1,
+    height: BRIDGE_FLIGHT_DEPTH,
+    floor: BRIDGE_FLOOR,
+  },
+  {
+    id: 135n,
+    x: BRIDGE_X1 + 1,
+    y: BRIDGE_DOWN_ANCHOR_Y,
+    width: 1,
+    height: BRIDGE_FLIGHT_DEPTH,
+    floor: BRIDGE_FLOOR,
+  },
+  {
+    id: 136n,
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_FOOT_Y,
+    width: BRIDGE_FLIGHT_WIDTH,
+    height: 1,
+    floor: BRIDGE_FLOOR,
   },
   { id: 111n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
   { id: 112n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
@@ -1068,6 +1136,17 @@ export const SUBWAY_ENTRANCE_TILES: StreetGroundTiles = {
   y1: STAIRS_Y + 1,
 };
 
+/** The flight's foot row, east of the subway entrance: the pavement a walker
+ * steps on and off the footbridge's stairs from. */
+export const BRIDGE_FOOT_TILES: StreetGroundTiles = {
+  assetKey: "sidewalk",
+  floor: STREET_FLOOR,
+  x0: BRIDGE_FLIGHT_X0,
+  y0: BRIDGE_FOOT_Y,
+  x1: BRIDGE_X1 + 1,
+  y1: BRIDGE_FOOT_Y + 1,
+};
+
 /** The platform's own floor pass, floor -1 -- Artie's direction: what
  * surrounds it is plain black (nothing drawn), never a texture, so this
  * pass paints only the interior the walls enclose, one row short of the
@@ -1101,6 +1180,7 @@ export const STREET_GROUND_TILES: readonly StreetGroundTiles[] = [
   INTERIOR_FLOOR_TILES_B,
   SIDEWALK_TILES,
   SUBWAY_ENTRANCE_TILES,
+  BRIDGE_FOOT_TILES,
   PLATFORM_FLOOR_TILES,
   PLATFORM_EDGE_TILES,
 ];
@@ -1420,24 +1500,48 @@ export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSe
       key: "ArrowDown",
       until: { kind: "y-at-least", value: inputs.bridgeUnderExitClearY },
     },
-    // East across the up-stairs' own anchor, which climbs onto the deck;
-    // the deck's east edge stops the walker past the threshold.
+    // South to the flight's foot row, then east along it to the flight.
+    {
+      label: "south-to-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
     {
       label: "east-of-the-bridge",
       key: "ArrowRight",
-      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+      until: { kind: "x-at-least", value: BRIDGE_FLIGHT_X0 + 0.35 },
     },
-    // Already on the deck in the ordinary case; held only until it is.
+    // Up the flight; entering its top row climbs onto the deck.
     {
       label: "on-the-bridge-deck",
-      key: "ArrowDown",
+      key: "ArrowUp",
       until: { kind: "floor", value: BRIDGE_FLOOR },
     },
-    // West along the deck, over the street, down the far stairs.
+    // Along the deck to its west end, back to the flight's column, and down.
+    {
+      label: "along-the-deck",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
+    },
+    {
+      label: "west-along-the-deck",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
+    },
+    {
+      label: "east-along-the-deck",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
     {
       label: "back-on-the-street",
-      key: "ArrowLeft",
+      key: "ArrowDown",
       until: { kind: "floor", value: STREET_FLOOR },
+    },
+    {
+      label: "off-onto-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
     },
   ];
 }
@@ -1573,11 +1677,11 @@ export function streetBollardRoute(
 }
 
 /**
- * The lap the NFR2 perf harness walks, over and over: north of the
- * bridge, west along the terrace, back east, up onto the deck and down
- * again. It starts and ends at exactly the position
- * [`streetWalkRoute`]'s own last segment leaves the walker in, so laps
- * chain with nothing to reset between them.
+ * The lap the NFR2 perf harness walks, over and over: north of the bridge,
+ * east to the stairs' abutment, back down to the flight's foot row, up onto
+ * the deck, along it and down again. It starts and ends at exactly the
+ * position [`streetWalkRoute`]'s own last segment leaves the walker in, so
+ * laps chain with nothing to reset between them.
  *
  * Every segment ends either against a real collider or a floor
  * transition, immune to overshoot (walking further into a wall changes
@@ -1585,35 +1689,192 @@ export function streetBollardRoute(
  */
 export function streetBridgeLapRoute(): readonly StreetWalkSegment[] {
   return [
+    // West along the foot row to the entrance's column.
+    {
+      label: "lap-west-along-the-foot-row",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+    },
     // North until the pavement's own northern edge stops the walker.
     {
       label: "lap-north-of-the-bridge",
       key: "ArrowUp",
       until: { kind: "y-at-most", value: BRIDGE_DECK_Y - 0.4 },
     },
-    // West along the terrace, short of the underpass bollard.
+    // East along the terrace until the stairs' abutment stops it.
     {
-      label: "lap-west-along-the-terrace",
-      key: "ArrowLeft",
-      until: { kind: "x-at-most", value: BRIDGE_UNDER_CURB_X + 1.5 },
+      label: "lap-east-to-the-abutment",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_FLIGHT_X0 - 0.6 },
     },
-    // East until the world's own eastern edge stops it.
     {
-      label: "lap-east-to-the-bridge",
+      label: "lap-back-west",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+    },
+    // South to the foot row, east to the world's eastern edge, up the flight.
+    {
+      label: "lap-south-to-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+    {
+      label: "lap-east-along-the-foot-row",
       key: "ArrowRight",
       until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
     },
-    // Down onto the stairs, which are the transition itself.
     {
       label: "lap-up-onto-the-deck",
-      key: "ArrowDown",
+      key: "ArrowUp",
       until: { kind: "floor", value: BRIDGE_FLOOR },
     },
-    // West along the deck, down the far stairs, back where the lap began.
+    // West along the deck, back east, down the flight, off onto the foot row.
+    {
+      label: "lap-onto-the-deck",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
+    },
+    {
+      label: "lap-west-along-the-deck",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
+    },
+    {
+      label: "lap-east-along-the-deck",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
     {
       label: "lap-down-to-the-street",
-      key: "ArrowLeft",
+      key: "ArrowDown",
       until: { kind: "floor", value: STREET_FLOOR },
+    },
+    {
+      label: "lap-off-onto-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+  ];
+}
+
+/**
+ * Story 15.19: up and back down the footbridge's flight at each of its two
+ * columns, for the flight-offset e2e. From the lamppost east to the entrance,
+ * a still beside the stairs' abutment, then the foot row: up the west column
+ * with a reversal on the street flight, over the cut and back down it by the
+ * deck flight, then up the east column, along the deck to its west end and
+ * back, and down again. Every threshold leaves more than the release bound
+ * short of an anchor row (whose entry is the floor change), and the two
+ * walls the route rests on (the abutment, the east edge) are real colliders.
+ * The e2e takes its stills by these labels.
+ */
+export function streetFootbridgeRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
+  return [
+    ...shopToPastTheLamppost(inputs),
+    {
+      label: "east-to-the-bridge-foot",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+    },
+    // North to the strip under the terrace and east along it to the abutment:
+    // as close to the stairs as a street walker can stand.
+    {
+      label: "up-to-the-north-strip",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y - 0.4 },
+    },
+    {
+      label: "east-to-the-abutment",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_FLIGHT_X0 - 0.6 },
+    },
+    {
+      label: "west-from-the-abutment",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+    },
+    {
+      label: "south-to-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+    {
+      label: "east-along-the-foot-row",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_FLIGHT_X0 + 0.35 },
+    },
+    // The west column: halfway up the street flight and back, then over the cut.
+    {
+      label: "up-the-street-half",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DOWN_ANCHOR_Y + 0.7 },
+    },
+    {
+      label: "street-half-reversal",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+    {
+      label: "up-onto-the-deck",
+      key: "ArrowUp",
+      until: { kind: "floor", value: BRIDGE_FLOOR },
+    },
+    // Up the deck flight, a reversal, and back down over the cut.
+    {
+      label: "up-the-deck-half",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_UP_ANCHOR_Y + 0.1 },
+    },
+    {
+      label: "down-the-deck-half",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_UP_ANCHOR_Y + 0.6 },
+    },
+    {
+      label: "down-off-the-deck",
+      key: "ArrowDown",
+      until: { kind: "floor", value: STREET_FLOOR },
+    },
+    // The east column, hugging the world's edge: up, along the deck, down.
+    {
+      label: "down-to-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+    {
+      label: "east-to-the-east-column",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
+    {
+      label: "up-the-east-column",
+      key: "ArrowUp",
+      until: { kind: "floor", value: BRIDGE_FLOOR },
+    },
+    {
+      label: "onto-the-deck",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
+    },
+    {
+      label: "west-along-the-deck",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
+    },
+    {
+      label: "east-along-the-deck",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
+    {
+      label: "down-the-east-column",
+      key: "ArrowDown",
+      until: { kind: "floor", value: STREET_FLOOR },
+    },
+    {
+      label: "off-onto-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
     },
   ];
 }

@@ -909,7 +909,9 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   // swept against it until the walker clears the row (story 1.13, cycle
   // 3).
   await walkRealSegment(page, segment("leaving-the-underpass"));
-  // Past the deck's own east end, to the stairs that climb onto it.
+  // South to the flight's foot row and east along it, to the stairs that
+  // climb onto the deck.
+  await walkRealSegment(page, segment("south-to-the-foot-row"));
   await walkRealSegment(page, segment("east-of-the-bridge"));
   await walkRealSegment(page, segment("on-the-bridge-deck"));
   const onDeck = await playerState(page);
@@ -925,7 +927,10 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   const deckVisibility = await currentVisibility(page);
   expect([...streetIds].some((id) => deckVisibility[id] !== "hidden")).toBe(true);
 
-  // --- back down to the street -------------------------------------------
+  // --- along the deck and back down to the street ------------------------
+  await walkRealSegment(page, segment("along-the-deck"));
+  await walkRealSegment(page, segment("west-along-the-deck"));
+  await walkRealSegment(page, segment("east-along-the-deck"));
   await walkRealSegment(page, segment("back-on-the-street"));
   const backOnTheStreet = await playerState(page);
   expect(backOnTheStreet.floor).toBe(PLAYER_START.floor);

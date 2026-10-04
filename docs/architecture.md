@@ -857,7 +857,9 @@ def declares a `flight` (`flight.drop_px`, `flight.from_px`,
 `flight.to_px`; JSON-only). The offset is zero at `flight.from_px` and
 `flight.drop_px` at `flight.to_px` (the first and last drawn nosing, from
 the footprint's open edge), linear between, flat outside, signed toward
-the target floor; the floor change takes whatever is left. It is summed
+the target floor; the floor change takes whatever is left. A flight is walked
+along either axis of its footprint, in either direction, and a flight wider
+than one cell is anchored in every column and is one flight. It is summed
 with the floor offset inside `worldPointPx` and exists nowhere else: not
 in the sort key, collision, walk state or picking.
 
