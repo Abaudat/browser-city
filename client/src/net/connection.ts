@@ -103,12 +103,22 @@ export interface RegionRowListener {
  * position and the floor range; every connection attaches a fresh backend
  * to it. */
 export interface RegionWiring {
-  readonly controller: RegionController;
+  readonly controller: Pick<RegionController, "attach">;
   readonly rows?: RegionRowListener;
   readonly players?: PlayerRowListener;
   /** Subscribe to `player_position`. A DEV build may switch it off;
    * absent means yes. */
   readonly remotePlayers?: boolean;
+  /** The new connection's initial region has fully applied. */
+  readonly onInitialApplied?: () => void;
+}
+
+/** Story 4.8: the identity a page presents on every connection after its
+ * first -- the stored token, or for a session-only tab (`persisted: false`)
+ * the one its first connection was issued. */
+export interface SessionIdentity {
+  readonly token: string;
+  readonly persisted: boolean;
 }
 
 export interface ConnectOptions {
@@ -122,6 +132,13 @@ export interface ConnectOptions {
   readonly onCharacter?: (character: CharacterReport) => void;
   /** Story 4.3: the interest region. */
   readonly region?: RegionWiring;
+  /** Story 4.8: presented instead of reading `storage`; set on a reconnect. */
+  readonly session?: SessionIdentity;
+  /** Story 4.8: the identity this connection used. */
+  readonly onSession?: (session: SessionIdentity) => void;
+  /** Story 4.8: false on a reconnect, so the boot marks keep meaning the
+   * page's first connection. Absent means true. */
+  readonly marks?: boolean;
 }
 
 /**
@@ -152,35 +169,37 @@ export function connect(options: ConnectOptions): DbConnection {
   options.onStatus?.("connecting");
   const { onPing, onStatus, onHandshake, clock, region, storage, onIdentity, onCharacter } =
     options;
+  const mark = (name: Parameters<typeof markBoot>[0]): void => {
+    if (options.marks !== false) markBoot(name);
+  };
   let clockSync: ClockSync | undefined;
   // The whole-table subscription is three singletons; the world arrives
   // through the region. `SUBSCRIPTION_APPLIED` keeps meaning the first
   // subscription's own decode term; `REGION_APPLIED` is the initial
   // region's.
 
-  const stored = readStoredToken(storage);
+  const stored = options.session?.token ?? readStoredToken(storage);
   const base = DbConnection.builder()
     .withUri(NET_CONFIG.uri)
     .withDatabaseName(NET_CONFIG.databaseName);
   const conn = (stored === null ? base : base.withToken(stored))
     .onConnect((connection, identity, token) => {
-      if (stored === null) {
-        const outcome = rememberFirstToken(storage, token);
-        onIdentity?.({ identityHex: identity.toHexString(), persisted: outcome.kind === "stored" });
-      } else {
-        onIdentity?.({ identityHex: identity.toHexString(), persisted: true });
-      }
+      const persisted =
+        options.session?.persisted ??
+        (stored === null ? rememberFirstToken(storage, token).kind === "stored" : true);
+      onIdentity?.({ identityHex: identity.toHexString(), persisted });
+      options.onSession?.({ token: stored ?? token, persisted });
       // Story 1.14 (NFR1): the handshake term ends here, and the
       // subscription-decode term ends at this subscription's own
       // `onApplied` -- the two are never conflated under one mark.
-      markBoot(BOOT_MARK.HANDSHAKE_OPEN);
+      mark(BOOT_MARK.HANDSHAKE_OPEN);
       onStatus?.("connected");
       // Story 2.8 (FR147): `module_version` rides the same subscribe
       // call as `demo_ping` -- one subscribe message, one `onApplied`, no
       // extra round trip on the common (matched-version) path.
       connection
         .subscriptionBuilder()
-        .onApplied(() => markBoot(BOOT_MARK.SUBSCRIPTION_APPLIED))
+        .onApplied(() => mark(BOOT_MARK.SUBSCRIPTION_APPLIED))
         .onError((ctx) => {
           // Cycle 1 review (Tim's finding 6): with no `onError`, a
           // rejected subscribe left the boot gate's own handshake latch
@@ -203,7 +222,10 @@ export function connect(options: ConnectOptions): DbConnection {
         sdkRegionBackend(connection, { remotePlayers: region.remotePlayers }),
         {
           onError: () => onStatus?.("disconnected"),
-          onInitialApplied: () => markBoot(BOOT_MARK.REGION_APPLIED),
+          onInitialApplied: () => {
+            mark(BOOT_MARK.REGION_APPLIED);
+            region.onInitialApplied?.();
+          },
         },
       );
       // Story 4.1: the first stamped round trip rides the same connect

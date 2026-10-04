@@ -18,10 +18,11 @@ import type { Intent } from "./input/intent";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
 import { OIDC_CONFIG } from "./net/config";
-import { type CharacterReport, connect, type IdentityReport } from "./net/connection";
+import type { CharacterReport, IdentityReport } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
+  exposeConnectionForE2e,
   exposeIdentityActionsForE2e,
   exposePlayerScreenBoundsForE2e,
   exposeRegionForE2e,
@@ -52,9 +53,11 @@ import {
 } from "./net/e2e-hooks";
 import { beginLink, completeLinkWithIdToken, newLinkCode } from "./net/link";
 import type { PingObservation } from "./net/observe-ping";
-import { type PositionSender, startPositionSender } from "./net/position-sender";
+import { startPositionSender } from "./net/position-sender";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
 import { cachedChunkKeys, RegionController } from "./net/region-subscription";
+import { createSenderLifecycle } from "./net/sender-lifecycle";
+import { superviseConnect } from "./net/supervised-connect";
 import { ZOOM } from "./render/camera";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
@@ -163,81 +166,110 @@ async function main(): Promise<void> {
   let motion: RemoteMotion | undefined;
   let playerPosition: { x: number; y: number; floor: number } | undefined;
   let sceneMounted = false;
-  let positionSender: PositionSender | undefined;
-  // The sender starts once the caller has a character and the scene a
-  // position; never before, and only once per page. Its first send is the
-  // scene's own position, which overwrites the durable row: the scene must
-  // adopt the stored row before this sender starts (story 4.7) the day
-  // anything reads that row. It stops for good when the connection leaves
-  // `connected` (a call on a dead connection is queued by the SDK, unbounded).
-  const maybeStartPositionSender = (): void => {
-    if (positionSender || !sceneMounted || !latestCharacter || !positionConfig) return;
-    positionSender = startPositionSender({
-      conn,
+  // The sender runs while the connection is `connected` and the caller has a
+  // character and the scene a position; it restarts on every `connected`
+  // (a call on a dead connection is queued by the SDK, unbounded). Its first
+  // send is the scene's own position, which overwrites the durable row: the
+  // scene must adopt the stored row before this sender starts (story 4.7)
+  // the day anything reads that row.
+  const senderLifecycle = createSenderLifecycle(() => {
+    const p = positionConfig as PositionConfig;
+    return startPositionSender({
+      conn: () => conn.current(),
       position: () => playerPosition,
-      periodMs: positionConfig.periodMs,
-      unitsPerCell: positionConfig.unitsPerCell,
+      periodMs: p.periodMs,
+      unitsPerCell: p.unitsPerCell,
     });
+  });
+  const syncSender = (): void =>
+    senderLifecycle.setReady(
+      sceneMounted && latestCharacter !== null && positionConfig !== undefined,
+    );
+  // Story 4.8: while the connection is down after having been up, the
+  // player's body holds where it stands under the notice.
+  let everConnected = false;
+  const inputHold = {
+    keyboard: undefined as KeyboardState | undefined,
+    offline: false,
+    set(offline: boolean): void {
+      this.offline = offline;
+      this.keyboard?.setOffline(offline);
+    },
+    attach(keyboard: KeyboardState): void {
+      this.keyboard = keyboard;
+      keyboard.setOffline(this.offline);
+    },
   };
   const moveRegion = (x: number, y: number, floor: number): void => region.moveTo(x, y, floor);
-  const conn = connect({
-    onPing,
-    onStatus: (status) => {
-      notice.setStatus(status);
-      if (status !== "connected") positionSender?.stop();
-      if (status === "disconnected") latch.resolveUnreachable();
-    },
-    onHandshake: (version) => {
-      latch.resolveHandshake(version);
-      postMountGuard?.onHandshake(version);
-    },
-    clock: {
-      serverClock,
-      visibility: document,
-      onClock: ({ epochMicros, speed }, kind) => {
-        cityClock.setClock(epochMicros, speed);
-        latestClock = { epochMicros, speed };
-        if (performance.getEntriesByName(BOOT_MARK.CITY_CLOCK_KNOWN).length === 0) {
-          markBoot(BOOT_MARK.CITY_CLOCK_KNOWN);
-        }
-        recordWorldClockForE2e(epochMicros, kind);
+  // A reconnect is a new `connect()`: every caller reads the connection
+  // through `conn.current()` at the moment of use, never holds one.
+  const conn = superviseConnect(
+    {
+      onPing,
+      onStatus: (status) => {
+        notice.setStatus(status);
+        if (status === "connected") everConnected = true;
+        inputHold.set(everConnected && status === "disconnected");
+        senderLifecycle.setConnected(status === "connected");
+        if (status === "disconnected") latch.resolveUnreachable();
       },
-    },
-    storage: identityStorage,
-    onIdentity: (identity) => {
-      latestIdentity = identity;
-      recordIdentityForE2e(identity);
-    },
-    onCharacter: (character) => {
-      latestCharacter = character;
-      recordCharacterForE2e(character);
-      maybeStartPositionSender();
-    },
-    region: {
-      controller: region,
-      rows: {
-        onInsert: (table, row) => recordRegionRowForE2e("inserts", table, row),
-        onUpdate: (table, _old, row) => recordRegionRowForE2e("updates", table, row),
-        onDelete: (table, row) => recordRegionRowForE2e("deletes", table, row),
+      onHandshake: (version) => {
+        latch.resolveHandshake(version);
+        postMountGuard?.onHandshake(version);
       },
-      remotePlayers: remotePlayersOn,
-      players: {
-        onUpsert: (row) => {
-          const p = positionConfig;
-          if (!motion || !p) return;
-          const at = dequantise(row, p.unitsPerCell);
-          motion.upsert(row.characterId, { tMs: row.tMs, ...at });
-          recordRemoteSampleForE2e(row.characterId, { tMs: row.tMs, x: at.x, y: at.y });
+      clock: {
+        serverClock,
+        visibility: document,
+        onClock: ({ epochMicros, speed }, kind) => {
+          cityClock.setClock(epochMicros, speed);
+          latestClock = { epochMicros, speed };
+          if (performance.getEntriesByName(BOOT_MARK.CITY_CLOCK_KNOWN).length === 0) {
+            markBoot(BOOT_MARK.CITY_CLOCK_KNOWN);
+          }
+          recordWorldClockForE2e(epochMicros, kind);
         },
-        onRemove: (id) => motion?.remove(id),
+      },
+      storage: identityStorage,
+      onIdentity: (identity) => {
+        latestIdentity = identity;
+        recordIdentityForE2e(identity);
+      },
+      onCharacter: (character) => {
+        latestCharacter = character;
+        recordCharacterForE2e(character);
+        syncSender();
+      },
+      region: {
+        controller: region,
+        rows: {
+          onInsert: (table, row) => recordRegionRowForE2e("inserts", table, row),
+          onUpdate: (table, _old, row) => recordRegionRowForE2e("updates", table, row),
+          onDelete: (table, row) => recordRegionRowForE2e("deletes", table, row),
+        },
+        remotePlayers: remotePlayersOn,
+        players: {
+          onUpsert: (row) => {
+            const p = positionConfig;
+            if (!motion || !p) return;
+            const at = dequantise(row, p.unitsPerCell);
+            motion.upsert(row.characterId, { tMs: row.tMs, ...at });
+            recordRemoteSampleForE2e(row.characterId, { tMs: row.tMs, x: at.x, y: at.y });
+          },
+          onRemove: (id) => motion?.remove(id),
+        },
       },
     },
+    { window, document },
+  );
+  exposeConnectionForE2e({
+    live: () => conn.liveCount(),
+    drop: () => conn.current().disconnect(),
   });
   exposeRegionForE2e({
     held: () => region.subscriptions()?.heldKeys().map(handleId) ?? [],
     liveHandles: () => region.subscriptions()?.liveHandleCount() ?? 0,
     applied: () => region.subscriptions()?.appliedKeys().map(handleId) ?? [],
-    cachedChunkKeys: (table) => cachedChunkKeys(conn, table),
+    cachedChunkKeys: (table) => cachedChunkKeys(conn.current(), table),
     moveTo: moveRegion,
   });
 
@@ -260,7 +292,7 @@ async function main(): Promise<void> {
     // for an identity whose token could not be kept.
     createCharacter: guardedCreateCharacter(
       () => latestIdentity?.persisted === true,
-      () => conn.reducers.createCharacter({}),
+      () => conn.current().reducers.createCharacter({}),
     ),
     startLink: () =>
       offerLink({
@@ -268,7 +300,7 @@ async function main(): Promise<void> {
         redirectUri,
         loadFlow: loadLinkFlow,
         newCode: newLinkCode,
-        beginLink: (code) => beginLink(conn, code),
+        beginLink: (code) => beginLink(conn.current(), code),
       }),
   });
 
@@ -278,7 +310,7 @@ async function main(): Promise<void> {
       redirectUri,
       loadFlow: loadLinkFlow,
       newCode: newLinkCode,
-      beginLink: (code) => beginLink(conn, code),
+      beginLink: (code) => beginLink(conn.current(), code),
     });
   let carrierDef: number | undefined;
   // Evaluated once per session, as the scene is about to mount, never
@@ -339,9 +371,11 @@ async function main(): Promise<void> {
       offer,
       region,
       sceneRegionFeed(moveRegion),
+      inputHold,
       {
         setUp: (defs) => {
           positionConfig = loadPositionConfig(defs);
+          syncSender();
           motion = new RemoteMotion({
             periodMs: positionConfig.periodMs,
             delayMs: positionConfig.delayMs,
@@ -364,7 +398,7 @@ async function main(): Promise<void> {
         },
         onMounted: () => {
           sceneMounted = true;
-          maybeStartPositionSender();
+          syncSender();
         },
       },
     );
@@ -420,6 +454,7 @@ async function startStreetScene(
   offer: OfferWiring,
   region: RegionController,
   followScene: (x: number, y: number, floor: number) => void,
+  hold: { attach(keyboard: KeyboardState): void },
   players: PlayersWiring,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
@@ -520,6 +555,7 @@ async function startStreetScene(
   const audio = loadAudioSettings(storage);
   const display = loadDisplaySettings(storage);
   const keyboard = new KeyboardState(bindings);
+  hold.attach(keyboard);
 
   // Set once the street scene below finishes mounting -- `onDisplayChange`
   // can fire before then (the menu is interactive immediately), so a

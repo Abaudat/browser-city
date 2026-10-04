@@ -125,6 +125,30 @@ describe("KeyboardState while the options menu has the keyboard", () => {
   });
 });
 
+describe("KeyboardState while the connection is down (story 4.8)", () => {
+  it("the body does not answer input, and answers again once back, with nothing stuck", () => {
+    const state = new KeyboardState(DEFAULT_BINDINGS);
+    state.keydown("KeyD");
+    state.setOffline(true);
+    expect(state.direction()).toEqual({ x: 0, y: 0 });
+    state.keydown("KeyD");
+    expect(state.direction()).toEqual({ x: 0, y: 0 });
+    state.setOffline(false);
+    expect(state.direction()).toEqual({ x: 0, y: 0 });
+    state.keydown("KeyD");
+    expect(state.direction()).toEqual({ x: 1, y: 0 });
+  });
+
+  it("the options menu resuming does not lift the hold", () => {
+    const state = new KeyboardState(DEFAULT_BINDINGS);
+    state.setOffline(true);
+    state.suspend();
+    state.resume();
+    state.keydown("KeyD");
+    expect(state.direction()).toEqual({ x: 0, y: 0 });
+  });
+});
+
 describe("attachKeyboard", () => {
   it("resolves KeyboardEvent.code, never .key", () => {
     const state = new KeyboardState(DEFAULT_BINDINGS);

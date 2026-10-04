@@ -25,6 +25,7 @@ export type { Direction } from "./keybindings";
 export class KeyboardState {
   private readonly held = new Set<BindableAction>();
   private suspended = false;
+  private offline = false;
 
   constructor(private bindings: Bindings) {}
 
@@ -50,8 +51,16 @@ export class KeyboardState {
     this.releaseAll();
   }
 
+  /** While the connection is down the player's body does not answer input
+   * (story 4.8): nothing is walked that the city never receives. Releases
+   * whatever was held, so a stride in progress stops where it stands. */
+  setOffline(offline: boolean): void {
+    this.offline = offline;
+    this.releaseAll();
+  }
+
   keydown(code: string): void {
-    if (this.suspended) return;
+    if (this.suspended || this.offline) return;
     const action = actionForCode(this.bindings, code);
     if (action) this.held.add(action);
   }

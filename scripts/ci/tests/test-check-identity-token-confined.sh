@@ -37,6 +37,14 @@ check "e2e-hooks exposing the token fails" 1 bash "$CHECK" "$d"
 d="$(tree)"; printf '%s\n' 'const u = `wss://h/?token=${t}`;' > "$d/net/url.ts"
 check "a token query parameter fails" 1 bash "$CHECK" "$d"
 
+d="$(tree)"; printf '%s
+' 'const c = DbConnection.builder();' > "$d/net/other.ts"
+check "DbConnection.builder outside connection.ts and link.ts fails" 1 bash "$CHECK" "$d"
+
+d="$(tree)"; printf '%s
+' 'const c = DbConnection.builder();' > "$d/net/link.ts"
+check "DbConnection.builder in link.ts passes" 0 bash "$CHECK" "$d"
+
 d="$(fake_dir)"
 check "a tree with no identity-storage.ts fails loudly" 1 bash "$CHECK" "$d"
 

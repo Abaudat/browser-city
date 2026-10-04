@@ -679,6 +679,67 @@ describe("identity token (story 4.5, FR141)", () => {
     expect(seen).toEqual([{ identityHex: "c200abcd", persisted: false }]);
   });
 
+  describe("a reconnect presents the page's own identity (story 4.8)", () => {
+    it("reports the token a session-only tab was issued, and not persisted", () => {
+      const f = fakeStorage();
+      const sessions: unknown[] = [];
+      connect(() => {}, undefined, undefined, undefined, {
+        storage: f.storage,
+        onSession: (s) => sessions.push(s),
+      });
+      f.data.set(IDENTITY_STORAGE_KEY, blob("other-tab"));
+      state.onConnectCb?.(fakeConn, identity, "mine");
+      expect(sessions).toEqual([{ token: "mine", persisted: false }]);
+    });
+
+    it("presents the session token, not a fresh anonymous identity, and never writes storage", () => {
+      const f = fakeStorage({ [IDENTITY_STORAGE_KEY]: blob("other-tab") });
+      const seen: unknown[] = [];
+      connect(() => {}, undefined, undefined, undefined, {
+        storage: f.storage,
+        session: { token: "mine", persisted: false },
+        onIdentity: (i) => seen.push(i),
+      });
+      expect(state.token).toBe("mine");
+      state.onConnectCb?.(fakeConn, identity, "mine");
+      expect(f.writes).toEqual([]);
+      expect(seen).toEqual([{ identityHex: "c200abcd", persisted: false }]);
+    });
+
+    it("reports the stored token as persisted on a returning visit", () => {
+      const f = fakeStorage({ [IDENTITY_STORAGE_KEY]: blob("t") });
+      const sessions: unknown[] = [];
+      connect(() => {}, undefined, undefined, undefined, {
+        storage: f.storage,
+        onSession: (s) => sessions.push(s),
+      });
+      state.onConnectCb?.(fakeConn, identity, "t");
+      expect(sessions).toEqual([{ token: "t", persisted: true }]);
+    });
+
+    it("a reconnect does not repeat the boot marks", () => {
+      const markSpy = vi.spyOn(performance, "mark");
+      connect(() => {}, undefined, undefined, undefined, { marks: false });
+      state.onConnectCb?.(fakeConn, identity, "t");
+      expect(markSpy).not.toHaveBeenCalled();
+      markSpy.mockRestore();
+    });
+
+    it("tells the region wiring when the initial region has applied", () => {
+      const { RegionController } = regionModule;
+      const controller = new RegionController();
+      controller.configure({ minFloor: -1, maxFloor: 7 });
+      controller.moveTo(0, 0, 0);
+      const applied = vi.fn();
+      connect(() => {}, undefined, undefined, undefined, {
+        region: { controller, onInitialApplied: applied },
+      });
+      state.onConnectCb?.(fakeConn);
+      for (const sub of state.subs.slice(1)) sub.onApplied?.();
+      expect(applied).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("the stored token is never replaced or removed by a failure", () => {
     const stored = { [IDENTITY_STORAGE_KEY]: blob("precious") };
 

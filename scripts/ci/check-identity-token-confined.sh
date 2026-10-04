@@ -7,7 +7,11 @@
 #   - `withToken` appears only under client/src/net/ (the one SDK caller);
 #   - identity-storage.ts and identity/link-flow.ts never call `console.`;
 #   - client/src/net/e2e-hooks.ts never names a token outside comments;
-#   - no client source builds a URL query parameter named token.
+#   - no client source builds a URL query parameter named token;
+#   - `DbConnection.builder` appears only in net/connection.ts (the
+#     supervised, everyday connection) and net/link.ts (the short-lived link
+#     connection, never supervised) -- story 4.8, so a second place that
+#     opens a connection cannot escape the reconnect supervisor.
 #
 # Usage: check-identity-token-confined.sh [client-src-dir]   (default: client/src)
 set -euo pipefail
@@ -30,6 +34,10 @@ while IFS= read -r f; do
   case "$rel" in
     net/*) ;;
     *) code "$f" | grep -q 'withToken' && note "$rel: calls withToken outside net/" ;;
+  esac
+  case "$rel" in
+    net/connection.ts | net/link.ts) ;;
+    *) code "$f" | grep -q 'DbConnection\.builder' && note "$rel: opens a connection outside net/connection.ts and net/link.ts" ;;
   esac
   if code "$f" | grep -Eq '[?&]token='; then
     note "$rel: builds a URL query parameter named token"
