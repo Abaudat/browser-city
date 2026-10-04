@@ -31,7 +31,7 @@ const BIN_ID = 15n;
 
 /** Artie reviews the feel from images, not from a pixel-delta count, so
  * the spec leaves them behind as CI artifacts. */
-const SHOT_DIR = "test-results/story-1.9-shots";
+const SHOT_DIR = "test-results/review-shots/story-1.9";
 
 function balance(key: string): number {
   const entry = committedDefs().balance.find((b) => b.key === key);

@@ -138,6 +138,8 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         window: o.window,
                         tags: o.tags,
                         flight_drop_px: o.flight_drop_px.as_ref().map(|d| located(text, d)),
+                        flight_from_px: o.flight_from_px,
+                        flight_to_px: o.flight_to_px,
                         archetype: o.archetype.as_ref().map(|a| located(text, a)),
                     });
                 }

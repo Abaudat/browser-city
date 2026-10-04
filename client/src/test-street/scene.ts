@@ -769,7 +769,13 @@ export async function mountStreetScene(
   // FR182: the player's flight offset, computed once per move in `tick` and
   // read by both the sprite and the camera anchor, so the player stays on
   // the camera centre on the stairs too.
-  let playerFlightOffsetPx = 0;
+  // Built once, before the first camera application: the offset is a pure
+  // function of position, so the mount calls it like every later frame.
+  const flights = new FlightIndex(
+    buildFlights(STREET_TRANSITIONS, streetPlacedRows(), objectDefs, storeyHeightPx, tileSizePx),
+    movementConfig,
+  );
+  let playerFlightOffsetPx = flights.offsetPx(walk.x, walk.y, walk.floor);
   function applyCamera(): void {
     const anchor = worldPointPx(
       walk.x,
@@ -922,7 +928,16 @@ export async function mountStreetScene(
   const playerFrames = await appearanceCache.acquire(playerTuple);
   const playerSprite = new Sprite(playerFrames.frame("idle", "down", 0));
   playerSprite.anchor.set(0.5, 1);
-  positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, 0, 0);
+  positionSprite(
+    playerSprite,
+    walk.x,
+    walk.y,
+    walk.floor,
+    tileSizePx,
+    storeyHeightPx,
+    0,
+    playerFlightOffsetPx,
+  );
   const playerEntry: PoolEntry = {
     drawable: playerDrawable,
     view: playerSprite,
@@ -1108,12 +1123,6 @@ export async function mountStreetScene(
   for (const placed of placedRows) {
     worldIndex.insert(placed);
   }
-  // FR182: the flights, built once from the transitions, the placed rows and
-  // the defs' declared `flight_drop_px`.
-  const flights = new FlightIndex(
-    buildFlights(STREET_TRANSITIONS, placedRows, objectSources, storeyHeightPx),
-    movementConfig,
-  );
 
   // Story 1.7: the visibility adapter, gated on the viewer's own
   // (floor, buildingId) tuple actually changing (Tim's direction) --
@@ -1122,7 +1131,8 @@ export async function mountStreetScene(
   // ground objects, the crowd) together, in one call, so nothing is ever
   // culled halfway.
   const visibilityApplier = new VisibilityApplier();
-  const originalBackground = app.renderer.background.color;
+  // By value: the renderer's own colour object is overwritten below.
+  const originalBackground = app.renderer.background.color.toNumber();
 
   // Story 15.8 (Tim's direction): one named list, built once -- every
   // pool member, flat pass and the crowd, each carrying the id

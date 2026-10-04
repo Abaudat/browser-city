@@ -8,7 +8,6 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { buildFlights, FlightIndex } from "../../../src/render/flight-offset";
 import { snapToScreenPx, worldPointPx } from "../../../src/render/screen-position";
-import { compareDrawables } from "../../../src/render/sort-key";
 import { toSortUnits } from "../../../src/render/sort-units";
 import { buildPlayerDrawable, updatePlayerDrawable } from "../../../src/test-street/drawables";
 import { STREET_TRANSITIONS, streetPlacedRows } from "../../../src/test-street/fixture";
@@ -41,31 +40,37 @@ describe("the flight offset is draw-only (FR182)", () => {
     expect(importers).toEqual(["test-street/scene.ts"]);
   });
 
-  it("inv_stair_offset_never_affects_depth_order: the player's key is the walked feet position", () => {
+  it("inv_stair_offset_never_affects_depth_order: on a flight, the player's key is the walked feet", () => {
     // The drawable update takes a position and a floor and nothing else, so
-    // no offset can reach the FR123 key.
+    // no offset can reach the FR123 key; the guard is that arity, the import
+    // scan above and 15.13's mounted render-order assertion on the tread row.
     expect(updatePlayerDrawable.length).toBe(4);
     const defs = committedDefs();
     const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
-    const index = new FlightIndex(
-      buildFlights(STREET_TRANSITIONS, streetPlacedRows(), streetObjectSources(), storey),
-      streetMovementConfig(),
+    const flights = buildFlights(
+      STREET_TRANSITIONS,
+      streetPlacedRows(),
+      streetObjectSources(),
+      storey,
+      TILE,
     );
+    const index = new FlightIndex(flights, streetMovementConfig());
     fc.assert(
       fc.property(
-        fc.double({ min: 10, max: 30, noNaN: true }),
-        fc.double({ min: 0, max: 16, noNaN: true }),
-        fc.constantFrom(-1, 0),
-        (x, y, floor) => {
-          const offset = index.offsetPx(x, y, floor);
-          const player = buildPlayerDrawable(0, x, y, floor);
-          updatePlayerDrawable(player, x, y, floor);
+        fc.constantFrom(...flights),
+        fc.double({ min: 0.05, max: 1, noNaN: true }),
+        fc.double({ min: 0.3, max: 0.99, noNaN: true }),
+        (flight, t, lateral) => {
+          const s = flight.startS + t * (flight.fullS - flight.startS);
+          const x =
+            flight.dirX !== 0 ? s * flight.dirX : flight.x0 + lateral * (flight.x1 - flight.x0);
+          const y =
+            flight.dirY !== 0 ? s * flight.dirY : flight.y0 + lateral * (flight.y1 - flight.y0);
+          expect(index.offsetPx(x, y, flight.floor)).not.toBe(0);
+          const player = buildPlayerDrawable(0, x, y, flight.floor);
+          updatePlayerDrawable(player, x, y, flight.floor);
           expect(player.x).toBe(toSortUnits(x));
           expect(player.y).toBe(toSortUnits(y));
-          const other = { ...player, stableId: player.stableId + 1n };
-          // Equal keys whatever the offset: the comparator sees only the walk.
-          expect(compareDrawables(player, other)).toBe(compareDrawables(player, other));
-          expect(Number.isFinite(offset)).toBe(true);
         },
       ),
     );
@@ -75,7 +80,7 @@ describe("the flight offset is draw-only (FR182)", () => {
     const defs = committedDefs();
     const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
     const index = new FlightIndex(
-      buildFlights(STREET_TRANSITIONS, streetPlacedRows(), streetObjectSources(), storey),
+      buildFlights(STREET_TRANSITIONS, streetPlacedRows(), streetObjectSources(), storey, TILE),
       streetMovementConfig(),
     );
     fc.assert(

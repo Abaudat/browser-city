@@ -489,8 +489,10 @@ describe("parseDefs", () => {
   it("parses a present flight_drop_px and leaves an absent or null one undefined (FR182)", () => {
     const payload = validPayload();
     const base = (payload.objects as Record<string, unknown>[])[0] as Record<string, unknown>;
-    payload.objects = [{ ...base, flight_drop_px: 8 }];
+    payload.objects = [{ ...base, flight_drop_px: 8, flight_from_px: 5, flight_to_px: 34 }];
     expect(parseDefs(payload).objects[0]?.flightDropPx).toBe(8);
+    expect(parseDefs(payload).objects[0]?.flightFromPx).toBe(5);
+    expect(parseDefs(payload).objects[0]?.flightToPx).toBe(34);
     payload.objects = [{ ...base, flight_drop_px: null }];
     expect(parseDefs(payload).objects[0]?.flightDropPx).toBeUndefined();
     payload.objects = [base];

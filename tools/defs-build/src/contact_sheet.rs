@@ -720,6 +720,8 @@ mod tests {
             window: false,
             tags: vec![],
             flight_drop_px: None,
+            flight_from_px: None,
+            flight_to_px: None,
         }
     }
 

@@ -1328,6 +1328,8 @@ struct LoweredObjectEntry {
     window: bool,
     tags: Vec<String>,
     flight_drop_px: Option<Located<u32>>,
+    flight_from_px: Option<u32>,
+    flight_to_px: Option<u32>,
 }
 
 /// Turns an archetype's own `collider_inset` into a concrete
@@ -1495,6 +1497,8 @@ fn lower_object(
         window: e.window,
         tags: e.tags.clone(),
         flight_drop_px: e.flight_drop_px.clone(),
+        flight_from_px: e.flight_from_px,
+        flight_to_px: e.flight_to_px,
     })
 }
 
@@ -2226,6 +2230,17 @@ fn check_object_flight_drop(
         .map(|b| b.value.value as u32);
     for e in entries {
         let Some(drop) = &e.flight_drop_px else {
+            if e.flight_from_px.is_some() || e.flight_to_px.is_some() {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "object '{}' declares flight_from_px/flight_to_px without flight_drop_px",
+                        e.key.value
+                    ),
+                ));
+            }
             continue;
         };
         let at = |message: String| DefsError::new(&e.path, drop.line, drop.col, message);
@@ -2240,6 +2255,15 @@ fn check_object_flight_drop(
                 "object '{}' flight_drop_px {} is outside 1..=render.storey_height_px ({storey})",
                 e.key.value, drop.value
             )));
+        }
+        match (e.flight_from_px, e.flight_to_px) {
+            (Some(from), Some(to)) if from < to => {}
+            _ => {
+                return Err(at(format!(
+                    "object '{}' declares flight_drop_px without flight_from_px < flight_to_px",
+                    e.key.value
+                )));
+            }
         }
         if e.collider.is_some() {
             return Err(at(format!(
@@ -2953,6 +2977,8 @@ pub fn validate(
                 tags: resolve_object_tags(&o.path, &o.key, &o.tags, &tag_ids)
                     .expect("tags already validated"),
                 flight_drop_px: o.flight_drop_px.as_ref().map(|d| d.value),
+                flight_from_px: o.flight_from_px,
+                flight_to_px: o.flight_to_px,
             }
         })
         .collect();

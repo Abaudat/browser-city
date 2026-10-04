@@ -699,10 +699,14 @@ pub fn emit_json(
             .get(&o.id)
             .unwrap_or_else(|| panic!("object '{}' (id {}) has no packed atlas rect", o.key, o.id));
         out.push_str(&format!(
-            "    {{ \"atlas\": {}, \"collider\": {}, \"flight_drop_px\": {}, \"height\": {}, \"id\": {}, \"interact_at\": {}, \"key\": {}, \"layer\": {}, \"name\": {}, \"sprite\": {}, \"tags\": {}, \"width\": {}, \"window\": {} }}{comma}\n",
+            "    {{ \"atlas\": {}, \"collider\": {}, \"flight_drop_px\": {}, \"flight_from_px\": {}, \"flight_to_px\": {}, \"height\": {}, \"id\": {}, \"interact_at\": {}, \"key\": {}, \"layer\": {}, \"name\": {}, \"sprite\": {}, \"tags\": {}, \"width\": {}, \"window\": {} }}{comma}\n",
             fmt_atlas_rect_json(atlas),
             fmt_collider_json(o.collider),
             o.flight_drop_px
+                .map_or_else(|| "null".to_string(), |d| d.to_string()),
+            o.flight_from_px
+                .map_or_else(|| "null".to_string(), |d| d.to_string()),
+            o.flight_to_px
                 .map_or_else(|| "null".to_string(), |d| d.to_string()),
             o.height,
             o.id,
@@ -1114,6 +1118,8 @@ mod tests {
                 window: false,
                 tags: vec![2],
                 flight_drop_px: Some(8),
+                flight_from_px: Some(5),
+                flight_to_px: Some(34),
             }],
             items: vec![ItemDef {
                 id: 1,
@@ -1488,6 +1494,10 @@ mod tests {
         );
         assert!(out.contains("\"tags\": [2]"));
         assert!(out.contains("\"flight_drop_px\": 8"));
+        assert!(out.contains("\"flight_from_px\": 5"));
+        assert!(out.contains("\"flight_to_px\": 34"));
+        // Client-only: the generated Rust never learns a flight.
+        assert!(!emit_rust(&sample(), "v1").contains("flight"));
         assert!(out.contains("{ \"id\": 1, \"key\": \"waste\", \"role\": null }"));
         assert!(out.contains("{ \"id\": 2, \"key\": \"seating\", \"role\": null }"));
     }
@@ -1732,6 +1742,8 @@ mod tests {
             window: false,
             tags: vec![],
             flight_drop_px: None,
+            flight_from_px: None,
+            flight_to_px: None,
         });
         let manifest = emit_id_manifest(&defs);
         let lines: Vec<&str> = manifest.lines().collect();

@@ -23,6 +23,11 @@ export interface FlightSource {
   readonly height: number;
   /** Native pixels the drawn treads descend (`flight_drop_px`). */
   readonly flightDropPx?: number;
+  /** Native pixels from the footprint's open edge to the first and the
+   * last drawn nosing (`flight_from_px` / `flight_to_px`): the ramp
+   * runs between them and is flat outside. */
+  readonly flightFromPx?: number;
+  readonly flightToPx?: number;
 }
 
 /** A placed row, as far as a flight is concerned. */
@@ -68,6 +73,7 @@ export function buildFlights(
   placed: readonly PlacedFlightRow[],
   sources: ReadonlyMap<number, FlightSource>,
   storeyHeightPx: number,
+  tileSizePx: number,
 ): readonly Flight[] {
   const { pairings } = pairTransitions(transitions);
   const flights: Flight[] = [];
@@ -92,6 +98,10 @@ export function buildFlights(
       const row = covering[0];
       const source = row ? sources.get(row.defId) : undefined;
       if (!row || !source || source.flightDropPx === undefined) continue;
+      const { flightFromPx: from, flightToPx: to } = source;
+      if (from === undefined || to === undefined || from >= to) {
+        throw new Error(`buildFlights: the flight at ${where} declares no ramp from < to`);
+      }
 
       const origin = footprintOrigin(row.x, row.y, source);
       const x1 = origin.x + source.width;
@@ -105,6 +115,9 @@ export function buildFlights(
       // footprint value, the anchor cell must hold its highest cell.
       const lo = alongX ? (dir.x > 0 ? origin.x : -x1) : dir.y > 0 ? origin.y : -y1;
       const hi = lo + length;
+      if (to > length * tileSizePx) {
+        throw new Error(`buildFlights: the ramp of the flight at ${where} leaves its footprint`);
+      }
       // The anchor cell's near edge on that axis (a cell spans one unit).
       const anchorNearS = alongX
         ? dir.x > 0
@@ -128,8 +141,8 @@ export function buildFlights(
         y1,
         dirX: dir.x,
         dirY: dir.y,
-        startS: lo,
-        fullS: hi - 1,
+        startS: lo + from / tileSizePx,
+        fullS: lo + to / tileSizePx,
         dropPx: sign * source.flightDropPx + 0,
       });
     }

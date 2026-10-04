@@ -8,4 +8,6 @@ width = 1
 height = 1
 collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
 flight_drop_px = 8
+flight_from_px = 5
+flight_to_px = 34
 tags = ["fixture"]

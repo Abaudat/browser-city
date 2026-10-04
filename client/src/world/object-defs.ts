@@ -18,6 +18,8 @@ export interface ObjectSource extends ColliderSource {
   readonly interactAt?: ColliderRectSubcells;
   /** FR182: the drawn drop of a flight, native pixels. */
   readonly flightDropPx?: number;
+  readonly flightFromPx?: number;
+  readonly flightToPx?: number;
 }
 
 /** Keyed by `ObjectDef.id`, which is what a `placed_object` row's `defId`
@@ -36,6 +38,8 @@ export function objectDefsById(defs: Defs): ReadonlyMap<number, ObjectSource> {
         ...(object.collider ? { collider: object.collider } : {}),
         ...(object.interactAt ? { interactAt: object.interactAt } : {}),
         ...(object.flightDropPx !== undefined ? { flightDropPx: object.flightDropPx } : {}),
+        ...(object.flightFromPx !== undefined ? { flightFromPx: object.flightFromPx } : {}),
+        ...(object.flightToPx !== undefined ? { flightToPx: object.flightToPx } : {}),
       },
     ]),
   );

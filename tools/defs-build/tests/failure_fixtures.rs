@@ -446,8 +446,26 @@ fn an_interact_at_inside_its_own_collider_is_named() {
 #[test]
 fn a_zero_flight_drop_is_named() {
     let err = build_err("flight-drop-zero");
-    assert!(err.message.contains("flight_drop_px"), "{err}");
-    assert!(err.message.contains("render.storey_height_px"), "{err}");
+    assert!(err.message.contains("flight_drop_px 0 is outside"), "{err}");
+}
+
+#[test]
+fn a_flight_drop_with_no_storey_height_balance_key_is_named() {
+    let err = build_err("flight-drop-without-storey-key");
+    assert!(
+        err.message
+            .contains("no 'render.storey_height_px' balance key"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_flight_drop_without_its_ramp_is_named() {
+    let err = build_err("flight-ramp-missing");
+    assert!(
+        err.message.contains("flight_from_px < flight_to_px"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -1006,6 +1024,8 @@ fn every_known_category_has_a_fixture_directory() {
         "flight-drop-zero",
         "flight-drop-above-storey",
         "flight-drop-with-collider",
+        "flight-drop-without-storey-key",
+        "flight-ramp-missing",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

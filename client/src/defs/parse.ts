@@ -219,6 +219,8 @@ function parseObject(value: unknown, path: string): ObjectDef {
       "collider",
       "interact_at",
       "flight_drop_px",
+      "flight_from_px",
+      "flight_to_px",
       "window",
       "tags",
     ],
@@ -231,6 +233,10 @@ function parseObject(value: unknown, path: string): ObjectDef {
     obj.flight_drop_px === undefined || obj.flight_drop_px === null
       ? undefined
       : expectU32(obj.flight_drop_px, `${path}.flight_drop_px`);
+  const optionalU32 = (value: unknown, at: string): number | undefined =>
+    value === undefined || value === null ? undefined : expectU32(value, at);
+  const flightFromPx = optionalU32(obj.flight_from_px, `${path}.flight_from_px`);
+  const flightToPx = optionalU32(obj.flight_to_px, `${path}.flight_to_px`);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
@@ -245,6 +251,8 @@ function parseObject(value: unknown, path: string): ObjectDef {
     ...(collider ? { collider } : {}),
     ...(interactAt ? { interactAt } : {}),
     ...(flightDropPx !== undefined ? { flightDropPx } : {}),
+    ...(flightFromPx !== undefined ? { flightFromPx } : {}),
+    ...(flightToPx !== undefined ? { flightToPx } : {}),
   };
 }
 
