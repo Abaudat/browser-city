@@ -772,7 +772,7 @@ const NOSINGS: Record<string, { fromOpenEdge: "east" | "west"; xs: number[]; row
 // rows of the dark riser lines, both measured from the sheet by Artie.
 const FRONT_ON: Record<string, { pitch: number; risers: number[] }> = {
   bridge_stairs_street: { pitch: 8, risers: [6, 14, 22, 30] },
-  bridge_stairs_deck: { pitch: 8, risers: [6, 14, 22, 30] },
+  bridge_stairs_deck: { pitch: 8, risers: [10, 18, 26] },
 };
 
 describe("a flight's ramp follows the drawn nosings (FR182)", () => {
