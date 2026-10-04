@@ -8,6 +8,7 @@ import { Body, type BodyPose, type Cell, createBodyPose, type Leg } from "../l3/
 import type { L3Config } from "../l3/config";
 import { type Facing, FacingHold, facingOfHeading, phaseOffsetFor, walkFrame } from "../l3/gait";
 import type { PathConfig, Walkability } from "../l3/micro-path";
+import { milliminutesFor, periodOf } from "../l3/timeline";
 
 /** Frames in one direction's walk row of a character sheet. */
 export const WALK_FRAMES_PER_CYCLE = 6;
@@ -54,8 +55,8 @@ function manhattanOf(route: readonly Cell[]): number {
 export function buildTimetable(spec: TimetableSpec, config: L3Config): Timetable {
   const msPerMilli = config.realMsPerCityMinute / 1000;
   const cells = manhattanOf(spec.out) + spec.detourCells;
-  const walkMilli = Math.max(1, Math.round(((cells / config.walkCellsPerS) * 1000) / msPerMilli));
-  const dwellMilli = Math.max(1, Math.round(spec.dwellMs / msPerMilli));
+  const walkMilli = milliminutesFor((cells / config.walkCellsPerS) * 1000, msPerMilli);
+  const dwellMilli = milliminutesFor(spec.dwellMs, msPerMilli);
   const halfMilli = 2 * dwellMilli + walkMilli;
   return { spec, walkMilli, dwellMilli, halfMilli, periodMilli: 2 * halfMilli };
 }
@@ -63,7 +64,7 @@ export function buildTimetable(spec: TimetableSpec, config: L3Config): Timetable
 /** The leg in force at city time `t`: a pure function of `t`. */
 export function legAt(timetable: Timetable, t: number): TimetableLeg {
   const { spec, periodMilli, halfMilli, dwellMilli, walkMilli } = timetable;
-  const cycle = Math.floor(t / periodMilli);
+  const cycle = periodOf(t, periodMilli);
   const second = t - cycle * periodMilli >= halfMilli;
   const departAt = cycle * periodMilli + (second ? halfMilli : 0) + dwellMilli;
   return {
@@ -101,7 +102,10 @@ export function createWalkerFrame(): WalkerFrame {
     legKey: 0,
     departAt: 0,
     arriveAt: 0,
-    animation: "idle", direction: "down", frameIndex: 0 };
+    animation: "idle",
+    direction: "down",
+    frameIndex: 0,
+  };
 }
 
 /** One citizen following a timetable through L3. Holds only caches and the

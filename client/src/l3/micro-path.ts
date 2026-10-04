@@ -53,18 +53,18 @@ class Heap {
   }
 
   #less(a: number, b: number): boolean {
-    const ka = this.#keys[a] ?? 0;
-    const kb = this.#keys[b] ?? 0;
-    return ka < kb || (ka === kb && (this.#seqs[a] ?? 0) < (this.#seqs[b] ?? 0));
+    const ka = this.#keys[a] as number;
+    const kb = this.#keys[b] as number;
+    return ka < kb || (ka === kb && (this.#seqs[a] as number) < (this.#seqs[b] as number));
   }
 
   #swap(a: number, b: number): void {
-    const n = this.#nodes[a] ?? 0;
-    const k = this.#keys[a] ?? 0;
-    const s = this.#seqs[a] ?? 0;
-    this.#nodes[a] = this.#nodes[b] ?? 0;
-    this.#keys[a] = this.#keys[b] ?? 0;
-    this.#seqs[a] = this.#seqs[b] ?? 0;
+    const n = this.#nodes[a] as number;
+    const k = this.#keys[a] as number;
+    const s = this.#seqs[a] as number;
+    this.#nodes[a] = this.#nodes[b] as number;
+    this.#keys[a] = this.#keys[b] as number;
+    this.#seqs[a] = this.#seqs[b] as number;
     this.#nodes[b] = n;
     this.#keys[b] = k;
     this.#seqs[b] = s;
@@ -96,12 +96,12 @@ class Heap {
   }
 
   pop(): number {
-    const top = this.#nodes[0] ?? 0;
+    const top = this.#nodes[0] as number;
     this.size--;
     if (this.size > 0) {
-      this.#nodes[0] = this.#nodes[this.size] ?? 0;
-      this.#keys[0] = this.#keys[this.size] ?? 0;
-      this.#seqs[0] = this.#seqs[this.size] ?? 0;
+      this.#nodes[0] = this.#nodes[this.size] as number;
+      this.#keys[0] = this.#keys[this.size] as number;
+      this.#seqs[0] = this.#seqs[this.size] as number;
       let i = 0;
       for (;;) {
         const l = 2 * i + 1;
@@ -162,18 +162,18 @@ export function findMicroPath(
     if (expansions > nodeBudget) return { ok: false, reason: "budget", expansions };
     const x = (idx % w) + minX;
     const y = Math.floor(idx / w) + minY;
-    const gHere = g[idx] ?? 0;
-    const heading = dirOf[idx] ?? NONE;
+    const gHere = g[idx] as number;
+    const heading = dirOf[idx] as number;
     for (let d = 0; d < 4; d++) {
-      const nx = x + (DX[d] ?? 0);
-      const ny = y + (DY[d] ?? 0);
+      const nx = x + (DX[d] as number);
+      const ny = y + (DY[d] as number);
       const lx = nx - minX;
       const ly = ny - minY;
       if (lx < 0 || ly < 0 || lx >= w || ly >= h) continue;
       const nIdx = ly * w + lx;
       if (closed[nIdx] || !walkable(nx, ny)) continue;
       const cost = gHere + STEP + (heading !== NONE && heading !== d ? TURN : 0);
-      const known = g[nIdx] ?? NONE;
+      const known = g[nIdx] as number;
       if (known !== NONE && cost >= known) continue;
       g[nIdx] = cost;
       parent[nIdx] = idx;
@@ -185,13 +185,13 @@ export function findMicroPath(
   if (!closed[goalIdx]) return { ok: false, reason: "unreachable", expansions };
 
   let length = 1;
-  for (let i = goalIdx; i !== startIdx; i = parent[i] ?? startIdx) length++;
+  for (let i = goalIdx; i !== startIdx; i = parent[i] as number) length++;
   const cells = new Int32Array(length * 2);
   let i = goalIdx;
   for (let k = length - 1; k >= 0; k--) {
     cells[k * 2] = (i % w) + minX;
     cells[k * 2 + 1] = Math.floor(i / w) + minY;
-    i = parent[i] ?? startIdx;
+    i = parent[i] as number;
   }
   return { ok: true, cells, expansions };
 }

@@ -22,8 +22,8 @@ import { type CharacterReport, connect, type IdentityReport } from "./net/connec
 import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
-  exposeIdentityActionsForE2e,
   exposeCommuterDrawnForE2e,
+  exposeIdentityActionsForE2e,
   exposePlayerScreenBoundsForE2e,
   exposeRegionForE2e,
   exposeWorldTransformForE2e,

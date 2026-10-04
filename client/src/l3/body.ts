@@ -100,12 +100,12 @@ function centrePath(cells: Int32Array): SegmentPath {
   const points = new Float64Array(cells.length);
   let length = 0;
   for (let i = 0; i < cells.length; i += 2) {
-    points[i] = (cells[i] ?? 0) + 0.5;
-    points[i + 1] = (cells[i + 1] ?? 0) + 0.5;
+    points[i] = (cells[i] as number) + 0.5;
+    points[i + 1] = (cells[i + 1] as number) + 0.5;
     if (i > 0) {
       length += Math.hypot(
-        (points[i] ?? 0) - (points[i - 2] ?? 0),
-        (points[i + 1] ?? 0) - (points[i - 1] ?? 0),
+        (points[i] as number) - (points[i - 2] as number),
+        (points[i + 1] as number) - (points[i - 1] as number),
       );
     }
   }

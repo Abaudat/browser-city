@@ -936,7 +936,12 @@ export async function mountStreetScene(
   // match a crowd member's tuple reuses that texture too (AC5).
   const appearanceCache = new AppearanceTextureCache(defs, atlasBaseUrl);
   const playerTuple = buildPlayerAppearanceTuple(defs);
-  const playerFrames = await appearanceCache.acquire(playerTuple);
+  // The commuter's look is acquired alongside the player's: one round of
+  // character-page fetches, not two.
+  const [playerFrames, commuterFrames] = await Promise.all([
+    appearanceCache.acquire(playerTuple),
+    crowdFrozen ? undefined : appearanceCache.acquire(buildCommuterAppearanceTuple(defs)),
+  ]);
   const playerSprite = new Sprite(playerFrames.frame("idle", "down", 0));
   playerSprite.anchor.set(0.5, 1);
   positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, 0);
@@ -1235,8 +1240,7 @@ export async function mountStreetScene(
   const l3Path = { marginCells: l3Config.marginCells, nodeBudget: l3Config.nodeBudget };
   let updateCommuter: (cityMilli: number | undefined) => void = () => {};
   let commuterDrawn: () => CommuterDrawn | undefined = () => undefined;
-  if (!crowdFrozen) {
-    const commuterFrames = await appearanceCache.acquire(buildCommuterAppearanceTuple(defs));
+  if (commuterFrames) {
     const timetable = buildTimetable(COMMUTER_SPEC, l3Config);
     const walker = new TimetableWalker(timetable, npcWalk, l3Path, l3Config, COMMUTER_ID);
     const frame = createWalkerFrame();
