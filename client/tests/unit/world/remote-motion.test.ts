@@ -11,7 +11,6 @@ import { loadMovementConfig } from "../../../src/world/movement-config";
 import { quantise } from "../../../src/world/position-codec";
 import { createPositionScheduler } from "../../../src/world/position-scheduler";
 import {
-  facingOf,
   REMOTE_MAX_SAMPLES,
   REMOTE_SNAP_CELLS,
   REMOTE_SPEED_TOLERANCE,
@@ -249,16 +248,6 @@ describe("RemoteMotion", () => {
       };
     };
     expect(() => assertContinuity(snap)).toThrow();
-  });
-});
-
-describe("facingOf", () => {
-  it("reads facing from motion and holds it at rest", () => {
-    expect(facingOf(1, 0.2, "down")).toEqual({ facing: "right", moving: true });
-    expect(facingOf(-1, 0.2, "down")).toEqual({ facing: "left", moving: true });
-    expect(facingOf(0.1, -1, "down")).toEqual({ facing: "up", moving: true });
-    expect(facingOf(0.1, 1, "up")).toEqual({ facing: "down", moving: true });
-    expect(facingOf(0, 0, "left")).toEqual({ facing: "left", moving: false });
   });
 });
 

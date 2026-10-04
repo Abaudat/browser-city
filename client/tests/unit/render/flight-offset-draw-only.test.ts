@@ -9,7 +9,10 @@ import { describe, expect, it } from "vitest";
 import { buildFlights, FlightIndex } from "../../../src/render/flight-offset";
 import { snapToScreenPx, worldPointPx } from "../../../src/render/screen-position";
 import { toSortUnits } from "../../../src/render/sort-units";
-import { buildPlayerDrawable, updatePlayerDrawable } from "../../../src/test-street/drawables";
+import {
+  buildCharacterDrawable,
+  updateCharacterDrawable,
+} from "../../../src/test-street/drawables";
 import { STREET_TRANSITIONS, streetPlacedRows } from "../../../src/test-street/fixture";
 import {
   committedDefs,
@@ -44,7 +47,7 @@ describe("the flight offset is draw-only (FR182)", () => {
     // The drawable update takes a position and a floor and nothing else, so
     // no offset can reach the FR123 key; the guard is that arity, the import
     // scan above and 15.13's mounted render-order assertion on the tread row.
-    expect(updatePlayerDrawable.length).toBe(4);
+    expect(updateCharacterDrawable.length).toBe(4);
     const defs = committedDefs();
     const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
     const flights = buildFlights(
@@ -67,8 +70,8 @@ describe("the flight offset is draw-only (FR182)", () => {
           const y =
             flight.dirY !== 0 ? s * flight.dirY : flight.y0 + lateral * (flight.y1 - flight.y0);
           expect(index.offsetPx(x, y, flight.floor)).not.toBe(0);
-          const player = buildPlayerDrawable(0, x, y, flight.floor);
-          updatePlayerDrawable(player, x, y, flight.floor);
+          const player = buildCharacterDrawable(0, x, y, flight.floor);
+          updateCharacterDrawable(player, x, y, flight.floor);
           expect(player.x).toBe(toSortUnits(x));
           expect(player.y).toBe(toSortUnits(y));
         },

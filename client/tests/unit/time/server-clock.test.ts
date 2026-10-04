@@ -95,3 +95,83 @@ describe("client/src/time never reads the wall clock", () => {
     }
   });
 });
+
+describe("ServerClock slews a correction and never reads backwards", () => {
+  it("slews a backwards correction instead of stepping, and converges", () => {
+    const perf = { t: 0 };
+    const clock = clockAt(perf);
+    clock.observe(0, 0, 10_000_000n);
+    perf.t = 1_000;
+    const before = clock.nowMicros() as bigint;
+    // The new sample says the server is 400 ms behind where we thought.
+    clock.observe(1_000, 1_000, 10_600_000n);
+    const after = clock.nowMicros() as bigint;
+    expect(after).toBeGreaterThanOrEqual(before);
+    perf.t = 1_000 + 60_000;
+    expect(clock.nowMicros()).toBe(10_600_000n + 60_000_000n);
+  });
+
+  it("slews a small forward correction: no step, the reading runs fast until caught up", () => {
+    const perf = { t: 0 };
+    const clock = clockAt(perf);
+    clock.observe(0, 0, 10_000_000n);
+    perf.t = 1_000;
+    const before = clock.nowMicros() as bigint; // 11_000_000
+    // The server is 400 ms further on than we thought.
+    clock.observe(1_000, 1_000, 11_400_000n);
+    expect(clock.nowMicros()).toBe(before);
+    perf.t = 1_100;
+    const step = (clock.nowMicros() as bigint) - before;
+    // 100 ms elapsed: at most half as fast again.
+    expect(step).toBeGreaterThan(100_000n);
+    expect(step).toBeLessThanOrEqual(150_000n);
+    perf.t = 1_000 + 60_000;
+    expect(clock.nowMicros()).toBe(11_400_000n + 60_000_000n);
+  });
+
+  it("steps a large forward correction at once (a machine that slept catches up)", () => {
+    const perf = { t: 0 };
+    const clock = clockAt(perf);
+    clock.observe(0, 0, 10_000_000n);
+    perf.t = 1_000;
+    clock.observe(1_000, 1_000, 10_000_000n + 600_000_000n);
+    expect(clock.nowMicros()).toBe(10_000_000n + 600_000_000n);
+  });
+
+  it("inv_server_clock_never_reads_backwards", () => {
+    type Step = { kind: "read" | "observe"; dtMs: number; serverMicros: number };
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            kind: fc.constantFrom<"read" | "observe">("read", "observe"),
+            dtMs: fc.integer({ min: 0, max: 400_000 }),
+            serverMicros: fc.integer({ min: 0, max: 2 ** 40 }),
+          }),
+          { maxLength: 60 },
+        ),
+        (steps: Step[]) => {
+          const perf = { t: 0 };
+          const clock = clockAt(perf);
+          clock.observe(0, 0, 1_000_000_000n);
+          let last = clock.nowMicros() as bigint;
+          let lastPerf = perf.t;
+          for (const s of steps) {
+            perf.t += s.dtMs;
+            if (s.kind === "observe") clock.observe(perf.t, perf.t, BigInt(s.serverMicros));
+            const now = clock.nowMicros() as bigint;
+            expect(now).toBeGreaterThanOrEqual(last);
+            // It never stops: at least half the elapsed time passes on the reading.
+            if (s.kind === "read") {
+              expect(now - last).toBeGreaterThanOrEqual(
+                BigInt(Math.floor((perf.t - lastPerf) * 500)),
+              );
+            }
+            last = now;
+            lastPerf = perf.t;
+          }
+        },
+      ),
+    );
+  });
+});

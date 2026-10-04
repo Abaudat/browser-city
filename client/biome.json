@@ -68,6 +68,46 @@
       }
     },
     {
+      "includes": ["src/l3/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "window": "l3/** is pure: time is an argument, the DOM is not reachable",
+                  "document": "l3/** is pure: time is an argument, the DOM is not reachable",
+                  "globalThis": "l3/** is pure: nothing ambient is reachable",
+                  "self": "l3/** is pure: nothing ambient is reachable",
+                  "navigator": "l3/** is pure: nothing ambient is reachable",
+                  "fetch": "l3/** has no path to the network",
+                  "WebSocket": "l3/** has no path to the network",
+                  "XMLHttpRequest": "l3/** has no path to the network",
+                  "localStorage": "l3/** keeps no state of its own",
+                  "sessionStorage": "l3/** keeps no state of its own",
+                  "crypto": "l3/** has no randomness",
+                  "requestAnimationFrame": "l3/** has no clock",
+                  "setTimeout": "l3/** has no clock",
+                  "setInterval": "l3/** has no clock"
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**", "!./*", "./*/..*", "./../*", "!../defs/types"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/input/**"],
       "linter": {
         "rules": {
@@ -254,6 +294,28 @@
                 "deniedGlobals": {
                   "document": "DOM creation belongs in src/ui/, src/input/, src/test-street/ or main.ts -- window stays allowed (e2e-hooks.ts, pixel-snapshot.ts use it)"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/net/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../debug/*", "../debug/**"]
+                  },
+                  {
+                    "group": ["../l3/*", "../l3/**"]
+                  }
+                ]
               }
             }
           }

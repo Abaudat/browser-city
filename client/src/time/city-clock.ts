@@ -1,7 +1,7 @@
 // Current in-city time: the server's epoch row plus the reconciled server
 // clock, evaluated on demand. Nothing ticks and nothing is stored.
 
-import { type CityTime, cityTime } from "./city-time";
+import { type CityTime, cityMilliminutes, cityTime } from "./city-time";
 import type { ServerClock } from "./server-clock";
 
 export class CityClock {
@@ -34,5 +34,16 @@ export class CityClock {
       return undefined;
     }
     return cityTime(this.#epochMicros, serverNow, rate, this.#speed);
+  }
+
+  /** City time since the epoch in milliminutes, or `undefined` while
+   * `now()` is. */
+  nowMilliminutes(): number | undefined {
+    const serverNow = this.#server.nowMicros();
+    const rate = this.#realMsPerCityMinute;
+    if (this.#epochMicros === undefined || serverNow === undefined || rate === undefined) {
+      return undefined;
+    }
+    return cityMilliminutes(this.#epochMicros, serverNow, rate, this.#speed);
   }
 }

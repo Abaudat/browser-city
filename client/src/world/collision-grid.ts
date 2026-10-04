@@ -72,6 +72,7 @@ const NO_ENTRIES: readonly GridEntry[] = [];
  */
 export class CollisionGrid implements CollisionGridQuery {
   private readonly floors = new Map<number, Map<bigint, Chunk>>();
+  private changes = 0;
 
   /** `subcellsPerCell` is `defs/`'s own generated
    * `COLLIDER_SUBCELLS_PER_CELL`, never a literal here. `objectDefs` is
@@ -81,6 +82,12 @@ export class CollisionGrid implements CollisionGridQuery {
     private readonly subcellsPerCell: number,
     private readonly objectDefs: ReadonlyMap<number, ColliderSource>,
   ) {}
+
+  /** Moves on every `insert`/`delete`/`update` that touches a cell, so a
+   * value derived from the grid can be keyed by it. */
+  get revision(): number {
+    return this.changes;
+  }
 
   entriesInCell(floor: number, cellX: number, cellY: number): readonly GridEntry[] {
     const chunk = this.floors.get(floor)?.get(chunkKey(cellX, cellY, floor));
@@ -103,6 +110,7 @@ export class CollisionGrid implements CollisionGridQuery {
    * and `delete`'s own no-op in that case is `inv_absent_collider_is_walkable`. */
   insert(row: PlacedObject): void {
     this.forEachCoveredCell(row, (cellX, cellY, entry) => {
+      this.changes++;
       let byChunk = this.floors.get(row.floor);
       if (!byChunk) {
         byChunk = new Map();
@@ -133,6 +141,7 @@ export class CollisionGrid implements CollisionGridQuery {
    * entries matching this exact `objectId` are removed. */
   delete(row: PlacedObject): void {
     this.forEachCoveredCell(row, (cellX, cellY) => {
+      this.changes++;
       const byChunk = this.floors.get(row.floor);
       const key = chunkKey(cellX, cellY, row.floor);
       const chunk = byChunk?.get(key);
