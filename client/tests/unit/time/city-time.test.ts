@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { cityTime } from "../../../src/time/city-time";
+import { cityMilliminutes, cityTime } from "../../../src/time/city-time";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const RATE = 2500;
@@ -100,5 +100,24 @@ describe("cityTime properties", () => {
         },
       ),
     );
+  });
+});
+
+describe("cityMilliminutes", () => {
+  it("counts a thousandth of a city minute, fractional, from the epoch", () => {
+    expect(cityMilliminutes(1_000n, 1_000n, RATE, 1)).toBe(0);
+    // One city minute is RATE real ms.
+    expect(cityMilliminutes(0n, BigInt(RATE) * 1000n, RATE, 1)).toBe(1000);
+    expect(cityMilliminutes(0n, BigInt(RATE) * 500n, RATE, 1)).toBe(500);
+    expect(cityMilliminutes(0n, BigInt(RATE) * 1000n, RATE, 4)).toBe(4000);
+  });
+
+  it("agrees with cityTime on the minute", () => {
+    for (const c of fixture.cases) {
+      const mm = cityMilliminutes(BigInt(c.epoch_micros), BigInt(c.now_micros), RATE, c.speed);
+      const t = cityTime(BigInt(c.epoch_micros), BigInt(c.now_micros), RATE, c.speed);
+      const minuteOfDay = (((Math.floor(mm / 1000) % 1440) + 1440) % 1440) | 0;
+      expect(minuteOfDay).toBe(t.hour * 60 + t.minute);
+    }
   });
 });

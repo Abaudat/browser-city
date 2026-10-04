@@ -76,7 +76,7 @@ import {
   worldPointPx,
 } from "../../src/render/screen-position";
 import { buildCitizenFixtures } from "../../src/test-street/citizens";
-import { buildPlayerDrawable, buildPropDrawables } from "../../src/test-street/drawables";
+import { buildCharacterDrawable, buildPropDrawables } from "../../src/test-street/drawables";
 import {
   BOLLARD_COLLIDER,
   BRIDGE_DECK_Y,
@@ -341,7 +341,7 @@ function expectedOrderFor(x: number, y: number, floor: number): string[] {
     windowDefIds: streetWindowDefIds(),
     objectDefs: streetObjectSources(),
   });
-  const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
+  const player = buildCharacterDrawable(rankOf("characters"), x, y, floor);
   // The mounted `renderOrder` lists the pool only: flat-pass drawables
   // are never y-sorted and are not in it.
   return sortAcrossFloors([...props, player], (d) => d)

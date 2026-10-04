@@ -33,6 +33,7 @@ import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
+import { loadL3Config } from "../l3/config";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import type { AppearanceTuple } from "../render/appearance/composite";
 import {
@@ -58,21 +59,23 @@ import {
   stepAndTransition,
 } from "../world/floor-walk";
 import { bodyRect, type MovementConfig } from "../world/movement";
+import { npcWalkability } from "../world/npc-walkable";
 import { buildObjectDefIndex, type ObjectSource, objectDefById } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
 import { ASSET_URLS, type PixelRect } from "./assets";
-import { buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
+import { buildCommuterAppearanceTuple, buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
 import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
+import { COMMUTER_ID, COMMUTER_SPEC, COMMUTER_STABLE_ID } from "./commuter";
 import {
-  buildPlayerDrawable,
+  buildCharacterDrawable,
   buildPropDrawables,
   isDefPropDrawable,
   type PropDrawable,
   type PropDrawableByAsset,
-  updatePlayerDrawable,
+  updateCharacterDrawable,
 } from "./drawables";
 import {
   PLAYER_START,
@@ -84,6 +87,7 @@ import {
   streetColliderSources,
   streetPlacedRows,
 } from "./fixture";
+import { buildTimetable, createWalkerFrame, TimetableWalker } from "./timetable";
 
 /** A plain, single-tile interior floor swatch cropped from the same
  * Room Builder sheet family as the walls -- real art, never a new PNG,
@@ -262,6 +266,10 @@ export interface MountStreetSceneOptions {
    * timing between mount and screenshot, which no baseline could ever
    * match twice. Absent (or `false`) means the crowd walks normally. */
   readonly startWithCrowdFrozen?: boolean;
+  /** City time since the epoch in milliminutes, or `undefined` while the
+   * clock cannot tell it. Every L3 body is posed from this and nothing
+   * else; with no reading, no body is drawn. */
+  readonly cityMilliminutes?: () => number | undefined;
   /** Story 2.7 (Quentin's direction): collapses the street crowd's own
    * distinct-per-citizen appearance tuples down to one shared tuple per
    * family, same count and positions -- exists solely so `test-street.
@@ -270,6 +278,25 @@ export interface MountStreetSceneOptions {
    * fixture module. Absent (or `false`) means the crowd's own tuples
    * stay distinct, exactly as they always have. */
   readonly crowdIdenticalTuples?: boolean;
+}
+
+export interface CommuterDrawn {
+  /** City time this frame was posed at, in milliminutes. */
+  readonly cityMilli: number;
+  readonly legKey: number;
+  readonly departAt: number;
+  readonly arriveAt: number;
+  /** Cells walked along the current leg. */
+  readonly distance: number;
+  /** Where the body is, in cells. */
+  readonly x: number;
+  readonly y: number;
+  /** The sprite's own drawn position, in stage pixels. */
+  readonly screenX: number;
+  readonly screenY: number;
+  readonly animation: string;
+  readonly direction: string;
+  readonly frameIndex: number;
 }
 
 export interface StreetSceneHandle {
@@ -308,6 +335,10 @@ export interface StreetSceneHandle {
    * (Quentin's direction: a follow-camera proof must never check its own
    * implementation). */
   playerScreenBounds(): { x: number; y: number; width: number; height: number };
+  /** The commuter as last drawn, or `undefined` while it is not on screen
+   * (no clock, or the crowd frozen). A getter read fresh each call, for
+   * `l3-walk.spec.ts`'s per-frame sampling. */
+  commuterDrawn(): CommuterDrawn | undefined;
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
   /** Live-updates the FR173 highlight dial (0-100) -- re-applies
@@ -704,6 +735,7 @@ export async function mountStreetScene(
     onWorldReady,
     onHighlightChange,
     startWithCrowdFrozen,
+    cityMilliminutes,
     crowdIdenticalTuples,
     highlightStrength,
   } = options;
@@ -890,7 +922,7 @@ export async function mountStreetScene(
     app.ticker,
   );
 
-  const playerDrawable = buildPlayerDrawable(
+  const playerDrawable = buildCharacterDrawable(
     rankOf(layerCodeByName("characters")),
     walk.x,
     walk.y,
@@ -975,7 +1007,11 @@ export async function mountStreetScene(
   function rebuildRenderOrder(): void {
     renderOrder.length = 0;
     for (const floor of stacks.floors()) {
-      for (const id of orderByFloor.get(floor) ?? []) renderOrder.push(id);
+      for (const id of orderByFloor.get(floor) ?? []) {
+        // The commuter sorts with the pool but is not part of the reported,
+        // golden-pinned order: it moves with the clock.
+        if (id !== COMMUTER_STABLE_ID) renderOrder.push(id);
+      }
     }
   }
 
@@ -1188,6 +1224,75 @@ export async function mountStreetScene(
   ];
   const allVisibilityMembers: VisibilityMember[] = namedVisibilityMembers.map((n) => n.member);
 
+  // Story 5.1: the commuter -- one L3 body on the pavement, a member of the
+  // street floor's depth-sorted pool on the `characters` rank and of
+  // visibility, positioned through the same `positionSprite` as the player.
+  // Absent from `renderOrder`, `poolDrawables` and the visibility report so
+  // no pinned order or baseline moves; absent altogether while the crowd is
+  // frozen for a screenshot. Posed from city time alone: no clock, no body.
+  const l3Config = loadL3Config(defs);
+  const npcWalk = npcWalkability(worldIndex);
+  const l3Path = { marginCells: l3Config.marginCells, nodeBudget: l3Config.nodeBudget };
+  let updateCommuter: (cityMilli: number | undefined) => void = () => {};
+  let commuterDrawn: () => CommuterDrawn | undefined = () => undefined;
+  if (!crowdFrozen) {
+    const commuterFrames = await appearanceCache.acquire(buildCommuterAppearanceTuple(defs));
+    const timetable = buildTimetable(COMMUTER_SPEC, l3Config);
+    const walker = new TimetableWalker(timetable, npcWalk, l3Path, l3Config, COMMUTER_ID);
+    const frame = createWalkerFrame();
+    const home = COMMUTER_SPEC.out[0];
+    if (!home) throw new Error("scene: the commuter timetable has no route");
+    const drawable = buildCharacterDrawable(
+      rankOf(layerCodeByName("characters")),
+      home.x + 0.5,
+      home.y + 0.5,
+      home.floor,
+      COMMUTER_STABLE_ID,
+      "commuter",
+    );
+    const sprite = new Sprite(commuterFrames.frame("idle", COMMUTER_SPEC.homeFacing, 0));
+    sprite.anchor.set(0.5, 1);
+    sprite.renderable = false;
+    const entry: PoolEntry = { drawable, view: sprite, label: "commuter" };
+    poolMembersOf(home.floor).push(entry);
+    allVisibilityMembers.push({ drawable, view: sprite });
+    reorderFloor(home.floor);
+    let drawn: CommuterDrawn | undefined;
+    commuterDrawn = () => drawn;
+    let lastSortY = drawable.y;
+    let lastSortX = drawable.x;
+    updateCommuter = (cityMilli) => {
+      sprite.renderable = cityMilli !== undefined;
+      if (cityMilli === undefined) {
+        drawn = undefined;
+        return;
+      }
+      walker.frameAt(cityMilli, frame);
+      sprite.texture = commuterFrames.frame(frame.animation, frame.direction, frame.frameIndex);
+      updateCharacterDrawable(drawable, frame.x, frame.y, frame.floor);
+      positionSprite(sprite, frame.x, frame.y, frame.floor, tileSizePx, storeyHeightPx, 0);
+      drawn = {
+        cityMilli,
+        legKey: frame.legKey,
+        departAt: frame.departAt,
+        arriveAt: frame.arriveAt,
+        distance: frame.distance,
+        x: frame.x,
+        y: frame.y,
+        screenX: sprite.x,
+        screenY: sprite.y,
+        animation: frame.animation,
+        direction: frame.direction,
+        frameIndex: frame.frameIndex,
+      };
+      if (drawable.x !== lastSortX || drawable.y !== lastSortY) {
+        lastSortX = drawable.x;
+        lastSortY = drawable.y;
+        reorderFloor(frame.floor);
+      }
+    };
+  }
+
   // Story 15.8's mount-time guard (Tim's direction, cycle 1): `FloorStacks`
   // is the one code that ever attaches anything under `world`, so it owns
   // the check of its own whole tree -- every child of `world` is one of
@@ -1383,7 +1488,7 @@ export async function mountStreetScene(
 
     onPlayerMove?.(walk.x, walk.y, walk.floor);
 
-    updatePlayerDrawable(playerDrawable, walk.x, walk.y, walk.floor);
+    updateCharacterDrawable(playerDrawable, walk.x, walk.y, walk.floor);
     positionSprite(playerSprite, walk.x, walk.y, walk.floor, tileSizePx, storeyHeightPx, 0);
 
     // Only re-sort when the player's own sort key actually moved to a
@@ -1472,6 +1577,7 @@ export async function mountStreetScene(
     textureFor("sidewalk", textures),
     atlasBaseUrl,
     crowdIdenticalTuples ?? false,
+    { walk: npcWalk, config: l3Config },
   );
   // Story 1.14 (NFR1): the atlas term's own end -- every texture this
   // scene loads before its first frame (the static tiles above, the
@@ -1491,8 +1597,11 @@ export async function mountStreetScene(
   // `startWithCrowdFrozen`) is the one exception: a screenshot test needs
   // every citizen pinned at its initial pose, never this scene's own
   // concern otherwise.
-  app.ticker.add((ticker) => {
-    if (!crowdFrozen) citizensLayer.update(ticker.deltaMS);
+  app.ticker.add(() => {
+    if (crowdFrozen) return;
+    const cityMilli = cityMilliminutes?.();
+    if (cityMilli !== undefined) citizensLayer.update(cityMilli);
+    updateCommuter(cityMilli);
   });
 
   // Story 2.7 (Tim's direction): a composite page re-uploads at most
@@ -1550,6 +1659,7 @@ export async function mountStreetScene(
     citizensLayer,
     distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache),
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
+    commuterDrawn: () => commuterDrawn(),
     playerScreenBounds: () => {
       const b = playerSprite.getBounds();
       return { x: b.x, y: b.y, width: b.width, height: b.height };

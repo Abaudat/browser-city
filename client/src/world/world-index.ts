@@ -97,6 +97,11 @@ export class WorldIndex implements CollisionGridQuery, FootprintQuery {
     this.footprints.update(oldRow, newRow);
   }
 
+  /** The collision grid's revision (see `CollisionGrid.revision`). */
+  get revision(): number {
+    return this.grid.revision;
+  }
+
   /** FR128's collision read (`world/movement.ts`'s resolver). */
   entriesInCell(floor: number, cellX: number, cellY: number): readonly GridEntry[] {
     return this.grid.entriesInCell(floor, cellX, cellY);

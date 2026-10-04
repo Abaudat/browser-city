@@ -35,6 +35,14 @@ with no row here.
 | `inv_identity_token_read_is_total` | Reading any string at all from the identity key never throws, never writes and never touches another key (FR141); explores strings of up to 200 characters; the probe asserts one of at least 150 | covered | `inv_identity_token_read_is_total` | 4.5 |
 | `inv_link_prompt_respects_cooloff_and_link` | Once the link offer was shown it is not due again before its cool-off for any inputs, and once linked it is never due (FR143); explores up to 12 offers; the probe asserts one of at least 11 | covered | `inv_link_prompt_respects_cooloff_and_link` | 4.5 |
 | `inv_item_instance_in_exactly_one_state` | Any interleaving of place and hold moves leaves each item instance in exactly one of its two forms (FR95) | covered | `inv_item_instance_in_exactly_one_state` | 6.11 |
+| `inv_npc_arrives_exactly_on_time` | For any route, any depart before arrive and any partition of time into frame deltas (16 ms to a five-minute gap), a body is at its origin until depart, at its destination from arrive on, and never there earlier than the early-arrival bound (FR64); explores routes of up to four waypoints | covered | `inv_npc_arrives_exactly_on_time` | 5.1 |
+| `inv_npc_pose_is_frame_rate_independent` | Two different frame-delta partitions of the same span give the same pose (FR64) | covered | `inv_npc_pose_is_frame_rate_independent` | 5.1 |
+| `inv_npc_never_enters_a_blocked_tile` | Model-based over advance, insert and delete obstacle, despawn and respawn on generated grids: every pose's tile is walkable under the derived walkability (FR63) | covered | `inv_npc_never_enters_a_blocked_tile` | 5.1 |
+| `inv_npc_motion_is_continuous` | Over sixty simulated seconds a body's per-frame displacement stays within its speed, its progress never decreases, it never stands still longer than the stall bound, and its pace is inside the walking band (FR64) | covered | `inv_npc_motion_is_continuous` | 5.1 |
+| `inv_l3_despawn_snaps_to_ledger` | After any use of a body, a respawned one equals a fresh one and the used one at any time: no micro state survives despawn (NFR23) | covered | `inv_l3_despawn_snaps_to_ledger` | 5.1 |
+| `inv_micro_path_is_total_and_deterministic` | Any grid and any endpoints give a path or a typed failure, never a throw; identical inputs give an identical result; node expansions never exceed the search box's cell count (FR63); explores up to 40 blocked cells; the probe asserts one of at least 30 | covered | `inv_micro_path_is_total_and_deterministic` | 5.1 |
+| `inv_gait_phase_follows_distance_only` | The walk frame is a function of distance walked and the citizen offset alone: a whole number of strides further on is the same frame (FR64) | covered | `inv_gait_phase_follows_distance_only` | 5.1 |
+| `inv_server_clock_never_reads_backwards` | Over any interleaving of reads and re-syncs, `ServerClock.nowMicros()` never decreases | covered | `inv_server_clock_never_reads_backwards` | 5.1 |
 | `inv_collider_within_footprint` | `collider` is contained within `footprint` (FR128); the failure message reports both rectangles, collider and footprint, in sub-cells | covered | `inv_collider_within_footprint` | — |
 | `inv_collision_only_within_floor` | No cell on any other floor ever contributes to an entity's collision result (FR117) | covered | `inv_collision_only_within_floor` | — |
 | `inv_floor_transition_lands_standable` | No transition cell ever targets a floor or cell where the entity would be inside geometry or out of bounds (FR117) | covered | `inv_floor_transition_lands_standable` | — |
@@ -1086,6 +1094,20 @@ Story 4.5 (FR141-FR143): the device's anonymous token is the everyday credential
 | FR143: the offer is an in-world object found by tag, placed when due; declining by walking away withholds nothing (movement and an in-reach intent still work) and a reload inside the cool-off shows no second offer; using it starts the link | covered | `client/tests/e2e/identity.spec.ts` -- `the link offer appears a city day after the character, is declined by walking away, and does not return inside the cool-off` |
 | FR143: a fresh browser signs in and reaches the same character end to end against a local OIDC issuer, and the first device reloaded still does | covered | `client/tests/e2e/identity.spec.ts` -- `a character linked on one device is reached from a fresh browser, and from the first again` |
 | A deploy smoke run leaves `character` and `character_identity` as it found them | covered | `client/tests/e2e/serve-for-deploy-smoke.mjs` |
+
+## L3 bodies
+
+Story 5.1: the client-side body system every Epic 5 story stands on. Same
+Guard-path discipline as the sections above.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| NPCs route on the tile walkability and perform no sub-tile collision (FR63): `l3/` cannot import the player's movement or floor-walk code | covered | `scripts/ci/check-l3-boundary.sh`, tested by `scripts/ci/tests/test-check-l3-boundary.sh`; `client/tests/unit/l3/body.test.ts` -- `paths around a static obstacle` |
+| L3 drives steering, gait and micro pathing for instantiated bodies only, client-side (FR64) | partial | `client/tests/unit/l3/body.test.ts`, `client/tests/unit/l3/gait.test.ts`; local avoidance and flavour behaviour are deferred to story 5.2 |
+| L3 may never write to the ledger; despawn snaps to the ledger (NFR23): no import path to `net/`, no clock, no randomness | covered | `scripts/ci/check-l3-boundary.sh`; `client/tests/unit/l3/body.test.ts` -- `inv_l3_despawn_snaps_to_ledger` |
+| The commuter's committed route has a path everywhere, goes around a solid prop, turns at least twice and is issued inside the walking band | covered | `client/tests/unit/test-street/commuter.test.ts` |
+| 200 simultaneous bodies cost what the frame budget allows (NFR11) | deferred | story 5.4 measures it; until then one path search per leg per grid revision is pinned by `client/tests/unit/l3/body.test.ts` -- `runs one path search for any number of frames inside a segment` |
+| Client tile walkability agrees with the server's (FR63) | deferred | the story that builds the server navmesh |
 
 ## Live declaration
 

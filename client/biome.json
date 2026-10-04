@@ -67,6 +67,46 @@
       }
     },
     {
+      "includes": ["src/l3/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "window": "l3/** is pure: time is an argument, the DOM is not reachable",
+                  "document": "l3/** is pure: time is an argument, the DOM is not reachable"
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "pixi.js",
+                      "../net/*",
+                      "../net/**",
+                      "../test-street/*",
+                      "../test-street/**",
+                      "../ui/*",
+                      "../ui/**",
+                      "../input/*",
+                      "../input/**",
+                      "../world/movement",
+                      "../world/floor-walk"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/input/**"],
       "linter": {
         "rules": {

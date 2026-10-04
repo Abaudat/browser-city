@@ -163,3 +163,15 @@ describe("CityClock", () => {
     expect(city.now()?.minute).toBe(10);
   });
 });
+
+describe("CityClock.nowMilliminutes", () => {
+  it("is undefined until the clock can tell time, then counts from the epoch", () => {
+    const serverClock = new ServerClock(() => 0);
+    const city = new CityClock(serverClock);
+    city.setRate(RATE);
+    city.setClock(EPOCH, 1);
+    expect(city.nowMilliminutes()).toBeUndefined();
+    serverClock.observe(0, 0, EPOCH + BigInt(RATE) * 1000n);
+    expect(city.nowMilliminutes()).toBe(1000);
+  });
+});

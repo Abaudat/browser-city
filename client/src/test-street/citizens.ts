@@ -30,8 +30,8 @@
 // needs to *not misrepresent* it, never to reproduce it bit for bit.
 
 import type { Defs, Family, HairstyleDef } from "../defs/types";
-import { loopFrameAt } from "../render/animation-frame";
 import type { AppearanceTuple } from "../render/appearance/composite";
+import type { TimetableSpec } from "./timetable";
 
 export interface CitizenFixture {
   readonly id: string;
@@ -337,73 +337,37 @@ export function buildCitizenFixtures(
  * counts changing. */
 export const WALKER_ID = "walker";
 
-/** The walker's fixed rectangular loop, in grid cells relative to its own
- * start position -- one leg per direction, so a short wait on screen
- * shows all four. Sized to stay fully inside the crowd's own pavement
- * strip. */
-export const WALKER_LOOP: readonly { readonly dx: number; readonly dy: number }[] = [
-  { dx: 3, dy: 0 }, // right
-  { dx: 0, dy: -1.5 }, // up
-  { dx: -3, dy: 0 }, // left
-  { dx: 0, dy: 1.5 }, // down
-];
+/** A second, distinct walker: a sanitation worker -- the uniform's extra
+ * layer needs its own walk-direction proof, not only the civilian walker's. */
+export const UNIFORMED_WALKER_ID = "uniformed-walker";
 
-export const WALK_CELLS_PER_SECOND = 1.5;
-export const WALK_FRAMES_PER_DIRECTION = 6;
-export const WALK_FRAMES_PER_SECOND = 8;
-
-function walkDirectionOf(dx: number, dy: number): string {
-  if (dx > 0) return "right";
-  if (dx < 0) return "left";
-  if (dy < 0) return "up";
-  return "down";
-}
-
-export interface WalkerPose {
-  readonly x: number;
-  readonly y: number;
-  readonly direction: string;
-  readonly frameIndex: number;
-}
-
-/** Where a walker starting at `(startX, startY)` sits after `elapsedMS`
- * of looping `WALKER_LOOP` forever, at `WALK_CELLS_PER_SECOND` -- pure
- * and stateless (a function of total elapsed time alone, not of any
- * per-tick accumulator), so `citizens-layer.ts`'s own ticker and a test
- * predicting where the walker will be at a given moment both call this
- * one implementation rather than two copies of the same leg math. */
-export function walkerPoseAt(startX: number, startY: number, elapsedMS: number): WalkerPose {
-  const legDurationsMS = WALKER_LOOP.map(
-    (leg) => (Math.hypot(leg.dx, leg.dy) / WALK_CELLS_PER_SECOND) * 1000,
-  );
-  const loopDurationMS = legDurationsMS.reduce((sum, ms) => sum + ms, 0);
-  let remainingMS = loopDurationMS > 0 ? elapsedMS % loopDurationMS : 0;
-  if (remainingMS < 0) remainingMS += loopDurationMS;
-
-  let x = startX;
-  let y = startY;
-  let legIndex = 0;
-  for (; legIndex < WALKER_LOOP.length; legIndex++) {
-    const legMS = legDurationsMS[legIndex] ?? 0;
-    if (remainingMS < legMS) break;
-    remainingMS -= legMS;
-    const leg = WALKER_LOOP[legIndex];
-    if (leg) {
-      x += leg.dx;
-      y += leg.dy;
-    }
-  }
-  const leg = WALKER_LOOP[legIndex % WALKER_LOOP.length];
-  const legMS = legDurationsMS[legIndex % WALKER_LOOP.length] ?? 0;
-  const progress = legMS > 0 ? remainingMS / legMS : 0;
-  const frameIndex = loopFrameAt(elapsedMS, WALK_FRAMES_PER_SECOND, WALK_FRAMES_PER_DIRECTION);
-  return {
-    x: x + (leg?.dx ?? 0) * progress,
-    y: y + (leg?.dy ?? 0) * progress,
-    direction: walkDirectionOf(leg?.dx ?? 0, leg?.dy ?? 0),
-    frameIndex,
-  };
-}
+/** Each walker's timetable (a fixture standing in for L2): out along an
+ * L-shaped route on the crowd's own pavement and back, standing between
+ * legs. Keyed by fixture id; `citizens-layer.ts` hands them to L3. */
+export const WALKER_SPECS: Readonly<Record<string, TimetableSpec>> = {
+  [WALKER_ID]: {
+    out: [
+      { x: PLAZA_X0 + STRIP_WIDTH + 2, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
+      { x: PLAZA_X0 + STRIP_WIDTH + 5, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
+      { x: PLAZA_X0 + STRIP_WIDTH + 5, y: PLAZA_Y0 + 3, floor: CROWD_FLOOR },
+    ],
+    detourCells: 0,
+    dwellMs: 1500,
+    homeFacing: "down",
+    outFacing: "down",
+  },
+  [UNIFORMED_WALKER_ID]: {
+    out: [
+      { x: PLAZA_X0 + STRIP_WIDTH + 8, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
+      { x: PLAZA_X0 + STRIP_WIDTH + 11, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
+      { x: PLAZA_X0 + STRIP_WIDTH + 11, y: PLAZA_Y0 + 3, floor: CROWD_FLOOR },
+    ],
+    detourCells: 0,
+    dwellMs: 1500,
+    homeFacing: "down",
+    outFacing: "down",
+  },
+};
 
 export function buildWalkerFixture(defs: Defs): CitizenFixture {
   return {
@@ -414,11 +378,6 @@ export function buildWalkerFixture(defs: Defs): CitizenFixture {
     facing: "down",
   };
 }
-
-/** A second, distinct walker: a sanitation worker, walking the same
- * shape of loop a few tiles further along -- the uniform's extra layer
- * needs its own walk-direction proof, not only the civilian walker's. */
-export const UNIFORMED_WALKER_ID = "uniformed-walker";
 
 export function buildUniformedWalkerFixture(defs: Defs): CitizenFixture {
   return {
@@ -438,6 +397,12 @@ export function buildUniformedWalkerFixture(defs: Defs): CitizenFixture {
  * shares a texture with a crowd member on screen at the same time. */
 export function buildPlayerAppearanceTuple(defs: Defs): AppearanceTuple {
   return tupleFor(defs, "adult", ADULT_COUNT + 2);
+}
+
+/** The demo commuter's own appearance -- a civilian adult distinct from the
+ * player and from every crowd member, through the same pipeline. */
+export function buildCommuterAppearanceTuple(defs: Defs): AppearanceTuple {
+  return tupleFor(defs, "adult", ADULT_COUNT + 3);
 }
 
 /** The crowd's own pavement footprint, in world cells -- `citizens-layer.

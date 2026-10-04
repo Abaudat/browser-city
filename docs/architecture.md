@@ -1659,6 +1659,25 @@ the build if the committed files and a fresh render ever disagree.
 - `sim::time::REAL_MS_PER_CITY_MINUTE` is the one server-side FR1 constant.
 - Transport modes are `routing.speed_percent.*` multipliers on `movement.walk_speed_millicells_per_s`, never absolute speeds.
 
+## L3 (client)
+
+- `client/src/l3/` holds micro pathing, pace and gait for instantiated bodies. Nothing else.
+- Inputs are FR56's two citizen states only: `At(node)` and `InTransit(route, t_depart, t_arrive)`. A route is an ordered list of waypoints; a leg stays on one floor.
+- A pose is a pure function of the route, the two instants, city time and tile walkability. A body keeps no position, progress or clock; it holds caches only (the leg cursor and the micro paths of one grid revision). Despawn discards the body and nothing merges.
+- Time is `CityClock.nowMilliminutes()`, read once per frame by the caller and passed in. No reading, no body. `ServerClock` never reads backwards; a backwards correction is slewed.
+- Time wins over pace. Each waypoint's integer instant is the leg duration shared by cumulative Manhattan length, floor division, from the route alone. Speed is constant within a leg and never clamped; a leg outside `l3.walk_pace_band_percent` of canonical walking speed is a defect in whoever issued it.
+- Micro path: tile-level A* between consecutive waypoints, 4-connected, straight moves preferred, bounded to the waypoints' box plus `l3.path_box_margin_cells` and `l3.path_node_budget`. It runs once per leg per collision-grid revision and never per frame. With no path the leg is walked straight and counted (`Body.fallbackCount`).
+- Walkability is one predicate, `world/npc-walkable.ts`: a cell is walkable iff no collider touches it. `CollisionGrid.revision` moves on every change; a cached path is keyed by it and recomputed whole.
+- Gait takes distance and heading only. The walk frame follows distance walked (`movement.gait_stride_millicells_per_cycle`) plus a per-citizen offset from the id; facing follows the dominant axis and is held `l3.facing_hold_ms`.
+- `poseAt` writes into a caller-owned pose and allocates nothing.
+- `l3/**` imports nothing from `net/`, `test-street/`, `ui/`, `input/`, `world/movement`, `world/floor-walk` or `pixi.js`, and uses no `window`, `document`, `Math.random`, `Date.now` or `performance.now`: `client/biome.json`'s `src/l3/**` override and `scripts/ci/check-l3-boundary.sh`. `net/**` may not import `l3/`.
+- An NPC is a member of the depth-sorted pool on the `characters` rank, placed through `positionSprite` and culled by floor like the player.
+- Until L2 exists, `test-street/timetable.ts` supplies the legs as fixture data; story 5.5 deletes it.
+
+### Moving bodies -- must never be seen
+
+Foot slide. Slow-motion or hurried walking. A pivot or pause at a waypoint. Facing flicker. Staircase diagonals. A sprite cutting through a solid prop. Popping or fading in view. Standing mid-pavement.
+
 ## Boot budget
 
 Boot milestones are marked only through `client/src/boot/boot-marks.ts`; NFR1

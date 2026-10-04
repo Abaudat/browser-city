@@ -30,3 +30,12 @@ key = "movement.player_body_height_subcells"
 value = 4
 min = 1
 max = 16
+
+[[balance]]
+# Ground distance of one 6-frame walk cycle (two steps), in millicells.
+# The walk frame is chosen from distance travelled, never from elapsed
+# time, so feet do not slide when a leg's pace differs.
+key = "movement.gait_stride_millicells_per_cycle"
+value = 1300
+min = 200
+max = 8000

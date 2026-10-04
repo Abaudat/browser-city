@@ -642,6 +642,8 @@ jobs:
         run: bash ../scripts/ci/check-no-canvas-ui.sh
       - name: story 1.9 FR148, the input layer cannot reach a procedure or an interaction module
         run: bash ../scripts/ci/check-input-boundary.sh
+      - name: story 5.1 FR63/NFR23, L3 reaches no network, renderer, DOM, movement code or clock
+        run: bash ../scripts/ci/check-l3-boundary.sh
       - name: story 1.12 FR168, debug tooling is reachable only through main.ts's DEV-gated dynamic import
         run: bash ../scripts/ci/check-debug-boundary.sh
       - name: story 1.14, docs/spikes/1.14-boot-budget.md is exactly the generator's own output

@@ -118,6 +118,24 @@ declare global {
        * only reader; it must never be recomputed from `viewTransform`,
        * which is the thing under test. */
       playerScreenBounds?: () => { x: number; y: number; width: number; height: number };
+      /** Story 5.1: the L3 commuter as last drawn -- a callable read fresh
+       * each call, `undefined` while it is not on screen. */
+      commuterDrawn?: () =>
+        | {
+            cityMilli: number;
+            legKey: number;
+            departAt: number;
+            arriveAt: number;
+            distance: number;
+            x: number;
+            y: number;
+            screenX: number;
+            screenY: number;
+            animation: string;
+            direction: string;
+            frameIndex: number;
+          }
+        | undefined;
       /** Cycle 2 (Quentin's direction, finding 2): the world container's
        * own real, live `scale`/`position` -- a callable, read fresh every
        * call from the real, mounted `Container`, never a value recorded
@@ -340,6 +358,16 @@ export function exposePlayerScreenBoundsForE2e(
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.playerScreenBounds = getter;
+  window.__bc = bucket;
+}
+
+/** Story 5.1: the same idiom, for the L3 commuter's last drawn state. */
+export function exposeCommuterDrawnForE2e(
+  getter: NonNullable<NonNullable<Window["__bc"]>["commuterDrawn"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.commuterDrawn = getter;
   window.__bc = bucket;
 }
 

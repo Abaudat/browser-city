@@ -23,6 +23,7 @@ import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
   exposeIdentityActionsForE2e,
+  exposeCommuterDrawnForE2e,
   exposePlayerScreenBoundsForE2e,
   exposeRegionForE2e,
   exposeWorldTransformForE2e,
@@ -280,6 +281,7 @@ async function main(): Promise<void> {
         postMountGuard = guard;
       },
       (rate) => cityClock.setRate(rate),
+      () => cityClock.nowMilliminutes(),
       offer,
       region,
       sceneRegionFeed(moveRegion),
@@ -333,6 +335,7 @@ async function startStreetScene(
   onDegrade: () => void,
   setPostMountGuard: (guard: PostMountGuard) => void,
   setCityRate: (realMsPerCityMinute: number) => void,
+  cityMilliminutes: () => number | undefined,
   offer: OfferWiring,
   region: RegionController,
   followScene: (x: number, y: number, floor: number) => void,
@@ -524,6 +527,7 @@ async function startStreetScene(
     objectDefs: objectDefsById(defs),
     windowDefIds: windowDefIds(defs),
     startWithCrowdFrozen: freezeCrowdForE2e,
+    cityMilliminutes,
     crowdIdenticalTuples: identicalCrowdForE2e,
     highlightStrength: display.highlightStrength,
     onOrderChange: (order) => {
@@ -586,6 +590,7 @@ async function startStreetScene(
   recordDistinctBoundAtlasPagesForE2e(handle.distinctBoundAtlasPages);
   recordAllBoundTextureSourcesForE2e(handle.allBoundTextureSources);
   exposePlayerScreenBoundsForE2e(handle.playerScreenBounds);
+  exposeCommuterDrawnForE2e(handle.commuterDrawn);
 
   // Story 1.12 (FR165/FR168): the whole of the debug tooling's gate, and
   // the only import of `client/src/debug/` that exists (enforced by
