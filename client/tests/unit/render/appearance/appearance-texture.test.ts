@@ -224,6 +224,7 @@ function defsWith(overrides: Partial<Defs> = {}): Defs {
   return {
     defsVersion: "test",
     colliderSubcellsPerCell: 16,
+    positionUnitsPerCell: 256,
     interactAtMaxReachCells: 2,
     maxFootprintCells: 8,
     minFloor: -1,

@@ -10,9 +10,9 @@ use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
     COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS, MAX_DENOMINATIONS,
-    MAX_FACE_VALUE, MAX_FLOOR, POSITION_UNITS_PER_CELL, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, MIN_FLOOR,
-    NeighbourTermDef, REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode,
-    RawDirection, RoleDef, RuleKindDef, SpriteRect,
+    MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, MIN_FLOOR,
+    NeighbourTermDef, POSITION_UNITS_PER_CELL, REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation,
+    RawCoherenceMode, RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
 
 // `RawLandUse::as_str` is used via the fully-qualified method call above,

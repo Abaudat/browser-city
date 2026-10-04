@@ -5,10 +5,11 @@
 
 import { quantise, type WirePosition } from "../world/position-codec";
 import { createPositionScheduler } from "../world/position-scheduler";
-import type { DbConnection } from "./bindings";
 
 export interface PositionSenderOptions {
-  readonly conn: Pick<DbConnection, "reducers">;
+  readonly conn: {
+    readonly reducers: { setPlayerPosition(position: WirePosition): Promise<void> };
+  };
   /** The player's current position in cells, or none before the scene has one. */
   readonly position: () => { x: number; y: number; floor: number } | undefined;
   readonly periodMs: number;
