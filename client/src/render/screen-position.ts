@@ -47,6 +47,9 @@ export function snapToScreenPx(v: number, zoom: number): number {
  * actually is -- the exact defect this story fixes (Adrian's Sprint 4
  * demo, #333): every actor and every debug overlay reads a world point
  * through this one function, never a second copy of the arithmetic.
+ *
+ * `flightOffsetPx` is `render/flight-offset.ts`'s value for an actor on a
+ * flight (FR182); every static drawable, the crowd and every label pass `0`.
  */
 export function worldPointPx(
   worldX: number,
@@ -55,10 +58,16 @@ export function worldPointPx(
   tileSizePx: number,
   storeyHeightPx: number,
   zoom: number,
+  flightOffsetPx: number,
 ): { readonly x: number; readonly y: number } {
   return {
     x: snapToScreenPx(worldX * tileSizePx, zoom),
-    y: snapToScreenPx(worldY * tileSizePx + floorOffsetPx(floor, storeyHeightPx), zoom),
+    // The flight offset (FR182) is summed with the floor offset *before*
+    // the one snap -- never snapped separately and added after.
+    y: snapToScreenPx(
+      worldY * tileSizePx + floorOffsetPx(floor, storeyHeightPx) + flightOffsetPx,
+      zoom,
+    ),
   };
 }
 

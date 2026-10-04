@@ -1,0 +1,10 @@
+[[object]]
+id = 1
+key = "treads"
+name = "Treads"
+layer = "furniture"
+sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+flight = { drop_px = 8, from_px = 34, to_px = 5 }
+tags = ["underfoot", "fixture"]

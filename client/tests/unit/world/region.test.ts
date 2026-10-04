@@ -237,7 +237,7 @@ describe("the region covers what is on screen", () => {
           const y = Math.floor(cyIn / CHUNK_SIZE) * CHUNK_SIZE + oy;
           const held = new Map<string, HandleKey>();
           applyPlan(held, { x, y, floor: f });
-          const player = worldPointPx(x + 0.5, y + 1, f, TILE, STOREY, ZOOM);
+          const player = worldPointPx(x + 0.5, y + 1, f, TILE, STOREY, ZOOM, 0);
           const camera = computeCamera(player.x, player.y, w, h, ZOOM);
           const margin = REGION_BODY_MARGIN_CELLS + defs.maxFootprintCells;
           for (const g of bandFloors(bandOf(f), FLOORS)) {

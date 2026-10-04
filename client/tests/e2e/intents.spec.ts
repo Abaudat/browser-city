@@ -31,7 +31,7 @@ const BIN_ID = 15n;
 
 /** Artie reviews the feel from images, not from a pixel-delta count, so
  * the spec leaves them behind as CI artifacts. */
-const SHOT_DIR = "test-results/story-1.9-shots";
+const SHOT_DIR = "test-results/review-shots/story-1.9";
 
 function balance(key: string): number {
   const entry = committedDefs().balance.find((b) => b.key === key);
@@ -67,7 +67,7 @@ function interactAtOf(defId: number) {
  * rect and half a tile above it is inside. */
 function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
   const centre = cellBottomCentre(cellX, cellY);
-  const anchor = worldPointPx(centre.x, centre.y, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM);
+  const anchor = worldPointPx(centre.x, centre.y, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM, 0);
   return { x: anchor.x, y: anchor.y - TILE_SIZE_PX / 2 };
 }
 

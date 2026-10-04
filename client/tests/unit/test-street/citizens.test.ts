@@ -255,7 +255,7 @@ describe("crowd placement through worldPointPx", () => {
   const storey =
     committedDefs().balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
   const crowdScreenPx = (x: number, y: number, tileSizePx: number, zoom: number) =>
-    worldPointPx(x, y, CROWD_FLOOR, tileSizePx, storey, zoom);
+    worldPointPx(x, y, CROWD_FLOOR, tileSizePx, storey, zoom, 0);
 
   // The walker's own drawn position, frame by frame at a constant delta:
   // whole screen pixels, monotone along each straight leg, and even steps

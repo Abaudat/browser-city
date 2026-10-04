@@ -27,6 +27,7 @@ import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
+import { buildFlights, FlightIndex } from "../../src/render/flight-offset";
 import { worldPointPx } from "../../src/render/screen-position";
 import {
   isDefStreetProp,
@@ -35,6 +36,7 @@ import {
   PLATFORM_UP_ANCHOR_Y,
   PLAYER_STABLE_ID,
   PLAYER_START,
+  RELEASE_LAG,
   STAIRS_Y,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_FOOTPRINT,
@@ -44,8 +46,10 @@ import {
   STREET_EXIT_X,
   STREET_EXIT_Y,
   STREET_PROPS,
+  STREET_TRANSITIONS,
   SUBWAY_FLOOR,
   streetNearRailingPressRoute,
+  streetPlacedRows,
   streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
 import {
@@ -55,11 +59,13 @@ import {
 } from "../unit/test-street/golden";
 import {
   committedDefs,
+  flightWalkRoute,
   platformWestRestX,
   propCells,
   shopfrontExitRestY,
   stairwellRowsAt,
   streetMovementConfig,
+  streetObjectSources,
   streetWalkInputs,
 } from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
@@ -334,7 +340,7 @@ test.describe("story 1.7: enclosure visibility", () => {
 // that falls under the player's body must be the canvas's colour, never the
 // player's. Clips of the stairwell at both rests go to a directory CI
 // uploads straight after this job's e2e step, for review.
-const STAIRWELL_SHOT_DIR = "test-results/story-15.13-shots";
+const STAIRWELL_SHOT_DIR = "test-results/review-shots/story-15.13";
 
 function balanceValue(key: string): number {
   const entry = committedDefs().balance.find((b) => b.key === key);
@@ -404,7 +410,7 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
       // The clip: the stairwell and its entrance, cropped, at the game's zoom.
       const canvasBox = await canvasOf(page).boundingBox();
       if (!canvasBox) throw new Error("no canvas box");
-      const nw = worldPointPx(STAIRWELL_X0, STAIRWELL_Y0, 0, tile, storey, view.zoom);
+      const nw = worldPointPx(STAIRWELL_X0, STAIRWELL_Y0, 0, tile, storey, view.zoom, 0);
       const shot = await page.screenshot({
         clip: {
           x: canvasBox.x + nw.x * view.zoom + view.offsetX - tile * view.zoom,
@@ -437,7 +443,7 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
           ) {
             expected++;
           }
-          const p = worldPointPx(wx / tile, wy / tile, 0, tile, storey, view.zoom);
+          const p = worldPointPx(wx / tile, wy / tile, 0, tile, storey, view.zoom, 0);
           const cx = p.x * view.zoom + view.offsetX + view.zoom / 2;
           const cy = p.y * view.zoom + view.offsetY + view.zoom / 2;
           if (cx < bounds.x || cx >= bounds.x + bounds.width) continue;
@@ -456,6 +462,191 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
         expected,
       );
       expect(wrong, `railing pixels the player is drawn over at ${rest}`).toEqual([]);
+    }
+  });
+});
+
+// Story 15.15 (FR182): the flight offset, mounted. The maths is proved in
+// `tests/unit/render/flight-offset*.test.ts`; this proves the wiring -- the
+// mounted sprite sits at the pure function's own value, and the camera stays
+// on it, on every frame of a real walk down and back up the subway stairs.
+// The recording (at the page's own size) and the stills go to a directory CI
+// uploads straight after the e2e step, for review.
+const FLIGHT_SHOT_DIR = "test-results/review-shots/story-15.15";
+
+interface FlightSample {
+  x: number;
+  y: number;
+  floor: number;
+  bounds: { x: number; y: number; width: number; height: number };
+  view: { zoom: number; offsetX: number; offsetY: number };
+  streetCulled: boolean;
+}
+
+/** The canvas's top-left pixel: the world's background, outside any drawable. */
+async function backgroundPixel(page: Page): Promise<number[]> {
+  const png = PNG.sync.read(await canvasOf(page).screenshot());
+  return [0, 1, 2].map((k) => png.data[(2 * png.width + 2) * 4 + k] ?? 0);
+}
+
+test.describe("story 15.15: the flight offset, mounted", () => {
+  test("down and back up the subway stairs, the sprite sits at the pure offset on every frame", async ({
+    browser,
+    baseURL,
+  }) => {
+    test.setTimeout(120_000);
+    const tile = balanceValue("render.tile_size_px");
+    const storey = balanceValue("render.storey_height_px");
+    const config = streetMovementConfig();
+    const flights = buildFlights(
+      STREET_TRANSITIONS,
+      streetPlacedRows(),
+      streetObjectSources(),
+      storey,
+      tile,
+    );
+    const index = new FlightIndex(flights, config);
+    const _inputs = streetWalkInputs();
+    mkdirSync(FLIGHT_SHOT_DIR, { recursive: true });
+    // Video is recorded for this one test only (a describe cannot switch it
+    // on: it costs every other spec), by its own context, at the page's own
+    // size -- never scaled.
+    const size = { width: 1920, height: 1080 };
+    const context = await browser.newContext({
+      baseURL,
+      viewport: size,
+      recordVideo: { dir: FLIGHT_SHOT_DIR, size },
+    });
+    const page = await context.newPage();
+    const video = page.video();
+    try {
+      await page.goto("/?freezeCrowd=1");
+      await waitForSceneReady(page);
+      await page.evaluate(() => {
+        const w = window as unknown as { __flightSamples: unknown[]; __flightStop: boolean };
+        w.__flightSamples = [];
+        w.__flightStop = false;
+        const sample = () => {
+          const bc = window.__bc;
+          const pos = bc?.playerPosition;
+          const bounds = bc?.playerScreenBounds?.();
+          const view = bc?.viewTransform;
+          if (pos && bounds && view) {
+            w.__flightSamples.push({
+              x: pos.x,
+              y: pos.y,
+              floor: bc?.playerFloor ?? 0,
+              bounds,
+              view,
+              streetCulled: bc?.visibility?.["ground:0"] === "hidden",
+            });
+          }
+          if (!w.__flightStop) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
+      const still = async (name: string) => {
+        await canvasOf(page).screenshot({ path: join(FLIGHT_SHOT_DIR, `${name}.png`) });
+      };
+      const settle = () => page.waitForTimeout(150);
+      // The stills, by the route's own segment labels.
+      const stillAfter: Record<string, string> = {
+        "south-edge-mid-flight": "02-south-edge-mid-flight",
+        "south-edge-last-walkable": "03-south-edge-last-walkable",
+        "north-edge-last-walkable": "04-north-edge-last-walkable",
+        "down-the-subway-stairs": "05-platform-landing-after-descent",
+        "platform-west-rest": "06-platform-floor-at-rest",
+        "platform-last-walkable": "07-platform-last-walkable",
+        "up-the-platform-stairs": "08-street-tread-after-ascent",
+        "out-onto-the-pavement": "09-pavement-after-ascent",
+      };
+
+      const backgroundBefore = await backgroundPixel(page);
+      await still("01-pavement-start");
+      for (const segment of flightWalkRoute()) {
+        await walkRealSegment(page, segment);
+        const name = stillAfter[segment.label];
+        if (name) {
+          await settle();
+          await still(name);
+        }
+      }
+      const restX = platformWestRestX();
+      const backgroundAfter = await backgroundPixel(page);
+      expect(backgroundAfter, "the street's surround is restored after the climb").toEqual(
+        backgroundBefore,
+      );
+
+      await page.evaluate(() => {
+        (window as unknown as { __flightStop: boolean }).__flightStop = true;
+      });
+      const samples = await page.evaluate(
+        () => (window as unknown as { __flightSamples: FlightSample[] }).__flightSamples,
+      );
+      expect(samples.length).toBeGreaterThan(100);
+
+      const drawnOffsetPx = (s: FlightSample): number => {
+        const feetWorldY = (s.bounds.y + s.bounds.height - s.view.offsetY) / s.view.zoom;
+        const logicalWorldY = s.y * tile - s.floor * storey;
+        return feetWorldY - logicalWorldY;
+      };
+      const zoom = samples.at(0)?.view.zoom ?? 1;
+      // The steepest the offset may move in one frame: the clamp's own step
+      // along the steepest flight, plus the whole-screen-pixel snap.
+      const slopePxPerCell = Math.max(
+        ...flights.map((f) => Math.abs(f.dropPx) / (f.fullS - f.startS)),
+      );
+      const maxStepPx = slopePxPerCell * config.walkSpeedCellsPerMs * RELEASE_LAG.stepMs + 1 / zoom;
+      const viewport = page.viewportSize() ?? size;
+
+      let sawOffset = false;
+      samples.forEach((s, i) => {
+        // (1) The wiring: the mounted sprite's feet are the pure function's value.
+        const expected = index.offsetPx(s.x, s.y, s.floor);
+        expect(Math.abs(drawnOffsetPx(s) - expected), `frame ${i}`).toBeLessThanOrEqual(
+          1 / s.view.zoom + 1e-6,
+        );
+        if (expected !== 0) sawOffset = true;
+        // The camera half: the sprite's bottom-centre stays on the canvas
+        // centre on every frame, flight or not.
+        const cx = s.bounds.x + s.bounds.width / 2;
+        const cy = s.bounds.y + s.bounds.height;
+        expect(Math.abs(cx - viewport.width / 2), `frame ${i} camera x`).toBeLessThanOrEqual(1);
+        expect(Math.abs(cy - viewport.height / 2), `frame ${i} camera y`).toBeLessThanOrEqual(1);
+        // (4) The floor and the street's culling flip on the same frame.
+        expect(s.streetCulled, `frame ${i}`).toBe(s.floor === SUBWAY_FLOOR);
+        const prev = samples[i - 1];
+        if (!prev || prev.floor !== s.floor) return; // the floor change is the cut
+        // (2) No pop between frames on one floor.
+        expect(Math.abs(drawnOffsetPx(s) - drawnOffsetPx(prev)), `frame ${i}`).toBeLessThanOrEqual(
+          maxStepPx,
+        );
+        // A rest holds its height.
+        if (prev.x === s.x && prev.y === s.y) {
+          expect(drawnOffsetPx(s), `frame ${i} at rest`).toBeCloseTo(drawnOffsetPx(prev), 6);
+        }
+      });
+      expect(sawOffset, "the walk crossed both flights").toBe(true);
+
+      // (3) Zero at rest on the pavement and on the platform floor.
+      const first = samples.at(0);
+      if (!first) throw new Error("no samples");
+      expect(index.offsetPx(first.x, first.y, first.floor)).toBe(0);
+      expect(Math.abs(drawnOffsetPx(first))).toBeLessThanOrEqual(1 / first.view.zoom + 1e-6);
+      const onPlatform = samples.filter(
+        (s) => s.floor === SUBWAY_FLOOR && Math.abs(s.x - restX) < 1e-6,
+      );
+      expect(onPlatform.length).toBeGreaterThan(0);
+      for (const s of onPlatform) {
+        expect(index.offsetPx(s.x, s.y, s.floor)).toBe(0);
+        expect(Math.abs(drawnOffsetPx(s))).toBeLessThanOrEqual(1 / s.view.zoom + 1e-6);
+      }
+    } finally {
+      // Saved whether or not the walk finished: the failing run is the one
+      // whose recording matters.
+      await context.close();
+      await video?.saveAs(join(FLIGHT_SHOT_DIR, "walk-down-and-up.webm"));
+      await video?.delete();
     }
   });
 });

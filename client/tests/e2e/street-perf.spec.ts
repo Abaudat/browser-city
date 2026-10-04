@@ -137,6 +137,7 @@ async function hoverAnInteractableProp(page: Page): Promise<void> {
     tileSizePx,
     storeyHeightPx,
     ZOOM,
+    0,
   );
   const worldPx = { x: anchor.x, y: anchor.y - tileSizePx / 2 };
   const canvasOffset = await canvasOffsetForWorldPx(page, worldPx);
