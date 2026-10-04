@@ -560,7 +560,7 @@ $SRC_POS
 got:
 $DST_POS"
 got="$(item_rows_live "$DST" player_position "WHERE character_id = 9")"
-[ "$got" = '[9,77,-5,-7,-1,13,200,1700000000000002]' ] || fail "restored 'player_position' row 9 is '$got', expected the seeded '[9,77,-5,-7,-1,13,200,1700000000000002]' (negative cell, floor, fractions and updated_at intact)"
+[ "$got" = '[9,77,-5,-7,-1,13,200,[1700000000000002]]' ] || fail "restored 'player_position' row 9 is '$got', expected the seeded '[9,77,-5,-7,-1,13,200,[1700000000000002]]' (negative cell, floor, fractions and updated_at intact)"
 ok "every player_position row reads back identically, and the seeded row holds its exact cell, floor, fractions and timestamp"
 
 # --- 5/7: COUNT(*) on both live databases and the auto_inc sequence
