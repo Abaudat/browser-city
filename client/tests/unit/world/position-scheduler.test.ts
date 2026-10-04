@@ -101,11 +101,20 @@ function violations(factory: Factory): Set<string> {
 const real: Factory = (period, send) => createPositionScheduler(period, send);
 
 describe("the position send scheduler", () => {
-  it("inv_position_send_rate_never_exceeds_dial, inv_idle_player_sends_nothing and inv_last_position_always_lands hold", () => {
-    expect([...violations(real)]).toEqual([]);
+  const realViolations = violations(real);
+  it("inv_position_send_rate_never_exceeds_dial", () => {
+    expect(realViolations.has("rate")).toBe(false);
   });
 
-  it("inv_idle_player_sends_nothing: sends on the first tick, then nothing while unchanged", () => {
+  it("inv_idle_player_sends_nothing", () => {
+    expect(realViolations.has("idle")).toBe(false);
+  });
+
+  it("inv_last_position_always_lands", () => {
+    expect(realViolations.has("last")).toBe(false);
+  });
+
+  it("sends on the first tick, then nothing while unchanged", () => {
     const sent: WirePosition[] = [];
     const s = createPositionScheduler(100, (p) => sent.push(p));
     for (let t = 0; t < 5000; t += 16) s.tick(t, pos(4));

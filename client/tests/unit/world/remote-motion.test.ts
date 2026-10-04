@@ -49,7 +49,7 @@ describe("RemoteMotion", () => {
     expect(m.poseAt("a", 99999)).toEqual({ x: 5, y: 6, floor: 0 });
   });
 
-  it("inv_remote_position_stays_between_samples: never extrapolates past the newest", () => {
+  it("inv_remote_position_stays_between_samples", () => {
     fc.assert(
       fc.property(
         fc.constantFrom(...RATES),
@@ -83,7 +83,7 @@ describe("RemoteMotion", () => {
     );
   });
 
-  it("inv_remote_motion_is_continuous: a walker at walk speed, with jitter, bursts and late updates, reads as smooth and rests exactly", () => {
+  it("inv_remote_motion_is_continuous", () => {
     const frames = fc.array(
       fc.record({
         dt: fc.double({ min: 6, max: 34, noNaN: true }),
@@ -204,7 +204,7 @@ describe("RemoteMotion", () => {
     expect(m.poseAt("a", 10_000 - cfg.periodMs / 2 + cfg.delayMs)?.x).toBeCloseTo(0.5, 6);
   });
 
-  it("inv_interpolation_buffer_is_bounded, and a delete removes the player", () => {
+  it("inv_interpolation_buffer_is_bounded", () => {
     const m = new RemoteMotion(config(HZ.value));
     for (let i = 0; i < REMOTE_MAX_SAMPLES * 10; i++) {
       m.upsert("a", { tMs: 1000 + i * 10, x: i / 100, y: 0, floor: 0 });
