@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { FacingHold, facingOfHeading, phaseOffsetFor, walkFrame } from "../../../src/l3/gait";
+import { facingOfHeading, phaseOffsetFor, walkFrame } from "../../../src/l3/gait";
 import { l3Config } from "./defs-config";
 
 const cfg = l3Config();
@@ -49,28 +49,30 @@ describe("phaseOffsetFor", () => {
 
 describe("facingOfHeading", () => {
   it("follows the dominant axis", () => {
-    expect(facingOfHeading(1, 0.2, "down")).toBe("right");
-    expect(facingOfHeading(-1, 0, "down")).toBe("left");
-    expect(facingOfHeading(0, -1, "down")).toBe("up");
-    expect(facingOfHeading(0.1, 1, "left")).toBe("down");
+    expect(facingOfHeading(1, 0.2)).toBe("right");
+    expect(facingOfHeading(-1, 0)).toBe("left");
+    expect(facingOfHeading(0, -1)).toBe("up");
+    expect(facingOfHeading(0.1, 1)).toBe("down");
   });
 
-  it("keeps the current facing on a perfect diagonal and when still", () => {
-    expect(facingOfHeading(1, 1, "up")).toBe("up");
-    expect(facingOfHeading(0, 0, "left")).toBe("left");
-  });
-});
-
-describe("FacingHold", () => {
-  it("holds a facing for the hold time before it may change", () => {
-    const hold = new FacingHold(cfg.facingHoldMs, "down");
-    expect(hold.update("right", 1000)).toBe("right");
-    expect(hold.update("up", 1000 + cfg.facingHoldMs - 1)).toBe("right");
-    expect(hold.update("up", 1000 + cfg.facingHoldMs)).toBe("up");
+  it("is horizontal on a perfect diagonal: a pure function, no state to disagree on", () => {
+    expect(facingOfHeading(1, 1)).toBe("right");
+    expect(facingOfHeading(-1, 1)).toBe("left");
+    expect(facingOfHeading(-1, -1)).toBe("left");
   });
 
-  it("the first change is immediate", () => {
-    const hold = new FacingHold(cfg.facingHoldMs, "down");
-    expect(hold.update("left", 0)).toBe("left");
+  it("inv_facing_is_a_function_of_the_heading", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -1, max: 1, noNaN: true }),
+        fc.double({ min: -1, max: 1, noNaN: true }),
+        (x, y) => {
+          expect(facingOfHeading(x, y)).toBe(facingOfHeading(x, y));
+          const f = facingOfHeading(x, y);
+          if (Math.abs(x) > Math.abs(y)) expect(["left", "right"]).toContain(f);
+          if (Math.abs(y) > Math.abs(x)) expect(["up", "down"]).toContain(f);
+        },
+      ),
+    );
   });
 });

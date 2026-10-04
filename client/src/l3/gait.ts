@@ -23,36 +23,19 @@ export function phaseOffsetFor(id: string): number {
     h ^= id.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
   }
-  return h / 0x1_0000_0000;
+  // Avalanche, so ids that differ in one character land far apart.
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  return (h >>> 0) / 0x1_0000_0000;
 }
 
-/** The facing for a heading: the dominant axis, `current` on a perfect
- * diagonal or when not moving. */
-export function facingOfHeading(headingX: number, headingY: number, current: Facing): Facing {
-  const ax = Math.abs(headingX);
-  const ay = Math.abs(headingY);
-  if (ax === ay) return current;
-  if (ax > ay) return headingX > 0 ? "right" : "left";
+/** The facing for a heading: the dominant axis, horizontal on a tie. A pure
+ * function of the heading, so two clients agree and the path alone decides
+ * when a facing changes. */
+export function facingOfHeading(headingX: number, headingY: number): Facing {
+  if (Math.abs(headingX) >= Math.abs(headingY)) return headingX >= 0 ? "right" : "left";
   return headingY > 0 ? "down" : "up";
-}
-
-/** Holds a facing for at least `holdMs` before it may change. */
-export class FacingHold {
-  #facing: Facing;
-  #since = Number.NEGATIVE_INFINITY;
-
-  constructor(
-    private readonly holdMs: number,
-    initial: Facing,
-  ) {
-    this.#facing = initial;
-  }
-
-  update(desired: Facing, nowMs: number): Facing {
-    if (desired !== this.#facing && nowMs - this.#since >= this.holdMs) {
-      this.#facing = desired;
-      this.#since = nowMs;
-    }
-    return this.#facing;
-  }
 }

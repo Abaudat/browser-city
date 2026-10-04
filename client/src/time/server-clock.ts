@@ -7,9 +7,13 @@
  * server's clock to be trusted. */
 export const MAX_ROUND_TRIP_MS = 2_000;
 
-/** While a backwards correction is being absorbed, the reading advances at
- * this fraction of real time (it never stops and never steps back). */
+/** While a correction is being absorbed, the reading runs at this much
+ * faster or slower than real time (so it never stops and never steps back). */
 const SLEW_RATE = 0.5;
+
+/** A forward correction larger than this is a machine that slept or a bad
+ * start, not drift: the reading steps to it at once. */
+const SLEW_LIMIT_MICROS = 5_000_000;
 
 export class ServerClock {
   readonly #perfNow: () => number;
@@ -17,8 +21,9 @@ export class ServerClock {
   #anchorServerMicros = 0n;
   #anchorPerfMs = 0;
   #sampleWaiters: Array<() => void> = [];
-  /** Microseconds the reading is still ahead of the newest estimate. */
-  #aheadMicros = 0;
+  /** Microseconds the reading is ahead (positive) or behind (negative) the
+   * newest estimate, shrinking at SLEW_RATE. */
+  #offsetMicros = 0;
   #lastReadPerfMs = 0;
 
   constructor(perfNow: () => number) {
@@ -35,10 +40,10 @@ export class ServerClock {
     this.#anchorPerfMs = (tSendMs + tRecvMs) / 2;
     this.#anchorServerMicros = serverMicros;
     this.#hasSample = true;
-    // A correction that would step the reading back is held as `ahead` and
-    // slewed away instead.
-    const ahead = before === undefined ? 0n : before - this.#rawMicros();
-    this.#aheadMicros = ahead > 0n ? Number(ahead) : 0;
+    // The reading stays where it was; the gap to the new estimate is slewed
+    // away, unless it is a large step forward.
+    const gap = before === undefined ? 0 : Number(before - this.#rawMicros());
+    this.#offsetMicros = gap < -SLEW_LIMIT_MICROS ? 0 : gap;
     for (const resolve of this.#sampleWaiters) resolve();
     this.#sampleWaiters = [];
     return true;
@@ -59,8 +64,9 @@ export class ServerClock {
     const now = this.#perfNow();
     const elapsedMicros = Math.max(0, now - this.#lastReadPerfMs) * 1000;
     this.#lastReadPerfMs = now;
-    this.#aheadMicros -= Math.min(this.#aheadMicros, elapsedMicros * SLEW_RATE);
-    return this.#rawMicros() + BigInt(Math.round(this.#aheadMicros));
+    const absorbed = Math.min(Math.abs(this.#offsetMicros), elapsedMicros * SLEW_RATE);
+    this.#offsetMicros -= Math.sign(this.#offsetMicros) * absorbed;
+    return this.#rawMicros() + BigInt(Math.round(this.#offsetMicros));
   }
 
   #rawMicros(): bigint {

@@ -1,6 +1,9 @@
 // Tile-level A* between two cells (FR63): 4-connected, deterministic, straight
-// moves preferred, bounded to the endpoints' box inflated by a margin and to
-// a node budget. Total: a path or a typed failure, never a throw.
+// moves preferred, kept near the straight line between the endpoints, bounded
+// to the endpoints' box inflated by a margin, to a cell cap and to a node
+// budget. The tile path is then pulled taut into the fewest straight edges
+// that keep clear of every blocked tile, so a sidestep is a drift, not two
+// right angles. Total: a path or a typed failure, never a throw.
 
 /** What L3 may know about the world: whether a tile is walkable, and a
  * revision that moves whenever that may have changed. */
@@ -12,13 +15,17 @@ export interface Walkability {
 export interface PathConfig {
   readonly marginCells: number;
   readonly nodeBudget: number;
+  /** A search box with more cells than this is refused before it is allocated. */
+  readonly maxCells: number;
 }
 
 export type MicroPath =
   | {
       readonly ok: true;
-      /** x0, y0, x1, y1, ... cell addresses, start to goal inclusive. */
-      readonly cells: Int32Array;
+      /** x0, y0, x1, y1, ... tile addresses, start to goal inclusive. */
+      readonly cells: Float64Array;
+      /** x0, y0, x1, y1, ... the taut route through tile centres. */
+      readonly route: Float64Array;
       readonly expansions: number;
     }
   | {
@@ -34,11 +41,20 @@ interface Point {
 
 const STEP = 1000;
 const TURN = 1;
+/** Cost per cell of distance from the straight line, per step. Small against
+ * STEP so the path stays shortest, large against TURN so a detour returns to
+ * the line at once. */
+const OFF_LINE = 20;
 const DX = [1, 0, -1, 0];
 const DY = [0, 1, 0, -1];
 const NONE = -1;
+/** How far either side of its centre line a body keeps from a blocked tile. */
+const CLEARANCE = 0.3;
+/** Sampling step along a candidate edge, in cells. */
+const SAMPLE = 0.1;
+/** The farthest ahead, in tiles, a taut edge is tried. */
+const LOOKAHEAD = 16;
 
-/** A binary min-heap of (key, seq) pairs held in typed arrays. */
 class Heap {
   #nodes: Int32Array;
   #keys: Float64Array;
@@ -118,6 +134,78 @@ class Heap {
   }
 }
 
+/** Whether a body standing at `(x, y)` (cell units) is clear of blocked tiles. */
+function clearAt(
+  walkable: (x: number, y: number) => boolean,
+  start: Point,
+  x: number,
+  y: number,
+): boolean {
+  const fx = Math.floor(x);
+  const fy = Math.floor(y);
+  if (fx === start.x && fy === start.y) return true;
+  return (
+    walkable(fx, fy) &&
+    walkable(Math.floor(x + CLEARANCE), fy) &&
+    walkable(Math.floor(x - CLEARANCE), fy) &&
+    walkable(fx, Math.floor(y + CLEARANCE)) &&
+    walkable(fx, Math.floor(y - CLEARANCE))
+  );
+}
+
+function lineIsClear(
+  walkable: (x: number, y: number) => boolean,
+  start: Point,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): boolean {
+  const length = Math.hypot(bx - ax, by - ay);
+  const steps = Math.ceil(length / SAMPLE);
+  for (let i = 1; i <= steps; i++) {
+    const f = i / steps;
+    if (!clearAt(walkable, start, ax + (bx - ax) * f, ay + (by - ay) * f)) return false;
+  }
+  return true;
+}
+
+/** The tile path pulled taut: from each kept point, the farthest later point
+ * (within LOOKAHEAD tiles) it can reach in a straight clear line. */
+function pullTaut(
+  walkable: (x: number, y: number) => boolean,
+  start: Point,
+  cells: Float64Array,
+): Float64Array {
+  const count = cells.length / 2;
+  const kept: number[] = [0];
+  let i = 0;
+  while (i < count - 1) {
+    let j = Math.min(count - 1, i + LOOKAHEAD);
+    while (
+      j > i + 1 &&
+      !lineIsClear(
+        walkable,
+        start,
+        (cells[i * 2] as number) + 0.5,
+        (cells[i * 2 + 1] as number) + 0.5,
+        (cells[j * 2] as number) + 0.5,
+        (cells[j * 2 + 1] as number) + 0.5,
+      )
+    ) {
+      j--;
+    }
+    kept.push(j);
+    i = j;
+  }
+  const route = new Float64Array(kept.length * 2);
+  kept.forEach((index, k) => {
+    route[k * 2] = (cells[index * 2] as number) + 0.5;
+    route[k * 2 + 1] = (cells[index * 2 + 1] as number) + 0.5;
+  });
+  return route;
+}
+
 /** The path from `from` to `to` over `walkable`. The start tile is always
  * leavable (a body whose own tile became blocked may walk out of it); the
  * goal must be walkable. */
@@ -127,9 +215,15 @@ export function findMicroPath(
   to: Point,
   marginCells: number,
   nodeBudget: number,
+  maxCells: number,
 ): MicroPath {
   if (from.x === to.x && from.y === to.y) {
-    return { ok: true, cells: Int32Array.of(from.x, from.y), expansions: 0 };
+    return {
+      ok: true,
+      cells: Float64Array.of(from.x, from.y),
+      route: Float64Array.of(from.x + 0.5, from.y + 0.5),
+      expansions: 0,
+    };
   }
   if (!walkable(to.x, to.y)) return { ok: false, reason: "blocked_goal", expansions: 0 };
 
@@ -138,6 +232,7 @@ export function findMicroPath(
   const w = Math.max(from.x, to.x) + marginCells - minX + 1;
   const h = Math.max(from.y, to.y) + marginCells - minY + 1;
   const total = w * h;
+  if (!(total <= maxCells)) return { ok: false, reason: "budget", expansions: 0 };
   const g = new Int32Array(total).fill(NONE);
   const parent = new Int32Array(total).fill(NONE);
   const dirOf = new Int8Array(total).fill(NONE);
@@ -148,6 +243,11 @@ export function findMicroPath(
   const goalIdx = (to.y - minY) * w + (to.x - minX);
   const heuristic = (x: number, y: number): number =>
     (Math.abs(to.x - x) + Math.abs(to.y - y)) * STEP;
+  const lineDx = to.x - from.x;
+  const lineDy = to.y - from.y;
+  const lineLength = Math.hypot(lineDx, lineDy);
+  const offLine = (x: number, y: number): number =>
+    Math.round((Math.abs((x - from.x) * lineDy - (y - from.y) * lineDx) / lineLength) * OFF_LINE);
 
   g[startIdx] = 0;
   heap.push(startIdx, heuristic(from.x, from.y));
@@ -172,7 +272,7 @@ export function findMicroPath(
       if (lx < 0 || ly < 0 || lx >= w || ly >= h) continue;
       const nIdx = ly * w + lx;
       if (closed[nIdx] || !walkable(nx, ny)) continue;
-      const cost = gHere + STEP + (heading !== NONE && heading !== d ? TURN : 0);
+      const cost = gHere + STEP + offLine(nx, ny) + (heading !== NONE && heading !== d ? TURN : 0);
       const known = g[nIdx] as number;
       if (known !== NONE && cost >= known) continue;
       g[nIdx] = cost;
@@ -186,12 +286,12 @@ export function findMicroPath(
 
   let length = 1;
   for (let i = goalIdx; i !== startIdx; i = parent[i] as number) length++;
-  const cells = new Int32Array(length * 2);
+  const cells = new Float64Array(length * 2);
   let i = goalIdx;
   for (let k = length - 1; k >= 0; k--) {
     cells[k * 2] = (i % w) + minX;
     cells[k * 2 + 1] = Math.floor(i / w) + minY;
     i = parent[i] as number;
   }
-  return { ok: true, cells, expansions };
+  return { ok: true, cells, route: pullTaut(walkable, from, cells), expansions };
 }

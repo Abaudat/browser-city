@@ -192,8 +192,8 @@ balance generation.streets.thin_strip_long_side_percent value=150 min=100 max=40
 balance identity.link_prompt_cooloff_days value=7 min=1 max=365
 balance identity.link_prompt_min_character_age_days value=1 min=0 max=365
 balance l3.early_arrival_bound_milliminutes value=0 min=0 max=1000
-balance l3.facing_hold_ms value=150 min=0 max=2000
 balance l3.path_box_margin_cells value=6 min=1 max=64
+balance l3.path_max_cells value=65536 min=64 max=16777216
 balance l3.path_node_budget value=4096 min=64 max=1000000
 balance l3.stall_bound_ms value=250 min=1 max=5000
 balance l3.walk_pace_band_percent value=15 min=1 max=50

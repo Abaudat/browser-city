@@ -20,6 +20,18 @@ import type { CellBounds, PlacedObjectView } from "../world/world-index";
 
 export type { CellBounds, ColliderRectSubcells, PlacedObjectView };
 
+/** One live L3 body as the L3 overlay reads it (story 5.1). */
+export interface L3BodyView {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  readonly floor: number;
+  /** Segments walked straight for want of a path. */
+  readonly fallbacks: number;
+  /** Some segment is walked outside the walking-pace band. */
+  readonly paceOutOfBand: boolean;
+}
+
 export interface DebugWorldView extends CollisionGridQuery {
   /** `render.tile_size_px`, resolved from `defs/` by the caller -- never
    * a literal anywhere under `debug/`. */
@@ -59,4 +71,6 @@ export interface DebugWorldView extends CollisionGridQuery {
    * overlay that re-sorts to decide what to print could never show a
    * wrong order. */
   orderOf(stableId: bigint): number | undefined;
+  /** Every live L3 body: what each says about itself, never recomputed here. */
+  l3Bodies(): readonly L3BodyView[];
 }

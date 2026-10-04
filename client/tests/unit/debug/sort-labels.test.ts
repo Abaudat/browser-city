@@ -37,6 +37,7 @@ function viewOver(
       return index === -1 ? undefined : index;
     },
     viewerBody: () => ({ x0: 0, y0: 0, x1: 0, y1: 0 }),
+    l3Bodies: () => [],
   };
 }
 

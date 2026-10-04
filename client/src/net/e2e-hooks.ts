@@ -141,6 +141,9 @@ declare global {
             distance: number;
             x: number;
             y: number;
+            floor: number;
+            orderIndex: number;
+            lamppostOrderIndex: number;
             screenX: number;
             screenY: number;
             animation: string;

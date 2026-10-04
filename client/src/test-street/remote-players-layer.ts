@@ -11,19 +11,15 @@
 
 import { Container, Sprite } from "pixi.js";
 import type { Defs } from "../defs/types";
-import { loopFrameAt } from "../render/animation-frame";
+import { loadL3Config, walkFramesPerCycle } from "../l3/config";
+import { phaseOffsetFor, walkFrame } from "../l3/gait";
 import type {
   AppearanceTextureCache,
   CompositeFrames,
 } from "../render/appearance/appearance-texture";
 import { worldPointPx } from "../render/screen-position";
 import { facingOf, type RemoteMotion, type RemotePose } from "../world/remote-motion";
-import {
-  buildPlayerAppearanceTuple,
-  CROWD_FLOOR,
-  WALK_FRAMES_PER_DIRECTION,
-  WALK_FRAMES_PER_SECOND,
-} from "./citizens";
+import { buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
 
 export interface RemotePlayersWiring {
   readonly motion: RemoteMotion;
@@ -46,7 +42,8 @@ interface Drawn {
   x: number;
   y: number;
   facing: string;
-  walkedMs: number;
+  /** Cells walked while moving; the walk frame follows it (l3/gait). */
+  walked: number;
 }
 
 export async function mountRemotePlayersLayer(
@@ -58,13 +55,15 @@ export async function mountRemotePlayersLayer(
   zoom: number,
   wiring: RemotePlayersWiring,
 ): Promise<RemotePlayersLayer> {
+  const strideCells = loadL3Config(defs).strideCells;
+  const framesPerCycle = walkFramesPerCycle(defs, "adult");
   const frames: CompositeFrames = await cache.acquire(buildPlayerAppearanceTuple(defs));
   const layer = new Container();
   layer.sortableChildren = true;
   parent.addChild(layer);
   const drawn = new Map<string, Drawn>();
 
-  function update(deltaMS: number): void {
+  function update(_deltaMS: number): void {
     const now = wiring.serverNowMs();
     if (now === undefined) return;
     const skip = wiring.skip();
@@ -87,15 +86,15 @@ export async function mountRemotePlayersLayer(
         const sprite = new Sprite(frames.frame("idle", "down", 0));
         sprite.anchor.set(0.5, 1);
         layer.addChild(sprite);
-        d = { sprite, x: pose.x, y: pose.y, facing: "down", walkedMs: 0 };
+        d = { sprite, x: pose.x, y: pose.y, facing: "down", walked: 0 };
         drawn.set(id, d);
       }
       const { facing, moving } = facingOf(pose.x - d.x, pose.y - d.y, d.facing);
+      if (moving) d.walked += Math.hypot(pose.x - d.x, pose.y - d.y);
+      else d.walked = 0;
       d.facing = facing;
       d.x = pose.x;
       d.y = pose.y;
-      if (moving) d.walkedMs += deltaMS;
-      else d.walkedMs = 0;
       const px = worldPointPx(pose.x, pose.y, pose.floor, tileSizePx, storeyHeightPx, zoom, 0);
       d.sprite.x = px.x;
       d.sprite.y = px.y;
@@ -105,7 +104,7 @@ export async function mountRemotePlayersLayer(
         ? frames.frame(
             "walk",
             facing,
-            loopFrameAt(d.walkedMs, WALK_FRAMES_PER_SECOND, WALK_FRAMES_PER_DIRECTION),
+            walkFrame(d.walked, strideCells, phaseOffsetFor(id), framesPerCycle),
           )
         : frames.frame("idle", facing, 0);
     }

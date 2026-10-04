@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "449778c53af1d3b2",
+  "defs_version": "211737c3abe90869",
   "collider_subcells_per_cell": 16,
   "position_units_per_cell": 256,
   "interact_at_max_reach_cells": 2,
@@ -239,8 +239,8 @@
     { "key": "identity.link_prompt_cooloff_days", "max": 365, "min": 1, "value": 7 },
     { "key": "identity.link_prompt_min_character_age_days", "max": 365, "min": 0, "value": 1 },
     { "key": "l3.early_arrival_bound_milliminutes", "max": 1000, "min": 0, "value": 0 },
-    { "key": "l3.facing_hold_ms", "max": 2000, "min": 0, "value": 150 },
     { "key": "l3.path_box_margin_cells", "max": 64, "min": 1, "value": 6 },
+    { "key": "l3.path_max_cells", "max": 16777216, "min": 64, "value": 65536 },
     { "key": "l3.path_node_budget", "max": 1000000, "min": 64, "value": 4096 },
     { "key": "l3.stall_bound_ms", "max": 5000, "min": 1, "value": 250 },
     { "key": "l3.walk_pace_band_percent", "max": 50, "min": 1, "value": 15 },

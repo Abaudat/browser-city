@@ -67,49 +67,25 @@ export function legInstants(leg: Leg): number[] {
   return instants;
 }
 
-/** The pace a leg asks for, in cells per real second, at `msPerMilliminute`
- * real milliseconds per milliminute. Infinite for an instantaneous leg. */
-export function legPaceCellsPerS(leg: Leg, msPerMilliminute: number): number {
-  const seconds = (Math.max(0, leg.arriveAt - leg.departAt) * msPerMilliminute) / 1000;
-  const cells = routeManhattan(leg);
-  if (cells === 0) return 0;
-  return seconds === 0 ? Number.POSITIVE_INFINITY : cells / seconds;
-}
-
-/** Whether the leg pace is inside canonical walking speed +/- the band. A
- * leg outside it is a defect in whoever issued it; L3 still honours its
- * arrival time. */
-export function paceWithinBand(
-  leg: Leg,
-  msPerMilliminute: number,
-  config: Pick<L3Config, "walkCellsPerS" | "paceBandPercent">,
-): boolean {
-  if (routeManhattan(leg) === 0) return true;
-  const pace = legPaceCellsPerS(leg, msPerMilliminute);
-  const slack = config.walkCellsPerS * (config.paceBandPercent / 100);
-  return pace >= config.walkCellsPerS - slack && pace <= config.walkCellsPerS + slack;
-}
-
 interface SegmentPath {
-  /** x0, y0, x1, y1, ... at cell centres. */
+  /** x0, y0, x1, y1, ... the taut route through tile centres. */
   readonly points: Float64Array;
+  /** Walked length from the first point to each point. */
+  readonly along: Float64Array;
   readonly length: number;
 }
 
-function centrePath(cells: Int32Array): SegmentPath {
-  const points = new Float64Array(cells.length);
-  let length = 0;
-  for (let i = 0; i < cells.length; i += 2) {
-    points[i] = (cells[i] as number) + 0.5;
-    points[i + 1] = (cells[i + 1] as number) + 0.5;
-    if (i > 0) {
-      length += Math.hypot(
-        (points[i] as number) - (points[i - 2] as number),
-        (points[i + 1] as number) - (points[i - 1] as number),
+function buildSegment(points: Float64Array): SegmentPath {
+  const along = new Float64Array(points.length / 2);
+  for (let i = 1; i < along.length; i++) {
+    along[i] =
+      (along[i - 1] as number) +
+      Math.hypot(
+        (points[i * 2] as number) - (points[i * 2 - 2] as number),
+        (points[i * 2 + 1] as number) - (points[i * 2 - 1] as number),
       );
-    }
   }
-  return { points, length };
+  return { points, along, length: along[along.length - 1] as number };
 }
 
 export class Body {
@@ -123,6 +99,7 @@ export class Body {
   #segmentStart: number[] = [];
   #total = 0;
   #cursor = 0;
+  #edge = 0;
   #searches = 0;
   #fallbacks = 0;
 
@@ -170,7 +147,7 @@ export class Body {
     this.#total = 0;
     if (waypoints.length === 1) {
       const only = waypoints[0] as Cell;
-      this.#segments.push(centrePath(Int32Array.of(only.x, only.y)));
+      this.#segments.push(buildSegment(Float64Array.of(only.x + 0.5, only.y + 0.5)));
       this.#segmentStart.push(0);
       return;
     }
@@ -178,13 +155,20 @@ export class Body {
       const a = waypoints[i - 1] as Cell;
       const b = waypoints[i] as Cell;
       this.#searches++;
-      const found = findMicroPath(walkable, a, b, this.#path.marginCells, this.#path.nodeBudget);
+      const found = findMicroPath(
+        walkable,
+        a,
+        b,
+        this.#path.marginCells,
+        this.#path.nodeBudget,
+        this.#path.maxCells,
+      );
       let segment: SegmentPath;
       if (found.ok) {
-        segment = centrePath(found.cells);
+        segment = buildSegment(found.route);
       } else {
         this.#fallbacks++;
-        segment = centrePath(Int32Array.of(a.x, a.y, b.x, b.y));
+        segment = buildSegment(Float64Array.of(a.x + 0.5, a.y + 0.5, b.x + 0.5, b.y + 0.5));
       }
       this.#segmentStart.push(this.#total);
       this.#segments.push(segment);
@@ -197,6 +181,8 @@ export class Body {
     this.#ensurePaths();
     const instants = this.#instants;
     const last = instants.length - 1;
+    // A time that is not a number is before the leg: the origin, standing.
+    if (!Number.isFinite(t)) t = Number.NEGATIVE_INFINITY;
     out.floor = this.#floor;
     out.moving = false;
     out.headingX = 0;
@@ -224,31 +210,56 @@ export class Body {
     const segment = this.#segments[s] as SegmentPath;
     const a = instants[s] as number;
     const b = instants[s + 1] as number;
-    const along = (segment.length * (t - a)) / (b - a);
+    const d = (segment.length * (t - a)) / (b - a);
     const pts = segment.points;
-    let remaining = along;
-    let i = 0;
-    let ex = 0;
-    let ey = 0;
-    let edge = 0;
-    for (; i + 3 < pts.length; i += 2) {
-      ex = (pts[i + 2] as number) - (pts[i] as number);
-      ey = (pts[i + 3] as number) - (pts[i + 1] as number);
-      edge = Math.hypot(ex, ey);
-      if (remaining <= edge || i + 5 >= pts.length) break;
-      remaining -= edge;
-    }
-    if (edge === 0) {
+    const along = segment.along;
+    const edges = along.length - 1;
+    out.distance = (this.#segmentStart[s] as number) + d;
+    if (edges < 1) {
       out.x = pts[0] as number;
       out.y = pts[1] as number;
-    } else {
-      const f = Math.min(1, remaining / edge);
-      out.x = (pts[i] as number) + ex * f;
-      out.y = (pts[i + 1] as number) + ey * f;
-      out.headingX = ex / edge;
-      out.headingY = ey / edge;
+      return;
     }
-    out.distance = (this.#segmentStart[s] as number) + along;
-    out.moving = edge !== 0;
+    let e = Math.min(this.#edge, edges - 1);
+    while (e > 0 && d < (along[e] as number)) e--;
+    while (e < edges - 1 && d > (along[e + 1] as number)) e++;
+    this.#edge = e;
+    const ex = (pts[e * 2 + 2] as number) - (pts[e * 2] as number);
+    const ey = (pts[e * 2 + 3] as number) - (pts[e * 2 + 1] as number);
+    const edge = (along[e + 1] as number) - (along[e] as number);
+    const f = Math.min(1, (d - (along[e] as number)) / edge);
+    out.x = (pts[e * 2] as number) + ex * f;
+    out.y = (pts[e * 2 + 1] as number) + ey * f;
+    out.headingX = ex / edge;
+    out.headingY = ey / edge;
+    out.moving = true;
+  }
+
+  /** The pace each segment is actually walked at, in cells per real second:
+   * its walked length over its own interval. Infinity for a segment given no
+   * time; 0 for one with nowhere to go. */
+  walkedPaces(msPerMilliminute: number): number[] {
+    this.#ensurePaths();
+    return this.#segments.map((segment, i) => {
+      if (segment.length === 0) return 0;
+      const interval = (this.#instants[i + 1] as number) - (this.#instants[i] as number);
+      if (interval <= 0) return Number.POSITIVE_INFINITY;
+      return segment.length / ((interval * msPerMilliminute) / 1000);
+    });
+  }
+
+  /** Whether every segment is walked inside canonical walking speed +/- the
+   * band. A leg outside it is a defect in whoever issued it; the body still
+   * arrives when the leg says. */
+  paceWithinBand(
+    msPerMilliminute: number,
+    config: Pick<L3Config, "walkCellsPerS" | "paceBandPercent">,
+  ): boolean {
+    const slack = config.walkCellsPerS * (config.paceBandPercent / 100);
+    return this.walkedPaces(msPerMilliminute).every(
+      (pace) =>
+        pace === 0 ||
+        (pace >= config.walkCellsPerS - slack && pace <= config.walkCellsPerS + slack),
+    );
   }
 }

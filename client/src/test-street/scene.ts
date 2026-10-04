@@ -33,7 +33,8 @@ import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
-import { loadL3Config } from "../l3/config";
+import { CitizenBody, createCitizenFrame } from "../l3/citizen";
+import { loadL3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import type { AppearanceTuple } from "../render/appearance/composite";
 import {
@@ -79,9 +80,12 @@ import {
   updateCharacterDrawable,
 } from "./drawables";
 import {
+  isDefStreetProp,
+  LAMPPOST_DEF_ID,
   PLAYER_START,
   STREET_BUILDING_AREAS,
   STREET_GROUND_TILES,
+  STREET_PROPS,
   STREET_ROOM_AREAS,
   STREET_TRANSITIONS,
   type StreetGroundTiles,
@@ -93,7 +97,7 @@ import {
   type RemotePlayersLayer,
   type RemotePlayersWiring,
 } from "./remote-players-layer";
-import { buildTimetable, createWalkerFrame, TimetableWalker } from "./timetable";
+import { Timetable } from "./timetable";
 
 /** A plain, single-tile interior floor swatch cropped from the same
  * Room Builder sheet family as the walls -- real art, never a new PNG,
@@ -290,6 +294,18 @@ export interface MountStreetSceneOptions {
   readonly crowdIdenticalTuples?: boolean;
 }
 
+/** One L3 body as the debug tooling reads it. */
+export interface L3BodyReport {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  readonly floor: number;
+  /** Segments walked straight for want of a path. */
+  readonly fallbacks: number;
+  /** Some segment is walked outside the walking-pace band. */
+  readonly paceOutOfBand: boolean;
+}
+
 export interface CommuterDrawn {
   /** City time this frame was posed at, in milliminutes. */
   readonly cityMilli: number;
@@ -301,6 +317,10 @@ export interface CommuterDrawn {
   /** Where the body is, in cells. */
   readonly x: number;
   readonly y: number;
+  readonly floor: number;
+  /** Where the commuter and the lamppost came out in the street floor's applied depth order. */
+  readonly orderIndex: number;
+  readonly lamppostOrderIndex: number;
   /** The sprite's own drawn position, in stage pixels. */
   readonly screenX: number;
   readonly screenY: number;
@@ -351,6 +371,8 @@ export interface StreetSceneHandle {
    * (no clock, or the crowd frozen). A getter read fresh each call, for
    * `l3-walk.spec.ts`'s per-frame sampling. */
   commuterDrawn(): CommuterDrawn | undefined;
+  /** What each live L3 body says about itself, for the debug tooling. */
+  l3Bodies(): readonly L3BodyReport[];
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
   /** Live-updates the FR173 highlight dial (0-100) -- re-applies
@@ -1051,13 +1073,15 @@ export async function mountStreetScene(
     highlightApplier.refresh();
   }
 
+  /** Pool members that sort and draw like any other but are not part of the
+   * reported, golden-pinned order: bodies that move with the clock. */
+  const unreportedIds = new Set<bigint>();
+
   function rebuildRenderOrder(): void {
     renderOrder.length = 0;
     for (const floor of stacks.floors()) {
       for (const id of orderByFloor.get(floor) ?? []) {
-        // The commuter sorts with the pool but is not part of the reported,
-        // golden-pinned order: it moves with the clock.
-        if (id !== COMMUTER_STABLE_ID) renderOrder.push(id);
+        if (!unreportedIds.has(id)) renderOrder.push(id);
       }
     }
   }
@@ -1280,13 +1304,26 @@ export async function mountStreetScene(
   // frozen for a screenshot. Posed from city time alone: no clock, no body.
   const l3Config = loadL3Config(defs);
   const npcWalk = npcWalkability(worldIndex);
-  const l3Path = { marginCells: l3Config.marginCells, nodeBudget: l3Config.nodeBudget };
+  const l3Path = pathConfigOf(l3Config);
+  const msPerMilliminute = l3Config.realMsPerCityMinute / 1000;
   let updateCommuter: (cityMilli: number | undefined) => void = () => {};
   let commuterDrawn: () => CommuterDrawn | undefined = () => undefined;
+  let commuterDiagnostics: () => readonly L3BodyReport[] = () => [];
   if (commuterFrames) {
-    const timetable = buildTimetable(COMMUTER_SPEC, l3Config);
-    const walker = new TimetableWalker(timetable, npcWalk, l3Path, l3Config, COMMUTER_ID);
-    const frame = createWalkerFrame();
+    const timetable = new Timetable(COMMUTER_SPEC, l3Config, npcWalk, l3Path);
+    const citizen = new CitizenBody(
+      npcWalk,
+      l3Path,
+      {
+        strideCells: l3Config.strideCells,
+        framesPerCycle: walkFramesPerCycle(defs, "adult"),
+      },
+      COMMUTER_ID,
+    );
+    const frame = createCitizenFrame();
+    const lamppostId = STREET_PROPS.find(
+      (prop) => isDefStreetProp(prop) && prop.defId === LAMPPOST_DEF_ID,
+    )?.id;
     const home = COMMUTER_SPEC.out[0];
     if (!home) throw new Error("scene: the commuter timetable has no route");
     const drawable = buildCharacterDrawable(
@@ -1302,10 +1339,38 @@ export async function mountStreetScene(
     sprite.renderable = false;
     const entry: PoolEntry = { drawable, view: sprite, label: "commuter" };
     poolMembersOf(home.floor).push(entry);
+    unreportedIds.add(COMMUTER_STABLE_ID);
     allVisibilityMembers.push({ drawable, view: sprite });
     reorderFloor(home.floor);
-    let drawn: CommuterDrawn | undefined;
-    commuterDrawn = () => drawn;
+    let drawn: Omit<CommuterDrawn, "orderIndex" | "lamppostOrderIndex"> | undefined;
+    commuterDrawn = () => {
+      if (!drawn) return undefined;
+      const order = orderByFloor.get(drawn.floor) ?? [];
+      return {
+        ...drawn,
+        orderIndex: order.indexOf(COMMUTER_STABLE_ID),
+        lamppostOrderIndex: lamppostId === undefined ? -1 : order.indexOf(lamppostId),
+      };
+    };
+    commuterDiagnostics = () => {
+      const report = citizen.diagnostics(msPerMilliminute);
+      if (!report || !drawn) return [];
+      const slack = l3Config.walkCellsPerS * (l3Config.paceBandPercent / 100);
+      return [
+        {
+          id: COMMUTER_ID,
+          x: drawn.x,
+          y: drawn.y,
+          floor: drawn.floor,
+          fallbacks: report.fallbacks,
+          paceOutOfBand: report.paces.some(
+            (pace) =>
+              pace !== 0 &&
+              (pace < l3Config.walkCellsPerS - slack || pace > l3Config.walkCellsPerS + slack),
+          ),
+        },
+      ];
+    };
     let lastSortY = drawable.y;
     let lastSortX = drawable.x;
     updateCommuter = (cityMilli) => {
@@ -1314,10 +1379,19 @@ export async function mountStreetScene(
         drawn = undefined;
         return;
       }
-      walker.frameAt(cityMilli, frame);
+      citizen.frameAt(timetable.stateAt(cityMilli), cityMilli, frame);
       sprite.texture = commuterFrames.frame(frame.animation, frame.direction, frame.frameIndex);
       updateCharacterDrawable(drawable, frame.x, frame.y, frame.floor);
-      positionSprite(sprite, frame.x, frame.y, frame.floor, tileSizePx, storeyHeightPx, 0, 0);
+      positionSprite(
+        sprite,
+        frame.x,
+        frame.y,
+        frame.floor,
+        tileSizePx,
+        storeyHeightPx,
+        0,
+        flights.offsetPx(frame.x, frame.y, frame.floor),
+      );
       drawn = {
         cityMilli,
         legKey: frame.legKey,
@@ -1326,6 +1400,7 @@ export async function mountStreetScene(
         distance: frame.distance,
         x: frame.x,
         y: frame.y,
+        floor: frame.floor,
         screenX: sprite.x,
         screenY: sprite.y,
         animation: frame.animation,
@@ -1733,6 +1808,7 @@ export async function mountStreetScene(
     distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache),
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
     commuterDrawn: () => commuterDrawn(),
+    l3Bodies: () => commuterDiagnostics(),
     playerScreenBounds: () => {
       const b = playerSprite.getBounds();
       return { x: b.x, y: b.y, width: b.width, height: b.height };

@@ -43,6 +43,7 @@
 import { collisionOverlay } from "./collision-overlay";
 import { DEBUG_ROOT_MARKER, DEBUG_VIEW_MARKER } from "./debug-markers";
 import { parseDebugQuery, unknownOverlayWarning } from "./debug-query";
+import { l3Overlay } from "./l3-overlay";
 import type { DebugOverlay, DebugOverlayEntry } from "./overlay-registry";
 import { DebugOverlayRegistry } from "./overlay-registry";
 import { sortOverlay } from "./sort-overlay";
@@ -50,7 +51,7 @@ import { clearGroup, svgElement } from "./svg";
 import type { DebugWorldView } from "./world-view";
 
 /** Every overlay this build knows about, in draw order. */
-export const DEBUG_OVERLAYS: readonly DebugOverlay[] = [collisionOverlay, sortOverlay];
+export const DEBUG_OVERLAYS: readonly DebugOverlay[] = [collisionOverlay, sortOverlay, l3Overlay];
 
 declare global {
   interface Window {

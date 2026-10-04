@@ -1,52 +1,72 @@
 #!/usr/bin/env bash
-# Story 5.1 (FR63, FR64, NFR23): nothing under `client/src/l3/**` may reach the
-# network, the renderer, the DOM, the player's movement code or a clock. L3
-# cannot write to the ledger because it has no import path to anything that
-# does (NFR23), performs no sub-tile collision because it cannot reach the
-# resolver (FR63), and is a pure function of the time it is handed because it
-# cannot read one.
+# Story 5.1 (FR63, FR64, NFR23): `client/src/l3/**` can reach nothing but
+# itself and the defs types. A module specifier under `l3/` is `./...` or
+# `../defs/types`; anything else -- a bare package, the network, the renderer,
+# the DOM, the player's movement code, a clock -- fails. L3 cannot write to the
+# ledger because it has no import path to anything that does (NFR23), performs
+# no sub-tile collision because it cannot reach the resolver (FR63), and is a
+# pure function of the time it is handed because it cannot read one.
 #
-# `client/biome.json`'s `src/l3/**` override bans the same imports for fast
-# feedback; this is the second, independent check, and also fails if the
-# override is deleted.
+# It also fails if anything under `client/src/net/` imports `l3/`, and if
+# `client/biome.json` loses its `src/l3/**` override or its ban on importing
+# `l3/` from `src/net/**` (the fast feedback a developer gets).
+#
+# Usage: check-l3-boundary.sh [l3 dir] [net dir]   (the test plants violations)
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-# An optional first argument overrides the scanned directory (the test plants
-# each violation in a temp dir).
 SRC_DIR="${1:-"$REPO_ROOT/client/src/l3"}"
+NET_DIR="${2:-"$REPO_ROOT/client/src/net"}"
 
 [ -d "$SRC_DIR" ] || { echo "check-l3-boundary: $SRC_DIR not found" >&2; exit 1; }
 
-# A module specifier naming net/, test-street/, ui/, input/, the player's
-# movement or floor-walk modules, or pixi.js -- static, side-effect, type-only
-# or dynamic import.
-Q='["'"'"']'
-IMPORT_PATTERN="(from|import)[[:space:]]*\(?[[:space:]]*${Q}[^\"']*((^|/)(net|test-street|ui|input)(/|${Q})|world/(movement|floor-walk)(\.ts)?${Q}|pixi\.js)"
-# DOM globals and ambient clocks/randomness, outside comment lines.
-GLOBAL_PATTERN='(^|[^A-Za-z0-9_.])(window|document)[^A-Za-z0-9_]|Math\.random|Date\.now|performance\.now|new Date\('
-
 FAILED=0
-IMPORTS="$(grep -rnE "$IMPORT_PATTERN" "$SRC_DIR" --include='*.ts' 2>/dev/null || true)"
-if [ -n "$IMPORTS" ]; then
-  echo "check-l3-boundary: FAIL -- client/src/l3/ must not import net/, test-street/, ui/, input/, world/movement, world/floor-walk or pixi.js (NFR23, FR63):" >&2
-  echo "$IMPORTS" >&2
-  FAILED=1
+fail() { echo "check-l3-boundary: FAIL -- $1" >&2; FAILED=1; }
+
+# Every module specifier: static, side-effect, type-only, re-export, dynamic,
+# require.
+Q="[\"']"
+SPEC_PATTERN="(from|import|require)[[:space:]]*\(?[[:space:]]*${Q}[^\"']+${Q}"
+BAD=""
+while IFS= read -r hit; do
+  [ -n "$hit" ] || continue
+  spec="$(printf '%s' "$hit" | sed -E "s/^.*[\"']([^\"']+)[\"']\$/\\1/")"
+  case "$spec" in
+    ./*) ;;
+    ../defs/types) ;;
+    *) BAD+="$hit"$'\n' ;;
+  esac
+done < <(grep -rnoE "$SPEC_PATTERN" "$SRC_DIR" --include='*.ts' 2>/dev/null | tr -d '\r' || true)
+if [ -n "$BAD" ]; then
+  fail "client/src/l3/ may import only ./... and ../defs/types (NFR23, FR63):"
+  printf '%s' "$BAD" >&2
 fi
 
+# Globals that reach the DOM, the network, storage, a clock, a timer or
+# randomness, outside comment lines.
+NAMES='window|document|globalThis|self|navigator|fetch|WebSocket|XMLHttpRequest|localStorage|sessionStorage|crypto|requestAnimationFrame|setTimeout|setInterval|Math\.random|Date\.now|performance\.now|new Date'
+GLOBAL_PATTERN="(^|[^A-Za-z0-9_.\$])(${NAMES})([^A-Za-z0-9_]|\$)"
 GLOBALS="$(grep -rnE "$GLOBAL_PATTERN" "$SRC_DIR" --include='*.ts' 2>/dev/null \
-  | grep -vE '\.ts:[0-9]+:[[:space:]]*(//|/\*|\*)' || true)"
+  | tr -d '\r' | grep -vE '\.ts:[0-9]+:[[:space:]]*(//|/\*|\*)' || true)"
 if [ -n "$GLOBALS" ]; then
-  echo "check-l3-boundary: FAIL -- client/src/l3/ must not use window, document, Math.random, Date.now, performance.now or new Date (time is an argument):" >&2
+  fail "client/src/l3/ must not use the DOM, the network, storage, timers, a clock or randomness (time is an argument):"
   echo "$GLOBALS" >&2
-  FAILED=1
+fi
+
+# Nothing under net/ reaches l3/.
+if [ -d "$NET_DIR" ]; then
+  NET_HITS="$(grep -rnE "(from|import|require)[[:space:]]*\(?[[:space:]]*${Q}(\.\./)+l3(/|${Q})" "$NET_DIR" --include='*.ts' 2>/dev/null | tr -d '\r' || true)"
+  if [ -n "$NET_HITS" ]; then
+    fail "client/src/net/ must not import l3/:"
+    echo "$NET_HITS" >&2
+  fi
 fi
 
 BIOME_CONFIG="$REPO_ROOT/client/biome.json"
-if [ -f "$BIOME_CONFIG" ] && ! grep -q '"src/l3/\*\*"' "$BIOME_CONFIG"; then
-  echo "check-l3-boundary: FAIL -- client/biome.json has no src/l3/** override left (the import ban on L3 was removed)" >&2
-  FAILED=1
+if [ -f "$BIOME_CONFIG" ]; then
+  grep -q '"src/l3/\*\*"' "$BIOME_CONFIG" || fail "client/biome.json has no src/l3/** override left"
+  grep -q '"\.\./l3/\*\*"' "$BIOME_CONFIG" || fail "client/biome.json has no ban on importing l3/ from src/net/**"
 fi
 
 [ "$FAILED" -eq 0 ] || exit 1
-echo "check-l3-boundary: client/src/l3/ reaches no network, renderer, DOM, movement code or clock (FR63, NFR23)" >&2
+echo "check-l3-boundary: client/src/l3/ reaches only itself and the defs types; net/ never reaches l3/ (FR63, NFR23)" >&2
 exit 0

@@ -718,6 +718,7 @@ async function startStreetScene(
       pool: () => handle.poolDrawables(),
       orderOf: (stableId) => handle.orderIndexOf(stableId),
       viewerBody: () => handle.playerBody(),
+      l3Bodies: () => handle.l3Bodies(),
     };
     debugOverlays = mountDebugOverlays({
       mount,

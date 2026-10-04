@@ -25,4 +25,4 @@ export class TestGrid implements Walkability {
   }
 }
 
-export const CFG = { marginCells: 6, nodeBudget: 4096 };
+export const CFG = { marginCells: 6, nodeBudget: 4096, maxCells: 65536 };

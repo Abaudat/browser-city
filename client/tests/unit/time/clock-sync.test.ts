@@ -116,6 +116,8 @@ describe("startClockSync", () => {
     expect(serverClock.nowMicros()).toBe(1_000_000n + 10_000n);
     fail = false;
     await sync.syncNow();
+    // A small correction is slewed, not stepped: it has caught up a while later.
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(serverClock.nowMicros()).toBeGreaterThanOrEqual(2_000_000n);
     sync.stop();
   });

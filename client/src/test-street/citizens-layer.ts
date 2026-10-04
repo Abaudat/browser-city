@@ -16,7 +16,8 @@
 
 import { Container, Sprite, type Texture } from "pixi.js";
 import type { Defs } from "../defs/types";
-import type { L3Config } from "../l3/config";
+import { CitizenBody, type CitizenFrame, createCitizenFrame } from "../l3/citizen";
+import { type L3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
 import type { Walkability } from "../l3/micro-path";
 import type {
   AppearanceTextureCache,
@@ -39,7 +40,7 @@ import {
   WALKER_SPECS,
 } from "./citizens";
 import { comparePipelineVsStack } from "./compare-pipeline-vs-stack";
-import { buildTimetable, createWalkerFrame, TimetableWalker, type WalkerFrame } from "./timetable";
+import { Timetable } from "./timetable";
 
 /** What the walking citizens need from L3: tile walkability and the dials. */
 export interface WalkerSource {
@@ -70,8 +71,9 @@ export interface CitizensLayerHandle {
 interface WalkerState {
   readonly sprite: Sprite;
   readonly frames: CompositeFrames;
-  readonly walker: TimetableWalker;
-  readonly frame: WalkerFrame;
+  readonly timetable: Timetable;
+  readonly body: CitizenBody;
+  readonly frame: CitizenFrame;
 }
 
 function poseWalker(
@@ -82,7 +84,7 @@ function poseWalker(
   zoom: number,
 ): void {
   const { frame, sprite, frames } = state;
-  state.walker.frameAt(cityMilliminutes, frame);
+  state.body.frameAt(state.timetable.stateAt(cityMilliminutes), cityMilliminutes, frame);
   const px = worldPointPx(frame.x, frame.y, CROWD_FLOOR, tileSizePx, storeyHeightPx, zoom, 0);
   sprite.x = px.x;
   sprite.y = px.y;
@@ -182,18 +184,21 @@ export async function mountCitizensLayer(
 
       const spec = WALKER_SPECS[fixture.id];
       if (spec) {
-        const path = { marginCells: l3.config.marginCells, nodeBudget: l3.config.nodeBudget };
+        const path = pathConfigOf(l3.config);
         walkers.set(fixture.id, {
           sprite,
           frames,
-          walker: new TimetableWalker(
-            buildTimetable(spec, l3.config),
+          timetable: new Timetable(spec, l3.config, l3.walk, path),
+          body: new CitizenBody(
             l3.walk,
             path,
-            l3.config,
+            {
+              strideCells: l3.config.strideCells,
+              framesPerCycle: walkFramesPerCycle(defs, body.family),
+            },
             fixture.id,
           ),
-          frame: createWalkerFrame(),
+          frame: createCitizenFrame(),
         });
       }
     }),

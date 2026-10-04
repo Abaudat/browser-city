@@ -3,6 +3,8 @@
 // id" property the module doc comment claims.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { CitizenBody, createCitizenFrame } from "../../../src/l3/citizen";
+import { pathConfigOf } from "../../../src/l3/config";
 import { ZOOM } from "../../../src/render/camera";
 import { worldPointPx } from "../../../src/render/screen-position";
 import {
@@ -15,11 +17,7 @@ import {
   WALKER_ID,
   WALKER_SPECS,
 } from "../../../src/test-street/citizens";
-import {
-  buildTimetable,
-  createWalkerFrame,
-  TimetableWalker,
-} from "../../../src/test-street/timetable";
+import { Timetable } from "../../../src/test-street/timetable";
 import { l3Config } from "../l3/defs-config";
 import { committedDefs } from "./street-world";
 
@@ -218,7 +216,9 @@ describe("crowd placement through worldPointPx", () => {
     const config = l3Config();
     const walkerSpec = WALKER_SPECS[WALKER_ID];
     if (!walkerSpec) throw new Error("no walker spec");
-    const timetable = buildTimetable(walkerSpec, config);
+    const open = { revision: () => 0, walkable: () => true };
+    const path = pathConfigOf(config);
+    const timetable = new Timetable(walkerSpec, config, open, path);
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 10_000_000 }),
@@ -226,17 +226,17 @@ describe("crowd placement through worldPointPx", () => {
         fc.constantFrom(ZOOM, 1, 2, 4),
         fc.constantFrom(tile, 8, 16, 32),
         (startMilli, deltaMS, zoom, tileSizePx) => {
-          const walker = new TimetableWalker(
-            timetable,
-            { revision: () => 0, walkable: () => true },
-            { marginCells: config.marginCells, nodeBudget: config.nodeBudget },
-            config,
+          const walker = new CitizenBody(
+            open,
+            path,
+            { strideCells: config.strideCells, framesPerCycle: 6 },
             WALKER_ID,
           );
-          const frame = createWalkerFrame();
+          const frame = createCitizenFrame();
           const stepMilli = (deltaMS * 1000) / config.realMsPerCityMinute;
           for (let k = 0; k < 300; k++) {
-            walker.frameAt(startMilli + k * stepMilli, frame);
+            const t = startMilli + k * stepMilli;
+            walker.frameAt(timetable.stateAt(t), t, frame);
             const px = crowdScreenPx(frame.x, frame.y, tileSizePx, zoom);
             expect(Math.abs(px.x * zoom - Math.round(px.x * zoom))).toBeLessThan(1e-6);
             expect(Math.abs(px.y * zoom - Math.round(px.y * zoom))).toBeLessThan(1e-6);
