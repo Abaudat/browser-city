@@ -12,7 +12,9 @@ export const COMMUTER_STABLE_ID = 1001n;
 
 /** From the pavement cell by shop A's awning, east along the shopfronts past
  * the lamppost (the route drifts round it), down beside the stairwell to the
- * street-level cell at the head of the subway stairs, facing them. One
+ * street exit cell (`STAIRS_X + 1, STAIRS_Y`): the first tread of the subway
+ * stairs, one step from the down anchor, where a player climbing out lands. She
+ * stands there facing the stairs, drawn sunk by the flight offset. One
  * segment, so one pace end to end. */
 export const COMMUTER_SPEC: TimetableSpec = {
   out: [

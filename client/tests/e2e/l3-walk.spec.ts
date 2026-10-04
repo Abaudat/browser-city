@@ -10,8 +10,10 @@ import { expect, test } from "@playwright/test";
 // Pulls in `declare global { interface Window { __bc } }` -- types only.
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
+import { buildFlights, FlightIndex } from "../../src/render/flight-offset";
 import { worldPointPx } from "../../src/render/screen-position";
-import { STAIRS_X } from "../../src/test-street/fixture";
+import { STREET_TRANSITIONS, streetPlacedRows } from "../../src/test-street/fixture";
+import { streetMovementConfig, streetObjectSources } from "../unit/test-street/street-world";
 
 interface Sample {
   realMs: number;
@@ -125,12 +127,27 @@ test("the commuter walks a leg on time, smoothly, in the walk row facing its tra
 
   // Drawn where the pose says, in whole screen pixels, and in the right depth
   // order against the lamppost.
+  const flights = new FlightIndex(
+    buildFlights(
+      STREET_TRANSITIONS,
+      streetPlacedRows(),
+      streetObjectSources(),
+      STOREY_HEIGHT_PX,
+      TILE_SIZE_PX,
+    ),
+    streetMovementConfig(),
+  );
+  let offsetSamples = 0;
   for (const s of whole) {
     const px = worldPointPx(s.x, s.y, s.floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM, 0);
     expect(s.screenX).toBe(px.x);
-    // Over the stairwell the flight offset sinks the body (FR182); elsewhere it is none.
-    if (s.x < STAIRS_X) expect(s.screenY).toBe(px.y);
-    else expect(s.screenY).toBeGreaterThanOrEqual(px.y);
+    // Drawn with the flight offset of its position, computed here the way the
+    // enclosure spec does for the player (FR182).
+    const offset = flights.offsetPx(s.x, s.y, s.floor);
+    if (offset !== 0) offsetSamples++;
+    expect(s.screenY).toBe(
+      worldPointPx(s.x, s.y, s.floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM, offset).y,
+    );
     expect(Number.isInteger(s.screenX * ZOOM)).toBe(true);
     expect(Number.isInteger(s.screenY * ZOOM)).toBe(true);
     expect(s.orderIndex).toBeGreaterThanOrEqual(0);
@@ -141,6 +158,9 @@ test("the commuter walks a leg on time, smoothly, in the walk row facing its tra
       expect(s.orderIndex).toBeLessThan(s.lamppostOrderIndex);
     }
   }
+
+  // The route keeps exercising the flight offset: some sample is on the stairs.
+  expect(offsetSamples).toBeGreaterThan(0);
 
   // Smooth: per-frame displacement within the band's speed, progress never
   // backwards, no stationary stretch beyond the stall bound while walking,
