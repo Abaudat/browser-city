@@ -43,6 +43,15 @@ check "a walk call with an inline segment literal" 1 bash "$CHECK" "$d"
 d="$(plant tests/e2e/walk-lag.spec.ts 'await walkRealSegment(page, { label: "x", key: "ArrowUp", until: { kind: "floor", value: 1 } });')"
 check "an inline segment in walk-lag.spec.ts passes" 0 bash "$CHECK" "$d"
 
+d="$(plant tests/e2e/other.spec.ts 'const segment: StreetWalkSegment = { label: "x", key, until: { kind: "x-at-least", value: 1 } };')"
+check "a segment built in a variable outside the helper" 1 bash "$CHECK" "$d"
+
+d="$(plant tests/e2e/walk-lag.spec.ts 'const segment = { label: "x", key, until: { kind: "x-at-least", value: 1 } };')"
+check "a segment built in walk-lag.spec.ts passes" 0 bash "$CHECK" "$d"
+
+d="$(plant tests/e2e/walk-support.ts 'const segment = { label: "x", key, until: { kind: "x-at-least", value: 1 } };')"
+check "a segment built in walk-support.ts passes" 0 bash "$CHECK" "$d"
+
 d="$(plant tests/e2e/other.spec.ts 'for (const segment of route) await walkRealSegment(page, segment);')"
 check "a walk call over a route is never a false positive" 0 bash "$CHECK" "$d"
 

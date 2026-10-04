@@ -441,6 +441,63 @@ fn an_interact_at_inside_its_own_collider_is_named() {
     assert!(err.message.contains("could never be reached"));
 }
 
+/// Story 15.15: a flight's `drop_px` is `1..=render.storey_height_px` and is
+/// refused on an object that declares a `collider`.
+#[test]
+fn a_zero_flight_drop_is_named() {
+    let err = build_err("flight-drop-zero");
+    assert!(err.message.contains("flight drop_px 0 is outside"), "{err}");
+}
+
+#[test]
+fn a_flight_drop_with_no_storey_height_balance_key_is_named() {
+    let err = build_err("flight-drop-without-storey-key");
+    assert!(
+        err.message
+            .contains("no 'render.storey_height_px' balance key"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_partial_flight_table_is_named() {
+    let err = build_err("flight-partial-table");
+    assert!(err.message.contains("missing field `to_px`"), "{err}");
+}
+
+#[test]
+fn an_inverted_flight_ramp_is_named() {
+    let err = build_err("flight-ramp-inverted");
+    assert!(
+        err.message.contains("from_px 34 is not below to_px 5"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_flight_ramp_beyond_its_footprint_is_named() {
+    let err = build_err("flight-ramp-beyond-footprint");
+    assert!(
+        err.message.contains("to_px 17 leaves its footprint"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_flight_drop_above_the_storey_height_is_named() {
+    let err = build_err("flight-drop-above-storey");
+    assert!(err.message.contains("flight drop_px 49"), "{err}");
+}
+
+#[test]
+fn a_flight_drop_on_an_object_with_a_collider_is_named() {
+    let err = build_err("flight-drop-with-collider");
+    assert!(
+        err.message.contains("both a flight and a collider"),
+        "{err}"
+    );
+}
+
 #[test]
 fn a_non_boolean_window_is_named() {
     let err = build_err("non-boolean-window");
@@ -981,6 +1038,13 @@ fn every_known_category_has_a_fixture_directory() {
         "collider-outside-art-rows",
         "collider-over-transparent-band",
         "archetype-collider-disagrees-with-art",
+        "flight-drop-zero",
+        "flight-drop-above-storey",
+        "flight-drop-with-collider",
+        "flight-drop-without-storey-key",
+        "flight-partial-table",
+        "flight-ramp-inverted",
+        "flight-ramp-beyond-footprint",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

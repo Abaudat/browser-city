@@ -157,6 +157,7 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 - **FR122** — The subway floor is culled until entered, at which point the street floor above is culled instead
 - **FR123** — Depth sorting uses the key (y, layer_rank, x, object_id) over one y-sorted pool after three flat passes; objects are never sliced
 - **FR124** — Floor is a vertical screen offset, not a sort key
+- **FR182** — On stairs and ramps, a character's floor offset is applied gradually along the walked path, following the drawn surface, and never moves the character off it. Where the art shows less than a full storey, the remainder is taken at the floor change
 - **FR125** — Multi-cell props decompose into per-cell drawables, each with its own anchor
 - **FR126** — Tilemap rows are placed object instances at their anchor cell; a multi-cell prop is one row and extent comes from `object_def`
 - **FR127** — Object footprints are capped at approximately 8x8; larger structures compose from multiple objects
@@ -294,3 +295,4 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 
 - **NFR49** — Every CI check that runs on master reaches a pass or a fail verdict within its own time budget; a check that cannot is fixed or removed, never left permanently red or cancelled
 - **NFR50** — A property test that gates master reports the seed it ran with, and every failure can be reproduced locally from that seed alone; the seed is fixed in the workflow, never drawn fresh per run, so a retry cannot change the verdict
+- **NFR51** — A property test that gates master explores the sizes it states: a size above the library's default is set explicitly, and CI fails when one is not

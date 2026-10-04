@@ -30,6 +30,13 @@ if [ -n "$INLINE" ]; then
   FAIL=1
 fi
 
+UNTIL="$(grep -rnE 'until[[:space:]]*:[[:space:]]*\{' "$E2E_DIR" --include='*.ts'   | grep -vE '/(walk-support\.ts|walk-watcher\.ts|walk-lag\.spec\.ts):' || true)"
+if [ -n "$UNTIL" ]; then
+  echo "check-one-walk-helper: FAIL -- a segment's until: is built under tests/e2e/ outside the walk helper and walk-lag.spec.ts; export the route from street-world.ts and register it in walkedRoutes():" >&2
+  echo "$UNTIL" >&2
+  FAIL=1
+fi
+
 LAG="$(grep -rnE 'releaseLagSteps[[:space:]]*:[[:space:]]*[1-9]' "$CLIENT_DIR/tests" "$CLIENT_DIR/src" --include='*.ts' 2>/dev/null \
   | grep -vE '/src/test-street/fixture\.ts:' || true)"
 if [ -n "$LAG" ]; then

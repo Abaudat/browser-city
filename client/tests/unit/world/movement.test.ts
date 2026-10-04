@@ -4,6 +4,7 @@ import type { ColliderSource, GridEntry } from "../../../src/world/collision-gri
 import { CollisionGrid } from "../../../src/world/collision-grid";
 import type { MovementConfig, Vec2 } from "../../../src/world/movement";
 import { bodyRect, step } from "../../../src/world/movement";
+import { sizeProbe } from "../setup/size-probe";
 
 const SUBCELLS_PER_CELL = 16;
 
@@ -135,6 +136,7 @@ describe("inv_move_never_ends_inside_collider", () => {
   // sequence, any delta and either speed: the body is never inside a
   // collider, checked after *every* step rather than only at the end.
   it("inv_move_never_ends_inside_collider", () => {
+    const probe = sizeProbe({ min: 1, max: 20 });
     fc.assert(
       fc.property(
         fc.array(colliderArb, { minLength: 1, maxLength: 8 }),
@@ -142,12 +144,15 @@ describe("inv_move_never_ends_inside_collider", () => {
           x: fc.integer({ min: -120, max: 120 }).map((v) => v / SUBCELLS_PER_CELL),
           y: fc.integer({ min: -120, max: 120 }).map((v) => v / SUBCELLS_PER_CELL),
         }),
-        fc.array(
-          fc.record({
-            dir: directionArb,
-            deltaMs: fc.integer({ min: 0, max: 5_000 }),
-          }),
-          { minLength: 1, maxLength: 20 },
+        probe.over(
+          fc.array(
+            fc.record({
+              dir: directionArb,
+              deltaMs: fc.integer({ min: 0, max: 5_000 }),
+            }),
+            { minLength: 1, maxLength: 20 },
+          ),
+          (a) => a.length,
         ),
         configArb,
         (colliders, start, inputs, config) => {
@@ -165,6 +170,7 @@ describe("inv_move_never_ends_inside_collider", () => {
       ),
       { numRuns: 300 },
     );
+    probe.expectReached(15);
   });
 });
 
@@ -396,12 +402,16 @@ describe("inv_step_is_frame_rate_independent", () => {
   // within epsilon. Kept under the 100ms delta clamp's own ceiling: at
   // most 15 steps of at most 5ms each, so the total never reaches 100ms.
   it("inv_step_is_frame_rate_independent", () => {
+    const probe = sizeProbe({ min: 1, max: 15 });
     fc.assert(
       fc.property(
-        fc.array(fc.float({ min: Math.fround(1), max: Math.fround(5), noNaN: true }), {
-          minLength: 1,
-          maxLength: 15,
-        }),
+        probe.over(
+          fc.array(fc.float({ min: Math.fround(1), max: Math.fround(5), noNaN: true }), {
+            minLength: 1,
+            maxLength: 15,
+          }),
+          (a) => a.length,
+        ),
         (deltas) => {
           const grid = buildGrid([]);
           let multi: Vec2 = { x: 0, y: 0 };
@@ -414,6 +424,7 @@ describe("inv_step_is_frame_rate_independent", () => {
         },
       ),
     );
+    probe.expectReached(13);
   });
 
   it("diagonal speed never exceeds axis speed", () => {

@@ -9,6 +9,7 @@ import {
   saveLastShownDay,
 } from "../../../src/identity/link-prompt";
 import type { SettingsStorage } from "../../../src/settings/settings-storage";
+import { sizeProbe } from "../setup/size-probe";
 
 const RULES: LinkPromptRules = { minCharacterAgeDays: 1, cooloffDays: 7 };
 
@@ -56,6 +57,7 @@ describe("isLinkPromptDue (story 4.5, FR143)", () => {
 
   // Once shown it is not due again before its cool-off, and once linked it is never due.
   it("inv_link_prompt_respects_cooloff_and_link", () => {
+    const probe = sizeProbe({ min: 0, max: 12 });
     fc.assert(
       fc.property(
         fc.record({
@@ -66,7 +68,10 @@ describe("isLinkPromptDue (story 4.5, FR143)", () => {
           shownDay: fc.integer({ min: -50, max: 400 }),
           cooloffDays: fc.integer({ min: 1, max: 365 }),
           minCharacterAgeDays: fc.integer({ min: 0, max: 365 }),
-          later: fc.array(fc.integer({ min: -50, max: 800 }), { maxLength: 12 }),
+          later: probe.over(
+            fc.array(fc.integer({ min: -50, max: 800 }), { maxLength: 12 }),
+            (a) => a.length,
+          ),
         }),
         (r) => {
           const rules = {
@@ -94,6 +99,7 @@ describe("isLinkPromptDue (story 4.5, FR143)", () => {
         },
       ),
     );
+    probe.expectReached(11);
   });
 });
 

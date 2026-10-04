@@ -12,7 +12,7 @@ cited here by identifier.
 | Server, database, replication | SpacetimeDB 2.9.x — the `spacetimedb` crate                                                              |
 | Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the native schema-test and fixture-tooling crate; the table-bounds registry is `sim::table_bounds`), and the `browser_city` module crate, which depends on `sim` |
 | Property testing (server)     | `proptest` `=1.11.0`, dev-dependency of `sim` and `tools/defs-build` only; case count from `PROPTEST_CASES`, RNG seed from `PROPTEST_RNG_SEED` — fixed in `ci.yml`, `github.run_id` in `explore.yml`; a failure reproduces with `PROPTEST_RNG_SEED=<log> PROPTEST_CASES=<log> cargo test -p sim --release --test invariants -- <property>` (NFR50) |
-| Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle; RNG seed from `FAST_CHECK_SEED` through the one vitest setup file (`tests/unit/setup/property-seed.ts`) — fixed in `ci.yml`, derived from `github.run_id` in `explore.yml`, fresh when unset locally, an error when unset under `CI`; no per-test `seed`/`path`, no `configureGlobal` outside the setup file, no `fc.sample`/`fc.check`; a failure prints `FAST_CHECK_SEED=<seed> npx vitest run <file>` (NFR50) |
+| Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle; RNG seed from `FAST_CHECK_SEED` through the one vitest setup file (`tests/unit/setup/property-seed.ts`) — fixed in `ci.yml`, derived from `github.run_id` in `explore.yml`, fresh when unset locally, an error when unset under `CI`; no per-test `seed`/`path`, no `configureGlobal` outside the setup file, no `fc.sample`/`fc.check`; a failure prints `FAST_CHECK_SEED=<seed> npx vitest run <file>` (NFR50); the setup file sets `defaultSizeToMaxWhenMaxSpecified`, so a stated `maxLength`/`maxKeys` is the size explored — no per-arbitrary `size`, no `baseSize`, no unbounded length arbitrary, and a property above the default ceiling records its drawn size with `tests/unit/setup/size-probe.ts` (NFR51) |
 | E2E pixel compare             | `pixelmatch` 7.2.0 + `pngjs` 7.0.0 (`@types/pngjs` 6.0.5), pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | Boot-budget HTTPS preview     | `@vitejs/plugin-basic-ssl` 2.3.0, pinned, `devDependency` of `client` only; enabled only when `BC_BOOT_HTTPS=1` (the boot-budget harness), never for `npm run dev`/`preview` defaults, never in the built bundle |
 | `proc-macro2`                 | `=1.0.107`, dev-dependency of `bounds` only (the token-level float scan over `sim`'s sources); native test tooling, never a dependency of `sim` or `browser_city` |
@@ -849,6 +849,17 @@ is the floor screen offset FR124 describes: a drawable's screen position
 subtracts `floor * storey_height_px`, and a drawable on a storey above the
 viewer's own must never sort as though it were on that floor because of
 it.
+
+An actor on a flight is drawn with a flight offset
+(`render/flight-offset.ts`), a pure function of its position. A flight is
+the footprint of the placed object under a `floor_transition` anchor whose
+def declares a `flight` (`flight.drop_px`, `flight.from_px`,
+`flight.to_px`; JSON-only). The offset is zero at `flight.from_px` and
+`flight.drop_px` at `flight.to_px` (the first and last drawn nosing, from
+the footprint's open edge), linear between, flat outside, signed toward
+the target floor; the floor change takes whatever is left. It is summed
+with the floor offset inside `worldPointPx` and exists nowhere else: not
+in the sort key, collision, walk state or picking.
 
 Only a test-street row with no `object_def` reads its art straight out of
 the repo-root `ModernTileset/` at runtime (`new URL(..., import.meta.url)`

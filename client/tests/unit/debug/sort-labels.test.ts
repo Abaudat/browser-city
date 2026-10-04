@@ -8,6 +8,7 @@ import type { Drawable } from "../../../src/render/sort-key";
 import { compareDrawables } from "../../../src/render/sort-key";
 import { fromSortUnits, SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
 import { emptyCellBounds } from "../../../src/world/world-index";
+import { sizeProbe } from "../setup/size-probe";
 
 const TILE = 16;
 const STOREY = 48;
@@ -64,7 +65,7 @@ describe("buildSortLabels", () => {
   it("puts the label at the drawable's own anchor, through the renderer's projection", () => {
     const d = drawable({ stableId: 4n, x: toSortUnits(2), y: toSortUnits(6) });
     const [label] = buildSortLabels(viewOver([d]));
-    const anchor = worldPointPx(fromSortUnits(d.x), fromSortUnits(d.y), 0, TILE, STOREY, 1);
+    const anchor = worldPointPx(fromSortUnits(d.x), fromSortUnits(d.y), 0, TILE, STOREY, 1, 0);
     expect(label?.x).toBe(anchor.x);
     // Lifted by whole lanes only: the horizontal position is always the
     // drawable's own anchor, so a label always belongs to the column it
@@ -120,7 +121,15 @@ describe("buildSortLabels", () => {
   it("staggers a negative tile column without ever landing outside its lanes", () => {
     const west = drawable({ stableId: 1n, x: toSortUnits(-1), y: toSortUnits(0) });
     const [label] = buildSortLabels(viewOver([west]));
-    const anchor = worldPointPx(fromSortUnits(west.x), fromSortUnits(west.y), 0, TILE, STOREY, 1);
+    const anchor = worldPointPx(
+      fromSortUnits(west.x),
+      fromSortUnits(west.y),
+      0,
+      TILE,
+      STOREY,
+      1,
+      0,
+    );
     const lift = anchor.y - (label?.y ?? 0);
     expect(lift).toBeGreaterThanOrEqual(0);
     expect(lift).toBeLessThanOrEqual(2 * DEBUG_STYLE.lineHeightPx * 2);
@@ -189,6 +198,7 @@ describe("buildSortLabels", () => {
   // the key, this fails -- without this module ever owning a second
   // comparator.
   it("inv_sort_overlay_labels_are_the_sort_key", () => {
+    const probe = sizeProbe({ min: 2, max: 20 });
     fc.assert(
       fc.property(
         fc.array(
@@ -208,6 +218,7 @@ describe("buildSortLabels", () => {
             seen.add(spec.stableId);
             pool.push(drawable(spec));
           }
+          probe.record(pool.length);
           const labels = buildSortLabels(
             viewOver(pool, [], {
               floor: 0,
@@ -231,5 +242,6 @@ describe("buildSortLabels", () => {
       ),
       { numRuns: 60 },
     );
+    probe.expectReached(15);
   });
 });

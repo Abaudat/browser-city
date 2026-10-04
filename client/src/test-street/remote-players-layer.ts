@@ -96,7 +96,7 @@ export async function mountRemotePlayersLayer(
       d.y = pose.y;
       if (moving) d.walkedMs += deltaMS;
       else d.walkedMs = 0;
-      const px = worldPointPx(pose.x, pose.y, pose.floor, tileSizePx, storeyHeightPx, zoom);
+      const px = worldPointPx(pose.x, pose.y, pose.floor, tileSizePx, storeyHeightPx, zoom, 0);
       d.sprite.x = px.x;
       d.sprite.y = px.y;
       d.sprite.zIndex = pose.y;

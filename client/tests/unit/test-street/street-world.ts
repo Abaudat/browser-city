@@ -21,12 +21,14 @@ import {
   LAMPPOST_DEF_ID,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
+  PLATFORM_UP_ANCHOR_X,
   PLAYER_START,
   SHOPFRONT_EXIT_Y,
   STAIRS_X,
   STAIRS_Y,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STREET_BUILDING_AREAS,
+  STREET_FLOOR,
   STREET_PROPS,
   STREET_ROOM_AREAS,
   STREET_STAIRWELL_ROWS,
@@ -34,6 +36,7 @@ import {
   STREET_WALK_DIRECTIONS,
   type StreetWalkInputs,
   type StreetWalkSegment,
+  SUBWAY_ENTRANCE_X0,
   SUBWAY_FLOOR,
   streetBollardRoute,
   streetBridgeLapRoute,
@@ -557,6 +560,68 @@ export function westOpenSpotRoute(): readonly StreetWalkSegment[] {
   ];
 }
 
+/** Story 15.15: the walk down and back up the subway stairs, along both
+ * edges of the tread path, for the flight-offset e2e. The south edge is the
+ * near railing's face; the north edge is walked at the first row the route
+ * walks the treads on, reached from the north so the release lag can only
+ * carry the body further into the row. Each leg stops short of an anchor
+ * cell (whose entry is the floor change) by more than the release bound.
+ * The e2e takes its stills by these labels. */
+export function flightWalkRoute(): readonly StreetWalkSegment[] {
+  const inputs = streetWalkInputs();
+  const approach = streetSubwayApproachRoute(inputs);
+  const onTreads = approach.findIndex((s) => s.label === "onto-the-subway-treads-row");
+  const lastWalkableStreetX = STAIRS_X + 1.9;
+  const backToOpenEdgeX = STAIRS_X + 3.3;
+  const left = (label: string, until: StreetWalkSegment["until"]): StreetWalkSegment => ({
+    label,
+    key: "ArrowLeft",
+    until,
+  });
+  const right = (label: string, until: StreetWalkSegment["until"]): StreetWalkSegment => ({
+    label,
+    key: "ArrowRight",
+    until,
+  });
+  return [
+    ...approach.slice(0, onTreads + 1),
+    {
+      label: "south-edge-press",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.nearRailingRestY },
+    },
+    left("south-edge-mid-flight", { kind: "x-at-most", value: STAIRS_X + 2.4 }),
+    right("south-edge-reversal", { kind: "x-at-least", value: backToOpenEdgeX }),
+    left("south-edge-last-walkable", { kind: "x-at-most", value: lastWalkableStreetX }),
+    right("south-edge-back", { kind: "x-at-least", value: backToOpenEdgeX }),
+    {
+      label: "up-to-the-pavement",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: STAIRS_Y - 1.5 },
+    },
+    {
+      label: "back-to-the-tread-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.subwayTreadRowY },
+    },
+    left("north-edge-last-walkable", { kind: "x-at-most", value: lastWalkableStreetX }),
+    left("down-the-subway-stairs", { kind: "floor", value: SUBWAY_FLOOR }),
+    left("platform-west-rest", { kind: "x-at-most", value: platformWestRestX() }),
+    right("platform-last-walkable", { kind: "x-at-least", value: PLATFORM_UP_ANCHOR_X - 0.6 }),
+    left("platform-back-from-last-walkable", {
+      kind: "x-at-most",
+      value: PLATFORM_UP_ANCHOR_X - 1.4,
+    }),
+    right("up-the-platform-stairs", { kind: "floor", value: STREET_FLOOR }),
+    right("out-onto-the-entrance", { kind: "x-at-least", value: SUBWAY_ENTRANCE_X0 + 0.5 }),
+    {
+      label: "out-onto-the-pavement",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: STAIRS_Y - 1.5 },
+    },
+  ];
+}
+
 export interface WalkedRoute {
   readonly name: string;
   readonly segments: readonly StreetWalkSegment[];
@@ -585,5 +650,6 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     { name: "bin-reach", segments: binReachRoute(), start: fresh },
     { name: "west-open-spot", segments: westOpenSpotRoute(), start: fresh },
     { name: "railing-foot", segments: railingFootRoute(), start: fresh },
+    { name: "flight-walk", segments: flightWalkRoute(), start: fresh },
   ];
 }

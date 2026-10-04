@@ -156,7 +156,8 @@ describe("RemoteMotion", () => {
         fc.constantFrom(...RATES),
         fc.array(fc.tuple(fc.integer({ min: 1, max: 400 }), fc.integer({ min: -40, max: 40 })), {
           minLength: 2,
-          maxLength: 30,
+          // Within the buffer: an older sample is dropped by design.
+          maxLength: REMOTE_MAX_SAMPLES,
         }),
         fc.array(fc.integer({ min: 0, max: 400 }), { minLength: 1, maxLength: 40 }),
         (hz, steps, probeSteps) => {

@@ -1,7 +1,7 @@
 ---
 name: quentin
 description: QA. Owns all testing, TDD, the trace matrix, and is responsible for game quality.
-model: fable
+model: opus
 tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, WebSearch
 ---
 

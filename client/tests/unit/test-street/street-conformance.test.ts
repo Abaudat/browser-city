@@ -1128,7 +1128,7 @@ describe("the bollard west of the shopfront stops the player where it is drawn (
   }) as [string, number][]) {
     it(`stops flush against the post's drawn base, off-centre from the ${label}`, () => {
       const rest = walkNorth(x);
-      const restDrawn = worldPointPx(rest.x, rest.y, floor, tileSizePx, storeyHeightPx, 1);
+      const restDrawn = worldPointPx(rest.x, rest.y, floor, tileSizePx, storeyHeightPx, 1, 0);
       // The drawn feet's bottom edge sits exactly `bodyHeightSubcells`
       // south of the post's own drawn base (`world/movement.ts`'s own
       // asymmetric north-approach extent, `onUnderpassRowY`'s established
@@ -1185,7 +1185,7 @@ describe("the bollard west of the shopfront stops the player where it is drawn (
 
   it("blocks one sub-cell further east than that -- the offset this story's AC4 exists to catch", () => {
     const rest = walkNorth(columns.oneSubcellBlocked);
-    const restDrawn = worldPointPx(rest.x, rest.y, floor, tileSizePx, storeyHeightPx, 1);
+    const restDrawn = worldPointPx(rest.x, rest.y, floor, tileSizePx, storeyHeightPx, 1, 0);
     const bodyHeightPx = (config.bodyHeightSubcells / config.subcellsPerCell) * tileSizePx;
     expect(restDrawn.y).toBeCloseTo(colliderSouthFacePx + bodyHeightPx, 6);
   });

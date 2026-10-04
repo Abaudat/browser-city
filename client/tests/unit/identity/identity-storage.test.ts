@@ -6,6 +6,7 @@ import {
   rememberFirstToken,
 } from "../../../src/identity/identity-storage";
 import type { SettingsStorage } from "../../../src/settings/settings-storage";
+import { sizeProbe } from "../setup/size-probe";
 
 function fakeStorage(initial: Record<string, string> = {}, opts: { failWrites?: boolean } = {}) {
   const data = new Map(Object.entries(initial));
@@ -58,17 +59,22 @@ describe("identity storage (story 4.5, FR141)", () => {
   // Reading any string at all from the key never throws, never writes and never
   // touches another key.
   it("inv_identity_token_read_is_total", () => {
+    const probe = sizeProbe({ min: 0, max: 200 });
     fc.assert(
-      fc.property(fc.string(), (raw) => {
-        const f = fakeStorage({ [IDENTITY_STORAGE_KEY]: raw });
-        const token = readStoredToken(f.storage);
-        expect(token === null || typeof token === "string").toBe(true);
-        expect(f.writes).toEqual([]);
-        expect(f.removals).toEqual([]);
-        expect(new Set(f.reads)).toEqual(new Set([IDENTITY_STORAGE_KEY]));
-        expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe(raw);
-      }),
+      fc.property(
+        probe.over(fc.string({ maxLength: 200 }), (s) => s.length),
+        (raw) => {
+          const f = fakeStorage({ [IDENTITY_STORAGE_KEY]: raw });
+          const token = readStoredToken(f.storage);
+          expect(token === null || typeof token === "string").toBe(true);
+          expect(f.writes).toEqual([]);
+          expect(f.removals).toEqual([]);
+          expect(new Set(f.reads)).toEqual(new Set([IDENTITY_STORAGE_KEY]));
+          expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe(raw);
+        },
+      ),
     );
+    probe.expectReached(150);
   });
 
   it("rejects a blob of the wrong shape, version or an empty token", () => {

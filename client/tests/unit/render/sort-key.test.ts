@@ -7,6 +7,7 @@ import {
   setDrawablePosition,
   sortDrawablesInPlace,
 } from "../../../src/render/sort-key";
+import { sizeProbe } from "../setup/size-probe";
 
 const drawableArb: fc.Arbitrary<Drawable> = fc.record({
   x: fc.integer({ min: -500, max: 500 }),
@@ -76,26 +77,31 @@ describe("compareDrawables", () => {
   // FR123: sorting a pool never drops or duplicates a drawable -- the
   // sorted output is exactly the input multiset.
   it("inv_drawable_pool_is_a_permutation", () => {
+    const probe = sizeProbe({ min: 0, max: 40 });
     fc.assert(
-      fc.property(fc.array(drawableArb, { minLength: 0, maxLength: 40 }), (pool) => {
-        const before = new Map<string, number>();
-        for (const d of pool) {
-          const key = `${d.x},${d.y},${d.rank},${d.stableId},${d.floor}`;
-          before.set(key, (before.get(key) ?? 0) + 1);
-        }
+      fc.property(
+        probe.over(fc.array(drawableArb, { minLength: 0, maxLength: 40 }), (a) => a.length),
+        (pool) => {
+          const before = new Map<string, number>();
+          for (const d of pool) {
+            const key = `${d.x},${d.y},${d.rank},${d.stableId},${d.floor}`;
+            before.set(key, (before.get(key) ?? 0) + 1);
+          }
 
-        const copy = [...pool];
-        sortDrawablesInPlace(copy);
+          const copy = [...pool];
+          sortDrawablesInPlace(copy);
 
-        expect(copy).toHaveLength(pool.length);
-        const after = new Map<string, number>();
-        for (const d of copy) {
-          const key = `${d.x},${d.y},${d.rank},${d.stableId},${d.floor}`;
-          after.set(key, (after.get(key) ?? 0) + 1);
-        }
-        expect(after).toEqual(before);
-      }),
+          expect(copy).toHaveLength(pool.length);
+          const after = new Map<string, number>();
+          for (const d of copy) {
+            const key = `${d.x},${d.y},${d.rank},${d.stableId},${d.floor}`;
+            after.set(key, (after.get(key) ?? 0) + 1);
+          }
+          expect(after).toEqual(before);
+        },
+      ),
     );
+    probe.expectReached(30);
   });
 
   // Precedence: a future refactor that swaps two components in the

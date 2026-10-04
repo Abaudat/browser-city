@@ -220,7 +220,7 @@ const STOREY_HEIGHT_PX = balance("render.storey_height_px");
  * ts` uses for its own hover points. */
 function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
   const centre = cellBottomCentre(cellX, cellY);
-  const anchor = worldPointPx(centre.x, centre.y, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM);
+  const anchor = worldPointPx(centre.x, centre.y, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM, 0);
   return { x: anchor.x, y: anchor.y - TILE_SIZE_PX / 2 };
 }
 
@@ -262,6 +262,7 @@ async function binDrawnRectPx(
     TILE_SIZE_PX,
     STOREY_HEIGHT_PX,
     ZOOM,
+    0,
   );
   const worldRect = {
     x0: anchor.x - TILE_SIZE_PX / 2,
