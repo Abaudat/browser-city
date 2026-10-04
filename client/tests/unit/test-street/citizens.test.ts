@@ -217,8 +217,8 @@ describe("crowd placement through worldPointPx", () => {
     const walkerSpec = WALKER_SPECS[WALKER_ID];
     if (!walkerSpec) throw new Error("no walker spec");
     const open = { revision: () => 0, walkable: () => true };
-    const path = pathConfigOf(config);
-    const timetable = new Timetable(walkerSpec, config, open, path);
+    const pathDials = pathConfigOf(config);
+    const timetable = new Timetable(walkerSpec, config, open, pathDials);
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 10_000_000 }),
@@ -228,7 +228,7 @@ describe("crowd placement through worldPointPx", () => {
         (startMilli, deltaMS, zoom, tileSizePx) => {
           const walker = new CitizenBody(
             open,
-            path,
+            pathDials,
             { strideCells: config.strideCells, framesPerCycle: 6 },
             WALKER_ID,
           );
