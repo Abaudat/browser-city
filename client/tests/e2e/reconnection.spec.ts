@@ -144,6 +144,25 @@ test("a dropped connection returns by itself: the notice goes lost then reconnec
   const before = await position(a);
   if (!before) throw new Error("no position");
   const socketsBefore = sockets.count;
+  // The region as streamed, once it has applied: what the row callbacks
+  // have delivered so far, per table and key.
+  await a.waitForFunction(
+    () => {
+      const r = window.__bc?.region;
+      return r !== undefined && r.held().length > 0 && r.applied().length === r.held().length;
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
+  const heldCount = await a.evaluate(() => window.__bc?.region?.held().length ?? 0);
+  const rowCallbacks = () =>
+    a.evaluate(() => ({
+      inserts: { ...window.__bc?.region?.inserts },
+      updates: { ...window.__bc?.region?.updates },
+      deletes: { ...window.__bc?.region?.deletes },
+    }));
+  const rowsBefore = await rowCallbacks();
+  expect(Object.keys(rowsBefore.inserts).some((k) => k.startsWith("placedObject:"))).toBe(true);
 
   // The outage: refused until the test lets it through.
   sockets.mode = "refuse";
@@ -172,6 +191,26 @@ test("a dropped connection returns by itself: the notice goes lost then reconnec
   await expect(a.locator("#test-street canvas")).toBeAttached();
   expect(await position(a)).toEqual(before);
   expect(await a.evaluate(() => window.__bc?.connection?.live())).toBe(1);
+
+  // No flash: once the new connection's region has applied, no row the page
+  // held before the drop was handed on again as an insert, none was deleted,
+  // and no static row was rewritten. This holds only while the superseded
+  // SDK cache is still readable after the drop; if an SDK upgrade clears
+  // it, every held row arrives as a fresh insert and this fails.
+  await a.waitForFunction(
+    (n) => {
+      const r = window.__bc?.region;
+      return r !== undefined && r.held().length >= n && r.applied().length === r.held().length;
+    },
+    heldCount,
+    { timeout: 30_000 },
+  );
+  const rowsAfter = await rowCallbacks();
+  expect(rowsAfter.inserts).toEqual(rowsBefore.inserts);
+  expect(rowsAfter.deletes).toEqual(rowsBefore.deletes);
+  const staticUpdates = (o: Record<string, number>) =>
+    Object.fromEntries(Object.entries(o).filter(([k]) => k.startsWith("placedObject:")));
+  expect(staticUpdates(rowsAfter.updates)).toEqual(staticUpdates(rowsBefore.updates));
 
   // The sender resumed: a step is on the server.
   await walkRealCells(a, "east", 1.5, true);
@@ -295,6 +334,10 @@ test("while the connection is down the body answers no click: no intent and no r
   await frames(a, 30);
   expect(await refusals()).toEqual([]);
   expect(await a.evaluate(() => window.__bc?.intents ?? [])).toEqual([]);
+  // What the player sees: no refusal blip on the cursor either.
+  expect(await canvasOf(a).evaluate((el) => (el as HTMLElement).style.cursor)).not.toBe(
+    "not-allowed",
+  );
 
   sockets.mode = "pass";
   await expect(notice(a)).toHaveText("Reconnected", { timeout: 30_000 });

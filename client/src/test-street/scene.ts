@@ -1384,12 +1384,9 @@ export async function mountStreetScene(
     player: () => ({ x: walk.x, y: walk.y, floor: walk.floor }),
     tileSizePx,
     storeyHeightPx,
-    onIntent: (intent) => {
-      if (options.bodyControl?.isOpen() !== false) onIntent?.(intent);
-    },
-    onIgnored: (objectId) => {
-      if (options.bodyControl?.isOpen() !== false) onIgnored?.(objectId);
-    },
+    onIntent: (intent) => onIntent?.(intent),
+    onIgnored: (objectId) => onIgnored?.(objectId),
+    canAct: () => options.bodyControl?.isOpen() !== false,
     onHighlightChange: setHighlight,
   });
 

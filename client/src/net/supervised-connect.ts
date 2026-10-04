@@ -169,19 +169,26 @@ export function superviseConnect(
         },
         onInitialApplied: () => {
           if (!live()) return;
-          // The new region is in: whatever an older connection left behind
-          // no longer exists.
-          if (hasHeld()) {
-            for (const table of REGION_TABLE_NAMES) {
-              for (const row of unseenRows(rowsOf(table), seen(table))) rows?.onDelete(table, row);
-            }
-            for (const row of unseenRows(playersOf(), seenPlayers)) {
-              players?.onRemove(row.characterId);
-            }
-          }
-          superseded = [];
-          resetWindow();
           region.onInitialApplied?.();
+          // The new region is in: whatever an older connection left behind
+          // no longer exists. The SDK emits `applied` before it dispatches
+          // the applied rows' insert callbacks, so the sweep waits until
+          // they have all been delivered.
+          queueMicrotask(() => {
+            if (!live()) return;
+            if (hasHeld()) {
+              for (const table of REGION_TABLE_NAMES) {
+                for (const row of unseenRows(rowsOf(table), seen(table))) {
+                  rows?.onDelete(table, row);
+                }
+              }
+              for (const row of unseenRows(playersOf(), seenPlayers)) {
+                players?.onRemove(row.characterId);
+              }
+            }
+            superseded = [];
+            resetWindow();
+          });
         },
       },
     });

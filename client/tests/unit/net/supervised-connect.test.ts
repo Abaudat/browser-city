@@ -130,6 +130,9 @@ function deliver(conn: FakeConn, opts: ConnectOptions, table: string, row: unkno
   opts.region?.rows?.onInsert(table as never, row as never);
 }
 
+/** Lets the microtask that closes a reconnect window run. */
+const settle = () => Promise.resolve();
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -218,7 +221,7 @@ describe("one continuous world across a reconnect", () => {
     expect(seen.update).toHaveBeenCalledWith("placedObject", placed(1, 0), placed(1, 5));
   });
 
-  it("deletes what the old connection held and the new region no longer has", () => {
+  it("deletes what the old connection held and the new region no longer has", async () => {
     const { seen, reconnect } = setup();
     const first = calls[0] as ConnectOptions;
     const old = conns[0] as FakeConn;
@@ -234,6 +237,7 @@ describe("one continuous world across a reconnect", () => {
     second.region?.rows?.onInsert("playerPosition", rawPlayer("8"));
     expect(seen.del).not.toHaveBeenCalled();
     second.region?.onInitialApplied?.();
+    await settle();
     expect(seen.del).toHaveBeenCalledWith("placedObject", placed(1));
     expect(seen.del).toHaveBeenCalledWith("playerPosition", rawPlayer("7"));
     expect(seen.del).toHaveBeenCalledTimes(2);
@@ -242,17 +246,36 @@ describe("one continuous world across a reconnect", () => {
     expect(seen.applied).toHaveBeenCalledTimes(1);
   });
 
-  it("forgets the old connection once the sweep is done", () => {
+  it("rows delivered after the SDK's applied event, before its callbacks finish, are not swept", async () => {
+    const { seen, reconnect } = setup();
+    deliver(conns[0] as FakeConn, calls[0] as ConnectOptions, "placedObject", placed(1));
+    deliver(conns[0] as FakeConn, calls[0] as ConnectOptions, "placedObject", placed(2));
+    seen.del.mockClear();
+    seen.insert.mockClear();
+    reconnect();
+    const second = calls[1] as ConnectOptions;
+    second.region?.rows?.onInsert("placedObject", placed(1));
+    // The SDK emits `applied` first and dispatches the row callbacks after.
+    second.region?.onInitialApplied?.();
+    second.region?.rows?.onInsert("placedObject", placed(2));
+    await settle();
+    expect(seen.del).not.toHaveBeenCalled();
+    expect(seen.insert).not.toHaveBeenCalled();
+  });
+
+  it("forgets the old connection once the sweep is done", async () => {
     const { seen, reconnect } = setup();
     deliver(conns[0] as FakeConn, calls[0] as ConnectOptions, "placedObject", placed(1));
     reconnect();
     (calls[1] as ConnectOptions).region?.onInitialApplied?.();
+    await settle();
     seen.del.mockClear();
     (calls[1] as ConnectOptions).region?.onInitialApplied?.();
+    await settle();
     expect(seen.del).not.toHaveBeenCalled();
   });
 
-  it("a row the new connection deleted is not deleted again by the sweep", () => {
+  it("a row the new connection deleted is not deleted again by the sweep", async () => {
     const { seen, reconnect } = setup();
     deliver(conns[0] as FakeConn, calls[0] as ConnectOptions, "placedObject", placed(1));
     reconnect();
@@ -260,10 +283,11 @@ describe("one continuous world across a reconnect", () => {
     second.region?.rows?.onDelete("placedObject", placed(1));
     seen.del.mockClear();
     second.region?.onInitialApplied?.();
+    await settle();
     expect(seen.del).not.toHaveBeenCalled();
   });
 
-  it("an attempt that never connected holds nothing, and the first connection's rows survive it", () => {
+  it("an attempt that never connected holds nothing, and the first connection's rows survive it", async () => {
     const { seen, win } = setup();
     const first = calls[0] as ConnectOptions;
     deliver(conns[0] as FakeConn, first, "placedObject", placed(1));
@@ -279,6 +303,7 @@ describe("one continuous world across a reconnect", () => {
     expect(seen.update).not.toHaveBeenCalled();
     seen.del.mockClear();
     third.region?.onInitialApplied?.();
+    await settle();
     expect(seen.del).not.toHaveBeenCalled();
   });
 
