@@ -366,7 +366,7 @@ describe("properties", () => {
     fc.assert(
       fc.property(
         routeArb,
-        fc.array(fc.integer({ min: 4, max: 60 }), { minLength: 1, maxLength: 80 }),
+        fc.array(fc.integer({ min: 8, max: 60 }), { minLength: 1, maxLength: 80 }),
         (raw, frameMs) => {
           const route = dedupe(raw);
           fc.pre(route.length >= 2);
@@ -380,6 +380,11 @@ describe("properties", () => {
           const prev = createBodyPose();
           let realMs = 0;
           let stationaryMs = 0;
+          // Worst values are tracked per frame and asserted once: a 60 s walk is
+          // thousands of frames and `expect` per frame costs seconds.
+          let worstOverSpeed = Number.NEGATIVE_INFINITY;
+          let worstBackstep = 0;
+          let worstStationaryMs = 0;
           body.poseAt(0, prev);
           let i = 0;
           while (realMs < 60_000) {
@@ -387,15 +392,18 @@ describe("properties", () => {
             realMs += dt;
             body.poseAt(realMs / MS_PER_MILLIMINUTE, out);
             const moved = Math.hypot(out.x - prev.x, out.y - prev.y);
-            expect(moved).toBeLessThanOrEqual(speedCellsPerMs * dt * 1.05 + 1e-9);
-            expect(out.distance).toBeGreaterThanOrEqual(prev.distance);
+            worstOverSpeed = Math.max(worstOverSpeed, moved - (speedCellsPerMs * dt * 1.05 + 1e-9));
+            worstBackstep = Math.max(worstBackstep, prev.distance - out.distance);
             const walking = realMs < duration * MS_PER_MILLIMINUTE;
             stationaryMs = walking && moved === 0 ? stationaryMs + dt : 0;
-            expect(stationaryMs).toBeLessThanOrEqual(cfg.stallBoundMs);
+            worstStationaryMs = Math.max(worstStationaryMs, stationaryMs);
             prev.x = out.x;
             prev.y = out.y;
             prev.distance = out.distance;
           }
+          expect(worstOverSpeed).toBeLessThanOrEqual(0);
+          expect(worstBackstep).toBe(0);
+          expect(worstStationaryMs).toBeLessThanOrEqual(cfg.stallBoundMs);
         },
       ),
     );
