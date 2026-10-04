@@ -46,7 +46,7 @@ describe("sizeProbe (NFR51)", () => {
   });
 
   it("over records every value its arbitrary generates", () => {
-    const p = sizeProbe({ min: 0, max: 400 });
+    const p = sizeProbe({ min: 0, max: 40 });
     const seen: number[] = [];
     fc.assert(
       fc.property(

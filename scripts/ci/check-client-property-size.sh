@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Story 15.18 (NFR51): a client property explores the size it states. The one
 # setup file sets fast-check's `defaultSizeToMaxWhenMaxSpecified`, so a stated
-# maxLength/maxDepth/maxKeys is the size drawn; nothing may override or dodge
+# maxLength/maxKeys is the size drawn; nothing may override or dodge
 # it. Line-based; comment lines are ignored. Under client/tests and client/src:
 #   1. tests/unit/setup/property-seed.ts sets `defaultSizeToMaxWhenMaxSpecified: true`.
 #      When it does not, every maxLength/maxDepth/maxKeys line in a file

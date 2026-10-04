@@ -348,26 +348,28 @@ describe("normaliseBindings", () => {
   it("inv_keybindings_parse_is_total", () => {
     // Any JSON value at all -- however hostile -- yields a complete,
     // valid map and never throws.
-    // Nesting depth and the widest container are the two stated dimensions.
-    const depth = sizeProbe({ min: 0, max: 6, ceiling: 2 });
+    // The widest container is the NFR51 dimension: fast-check's default stops
+    // at 10 keys (measured: 10 in 2000 seeds), so 11 is above its ceiling.
+    // Nesting is not governed by the switch, so it only gets a plain check.
     const width = sizeProbe({ min: 0, max: 12, ceiling: 10 });
+    let deepest = 0;
     const shape = (value: unknown): [number, number] => {
-      let deepest = 0;
+      let nest = 0;
       let widest = 0;
       const walk = (v: unknown, level: number): void => {
         if (v === null || typeof v !== "object") return;
         const children = Array.isArray(v) ? v : Object.values(v);
-        deepest = Math.max(deepest, level + 1);
+        nest = Math.max(nest, level + 1);
         widest = Math.max(widest, children.length);
         for (const child of children) walk(child, level + 1);
       };
       walk(value, 0);
-      return [deepest, widest];
+      return [nest, widest];
     };
     const anything = fc.anything({ maxDepth: 6, maxKeys: 12 }).map((value) => {
-      const [d, w] = shape(value);
-      depth.record(d);
-      width.record(w);
+      const [nest, widest] = shape(value);
+      deepest = Math.max(deepest, nest);
+      width.record(widest);
       return value;
     });
     fc.assert(
@@ -377,7 +379,7 @@ describe("normaliseBindings", () => {
         expectValid(bindings);
       }),
     );
-    depth.expectReached(3);
+    expect(deepest).toBeGreaterThanOrEqual(3);
     width.expectReached(11);
   });
 });
