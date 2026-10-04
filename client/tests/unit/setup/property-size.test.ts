@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 // must not reconfigure): a stated max is the size explored (NFR51).
 const RUNS = 100;
 
-function largest<T>(arb: fc.Arbitrary<T>, size: (v: T) => number): number {
+function largest<T>(arb: fc.Arbitrary<T>, measure: (v: T) => number): number {
   let max = 0;
   fc.assert(
     fc.property(arb, (v) => {
-      max = Math.max(max, size(v));
+      max = Math.max(max, measure(v));
     }),
     { numRuns: RUNS },
   );
@@ -30,6 +30,14 @@ describe("a stated maximum is the size a property explores (NFR51)", () => {
   it("fc.uniqueArray with maxLength 400 reaches past 200", () => {
     expect(
       largest(fc.uniqueArray(fc.integer(), { maxLength: 400 }), (a) => a.length),
+    ).toBeGreaterThan(200);
+  });
+  it("fc.dictionary with maxKeys 400 reaches past 200 keys", () => {
+    expect(
+      largest(
+        fc.dictionary(fc.string({ minLength: 1, maxLength: 8 }), fc.integer(), { maxKeys: 400 }),
+        (d) => Object.keys(d).length,
+      ),
     ).toBeGreaterThan(200);
   });
   it("an arbitrary with no stated maximum stays at the cheap default", () => {

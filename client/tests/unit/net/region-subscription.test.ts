@@ -19,6 +19,7 @@ import {
   REGION_MAX_HANDLES,
   REGION_RADIUS_CHUNKS,
 } from "../../../src/world/region";
+import { sizeProbe } from "../setup/size-probe";
 
 const FLOORS = { minFloor: -1, maxFloor: 7 };
 
@@ -379,6 +380,9 @@ describe("RegionSubscriptions", () => {
       nat.map((i) => ({ t: "errorEnding" as const, i })),
     );
     // An error-free walk, then at most one error, then a tail of deliveries.
+    // Stated: up to 120 walk steps, 3 error steps and 30 tail steps. Fast-check's
+    // default stops each array at 10, so 23 is the most it would reach.
+    const probe = sizeProbe({ min: 0, max: 153, ceiling: 23 });
     const schedule = fc
       .tuple(
         fc.array(walkStep, { maxLength: 120 }),
@@ -389,7 +393,11 @@ describe("RegionSubscriptions", () => {
         error
           ? [...walk, ...error, ...tail]
           : [...walk, ...tail.filter((c) => !c.t.startsWith("error"))],
-      );
+      )
+      .map((commands) => {
+        probe.record(commands.length);
+        return commands;
+      });
 
     const reports: Report[] = [];
     fc.assert(
@@ -397,6 +405,8 @@ describe("RegionSubscriptions", () => {
         reports.push(runSchedule(commands));
       }),
     );
+
+    probe.expectReached(100);
 
     // The generator's depth is a tested fact: the run holds at least one
     // schedule of each kind (each is drawn in about 20% of schedules, so a

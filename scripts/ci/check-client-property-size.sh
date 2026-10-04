@@ -7,14 +7,16 @@
 #      When it does not, every maxLength/maxDepth/maxKeys line in a file
 #      importing fast-check is reported, because none of them is honoured.
 #   2. `baseSize` appears nowhere.
-#   3. A file importing fast-check has no `size`/`depthSize` key set to a
-#      fast-check size literal ("max", "xsmall".."xlarge", "-4".."+4", "=").
-#   4. A file importing fast-check has no zero-argument fc.string(),
-#      fc.anything(), fc.json(), fc.jsonValue(), fc.object(), and no
-#      fc.array(x)/fc.uniqueArray(x) closed on one line with no options.
-# Files under tests/unit/setup/ are exempt from 3 and 4 (the canary test there
-# pins the defaults). It cannot see that a multi-line fc.array( carries a
-# maxLength; the probes in the properties (size-probe.ts) cover that.
+#   3. A file importing fast-check has no `size`/`depthSize` key whose value is
+#      not a number (a literal, an identifier, a template, or shorthand).
+#   4. A file importing fast-check has no fc.array/uniqueArray/string/
+#      dictionary/anything/json/jsonValue/object call that opens and closes on
+#      one line without its own maxLength (array, uniqueArray, string), maxKeys (dictionary)
+#      or maxDepth/maxKeys (anything, json, jsonValue, object); a maximum on a
+#      nested arbitrary does not count.
+# Files under tests/unit/setup/ are exempt from 4 only (the canary draws
+# unbounded arbitraries on purpose). It cannot see that a multi-line
+# fc.array( carries a maxLength; the probes (size-probe.ts) cover that.
 #
 # Usage: check-client-property-size.sh [client dir]
 set -euo pipefail
@@ -57,13 +59,37 @@ hits "sets baseSize -- a stated maximum is the size, never a base size" '\<baseS
 if [ "$SWITCH" -eq 0 ]; then
   hits "states a maximum that is not honoured" '\<(maxLength|maxDepth|maxKeys)\>' "${PROPS[@]}"
 fi
-LITERAL="\"(max|xsmall|small|medium|large|xlarge|[-+][0-4]|=)\"|'(max|xsmall|small|medium|large|xlarge|[-+][0-4]|=)'"
-hits "sets a fast-check size -- lower the stated maximum instead" \
-  "\<(size|depthSize)[[:space:]]*:[[:space:]]*($LITERAL)" "${OUTSIDE[@]}"
-hits "draws an arbitrary with no stated maximum" \
-  'fc\.(string|anything|json|jsonValue|object)\(\)' "${OUTSIDE[@]}"
-hits "draws an array with no options, so no stated maximum" \
-  'fc\.(array|uniqueArray)\((fc\.[A-Za-z]+\([^(){}]*\)|[A-Za-z_][A-Za-z0-9_.]*)\)' "${OUTSIDE[@]}"
+# Rule 3 holds everywhere fast-check is imported, the setup directory included:
+# a size/depthSize key may only carry a number, never a literal, identifier or
+# shorthand.
+hits "sets a fast-check size -- lower the stated maximum instead"   '\<(size|depthSize)[[:space:]]*:[[:space:]]*[^-0-9[:space:]]|[{,][[:space:]]*(size|depthSize)[[:space:]]*[,}]' "${PROPS[@]}"
+
+# Rule 4: a one-line call of a sized arbitrary must state a maximum.
+if [ "${#OUTSIDE[@]}" -gt 0 ]; then
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    fail "$hit draws a sized arbitrary with no stated maximum"
+  done < <(awk '
+    { sub(/$/, "") }
+    /^[[:space:]]*(\/\/|\/\*|\*)/ { next }
+    {
+      line = $0; rest = line
+      while (match(rest, /fc\.(array|uniqueArray|string|dictionary|anything|json|jsonValue|object)\(/)) {
+        start = RSTART
+        kind = substr(rest, start + 3, RLENGTH - 4)
+        depth = 0; end = 0; own = ""
+        for (i = start + RLENGTH - 1; i <= length(rest); i++) {
+          c = substr(rest, i, 1)
+          if (c == "(") depth++
+          else if (c == ")") { depth--; if (depth == 0) { end = i; break } }
+          if (depth == 1) own = own c
+        }
+        want = (kind == "dictionary") ? "maxKeys" : (kind ~ /^(anything|json|jsonValue|object)$/) ? "max(Depth|Keys)" : "maxLength"
+        if (end > 0 && own !~ want) { print FILENAME ":" FNR; break }
+        rest = substr(rest, start + RLENGTH)
+      }
+    }' "${OUTSIDE[@]}" 2>/dev/null | sort -u)
+fi
 
 [ "$FAILED" -eq 0 ] || exit 1
 echo "check-client-property-size: every client property explores the size it states (story 15.18)" >&2

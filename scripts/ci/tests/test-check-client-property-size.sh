@@ -21,7 +21,9 @@ fc.assert(
   fc.property(fc.array(fc.integer(), { maxLength: 40 }), fc.string({ maxLength: 5 }), () => true),
   { numRuns: 20 },
 );
-const fixture = { size: 3, depthSize: undefined };
+const fixture = { size: 3, depthSize: 2 };
+const count = listeners.size,
+  other = 1;
 TS
 }
 
@@ -60,6 +62,16 @@ check "the switch only in a comment fails" 1 bash "$CHECK" "$d"
 d="$(fake_dir)"; tree "$d"
 printf 'import fc from "fast-check";\nfc.configureGlobal({ seed: 1, defaultSizeToMaxWhenMaxSpecified: false });\n' > "$d/tests/unit/setup/property-seed.ts"
 check "the switch set to false fails" 1 bash "$CHECK" "$d"
+d="$(fake_dir)"; tree "$d"
+printf 'import fc from "fast-check";
+fc.configureGlobal({ seed: 1 });
+' > "$d/tests/unit/setup/property-seed.ts"
+printf 'import fc from "fast-check";
+const a = fc.boolean();
+' > "$d/tests/unit/world/a.test.ts"
+out="$(bash "$CHECK" "$d" 2>&1)"
+check "a setup file without the switch and no stated maximum fails" 1 bash "$CHECK" "$d"
+check_contains "the missing switch is reported against the setup file"   "tests/unit/setup/property-seed.ts does not set defaultSizeToMaxWhenMaxSpecified" "$out"
 d="$(fake_dir)"; rm -rf "$d"; mkdir -p "$d/tests/unit/world"
 check "a missing setup file fails" 1 bash "$CHECK" "$d"
 
@@ -128,9 +140,48 @@ d="$(fake_dir)"; tree "$d"
 cat > "$d/tests/unit/setup/canary.test.ts" <<'TS'
 import fc from "fast-check";
 const a = fc.array(fc.integer());
-const b = fc.array(fc.integer(), { maxLength: 400, size: "max" });
+const b = fc.array(fc.integer(), { maxLength: 400 });
 TS
-check "the setup directory is exempt from the size and unbounded rules" 0 bash "$CHECK" "$d"
+check "an unbounded arbitrary in the setup directory passes" 0 bash "$CHECK" "$d"
+red "a size literal in the setup directory fails" tests/unit/setup/canary.test.ts   'import fc from "fast-check";
+const b = fc.array(fc.integer(), { maxLength: 400, size: "max" });'
+
+# Shapes the codebase writes: options without a maximum, braces in the element.
+red "a one-line fc.array with a record element and no options fails" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const a = fc.array(fc.record({ x: fc.integer() }));'
+red "a one-line fc.array with a bounded integer element and no options fails" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const a = fc.array(fc.integer({ min: 1, max: 5 }));'
+red "fc.array with a minLength and no maxLength fails" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const a = fc.array(fc.integer(), { minLength: 3 });'
+red "fc.uniqueArray with a minLength and no maxLength fails" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const a = fc.uniqueArray(fc.integer(), { minLength: 2 });'
+red "fc.string with a minLength and no maxLength fails" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const a = fc.string({ minLength: 1 });'
+red "fc.string with empty options fails" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const a = fc.string({});'
+red "fc.dictionary with no maxKeys fails" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const a = fc.dictionary(fc.string({ maxLength: 4 }), fc.integer());'
+red "a maximum on a nested arbitrary does not bound the outer array" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const a = fc.array(fc.string({ maxLength: 3 }));'
+red "a size set from an identifier fails" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const SIZE = "max";
+const a = fc.array(fc.integer(), { maxLength: 400, size: SIZE });'
+red "a shorthand size key fails" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const size = "max";
+const a = fc.array(fc.integer(), { maxLength: 400, size });'
+red "a template literal size fails" tests/unit/world/b.test.ts   'import fc from "fast-check";
+const a = fc.array(fc.integer(), { maxLength: 400, size: `max` });'
+d="$(fake_dir)"; tree "$d"
+cat > "$d/tests/unit/world/ok.test.ts" <<'TS'
+import fc from "fast-check";
+const a = fc.array(
+  fc.record({ x: fc.integer() }),
+  { maxLength: 8 },
+);
+const b = fc.dictionary(fc.string({ maxLength: 4 }), fc.integer(), { maxKeys: 8 });
+const c = fc.array(fc.integer(), { maxLength: 8, size: 2 });
+TS
+check "a multi-line fc.array, a bounded dictionary and a numeric size pass" 0 bash "$CHECK" "$d"
 
 summary
 exit $?

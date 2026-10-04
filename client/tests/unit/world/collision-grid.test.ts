@@ -266,7 +266,7 @@ describe("inv_collision_grid_matches_rebuild", () => {
   // fresh build of the survivors -- including which chunks are allocated,
   // so a grid that never frees an emptied chunk fails here.
   it("inv_collision_grid_matches_rebuild", () => {
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 40 });
     fc.assert(
       fc.property(
         probe.over(

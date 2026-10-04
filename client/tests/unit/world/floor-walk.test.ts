@@ -118,7 +118,7 @@ describe("stepAndTransition", () => {
       { skipPairSymmetry: true },
     );
 
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 1, max: 30 });
     fc.assert(
       fc.property(
         fc.constantFrom({ x: 1, y: 0 } as const, { x: -1, y: 0 } as const),
@@ -176,7 +176,7 @@ describe("stepAndTransition", () => {
       { x: 0, y: 0 },
     ] as const;
 
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 1, max: 40 });
     fc.assert(
       fc.property(
         probe.over(

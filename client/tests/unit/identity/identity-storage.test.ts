@@ -59,7 +59,7 @@ describe("identity storage (story 4.5, FR141)", () => {
   // Reading any string at all from the key never throws, never writes and never
   // touches another key.
   it("inv_identity_token_read_is_total", () => {
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 200 });
     fc.assert(
       fc.property(
         probe.over(fc.string({ maxLength: 200 }), (s) => s.length),

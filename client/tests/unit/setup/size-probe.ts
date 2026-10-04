@@ -8,27 +8,39 @@ import { appendFileSync } from "node:fs";
 import type fc from "fast-check";
 import { expect } from "vitest";
 
+/** What the arbitrary states (`min`, `max`) and the largest size fast-check's
+ * default would reach (`ceiling`, `2 * min + 10` for lengths). */
+export interface SizeBounds {
+  min: number;
+  max: number;
+  ceiling?: number;
+}
+
 export interface SizeProbe {
-  record(size: number): void;
-  /** `arb`, recording `size(value)` of every value it generates. */
-  over<T>(arb: fc.Arbitrary<T>, size: (value: T) => number): fc.Arbitrary<T>;
+  record(n: number): void;
+  /** `arb`, recording `measure(value)` of every value it generates. */
+  over<T>(arb: fc.Arbitrary<T>, measure: (value: T) => number): fc.Arbitrary<T>;
   /** Assert the largest recorded size is at least `floor`. */
   expectReached(floor: number): void;
 }
 
-export function sizeProbe(): SizeProbe {
+export function sizeProbe({ min, max: stated, ceiling = 2 * min + 10 }: SizeBounds): SizeProbe {
   const sizes: number[] = [];
-  const record = (size: number): void => {
-    sizes.push(size);
+  const record = (n: number): void => {
+    sizes.push(n);
   };
   return {
     record,
-    over: (arb, size) =>
+    over: (arb, measure) =>
       arb.map((value) => {
-        record(size(value));
+        record(measure(value));
         return value;
       }),
     expectReached: (floor) => {
+      if (floor <= ceiling) {
+        throw new Error(`floor ${floor} is at or below the default ceiling ${ceiling}`);
+      }
+      if (floor > stated) throw new Error(`floor ${floor} is above the stated maximum ${stated}`);
       const sorted = [...sizes].sort((a, b) => a - b);
       const max = sorted[sorted.length - 1] ?? 0;
       const median = sorted[Math.floor(sorted.length / 2)] ?? 0;

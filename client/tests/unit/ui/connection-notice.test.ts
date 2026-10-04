@@ -229,7 +229,7 @@ describe("mountConnectionNotice", () => {
     // fade are all 0 here so "settled" needs no fake-timer bookkeeping
     // inside the property itself: every timer this module schedules
     // fires on the very next tick it is given.
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 30 });
     fc.assert(
       fc.property(
         probe.over(

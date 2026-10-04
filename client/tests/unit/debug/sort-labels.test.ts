@@ -190,7 +190,7 @@ describe("buildSortLabels", () => {
   // the key, this fails -- without this module ever owning a second
   // comparator.
   it("inv_sort_overlay_labels_are_the_sort_key", () => {
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 2, max: 20 });
     fc.assert(
       fc.property(
         fc.array(
@@ -234,6 +234,6 @@ describe("buildSortLabels", () => {
       ),
       { numRuns: 60 },
     );
-    probe.expectReached(14);
+    probe.expectReached(15);
   });
 });

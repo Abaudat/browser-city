@@ -190,7 +190,7 @@ describe("rebind", () => {
     // Whatever any sequence of rebinds produces, loading it back yields
     // exactly the same map -- no binding the player set can disappear on
     // the next boot.
-    const codeProbe = sizeProbe();
+    const codeProbe = sizeProbe({ min: 0, max: 20 });
     const codeArb = fc.oneof(
       fc.constantFrom(
         "KeyW",
@@ -208,7 +208,7 @@ describe("rebind", () => {
       ),
       codeProbe.over(fc.string({ maxLength: 20 }), (code) => code.length),
     );
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 20 });
     fc.assert(
       fc.property(
         probe.over(
@@ -260,7 +260,7 @@ describe("rebind", () => {
       "Escape",
       "Space",
     );
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 25 });
     fc.assert(
       fc.property(
         probe.over(
@@ -348,17 +348,36 @@ describe("normaliseBindings", () => {
   it("inv_keybindings_parse_is_total", () => {
     // Any JSON value at all -- however hostile -- yields a complete,
     // valid map and never throws.
-    const probe = sizeProbe();
+    // Nesting depth and the widest container are the two stated dimensions.
+    const depth = sizeProbe({ min: 0, max: 6, ceiling: 2 });
+    const width = sizeProbe({ min: 0, max: 12, ceiling: 10 });
+    const shape = (value: unknown): [number, number] => {
+      let deepest = 0;
+      let widest = 0;
+      const walk = (v: unknown, level: number): void => {
+        if (v === null || typeof v !== "object") return;
+        const children = Array.isArray(v) ? v : Object.values(v);
+        deepest = Math.max(deepest, level + 1);
+        widest = Math.max(widest, children.length);
+        for (const child of children) walk(child, level + 1);
+      };
+      walk(value, 0);
+      return [deepest, widest];
+    };
+    const anything = fc.anything({ maxDepth: 6, maxKeys: 12 }).map((value) => {
+      const [d, w] = shape(value);
+      depth.record(d);
+      width.record(w);
+      return value;
+    });
     fc.assert(
-      fc.property(
-        probe.over(fc.anything({ maxDepth: 4, maxKeys: 8 }), (v) => JSON.stringify(v)?.length ?? 0),
-        (value) => {
-          const bindings = normaliseBindings(value);
-          expect(Object.keys(bindings).sort()).toEqual([...BINDABLE_ACTIONS].sort());
-          expectValid(bindings);
-        },
-      ),
+      fc.property(anything, (value) => {
+        const bindings = normaliseBindings(value);
+        expect(Object.keys(bindings).sort()).toEqual([...BINDABLE_ACTIONS].sort());
+        expectValid(bindings);
+      }),
     );
-    probe.expectReached(250);
+    depth.expectReached(3);
+    width.expectReached(11);
   });
 });

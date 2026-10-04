@@ -402,7 +402,7 @@ describe("buildCollisionRects", () => {
   // A dropped translation, a doubled anchor, a state read from the wrong
   // source or an object drawn twice all fail here.
   it("inv_collision_overlay_shows_exactly_the_colliders", () => {
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 25 });
     fc.assert(
       fc.property(
         fc.array(

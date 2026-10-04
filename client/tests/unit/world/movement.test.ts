@@ -136,7 +136,7 @@ describe("inv_move_never_ends_inside_collider", () => {
   // sequence, any delta and either speed: the body is never inside a
   // collider, checked after *every* step rather than only at the end.
   it("inv_move_never_ends_inside_collider", () => {
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 1, max: 20 });
     fc.assert(
       fc.property(
         fc.array(colliderArb, { minLength: 1, maxLength: 8 }),
@@ -402,7 +402,7 @@ describe("inv_step_is_frame_rate_independent", () => {
   // within epsilon. Kept under the 100ms delta clamp's own ceiling: at
   // most 15 steps of at most 5ms each, so the total never reaches 100ms.
   it("inv_step_is_frame_rate_independent", () => {
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 1, max: 15 });
     fc.assert(
       fc.property(
         probe.over(
@@ -424,7 +424,7 @@ describe("inv_step_is_frame_rate_independent", () => {
         },
       ),
     );
-    probe.expectReached(12);
+    probe.expectReached(13);
   });
 
   it("diagonal speed never exceeds axis speed", () => {

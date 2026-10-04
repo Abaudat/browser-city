@@ -254,7 +254,7 @@ function gridForPair(
 
 describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and any deltaMs in range, walking the entry direction then the reverse direction lands back on the original cell, with no bounce", () => {
   it("inv_transition_pairs_round_trip", () => {
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 1, max: 20 });
     fc.assert(
       fc.property(
         fc.constantFrom(

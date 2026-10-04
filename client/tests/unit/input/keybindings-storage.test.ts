@@ -135,7 +135,7 @@ describe("loadBindings", () => {
   it("inv_keybindings_read_is_total", () => {
     // Any string at all in the slot -- and any throw from storage -- is a
     // playable game on defaults, never an exception.
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 200 });
     fc.assert(
       fc.property(
         probe.over(fc.string({ maxLength: 200 }), (s) => s.length),

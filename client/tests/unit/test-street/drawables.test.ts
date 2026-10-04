@@ -431,10 +431,13 @@ describe("the player can never walk off the drawn world", () => {
   }
 
   function isOnDrawnGround(pos: Vec2): boolean {
-    // The union of the two ground rects has no hole, so a body entirely
-    // inside it is exactly a body whose every corner is inside one of
-    // them -- corner checking cannot pass a body that has left the
-    // ground. A raw world-space corner is compared against the ground
+    // The union of the four ground rects (the two interior floors, the
+    // pavement and the subway entrance strip) has no hole. Its only
+    // concave corners are where the strip meets the pavement's south edge,
+    // and the body is far narrower than the pavement either side of the
+    // strip, so a body with every corner inside one of the rects is
+    // entirely inside the union -- corner checking cannot pass a body that
+    // has left the ground. A raw world-space corner is compared against the ground
     // rects in the same plain `tile * tileSizePx` pixel space they were
     // built in above -- never through `cellBottomCentre`, which adds a
     // bottom-centre *sprite anchor* offset (`+0.5` tile in x, `+1` tile
@@ -458,8 +461,8 @@ describe("the player can never walk off the drawn world", () => {
     });
   }
 
-  it("stays on the interior floor or the pavement for any input sequence, every step", () => {
-    const probe = sizeProbe();
+  it("stays on the drawn ground for any input sequence, every step", () => {
+    const probe = sizeProbe({ min: 1, max: 400 });
     fc.assert(
       fc.property(
         probe.over(
@@ -548,7 +551,7 @@ describe("the player can never walk off the drawn world", () => {
     run(start(foot.rect.x0 + half), around);
     // A diagonal off the strip's east end, in one step.
     run(start(foot.rect.x0 + half), repeat(1, 1, 40));
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 1, max: 400 });
     fc.assert(
       fc.property(
         probe.over(
@@ -576,7 +579,7 @@ describe("the player can never walk off the drawn world", () => {
   // the boundary ring there must fail here, at unit speed, rather than
   // only ever showing up as a wrong-looking screenshot.
   it("stays on the pavement for any input sequence starting under the bridge's own east end", () => {
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 1, max: 400 });
     fc.assert(
       fc.property(
         probe.over(

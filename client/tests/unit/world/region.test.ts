@@ -84,7 +84,7 @@ describe("planRegion", () => {
         df: fc.constantFrom(-1, 0, 1),
       }),
     );
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 40 });
     fc.assert(
       fc.property(
         pos(),

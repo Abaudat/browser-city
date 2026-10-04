@@ -77,7 +77,7 @@ describe("compareDrawables", () => {
   // FR123: sorting a pool never drops or duplicates a drawable -- the
   // sorted output is exactly the input multiset.
   it("inv_drawable_pool_is_a_permutation", () => {
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 40 });
     fc.assert(
       fc.property(
         probe.over(fc.array(drawableArb, { minLength: 0, maxLength: 40 }), (a) => a.length),

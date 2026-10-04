@@ -57,7 +57,7 @@ describe("isLinkPromptDue (story 4.5, FR143)", () => {
 
   // Once shown it is not due again before its cool-off, and once linked it is never due.
   it("inv_link_prompt_respects_cooloff_and_link", () => {
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 12 });
     fc.assert(
       fc.property(
         fc.record({
@@ -99,7 +99,7 @@ describe("isLinkPromptDue (story 4.5, FR143)", () => {
         },
       ),
     );
-    probe.expectReached(10);
+    probe.expectReached(11);
   });
 });
 

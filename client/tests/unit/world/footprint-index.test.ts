@@ -287,7 +287,7 @@ describe("FootprintIndex", () => {
       return { cells, allocatedChunks: index.allocatedChunkCount() };
     }
 
-    const probe = sizeProbe();
+    const probe = sizeProbe({ min: 0, max: 30 });
     fc.assert(
       fc.property(
         probe.over(
