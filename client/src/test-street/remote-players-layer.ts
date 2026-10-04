@@ -11,6 +11,7 @@
 
 import { Container, Sprite } from "pixi.js";
 import type { Defs } from "../defs/types";
+import { loopFrameAt } from "../render/animation-frame";
 import type {
   AppearanceTextureCache,
   CompositeFrames,
@@ -104,7 +105,7 @@ export async function mountRemotePlayersLayer(
         ? frames.frame(
             "walk",
             facing,
-            Math.floor((d.walkedMs / 1000) * WALK_FRAMES_PER_SECOND) % WALK_FRAMES_PER_DIRECTION,
+            loopFrameAt(d.walkedMs, WALK_FRAMES_PER_SECOND, WALK_FRAMES_PER_DIRECTION),
           )
         : frames.frame("idle", facing, 0);
     }
