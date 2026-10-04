@@ -30,6 +30,8 @@ import type {} from "../../src/net/e2e-hooks";
 import { buildFlights, FlightIndex } from "../../src/render/flight-offset";
 import { worldPointPx } from "../../src/render/screen-position";
 import {
+  BRIDGE_DECK_Y,
+  BRIDGE_FLOOR,
   isDefStreetProp,
   PLATFORM_LANDING_Y,
   PLATFORM_UP_ANCHOR_X,
@@ -48,6 +50,7 @@ import {
   STREET_PROPS,
   STREET_TRANSITIONS,
   SUBWAY_FLOOR,
+  streetFootbridgeRoute,
   streetNearRailingPressRoute,
   streetPlacedRows,
   streetSubwayApproachRoute,
@@ -646,6 +649,181 @@ test.describe("story 15.15: the flight offset, mounted", () => {
       // whose recording matters.
       await context.close();
       await video?.saveAs(join(FLIGHT_SHOT_DIR, "walk-down-and-up.webm"));
+      await video?.delete();
+    }
+  });
+});
+
+// Story 15.19 (FR182): the footbridge's flight, mounted. The cut and the
+// maths are proved in `tests/unit/render/flight-offset.test.ts`; this proves
+// the wiring on every frame of a real walk up the flight, along the deck and
+// down again, at each column: the sprite sits at the pure function's value,
+// nothing pops on one floor, and the camera, the floor and the deck's
+// culling stay in step. The recording (at the page's own size) and the stills
+// go to a directory CI uploads straight after the e2e step, for review.
+const BRIDGE_SHOT_DIR = "test-results/review-shots/story-15.19";
+
+interface FootbridgeSample {
+  x: number;
+  y: number;
+  floor: number;
+  bounds: { x: number; y: number; width: number; height: number };
+  view: { zoom: number; offsetX: number; offsetY: number };
+  streetCulled: boolean;
+  deckCulled: boolean;
+}
+
+test.describe("story 15.19: the footbridge flights, mounted", () => {
+  test("up and back down each end of the footbridge flight, the sprite sits at the pure offset on every frame", async ({
+    browser,
+    baseURL,
+  }) => {
+    test.setTimeout(180_000);
+    const tile = balanceValue("render.tile_size_px");
+    const storey = balanceValue("render.storey_height_px");
+    const config = streetMovementConfig();
+    const flights = buildFlights(
+      STREET_TRANSITIONS,
+      streetPlacedRows(),
+      streetObjectSources(),
+      storey,
+      tile,
+    );
+    const index = new FlightIndex(flights, config);
+    mkdirSync(BRIDGE_SHOT_DIR, { recursive: true });
+    const size = { width: 1920, height: 1080 };
+    const context = await browser.newContext({
+      baseURL,
+      viewport: size,
+      recordVideo: { dir: BRIDGE_SHOT_DIR, size },
+    });
+    const page = await context.newPage();
+    const video = page.video();
+    try {
+      await page.goto("/?freezeCrowd=1");
+      await waitForSceneReady(page);
+      await page.evaluate((deckFloor) => {
+        const w = window as unknown as { __flightSamples: unknown[]; __flightStop: boolean };
+        w.__flightSamples = [];
+        w.__flightStop = false;
+        const sample = () => {
+          const bc = window.__bc;
+          const pos = bc?.playerPosition;
+          const bounds = bc?.playerScreenBounds?.();
+          const view = bc?.viewTransform;
+          if (pos && bounds && view) {
+            w.__flightSamples.push({
+              x: pos.x,
+              y: pos.y,
+              floor: bc?.playerFloor ?? 0,
+              bounds,
+              view,
+              streetCulled: bc?.visibility?.["ground:0"] === "hidden",
+              deckCulled: bc?.visibility?.[`ground_objects:${deckFloor}`] === "hidden",
+            });
+          }
+          if (!w.__flightStop) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      }, BRIDGE_FLOOR);
+      const still = async (name: string) => {
+        await canvasOf(page).screenshot({ path: join(BRIDGE_SHOT_DIR, `${name}.png`) });
+      };
+      const settle = () => page.waitForTimeout(150);
+      // The stills, by the route's own segment labels: the last frames before
+      // and the first after each cut, and a street walker as close as it can
+      // stand to the abutment.
+      const stillAfter: Record<string, string> = {
+        "east-to-the-abutment": "01-street-beside-the-abutment",
+        "east-along-the-foot-row": "02-foot-of-the-flight",
+        "up-the-street-half": "03-street-half-before-the-cut",
+        "up-onto-the-deck": "04-deck-half-after-the-cut",
+        "down-the-deck-half": "05-deck-half-before-the-cut",
+        "down-off-the-deck": "06-street-half-after-the-cut",
+        "east-to-the-east-column": "07-foot-row-east-end",
+        "up-the-east-column": "08-deck-half-east-column-after-the-cut",
+        "west-along-the-deck": "09-deck-west-end",
+        "east-along-the-deck": "10-deck-east-end",
+        "down-the-east-column": "11-street-half-east-column-after-the-cut",
+      };
+      for (const segment of streetFootbridgeRoute(streetWalkInputs())) {
+        await walkRealSegment(page, segment);
+        const name = stillAfter[segment.label];
+        if (name) {
+          await settle();
+          await still(name);
+        }
+      }
+
+      await page.evaluate(() => {
+        (window as unknown as { __flightStop: boolean }).__flightStop = true;
+      });
+      const samples = await page.evaluate(
+        () => (window as unknown as { __flightSamples: FootbridgeSample[] }).__flightSamples,
+      );
+      expect(samples.length).toBeGreaterThan(100);
+
+      const drawnOffsetPx = (s: FootbridgeSample): number => {
+        const feetWorldY = (s.bounds.y + s.bounds.height - s.view.offsetY) / s.view.zoom;
+        const logicalWorldY = s.y * tile - s.floor * storey;
+        return feetWorldY - logicalWorldY;
+      };
+      const zoom = samples.at(0)?.view.zoom ?? 1;
+      const slopePxPerCell = Math.max(
+        ...flights.map((f) => Math.abs(f.dropPx) / (f.fullS - f.startS)),
+      );
+      const maxStepPx = slopePxPerCell * config.walkSpeedCellsPerMs * RELEASE_LAG.stepMs + 1 / zoom;
+      const viewport = page.viewportSize() ?? size;
+
+      let sawOffset = false;
+      let sawDeck = false;
+      samples.forEach((s, i) => {
+        // (1) The wiring: the mounted sprite's feet are the pure function's value.
+        const expected = index.offsetPx(s.x, s.y, s.floor);
+        expect(Math.abs(drawnOffsetPx(s) - expected), `frame ${i}`).toBeLessThanOrEqual(
+          1 / s.view.zoom + 1e-6,
+        );
+        if (expected !== 0) sawOffset = true;
+        if (s.floor === BRIDGE_FLOOR) sawDeck = true;
+        // The camera half: the sprite's bottom-centre stays on the canvas centre.
+        const cx = s.bounds.x + s.bounds.width / 2;
+        const cy = s.bounds.y + s.bounds.height;
+        expect(Math.abs(cx - viewport.width / 2), `frame ${i} camera x`).toBeLessThanOrEqual(1);
+        expect(Math.abs(cy - viewport.height / 2), `frame ${i} camera y`).toBeLessThanOrEqual(1);
+        // (4) The deck and the street are both drawn, on the deck and off it:
+        // the floor flips and nothing is culled, on the same frame.
+        expect(s.streetCulled, `frame ${i} street`).toBe(false);
+        expect(s.deckCulled, `frame ${i} deck`).toBe(false);
+        const prev = samples[i - 1];
+        if (!prev || prev.floor !== s.floor) return; // the floor change is the cut
+        // (2) No pop between frames on one floor.
+        expect(Math.abs(drawnOffsetPx(s) - drawnOffsetPx(prev)), `frame ${i}`).toBeLessThanOrEqual(
+          maxStepPx,
+        );
+        // A rest holds its height.
+        if (prev.x === s.x && prev.y === s.y) {
+          expect(drawnOffsetPx(s), `frame ${i} at rest`).toBeCloseTo(drawnOffsetPx(prev), 6);
+        }
+      });
+      expect(sawOffset, "the walk crossed the flights").toBe(true);
+      expect(sawDeck, "the walk reached the deck").toBe(true);
+
+      // (3) Zero at rest on the pavement and on the deck.
+      const first = samples.at(0);
+      if (!first) throw new Error("no samples");
+      expect(index.offsetPx(first.x, first.y, first.floor)).toBe(0);
+      expect(Math.abs(drawnOffsetPx(first))).toBeLessThanOrEqual(1 / first.view.zoom + 1e-6);
+      const onDeckRow = samples.filter(
+        (s) => s.floor === BRIDGE_FLOOR && Math.floor(s.y) === BRIDGE_DECK_Y,
+      );
+      expect(onDeckRow.length).toBeGreaterThan(0);
+      for (const s of onDeckRow) {
+        expect(index.offsetPx(s.x, s.y, s.floor)).toBe(0);
+        expect(Math.abs(drawnOffsetPx(s))).toBeLessThanOrEqual(1 / s.view.zoom + 1e-6);
+      }
+    } finally {
+      await context.close();
+      await video?.saveAs(join(BRIDGE_SHOT_DIR, "walk-up-and-down.webm"));
       await video?.delete();
     }
   });

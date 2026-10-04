@@ -41,6 +41,7 @@ import {
   streetBollardRoute,
   streetBridgeLapRoute,
   streetColliderSources,
+  streetFootbridgeRoute,
   streetNearRailingPressRoute,
   streetPlacedRows,
   streetSubwayApproachRoute,
@@ -651,5 +652,6 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     { name: "west-open-spot", segments: westOpenSpotRoute(), start: fresh },
     { name: "railing-foot", segments: railingFootRoute(), start: fresh },
     { name: "flight-walk", segments: flightWalkRoute(), start: fresh },
+    { name: "footbridge-walk", segments: streetFootbridgeRoute(inputs), start: fresh },
   ];
 }

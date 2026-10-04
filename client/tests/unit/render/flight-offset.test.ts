@@ -8,12 +8,12 @@ import fc from "fast-check";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import { buildFlights, FlightIndex } from "../../../src/render/flight-offset";
-import { snapToScreenPx, worldPointPx } from "../../../src/render/screen-position";
+import { floorOffsetPx, snapToScreenPx, worldPointPx } from "../../../src/render/screen-position";
 import {
-  BRIDGE_DOWN_ANCHOR_X,
-  BRIDGE_DOWN_ANCHOR_Y,
+  BRIDGE_FLIGHT_DEPTH,
+  BRIDGE_FLIGHT_WIDTH,
+  BRIDGE_FLIGHT_X0,
   BRIDGE_FLOOR,
-  BRIDGE_UP_ANCHOR_X,
   BRIDGE_UP_ANCHOR_Y,
   STAIRS_X,
   STAIRS_Y,
@@ -353,6 +353,33 @@ describe("flight construction (FR182)", () => {
     expect(new FlightIndex([], config).offsetPx(11, 5.9, 0)).toBe(0);
   });
 
+  it("a flight wider than one cell, anchored in every column, is one flight", () => {
+    // Two columns walked north: a pair per column on one two-wide object each side.
+    const columns = [30, 31];
+    const transitions: TransitionSpec[] = columns.flatMap((x) => [
+      { x, y: 10, floor: 0, targetX: x, targetY: 10, targetFloor: 1 },
+      { x, y: 11, floor: 1, targetX: x, targetY: 11, targetFloor: 0 },
+    ]);
+    const sources = new Map([
+      [1, { width: 2, height: 2, flight: { dropPx: 24, fromPx: 0, toPx: 16 } }],
+      [2, { width: 2, height: 2, flight: { dropPx: 24, fromPx: 0, toPx: 16 } }],
+    ]);
+    const flights = buildFlights(
+      transitions,
+      [
+        { defId: 1, x: 30, y: 11, floor: 0 },
+        { defId: 2, x: 30, y: 11, floor: 1 },
+      ],
+      sources,
+      STOREY,
+      TILE,
+    );
+    expect(flights.map((f) => [f.floor, f.x0, f.x1, f.y0, f.y1, f.dirY, f.dropPx])).toEqual([
+      [0, 30, 32, 10, 12, -1, -24],
+      [1, 30, 32, 10, 12, 1, 24],
+    ]);
+  });
+
   it("ignores a placed row whose def declares no drop, or has no def", () => {
     const rows = [PROP_ROW, { defId: 99, x: 10, y: 5, floor: 0 }];
     expect(buildFlights(TRANSITIONS, rows, SOURCES, STOREY, TILE)).toEqual([]);
@@ -380,19 +407,135 @@ describe("the street's own flights (conformance)", () => {
     TILE,
   );
 
-  it("both subway anchors resolve exactly one flight; the footbridge's resolves none", () => {
-    expect(flights.map((f) => f.floor).sort()).toEqual([SUBWAY_FLOOR, 0]);
+  const coversAnchor = (f: (typeof flights)[number], a: TransitionSpec) =>
+    f.floor === a.floor && a.x >= f.x0 && a.x < f.x1 && a.y >= f.y0 && a.y < f.y1;
+
+  it("every anchor of every pairing resolves exactly one flight, by floor and by the fixture's own constants", () => {
+    // The subway's two, and the footbridge's: one flight on the street, one on the deck.
+    expect(flights.map((f) => f.floor).sort()).toEqual([SUBWAY_FLOOR, 0, 0, BRIDGE_FLOOR]);
+    const bridgeStreet = flights.find((f) => f.floor === 0 && f.x0 === BRIDGE_FLIGHT_X0);
+    const bridgeDeck = flights.find((f) => f.floor === BRIDGE_FLOOR);
+    if (!bridgeStreet || !bridgeDeck) throw new Error("the footbridge has no flight on a floor");
+    for (const f of [bridgeStreet, bridgeDeck]) {
+      expect(f.x1 - f.x0).toBe(BRIDGE_FLIGHT_WIDTH);
+      expect(f.x0).toBe(BRIDGE_FLIGHT_X0);
+      expect(f.y1 - f.y0).toBe(BRIDGE_FLIGHT_DEPTH);
+      expect(f.y0).toBe(BRIDGE_UP_ANCHOR_Y);
+      // Walked along the drawn axis (north up, south down), never across it.
+      expect(f.dirX).toBe(0);
+    }
+    expect(bridgeStreet.dirY).toBe(-1);
+    expect(bridgeDeck.dirY).toBe(1);
+    const { pairings, unpaired } = pairTransitions(STREET_TRANSITIONS);
+    expect(unpaired).toEqual([]);
+    for (const { forward, reverse } of pairings) {
+      for (const anchor of [forward, reverse]) {
+        expect(
+          flights.filter((f) => coversAnchor(f, anchor)).length,
+          `anchor (${anchor.x}, ${anchor.y}, floor ${anchor.floor}) must resolve exactly one flight`,
+        ).toBe(1);
+      }
+    }
   });
 
   it("takes each drop from the declared art, signed toward the target floor", () => {
     const declared = new Map(
       defs.objects.filter((o) => o.flight !== undefined).map((o) => [o.key, o.flight?.dropPx]),
     );
-    expect([...declared.keys()].sort()).toEqual(["platform_stair_flight", "stairwell_treads"]);
-    expect(flights.find((f) => f.floor === 0)?.dropPx).toBe(declared.get("stairwell_treads"));
+    expect([...declared.keys()].sort()).toEqual([
+      "bridge_stairs_deck",
+      "bridge_stairs_street",
+      "platform_stair_flight",
+      "stairwell_treads",
+    ]);
+    const onStreet = flights.filter((f) => f.floor === 0);
+    expect(onStreet.map((f) => f.dropPx).sort((a, b) => a - b)).toEqual(
+      [
+        declared.get("stairwell_treads") as number,
+        -(declared.get("bridge_stairs_street") as number),
+      ].sort((a, b) => a - b),
+    );
     expect(flights.find((f) => f.floor === SUBWAY_FLOOR)?.dropPx).toBe(
       -(declared.get("platform_stair_flight") as number),
     );
+    expect(flights.find((f) => f.floor === BRIDGE_FLOOR)?.dropPx).toBe(
+      declared.get("bridge_stairs_deck"),
+    );
+  });
+
+  it("a positive storey difference gives the offset the right screen direction on both sides of the pair", () => {
+    // The deck is above the street: climbing is up the screen on the street
+    // side (negative) and the deck side is the way back down (positive).
+    const index = new FlightIndex(flights, config);
+    const { pairings } = pairTransitions(STREET_TRANSITIONS);
+    const bridge = pairings.filter(
+      (p) => p.forward.floor === BRIDGE_FLOOR || p.reverse.floor === BRIDGE_FLOOR,
+    );
+    expect(bridge.length).toBe(BRIDGE_FLIGHT_WIDTH);
+    for (const { forward, reverse } of bridge) {
+      const [up, down] =
+        forward.targetFloor > forward.floor ? [forward, reverse] : [reverse, forward];
+      expect(floorOffsetPx(up.targetFloor, STOREY)).toBeLessThan(floorOffsetPx(up.floor, STOREY));
+      // Entering the anchor cell of each side, from its open neighbour.
+      const entry = (a: TransitionSpec, dirY: number) =>
+        index.offsetPx(a.x + 0.5, dirY > 0 ? a.y + 0.001 : a.y + 0.999, a.floor);
+      expect(entry(up, -1), "toward a higher floor: up the screen").toBeLessThan(0);
+      expect(entry(down, 1), "toward a lower floor: down the screen").toBeGreaterThan(0);
+      for (const f of flights.filter((f) => coversAnchor(f, up))) {
+        expect(Math.sign(f.dropPx)).toBe(Math.sign(floorOffsetPx(up.targetFloor, STOREY)));
+      }
+      for (const f of flights.filter((f) => coversAnchor(f, down))) {
+        expect(Math.sign(f.dropPx)).toBe(-Math.sign(floorOffsetPx(up.targetFloor, STOREY)));
+      }
+    }
+  });
+
+  it("at every floor change, the two sides' offsets and the jump account for the whole storey", () => {
+    const index = new FlightIndex(flights, config);
+    const { pairings } = pairTransitions(STREET_TRANSITIONS);
+    for (const { forward, reverse, d } of pairings) {
+      // Walking `+d` into `forward` and `-d` into `reverse`.
+      for (const [from, dir] of [
+        [forward, d],
+        [reverse, { x: -d.x, y: -d.y }],
+      ] as const) {
+        const entry = index.offsetPx(
+          from.x + 0.5 - dir.x * 0.5 + dir.x * 0.001,
+          from.y + 0.5 - dir.y * 0.5 + dir.y * 0.001,
+          from.floor,
+        );
+        const landing = index.offsetPx(from.targetX + 0.5, from.targetY + 0.5, from.targetFloor);
+        const floorStep =
+          floorOffsetPx(from.targetFloor, STOREY) - floorOffsetPx(from.floor, STOREY);
+        const jump = floorStep + (landing - entry);
+        // The flights show part of the storey; the rest is the cut.
+        expect(Math.abs(floorStep)).toBe(STOREY);
+        expect(Math.abs(jump)).toBeCloseTo(STOREY - Math.abs(entry) - Math.abs(landing), 9);
+        expect(Math.sign(jump) === Math.sign(floorStep) || jump === 0).toBe(true);
+      }
+    }
+  });
+
+  it("the cut at a floor change is no more than a third of a storey", () => {
+    const index = new FlightIndex(flights, config);
+    const { pairings } = pairTransitions(STREET_TRANSITIONS);
+    const bridge = pairings.filter(
+      (p) => p.forward.floor === BRIDGE_FLOOR || p.reverse.floor === BRIDGE_FLOOR,
+    );
+    for (const { forward, reverse, d } of bridge) {
+      for (const [from, dir] of [
+        [forward, d],
+        [reverse, { x: -d.x, y: -d.y }],
+      ] as const) {
+        const entry = index.offsetPx(
+          from.x + 0.5 - dir.x * 0.5 + dir.x * 0.001,
+          from.y + 0.5 - dir.y * 0.5 + dir.y * 0.001,
+          from.floor,
+        );
+        const landing = index.offsetPx(from.targetX + 0.5, from.targetY + 0.5, from.targetFloor);
+        expect(STOREY - Math.abs(entry) - Math.abs(landing)).toBeLessThanOrEqual(STOREY / 3);
+      }
+    }
   });
 
   it("a real walk down and back up never pops between ticks; the landing is already on a tread", () => {
@@ -432,53 +575,32 @@ describe("the street's own flights (conformance)", () => {
     }
   });
 
-  // The footbridge's `foot_stairs` is one cell and fires on entry: it has no
-  // walked path to spread an offset along (story 15.19 re-lays it). Named by
-  // the fixture's own constants, so a new stairwell with no declared drop is
-  // in neither list and fails here by name.
-  const EXEMPT_ANCHORS = [
-    { x: BRIDGE_UP_ANCHOR_X, y: BRIDGE_UP_ANCHOR_Y, floor: 0 },
-    { x: BRIDGE_DOWN_ANCHOR_X, y: BRIDGE_DOWN_ANCHOR_Y, floor: BRIDGE_FLOOR },
-  ];
-
-  it("every transition anchor resolves a flight or is a named exemption", () => {
-    const { pairings, unpaired } = pairTransitions(STREET_TRANSITIONS);
-    expect(unpaired).toEqual([]);
-    for (const { forward, reverse } of pairings) {
-      for (const anchor of [forward, reverse]) {
-        const covered = flights.some(
-          (f) =>
-            f.floor === anchor.floor &&
-            anchor.x >= f.x0 &&
-            anchor.x < f.x1 &&
-            anchor.y >= f.y0 &&
-            anchor.y < f.y1,
-        );
-        const exempt = EXEMPT_ANCHORS.some(
-          (e) => e.x === anchor.x && e.y === anchor.y && e.floor === anchor.floor,
-        );
-        expect(
-          covered !== exempt,
-          `anchor (${anchor.x}, ${anchor.y}, floor ${anchor.floor}) must resolve a flight or be a named exemption, not both or neither`,
-        ).toBe(true);
-      }
-    }
-  });
-
-  it("no two adjacent standable feet positions differ by more than the steepest slope (never off the surface)", () => {
+  it("no two adjacent standable feet positions differ by more than the steepest slope (never off the surface), on every floor", () => {
     const index = new FlightIndex(flights, config);
     const world = streetWorldIndex();
     const sub = config.subcellsPerCell;
     const slope = Math.max(
       ...flights.map((f) => Math.abs(f.dropPx) / ((f.fullS - f.startS) * sub)),
     );
-    let nonZero = 0;
-    for (const floor of [0, SUBWAY_FLOOR]) {
-      for (let cx = 0; cx < 46 * sub; cx++) {
-        for (let feet = 0; feet < 26 * sub; feet++) {
+    // The floors and the grid are the fixture's own: a fourth floor or a
+    // wider street cannot fall outside the sweep.
+    const floors = [...new Set(STREET_TRANSITIONS.flatMap((t) => [t.floor, t.targetFloor]))];
+    expect([...floors].sort((a, b) => a - b)).toEqual([SUBWAY_FLOOR, 0, BRIDGE_FLOOR]);
+    const sources = streetObjectSources();
+    let widthCells = 0;
+    let heightCells = 0;
+    for (const row of streetPlacedRows()) {
+      const source = sources.get(row.defId);
+      widthCells = Math.max(widthCells, row.x + (source?.width ?? 1) + 1);
+      heightCells = Math.max(heightCells, row.y + 2);
+    }
+    const nonZero = new Map<number, number>(floors.map((f) => [f, 0]));
+    for (const floor of floors) {
+      for (let cx = 0; cx < widthCells * sub; cx++) {
+        for (let feet = 0; feet < heightCells * sub; feet++) {
           if (!isBodyClear(world, config, floor, cx, feet)) continue;
           const here = index.offsetPx(cx / sub, feet / sub, floor);
-          if (here !== 0) nonZero++;
+          if (here !== 0) nonZero.set(floor, (nonZero.get(floor) ?? 0) + 1);
           for (const [nx, ny] of [
             [cx + 1, feet],
             [cx, feet + 1],
@@ -494,8 +616,138 @@ describe("the street's own flights (conformance)", () => {
         }
       }
     }
-    expect(nonZero).toBeGreaterThan(0);
+    for (const floor of floors) {
+      expect(
+        nonZero.get(floor),
+        `the sweep never reached a flight on floor ${floor}`,
+      ).toBeGreaterThan(0);
+    }
   });
+});
+
+// FR182: the floor offset is taken at the floor change, and nowhere else. A
+// real walk (the resolver and grid the browser runs) up onto the deck, back
+// halfway, up again, then all the way down, tracking the whole drawn height:
+// the floor offset plus the flight offset.
+describe("the footbridge flights: the cut is taken at the floor change, and nowhere else (FR182)", () => {
+  const defs = committedDefs();
+  const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
+  const flights = buildFlights(
+    STREET_TRANSITIONS,
+    streetPlacedRows(),
+    streetObjectSources(),
+    storey,
+    TILE,
+  );
+  const index = new FlightIndex(flights, config);
+  const world = streetWorldIndex();
+  const transitions = streetTransitionIndex();
+  const { pairings } = pairTransitions(STREET_TRANSITIONS);
+  const bridge = pairings.filter(
+    (p) => p.forward.floor === BRIDGE_FLOOR || p.reverse.floor === BRIDGE_FLOOR,
+  );
+  const perTickPx = config.walkSpeedCellsPerMs * 16 * TILE;
+  // The steepest the drawn height moves with one px of walking, and so with one tick.
+  const tickBoundPx =
+    Math.max(...flights.map((f) => Math.abs(f.dropPx) / ((f.fullS - f.startS) * TILE))) * perTickPx;
+  const covers = (f: (typeof flights)[number], a: TransitionSpec) =>
+    f.floor === a.floor && a.x >= f.x0 && a.x < f.x1 && a.y >= f.y0 && a.y < f.y1;
+
+  it("the footbridge is a pair per column of its flight", () => {
+    expect(bridge.length).toBe(BRIDGE_FLIGHT_WIDTH);
+  });
+
+  for (const pairing of bridge) {
+    // The street side is the one whose anchor is on the street floor.
+    const up = pairing.forward.floor === 0 ? pairing.forward : pairing.reverse;
+    const down = up === pairing.forward ? pairing.reverse : pairing.forward;
+    const climb = up === pairing.forward ? pairing.d : { x: -pairing.d.x, y: -pairing.d.y };
+
+    it(`column ${up.x}: up onto the deck, a reversal halfway, then all the way down`, () => {
+      const streetFlight = flights.find((f) => covers(f, up));
+      const deckFlight = flights.find((f) => covers(f, down));
+      if (!streetFlight || !deckFlight) throw new Error("the pair has no flight on a side");
+      // The flight is walked along y: `climb.y` is -1 when climbing goes north.
+      const north = climb.y < 0;
+      const streetOpenY = north ? streetFlight.y1 : streetFlight.y0;
+      const deckOpenY = north ? deckFlight.y0 : deckFlight.y1;
+      // `toward(y, edge)`: y is at or beyond `edge` in the climbing direction.
+      const beyond = (y: number, edge: number) => (north ? y <= edge : y >= edge);
+      let state = {
+        ...initialFloorWalkState(up.x + 0.5, streetOpenY - climb.y * 0.4, 0),
+        transitioned: false,
+      };
+      const samples: { drawn: number; floor: number; transitioned: boolean }[] = [];
+      const walk = (dy: number, until: (s: typeof state) => boolean) => {
+        for (let i = 0; i < 4000; i++) {
+          state = stepAndTransition(state, { x: 0, y: dy }, 16, world, config, transitions);
+          samples.push({
+            drawn:
+              floorOffsetPx(state.floor, STOREY) + index.offsetPx(state.x, state.y, state.floor),
+            floor: state.floor,
+            transitioned: state.transitioned,
+          });
+          if (until(state)) return;
+        }
+        throw new Error("walk did not finish");
+      };
+      const atOpenEdge = (s: typeof state) => !beyond(s.y, streetOpenY - climb.y * 0.3);
+      // Up halfway along the street half, back to its open edge, then up and over.
+      walk(climb.y, (s) => beyond(s.y, streetOpenY + climb.y * 0.5));
+      walk(-climb.y, atOpenEdge);
+      walk(climb.y, (s) => s.floor === BRIDGE_FLOOR);
+      // Along the deck half toward the deck, a reversal, then all the way down.
+      walk(climb.y, (s) => beyond(s.y, deckOpenY - climb.y * 0.25));
+      walk(-climb.y, (s) => s.floor === 0);
+      walk(-climb.y, atOpenEdge);
+
+      const cuts: number[] = [];
+      for (let i = 1; i < samples.length; i++) {
+        const a = samples[i - 1];
+        const b = samples[i];
+        if (!a || !b) continue;
+        if (b.transitioned) {
+          cuts.push(i);
+          continue;
+        }
+        // Between two ticks on one floor, never more than the slope allows.
+        expect(a.floor).toBe(b.floor);
+        expect(Math.abs(b.drawn - a.drawn), `tick ${i}`).toBeLessThanOrEqual(tickBoundPx + 1e-9);
+      }
+      // Up, and down again: the only two ticks that move more are the cuts.
+      expect(cuts.length).toBe(2);
+      for (const i of cuts) {
+        const a = samples[i - 1];
+        const b = samples[i];
+        if (!a || !b) throw new Error("no samples around the cut");
+        const climbing = b.floor === BRIDGE_FLOOR;
+        const from = climbing ? up : down;
+        const walked = climbing ? climb : { x: -climb.x, y: -climb.y };
+        // What the art does not show: the storey less the two sides' drops,
+        // read from the defs, with the sign of the floor change.
+        const entry = index.offsetPx(
+          from.x + 0.5 - walked.x * 0.499,
+          from.y + 0.5 - walked.y * 0.499,
+          from.floor,
+        );
+        const landing = index.offsetPx(from.targetX + 0.5, from.targetY + 0.5, from.targetFloor);
+        const remainder = STOREY - Math.abs(entry) - Math.abs(landing);
+        const change = floorOffsetPx(from.targetFloor, STOREY) - floorOffsetPx(from.floor, STOREY);
+        const jump = b.drawn - a.drawn;
+        // One tick of walking is the most the entry point can be off by.
+        expect(Math.abs(jump - Math.sign(change) * remainder)).toBeLessThanOrEqual(
+          tickBoundPx + 1e-6,
+        );
+        expect(Math.abs(jump), "the cut is more than a tick of flight").toBeGreaterThan(
+          tickBoundPx,
+        );
+        // The remainder the art leaves is within a third of a storey.
+        expect(remainder).toBeLessThanOrEqual(STOREY / 3);
+      }
+      // The deck is a storey up.
+      expect(Math.min(...samples.map((s) => s.drawn))).toBeLessThan(-STOREY + 1);
+    });
+  }
 });
 
 // The nosings, measured from the art (Artie): the sprite-relative x of each
@@ -514,6 +766,15 @@ const NOSINGS: Record<string, { fromOpenEdge: "east" | "west"; xs: number[]; row
   },
 };
 
+// Flights seen front-on and walked along the drawn axis (the footbridge's):
+// the treads are stacked on screen, so a tread's nosing is a sprite row. `pitch`
+// is the rows from one nosing to the next and `risers` the sprite-relative
+// rows of the dark riser lines, both measured from the sheet by Artie.
+const FRONT_ON: Record<string, { pitch: number; risers: number[] }> = {
+  bridge_stairs_street: { pitch: 8, risers: [6, 14, 22, 30] },
+  bridge_stairs_deck: { pitch: 8, risers: [6, 14, 22, 30] },
+};
+
 describe("a flight's ramp follows the drawn nosings (FR182)", () => {
   const defs = committedDefs();
   const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
@@ -528,7 +789,7 @@ describe("a flight's ramp follows the drawn nosings (FR182)", () => {
 
   it("every def that declares a flight has a nosing line to be checked against", () => {
     const missing = defs.objects
-      .filter((o) => o.flight !== undefined && !(o.key in NOSINGS))
+      .filter((o) => o.flight !== undefined && !(o.key in NOSINGS) && !(o.key in FRONT_ON))
       .map((o) => o.key);
     expect(missing, `flight defs with no NOSINGS entry: ${missing.join(", ")}`).toEqual([]);
   });
@@ -575,6 +836,57 @@ describe("a flight's ramp follows the drawn nosings (FR182)", () => {
         const y = flight.dirY !== 0 ? s * flight.dirY : flight.y1 - 0.1;
         const got = index.offsetPx(x, y, flight.floor);
         expect(Math.abs(got - nosingOffset(px)), `${key} at ${px} px`).toBeLessThanOrEqual(1);
+      }
+    });
+  }
+
+  for (const [key, art] of Object.entries(FRONT_ON)) {
+    it(`${key}: the ramp climbs whole treads, from a riser line to a riser line, along the drawn axis`, () => {
+      const object = defs.objects.find((o) => o.key === key);
+      const row = streetPlacedRows().find((r) => r.defId === object?.id);
+      if (!object?.flight || !row) throw new Error(`no ${key}`);
+      const flight = flights.find(
+        (f) => f.floor === row.floor && row.x >= f.x0 && row.x < f.x1 && f.y1 - 1 === row.y,
+      );
+      if (!flight) throw new Error(`no flight for ${key}`);
+      expect(flight.dirX, "a front-on stair is walked along y").toBe(0);
+      // The art repeats every `pitch` rows, and each riser line is darker than the row above it.
+      const root = fileURLToPath(new URL("../../../../", import.meta.url));
+      const png = PNG.sync.read(readFileSync(`${root}${object.sprite.sheet}`));
+      const px = (x: number, y: number, k: number) =>
+        png.data[((object.sprite.y + y) * png.width + object.sprite.x + x) * 4 + k] ?? 0;
+      const luma = (y: number) => px(16, y, 0) + px(16, y, 1) + px(16, y, 2);
+      for (const riser of art.risers) {
+        expect(luma(riser), `row ${riser} is a riser line`).toBeLessThan(luma(riser - 1));
+        for (let x = 0; x < object.sprite.w; x++) {
+          for (let k = 0; k < 4; k++) {
+            expect(px(x, riser, k)).toBe(px(x, art.risers[0] ?? 0, k));
+          }
+        }
+      }
+      art.risers.forEach((riser, i) => {
+        expect(riser - (art.risers[0] ?? 0)).toBe(i * art.pitch);
+      });
+      // The feet's screen rise over the ramp is the run plus the drop; it is a
+      // whole number of treads, and `from`/`to` are where it crosses a tread.
+      const { dropPx, fromPx, toPx } = object.flight;
+      const rise = (p: number) =>
+        p + Math.abs(dropPx) * Math.min(1, Math.max(0, (p - fromPx) / (toPx - fromPx)));
+      expect(rise(toPx) - rise(fromPx) + 0, "treads climbed").toBe(
+        Math.round((rise(toPx) - rise(fromPx)) / art.pitch) * art.pitch,
+      );
+      expect(fromPx % art.pitch).toBe(0);
+      // The pure offset does follow that line over the whole footprint, and rises with it.
+      const lo = flight.dirY > 0 ? flight.y0 : -flight.y1;
+      let last = -1;
+      for (let p = 0; p <= object.sprite.h; p += 0.5) {
+        const y = (lo + p / TILE) * flight.dirY;
+        const got = Math.abs(
+          index.offsetPx(flight.x0 + 0.5, y - flight.dirY * 0.0001, flight.floor),
+        );
+        expect(Math.abs(got - (rise(p) - p)), `${key} at ${p} px`).toBeLessThanOrEqual(1);
+        expect(p + got).toBeGreaterThanOrEqual(last);
+        last = p + got;
       }
     });
   }
