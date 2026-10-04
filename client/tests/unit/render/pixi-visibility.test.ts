@@ -11,6 +11,7 @@ import { VisibilityApplier, type VisibilityMember } from "../../../src/render/pi
 import type { Drawable } from "../../../src/render/sort-key";
 import type { VisibilityDrawable } from "../../../src/render/visibility";
 import { NO_OWNER } from "../../../src/world/ownership";
+import { sizeProbe } from "../setup/size-probe";
 
 const FURNITURE = layerCodeByName("furniture");
 
@@ -123,40 +124,40 @@ describe("VisibilityApplier", () => {
     // touches, which cannot fail this invariant by construction). Hidden
     // members get `visible = false` but stay in the container, at their
     // sorted position, exactly like every other member.
+    const probe = sizeProbe({ min: 1, max: 20 });
     fc.assert(
       fc.property(
-        fc.uniqueArray(fc.integer({ min: 1, max: 50 }), { minLength: 1, maxLength: 20 }),
-        fc.array(
-          fc.record({
-            y: fc.integer({ min: -20, max: 20 }),
-            rank: fc.integer({ min: 10, max: 15 }),
-            floor: fc.integer({ min: -2, max: 2 }),
-            layerCode: fc.constantFrom(WALLS, FURNITURE),
-            ownerBuildingId: fc.oneof(
-              fc.constant(NO_OWNER),
-              fc.integer({ min: 1, max: 3 }).map(BigInt),
-            ),
-            isWindow: fc.boolean(),
-            isNearSide: fc.boolean(),
-          }),
-          { minLength: 1, maxLength: 20 },
+        probe.over(
+          fc.uniqueArray(
+            fc.record({
+              id: fc.integer({ min: 1, max: 50 }),
+              y: fc.integer({ min: -20, max: 20 }),
+              rank: fc.integer({ min: 10, max: 15 }),
+              floor: fc.integer({ min: -2, max: 2 }),
+              layerCode: fc.constantFrom(WALLS, FURNITURE),
+              ownerBuildingId: fc.oneof(
+                fc.constant(NO_OWNER),
+                fc.integer({ min: 1, max: 3 }).map(BigInt),
+              ),
+              isWindow: fc.boolean(),
+              isNearSide: fc.boolean(),
+            }),
+            { selector: (spec) => spec.id, minLength: 1, maxLength: 20 },
+          ),
+          (specs) => specs.length,
         ),
         fc.record({
           floor: fc.integer({ min: -2, max: 2 }),
           buildingId: fc.oneof(fc.constant(NO_OWNER), fc.integer({ min: 1, max: 3 }).map(BigInt)),
         }),
-        (ids, specs, viewer) => {
-          const n = Math.min(ids.length, specs.length);
+        (specs, viewer) => {
           const members: (OrderedMember & VisibilityMember<Drawable & VisibilityDrawable>)[] = [];
-          for (let i = 0; i < n; i++) {
-            const id = ids[i];
-            const spec = specs[i];
-            if (id === undefined || spec === undefined) throw new Error("unreachable");
+          for (const spec of specs) {
             const drawable: Drawable & VisibilityDrawable = {
               x: 0,
               y: spec.y,
               rank: spec.rank,
-              stableId: BigInt(id),
+              stableId: BigInt(spec.id),
               floor: spec.floor,
               layerCode: spec.layerCode,
               ownerBuildingId: spec.ownerBuildingId,
@@ -185,5 +186,6 @@ describe("VisibilityApplier", () => {
         },
       ),
     );
+    probe.expectReached(13);
   });
 });

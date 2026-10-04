@@ -11,6 +11,7 @@ import {
   RESERVED_CODES,
   rebind,
 } from "../../../src/input/keybindings";
+import { sizeProbe } from "../setup/size-probe";
 
 function codesOf(bindings: Bindings): string[] {
   return BINDABLE_ACTIONS.flatMap((action) => [...bindings[action]]);
@@ -189,6 +190,7 @@ describe("rebind", () => {
     // Whatever any sequence of rebinds produces, loading it back yields
     // exactly the same map -- no binding the player set can disappear on
     // the next boot.
+    const codeProbe = sizeProbe({ min: 0, max: 20 });
     const codeArb = fc.oneof(
       fc.constantFrom(
         "KeyW",
@@ -204,17 +206,21 @@ describe("rebind", () => {
         "Unidentified",
         "",
       ),
-      fc.string(),
+      codeProbe.over(fc.string({ maxLength: 20 }), (code) => code.length),
     );
+    const probe = sizeProbe({ min: 0, max: 20 });
     fc.assert(
       fc.property(
-        fc.array(
-          fc.record({
-            action: fc.constantFrom(...BINDABLE_ACTIONS),
-            slot: fc.integer({ min: 0, max: 2 }),
-            code: codeArb,
-          }),
-          { maxLength: 20 },
+        probe.over(
+          fc.array(
+            fc.record({
+              action: fc.constantFrom(...BINDABLE_ACTIONS),
+              slot: fc.integer({ min: 0, max: 2 }),
+              code: codeArb,
+            }),
+            { maxLength: 20 },
+          ),
+          (a) => a.length,
         ),
         (steps) => {
           let bindings = DEFAULT_BINDINGS;
@@ -223,6 +229,8 @@ describe("rebind", () => {
         },
       ),
     );
+    probe.expectReached(16);
+    codeProbe.expectReached(16);
   });
 
   it("rebinding a slot to the code it already holds changes nothing", () => {
@@ -252,15 +260,19 @@ describe("rebind", () => {
       "Escape",
       "Space",
     );
+    const probe = sizeProbe({ min: 0, max: 25 });
     fc.assert(
       fc.property(
-        fc.array(
-          fc.record({
-            action: fc.constantFrom(...BINDABLE_ACTIONS),
-            slot: fc.integer({ min: 0, max: 2 }),
-            code: codeArb,
-          }),
-          { maxLength: 25 },
+        probe.over(
+          fc.array(
+            fc.record({
+              action: fc.constantFrom(...BINDABLE_ACTIONS),
+              slot: fc.integer({ min: 0, max: 2 }),
+              code: codeArb,
+            }),
+            { maxLength: 25 },
+          ),
+          (a) => a.length,
         ),
         (steps) => {
           let bindings = DEFAULT_BINDINGS;
@@ -271,6 +283,7 @@ describe("rebind", () => {
         },
       ),
     );
+    probe.expectReached(20);
   });
 });
 
@@ -335,12 +348,38 @@ describe("normaliseBindings", () => {
   it("inv_keybindings_parse_is_total", () => {
     // Any JSON value at all -- however hostile -- yields a complete,
     // valid map and never throws.
+    // The widest container is the NFR51 dimension: fast-check's default stops
+    // at 10 keys (measured: 10 in 2000 seeds), so 11 is above its ceiling.
+    // Nesting is not governed by the switch, so it only gets a plain check.
+    const width = sizeProbe({ min: 0, max: 12, ceiling: 10 });
+    let deepest = 0;
+    const shape = (value: unknown): [number, number] => {
+      let nest = 0;
+      let widest = 0;
+      const walk = (v: unknown, level: number): void => {
+        if (v === null || typeof v !== "object") return;
+        const children = Array.isArray(v) ? v : Object.values(v);
+        nest = Math.max(nest, level + 1);
+        widest = Math.max(widest, children.length);
+        for (const child of children) walk(child, level + 1);
+      };
+      walk(value, 0);
+      return [nest, widest];
+    };
+    const anything = fc.anything({ maxDepth: 6, maxKeys: 12 }).map((value) => {
+      const [nest, widest] = shape(value);
+      deepest = Math.max(deepest, nest);
+      width.record(widest);
+      return value;
+    });
     fc.assert(
-      fc.property(fc.anything(), (value) => {
+      fc.property(anything, (value) => {
         const bindings = normaliseBindings(value);
         expect(Object.keys(bindings).sort()).toEqual([...BINDABLE_ACTIONS].sort());
         expectValid(bindings);
       }),
     );
+    expect(deepest).toBeGreaterThanOrEqual(3);
+    width.expectReached(11);
   });
 });
