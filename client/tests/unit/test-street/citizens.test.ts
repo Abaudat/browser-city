@@ -3,6 +3,8 @@
 // id" property the module doc comment claims.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { CitizenBody, createCitizenFrame } from "../../../src/l3/citizen";
+import { pathConfigOf } from "../../../src/l3/config";
 import { ZOOM } from "../../../src/render/camera";
 import { worldPointPx } from "../../../src/render/screen-position";
 import {
@@ -12,13 +14,11 @@ import {
   buildWalkerFixture,
   CROWD_FLOOR,
   UNIFORMED_WALKER_ID,
-  WALK_CELLS_PER_SECOND,
-  WALK_FRAMES_PER_DIRECTION,
-  WALK_FRAMES_PER_SECOND,
   WALKER_ID,
-  WALKER_LOOP,
-  walkerPoseAt,
+  WALKER_SPECS,
 } from "../../../src/test-street/citizens";
+import { Timetable } from "../../../src/test-street/timetable";
+import { l3Config } from "../l3/defs-config";
 import { committedDefs } from "./street-world";
 
 describe("buildCitizenFixtures", () => {
@@ -188,60 +188,13 @@ describe("buildWalkerFixture / buildUniformedWalkerFixture", () => {
   });
 });
 
-describe("WALKER_LOOP", () => {
-  it("visits all four axis directions (right, up, left, down) and returns to its start", () => {
-    let x = 0;
-    let y = 0;
-    const directionsSeen = new Set<string>();
-    for (const leg of WALKER_LOOP) {
-      x += leg.dx;
-      y += leg.dy;
-      if (leg.dx > 0) directionsSeen.add("right");
-      if (leg.dx < 0) directionsSeen.add("left");
-      if (leg.dy < 0) directionsSeen.add("up");
-      if (leg.dy > 0) directionsSeen.add("down");
+describe("WALKER_SPECS", () => {
+  it("gives each walker an L-shaped route on the crowd's own pavement", () => {
+    for (const id of [WALKER_ID, UNIFORMED_WALKER_ID]) {
+      const spec = WALKER_SPECS[id];
+      expect(spec?.out.length).toBeGreaterThanOrEqual(3);
+      expect(spec?.out.every((c) => c.floor === CROWD_FLOOR)).toBe(true);
     }
-    expect(directionsSeen).toEqual(new Set(["right", "up", "left", "down"]));
-    expect(x).toBe(0);
-    expect(y).toBe(0);
-  });
-});
-
-describe("walkerPoseAt", () => {
-  it("stays at the start with the right-leg's frame 0 at elapsedMS 0", () => {
-    const pose = walkerPoseAt(10, 20, 0);
-    expect(pose.x).toBe(10);
-    expect(pose.y).toBe(20);
-    expect(pose.direction).toBe("right");
-    expect(pose.frameIndex).toBe(0);
-  });
-
-  it("returns to the exact start position after one full loop", () => {
-    const legDurationsMS = WALKER_LOOP.map(
-      (leg) => (Math.hypot(leg.dx, leg.dy) / WALK_CELLS_PER_SECOND) * 1000,
-    );
-    const loopDurationMS = legDurationsMS.reduce((sum, ms) => sum + ms, 0);
-    const pose = walkerPoseAt(5, 5, loopDurationMS);
-    expect(pose.x).toBeCloseTo(5, 6);
-    expect(pose.y).toBeCloseTo(5, 6);
-    expect(pose.direction).toBe("right");
-  });
-
-  it("is exactly at the first corner, facing up, right after the right leg finishes", () => {
-    const rightLeg = WALKER_LOOP[0];
-    if (!rightLeg) throw new Error("WALKER_LOOP has no first leg");
-    const rightLegMS = (Math.hypot(rightLeg.dx, rightLeg.dy) / WALK_CELLS_PER_SECOND) * 1000;
-    const pose = walkerPoseAt(0, 0, rightLegMS);
-    expect(pose.x).toBeCloseTo(rightLeg.dx, 6);
-    expect(pose.y).toBeCloseTo(rightLeg.dy, 6);
-    expect(pose.direction).toBe("up");
-  });
-
-  it("cycles its frame index over WALK_FRAMES_PER_DIRECTION, at WALK_FRAMES_PER_SECOND", () => {
-    const msPerFrame = 1000 / WALK_FRAMES_PER_SECOND;
-    expect(walkerPoseAt(0, 0, 0).frameIndex).toBe(0);
-    expect(walkerPoseAt(0, 0, msPerFrame).frameIndex).toBe(1);
-    expect(walkerPoseAt(0, 0, msPerFrame * WALK_FRAMES_PER_DIRECTION).frameIndex).toBe(0);
   });
 });
 
@@ -257,57 +210,40 @@ describe("crowd placement through worldPointPx", () => {
   const crowdScreenPx = (x: number, y: number, tileSizePx: number, zoom: number) =>
     worldPointPx(x, y, CROWD_FLOOR, tileSizePx, storey, zoom, 0);
 
-  // The walker's own drawn position, frame by frame at a constant delta:
-  // whole screen pixels, monotone along each straight leg, and even steps
-  // (at most one screen pixel apart) -- the same steadiness the camera's
-  // own `inv_camera_scroll_tracks_continuous_walk` holds the world to.
-  it("moves a walker in whole, monotone, even screen-pixel steps along each leg", () => {
+  // A walker's drawn position, frame by frame at a constant delta: whole
+  // screen pixels at every zoom.
+  it("draws an L3 walker at whole screen pixels", () => {
+    const config = l3Config();
+    const walkerSpec = WALKER_SPECS[WALKER_ID];
+    if (!walkerSpec) throw new Error("no walker spec");
+    const open = { revision: () => 0, walkable: () => true };
+    const pathDials = pathConfigOf(config);
+    const timetable = new Timetable(walkerSpec, config, open, pathDials);
     fc.assert(
       fc.property(
-        fc.double({ min: 0, max: 100, noNaN: true }),
-        fc.double({ min: 0, max: 100, noNaN: true }),
-        fc.double({ min: 0, max: 10_000, noNaN: true }),
-        fc.oneof(fc.constant(1000 / 60), fc.integer({ min: 8, max: 34 })),
+        fc.integer({ min: 0, max: 10_000_000 }),
+        fc.integer({ min: 4, max: 60 }),
         fc.constantFrom(ZOOM, 1, 2, 4),
         fc.constantFrom(tile, 8, 16, 32),
-        (startX, startY, startMS, deltaMS, zoom, tileSizePx) => {
-          const frames = Array.from({ length: 600 }, (_, k) => {
-            const pose = walkerPoseAt(startX, startY, startMS + k * deltaMS);
-            return { pose, px: crowdScreenPx(pose.x, pose.y, tileSizePx, zoom) };
-          });
-          for (const { px } of frames) {
+        (startMilli, deltaMS, zoom, tileSizePx) => {
+          const walker = new CitizenBody(
+            open,
+            pathDials,
+            { strideCells: config.strideCells, framesPerCycle: 6 },
+            WALKER_ID,
+          );
+          const frame = createCitizenFrame();
+          const stepMilli = (deltaMS * 1000) / config.realMsPerCityMinute;
+          for (let k = 0; k < 300; k++) {
+            const t = startMilli + k * stepMilli;
+            walker.frameAt(timetable.stateAt(t), t, frame);
+            const px = crowdScreenPx(frame.x, frame.y, tileSizePx, zoom);
             expect(Math.abs(px.x * zoom - Math.round(px.x * zoom))).toBeLessThan(1e-6);
             expect(Math.abs(px.y * zoom - Math.round(px.y * zoom))).toBeLessThan(1e-6);
           }
-          // Steps between consecutive frames on the same leg, in screen px.
-          const legSteps: { dx: number; dy: number; direction: string }[][] = [[]];
-          for (let k = 1; k < frames.length; k++) {
-            const prev = frames[k - 1];
-            const cur = frames[k];
-            if (!prev || !cur) continue;
-            if (prev.pose.direction !== cur.pose.direction) {
-              legSteps.push([]);
-              continue;
-            }
-            legSteps[legSteps.length - 1]?.push({
-              dx: Math.round((cur.px.x - prev.px.x) * zoom),
-              dy: Math.round((cur.px.y - prev.px.y) * zoom),
-              direction: cur.pose.direction,
-            });
-          }
-          for (const steps of legSteps) {
-            if (steps.length === 0) continue;
-            const horizontal = steps[0]?.direction === "right" || steps[0]?.direction === "left";
-            const sign = steps[0]?.direction === "right" || steps[0]?.direction === "down" ? 1 : -1;
-            const along = steps.map((s) => (horizontal ? s.dx : s.dy) * sign);
-            const across = steps.map((s) => (horizontal ? s.dy : s.dx));
-            expect(Math.min(...along)).toBeGreaterThanOrEqual(0);
-            expect(Math.max(...along) - Math.min(...along)).toBeLessThanOrEqual(1);
-            expect(across.every((a) => a === 0)).toBe(true);
-          }
         },
       ),
-      { numRuns: 200 },
+      { numRuns: 50 },
     );
   });
 

@@ -13,9 +13,9 @@ import { SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import { CROWD_FLOOR } from "../../../src/test-street/citizens";
 import {
-  buildPlayerDrawable,
+  buildCharacterDrawable,
   buildPropDrawables,
-  updatePlayerDrawable,
+  updateCharacterDrawable,
 } from "../../../src/test-street/drawables";
 import {
   BRIDGE_DECK_Y,
@@ -104,7 +104,7 @@ function buildStreetProps() {
 describe("the story 1.6 street scene's committed ordering", () => {
   it("sorts the whole fixture (props + player) to a fixed, committed id sequence", () => {
     const props = buildStreetProps();
-    const player = buildPlayerDrawable(
+    const player = buildCharacterDrawable(
       rankOf("characters"),
       PLAYER_START.x,
       PLAYER_START.y,
@@ -132,7 +132,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
     // Story 2.13: `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- the lamppost
     // no longer shares the door's own column (`LAMPPOST_CELL`'s own doc
     // comment says why).
-    const player = buildPlayerDrawable(
+    const player = buildCharacterDrawable(
       rankOf("characters"),
       LAMPPOST_CELL.x + 0.5,
       lamppostRestY(),
@@ -153,7 +153,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
     // in front -- the one thing a footprint running parallel to the
     // camera could never demonstrate.
     const props = buildStreetProps();
-    const player = buildPlayerDrawable(
+    const player = buildCharacterDrawable(
       rankOf("characters"),
       PLAYER_START.x,
       PLAYER_START.y,
@@ -191,7 +191,7 @@ describe("the story 1.6 street scene's committed ordering", () => {
     /** The oracle, as a function of the feet position: every stairwell pool row whose ground row
      * is south of the feet sorts after the player, every one north before. */
     function expectStairwellSortAt(x: number, y: number) {
-      const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
+      const player = buildCharacterDrawable(rankOf("characters"), x, y, floor);
       for (const row of pooled) {
         const where = `player (${x}, ${y}) vs def ${"defId" in row ? row.defId : "?"} row ${row.y / SORT_SUBDIVISIONS}`;
         if (row.y / SORT_SUBDIVISIONS > y) {
@@ -238,13 +238,13 @@ describe("the story 1.6 street scene's committed ordering", () => {
         (d) => "defId" in d && d.defId === STAIRWELL_BOTTOM_RAILING_DEF_ID,
       );
       const top = pooled.filter((d) => "defId" in d && d.defId === STAIRWELL_TOP_RAILING_DEF_ID);
-      const south = buildPlayerDrawable(
+      const south = buildCharacterDrawable(
         rankOf("characters"),
         (bottom[0]?.x ?? Number.NaN) / SORT_SUBDIVISIONS,
         (bottom[0]?.y ?? Number.NaN) / SORT_SUBDIVISIONS + 1.5,
         floor,
       );
-      const north = buildPlayerDrawable(
+      const north = buildCharacterDrawable(
         rankOf("characters"),
         (top[0]?.x ?? Number.NaN) / SORT_SUBDIVISIONS,
         (top[0]?.y ?? Number.NaN) / SORT_SUBDIVISIONS - 0.5,
@@ -328,7 +328,7 @@ describe("the street scene's committed visibility (story 1.7 cycle 2, Quentin's 
   function visibilityAt(x: number, y: number, floor: number): Record<string, string> {
     const ownership = streetOwnershipIndex();
     const props = buildStreetProps();
-    const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
+    const player = buildCharacterDrawable(rankOf("characters"), x, y, floor);
     const viewer: VisibilityViewer = {
       floor,
       buildingId: ownership.ownershipAt(cellOf(x), cellOf(y), floor).buildingId,
@@ -669,9 +669,9 @@ describe("the player can never walk off the drawn world", () => {
   });
 });
 
-describe("updatePlayerDrawable", () => {
+describe("updateCharacterDrawable", () => {
   it("mutates the same object in place rather than allocating a new one", () => {
-    const player = buildPlayerDrawable(
+    const player = buildCharacterDrawable(
       rankOf("characters"),
       PLAYER_START.x,
       PLAYER_START.y,
@@ -679,7 +679,7 @@ describe("updatePlayerDrawable", () => {
     );
     const sameObject = player;
 
-    updatePlayerDrawable(player, PLAYER_START.x + 1, PLAYER_START.y + 1, PLAYER_START.floor);
+    updateCharacterDrawable(player, PLAYER_START.x + 1, PLAYER_START.y + 1, PLAYER_START.floor);
 
     expect(player).toBe(sameObject);
     expect(player.x).toBe(toSortUnits(PLAYER_START.x + 1));
@@ -691,14 +691,14 @@ describe("updatePlayerDrawable", () => {
   });
 
   it("also updates the player's own floor on a floor transition -- FR122: a stale floor would read the player itself as floor-culled the instant it lands", () => {
-    const player = buildPlayerDrawable(
+    const player = buildCharacterDrawable(
       rankOf("characters"),
       PLAYER_START.x,
       PLAYER_START.y,
       PLAYER_START.floor,
     );
 
-    updatePlayerDrawable(player, PLAYER_START.x, PLAYER_START.y, -1);
+    updateCharacterDrawable(player, PLAYER_START.x, PLAYER_START.y, -1);
 
     expect(player.floor).toBe(-1);
   });
@@ -724,7 +724,7 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
       const cy = flat.y / SORT_SUBDIVISIONS;
       for (let ux = (cx - 1) * SORT_SUBDIVISIONS; ux <= (cx + 2) * SORT_SUBDIVISIONS; ux++) {
         for (let uy = (cy - 1) * SORT_SUBDIVISIONS; uy <= (cy + 2) * SORT_SUBDIVISIONS; uy++) {
-          const player = buildPlayerDrawable(
+          const player = buildCharacterDrawable(
             rankOf("characters"),
             ux / SORT_SUBDIVISIONS,
             uy / SORT_SUBDIVISIONS,
@@ -749,7 +749,7 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
         [1, 0],
         [-1, 0],
       ] as const) {
-        const player = buildPlayerDrawable(
+        const player = buildCharacterDrawable(
           rankOf("characters"),
           cx + 0.5 + dx,
           cy + 0.5 + dy,
@@ -768,8 +768,18 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
       expect(upright.length).toBeGreaterThan(0);
       const cx = upright[0].x / SORT_SUBDIVISIONS;
       const cy = upright[0].y / SORT_SUBDIVISIONS;
-      const north = buildPlayerDrawable(rankOf("characters"), cx + 0.5, cy - 1, upright[0].floor);
-      const south = buildPlayerDrawable(rankOf("characters"), cx + 0.5, cy + 1, upright[0].floor);
+      const north = buildCharacterDrawable(
+        rankOf("characters"),
+        cx + 0.5,
+        cy - 1,
+        upright[0].floor,
+      );
+      const south = buildCharacterDrawable(
+        rankOf("characters"),
+        cx + 0.5,
+        cy + 1,
+        upright[0].floor,
+      );
       const northOrder = sortAcrossFloors([...props, north], (d) => d);
       const southOrder = sortAcrossFloors([...props, south], (d) => d);
       expect(indexIn(northOrder, north.stableId)).toBeLessThan(indexIn(northOrder, id));
@@ -833,7 +843,7 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
       }
       for (let i = 0; i < SUB; i++) {
         for (let j = 0; j < SUB; j++) {
-          const player = buildPlayerDrawable(
+          const player = buildCharacterDrawable(
             rankOf("characters"),
             cell.x + i / SUB,
             cell.y + j / SUB,

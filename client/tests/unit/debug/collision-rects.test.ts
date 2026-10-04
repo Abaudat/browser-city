@@ -55,6 +55,7 @@ function viewOver(
     pool: () => [],
     orderOf: () => undefined,
     viewerBody: () => playerBody,
+    l3Bodies: () => [],
   };
 }
 

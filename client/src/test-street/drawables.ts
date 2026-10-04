@@ -197,7 +197,7 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
   return drawables;
 }
 
-/** The player's own drawable, from its continuous feet position -- never
+/** A character's own drawable (the player by default), from its continuous feet position -- never
  * snapped to a cell (Artie's direction). `feetX`/`feetY` already *are*
  * the drawn bottom-centre point (`world/movement.ts`'s `step` anchors the
  * body's bottom edge on them, and `scene.ts` draws the sprite there
@@ -211,19 +211,21 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
  * that needs recomputing as the player moves. `floor` changes only on a
  * floor transition (`scene.ts` rebuilds this drawable then, a rare event,
  * never every frame). */
-export function buildPlayerDrawable(
+export function buildCharacterDrawable(
   rank: number,
   feetX: number,
   feetY: number,
   floor: number,
+  stableId: bigint = PLAYER_STABLE_ID,
+  assetKey = "player",
 ): PropDrawable {
   return {
     x: toSortUnits(feetX),
     y: toSortUnits(feetY),
     rank,
-    stableId: PLAYER_STABLE_ID,
+    stableId,
     floor,
-    assetKey: "player",
+    assetKey,
     sourceCol: 0,
     sourceRow: 0,
     footprintWidth: 1,
@@ -245,7 +247,7 @@ export function buildPlayerDrawable(
  * (FR122) from its own new position the instant it lands -- the player
  * itself would be invisible in its own new enclosure. `rank`, `stableId`
  * and the asset fields never change for the player. */
-export function updatePlayerDrawable(
+export function updateCharacterDrawable(
   player: PropDrawable,
   feetX: number,
   feetY: number,
