@@ -27,7 +27,7 @@ function rig(periodMs = 100, unitsPerCell = 256) {
     },
   };
   const sender = startPositionSender({
-    conn,
+    conn: () => conn,
     position: () => position,
     periodMs,
     unitsPerCell,
@@ -105,14 +105,14 @@ describe("startPositionSender", () => {
     const calls: unknown[] = [];
     let tick: (() => void) | undefined;
     startPositionSender({
-      conn: {
+      conn: () => ({
         reducers: {
           setPlayerPosition: (c) => {
             calls.push(c);
             return Promise.reject(new Error("no character"));
           },
         },
-      },
+      }),
       position: () => ({ x: 0, y: 0, floor: 0 }),
       periodMs: 100,
       unitsPerCell: 256,

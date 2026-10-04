@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
+  exposeConnectionForE2e,
   exposeRegionForE2e,
   exposeRemotePlayersForE2e,
   recordAppearanceTextureIdsForE2e,
@@ -340,6 +341,22 @@ describe("the remote players' hook", () => {
     exposeRemotePlayersForE2e();
     recordRemotePlayersForE2e({ "1": { x: 0, y: 0, floor: 0 } });
     recordRemoteSampleForE2e("1", { tMs: 1, x: 0, y: 0 });
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("exposeConnectionForE2e", () => {
+  it("exposes the supervisor's live count and drop under DEV", () => {
+    const drop = vi.fn();
+    exposeConnectionForE2e({ live: () => 1, drop });
+    expect(window.__bc?.connection?.live()).toBe(1);
+    window.__bc?.connection?.drop();
+    expect(drop).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+    exposeConnectionForE2e({ live: () => 1, drop: () => {} });
     expect(window.__bc).toBeUndefined();
   });
 });

@@ -14,6 +14,11 @@
 #      fails; adding one to the allowlist below is a reviewed decision.
 #      Every other use of `tables` must be `tables.<name>.where(` on one
 #      line, so splitting, aliasing or destructuring a table is no way round.
+#   4. Story 4.8: every connection is supervised (it reconnects by itself).
+#      `DbConnection.builder` appears only in net/connection.ts (the one
+#      everyday connection) and net/link.ts (the short-lived link
+#      connection, never supervised), and `connect` from net/connection is
+#      called and imported only by net/supervised-connect.ts.
 #
 # An optional first argument overrides the scanned directory, for
 # scripts/ci/tests/test-check-subscription-shape.sh.
@@ -74,5 +79,13 @@ for t in $ALLOWED_WHOLE_TABLES; do
     || fail "net/connection.ts no longer subscribes the global singleton '$t'"
 done
 
+# 4. Connections open in one place, and only the supervisor calls `connect`.
+BAD="$(printf '%s\n' "$LINES" | grep -F 'DbConnection.builder' | grep -vE '^net/(connection|link)\.ts:' || true)"
+[ -z "$BAD" ] || fail "DbConnection.builder outside net/connection.ts and net/link.ts:
+$BAD"
+BAD="$(printf '%s\n' "$LINES" | grep -vE '^net/(connection|supervised-connect)\.ts:'   | grep -E '(^|[^A-Za-z0-9_.])connect\(|import .*[{, ]connect[ ,}].* from "[./a-z-]*connection"' || true)"
+[ -z "$BAD" ] || fail "connect() from net/connection used outside net/supervised-connect.ts (a connection nothing supervises):
+$BAD"
+
 [ "$FAILED" -eq 0 ] || exit 1
-echo "check-subscription-shape: .subscribe( only in the two net/ files, no SELECT literal, whole-table set is exactly: $ALLOWED_WHOLE_TABLES"
+echo "check-subscription-shape: .subscribe( only in the two net/ files, no SELECT literal, whole-table set is exactly: $ALLOWED_WHOLE_TABLES; connections open only in the supervised paths"

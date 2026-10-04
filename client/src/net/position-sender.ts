@@ -7,7 +7,8 @@ import { quantise, type WirePosition } from "../world/position-codec";
 import { createPositionScheduler } from "../world/position-scheduler";
 
 export interface PositionSenderOptions {
-  readonly conn: {
+  /** Read at each send, so a reconnect is a different connection. */
+  readonly conn: () => {
     readonly reducers: { setPlayerPosition(position: WirePosition): Promise<void> };
   };
   /** The player's current position in cells, or none before the scene has one. */
@@ -35,9 +36,11 @@ export function startPositionSender(options: PositionSenderOptions): PositionSen
 
   let stopped = false;
   const scheduler = createPositionScheduler(periodMs, (p: WirePosition) => {
-    conn.reducers.setPlayerPosition(p).catch((error: unknown) => {
-      console.error("[net] position write refused", error);
-    });
+    conn()
+      .reducers.setPlayerPosition(p)
+      .catch((error: unknown) => {
+        console.error("[net] position write refused", error);
+      });
   });
 
   // Polling at half the period keeps timer jitter from costing a whole

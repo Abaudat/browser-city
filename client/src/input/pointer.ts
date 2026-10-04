@@ -79,6 +79,11 @@ export interface PointerOptions {
   readonly storeyHeightPx: number;
   readonly onIntent: IntentSink;
   readonly onIgnored?: IgnoredSink;
+  /** Story 4.8: whether the body may act. Read at each primary click; while
+   * false a click does nothing at all -- no intent, no ignore, no cursor
+   * blip. Hover is looking, not acting, and is unaffected. Absent means
+   * always. */
+  readonly canAct?: () => boolean;
   /** Called only when the highlighted object actually changes, never on
    * every mouse move -- `undefined` means "nothing highlighted". */
   readonly onHighlightChange?: (objectId: bigint | undefined) => void;
@@ -131,6 +136,7 @@ export function attachPointer(options: PointerOptions): PointerHandle {
     storeyHeightPx,
     onIntent,
     onIgnored,
+    canAct,
     onHighlightChange,
   } = options;
 
@@ -284,6 +290,7 @@ export function attachPointer(options: PointerOptions): PointerHandle {
     // Primary button only: a right-click opens the browser's own menu and
     // must never also act on the world.
     if (event.button !== 0) return;
+    if (canAct && !canAct()) return;
 
     const resolution = resolveAt(event.clientX, event.clientY);
     if (!resolution) return;

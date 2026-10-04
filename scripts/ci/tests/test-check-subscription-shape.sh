@@ -91,5 +91,27 @@ plant "$d" "net/region-subscription.ts" 'export const t = tables.placedObject;
 const q = t.build();'
 check "an exported alias of a table is banned (only imports are exempt)" 1 bash "$CHECK" "$d"
 
+d="$(clean_tree)"
+plant "$d" "net/link.ts" 'const c = DbConnection.builder();'
+check "DbConnection.builder in link.ts passes" 0 bash "$CHECK" "$d"
+
+d="$(clean_tree)"
+plant "$d" "net/other.ts" 'const c = DbConnection.builder();'
+check "DbConnection.builder in another file is banned" 1 bash "$CHECK" "$d"
+
+d="$(clean_tree)"
+plant "$d" "net/supervised-connect.ts" 'import { connect } from "./connection";
+const c = connect(options);'
+check "the supervisor importing and calling connect passes" 0 bash "$CHECK" "$d"
+
+d="$(clean_tree)"
+plant "$d" "main.ts" 'import { connect } from "./net/connection";
+const c = connect(options);'
+check "connect imported and called outside the supervisor is banned" 1 bash "$CHECK" "$d"
+
+d="$(clean_tree)"
+plant "$d" "main.ts" 'import { type ConnectOptions } from "./net/connection";'
+check "importing only types from net/connection passes" 0 bash "$CHECK" "$d"
+
 summary
 exit $?

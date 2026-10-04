@@ -545,7 +545,13 @@ test.describe("camera/viewport (NFR48)", () => {
     const handle = readSpacetimeHandle();
     const wsPattern = `${handle.serverUrl.replace(/^http/, "ws")}/**`;
     let serverRoute: ReturnType<WebSocketRoute["connectToServer"]> | undefined;
+    // Only the first socket reaches the server: the client reconnects by
+    // itself, and a later socket let through would hide the notice again.
     await page.routeWebSocket(wsPattern, (ws) => {
+      if (serverRoute) {
+        ws.close();
+        return;
+      }
       serverRoute = ws.connectToServer();
     });
 

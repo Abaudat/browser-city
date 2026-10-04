@@ -523,7 +523,7 @@ Two mechanics occupy the space the genre normally fills:
 
 **No system may punish logging off.** Absence costs nothing. Services degrade only when someone *chooses* it — never because the server was quiet. Decay always has an author.
 
-**Kinematic continuity.** The player returns exactly where cause and elapsed time put them. Reconnection has no seam because nothing was suspended.
+**Kinematic continuity.** The player returns exactly where cause and elapsed time put them. Reconnection has no seam because nothing was suspended. On every arrival the stored body is adopted before the player drives it; nothing the client did while disconnected is replayed. While disconnected the player's body does not answer input.
 
 **Separate the ledger from the body.** Chains simulate to the floor as *records*; bodies instantiate only where observed. This applies to absent players too: an absent character reconciles as a record and settles on return, delivered physically as the pile of post on the doormat.
 

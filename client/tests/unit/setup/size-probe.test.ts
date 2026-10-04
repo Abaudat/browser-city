@@ -45,20 +45,21 @@ describe("sizeProbe (NFR51)", () => {
     expect(() => p.expectReached(2)).toThrow(/default ceiling/);
   });
 
+  // minLength 11 and maxLength 40 keep max(seen) and max(seen) + 1 inside (ceiling 10, stated 41].
   it("over records every value its arbitrary generates", () => {
-    const p = sizeProbe({ min: 0, max: 40 });
+    const p = sizeProbe({ min: 11, max: 41, ceiling: 10 });
     const seen: number[] = [];
     fc.assert(
       fc.property(
-        p.over(fc.array(fc.integer(), { maxLength: 40 }), (a) => a.length),
+        p.over(fc.array(fc.integer(), { minLength: 11, maxLength: 40 }), (a) => a.length),
         (a) => {
           seen.push(a.length);
         },
       ),
       { numRuns: 30 },
     );
-    expect(seen.length).toBeGreaterThanOrEqual(30);
+    expect(seen.length).toBe(30);
     expect(() => p.expectReached(Math.max(...seen))).not.toThrow();
-    expect(() => p.expectReached(Math.max(...seen) + 1)).toThrow(/largest of/);
+    expect(() => p.expectReached(Math.max(...seen) + 1)).toThrow(`largest of ${seen.length} cases`);
   });
 });

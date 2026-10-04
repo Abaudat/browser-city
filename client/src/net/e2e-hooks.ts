@@ -25,6 +25,10 @@ declare global {
        * `my_character` view delivers it. */
       character?: { characterId: string; createdAtMicros: string; linked: boolean };
       renderOrder?: string[];
+      /** Story 4.8: the reconnect supervisor. `live` is how many SDK
+       * connections are open (never more than one); `drop` closes the
+       * current one from the client, as a socket loss would. */
+      connection?: { live: () => number; drop: () => void };
       playerPosition?: { x: number; y: number };
       /** Story 1.13: the floor the player is standing on right now --
        * recorded with the position, from the same `FloorWalkResult`, so a
@@ -432,6 +436,14 @@ export function exposeCityTimeForE2e(getter: () => CityTime | undefined): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.cityTime = getter;
+  window.__bc = bucket;
+}
+
+/** Story 4.8: exposes the connection supervisor (see `Window.__bc.connection`). */
+export function exposeConnectionForE2e(connection: { live: () => number; drop: () => void }): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.connection = connection;
   window.__bc = bucket;
 }
 
