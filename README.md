@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/readme/team.png" width="880" alt="The team. Four leads direct and review. Only Crew touches the code. Scotty keeps the cycle turning. Scotty, Scrum Master (Fable): runs the cycle, turns demo feedback into stories and rules on task requests. Crew, Implementer (Sonnet): the only one who writes to the repo, implements the story and opens the PR. Tim, Tech Lead (Fable): keeps the code simple and the stack used well, owns CI and deploys. Derek, Game Designer (Fable): guards the design doc, every feature must be a real system, not a one-off. Quentin, QA (Fable): owns TDD, the trace matrix and CI tests, so players never meet a bug. Artie, Art Director (Fable): owns how the city looks and feels, from the pixel art to the UI.">
+  <img src="docs/readme/team.png" width="880" alt="The team. Four leads direct and review. Only Crew touches the code. Scotty keeps the cycle turning. Scotty, Scrum Master (Opus): runs the cycle, turns demo feedback into stories and rules on task requests. Crew, Implementer (Sonnet): the only one who writes to the repo, implements the story and opens the PR. Tim, Tech Lead (Opus): keeps the code simple and the stack used well, owns CI and deploys. Derek, Game Designer (Fable): guards the design doc, every feature must be a real system, not a one-off. Quentin, QA (Opus): owns TDD, the trace matrix and CI tests, so players never meet a bug. Artie, Art Director (Fable): owns how the city looks and feels, from the pixel art to the UI.">
 </p>
 
 <p align="center">
