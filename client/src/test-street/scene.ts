@@ -61,6 +61,7 @@ import {
 import { bodyRect, type MovementConfig } from "../world/movement";
 import { buildObjectDefIndex, type ObjectSource, objectDefById } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
+import { isCellStandable } from "../world/standable";
 import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
@@ -1135,6 +1136,15 @@ export async function mountStreetScene(
   for (const placed of placedRows) {
     worldIndex.insert(placed);
   }
+  // Mount-time check: every standable far-end cell of a flight is an anchor.
+  buildFlights(
+    STREET_TRANSITIONS,
+    streetPlacedRows(),
+    objectDefs,
+    storeyHeightPx,
+    tileSizePx,
+    (x, y, floor) => isCellStandable(worldIndex, movementConfig, x, y, floor),
+  );
 
   // Story 1.7: the visibility adapter, gated on the viewer's own
   // (floor, buildingId) tuple actually changing (Tim's direction) --

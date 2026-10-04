@@ -736,15 +736,15 @@ test.describe("story 15.19: the footbridge flights, mounted", () => {
       const stillAfter: Record<string, string> = {
         "east-to-the-abutment": "01-street-beside-the-abutment",
         "east-along-the-foot-row": "02-foot-of-the-flight",
-        "up-the-street-half": "03-street-half-before-the-cut",
-        "up-onto-the-deck": "04-deck-half-after-the-cut",
-        "down-the-deck-half": "05-deck-half-before-the-cut",
-        "down-off-the-deck": "06-street-half-after-the-cut",
+        "up-the-street-half": "03-street-half-last-stop-before-the-cut",
+        "up-onto-the-deck": "04-deck-half-first-stop-after-the-cut",
+        "down-the-deck-half": "05-deck-half-last-stop-before-the-cut",
+        "down-off-the-deck": "06-street-half-first-stop-after-the-cut",
         "east-to-the-east-column": "07-foot-row-east-end",
-        "up-the-east-column": "08-deck-half-east-column-after-the-cut",
+        "up-the-east-column": "08-deck-half-east-column-first-stop-after-the-cut",
         "west-along-the-deck": "09-deck-west-end",
         "east-along-the-deck": "10-deck-east-end",
-        "down-the-east-column": "11-street-half-east-column-after-the-cut",
+        "down-the-east-column": "11-street-half-east-column-first-stop-after-the-cut",
       };
       for (const segment of streetFootbridgeRoute(streetWalkInputs())) {
         await walkRealSegment(page, segment);
@@ -772,7 +772,10 @@ test.describe("story 15.19: the footbridge flights, mounted", () => {
       const slopePxPerCell = Math.max(
         ...flights.map((f) => Math.abs(f.dropPx) / (f.fullS - f.startS)),
       );
-      const maxStepPx = slopePxPerCell * config.walkSpeedCellsPerMs * RELEASE_LAG.stepMs + 1 / zoom;
+      const feetWorldY = (s: FootbridgeSample): number =>
+        (s.bounds.y + s.bounds.height - s.view.offsetY) / s.view.zoom;
+      const maxFeetStepPx =
+        (tile + slopePxPerCell) * config.walkSpeedCellsPerMs * RELEASE_LAG.stepMs + 1 / zoom;
       const viewport = page.viewportSize() ?? size;
 
       let sawOffset = false;
@@ -795,10 +798,12 @@ test.describe("story 15.19: the footbridge flights, mounted", () => {
         expect(s.streetCulled, `frame ${i} street`).toBe(false);
         expect(s.deckCulled, `frame ${i} deck`).toBe(false);
         const prev = samples[i - 1];
-        if (!prev || prev.floor !== s.floor) return; // the floor change is the cut
-        // (2) No pop between frames on one floor.
-        expect(Math.abs(drawnOffsetPx(s) - drawnOffsetPx(prev)), `frame ${i}`).toBeLessThanOrEqual(
-          maxStepPx,
+        if (!prev) return;
+        // (2) No pop between frames, the floor change included: the drawn feet
+        // (world y, floor offset and flight offset) move no more than the walk
+        // and the slope on it allow.
+        expect(Math.abs(feetWorldY(s) - feetWorldY(prev)), `frame ${i}`).toBeLessThanOrEqual(
+          maxFeetStepPx,
         );
         // A rest holds its height.
         if (prev.x === s.x && prev.y === s.y) {

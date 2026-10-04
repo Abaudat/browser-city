@@ -136,6 +136,8 @@ export const STREET_GOLDEN_ORDER: readonly string[] = [
   "72",
   "73",
   "74",
+  "89",
+  "90",
 ];
 
 export const STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
@@ -253,6 +255,8 @@ export const STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH: readonly string[] = [
   "72",
   "73",
   "74",
+  "89",
+  "90",
 ];
 
 export const STREET_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string>> = {
@@ -319,7 +323,9 @@ export const STREET_VISIBILITY_AT_REST_IN_SHOP_A: Readonly<Record<string, string
   "83": "normal",
   "87": "normal",
   "88": "normal",
+  "89": "normal",
   "9": "normal",
+  "90": "normal",
   "crowd:0": "normal",
   "ground_decals:-1": "hidden",
   "ground_decals:0": "normal",
@@ -394,7 +400,9 @@ export const STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE: Readonly<Record<string, stri
   "83": "normal",
   "87": "normal",
   "88": "normal",
+  "89": "normal",
   "9": "normal",
+  "90": "normal",
   "crowd:0": "normal",
   "ground_decals:-1": "hidden",
   "ground_decals:0": "normal",
@@ -469,7 +477,9 @@ export const STREET_VISIBILITY_ON_SUBWAY_LANDING: Readonly<Record<string, string
   "83": "hidden",
   "87": "hidden",
   "88": "hidden",
+  "89": "hidden",
   "9": "hidden",
+  "90": "hidden",
   "crowd:0": "hidden",
   "ground_decals:-1": "normal",
   "ground_decals:0": "hidden",

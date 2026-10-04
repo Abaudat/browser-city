@@ -53,6 +53,16 @@ fn defs_from(files: &[(PathBuf, String)]) -> Defs {
 const TWIN_CONTINUED: &[(&str, Edge, (u32, u32))] =
     &[("stairwell_bottom_railing", Edge::North, (0, 7))];
 
+/// The footbridge's flights start on the sheet's first tread (row 13): the
+/// landing lip above it (rows 9-12) is not drawn, because the deck tile is the
+/// landing, so a riser line falls every 8 px from the deck to the foot. Pinned
+/// exactly, like the twin edges: each entry must be hit, and nothing else may
+/// be listed.
+const LANDING_NOT_DRAWN: &[(&str, Edge, (u32, u32))] = &[
+    ("bridge_stairs_street", Edge::North, (0, 32)),
+    ("bridge_stairs_deck", Edge::North, (0, 32)),
+];
+
 /// `(examined objects, continued edges, repeat edges, twin-continued edges)`,
 /// or the failure messages.
 fn audit(defs: &Defs) -> Result<(usize, usize, usize, usize), Vec<String>> {
@@ -108,7 +118,9 @@ fn audit_with(
                 continued += 1;
             } else if e.repeats {
                 repeated += 1;
-            } else if TWIN_CONTINUED.contains(&(key.as_str(), e.edge, e.span)) {
+            } else if TWIN_CONTINUED.contains(&(key.as_str(), e.edge, e.span))
+                || LANDING_NOT_DRAWN.contains(&(key.as_str(), e.edge, e.span))
+            {
                 twin_continued += 1;
             } else {
                 failures.push(format!(
@@ -151,7 +163,7 @@ fn no_object_rect_slices_through_its_art() {
     );
     assert_eq!(
         twin_continued,
-        TWIN_CONTINUED.len(),
+        TWIN_CONTINUED.len() + LANDING_NOT_DRAWN.len(),
         "every twin-continued edge listed is hit, and only those"
     );
 }

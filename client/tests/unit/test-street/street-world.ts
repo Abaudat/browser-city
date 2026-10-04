@@ -61,6 +61,7 @@ import { loadMovementConfig } from "../../../src/world/movement-config";
 import type { ObjectSource } from "../../../src/world/object-defs";
 import { objectDefsById, windowDefIds } from "../../../src/world/object-defs";
 import { OwnershipIndex } from "../../../src/world/ownership";
+import { isBodyClear, isCellStandable } from "../../../src/world/standable";
 import {
   forwardOpenNeighbor,
   pairTransitions,
@@ -277,52 +278,8 @@ export function streetWalkInputs(): StreetWalkInputs {
   };
 }
 
-/** Whether the real player body, with its horizontal centre at `cx` and its
- * feet at `feet` (sub-cell units), overlaps no collider entry in the real
- * grid (half-open, so touching a face is not overlapping). An overlap
- * test, not a probe step: the resolver never blocks a body that already
- * overlaps a collider, so a probe reads a cell inside a wall as
- * standable. */
-export function isBodyClear(
-  world: WorldIndex,
-  config: MovementConfig,
-  floor: number,
-  cx: number,
-  feet: number,
-): boolean {
-  const s = config.subcellsPerCell;
-  const halfWidth = config.bodyWidthSubcells / 2;
-  const body = {
-    x0: cx - halfWidth,
-    x1: cx + halfWidth,
-    y0: feet - config.bodyHeightSubcells,
-    y1: feet,
-  };
-  for (let cy = Math.floor(body.y0 / s); cy <= Math.floor((body.y1 - 1) / s); cy++) {
-    for (let cellX = Math.floor(body.x0 / s); cellX <= Math.floor((body.x1 - 1) / s); cellX++) {
-      for (const { rect } of world.entriesInCell(floor, cellX, cy)) {
-        if (rect.x0 < body.x1 && body.x0 < rect.x1 && rect.y0 < body.y1 && body.y0 < rect.y1) {
-          return false;
-        }
-      }
-    }
-  }
-  return true;
-}
-
-/** Whether a whole cell can be stood on, on its own floor: the real
- * player body, centred in the cell the way a floor transition lands it,
- * overlaps no collider entry in the real grid. */
-export function isCellStandable(
-  world: WorldIndex,
-  config: MovementConfig,
-  x: number,
-  y: number,
-  floor: number,
-): boolean {
-  const s = config.subcellsPerCell;
-  return isBodyClear(world, config, floor, (x + 0.5) * s, (y + 0.5) * s);
-}
+// The one standability rule the scene shares (`world/standable.ts`).
+export { isBodyClear, isCellStandable };
 
 /** Whether a body can stand in `cell` pressed flush against its edge shared
  * with `toward` (an orthogonal neighbour), centred along that edge: the

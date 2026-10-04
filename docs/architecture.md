@@ -460,6 +460,10 @@ always derived from placed content, never stored per cell.
   names) must each refuse a step into it -- real colliders on the drawn
   railings, never a rule that only checks the pairing shape and stops
   there.
+  The client's `stepAndTransition` lands an entity at the centre of its
+  target cell, except for a transition whose target is its own anchor cell
+  (a stair stacked on itself, one floor up): that keeps the entity's
+  position and changes only its floor.
   The client's `world/transitions.ts` mirrors the pairing half as
   `checkTransitionPairSymmetry`, pairing transitions one to one
   (`pairTransitions`, never a plain `find` that lets two forwards claim
@@ -859,7 +863,9 @@ def declares a `flight` (`flight.drop_px`, `flight.from_px`,
 the footprint's open edge), linear between, flat outside, signed toward
 the target floor; the floor change takes whatever is left. A flight is walked
 along either axis of its footprint, in either direction, and a flight wider
-than one cell is anchored in every column and is one flight. It is summed
+than one cell is one flight: every anchor of its far end must resolve the same
+flight, and `buildFlights` refuses anchors that disagree and a standable
+far-end cell with no anchor. It is summed
 with the floor offset inside `worldPointPx` and exists nowhere else: not
 in the sort key, collision, walk state or picking.
 

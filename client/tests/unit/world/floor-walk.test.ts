@@ -79,7 +79,29 @@ describe("stepAndTransition", () => {
       transitions,
     );
     expect(result.transitioned).toBe(true);
-    expect(result).toMatchObject({ x: 5.5, y: 0.5, floor: -1, cellX: 5, cellY: 0 });
+    // The target is the anchor's own cell: the walker keeps its position and
+    // only the floor changes.
+    expect(result).toMatchObject({ y: 0.5, floor: -1, cellX: 5, cellY: 0 });
+    expect(result.x).toBeGreaterThanOrEqual(5);
+    expect(result.x).toBeLessThan(6);
+    expect(result.x).not.toBe(5.5);
+  });
+
+  it("lands at the centre of the target cell when that is another cell", () => {
+    const elsewhere = new TransitionIndex(
+      [{ x: 5, y: 0, floor: 0, targetX: 9, targetY: 3, targetFloor: -1 }],
+      { skipPairSymmetry: true },
+    );
+    const state: FloorWalkState = { x: 4.9, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
+    const result = stepAndTransition(
+      state,
+      { x: 1, y: 0 },
+      BIG_DELTA_MS,
+      OPEN_GRID,
+      FAST_CONFIG,
+      elsewhere,
+    );
+    expect(result).toMatchObject({ x: 9.5, y: 3.5, floor: -1, cellX: 9, cellY: 3 });
   });
 
   it("never re-fires on the very next call after landing, even holding the identical input", () => {
