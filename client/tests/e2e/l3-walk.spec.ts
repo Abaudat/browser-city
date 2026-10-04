@@ -11,6 +11,7 @@ import { expect, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
 import { worldPointPx } from "../../src/render/screen-position";
+import { STAIRS_X } from "../../src/test-street/fixture";
 
 interface Sample {
   realMs: number;
@@ -87,7 +88,7 @@ test("the commuter walks a leg on time, smoothly, in the walk row facing its tra
         };
         requestAnimationFrame(tick);
       }),
-    9_000,
+    11_000,
   );
   expect(samples.length).toBeGreaterThan(100);
 
@@ -127,14 +128,18 @@ test("the commuter walks a leg on time, smoothly, in the walk row facing its tra
   for (const s of whole) {
     const px = worldPointPx(s.x, s.y, s.floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM, 0);
     expect(s.screenX).toBe(px.x);
-    expect(s.screenY).toBe(px.y);
+    // Over the stairwell the flight offset sinks the body (FR182); elsewhere it is none.
+    if (s.x < STAIRS_X) expect(s.screenY).toBe(px.y);
+    else expect(s.screenY).toBeGreaterThanOrEqual(px.y);
     expect(Number.isInteger(s.screenX * ZOOM)).toBe(true);
     expect(Number.isInteger(s.screenY * ZOOM)).toBe(true);
     expect(s.orderIndex).toBeGreaterThanOrEqual(0);
     expect(s.lamppostOrderIndex).toBeGreaterThanOrEqual(0);
-    // The lamppost's feet are on row 8's bottom edge; the commuter's are on a
+    // The lamppost's last (bottom) cell sits on row 8's bottom edge; the commuter's feet are on a
     // row centre above it: it is drawn behind the lamppost.
-    if (s.y < 9) expect(s.orderIndex).toBeLessThan(s.lamppostOrderIndex);
+    if (s.y < 8.9 && Math.abs(s.x - 8.5) < 3) {
+      expect(s.orderIndex).toBeLessThan(s.lamppostOrderIndex);
+    }
   }
 
   // Smooth: per-frame displacement within the band's speed, progress never

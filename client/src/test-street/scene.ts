@@ -1349,7 +1349,7 @@ export async function mountStreetScene(
       return {
         ...drawn,
         orderIndex: order.indexOf(COMMUTER_STABLE_ID),
-        lamppostOrderIndex: lamppostId === undefined ? -1 : order.indexOf(lamppostId),
+        lamppostOrderIndex: lamppostId === undefined ? -1 : order.lastIndexOf(lamppostId),
       };
     };
     commuterDiagnostics = () => {
