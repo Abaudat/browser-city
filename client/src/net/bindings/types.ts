@@ -265,6 +265,18 @@ export const PlacedObject = __t.object("PlacedObject", {
 });
 export type PlacedObject = __Infer<typeof PlacedObject>;
 
+export const PlayerPosition = __t.object("PlayerPosition", {
+  characterId: __t.u64(),
+  chunkKey: __t.u64(),
+  x: __t.i32(),
+  y: __t.i32(),
+  floor: __t.i8(),
+  fracX: __t.u8(),
+  fracY: __t.u8(),
+  updatedAt: __t.timestamp(),
+});
+export type PlayerPosition = __Infer<typeof PlayerPosition>;
+
 export const Provision = __t.object("Provision", {
   code: __t.u32(),
   name: __t.string(),

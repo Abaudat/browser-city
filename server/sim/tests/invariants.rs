@@ -50,6 +50,9 @@ pub const INV_STOCK_MOVES_ONLY_BY_HAND: &str = "stock moves only by hand: across
 pub const INV_STOCK_MOVE_CONSERVES_QUANTITY: &str = "a stock move conserves quantity: the per-item sum across holders is unchanged by any sequence of moves, and a move the receiver refuses takes nothing from the giver";
 pub const INV_CASH_PAYMENT_CONSERVES_EVERY_DENOMINATION: &str = "a cash payment conserves every denomination: after any payment outcome the count of each denomination across all holders is unchanged, a completed payment moves exactly the price of value from customer to till, and every other outcome moves nothing";
 pub const INV_ACTOR_LOCATION_WRITTEN_ONLY_ON_CHUNK_CHANGE: &str = "actor_location is written only on a chunk or floor change: the planner returns no write for any move that keeps chunk and floor, and exactly one write, naming the chunk sim::world::chunk_key derives, for any move that changes either";
+pub const INV_PLAYER_POSITION_IS_ONE_ROW_PER_PLAYER: &str = "Over any interleaving of position writes by any number of characters, the planned writes leave exactly one row per character that has written, equal to its last write, and no plan touches another character's row (FR138)";
+pub const INV_PLAYER_POSITION_CHUNK_KEY_FOLLOWS_POSITION: &str = "Over any walk (negative coordinates, corner crossings, floor changes, teleports) the stored chunk_key of a player_position row equals sim::world::chunk_key of its stored position, and an out-of-range input produces no write (FR138)";
+pub const INV_PLAYER_POSITION_PLANNING_NEVER_PANICS: &str = "Any i32 position and any i8 floor returns Ok or a typed Err and never wraps; a jump of any distance inside the addressable range is accepted, since FR137 forbids plausibility checks (NFR41)";
 pub const INV_CHANGE_IS_REFUSED_ONLY_WHEN_THE_TILL_CANNOT_MAKE_IT: &str = "change is refused only when the till cannot make it: while the change due is under the bound a payment reports no change if and only if no combination of the pieces the till holds and what was just tendered sums to the change due, and the change chosen is the fewest pieces with ties to the larger denomination";
 pub const INV_CASH_PLANNING_NEVER_PANICS: &str = "cash planning never panics: value_of, choose_change and plan_payment return Ok or a typed Err for any table, any lines, any tender and any price";
 pub const INV_ITEM_INSTANCE_IN_EXACTLY_ONE_STATE: &str = "an item instance is in exactly one of its two states: any interleaving of place and hold moves leaves each instance in one form, never both, never neither";
@@ -6787,4 +6790,163 @@ proptest! {
             }
         }
     }
+}
+
+proptest! {
+    /// `inv_player_position_is_one_row_per_player` (FR138): a model of the
+    /// table (a map keyed by character) driven only by `plan_position`.
+    #[test]
+    fn inv_player_position_is_one_row_per_player(
+        writes in proptest::collection::vec(
+            (0u64..5, -2000i32..2000, -2000i32..2000, -1i8..=7, any::<u8>(), any::<u8>()),
+            0..60,
+        ),
+    ) {
+        use sim::player_position::{Write, plan_position};
+        use std::collections::BTreeMap;
+
+        let mut table: BTreeMap<u64, sim::player_position::PositionRow> = BTreeMap::new();
+        let mut last: BTreeMap<u64, (i32, i32, i8, u8, u8)> = BTreeMap::new();
+        for (who, x, y, floor, fx, fy) in writes {
+            let before = table.clone();
+            let plan = plan_position(table.contains_key(&who), x, y, floor, fx, fy);
+            let row = match plan {
+                Ok(Write::Insert(r)) => {
+                    prop_assert!(!before.contains_key(&who), "inserted over an existing row");
+                    r
+                }
+                Ok(Write::Update(r)) => {
+                    prop_assert!(before.contains_key(&who), "updated a row that is not there");
+                    r
+                }
+                Err(e) => return Err(TestCaseError::fail(format!("in-range write refused: {e:?}"))),
+            };
+            table.insert(who, row);
+            last.insert(who, (x, y, floor, fx, fy));
+            for (other, r) in &before {
+                if *other != who {
+                    prop_assert_eq!(table.get(other), Some(r), "a write touched another character's row");
+                }
+            }
+        }
+        prop_assert_eq!(table.len(), last.len());
+        for (who, (x, y, floor, fx, fy)) in last {
+            let r = table.get(&who).expect("a row per writer");
+            prop_assert_eq!((r.x, r.y, r.floor, r.frac_x, r.frac_y), (x, y, floor, fx, fy));
+        }
+    }
+
+    /// `inv_player_position_chunk_key_follows_position` (FR138): walks that
+    /// mostly stay in range, cross chunk edges and floors, with out-of-range
+    /// inputs mixed in. A write is accepted exactly when the floor and both
+    /// cells are addressable; an accepted one stores the chunk its position
+    /// is in, and is an update exactly when the character already has a row.
+    #[test]
+    fn inv_player_position_chunk_key_follows_position(
+        steps in proptest::collection::vec(
+            (
+                prop_oneof![
+                    6 => -70i32..70,
+                    1 => any::<i32>(),
+                    1 => Just(i32::MIN),
+                    1 => Just(sim::player_position::CELL_MAX + 1),
+                    1 => Just(sim::player_position::CELL_MIN - 1),
+                ],
+                prop_oneof![
+                    6 => -70i32..70,
+                    1 => any::<i32>(),
+                    1 => Just(sim::player_position::CELL_MAX),
+                ],
+                prop_oneof![8 => -1i8..=7, 1 => any::<i8>()],
+            ),
+            1..40,
+        ),
+    ) {
+        use sim::generated::defs::{MAX_FLOOR, MIN_FLOOR};
+        use sim::player_position::{CELL_MAX, CELL_MIN, Write, plan_position};
+        use sim::world::chunk_key;
+
+        let mut exists = false;
+        for (x, y, floor) in steps {
+            let addressable = (MIN_FLOOR..=MAX_FLOOR).contains(&(floor as i32))
+                && (CELL_MIN..=CELL_MAX).contains(&x)
+                && (CELL_MIN..=CELL_MAX).contains(&y);
+            let plan = plan_position(exists, x, y, floor, 0, 0);
+            prop_assert_eq!(plan.is_ok(), addressable, "accepted exactly when addressable");
+            if let Ok(w) = plan {
+                let (Write::Insert(r) | Write::Update(r)) = w;
+                prop_assert_eq!(matches!(w, Write::Update(_)), exists);
+                prop_assert_eq!(r.chunk_key, chunk_key(x, y, floor));
+                exists = true;
+            }
+        }
+    }
+
+    /// `inv_player_position_planning_never_panics` (NFR41, FR137).
+    #[test]
+    fn inv_player_position_planning_never_panics(
+        x in prop_oneof![any::<i32>(), Just(i32::MIN), Just(i32::MAX)],
+        y in prop_oneof![any::<i32>(), Just(i32::MIN), Just(i32::MAX)],
+        floor in any::<i8>(),
+        fx in any::<u8>(),
+        fy in any::<u8>(),
+        jump in any::<i32>(),
+    ) {
+        use sim::player_position::plan_position;
+        let _ = plan_position(false, x, y, floor, fx, fy);
+
+        // A jump of any distance between two addressable cells is accepted.
+        use sim::player_position::{CELL_MAX, CELL_MIN};
+        let a = (jump as i64).clamp(CELL_MIN as i64, CELL_MAX as i64) as i32;
+        prop_assert!(plan_position(true, a, a, 0, fx, fy).is_ok());
+    }
+}
+
+#[test]
+fn player_position_refuses_an_out_of_range_floor_and_cell() {
+    use sim::generated::defs::{MAX_FLOOR, MIN_FLOOR};
+    use sim::player_position::{CELL_MAX, CELL_MIN, PositionError, plan_position};
+    assert_eq!(
+        plan_position(false, 0, 0, (MAX_FLOOR + 1) as i8, 0, 0),
+        Err(PositionError::FloorOutOfRange)
+    );
+    assert_eq!(
+        plan_position(false, 0, 0, (MIN_FLOOR - 1) as i8, 0, 0),
+        Err(PositionError::FloorOutOfRange)
+    );
+    assert_eq!(
+        plan_position(false, CELL_MAX + 1, 0, 0, 0, 0),
+        Err(PositionError::CellOutOfRange)
+    );
+    assert_eq!(
+        plan_position(false, 0, CELL_MIN - 1, 0, 0, 0),
+        Err(PositionError::CellOutOfRange)
+    );
+    assert!(plan_position(false, CELL_MAX, CELL_MIN, MAX_FLOOR as i8, 255, 255).is_ok());
+}
+
+#[test]
+fn player_position_walk_across_chunk_edges_and_floors_updates_and_crosses() {
+    use sim::player_position::{Write, plan_position};
+    let walk = [
+        (-1, 0, 0),
+        (0, 0, 0),
+        (31, 5, 0),
+        (32, 5, 0),
+        (32, 5, -1),
+        (-33, -40, 7),
+    ];
+    let mut exists = false;
+    let (mut updates, mut crossings) = (0, 0);
+    let mut last = None;
+    for (x, y, f) in walk {
+        let w = plan_position(exists, x, y, f, 0, 0).expect("in range");
+        let (Write::Insert(r) | Write::Update(r)) = w;
+        updates += usize::from(matches!(w, Write::Update(_)));
+        crossings += usize::from(last.is_some_and(|k| k != r.chunk_key));
+        last = Some(r.chunk_key);
+        exists = true;
+    }
+    assert_eq!(updates, walk.len() - 1);
+    assert_eq!(crossings, 4, "four chunk or floor changes along the walk");
 }

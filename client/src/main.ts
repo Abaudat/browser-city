@@ -26,6 +26,7 @@ import {
   exposeIdentityActionsForE2e,
   exposePlayerScreenBoundsForE2e,
   exposeRegionForE2e,
+  exposeRemotePlayersForE2e,
   exposeWorldTransformForE2e,
   recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
@@ -42,6 +43,8 @@ import {
   recordPlayerAppearanceForE2e,
   recordPlayerPositionForE2e,
   recordRegionRowForE2e,
+  recordRemotePlayersForE2e,
+  recordRemoteSampleForE2e,
   recordRenderOrderForE2e,
   recordViewTransformForE2e,
   recordVisibilityForE2e,
@@ -50,6 +53,7 @@ import {
 } from "./net/e2e-hooks";
 import { beginLink, completeLinkWithIdToken, newLinkCode } from "./net/link";
 import type { PingObservation } from "./net/observe-ping";
+import { type PositionSender, startPositionSender } from "./net/position-sender";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
 import { cachedChunkKeys, RegionController } from "./net/region-subscription";
 import { ZOOM } from "./render/camera";
@@ -61,6 +65,7 @@ import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-set
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
 import { PLAYER_START } from "./test-street/fixture";
 import { placeLinkCarrier } from "./test-street/link-carrier";
+import type { RemotePlayersWiring } from "./test-street/remote-players-layer";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
@@ -68,7 +73,10 @@ import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";
+import { dequantise } from "./world/position-codec";
+import { loadPositionConfig, type PositionConfig } from "./world/position-config";
 import { handleId } from "./world/region";
+import { REMOTE_MAX_SAMPLES, REMOTE_SNAP_CELLS, RemoteMotion } from "./world/remote-motion";
 
 /** Story 1.12: the camera a debug overlay sees before the scene has
  * reported its own. It describes no rectangle, so
@@ -81,6 +89,16 @@ const NO_CAMERA_YET = { zoom: 0, offsetX: 0, offsetY: 0 } as const;
 interface OfferWiring {
   readonly beforeMount: (defs: VerifiedDefs, handshakeSettled: boolean) => Promise<void>;
   readonly onIntent: (intent: Intent) => void;
+}
+
+/** Story 4.4: the street scene's touch points with the other players and
+ * the position sender. */
+interface PlayersWiring {
+  /** Once the defs are verified: what the scene draws remote players from,
+   * or none when this page draws no remote players. */
+  readonly setUp: (defs: Defs) => RemotePlayersWiring | undefined;
+  readonly onPlayerMove: (x: number, y: number, floor: number) => void;
+  readonly onMounted: () => void;
 }
 
 async function main(): Promise<void> {
@@ -137,11 +155,37 @@ async function main(): Promise<void> {
   // Story 4.3: the interest region. It holds nothing until the defs give
   // it a floor range and the scene gives it a position.
   const region = new RegionController();
+  // Story 4.4 (FR138): the other players. A DEV build draws none unless the
+  // page asks (`?remotePlayers`), so a spec's pixels never depend on whoever
+  // else is in the shared instance; a production build always does.
+  const remotePlayersOn =
+    !import.meta.env.DEV || new URLSearchParams(window.location.search).has("remotePlayers");
+  let positionConfig: PositionConfig | undefined;
+  let motion: RemoteMotion | undefined;
+  let playerPosition: { x: number; y: number; floor: number } | undefined;
+  let sceneMounted = false;
+  let positionSender: PositionSender | undefined;
+  // The sender starts once the caller has a character and the scene a
+  // position; never before, and only once per page. Its first send is the
+  // scene's own position, which overwrites the durable row: the scene must
+  // adopt the stored row before this sender starts (story 4.7) the day
+  // anything reads that row. It stops for good when the connection leaves
+  // `connected` (a call on a dead connection is queued by the SDK, unbounded).
+  const maybeStartPositionSender = (): void => {
+    if (positionSender || !sceneMounted || !latestCharacter || !positionConfig) return;
+    positionSender = startPositionSender({
+      conn,
+      position: () => playerPosition,
+      periodMs: positionConfig.periodMs,
+      unitsPerCell: positionConfig.unitsPerCell,
+    });
+  };
   const moveRegion = (x: number, y: number, floor: number): void => region.moveTo(x, y, floor);
   const conn = connect({
     onPing,
     onStatus: (status) => {
       notice.setStatus(status);
+      if (status !== "connected") positionSender?.stop();
       if (status === "disconnected") latch.resolveUnreachable();
     },
     onHandshake: (version) => {
@@ -168,6 +212,7 @@ async function main(): Promise<void> {
     onCharacter: (character) => {
       latestCharacter = character;
       recordCharacterForE2e(character);
+      maybeStartPositionSender();
     },
     region: {
       controller: region,
@@ -175,6 +220,17 @@ async function main(): Promise<void> {
         onInsert: (table, row) => recordRegionRowForE2e("inserts", table, row),
         onUpdate: (table, _old, row) => recordRegionRowForE2e("updates", table, row),
         onDelete: (table, row) => recordRegionRowForE2e("deletes", table, row),
+      },
+      remotePlayers: remotePlayersOn,
+      players: {
+        onUpsert: (row) => {
+          const p = positionConfig;
+          if (!motion || !p) return;
+          const at = dequantise(row, p.unitsPerCell);
+          motion.upsert(row.characterId, { tMs: row.tMs, ...at });
+          recordRemoteSampleForE2e(row.characterId, { tMs: row.tMs, x: at.x, y: at.y });
+        },
+        onRemove: (id) => motion?.remove(id),
       },
     },
   });
@@ -285,6 +341,34 @@ async function main(): Promise<void> {
       offer,
       region,
       sceneRegionFeed(moveRegion),
+      {
+        setUp: (defs) => {
+          positionConfig = loadPositionConfig(defs);
+          motion = new RemoteMotion({
+            periodMs: positionConfig.periodMs,
+            delayMs: positionConfig.delayMs,
+            snapCells: REMOTE_SNAP_CELLS,
+            maxSamples: REMOTE_MAX_SAMPLES,
+          });
+          if (!remotePlayersOn) return undefined;
+          return {
+            motion,
+            serverNowMs: () => {
+              const micros = serverClock.nowMicros();
+              return micros === undefined ? undefined : Number(micros / 1000n);
+            },
+            skip: () => latestCharacter?.characterId.toString(),
+            onFrame: import.meta.env.DEV ? recordRemotePlayersForE2e : undefined,
+          };
+        },
+        onPlayerMove: (x, y, floor) => {
+          playerPosition = { x, y, floor };
+        },
+        onMounted: () => {
+          sceneMounted = true;
+          maybeStartPositionSender();
+        },
+      },
     );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
@@ -339,6 +423,7 @@ async function startStreetScene(
   offer: OfferWiring,
   region: RegionController,
   followScene: (x: number, y: number, floor: number) => void,
+  players: PlayersWiring,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {
@@ -406,6 +491,7 @@ async function startStreetScene(
   // Story 4.3: the floor range is the defs', and the scene's spawn is where
   // the initial region is requested around; from here on the scene's own
   // position drives it (`onPlayerMove`), edge-triggered.
+  const remotePlayers = players.setUp(defs);
   region.configure({ minFloor: defs.minFloor, maxFloor: defs.maxFloor });
   followScene(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
 
@@ -534,8 +620,10 @@ async function startStreetScene(
       recordRenderOrderForE2e(order);
       debugOverlays?.redraw();
     },
+    remotePlayers,
     onPlayerMove: (x, y, floor) => {
       recordPlayerPositionForE2e(x, y, floor);
+      players.onPlayerMove(x, y, floor);
       followScene(x, y, floor);
       // Story 1.12: `onPlayerMove` is the one callback here that really
       // does fire every frame, so the overlays are redrawn on the *cell*
@@ -576,6 +664,8 @@ async function startStreetScene(
     onHighlightChange: recordHighlightForE2e,
   });
   sceneHandle = handle;
+  players.onMounted();
+  exposeRemotePlayersForE2e();
 
   // Story 1.10: the street crowd's own e2e observation surface, wired
   // here rather than threaded through `MountStreetSceneOptions` as another

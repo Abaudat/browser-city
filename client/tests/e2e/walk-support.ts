@@ -108,3 +108,19 @@ export function walkSyntheticSegment(
 ): Promise<void> {
   return walkSegment(page, segment, "synthetic", timeoutMs);
 }
+
+/** Walks `cells` east or west of where the player stands now, with real
+ * keyboard input. The one place a relative `until` is built for a spec. */
+export async function walkRealCells(
+  page: Page,
+  label: string,
+  cells: number,
+  east: boolean,
+): Promise<void> {
+  const here = await page.evaluate(() => window.__bc?.playerPosition);
+  if (!here) throw new Error("no player position");
+  const segment: StreetWalkSegment = east
+    ? { label, key: "ArrowRight", until: { kind: "x-at-least", value: here.x + cells } }
+    : { label, key: "ArrowLeft", until: { kind: "x-at-most", value: here.x - cells } };
+  await walkRealSegment(page, segment);
+}

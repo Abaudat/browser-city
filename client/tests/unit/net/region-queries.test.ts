@@ -43,7 +43,17 @@ describe("regionQueries", () => {
         "building_area",
         "room_area",
         "actor_location",
+        "player_position",
       ]),
     );
+  });
+
+  it("the DEV switch leaves the player_position query out and nothing else", () => {
+    const all = regionQueries({ cx: 0, cy: 0, band: 0 }, FLOORS).map((q) => toSql(q));
+    const without = regionQueries({ cx: 0, cy: 0, band: 0 }, FLOORS, { remotePlayers: false }).map(
+      (q) => toSql(q),
+    );
+    expect(without).toEqual(all.filter((s) => !s.includes('"player_position"')));
+    expect(without.length).toBeLessThan(all.length);
   });
 });

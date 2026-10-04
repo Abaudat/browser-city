@@ -421,3 +421,9 @@ export function plazaBounds(): { x0: number; y0: number; x1: number; y1: number 
     y1: PLAZA_Y0 + STRIP_DEPTH + 2,
   };
 }
+
+/** Remote players' walk animation (`remote-players-layer.ts`): they are
+ * driven by their own input, not by an L3 body, so their frame still runs on
+ * a timer. */
+export const WALK_FRAMES_PER_DIRECTION = 6;
+export const WALK_FRAMES_PER_SECOND = 8;

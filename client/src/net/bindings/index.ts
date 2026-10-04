@@ -67,6 +67,7 @@ import RestoreModuleOwnerReducer from "./restore_module_owner_reducer";
 import RestoreNodeKindReducer from "./restore_node_kind_reducer";
 import RestoreOidcIssuerReducer from "./restore_oidc_issuer_reducer";
 import RestorePlacedObjectReducer from "./restore_placed_object_reducer";
+import RestorePlayerPositionReducer from "./restore_player_position_reducer";
 import RestoreProvisionReducer from "./restore_provision_reducer";
 import RestoreReasonCodeReducer from "./restore_reason_code_reducer";
 import RestoreReducerClassCounterReducer from "./restore_reducer_class_counter_reducer";
@@ -79,6 +80,7 @@ import RestoreTableSampleReducer from "./restore_table_sample_reducer";
 import RestoreUnitReducer from "./restore_unit_reducer";
 import RestoreWorldClockReducer from "./restore_world_clock_reducer";
 import SendPingReducer from "./send_ping_reducer";
+import SetPlayerPositionReducer from "./set_player_position_reducer";
 
 // Import all procedure arg schemas
 import * as SyncClockProcedure from "./sync_clock_procedure";
@@ -92,6 +94,7 @@ import FloorTransitionRow from "./floor_transition_table";
 import ModuleVersionRow from "./module_version_table";
 import MyCharacterRow from "./my_character_table";
 import PlacedObjectRow from "./placed_object_table";
+import PlayerPositionRow from "./player_position_table";
 import RoomAreaRow from "./room_area_table";
 import WorldClockRow from "./world_clock_table";
 
@@ -183,6 +186,20 @@ const tablesSchema = __schema({
       { name: 'placed_object_object_id_key', constraint: 'unique', columns: ['objectId'] },
     ],
   }, PlacedObjectRow),
+  playerPosition: __table({
+    name: 'player_position',
+    indexes: [
+      { accessor: 'character_id', name: 'player_position_character_id_idx_btree', algorithm: 'btree', columns: [
+        'characterId',
+      ] },
+      { accessor: 'chunk_key', name: 'player_position_chunk_key_idx_btree', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+    ],
+    constraints: [
+      { name: 'player_position_character_id_key', constraint: 'unique', columns: ['characterId'] },
+    ],
+  }, PlayerPositionRow),
   roomArea: __table({
     name: 'room_area',
     indexes: [
@@ -262,6 +279,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_node_kind", RestoreNodeKindReducer),
   __reducerSchema("restore_oidc_issuer", RestoreOidcIssuerReducer),
   __reducerSchema("restore_placed_object", RestorePlacedObjectReducer),
+  __reducerSchema("restore_player_position", RestorePlayerPositionReducer),
   __reducerSchema("restore_provision", RestoreProvisionReducer),
   __reducerSchema("restore_reason_code", RestoreReasonCodeReducer),
   __reducerSchema("restore_reducer_class_counter", RestoreReducerClassCounterReducer),
@@ -274,6 +292,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_unit", RestoreUnitReducer),
   __reducerSchema("restore_world_clock", RestoreWorldClockReducer),
   __reducerSchema("send_ping", SendPingReducer),
+  __reducerSchema("set_player_position", SetPlayerPositionReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
@@ -295,6 +314,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "floor_transition": Omit<typeof tablesSchema.schemaType.tables["floorTransition"], "accessorName"> & { readonly accessorName: "floor_transition" };
     /** @deprecated Use `placedObject` instead. This alias will be removed in the next major version. */
     readonly "placed_object": Omit<typeof tablesSchema.schemaType.tables["placedObject"], "accessorName"> & { readonly accessorName: "placed_object" };
+    /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
+    readonly "player_position": Omit<typeof tablesSchema.schemaType.tables["playerPosition"], "accessorName"> & { readonly accessorName: "player_position" };
     /** @deprecated Use `roomArea` instead. This alias will be removed in the next major version. */
     readonly "room_area": Omit<typeof tablesSchema.schemaType.tables["roomArea"], "accessorName"> & { readonly accessorName: "room_area" };
     /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
@@ -327,6 +348,7 @@ const tableAccessorAliases = {
   "demo_ping": "demoPing",
   "floor_transition": "floorTransition",
   "placed_object": "placedObject",
+  "player_position": "playerPosition",
   "room_area": "roomArea",
   "world_clock": "worldClock",
   "module_version": "moduleVersion",
@@ -363,6 +385,8 @@ export type DbView = __DbViewBase & {
   readonly "floor_transition": __DbViewBase["floorTransition"];
   /** @deprecated Use `placedObject` instead. This alias will be removed in the next major version. */
   readonly "placed_object": __DbViewBase["placedObject"];
+  /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
+  readonly "player_position": __DbViewBase["playerPosition"];
   /** @deprecated Use `roomArea` instead. This alias will be removed in the next major version. */
   readonly "room_area": __DbViewBase["roomArea"];
   /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
@@ -387,6 +411,8 @@ export type Tables = __TablesBase & {
   readonly "floor_transition": __TablesBase["floorTransition"];
   /** @deprecated Use `placedObject` instead. This alias will be removed in the next major version. */
   readonly "placed_object": __TablesBase["placedObject"];
+  /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
+  readonly "player_position": __TablesBase["playerPosition"];
   /** @deprecated Use `roomArea` instead. This alias will be removed in the next major version. */
   readonly "room_area": __TablesBase["roomArea"];
   /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */

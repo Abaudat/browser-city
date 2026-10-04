@@ -1,0 +1,27 @@
+# Story 4.4 (FR138): how a player's position travels. Neither key is read
+# by the server.
+
+[[balance]]
+# Position writes per second, per moving player. Movement transactions are
+# moving players times this rate, and the load scales with concurrency, not
+# with the world: NFR14's 5,000 citizens are 42 tx/s (168 at 20,000), so ten
+# players at 20 Hz (200 tx/s) already out-write twenty thousand citizens.
+# No server-side rate cap exists (FR137 forbids plausibility checks); abuse
+# would show on the metered `position` class counter. The sender period
+# derives from this key; no second rate literal exists anywhere.
+key = "net.player_position_hz"
+value = 10
+min = 1
+max = 20
+
+[[balance]]
+# How far behind the server clock a remote player is drawn, so two samples
+# bracket the drawn instant. The drawn delay is `max(this key, 2 send periods)`
+# (`remoteDelayMs`), so it moves with the rate above: at any rate under 8 Hz
+# the committed 250 is overridden (5 Hz draws 400 ms), and at 1 Hz the drawn
+# delay (2000 ms) is outside this key's own max. Whoever tunes the rate reads
+# the delay from that rule, not from this value.
+key = "net.player_interpolation_delay_ms"
+value = 250
+min = 100
+max = 1000

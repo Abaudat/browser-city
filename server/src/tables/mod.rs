@@ -14,6 +14,7 @@ pub mod identity;
 pub mod item_instance;
 pub mod metrics;
 pub mod ops;
+pub mod player_position;
 pub mod publish;
 pub mod restore;
 pub mod schedules;

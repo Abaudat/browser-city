@@ -109,6 +109,7 @@ use super::metrics::{
     reducer_class_counter, reducer_class_sample, storage_sample, table_sample,
 };
 use super::ops::{ModuleOwner, module_owner, require_owner};
+use super::player_position::{PlayerPosition, player_position};
 use super::schedules::{CadenceLiveness, cadence_liveness};
 use super::stock::{Business, Stock, business, stock};
 use super::world::{
@@ -183,6 +184,7 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "business",
     "stock",
     "actor_location",
+    "player_position",
     "demo_ping",
     "building",
     "building_area",
@@ -274,6 +276,9 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.actor_location().iter().next().is_some() {
         nonempty.push("actor_location");
+    }
+    if ctx.db.player_position().iter().next().is_some() {
+        nonempty.push("player_position");
     }
     if ctx.db.building().iter().next().is_some() {
         nonempty.push("building");
@@ -989,6 +994,22 @@ pub fn restore_actor_location(
         "actor_location",
         sequence_floor,
     )
+}
+
+// --- direct insert, by value with the explicit `character_id` (a permanent
+// key, never re-minted) ---------------------------------------------------
+#[spacetimedb::reducer]
+pub fn restore_player_position(
+    ctx: &ReducerContext,
+    rows: Vec<PlayerPosition>,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    for row in rows {
+        ctx.db.player_position().insert(row);
+    }
+    Ok(())
 }
 
 #[spacetimedb::reducer]

@@ -88,6 +88,11 @@ import {
   streetColliderSources,
   streetPlacedRows,
 } from "./fixture";
+import {
+  mountRemotePlayersLayer,
+  type RemotePlayersLayer,
+  type RemotePlayersWiring,
+} from "./remote-players-layer";
 import { buildTimetable, createWalkerFrame, TimetableWalker } from "./timetable";
 
 /** A plain, single-tile interior floor swatch cropped from the same
@@ -187,6 +192,10 @@ export interface MountStreetSceneOptions {
    * client-side and immediate, FR137) -- unlike `onOrderChange`, this is
    * polled every frame on purpose. */
   readonly onPlayerMove?: (x: number, y: number, floor: number) => void;
+  /** Story 4.4 (FR138): where the other players come from. Absent means
+   * none are drawn (a DEV build's isolation switch; always present in a
+   * production build). */
+  readonly remotePlayers?: RemotePlayersWiring;
   /** Story 1.13 (NFR2): how long this scene's own ticker callback took,
    * in ms, every frame it runs -- the frame *work* the perf harness
    * gates on, never a rAF interval. One call per frame into a sink that
@@ -313,6 +322,8 @@ export interface StreetSceneHandle {
   /** Story 1.10: the mounted street crowd, for `main.ts` to wire its own
    * DEV-only `window.__bc` hooks against -- never read by this file. */
   readonly citizensLayer: CitizensLayerHandle;
+  /** Story 4.4: the other players, when the caller supplied a source. */
+  readonly remotePlayers?: RemotePlayersLayer;
   /** Story 2.6 (NFR12): how many distinct atlas page `TextureSource`s are
    * actually reachable from the mounted display list right now
    * (`countBoundAtlasPages` over `app.stage`, not the loader's own
@@ -728,6 +739,7 @@ export async function mountStreetScene(
     windowDefIds,
     onOrderChange,
     onPlayerMove,
+    remotePlayers: remotePlayersWiring,
     onFrameWork,
     onVisibilityChange,
     onMasksChecked,
@@ -1624,6 +1636,19 @@ export async function mountStreetScene(
     crowdIdenticalTuples ?? false,
     { walk: npcWalk, config: l3Config },
   );
+  // Story 4.4: the other players, in the same floor-0 container, advanced
+  // from the same ticker below.
+  const remotePlayers = remotePlayersWiring
+    ? await mountRemotePlayersLayer(
+        crowdContainer,
+        defs,
+        appearanceCache,
+        tileSizePx,
+        storeyHeightPx,
+        ZOOM,
+        remotePlayersWiring,
+      )
+    : undefined;
   // Story 1.14 (NFR1): the atlas term's own end -- every texture this
   // scene loads before its first frame (the static tiles above, the
   // player's own composite and the street crowd's own part sheets just
@@ -1642,11 +1667,13 @@ export async function mountStreetScene(
   // `startWithCrowdFrozen`) is the one exception: a screenshot test needs
   // every citizen pinned at its initial pose, never this scene's own
   // concern otherwise.
-  app.ticker.add(() => {
-    if (crowdFrozen) return;
-    const cityMilli = cityMilliminutes?.();
-    if (cityMilli !== undefined) citizensLayer.update(cityMilli);
-    updateCommuter(cityMilli);
+  app.ticker.add((ticker) => {
+    if (!crowdFrozen) {
+      const cityMilli = cityMilliminutes?.();
+      if (cityMilli !== undefined) citizensLayer.update(cityMilli);
+      updateCommuter(cityMilli);
+    }
+    remotePlayers?.update(ticker.deltaMS);
   });
 
   // Story 2.7 (Tim's direction): a composite page re-uploads at most
@@ -1702,6 +1729,7 @@ export async function mountStreetScene(
     getRenderOrder: () => renderOrder,
     keyboard,
     citizensLayer,
+    remotePlayers,
     distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache),
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
     commuterDrawn: () => commuterDrawn(),
