@@ -170,8 +170,9 @@ function lineIsClear(
   return true;
 }
 
-/** The tile path pulled taut: from each kept point, the farthest later point
- * (within LOOKAHEAD tiles) it can reach in a straight clear line. */
+/** The tile path pulled taut: from each kept point, the goal if it can be
+ * reached in a straight clear line, else the farthest later point (within
+ * LOOKAHEAD tiles) that can. So open ground of any length is one edge. */
 function pullTaut(
   walkable: (x: number, y: number) => boolean,
   start: Point,
@@ -181,8 +182,18 @@ function pullTaut(
   const kept: number[] = [0];
   let i = 0;
   while (i < count - 1) {
-    let j = Math.min(count - 1, i + LOOKAHEAD);
+    const last = count - 1;
+    const goalInSight = lineIsClear(
+      walkable,
+      start,
+      (cells[i * 2] as number) + 0.5,
+      (cells[i * 2 + 1] as number) + 0.5,
+      (cells[last * 2] as number) + 0.5,
+      (cells[last * 2 + 1] as number) + 0.5,
+    );
+    let j = goalInSight ? last : Math.min(last, i + LOOKAHEAD);
     while (
+      !goalInSight &&
       j > i + 1 &&
       !lineIsClear(
         walkable,

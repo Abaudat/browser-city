@@ -135,7 +135,7 @@ describe("findMicroPath", () => {
 });
 
 describe("findMicroPath: the taut route", () => {
-  it("is a straight line on open ground, however the tiles stair-step", () => {
+  it("is a straight line on open ground, however the tiles stair-step (11 steps)", () => {
     const r = findMicroPath(open(), { x: 0, y: 0 }, { x: 8, y: 3 }, 4, 4096, 65536);
     expect(r.ok).toBe(true);
     if (r.ok) expect(Array.from(r.route)).toEqual([0.5, 0.5, 8.5, 3.5]);
@@ -172,6 +172,49 @@ describe("findMicroPath: the taut route", () => {
         const y = ay + (by - ay) * f;
         expect(walk(Math.floor(x), Math.floor(y))).toBe(true);
       }
+    }
+  });
+});
+
+describe("findMicroPath: open ground of any length", () => {
+  it("inv_open_ground_route_is_one_straight_edge", () => {
+    const probe = sizeProbe({ min: 0, max: 100 });
+    const reach = fc.integer({ min: -60, max: 60 });
+    fc.assert(
+      fc.property(
+        reach,
+        reach,
+        probe.over(fc.integer({ min: 0, max: 100 }), (n) => n),
+        reach,
+        (sx, sy, dx, dy) => {
+          fc.pre(dx !== 0 || dy !== 0);
+          const r = findMicroPath(
+            open(),
+            { x: sx, y: sy },
+            { x: sx + dx, y: sy + dy },
+            6,
+            4096,
+            65536,
+          );
+          expect(r.ok).toBe(true);
+          if (r.ok) {
+            expect(Array.from(r.route)).toEqual([sx + 0.5, sy + 0.5, sx + dx + 0.5, sy + dy + 0.5]);
+          }
+        },
+      ),
+    );
+    probe.expectReached(80);
+  });
+
+  it("pins the lengths that used to hook", () => {
+    for (const [dx, dy] of [
+      [9, 8],
+      [10, 7],
+      [40, 30],
+    ] as const) {
+      const r = findMicroPath(open(), { x: 0, y: 0 }, { x: dx, y: dy }, 6, 4096, 65536);
+      if (!r.ok) throw new Error("no path");
+      expect(Array.from(r.route)).toEqual([0.5, 0.5, dx + 0.5, dy + 0.5]);
     }
   });
 });

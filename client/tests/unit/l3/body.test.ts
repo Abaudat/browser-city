@@ -389,7 +389,7 @@ describe("properties", () => {
           const paces = new Body(l, grid, CFG).walkedPaces(MS_PER_MILLIMINUTE);
           // Whole milliminutes are the only slack: a segment's interval is rounded.
           const mean = paces.reduce((s, x) => s + x, 0) / paces.length;
-          for (const pace of paces) expect(Math.abs(pace - mean) / mean).toBeLessThan(0.03);
+          for (const pace of paces) expect(Math.abs(pace - mean) / mean).toBeLessThan(0.01);
           expect(new Body(l, grid, CFG).paceWithinBand(MS_PER_MILLIMINUTE, cfg)).toBe(true);
         },
       ),
