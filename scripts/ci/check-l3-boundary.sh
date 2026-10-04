@@ -31,11 +31,19 @@ while IFS= read -r hit; do
   [ -n "$hit" ] || continue
   spec="$(printf '%s' "$hit" | sed -E "s/^.*[\"']([^\"']+)[\"']\$/\\1/")"
   case "$spec" in
-    ./*) ;;
     ../defs/types) ;;
+    *..*) BAD+="$hit"$'\n' ;;
+    ./*) ;;
     *) BAD+="$hit"$'\n' ;;
   esac
 done < <(grep -rnoE "$SPEC_PATTERN" "$SRC_DIR" --include='*.ts' 2>/dev/null | tr -d '\r' || true)
+# L3 has no reason to import dynamically, and a computed specifier cannot be read.
+DYNAMIC="$(grep -rnE "(^|[^A-Za-z0-9_.\$])import[[:space:]]*\(" "$SRC_DIR" --include='*.ts' 2>/dev/null \
+  | tr -d '\r' | grep -vE '\.ts:[0-9]+:[[:space:]]*(//|/\*|\*)' || true)"
+if [ -n "$DYNAMIC" ]; then
+  fail "client/src/l3/ must not import dynamically:"
+  echo "$DYNAMIC" >&2
+fi
 if [ -n "$BAD" ]; then
   fail "client/src/l3/ may import only ./... and ../defs/types (NFR23, FR63):"
   printf '%s' "$BAD" >&2
@@ -43,7 +51,7 @@ fi
 
 # Globals that reach the DOM, the network, storage, a clock, a timer or
 # randomness, outside comment lines.
-NAMES='window|document|globalThis|self|navigator|fetch|WebSocket|XMLHttpRequest|localStorage|sessionStorage|crypto|requestAnimationFrame|setTimeout|setInterval|Math\.random|Date\.now|performance\.now|new Date'
+NAMES='performance|Date|window|document|globalThis|self|navigator|fetch|WebSocket|XMLHttpRequest|localStorage|sessionStorage|crypto|requestAnimationFrame|setTimeout|setInterval|Math\.random'
 GLOBAL_PATTERN="(^|[^A-Za-z0-9_.\$])(${NAMES})([^A-Za-z0-9_]|\$)"
 GLOBALS="$(grep -rnE "$GLOBAL_PATTERN" "$SRC_DIR" --include='*.ts' 2>/dev/null \
   | tr -d '\r' | grep -vE '\.ts:[0-9]+:[[:space:]]*(//|/\*|\*)' || true)"

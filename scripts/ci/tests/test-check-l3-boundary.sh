@@ -54,6 +54,10 @@ import { worldPointPx } from "../render/screen-position";
 import { load } from "../identity/identity-storage";
 import { overlay } from "../debug/overlays";
 import "../settings/side-effect";
+import { connect } from "./../net/connection";
+import { connect } from "./a/../../net/connection";
+const m = await import(`../net/connection`);
+const m = await import(path);
 export * from "../net/connection";
 const m = await import("../net/connection");
 const m = require("fs");
@@ -64,6 +68,8 @@ while IFS= read -r code; do
   check "banned global: $code" 1 bash "$CHECK" "$d"
 done <<'GLOBALS'
 export const t = performance.now();
+const p = performance; export const q = p;
+export const d = Date.parse("x");
 export const t = Date.now();
 export const d = new Date();
 export const r = Math.random();

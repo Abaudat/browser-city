@@ -39,3 +39,24 @@ export function facingOfHeading(headingX: number, headingY: number): Facing {
   if (Math.abs(headingX) >= Math.abs(headingY)) return headingX >= 0 ? "right" : "left";
   return headingY > 0 ? "down" : "up";
 }
+
+/** What a body driven by its own movement (a remote player) carries between
+ * frames: the facing it holds while still, and the distance walked. */
+export interface GaitState {
+  facing: Facing;
+  /** Cells walked since it last stood still. */
+  walked: number;
+}
+
+/** Advances `state` by one observed move of `(dx, dy)` cells and says whether
+ * the body moved. Facing is `facingOfHeading`'s; it holds while still, and
+ * the walked distance restarts. */
+export function advanceGait(state: GaitState, dx: number, dy: number): boolean {
+  if (dx === 0 && dy === 0) {
+    state.walked = 0;
+    return false;
+  }
+  state.facing = facingOfHeading(dx, dy);
+  state.walked += Math.hypot(dx, dy);
+  return true;
+}

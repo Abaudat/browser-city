@@ -49,6 +49,23 @@ describe("legInstants", () => {
   });
 });
 
+describe("legInstants on diagonals", () => {
+  it("shares the duration by straight-line distance, not Manhattan", () => {
+    const l = leg(
+      [
+        [0, 0],
+        [10, 0],
+        [20, 10],
+      ],
+      0,
+      1000,
+    );
+    const [, mid] = legInstants(l);
+    // 10 and sqrt(200): 10 / (10 + 14.142...) of the duration.
+    expect(mid).toBe(Math.floor((1000 * 10) / (10 + Math.sqrt(200))));
+  });
+});
+
 describe("Body pose", () => {
   const straight = leg(
     [
@@ -357,6 +374,27 @@ describe("properties", () => {
     routes.expectReached(5);
     frames.expectReached(100);
     midLeg.expectReached(20);
+  });
+
+  it("inv_l3_pace_is_even_on_open_ground", () => {
+    const routes = sizeProbe({ min: 2, max: 6, ceiling: 4 });
+    fc.assert(
+      fc.property(
+        routes.over(routeArb, (r) => dedupe(r).length),
+        (raw) => {
+          const route = dedupe(raw);
+          fc.pre(route.length >= 2);
+          const grid = new TestGrid();
+          const l = pacedLeg(route, grid);
+          const paces = new Body(l, grid, CFG).walkedPaces(MS_PER_MILLIMINUTE);
+          // Whole milliminutes are the only slack: a segment's interval is rounded.
+          const mean = paces.reduce((s, x) => s + x, 0) / paces.length;
+          for (const pace of paces) expect(Math.abs(pace - mean) / mean).toBeLessThan(0.12);
+          expect(new Body(l, grid, CFG).paceWithinBand(MS_PER_MILLIMINUTE, cfg)).toBe(true);
+        },
+      ),
+    );
+    routes.expectReached(5);
   });
 
   it("inv_npc_pose_is_frame_rate_independent", () => {

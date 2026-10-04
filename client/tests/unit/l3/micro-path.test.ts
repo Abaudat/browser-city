@@ -103,6 +103,29 @@ describe("findMicroPath", () => {
               expect(step).toBe(1);
               expect(walk(a.cells[i] ?? 0, a.cells[i + 1] ?? 0)).toBe(true);
             }
+            // The line that is walked: from the start tile centre to the goal
+            // tile centre, every densely sampled point of every edge in a
+            // walkable tile (the start tile is leavable, as in the code).
+            const route = a.route;
+            expect([route[0], route[1]]).toEqual([sx + 0.5, sy + 0.5]);
+            expect([route[route.length - 2], route[route.length - 1]]).toEqual([
+              gx + 0.5,
+              gy + 0.5,
+            ]);
+            for (let i = 2; i < route.length; i += 2) {
+              const ax = route[i - 2] as number;
+              const ay = route[i - 1] as number;
+              const bx = route[i] as number;
+              const by = route[i + 1] as number;
+              const steps = Math.ceil(Math.hypot(bx - ax, by - ay) / 0.01);
+              let bad = 0;
+              for (let k = 0; k <= steps; k++) {
+                const x = Math.floor(ax + ((bx - ax) * k) / steps);
+                const y = Math.floor(ay + ((by - ay) * k) / steps);
+                if (!(x === sx && y === sy) && !walk(x, y)) bad++;
+              }
+              expect(bad).toBe(0);
+            }
           }
         },
       ),
@@ -135,7 +158,7 @@ describe("findMicroPath: the taut route", () => {
     expect(route[after + 1]).toBe(8.5);
   });
 
-  it("keeps clear of a blocked tile by more than the tile edge", () => {
+  it("walks a line that stays in walkable tiles beside an obstacle", () => {
     const walk = wallAt([[8, 8]]);
     const r = findMicroPath(walk, { x: 3, y: 8 }, { x: 14, y: 8 }, 6, 4096, 65536);
     if (!r.ok) throw new Error("no path");

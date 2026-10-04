@@ -4,6 +4,7 @@
 // facing from the path; nothing here reads a clock or keeps a position.
 
 import { Body, type BodyPose, type Cell, createBodyPose, type Leg } from "./body";
+import type { L3Config } from "./config";
 import { type Facing, facingOfHeading, phaseOffsetFor, walkFrame } from "./gait";
 import type { PathConfig, Walkability } from "./micro-path";
 
@@ -66,8 +67,8 @@ export interface GaitDials {
 export interface CitizenDiagnostics {
   /** Segments walked straight for want of a path. */
   readonly fallbacks: number;
-  /** Per-segment walked pace, cells per real second. */
-  readonly paces: readonly number[];
+  /** Some segment is walked outside the walking-pace band. */
+  readonly paceOutOfBand: boolean;
 }
 
 /** One citizen's body: the cache of the leg it is on and nothing else. */
@@ -142,9 +143,15 @@ export class CitizenBody {
   }
 
   /** The current body's diagnostics, or none while not on a leg. */
-  diagnostics(msPerMilliminute: number): CitizenDiagnostics | undefined {
+  diagnostics(
+    msPerMilliminute: number,
+    band: Pick<L3Config, "walkCellsPerS" | "paceBandPercent">,
+  ): CitizenDiagnostics | undefined {
     const body = this.#body;
     if (!body) return undefined;
-    return { fallbacks: body.fallbackCount, paces: body.walkedPaces(msPerMilliminute) };
+    return {
+      fallbacks: body.fallbackCount,
+      paceOutOfBand: !body.paceWithinBand(msPerMilliminute, band),
+    };
   }
 }

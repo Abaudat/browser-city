@@ -128,10 +128,11 @@ describe("CitizenBody", () => {
     const grid = new TestGrid();
     grid.block(10, 0);
     const body = new CitizenBody(grid, CFG, gait, "c");
-    expect(body.diagnostics(2.5)).toBeUndefined();
+    expect(body.diagnostics(1, cfg)).toBeUndefined();
     frameOf(body, transit, 1500);
-    const d = body.diagnostics(2.5);
+    const d = body.diagnostics(1, cfg);
     expect(d?.fallbacks).toBe(1);
-    expect(d?.paces).toHaveLength(1);
+    // 10 cells in 2000 milliminutes of 1 ms (2 s) is over twice the walking pace.
+    expect(d?.paceOutOfBand).toBe(true);
   });
 });

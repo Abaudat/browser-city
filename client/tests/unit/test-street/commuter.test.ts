@@ -28,17 +28,38 @@ describe("the commuter's committed route on the real street", () => {
     expect(body.fallbackCount).toBe(0);
   });
 
-  it("never turns its back: the heading stays along the route, around the lamppost and after", () => {
+  it("walks at least twelve cells, so a player has a walk to follow", () => {
+    expect(body.totalLength).toBeGreaterThanOrEqual(12);
+  });
+
+  it("makes a real turn: the facing changes strictly inside the leg", () => {
+    const f = createCitizenFrame();
+    const citizen = new CitizenBody(walk, path, gait, "commuter");
+    const seen: string[] = [];
     for (let t = state.leg.departAt + 1; t < state.leg.arriveAt; t++) {
-      body.poseAt(t, out);
-      expect(Math.abs(out.headingX)).toBeGreaterThanOrEqual(Math.abs(out.headingY));
+      citizen.frameAt(state, t, f);
+      if (seen[seen.length - 1] !== f.direction) seen.push(f.direction);
+    }
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("never turns its back around the lamppost: facing is the route direction there", () => {
+    const f = createCitizenFrame();
+    const citizen = new CitizenBody(walk, path, gait, "commuter");
+    for (let t = state.leg.departAt + 1; t < state.leg.arriveAt; t++) {
+      citizen.frameAt(state, t, f);
+      if (f.x > 6.5 && f.x < 10.5) expect(f.direction).toBe("right");
     }
   });
 
-  it("goes around the lamppost: the walked route is longer than the straight line", () => {
-    const [a, b] = state.leg.waypoints;
-    const straight = Math.hypot((a?.x ?? 0) - (b?.x ?? 0), (a?.y ?? 0) - (b?.y ?? 0));
-    expect(body.totalLength).toBeGreaterThan(straight + 0.1);
+  it("passes the lamppost: the route comes within a cell of it", () => {
+    let closest = Number.POSITIVE_INFINITY;
+    for (let t = state.leg.departAt; t <= state.leg.arriveAt; t++) {
+      body.poseAt(t, out);
+      closest = Math.min(closest, Math.hypot(out.x - 8.5, out.y - 8.5));
+    }
+    expect(closest).toBeLessThan(1.6);
+    expect(closest).toBeGreaterThan(0.5);
     expect(body.fallbackCount).toBe(0);
   });
 
@@ -94,6 +115,10 @@ describe("the timetable", () => {
     expect(timetable.stateAt(1000 + timetable.halfMilli)).not.toBe(a);
   });
 
+  it("walks for at least half of every period", () => {
+    expect(timetable.walkMilli * 4).toBeGreaterThanOrEqual(timetable.periodMilli);
+  });
+
   it("repeats within a minute of real time, so anyone opening the game sees it walk", () => {
     expect(timetable.periodMilli * MS_PER_MILLI).toBeLessThan(60_000);
   });
@@ -110,7 +135,7 @@ describe("the timetable", () => {
     }
   });
 
-  it("stands facing the window before departing and the lamppost on arriving", () => {
+  it("stands facing along the shopfront before departing and the stairs on arriving", () => {
     const body = new CitizenBody(walk, path, gait, "commuter");
     const f = createCitizenFrame();
     const state = timetable.stateAt(0);
@@ -120,6 +145,7 @@ describe("the timetable", () => {
     expect(f.animation).toBe("walk");
     body.frameAt(state, state.leg.arriveAt, f);
     expect(f).toMatchObject({ animation: "idle", direction: COMMUTER_SPEC.outFacing });
+    expect(COMMUTER_SPEC.outFacing).toBe("left");
   });
 
   it("N frames inside one leg run one path search per segment", () => {

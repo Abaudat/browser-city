@@ -1353,23 +1353,9 @@ export async function mountStreetScene(
       };
     };
     commuterDiagnostics = () => {
-      const report = citizen.diagnostics(msPerMilliminute);
+      const report = citizen.diagnostics(msPerMilliminute, l3Config);
       if (!report || !drawn) return [];
-      const slack = l3Config.walkCellsPerS * (l3Config.paceBandPercent / 100);
-      return [
-        {
-          id: COMMUTER_ID,
-          x: drawn.x,
-          y: drawn.y,
-          floor: drawn.floor,
-          fallbacks: report.fallbacks,
-          paceOutOfBand: report.paces.some(
-            (pace) =>
-              pace !== 0 &&
-              (pace < l3Config.walkCellsPerS - slack || pace > l3Config.walkCellsPerS + slack),
-          ),
-        },
-      ];
+      return [{ id: COMMUTER_ID, x: drawn.x, y: drawn.y, floor: drawn.floor, ...report }];
     };
     let lastSortY = drawable.y;
     let lastSortX = drawable.x;
@@ -1742,13 +1728,13 @@ export async function mountStreetScene(
   // `startWithCrowdFrozen`) is the one exception: a screenshot test needs
   // every citizen pinned at its initial pose, never this scene's own
   // concern otherwise.
-  app.ticker.add((ticker) => {
+  app.ticker.add(() => {
     if (!crowdFrozen) {
       const cityMilli = cityMilliminutes?.();
       if (cityMilli !== undefined) citizensLayer.update(cityMilli);
       updateCommuter(cityMilli);
     }
-    remotePlayers?.update(ticker.deltaMS);
+    remotePlayers?.update();
   });
 
   // Story 2.7 (Tim's direction): a composite page re-uploads at most
@@ -1808,7 +1794,7 @@ export async function mountStreetScene(
     distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache),
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
     commuterDrawn: () => commuterDrawn(),
-    l3Bodies: () => commuterDiagnostics(),
+    l3Bodies: () => [...commuterDiagnostics(), ...citizensLayer.l3Bodies()],
     playerScreenBounds: () => {
       const b = playerSprite.getBounds();
       return { x: b.x, y: b.y, width: b.width, height: b.height };

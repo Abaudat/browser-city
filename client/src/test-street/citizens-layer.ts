@@ -66,6 +66,15 @@ export interface CitizensLayerHandle {
    * from `scene.ts`'s own ticker, never a second ticker registered here
    * (one driver of frame-by-frame state). */
   update(cityMilliminutes: number): void;
+  /** What each walking citizen's body says about itself (the L3 overlay). */
+  l3Bodies(): readonly {
+    readonly id: string;
+    readonly x: number;
+    readonly y: number;
+    readonly floor: number;
+    readonly fallbacks: number;
+    readonly paceOutOfBand: boolean;
+  }[];
 }
 
 interface WalkerState {
@@ -248,5 +257,21 @@ export async function mountCitizensLayer(
     distinctTextureCount: nextTextureId,
     compareForE2e,
     update,
+    l3Bodies: () => {
+      const out = [];
+      const msPerMilliminute = l3.config.realMsPerCityMinute / 1000;
+      for (const [id, walker] of walkers) {
+        const report = walker.body.diagnostics(msPerMilliminute, l3.config);
+        if (!report) continue;
+        out.push({
+          id,
+          x: walker.frame.x,
+          y: walker.frame.y,
+          floor: walker.frame.floor,
+          ...report,
+        });
+      }
+      return out;
+    },
   };
 }

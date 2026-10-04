@@ -22,7 +22,7 @@ export interface Leg {
 }
 
 /** Written into by `Body.poseAt`; owned by the caller. Positions are in
- * cells, at cell centres along the path. */
+ * cells, on the taut route between tile centres. */
 export interface BodyPose {
   x: number;
   y: number;
@@ -39,27 +39,33 @@ export function createBodyPose(): BodyPose {
   return { x: 0, y: 0, floor: 0, moving: false, distance: 0, headingX: 0, headingY: 0 };
 }
 
-function manhattan(a: Cell, b: Cell): number {
-  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+/** The straight-line distance between two waypoints. The square root of an
+ * integer sum is correctly rounded, so every client computes the same value. */
+function straight(a: Cell, b: Cell): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
-function routeManhattan(leg: Leg): number {
+function routeStraight(leg: Leg): number {
   let total = 0;
   for (let i = 1; i < leg.waypoints.length; i++) {
-    total += manhattan(leg.waypoints[i - 1] as Cell, leg.waypoints[i] as Cell);
+    total += straight(leg.waypoints[i - 1] as Cell, leg.waypoints[i] as Cell);
   }
   return total;
 }
 
 /** Each waypoint's integer instant: the leg duration shared by cumulative
- * Manhattan length, floor division. Depends on the route alone. */
+ * straight-line distance between waypoints, floor division. Depends on the
+ * route alone, never on walkability, so every client agrees which segment a
+ * citizen is on; on open ground every segment is then walked at one pace. */
 export function legInstants(leg: Leg): number[] {
   const duration = Math.max(0, leg.arriveAt - leg.departAt);
-  const total = routeManhattan(leg);
+  const total = routeStraight(leg);
   const instants = [leg.departAt];
   let cumulative = 0;
   for (let i = 1; i < leg.waypoints.length; i++) {
-    cumulative += manhattan(leg.waypoints[i - 1] as Cell, leg.waypoints[i] as Cell);
+    cumulative += straight(leg.waypoints[i - 1] as Cell, leg.waypoints[i] as Cell);
     if (total === 0) instants.push(leg.departAt);
     else if (i === leg.waypoints.length - 1) instants.push(leg.departAt + duration);
     else instants.push(leg.departAt + Math.floor((duration * cumulative) / total));

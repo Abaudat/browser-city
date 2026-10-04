@@ -1,6 +1,12 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { facingOfHeading, phaseOffsetFor, walkFrame } from "../../../src/l3/gait";
+import {
+  advanceGait,
+  facingOfHeading,
+  type GaitState,
+  phaseOffsetFor,
+  walkFrame,
+} from "../../../src/l3/gait";
 import { l3Config } from "./defs-config";
 
 const cfg = l3Config();
@@ -74,5 +80,27 @@ describe("facingOfHeading", () => {
         },
       ),
     );
+  });
+});
+
+describe("advanceGait", () => {
+  it("reads facing from motion, holds it at rest and restarts the distance", () => {
+    const s: GaitState = { facing: "down", walked: 0 };
+    expect(advanceGait(s, 1, 0.2)).toBe(true);
+    expect(s).toEqual({ facing: "right", walked: Math.hypot(1, 0.2) });
+    expect(advanceGait(s, -1, 0.2)).toBe(true);
+    expect(s.facing).toBe("left");
+    expect(advanceGait(s, 0.1, -1)).toBe(true);
+    expect(s.facing).toBe("up");
+    expect(advanceGait(s, 0, 0)).toBe(false);
+    expect(s).toEqual({ facing: "up", walked: 0 });
+  });
+
+  it("the frame follows the distance walked: the same distance, the same frame", () => {
+    const a: GaitState = { facing: "down", walked: 0 };
+    const b: GaitState = { facing: "down", walked: 0 };
+    for (let i = 0; i < 10; i++) advanceGait(a, 0.1, 0);
+    advanceGait(b, 1, 0);
+    expect(walkFrame(a.walked, STRIDE, 0.3, 6)).toBe(walkFrame(b.walked, STRIDE, 0.3, 6));
   });
 });
