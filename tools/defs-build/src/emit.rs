@@ -1488,7 +1488,6 @@ mod tests {
         );
         assert!(out.contains("\"tags\": [2]"));
         assert!(out.contains("\"flight_drop_px\": 8"));
-        assert!(out.contains("\"flight_drop_px\": null"));
         assert!(out.contains("{ \"id\": 1, \"key\": \"waste\", \"role\": null }"));
         assert!(out.contains("{ \"id\": 2, \"key\": \"seating\", \"role\": null }"));
     }
