@@ -106,6 +106,7 @@ interface Harness {
   readonly ignored: bigint[];
   readonly highlights: (bigint | undefined)[];
   cursor(): string;
+  setCanAct(open: boolean): void;
   setPlayer(next: PickPlayer): void;
   refresh(): void;
   suspend(): void;
@@ -131,6 +132,7 @@ function harness(
   const highlights: (bigint | undefined)[] = [];
   let player = playerAt;
   const fakeWindow = fakeWindowTarget();
+  const gate = { open: true };
 
   const pointer = attachPointer({
     element,
@@ -142,6 +144,7 @@ function harness(
     storeyHeightPx: STOREY,
     onIntent: (intent) => intents.push(intent),
     onIgnored: (objectId) => ignored.push(objectId),
+    canAct: () => gate.open,
     onHighlightChange: (objectId) => highlights.push(objectId),
   });
 
@@ -151,6 +154,9 @@ function harness(
     ignored,
     highlights,
     cursor: () => element.style.cursor,
+    setCanAct: (open) => {
+      gate.open = open;
+    },
     setPlayer: (next) => {
       player = next;
     },
@@ -339,6 +345,41 @@ describe("click feedback", () => {
     expect(h.cursor()).toBe("pointer");
     h.detach();
     vi.useRealTimers();
+  });
+
+  it("while the body may not act a click does nothing at all: no intent, no ignore, no cursor blip, hover untouched; it blips again once reopened", () => {
+    vi.useFakeTimers();
+    const h = harness(BIN_CELL, { x: 20, y: 20, floor: 0 });
+    move(h, 5, 5);
+    expect(h.cursor()).toBe("pointer");
+    h.setCanAct(false);
+    click(h, 5, 5);
+    expect(h.intents).toEqual([]);
+    expect(h.ignored).toEqual([]);
+    expect(h.cursor()).toBe("pointer");
+    // Looking is not acting: hover still follows the mouse.
+    move(h, 1, 1);
+    move(h, 5, 5);
+    expect(h.cursor()).toBe("pointer");
+
+    h.setCanAct(true);
+    click(h, 5, 5);
+    expect(h.ignored).toEqual([100n]);
+    expect(h.cursor()).toBe("not-allowed");
+    h.detach();
+    vi.useRealTimers();
+  });
+
+  it("an in-reach click is held too while the body may not act", () => {
+    const h = harness();
+    move(h, 5, 5);
+    h.setCanAct(false);
+    click(h, 5, 5);
+    expect(h.intents).toEqual([]);
+    h.setCanAct(true);
+    click(h, 5, 5);
+    expect(h.intents).toHaveLength(1);
+    h.detach();
   });
 
   it("an out-of-reach click never highlights the object it refused", () => {

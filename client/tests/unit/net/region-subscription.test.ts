@@ -557,7 +557,14 @@ describe("RegionController", () => {
   });
 });
 
-describe("a long session never accumulates what it left behind", () => {
+// A 10,000-step walk is CPU-bound (about a second here, four times that on a
+// loaded coverage runner); the default 5 s is a budget it has no business
+// racing, the same stated bound `camera-scroll.test.ts` gives its walk.
+const LONG_WALK_TIMEOUT_MS = 60_000;
+
+describe("a long session never accumulates what it left behind", {
+  timeout: LONG_WALK_TIMEOUT_MS,
+}, () => {
   it("a 10,000-step seeded walk over streamed rows keeps both indexes under the same bound at every step", () => {
     const grid = new CollisionGrid(
       16,

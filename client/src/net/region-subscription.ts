@@ -27,6 +27,14 @@ import {
 } from "../world/region";
 import type { DbConnection } from "./bindings";
 import { tables } from "./bindings";
+import type {
+  ActorLocation,
+  BuildingArea,
+  FloorTransition,
+  PlacedObject,
+  PlayerPosition,
+  RoomArea,
+} from "./bindings/types";
 
 /** A handle ends on exactly one of `onEnded` or `onError`, whichever comes
  * first; `onError` can arrive in any state, unsubscribing included. */
@@ -238,6 +246,33 @@ export interface RegionQueryOptions {
 
 /** The tables the region streams, by accessor name. */
 export type RegionTableName = keyof typeof REGION_QUERIES;
+
+/** A region table's row type. */
+export interface RegionRows {
+  placedObject: PlacedObject;
+  floorTransition: FloorTransition;
+  buildingArea: BuildingArea;
+  roomArea: RoomArea;
+  actorLocation: ActorLocation;
+  playerPosition: PlayerPosition;
+}
+
+/** The one declaration of each region table's primary-key column, which a
+ * reconnect reconciles rows by. A unit test checks each against the
+ * bindings' own primary-key metadata. */
+export const REGION_KEY_COLUMNS: { [K in RegionTableName]: keyof RegionRows[K] & string } = {
+  placedObject: "objectId",
+  floorTransition: "transitionId",
+  buildingArea: "areaId",
+  roomArea: "areaId",
+  actorLocation: "locationId",
+  playerPosition: "characterId",
+};
+
+/** A row's primary key as a string. */
+export function regionRowKey(table: RegionTableName, row: object): string {
+  return String((row as Record<string, unknown>)[REGION_KEY_COLUMNS[table]]);
+}
 
 export const REGION_TABLE_NAMES = Object.keys(REGION_QUERIES) as RegionTableName[];
 

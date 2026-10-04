@@ -29,6 +29,7 @@ import {
 } from "pixi.js";
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import type { VerifiedDefs } from "../boot/handshake";
+import type { BodyControl } from "../input/body-control";
 import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
@@ -264,6 +265,10 @@ export interface MountStreetSceneOptions {
    * purpose: one falling back to `DEFAULT_BINDINGS` would silently ignore
    * what the player had set. */
   readonly keyboard: KeyboardState;
+  /** Story 4.8: whether the body answers the player. While closed no
+   * movement is applied and no intent reaches the sinks; looking (hover) is
+   * unaffected. Absent means always open. */
+  readonly bodyControl?: Pick<BodyControl, "isOpen">;
   /** Story 1.13: starts the street crowd's own walk-cycle ticker paused
    * -- every citizen stays at its initial, fixed-fixture pose, forever,
    * rather than animating. Exists solely so `test-street.spec.ts`'s
@@ -1381,6 +1386,7 @@ export async function mountStreetScene(
     storeyHeightPx,
     onIntent: (intent) => onIntent?.(intent),
     onIgnored: (objectId) => onIgnored?.(objectId),
+    canAct: () => options.bodyControl?.isOpen() !== false,
     onHighlightChange: setHighlight,
   });
 
@@ -1410,7 +1416,8 @@ export async function mountStreetScene(
   });
 
   function tick(deltaMS: number): void {
-    const direction = keyboard.direction();
+    const direction =
+      options.bodyControl?.isOpen() === false ? { x: 0, y: 0 } : keyboard.direction();
     if (direction.x === 0 && direction.y === 0) {
       // Still applied on an idle frame (Quentin's direction): a window
       // resize does not move the player, but the camera's own offset has

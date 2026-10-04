@@ -14,8 +14,9 @@ E2E_DIR="${1:-"$REPO_ROOT/client/tests/e2e"}"
 
 # player-position.spec.ts is the story's own proof; street-perf.spec.ts runs
 # on its own instance and must hold the subscription every production client
-# runs (NFR2).
-ALLOWED="player-position.spec.ts street-perf.spec.ts"
+# runs (NFR2); reconnection.spec.ts reads a second player's row through a
+# witness page (story 4.8).
+ALLOWED="player-position.spec.ts street-perf.spec.ts reconnection.spec.ts"
 
 status=0
 while IFS= read -r f; do
