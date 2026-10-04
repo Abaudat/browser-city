@@ -1,7 +1,7 @@
 ---
 name: tim
 description: Tech Lead. Owns that the project uses its technologies well and that code is as simple and elegant as it can be.
-model: fable
+model: opus
 tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, WebSearch
 ---
 
