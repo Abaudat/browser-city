@@ -1,8 +1,10 @@
 // Story 4.8: a reconnect is a new connection with a new SDK cache whose
-// initial apply re-inserts everything. This keeps what consumers hold in
-// step: a re-insert of a held key is handed on as an update (or nothing when
-// unchanged), and once the new region has applied, every row still tagged
-// with an older generation is handed on as a delete. Never clear-and-reload.
+// initial apply re-inserts everything. While the new connection's initial
+// region applies, the superseded connection's cache says what consumers
+// already hold: a re-insert of a held key is handed on as an update (nothing
+// when unchanged), and afterwards each held key the new cache did not bring
+// back is handed on as a delete. Never clear-and-reload. Pure: two lookups
+// in, decisions out.
 
 /** Structural equality of two rows (primitives, bigints, arrays, plain and
  * class-instance objects such as SDK timestamps). */
@@ -23,43 +25,15 @@ export type Reconciled<R> =
   | { readonly kind: "update"; readonly old: R }
   | { readonly kind: "none" };
 
-export class GenerationStore<R> {
-  private readonly held = new Map<string, { gen: number; row: R }>();
+/** What an arriving row means to a consumer that holds `held` for its key. */
+export function reconcileInsert<R>(held: R | undefined, row: R): Reconciled<R> {
+  if (held === undefined) return { kind: "insert" };
+  return rowsEqual(held, row) ? { kind: "none" } : { kind: "update", old: held };
+}
 
-  constructor(private readonly keyOf: (row: R) => string) {}
-
-  insert(gen: number, row: R): Reconciled<R> {
-    const key = this.keyOf(row);
-    const prev = this.held.get(key);
-    this.held.set(key, { gen, row });
-    if (!prev) return { kind: "insert" };
-    return rowsEqual(prev.row, row) ? { kind: "none" } : { kind: "update", old: prev.row };
-  }
-
-  update(gen: number, row: R): void {
-    this.held.set(this.keyOf(row), { gen, row });
-  }
-
-  remove(row: R): void {
-    this.removeKey(this.keyOf(row));
-  }
-
-  removeKey(key: string): void {
-    this.held.delete(key);
-  }
-
-  /** Forgets, and returns, every row tagged with a generation before `gen`. */
-  sweep(gen: number): R[] {
-    const out: R[] = [];
-    for (const [key, entry] of this.held) {
-      if (entry.gen >= gen) continue;
-      out.push(entry.row);
-      this.held.delete(key);
-    }
-    return out;
-  }
-
-  size(): number {
-    return this.held.size;
-  }
+/** Held rows whose key the new connection did not bring back (or delete). */
+export function unseenRows<R>(held: ReadonlyMap<string, R>, seen: ReadonlySet<string>): R[] {
+  const out: R[] = [];
+  for (const [key, row] of held) if (!seen.has(key)) out.push(row);
+  return out;
 }

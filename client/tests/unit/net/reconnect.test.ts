@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConnectionStatus } from "../../../src/net/connection-status";
 import { startSupervisor, type WakeTarget } from "../../../src/net/reconnect";
-import { BACKOFF, PROBE_TIMEOUT_MS } from "../../../src/net/reconnect-policy";
+import { BACKOFF, CONNECT_TIMEOUT_MS, PROBE_TIMEOUT_MS } from "../../../src/net/reconnect-policy";
 
 class FakeTarget implements WakeTarget {
   visibilityState = "visible";
@@ -129,7 +129,8 @@ describe("reconnect supervisor", () => {
       r.last().report("disconnected");
       r.advance(BACKOFF.capMs);
     }
-    expect(r.conns).toHaveLength(13);
+    // At least one attempt per round; a hung one is failed by its deadline too.
+    expect(r.conns.length).toBeGreaterThanOrEqual(13);
     expect(r.statuses).toEqual(["connecting", "disconnected"]);
   });
 
@@ -145,7 +146,53 @@ describe("reconnect supervisor", () => {
     expect(r.timers.size).toBe(1);
     (who === "window" ? r.win : r.doc).fire(type);
     expect(r.conns).toHaveLength(2);
-    expect(r.timers.size).toBe(0);
+    // Only the new attempt's deadline is pending; the backoff wait is gone.
+    expect(r.timers.size).toBe(1);
+  });
+
+  describe("a connect attempt has a deadline", () => {
+    it("an attempt that never reports is failed at the deadline and retried on the backoff", () => {
+      const r = rig(() => 0.5);
+      r.advance(CONNECT_TIMEOUT_MS - 1);
+      expect(r.conns[0]?.closed).toBe(false);
+      expect(r.statuses).toEqual(["connecting"]);
+      r.advance(1);
+      expect(r.conns[0]?.closed).toBe(true);
+      expect(r.statuses).toEqual(["connecting", "disconnected"]);
+      expect(r.conns).toHaveLength(1);
+      r.advance(BACKOFF.baseMs);
+      expect(r.conns).toHaveLength(2);
+    });
+
+    it("a late connected from the timed-out attempt is ignored", () => {
+      const r = rig();
+      const hung = r.last();
+      r.advance(CONNECT_TIMEOUT_MS);
+      hung.report("connected");
+      expect(r.statuses).toEqual(["connecting", "disconnected"]);
+      r.win.fire("focus");
+      r.last().report("connected");
+      expect(r.statuses.at(-1)).toBe("connected");
+      expect(r.conns).toHaveLength(2);
+    });
+
+    it("a burst of wakes during a hung attempt makes no second attempt before the deadline", () => {
+      const r = rig();
+      r.win.fire("online");
+      r.win.fire("focus");
+      r.doc.fire("visibilitychange");
+      r.advance(CONNECT_TIMEOUT_MS - 1);
+      r.win.fire("pageshow");
+      expect(r.conns).toHaveLength(1);
+    });
+
+    it("a connected attempt cancels its deadline", () => {
+      const r = rig();
+      r.last().report("connected");
+      r.advance(CONNECT_TIMEOUT_MS * 3);
+      expect(r.conns[0]?.closed).toBe(false);
+      expect(r.statuses).toEqual(["connecting", "connected"]);
+    });
   });
 
   it("ignores visibilitychange to hidden", () => {

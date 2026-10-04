@@ -7,11 +7,13 @@
 // `visibilitychange` to visible. A wake while waiting cancels the timer and
 // attempts at once; while connecting it does nothing (single flight); while
 // connected it probes the socket, because after a lid close it can look open
-// and be dead. Probe: the socket is already closed, or the injected `probe`
+// and be dead. An attempt that does not settle within `CONNECT_TIMEOUT_MS`
+// has failed: it is superseded and the backoff goes on. Probe: the socket is already closed, or the injected `probe`
 // (the `sync_clock` round trip) does not answer within `PROBE_TIMEOUT_MS`.
 
 import type { ConnectionStatus } from "./connection-status";
 import {
+  CONNECT_TIMEOUT_MS,
   initialPolicy,
   type PolicyAction,
   type PolicyInput,
@@ -65,6 +67,7 @@ export function startSupervisor<C>(deps: SupervisorDeps<C>): Supervisor<C> {
   let state: PolicyState = initialPolicy();
   let conn: C | undefined;
   let timer: unknown;
+  let deadline: unknown;
   let probing = false;
   let stopped = false;
   let open = false;
@@ -94,8 +97,15 @@ export function startSupervisor<C>(deps: SupervisorDeps<C>): Supervisor<C> {
     timer = undefined;
   };
 
+  const clearDeadline = (): void => {
+    if (deadline === undefined) return;
+    deps.clearTimer(deadline);
+    deadline = undefined;
+  };
+
   const run = (action: PolicyAction): void => {
     if (action.kind === "wait") {
+      clearDeadline();
       // "Connection lost" holds steady through every attempt: the retries
       // report nothing.
       emit("disconnected");
@@ -122,6 +132,7 @@ export function startSupervisor<C>(deps: SupervisorDeps<C>): Supervisor<C> {
     clearWait();
     generation += 1;
     const mine = generation;
+    clearDeadline();
     // The old connection is superseded before the new one opens: its late
     // callbacks are ignored by generation.
     closeConn();
@@ -135,12 +146,22 @@ export function startSupervisor<C>(deps: SupervisorDeps<C>): Supervisor<C> {
     } catch (error) {
       console.error("[net] opening a connection failed", error);
       apply("failed");
+      return;
     }
+    deadline = deps.setTimer(() => {
+      deadline = undefined;
+      if (mine !== generation || state.kind !== "connecting") return;
+      // Superseded first: a late answer of this attempt is ignored.
+      generation += 1;
+      closeConn();
+      apply("failed");
+    }, CONNECT_TIMEOUT_MS);
   };
 
   const report = (from: number, status: ConnectionStatus): void => {
     if (from !== generation || stopped) return;
     if (status === "connected") {
+      clearDeadline();
       apply("succeeded");
       emit("connected");
     } else if (status === "disconnected") {
@@ -204,6 +225,7 @@ export function startSupervisor<C>(deps: SupervisorDeps<C>): Supervisor<C> {
     stop: () => {
       stopped = true;
       clearWait();
+      clearDeadline();
       deps.window.removeEventListener("online", wake);
       deps.window.removeEventListener("pageshow", wake);
       deps.window.removeEventListener("focus", wake);

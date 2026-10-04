@@ -2,22 +2,20 @@
 // supervisor. Each attempt gets its own copy of the caller's callbacks,
 // guarded by generation: once a newer connection exists, a late callback of
 // an older one (a row, a status, the character, the region) reaches no
-// consumer. Rows are reconciled across generations (`reconcile.ts`), so
-// `world/` and `render/` keep receiving plain insert, update and delete and
-// never learn that a reconnect happened.
+// consumer. `world/` and `render/` keep receiving plain insert, update and
+// delete and never learn that a reconnect happened.
+//
+// Nothing here stores a row in steady state. The superseded connection's SDK
+// cache (still readable after `disconnect()`) is kept only until the new
+// connection's initial region has applied; during that window it says what
+// consumers already hold (`reconcile.ts`).
 
 import type { DbConnection } from "./bindings";
-import {
-  type ConnectOptions,
-  connect,
-  type RegionRow,
-  type RegionTableName,
-  type SessionIdentity,
-} from "./connection";
-import { GenerationStore } from "./reconcile";
+import { type ConnectOptions, connect, type RegionRow, type SessionIdentity } from "./connection";
+import { reconcileInsert, unseenRows } from "./reconcile";
 import { type SupervisorDeps, startSupervisor, type WakeTarget } from "./reconnect";
-import { REGION_TABLE_NAMES } from "./region-subscription";
-import type { PlayerPositionRow } from "./remote-rows";
+import { REGION_TABLE_NAMES, type RegionTableName, regionRowKey } from "./region-subscription";
+import { type PlayerPositionRow, plainPlayerRow } from "./remote-rows";
 
 export interface SupervisedEnv {
   /** The page's `window` and `document`, passed in by `main.ts`. */
@@ -37,18 +35,62 @@ export interface SupervisedConnection {
   stop(): void;
 }
 
-/** Every region table's first column is its primary key. */
-const rowKey = (row: RegionRow): string => String(Object.values(row)[0]);
+type Held<R> = Map<string, R>;
 
 export function superviseConnect(
   options: ConnectOptions,
   env: SupervisedEnv,
 ): SupervisedConnection {
   let session: SessionIdentity | undefined;
-  const rowStores = new Map<RegionTableName, GenerationStore<RegionRow>>(
-    REGION_TABLE_NAMES.map((name) => [name, new GenerationStore<RegionRow>(rowKey)]),
-  );
-  const playerStore = new GenerationStore<PlayerPositionRow>((r) => r.characterId);
+  /** The newest connection opened so far. */
+  let latest: DbConnection | undefined;
+  /** Connections that ever delivered rows; a failed attempt holds nothing. */
+  const connected = new WeakSet<DbConnection>();
+  /** Superseded connections whose rows consumers may still hold, oldest
+   * first, until a new connection's initial region has applied. */
+  let superseded: DbConnection[] = [];
+  let heldRows = new Map<RegionTableName, Held<RegionRow>>();
+  let heldPlayers: Held<PlayerPositionRow> | undefined;
+  let seenRows = new Map<RegionTableName, Set<string>>();
+  let seenPlayers = new Set<string>();
+
+  const rowsOf = (table: RegionTableName): Held<RegionRow> => {
+    let held = heldRows.get(table);
+    if (!held) {
+      held = new Map();
+      for (const old of superseded) {
+        for (const row of old.db[table].iter()) held.set(regionRowKey(table, row), row);
+      }
+      heldRows.set(table, held);
+    }
+    return held;
+  };
+  const playersOf = (): Held<PlayerPositionRow> => {
+    if (!heldPlayers) {
+      heldPlayers = new Map();
+      for (const old of superseded) {
+        for (const row of old.db.playerPosition.iter()) {
+          const plain = plainPlayerRow(row);
+          heldPlayers.set(plain.characterId, plain);
+        }
+      }
+    }
+    return heldPlayers;
+  };
+  const seen = (table: RegionTableName): Set<string> => {
+    let set = seenRows.get(table);
+    if (!set) {
+      set = new Set();
+      seenRows.set(table, set);
+    }
+    return set;
+  };
+  const resetWindow = (): void => {
+    heldRows = new Map();
+    heldPlayers = undefined;
+    seenRows = new Map();
+    seenPlayers = new Set();
+  };
 
   const open: SupervisorDeps<DbConnection>["open"] = (gen, report, live) => {
     const guard =
@@ -57,15 +99,24 @@ export function superviseConnect(
         if (live()) fn?.(...args);
       };
     const { region, clock } = options;
-    const store = (table: RegionTableName) => rowStores.get(table) as GenerationStore<RegionRow>;
     const rows = region?.rows;
     const players = region?.players;
-    return connect({
+    // This attempt starts a new window: what the previous connection held,
+    // and everything before it that was never swept, is what consumers hold.
+    if (latest && connected.has(latest)) superseded.push(latest);
+    resetWindow();
+    const hasHeld = (): boolean => superseded.length > 0;
+
+    // Assigned from the result below; `connected` only arrives after it.
+    let next: DbConnection | undefined;
+    next = connect({
       ...options,
       session,
       marks: gen === 1,
       onStatus: (status) => {
-        if (live()) report(status);
+        if (!live()) return;
+        if (status === "connected" && next) connected.add(next);
+        report(status);
       },
       onPing: guard(options.onPing),
       onHandshake: guard(options.onHandshake),
@@ -85,28 +136,34 @@ export function superviseConnect(
         rows: rows && {
           onInsert: (table, row) => {
             if (!live()) return;
-            const outcome = store(table).insert(gen, row);
+            const key = regionRowKey(table, row);
+            seen(table).add(key);
+            const held = hasHeld() ? rowsOf(table).get(key) : undefined;
+            const outcome = reconcileInsert(held, row);
             if (outcome.kind === "insert") rows.onInsert(table, row);
             else if (outcome.kind === "update") rows.onUpdate(table, outcome.old, row);
           },
           onUpdate: (table, old, row) => {
             if (!live()) return;
-            store(table).update(gen, row);
+            seen(table).add(regionRowKey(table, row));
             rows.onUpdate(table, old, row);
           },
           onDelete: (table, row) => {
             if (!live()) return;
-            store(table).remove(row);
+            seen(table).add(regionRowKey(table, row));
             rows.onDelete(table, row);
           },
         },
         players: players && {
           onUpsert: (row) => {
-            if (live() && playerStore.insert(gen, row).kind !== "none") players.onUpsert(row);
+            if (!live()) return;
+            seenPlayers.add(row.characterId);
+            const held = hasHeld() ? playersOf().get(row.characterId) : undefined;
+            if (reconcileInsert(held, row).kind !== "none") players.onUpsert(row);
           },
           onRemove: (id) => {
             if (!live()) return;
-            playerStore.removeKey(id);
+            seenPlayers.add(id);
             players.onRemove(id);
           },
         },
@@ -114,17 +171,25 @@ export function superviseConnect(
           if (!live()) return;
           // The new region is in: whatever an older connection left behind
           // no longer exists.
-          for (const [table, held] of rowStores) {
-            for (const row of held.sweep(gen)) rows?.onDelete(table, row);
+          if (hasHeld()) {
+            for (const table of REGION_TABLE_NAMES) {
+              for (const row of unseenRows(rowsOf(table), seen(table))) rows?.onDelete(table, row);
+            }
+            for (const row of unseenRows(playersOf(), seenPlayers)) {
+              players?.onRemove(row.characterId);
+            }
           }
-          for (const row of playerStore.sweep(gen)) players?.onRemove(row.characterId);
+          superseded = [];
+          resetWindow();
           region.onInitialApplied?.();
         },
       },
     });
+    latest = next;
+    return next;
   };
 
-  const supervisor = startSupervisor<DbConnection>({
+  return startSupervisor<DbConnection>({
     open,
     probe: (conn) => conn.procedures.syncClock({}),
     isClosed: (conn) => conn.isSocketClosed,
@@ -136,5 +201,4 @@ export function superviseConnect(
     window: env.window,
     document: env.document,
   });
-  return supervisor;
 }

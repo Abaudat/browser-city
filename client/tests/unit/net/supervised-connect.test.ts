@@ -6,20 +6,35 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ConnectOptions } from "../../../src/net/connection";
 
 const calls: ConnectOptions[] = [];
-const conns: Array<{
+const TABLES = [
+  "placedObject",
+  "floorTransition",
+  "buildingArea",
+  "roomArea",
+  "actorLocation",
+  "playerPosition",
+] as const;
+interface FakeConn {
   isSocketClosed: boolean;
   disconnect: ReturnType<typeof vi.fn>;
   procedures: { syncClock: ReturnType<typeof vi.fn> };
-}> = [];
+  /** What the SDK cache holds, per table. */
+  cache: Record<string, unknown[]>;
+  db: Record<string, { iter: () => unknown[] }>;
+}
+const conns: FakeConn[] = [];
 
 vi.mock("../../../src/net/connection", () => ({
   connect: (options: ConnectOptions) => {
     calls.push(options);
     options.onStatus?.("connecting");
-    const conn = {
+    const cache: Record<string, unknown[]> = Object.fromEntries(TABLES.map((t) => [t, []]));
+    const conn: FakeConn = {
       isSocketClosed: false,
       disconnect: vi.fn(),
       procedures: { syncClock: vi.fn(() => Promise.resolve(0n)) },
+      cache,
+      db: Object.fromEntries(TABLES.map((t) => [t, { iter: () => cache[t] ?? [] }])),
     };
     conns.push(conn);
     return conn;
@@ -94,6 +109,26 @@ function setup() {
 const placed = (id: number, v = 0) => ({ objectId: BigInt(id), v }) as never;
 const player = (id: string, x = 0) =>
   ({ characterId: id, tMs: 1, x, y: 0, floor: 0, fracX: 0, fracY: 0 }) as const;
+const rawPlayer = (id: string, x = 0) =>
+  ({
+    characterId: BigInt(id),
+    updatedAt: { microsSinceUnixEpoch: 1000n },
+    x,
+    y: 0,
+    floor: 0,
+    fracX: 0,
+    fracY: 0,
+  }) as never;
+
+/** The SDK delivers a row to the consumer and holds it in its cache. */
+function deliver(conn: FakeConn, opts: ConnectOptions, table: string, row: unknown) {
+  conn.cache[table]?.push(row);
+  if (table === "playerPosition") {
+    const r = row as { characterId: bigint; x: number };
+    opts.region?.players?.onUpsert(player(String(r.characterId), r.x));
+  }
+  opts.region?.rows?.onInsert(table as never, row as never);
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -157,17 +192,28 @@ describe("stale-connection guard", () => {
 });
 
 describe("one continuous world across a reconnect", () => {
+  it("holds nothing in steady state: the superseded cache is never read before a reconnect", () => {
+    const { seen } = setup();
+    const first = calls[0] as ConnectOptions;
+    deliver(conns[0] as FakeConn, first, "placedObject", placed(1));
+    expect(seen.insert).toHaveBeenCalledTimes(1);
+    const iter = vi.spyOn((conns[0] as FakeConn).db.placedObject as never, "iter");
+    first.region?.rows?.onInsert("placedObject", placed(1));
+    expect(iter).not.toHaveBeenCalled();
+  });
+
   it("hands a re-inserted row on as an update, and an unchanged one as nothing", () => {
     const { seen, reconnect } = setup();
     const first = calls[0] as ConnectOptions;
-    first.region?.rows?.onInsert("placedObject", placed(1, 0));
-    first.region?.rows?.onInsert("placedObject", placed(2, 0));
+    deliver(conns[0] as FakeConn, first, "placedObject", placed(1, 0));
+    deliver(conns[0] as FakeConn, first, "placedObject", placed(2, 0));
     expect(seen.insert).toHaveBeenCalledTimes(2);
     reconnect();
     const second = calls[1] as ConnectOptions;
     second.region?.rows?.onInsert("placedObject", placed(1, 5));
     second.region?.rows?.onInsert("placedObject", placed(2, 0));
-    expect(seen.insert).toHaveBeenCalledTimes(2);
+    second.region?.rows?.onInsert("placedObject", placed(3, 0));
+    expect(seen.insert).toHaveBeenCalledTimes(3);
     expect(seen.update).toHaveBeenCalledTimes(1);
     expect(seen.update).toHaveBeenCalledWith("placedObject", placed(1, 0), placed(1, 5));
   });
@@ -175,43 +221,77 @@ describe("one continuous world across a reconnect", () => {
   it("deletes what the old connection held and the new region no longer has", () => {
     const { seen, reconnect } = setup();
     const first = calls[0] as ConnectOptions;
-    first.region?.rows?.onInsert("placedObject", placed(1));
-    first.region?.rows?.onInsert("placedObject", placed(2));
-    first.region?.players?.onUpsert(player("7"));
-    first.region?.players?.onUpsert(player("8"));
+    const old = conns[0] as FakeConn;
+    deliver(old, first, "placedObject", placed(1));
+    deliver(old, first, "placedObject", placed(2));
+    deliver(old, first, "playerPosition", rawPlayer("7"));
+    deliver(old, first, "playerPosition", rawPlayer("8"));
+    seen.del.mockClear();
     reconnect();
     const second = calls[1] as ConnectOptions;
     second.region?.rows?.onInsert("placedObject", placed(2));
     second.region?.players?.onUpsert(player("8"));
+    second.region?.rows?.onInsert("playerPosition", rawPlayer("8"));
     expect(seen.del).not.toHaveBeenCalled();
     second.region?.onInitialApplied?.();
-    expect(seen.del).toHaveBeenCalledTimes(1);
     expect(seen.del).toHaveBeenCalledWith("placedObject", placed(1));
+    expect(seen.del).toHaveBeenCalledWith("playerPosition", rawPlayer("7"));
+    expect(seen.del).toHaveBeenCalledTimes(2);
     expect(seen.remove).toHaveBeenCalledWith("7");
     expect(seen.remove).toHaveBeenCalledTimes(1);
     expect(seen.applied).toHaveBeenCalledTimes(1);
   });
 
-  it("forgets a row the new connection deleted, so it is not swept twice", () => {
+  it("forgets the old connection once the sweep is done", () => {
     const { seen, reconnect } = setup();
-    (calls[0] as ConnectOptions).region?.rows?.onInsert("placedObject", placed(1));
+    deliver(conns[0] as FakeConn, calls[0] as ConnectOptions, "placedObject", placed(1));
+    reconnect();
+    (calls[1] as ConnectOptions).region?.onInitialApplied?.();
+    seen.del.mockClear();
+    (calls[1] as ConnectOptions).region?.onInitialApplied?.();
+    expect(seen.del).not.toHaveBeenCalled();
+  });
+
+  it("a row the new connection deleted is not deleted again by the sweep", () => {
+    const { seen, reconnect } = setup();
+    deliver(conns[0] as FakeConn, calls[0] as ConnectOptions, "placedObject", placed(1));
     reconnect();
     const second = calls[1] as ConnectOptions;
-    second.region?.rows?.onInsert("placedObject", placed(1));
     second.region?.rows?.onDelete("placedObject", placed(1));
+    seen.del.mockClear();
     second.region?.onInitialApplied?.();
-    expect(seen.del).toHaveBeenCalledTimes(1);
+    expect(seen.del).not.toHaveBeenCalled();
+  });
+
+  it("an attempt that never connected holds nothing, and the first connection's rows survive it", () => {
+    const { seen, win } = setup();
+    const first = calls[0] as ConnectOptions;
+    deliver(conns[0] as FakeConn, first, "placedObject", placed(1));
+    first.onStatus?.("connected");
+    first.onStatus?.("disconnected");
+    win.fire("focus");
+    // The second attempt fails before ever connecting.
+    (calls[1] as ConnectOptions).onStatus?.("disconnected");
+    win.fire("focus");
+    expect(calls).toHaveLength(3);
+    const third = calls[2] as ConnectOptions;
+    third.region?.rows?.onInsert("placedObject", placed(1));
+    expect(seen.update).not.toHaveBeenCalled();
+    seen.del.mockClear();
+    third.region?.onInitialApplied?.();
+    expect(seen.del).not.toHaveBeenCalled();
   });
 
   it("an upsert of an unchanged player raises nothing, a changed one does", () => {
     const { seen, reconnect } = setup();
-    (calls[0] as ConnectOptions).region?.players?.onUpsert(player("1", 0));
+    deliver(conns[0] as FakeConn, calls[0] as ConnectOptions, "playerPosition", rawPlayer("1", 0));
+    seen.upsert.mockClear();
     reconnect();
     const second = calls[1] as ConnectOptions;
     second.region?.players?.onUpsert(player("1", 0));
-    expect(seen.upsert).toHaveBeenCalledTimes(1);
+    expect(seen.upsert).not.toHaveBeenCalled();
     second.region?.players?.onUpsert(player("1", 3));
-    expect(seen.upsert).toHaveBeenCalledTimes(2);
+    expect(seen.upsert).toHaveBeenCalledTimes(1);
   });
 });
 

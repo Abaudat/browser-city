@@ -14,6 +14,7 @@ import { carrierDefId, offerDue, readOfferRules } from "./identity/link-offer";
 import { decideOffer } from "./identity/link-offer-gate";
 import { loadLastShownDay, saveLastShownDay } from "./identity/link-prompt";
 import { offerLink, resumeLinkIfPending } from "./identity/link-session";
+import { type BodyControl, connectionReason, createBodyControl } from "./input/body-control";
 import type { Intent } from "./input/intent";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
@@ -185,21 +186,10 @@ async function main(): Promise<void> {
     senderLifecycle.setReady(
       sceneMounted && latestCharacter !== null && positionConfig !== undefined,
     );
-  // Story 4.8: while the connection is down after having been up, the
-  // player's body holds where it stands under the notice.
-  let everConnected = false;
-  const inputHold = {
-    keyboard: undefined as KeyboardState | undefined,
-    offline: false,
-    set(offline: boolean): void {
-      this.offline = offline;
-      this.keyboard?.setOffline(offline);
-    },
-    attach(keyboard: KeyboardState): void {
-      this.keyboard = keyboard;
-      keyboard.setOffline(this.offline);
-    },
-  };
+  // Story 4.8: the one gate on whether the body answers the player; the
+  // connection being down after having been up closes it.
+  const bodyControl = createBodyControl();
+  const feedConnection = connectionReason(bodyControl);
   const moveRegion = (x: number, y: number, floor: number): void => region.moveTo(x, y, floor);
   // A reconnect is a new `connect()`: every caller reads the connection
   // through `conn.current()` at the moment of use, never holds one.
@@ -208,8 +198,7 @@ async function main(): Promise<void> {
       onPing,
       onStatus: (status) => {
         notice.setStatus(status);
-        if (status === "connected") everConnected = true;
-        inputHold.set(everConnected && status === "disconnected");
+        feedConnection(status);
         senderLifecycle.setConnected(status === "connected");
         if (status === "disconnected") latch.resolveUnreachable();
       },
@@ -371,7 +360,7 @@ async function main(): Promise<void> {
       offer,
       region,
       sceneRegionFeed(moveRegion),
-      inputHold,
+      bodyControl,
       {
         setUp: (defs) => {
           positionConfig = loadPositionConfig(defs);
@@ -454,7 +443,7 @@ async function startStreetScene(
   offer: OfferWiring,
   region: RegionController,
   followScene: (x: number, y: number, floor: number) => void,
-  hold: { attach(keyboard: KeyboardState): void },
+  bodyControl: BodyControl,
   players: PlayersWiring,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
@@ -555,7 +544,6 @@ async function startStreetScene(
   const audio = loadAudioSettings(storage);
   const display = loadDisplaySettings(storage);
   const keyboard = new KeyboardState(bindings);
-  hold.attach(keyboard);
 
   // Set once the street scene below finishes mounting -- `onDisplayChange`
   // can fire before then (the menu is interactive immediately), so a
@@ -673,6 +661,7 @@ async function startStreetScene(
     onVisibilityChange: recordVisibilityForE2e,
     onMasksChecked: recordMasksCheckedForE2e,
     keyboard,
+    bodyControl,
     // FR148: the intent sink. Nothing consumes an intent yet -- the
     // procedure interaction model is Epic 8's, deliberately unresolved --
     // so the only consumer today is the e2e observation hook. Swapping

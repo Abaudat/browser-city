@@ -2,72 +2,35 @@
 // continuous world -- re-inserts become updates, vanished rows become deletes.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { GenerationStore, rowsEqual } from "../../../src/net/reconcile";
+import { reconcileInsert, rowsEqual, unseenRows } from "../../../src/net/reconcile";
 
-interface Row {
-  id: number;
-  v: number;
-}
-
-const store = () => new GenerationStore<Row>((r) => String(r.id));
-
-describe("GenerationStore", () => {
-  it("hands a first insert on as an insert", () => {
-    expect(store().insert(1, { id: 1, v: 1 })).toEqual({ kind: "insert" });
+describe("reconcileInsert", () => {
+  it("a key nobody holds is an insert", () => {
+    expect(reconcileInsert(undefined, { id: 1 })).toEqual({ kind: "insert" });
   });
 
-  it("hands a re-insert of a held key on as an update with the held row", () => {
-    const s = store();
-    s.insert(1, { id: 1, v: 1 });
-    expect(s.insert(2, { id: 1, v: 2 })).toEqual({ kind: "update", old: { id: 1, v: 1 } });
+  it("a held key with a different row is an update carrying the held row", () => {
+    expect(reconcileInsert({ id: 1, v: 1 }, { id: 1, v: 2 })).toEqual({
+      kind: "update",
+      old: { id: 1, v: 1 },
+    });
   });
 
-  it("raises nothing for a re-insert of an unchanged row, but still re-tags it", () => {
-    const s = store();
-    s.insert(1, { id: 1, v: 1 });
-    expect(s.insert(2, { id: 1, v: 1 })).toEqual({ kind: "none" });
-    expect(s.sweep(2)).toEqual([]);
-  });
-
-  it("sweeps exactly the rows an older generation left behind", () => {
-    const s = store();
-    s.insert(1, { id: 1, v: 1 });
-    s.insert(1, { id: 2, v: 1 });
-    s.insert(2, { id: 2, v: 1 });
-    s.insert(2, { id: 3, v: 1 });
-    expect(s.sweep(2)).toEqual([{ id: 1, v: 1 }]);
-    expect(s.size()).toBe(2);
-  });
-
-  it("forgets a deleted row, and tolerates a delete of an unknown one", () => {
-    const s = store();
-    s.insert(1, { id: 1, v: 1 });
-    s.remove({ id: 1, v: 1 });
-    s.remove({ id: 9, v: 1 });
-    expect(s.size()).toBe(0);
-  });
-
-  it("an update re-tags the row with the current generation", () => {
-    const s = store();
-    s.insert(1, { id: 1, v: 1 });
-    s.update(2, { id: 1, v: 5 });
-    expect(s.sweep(2)).toEqual([]);
+  it("an unchanged row raises nothing", () => {
+    expect(reconcileInsert({ id: 1, v: 1 }, { id: 1, v: 1 })).toEqual({ kind: "none" });
   });
 });
 
-describe("sweep as a property", () => {
-  it("removals are exactly the old set minus the newly applied one", () => {
+describe("unseenRows", () => {
+  it("removals are exactly the held set minus the newly seen one", () => {
     fc.assert(
       fc.property(
         fc.uniqueArray(fc.integer({ min: 0, max: 40 }), { maxLength: 41 }),
         fc.uniqueArray(fc.integer({ min: 0, max: 40 }), { maxLength: 41 }),
-        (oldIds, newIds) => {
-          const s = store();
-          for (const id of oldIds) s.insert(1, { id, v: 0 });
-          for (const id of newIds) s.insert(2, { id, v: 0 });
-          const removed = s.sweep(2).map((r) => r.id);
-          expect(removed.sort()).toEqual(oldIds.filter((i) => !newIds.includes(i)).sort());
-          expect(s.size()).toBe(newIds.length);
+        (heldIds, seenIds) => {
+          const held = new Map(heldIds.map((i) => [String(i), { id: i }]));
+          const removed = unseenRows(held, new Set(seenIds.map(String))).map((r) => r.id);
+          expect(removed.sort()).toEqual(heldIds.filter((i) => !seenIds.includes(i)).sort());
         },
       ),
     );

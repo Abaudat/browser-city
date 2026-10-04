@@ -11,6 +11,11 @@
 // an observable condition, and `retries` stays 0.
 import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
+import { ZOOM } from "../../src/render/camera";
+import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
+import { SHOP_COUNTER_DEF_ID, STREET_PROPS } from "../../src/test-street/fixture";
+import { committedDefs } from "../unit/test-street/street-world";
+import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
 import { walkRealCells } from "./walk-support";
 
@@ -22,10 +27,13 @@ interface Sockets {
   /** Holds the next socket back from the server for this long, once. */
   delayMs: number;
   servers: Array<ReturnType<WebSocketRoute["connectToServer"]>>;
+  /** Per socket: while set, nothing crosses it in either direction and it is
+   * never closed -- a socket that died unseen. */
+  quiet: Array<{ silent: boolean }>;
 }
 
 async function routeDb(page: Page): Promise<Sockets> {
-  const sockets: Sockets = { count: 0, mode: "pass", delayMs: 0, servers: [] };
+  const sockets: Sockets = { count: 0, mode: "pass", delayMs: 0, servers: [], quiet: [] };
   const pattern = `${readSpacetimeHandle().serverUrl.replace(/^http/, "ws")}/**`;
   await page.routeWebSocket(pattern, (ws) => {
     sockets.count += 1;
@@ -33,13 +41,31 @@ async function routeDb(page: Page): Promise<Sockets> {
       ws.close();
       return;
     }
-    const connect = () => sockets.servers.push(ws.connectToServer());
+    const gate = { silent: false };
+    sockets.quiet.push(gate);
+    const connect = () => {
+      const server = ws.connectToServer();
+      sockets.servers.push(server);
+      ws.onMessage((m) => {
+        if (!gate.silent) server.send(m);
+      });
+      server.onMessage((m) => {
+        if (!gate.silent) ws.send(m);
+      });
+      ws.onClose(() => void server.close());
+      server.onClose(() => void ws.close());
+    };
     const delay = sockets.delayMs;
     sockets.delayMs = 0;
     if (delay > 0) setTimeout(connect, delay);
     else connect();
   });
   return sockets;
+}
+
+/** Every socket so far goes silent, still open. */
+function goSilent(sockets: Sockets): void {
+  for (const gate of sockets.quiet) gate.silent = true;
 }
 
 /** Closes the server side of every live socket: what the page sees as a drop. */
@@ -129,7 +155,10 @@ test("a dropped connection returns by itself: the notice goes lost then reconnec
   await a.keyboard.up("ArrowRight");
   expect(await position(a)).toEqual(before);
   const rowDuring = await witnessPose(witness, id);
-  expect(rowDuring?.x).toBeCloseTo(before.x, 1);
+  const quantum = 1 / committedDefs().positionUnitsPerCell;
+  expect(Math.abs((rowDuring?.x ?? Number.NaN) - before.x)).toBeLessThanOrEqual(quantum);
+  expect(Math.abs((rowDuring?.y ?? Number.NaN) - before.y)).toBeLessThanOrEqual(quantum);
+  expect(rowDuring?.floor).toBe(await a.evaluate(() => window.__bc?.playerFloor));
   // Retries are silent: the wording never flickers to "Connecting…".
   await expect(notice(a)).toHaveText("Connection lost");
 
@@ -158,7 +187,7 @@ test("a dropped connection returns by itself: the notice goes lost then reconnec
   await witness.context().close();
 });
 
-test("a laptop lid: the page freezes, the socket dies unseen, and on resume one new socket brings the player back with no input (FR140)", async ({
+test("a drop while the page is frozen: on resume one new socket brings the player back with no input and the notice shows meanwhile (FR140)", async ({
   browser,
 }) => {
   const context = await browser.newContext();
@@ -228,4 +257,84 @@ test("the world moved while away: after reconnecting, another player's new posit
 
   await a.context().close();
   await b.context().close();
+});
+
+test("while the connection is down the body answers no click: no intent and no refusal, and it answers again once back", async ({
+  browser,
+}) => {
+  const a = await (await browser.newContext()).newPage();
+  const sockets = await openPlayer(a);
+  const counter = STREET_PROPS.find((p) => "defId" in p && p.defId === SHOP_COUNTER_DEF_ID);
+  if (!counter) throw new Error("no counter in the fixture");
+  const balance = (key: string): number => {
+    const entry = committedDefs().balance.find((b) => b.key === key);
+    if (!entry) throw new Error(`no balance key ${key}`);
+    return entry.value;
+  };
+  const tile = balance("render.tile_size_px");
+  const clickCounter = async () => {
+    const centre = cellBottomCentre(counter.x, counter.y);
+    const anchor = worldPointPx(
+      centre.x,
+      centre.y,
+      counter.floor,
+      tile,
+      balance("render.storey_height_px"),
+      ZOOM,
+      0,
+    );
+    const position = await canvasOffsetForWorldPx(a, { x: anchor.x, y: anchor.y - tile / 2 });
+    await canvasOf(a).click({ position });
+  };
+  const refusals = () => a.evaluate(() => window.__bc?.ignoredIntents ?? []);
+
+  sockets.mode = "refuse";
+  await dropServer(sockets);
+  await expect(notice(a)).toHaveText("Connection lost", { timeout: 5_000 });
+  await clickCounter();
+  await frames(a, 30);
+  expect(await refusals()).toEqual([]);
+  expect(await a.evaluate(() => window.__bc?.intents ?? [])).toEqual([]);
+
+  sockets.mode = "pass";
+  await expect(notice(a)).toHaveText("Reconnected", { timeout: 30_000 });
+  // The player starts out of the counter's reach: a click is now refused.
+  await clickCounter();
+  await expect.poll(refusals).toEqual([String(counter.id)]);
+
+  await a.context().close();
+});
+
+test("a laptop lid with a socket that died unseen: on resume the probe finds it silent, rebuilds it, and one new socket brings the player back (FR140)", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const a = await context.newPage();
+  const sockets = await openPlayer(a);
+  const cdp = await context.newCDPSession(a);
+  const socketsBefore = sockets.count;
+  const before = await position(a);
+
+  await cdp.send("Page.setWebLifecycleState", { state: "frozen" });
+  // The socket stays open on both sides but carries nothing.
+  goSilent(sockets);
+  // The rebuilt socket is held back long enough for the notice to show.
+  sockets.delayMs = 1_500;
+  await cdp.send("Page.setWebLifecycleState", { state: "active" });
+  await a.evaluate(() => {
+    window.dispatchEvent(new Event("online"));
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+    window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+
+  // Nothing but the wake-then-probe chain can notice: no close ever arrives.
+  await expect(notice(a)).toHaveText("Connection lost", { timeout: 20_000 });
+  await expect(notice(a)).toHaveText("Reconnected", { timeout: 30_000 });
+  await expect(notice(a)).toBeHidden({ timeout: 5_000 });
+  expect(sockets.count).toBe(socketsBefore + 1);
+  expect(await a.evaluate(() => window.__bc?.connection?.live())).toBe(1);
+  expect(await position(a)).toEqual(before);
+
+  await context.close();
 });
