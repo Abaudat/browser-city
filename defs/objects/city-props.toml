@@ -279,47 +279,59 @@ width = 3
 archetype = "underfoot_flat"
 tags = ["stairs", "underfoot", "fixture"]
 
-# The footbridge's flight (story 15.19): one front-on staircase walked along
-# the drawn axis, seen as two flights of two cells, one per floor, both on the
-# deck's east end. Each is the sheet's tread art, `32x32` from the first tread
-# down (the landing lip above it is not drawn: the deck tile is the landing):
-# four nosings every 8 px, a riser line each. The street flight rises
-# to the deck, the deck flight is the way back down. Which floors they join is
-# a `floor_transition` row per column, never a field here.
+# The footbridge's stairs (story 15.19): one front-on staircase on the deck's
+# east end, drawn once, on the street floor, as placed rows of the two crops
+# below (`bridge_stairs_tread` where it is walked, `bridge_stairs_abutment`
+# over the street cells nobody stands on); a riser line falls every 8 px. The
+# two flights are the walk data on top: undrawn, one per floor, sharing their
+# cells, and each shows the whole storey. The street flight rises to the
+# deck, the deck flight is the way back down. Which floors they join is a
+# `floor_transition` row per column, never a field here.
 [[object]]
 id = 20
 key = "bridge_stairs_street"
-name = "Bridge Stairs (street)"
+name = "Bridge Stairs (street flight)"
 layer = "ground_objects"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png", x = 0, y = 13, w = 32, h = 32 }
 width = 2
 height = 2
 # Walked north from the foot row: the feet's screen rise over the 16 px ramp is
 # the 16 px run and the 24 px drop, five treads of 8 px.
 flight = { drop_px = 24, from_px = 0, to_px = 16 }
-tags = ["stairs", "bridge", "underfoot", "fixture"]
+tags = ["bridge", "underfoot", "fixture"]
 
 [[object]]
 id = 21
 key = "bridge_stairs_deck"
-name = "Bridge Stairs (deck)"
+name = "Bridge Stairs (deck flight)"
 layer = "ground_objects"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png", x = 0, y = 13, w = 32, h = 32 }
 width = 2
 height = 2
 # Walked south from the deck: the same ramp, the other way.
 flight = { drop_px = 24, from_px = 0, to_px = 16 }
-tags = ["stairs", "bridge", "underfoot", "fixture"]
+tags = ["bridge", "underfoot", "fixture"]
 
-# The street under the deck's own stairs: the treads' art draws over these two
-# columns on screen, so they are drawn here too and closed, one row each, so a
-# walker never stands in front of treads it is not climbing.
+# The treads where the stairs are walked: two nosings, the first tread's
+# surface down (the landing lip above it is not drawn: the deck tile is the
+# landing).
+[[object]]
+id = 23
+key = "bridge_stairs_tread"
+name = "Bridge Stairs Tread"
+layer = "ground_objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png", x = 0, y = 21, w = 32, h = 16 }
+width = 2
+height = 1
+tags = ["bridge", "underfoot", "fixture"]
+
+# The treads over the street cells the stairs' art covers on screen above the
+# flights: drawn and closed, one row each, so a walker never stands in front
+# of treads it is not climbing.
 [[object]]
 id = 22
 key = "bridge_stairs_abutment"
 name = "Bridge Stairs Abutment"
 layer = "objects"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png", x = 0, y = 21, w = 32, h = 16 }
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png", x = 0, y = 29, w = 32, h = 16 }
 width = 2
 height = 1
 collider = { x0 = 0, y0 = 0, x1 = 32, y1 = 16 }

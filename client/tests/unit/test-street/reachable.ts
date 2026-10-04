@@ -1,21 +1,17 @@
 // The cells a walker can reach on foot, over the real grid and the real
 // transitions: one shared helper for the reachability test and the committed
 // golden (`regen-golden.ts`). The bounds are the fixture's own.
+
 import {
   PLAYER_START,
   STREET_TRANSITIONS,
   streetPlacedRows,
 } from "../../../src/test-street/fixture";
 import { cellOf } from "../../../src/world/ownership";
+import { isBodyClear, isCellStandable } from "../../../src/world/standable";
 import { TransitionIndex, type TransitionSpec } from "../../../src/world/transitions";
 import type { WorldIndex } from "../../../src/world/world-index";
-import {
-  isBodyClear,
-  isCellStandable,
-  streetMovementConfig,
-  streetObjectSources,
-  streetWorldIndex,
-} from "./street-world";
+import { streetMovementConfig, streetObjectSources, streetWorldIndex } from "./street-world";
 
 export const cellKey = (floor: number, x: number, y: number) => `${floor}|${x}|${y}`;
 
@@ -96,7 +92,13 @@ export function reachableCells(
       crossed.add(cellKey(floor, cellX, cellY));
       if (landing.x === cellX && landing.y === cellY) {
         // A transition onto its own cell keeps the walker's position.
-        if (isBodyClear(world, config, landing.floor, nx, ny)) push(landing.floor, nx, ny);
+        // Never filtered: a position production can produce that lands in a collider is a defect.
+        if (!isBodyClear(world, config, landing.floor, nx, ny)) {
+          throw new Error(
+            `a body entering (${cellX}, ${cellY}, floor ${floor}) at sub-cell (${nx}, ${ny}) lands in a collider on floor ${landing.floor}`,
+          );
+        }
+        push(landing.floor, nx, ny);
       } else {
         push(
           landing.floor,

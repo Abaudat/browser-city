@@ -866,9 +866,9 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
     }
   });
 
-  it("the manhole covers, the doormat and the footbridge flights are on the flat ground-objects pass; the stairs' abutment and bin are not", () => {
+  it("the manhole covers, the doormat and the footbridge's treads are on the flat ground-objects pass; the stairs' abutment and bin are not", () => {
     const props = buildStreetProps();
-    for (const id of [116n, 117n, 119n, 120n, 85n, 86n]) {
+    for (const id of [116n, 117n, 119n, 120n, 90n, 91n]) {
       expect(props.find((p) => p.stableId === id)?.layerCode).toBe(
         layerCodeByName("ground_objects"),
       );

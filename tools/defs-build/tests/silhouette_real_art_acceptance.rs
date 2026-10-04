@@ -34,12 +34,13 @@ fn real_defs() -> Defs {
 }
 
 fn verdict(o: &ObjectDef, tile: u32, collider: ColliderRect) -> Result<(), Disagreement> {
-    let bytes = fsio::read_bytes(&repo_root(), &[PathBuf::from(&o.sprite.sheet)])
+    let sprite = o.sprite.as_ref().expect("a drawn object");
+    let bytes = fsio::read_bytes(&repo_root(), &[PathBuf::from(&sprite.sheet)])
         .unwrap()
         .remove(0)
         .1;
     let (w, _h, rgba) = decode_rgba8(&bytes).unwrap();
-    check_collider_against_art(&rgba, w, &o.sprite, o.height, tile, collider)
+    check_collider_against_art(&rgba, w, sprite, o.height, tile, collider)
 }
 
 fn object<'a>(defs: &'a Defs, key: &str) -> &'a ObjectDef {

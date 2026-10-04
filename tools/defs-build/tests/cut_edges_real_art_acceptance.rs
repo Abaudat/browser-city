@@ -53,15 +53,13 @@ fn defs_from(files: &[(PathBuf, String)]) -> Defs {
 const TWIN_CONTINUED: &[(&str, Edge, (u32, u32))] =
     &[("stairwell_bottom_railing", Edge::North, (0, 7))];
 
-/// The footbridge's flights start on the sheet's first tread (row 13): the
-/// landing lip above it (rows 9-12) is not drawn, because the deck tile is the
-/// landing, so a riser line falls every 8 px from the deck to the foot. Pinned
-/// exactly, like the twin edges: each entry must be hit, and nothing else may
-/// be listed.
-const LANDING_NOT_DRAWN: &[(&str, Edge, (u32, u32))] = &[
-    ("bridge_stairs_street", Edge::North, (0, 32)),
-    ("bridge_stairs_deck", Edge::North, (0, 32)),
-];
+/// The footbridge's treads start on the sheet's first tread (row 21): the
+/// landing lip and the first tread above it (rows 9-20) are not drawn, because
+/// the deck tile is the landing, so a riser line falls every 8 px from the deck
+/// to the foot. Pinned exactly, like the twin edges: each entry must be hit,
+/// and nothing else may be listed.
+const LANDING_NOT_DRAWN: &[(&str, Edge, (u32, u32))] =
+    &[("bridge_stairs_tread", Edge::North, (0, 32))];
 
 /// `(examined objects, continued edges, repeat edges, twin-continued edges)`,
 /// or the failure messages.
@@ -83,11 +81,12 @@ fn audit_with(
     let mut by_sheet: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     let mut examined = 0;
     for (i, o) in defs.objects.iter().enumerate() {
+        let Some(sprite) = &o.sprite else { continue };
         if tile_layers.contains(&o.layer) {
             continue;
         }
         examined += 1;
-        by_sheet.entry(o.sprite.sheet.as_str()).or_default().push(i);
+        by_sheet.entry(sprite.sheet.as_str()).or_default().push(i);
     }
     let (mut continued, mut repeated, mut twin_continued, mut failures) = (0, 0, 0, Vec::new());
     for (sheet, idxs) in by_sheet {
@@ -103,7 +102,7 @@ fn audit_with(
                 if let Some((_, r)) = overrides.iter().find(|(k, _)| *k == o.key) {
                     return *r;
                 }
-                let s = &o.sprite;
+                let s = o.sprite.as_ref().unwrap();
                 Rect {
                     x: s.x,
                     y: s.y,
@@ -189,7 +188,9 @@ fn a_shortened_street_bottom_railing_fails_naming_the_uncovered_row() {
         .iter()
         .find(|o| o.key == "stairwell_bottom_railing")
         .unwrap()
-        .sprite;
+        .sprite
+        .as_ref()
+        .unwrap();
     let short = Rect {
         x: s.x,
         y: s.y,

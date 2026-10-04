@@ -115,18 +115,22 @@ export class AtlasPageLoader {
   objectTexture(defs: Defs, object: ObjectDef): Promise<Texture> {
     let promise = this.objectTextures.get(object.id);
     if (promise) return promise;
+    const atlas = object.atlas;
+    if (!atlas) {
+      return Promise.reject(new Error(`atlas-pages: object '${object.key}' is undrawn`));
+    }
 
-    const page = defs.atlasPages[object.atlas.page];
+    const page = defs.atlasPages[atlas.page];
     if (!page) {
       return Promise.reject(
         new Error(
-          `atlas-pages: object '${object.key}' names atlas page ${object.atlas.page}, but defs only has ${defs.atlasPages.length} page(s)`,
+          `atlas-pages: object '${object.key}' names atlas page ${atlas.page}, but defs only has ${defs.atlasPages.length} page(s)`,
         ),
       );
     }
     promise = this.pageTexture(page)
       .then((pageTexture) => {
-        const cell = atlasFrameRect(object.atlas);
+        const cell = atlasFrameRect(atlas);
         const frame = new Rectangle(cell.x, cell.y, cell.width, cell.height);
         return new Texture({ source: pageTexture.source, frame, dynamic: false });
       })
@@ -163,6 +167,9 @@ export class AtlasPageLoader {
     tileSizePx: number,
     sourceRow: number,
   ): Promise<Texture> {
+    if (!object.atlas) {
+      return Promise.reject(new Error(`atlas-pages: object '${object.key}' is undrawn`));
+    }
     if (object.height > 1 && object.atlas.h !== object.height * tileSizePx) {
       return Promise.reject(
         new Error(

@@ -8,6 +8,7 @@
 // Nothing here re-proves a geometric or ordering fact: those are the
 // property tests in `tests/unit/render/**` and `tests/unit/world/**`.
 // This file only asserts what is true of *this* street's data.
+
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,6 +82,7 @@ import {
 import { footprintCells, footprintOrigin } from "../../../src/world/footprint";
 import { bodyRect, MAX_DELTA_MS, step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
+import { isBodyClear, isCellStandable } from "../../../src/world/standable";
 import { blockedNeighborsOf } from "../../../src/world/transitions";
 import { checkWorldSpec } from "../../../src/world/world-spec";
 import {
@@ -88,8 +90,6 @@ import {
   committedDefs,
   coversCell,
   type DefProp,
-  isBodyClear,
-  isCellStandable,
   isCellStandableAgainst,
   lamppostApproachMaxX,
   lamppostRestY,
@@ -116,6 +116,13 @@ const objectSources = streetObjectSources();
 const config = streetMovementConfig();
 const world = streetWorldIndex();
 const ownership = streetOwnershipIndex();
+
+/** A drawn def's sprite: an undrawn flight has none, and a test that reads one names it. */
+function spriteOf(defId: number) {
+  const sprite = objectDef(defId).sprite;
+  if (!sprite) throw new Error(`def ${defId} is undrawn`);
+  return sprite;
+}
 
 function objectDef(defId: number) {
   const def = defs.objects.find((object) => object.id === defId);
@@ -433,7 +440,8 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
    * whole-cell rail would rest exactly on the deck row's southern
    * boundary, which `Math.floor` reads as the row past it -- where the
    * stairs down are not. */
-  const BRIDGE_SOUTH_RAIL_ID = 110n;
+  // The deck's south rail and its flight's west edge: the ring rects with a sub-cell collider.
+  const BRIDGE_RAIL_IDS = [110n, 134n];
 
   /** Furniture-layer asset rows drawn with no collider, each with its
    * reason. Nothing lands here by default. */
@@ -485,11 +493,13 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
     expect(failures).toEqual([]);
   });
 
-  it("STREET_BOUNDARY is only the undrawn ring: no rect carries a collider (bar the bridge's south rail, by id), and every cell lies outside every drawn ground pass on its floor", () => {
+  it("STREET_BOUNDARY is only the undrawn ring: no rect carries a collider (bar the bridge's two rails, by id), and every cell lies outside every drawn ground pass on its floor", () => {
     const failures: string[] = [];
-    expect(STREET_BOUNDARY.some((rect) => rect.id === BRIDGE_SOUTH_RAIL_ID)).toBe(true);
+    for (const id of BRIDGE_RAIL_IDS) {
+      expect(STREET_BOUNDARY.some((rect) => rect.id === id)).toBe(true);
+    }
     for (const rect of STREET_BOUNDARY) {
-      if (rect.collider && rect.id !== BRIDGE_SOUTH_RAIL_ID) {
+      if (rect.collider && !BRIDGE_RAIL_IDS.includes(rect.id)) {
         failures.push(`boundary id ${rect.id} carries its own collider -- the ring is whole cells`);
       }
       const floor = rect.floor ?? PLAYER_START.floor;
@@ -1325,9 +1335,11 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
   it("no real defs/objects entry's own atlas rect starts at its page's own origin -- every one sits behind the packer's own extrusion border", () => {
     expect(defs.objects.length).toBeGreaterThan(0);
     for (const object of defs.objects) {
+      const atlas = object.atlas;
+      if (!atlas) continue; // an undrawn flight packs nothing
       expect(
-        object.atlas.x > 0 && object.atlas.y > 0,
-        `object '${object.key}' packs at (${object.atlas.x}, ${object.atlas.y}) -- flush against its page's own origin, with no extrusion border to catch a per-cell crop that ignores its own placement`,
+        atlas.x > 0 && atlas.y > 0,
+        `object '${object.key}' packs at (${atlas.x}, ${atlas.y}) -- flush against its page's own origin, with no extrusion border to catch a per-cell crop that ignores its own placement`,
       ).toBe(true);
     }
   });
@@ -1351,7 +1363,9 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
     const sheets = sheetByAssetKey();
     expect(sheets.size).toBeGreaterThan(0);
 
-    const defSheets = new Set(defs.objects.map((object) => object.sprite.sheet));
+    const defSheets = new Set(
+      defs.objects.flatMap((object) => (object.sprite ? [object.sprite.sheet] : [])),
+    );
     for (const [key, sheet] of sheets) {
       const collides = defSheets.has(sheet);
       if (ACCEPTED_SHEET_COLLISIONS.has(key)) {
@@ -1417,7 +1431,7 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
   /** The art of `rows`: the bounding box of their sprites, which must be
    * cut from one sheet. */
   function decode(rows: readonly { readonly defId: number }[]): PNG {
-    const sprites = rows.map((p) => objectDef(p.defId).sprite);
+    const sprites = rows.map((p) => spriteOf(p.defId));
     const sheet = sprites[0]?.sheet;
     if (!sheet || sprites.some((s) => s.sheet !== sheet)) {
       throw new Error("the rows must be cut from one sheet");
@@ -1436,9 +1450,9 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
    * on its row's cell and opaque pixels painted over (the art has no
    * partial alpha, asserted). The canvas is the bounding box of the sprites. */
   function composite(rows: readonly DefProp[]): PNG {
-    const tile = (p: DefProp) => objectDef(p.defId).sprite.w / (objectDef(p.defId).width ?? 1);
+    const tile = (p: DefProp) => spriteOf(p.defId).w / (objectDef(p.defId).width ?? 1);
     const boxes = rows.map((p) => {
-      const { sprite } = objectDef(p.defId);
+      const sprite = spriteOf(p.defId);
       const left = (p.x * tile(p)) | 0;
       const bottom = (p.y + 1) * tile(p);
       return { p, sprite, left, top: bottom - sprite.h };
@@ -1605,10 +1619,11 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     const streetRows = stairwellRowsAt(streetAnchor().anchor);
     const platformRows = stairwellRowsAt(platformFlight().anchor);
     expect(platformRows.length).toBeGreaterThan(0);
-    const streetSheets = new Set(streetRows.map((p) => objectDef(p.defId).sprite.sheet));
+    const streetSheets = new Set(streetRows.map((p) => spriteOf(p.defId).sheet));
     const street = composite(streetRows);
     for (const p of platformRows) {
-      const { key, sprite } = objectDef(p.defId);
+      const { key } = objectDef(p.defId);
+      const sprite = spriteOf(p.defId);
       expect(streetSheets.has(sprite.sheet), `${key} shares a sheet with the street`).toBe(false);
       const best = bestMatch(spriteArt(sprite), street);
       expect(
@@ -1625,7 +1640,7 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
       (p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects",
     );
     if (!treads) throw new Error("no flat stairwell row");
-    return sheetOf(objectDef(treads.defId).sprite.sheet);
+    return sheetOf(spriteOf(treads.defId).sheet);
   };
 
   it("the street stairwell's rows composite to Stairs_Complete_2 pixel for pixel", () => {
@@ -1673,10 +1688,10 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     const flatRows = rows.filter(isFlat);
     expect(flatRows.length).toBeGreaterThan(0);
     // Positive control: the classifier finds the treads in the flat rows.
-    expect(flatRows.reduce((n, p) => n + tread(objectDef(p.defId).sprite), 0)).toBeGreaterThan(0);
+    expect(flatRows.reduce((n, p) => n + tread(spriteOf(p.defId)), 0)).toBeGreaterThan(0);
     for (const p of rows.filter((r) => !isFlat(r))) {
       const def = objectDef(p.defId);
-      expect(tread(def.sprite), `${def.key} draws tread pixels over a player`).toBe(0);
+      expect(tread(spriteOf(p.defId)), `${def.key} draws tread pixels over a player`).toBe(0);
     }
   });
 
@@ -1685,9 +1700,9 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
       (p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects",
     );
     if (!flat) throw new Error("no flat stairwell row");
-    const flatSheet = objectDef(flat.defId).sprite.sheet;
-    const near = objectDef(STAIRWELL_BOTTOM_RAILING_DEF_ID).sprite;
-    const far = objectDef(STAIRWELL_TOP_RAILING_DEF_ID).sprite;
+    const flatSheet = spriteOf(flat.defId).sheet;
+    const near = spriteOf(STAIRWELL_BOTTOM_RAILING_DEF_ID);
+    const far = spriteOf(STAIRWELL_TOP_RAILING_DEF_ID);
     expect(near.sheet, "the near railing is cut from a sheet without the treads").not.toBe(
       flatSheet,
     );
@@ -1711,14 +1726,11 @@ describe("the subway stairs read the right way (story 15.7, FR117, FR126)", () =
     const street = composite(streetRows);
     const treads = streetRows.find((p) => objectDef(p.defId).key === "stairwell_treads");
     if (!treads) throw new Error("the street stairwell has no treads row");
-    const own = bestMatch(spriteArt(objectDef(treads.defId).sprite), street);
+    const own = bestMatch(spriteArt(spriteOf(treads.defId)), street);
     expect(own.fraction).toBeGreaterThanOrEqual(RETREAT_MATCH_FRACTION);
     expect(own.mirrored).toBe(false);
 
-    const sheet = objectDef(treads.defId).sprite.sheet.replace(
-      "Stairs_Complete_2",
-      "Stairs_Complete_4",
-    );
+    const sheet = spriteOf(treads.defId).sheet.replace("Stairs_Complete_2", "Stairs_Complete_4");
     const other = bestMatch(spriteArt({ sheet, x: 0, y: 32, w: 48, h: 16 }), street);
     expect(other.fraction).toBeGreaterThanOrEqual(RETREAT_MATCH_FRACTION);
     expect(other.mirrored).toBe(true);
@@ -1865,7 +1877,7 @@ describe("the bollard approach route (NFR50)", () => {
 });
 
 describe("a stairwell is drawn whole (story 15.14, FR126)", () => {
-  const sheetRect = (p: DefProp) => objectDef(p.defId).sprite;
+  const sheetRect = (p: DefProp) => spriteOf(p.defId);
   /** The sprite's drawn rect in world px: bottom-left on the anchor cell. */
   const drawnRect = (p: DefProp) => {
     const { w, h } = sheetRect(p);
@@ -1966,10 +1978,10 @@ describe("a stairwell is drawn whole (story 15.14, FR126)", () => {
   it("every committed object meets the atlas loader's row precondition: one row, or a sprite exactly its footprint tall", () => {
     const tile = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
     if (tile === undefined) throw new Error("no render.tile_size_px balance");
-    const several = committedDefs().objects.filter((o) => o.height > 1);
+    const several = committedDefs().objects.filter((o) => o.height > 1 && o.atlas);
     expect(several.length, "the platform flight is a several-row def").toBeGreaterThan(0);
     for (const o of several) {
-      expect(o.atlas.h, `${o.key} is ${o.height} rows tall`).toBe(o.height * tile);
+      expect(o.atlas?.h, `${o.key} is ${o.height} rows tall`).toBe(o.height * tile);
     }
   });
 
@@ -2017,7 +2029,11 @@ describe("a stairwell is drawn whole (story 15.14, FR126)", () => {
       const flight = rows.filter((p) => passOfLayer(layerCodeByName(p.layer)) === "groundObjects");
       expect(flight.length).toBeGreaterThan(0);
       const outside = STREET_PROPS.filter(
-        (o) => o.floor === anchor.floor && !rows.includes(o as DefProp),
+        (o) =>
+          o.floor === anchor.floor &&
+          !rows.includes(o as DefProp) &&
+          // An undrawn flight draws nothing to be drawn over a stairwell.
+          !(isDefStreetProp(o) && !objectDef(o.defId).sprite),
       );
       expect(outside.length, `floor ${anchor.floor}: outside rows examined`).toBeGreaterThan(0);
       for (const other of outside) {

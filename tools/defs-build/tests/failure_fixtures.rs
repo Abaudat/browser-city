@@ -499,6 +499,26 @@ fn a_flight_drop_on_an_object_with_a_collider_is_named() {
 }
 
 #[test]
+fn an_object_with_no_sprite_and_no_flight_is_named() {
+    let err = build_err("undrawn-without-flight");
+    assert!(
+        err.message
+            .contains("declares no sprite but declares no flight"),
+        "{err}"
+    );
+}
+
+#[test]
+fn an_undrawn_flight_with_a_collider_is_named() {
+    let err = build_err("undrawn-flight-with-collider");
+    assert!(
+        err.message
+            .contains("declares no sprite but declares a collider"),
+        "{err}"
+    );
+}
+
+#[test]
 fn a_non_boolean_window_is_named() {
     let err = build_err("non-boolean-window");
     assert!(err.message.contains("expected") || err.message.contains("boolean"));
@@ -1045,6 +1065,8 @@ fn every_known_category_has_a_fixture_directory() {
         "flight-partial-table",
         "flight-ramp-inverted",
         "flight-ramp-beyond-footprint",
+        "undrawn-without-flight",
+        "undrawn-flight-with-collider",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

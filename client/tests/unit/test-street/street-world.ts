@@ -117,6 +117,14 @@ export function streetWorldIndex(): WorldIndex {
   return world;
 }
 
+let cachedStreetWorld: WorldIndex | undefined;
+/** Whether a body can stand in a whole cell of the street: the one predicate
+ * `buildFlights` is given for the real street. */
+export function streetStandable(x: number, y: number, floor: number): boolean {
+  cachedStreetWorld ??= streetWorldIndex();
+  return isCellStandable(cachedStreetWorld, streetMovementConfig(), x, y, floor);
+}
+
 /** The street's own `TransitionIndex`. Pair symmetry (both halves: real
  * mirrored pairing and standability) is checked unconditionally by the
  * constructor itself (story 15.2, cycle 2, Quentin's finding 5) -- this
@@ -130,6 +138,10 @@ export function streetTransitionIndex(): TransitionIndex {
   const config = streetMovementConfig();
   return new TransitionIndex(STREET_TRANSITIONS, {
     isStandable: (x, y, floor) => isCellStandable(world, config, x, y, floor),
+    entryBand: {
+      subcellsPerCell: config.subcellsPerCell,
+      isBodyClear: (floor, cx, feet) => isBodyClear(world, config, floor, cx, feet),
+    },
   });
 }
 
@@ -277,9 +289,6 @@ export function streetWalkInputs(): StreetWalkInputs {
     nearRailingRestY: nearRailingRestY(),
   };
 }
-
-// The one standability rule the scene shares (`world/standable.ts`).
-export { isBodyClear, isCellStandable };
 
 /** Whether a body can stand in `cell` pressed flush against its edge shared
  * with `toward` (an orthogonal neighbour), centred along that edge: the

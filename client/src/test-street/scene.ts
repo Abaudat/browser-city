@@ -61,7 +61,7 @@ import {
 import { bodyRect, type MovementConfig } from "../world/movement";
 import { buildObjectDefIndex, type ObjectSource, objectDefById } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
-import { isCellStandable } from "../world/standable";
+import { isBodyClear, isCellStandable } from "../world/standable";
 import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
@@ -782,13 +782,10 @@ export async function mountStreetScene(
   // FR182: the player's flight offset, computed once per move in `tick` and
   // read by both the sprite and the camera anchor, so the player stays on
   // the camera centre on the stairs too.
-  // Built once, before the first camera application: the offset is a pure
-  // function of position, so the mount calls it like every later frame.
-  const flights = new FlightIndex(
-    buildFlights(STREET_TRANSITIONS, streetPlacedRows(), objectDefs, storeyHeightPx, tileSizePx),
-    movementConfig,
-  );
-  let playerFlightOffsetPx = flights.offsetPx(walk.x, walk.y, walk.floor);
+  // Built once, as soon as the collision world exists (below): the start is
+  // off every flight, so the first camera application is right without it.
+  let flights = new FlightIndex([], movementConfig);
+  let playerFlightOffsetPx = 0;
   function applyCamera(): void {
     const anchor = worldPointPx(
       walk.x,
@@ -867,7 +864,6 @@ export async function mountStreetScene(
   }
 
   const ownership = new OwnershipIndex(STREET_BUILDING_AREAS, STREET_ROOM_AREAS);
-  const transitions = new TransitionIndex(STREET_TRANSITIONS);
 
   const propDrawables: readonly PropDrawable[] = buildPropDrawables({
     rankOf: (layer) => rankOf(layerCodeByName(layer)),
@@ -1136,15 +1132,29 @@ export async function mountStreetScene(
   for (const placed of placedRows) {
     worldIndex.insert(placed);
   }
-  // Mount-time check: every standable far-end cell of a flight is an anchor.
-  buildFlights(
-    STREET_TRANSITIONS,
-    streetPlacedRows(),
-    objectDefs,
-    storeyHeightPx,
-    tileSizePx,
-    (x, y, floor) => isCellStandable(worldIndex, movementConfig, x, y, floor),
+  // The flights, validated against the real grid: every standable far-end
+  // cell of a flight is an anchor, or the mount throws.
+  flights = new FlightIndex(
+    buildFlights(
+      STREET_TRANSITIONS,
+      placedRows,
+      objectDefs,
+      storeyHeightPx,
+      tileSizePx,
+      (x, y, floor) => isCellStandable(worldIndex, movementConfig, x, y, floor),
+    ),
+    movementConfig,
   );
+  playerFlightOffsetPx = flights.offsetPx(walk.x, walk.y, walk.floor);
+  // The transitions, checked against the real grid: a transition onto its own
+  // cell keeps the walker's position, so that position is clear on both floors.
+  const transitions = new TransitionIndex(STREET_TRANSITIONS, {
+    isStandable: (x, y, floor) => isCellStandable(worldIndex, movementConfig, x, y, floor),
+    entryBand: {
+      subcellsPerCell: movementConfig.subcellsPerCell,
+      isBodyClear: (floor, cx, feet) => isBodyClear(worldIndex, movementConfig, floor, cx, feet),
+    },
+  });
 
   // Story 1.7: the visibility adapter, gated on the viewer's own
   // (floor, buildingId) tuple actually changing (Tim's direction) --

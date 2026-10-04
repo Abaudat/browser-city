@@ -572,13 +572,13 @@ mod tests {
             key: "wall_segment",
             name: "Wall Segment",
             layer: 0,
-            sprite: defs::SpriteRect {
+            sprite: Some(defs::SpriteRect {
                 sheet: "x",
                 x: 0,
                 y: 0,
                 w: 16,
                 h: 16,
-            },
+            }),
             width: 1,
             height: 1,
             collider: Some(defs::ColliderRect {
@@ -617,13 +617,13 @@ mod tests {
             key: "wall_segment",
             name: "Wall Segment",
             layer: 0,
-            sprite: defs::SpriteRect {
+            sprite: Some(defs::SpriteRect {
                 sheet: "x",
                 x: 0,
                 y: 0,
                 w: 16,
                 h: 16,
-            },
+            }),
             width: 1,
             height: 1,
             collider: Some(defs::ColliderRect {
@@ -679,13 +679,13 @@ mod tests {
             key: "wall_segment",
             name: "Wall Segment",
             layer: 0,
-            sprite: defs::SpriteRect {
+            sprite: Some(defs::SpriteRect {
                 sheet: "x",
                 x: 0,
                 y: 0,
                 w: 16,
                 h: 16,
-            },
+            }),
             width: 1,
             height: 1,
             collider: Some(defs::ColliderRect {

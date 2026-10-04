@@ -157,13 +157,15 @@ export const BRIDGE_DECK_DEF_ID = 7;
  * can overlap the flight (a transition fires on the body's centre cell). */
 export const BRIDGE_POST_COLLIDER = { x0: 5, y0: 0, x1: 12, y1: 16 } as const;
 
-/** The footbridge's three `defs/objects` rows (story 15.19): the street flight
- * and the deck flight (each a `flight`) and the closed abutment under the
- * deck. Which floors the flights join is a `floor_transition` row per column,
+/** The footbridge's four `defs/objects` rows (story 15.19): the street flight
+ * and the deck flight (each an undrawn `flight`, the walk data), and the one
+ * staircase drawn on the street floor: the treads where it is walked and the
+ * closed abutment over the street cells above them. Which floors the flights join is a `floor_transition` row per column,
  * never a field on the prop. */
 export const BRIDGE_STAIRS_STREET_DEF_ID = 20;
 export const BRIDGE_STAIRS_DECK_DEF_ID = 21;
 export const BRIDGE_STAIRS_ABUTMENT_DEF_ID = 22;
+export const BRIDGE_STAIRS_TREAD_DEF_ID = 23;
 /** The street stairwell's four `defs/objects` rows (`stairwell_top_railing`,
  * `stairwell_treads`, `stairwell_well`, `stairwell_bottom_railing`): the
  * player walks between the railings. */
@@ -374,6 +376,9 @@ export const BRIDGE_UNDER_EXIT_Y = BRIDGE_DECK_Y + 1;
  * deck's one storey up. */
 export const BRIDGE_FLIGHT_WIDTH = 2;
 export const BRIDGE_FLIGHT_DEPTH = 2;
+/** The street rows above the flight that the staircase's art covers on
+ * screen (the flight's rows and these are the stack, a riser line every 8 px). */
+export const BRIDGE_ABUTMENT_ROWS = 3;
 export const BRIDGE_FLIGHT_X0 = BRIDGE_X1 - BRIDGE_FLIGHT_WIDTH + 1;
 
 /** The flight's top row, on both floors: entering it from the street climbs
@@ -836,33 +841,40 @@ const STREET_PROP_LIST: StreetProp[] = [
     layer: "ground_objects",
     defId: BRIDGE_STAIRS_DECK_DEF_ID,
   },
-  // The deck's stairs draw over the two street rows above the flight, so
-  // those are drawn and closed on the street: the stair's abutment, one row
-  // under the deck's own and one beside it.
-  ...[BRIDGE_DECK_Y - 1, BRIDGE_DECK_Y].map((y, index) => ({
+  // The one staircase, drawn once, on the street floor: the treads where it
+  // is walked (flat, under the walker on both floors), and above them the
+  // abutment over the street cells the art covers on screen (drawn and closed,
+  // so a walker never stands in front of treads it is not climbing). A riser
+  // line falls every 8 px from the foot to the deck.
+  ...Array.from({ length: BRIDGE_FLIGHT_DEPTH }, (_, index) => ({
+    id: BigInt(90 + index),
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_UP_ANCHOR_Y + index,
+    floor: STREET_FLOOR,
+    layer: "ground_objects" as const,
+    defId: BRIDGE_STAIRS_TREAD_DEF_ID,
+  })),
+  ...Array.from({ length: BRIDGE_ABUTMENT_ROWS }, (_, index) => ({
     id: BigInt(82 + index),
     x: BRIDGE_FLIGHT_X0,
-    y,
+    y: BRIDGE_UP_ANCHOR_Y - BRIDGE_ABUTMENT_ROWS + index,
     floor: STREET_FLOOR,
     layer: "objects" as const,
     defId: BRIDGE_STAIRS_ABUTMENT_DEF_ID,
   })),
-  // Each flight's west side: a post on each of its rows, so the flight is
-  // entered by its foot and the pavement beside it stays open (a body is
-  // wider than the gap between a post and the flight). The same posts on both
-  // floors, so a walker keeps its position across the floor change.
-  ...[STREET_FLOOR, BRIDGE_FLOOR].flatMap((floor, column) =>
-    [BRIDGE_UP_ANCHOR_Y, BRIDGE_DOWN_ANCHOR_Y].map((y, index) => ({
-      id: BigInt(87 + column * 2 + index),
-      assetKey: "bollard",
-      x: BRIDGE_FLIGHT_X0 - 1,
-      y,
-      floor,
-      layer: "objects" as const,
-      solid: true as const,
-      collider: BRIDGE_POST_COLLIDER,
-    })),
-  ),
+  // The street flight's west side: a post on each of its rows, so the flight
+  // is entered by its foot and the pavement beside it stays open (a body is
+  // wider than the gap between a post and the flight).
+  ...[BRIDGE_UP_ANCHOR_Y, BRIDGE_DOWN_ANCHOR_Y].map((y, index) => ({
+    id: BigInt(87 + index),
+    assetKey: "bollard",
+    x: BRIDGE_FLIGHT_X0 - 1,
+    y,
+    floor: STREET_FLOOR,
+    layer: "objects" as const,
+    solid: true as const,
+    collider: BRIDGE_POST_COLLIDER,
+  })),
 
   {
     id: 64n,
@@ -1056,8 +1068,18 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
     floor: BRIDGE_FLOOR,
     collider: { x0: 0, y0: 14, x1: (BRIDGE_FLIGHT_X0 - (BRIDGE_X0 - 1)) * 16, y1: 16 },
   },
-  // The deck flight's east side and below it (its west side is posts, as on
-  // the street).
+  // Either side of the deck's flight and below it.
+  {
+    id: 134n,
+    x: BRIDGE_FLIGHT_X0 - 1,
+    y: BRIDGE_DOWN_ANCHOR_Y,
+    width: 1,
+    height: BRIDGE_FLIGHT_DEPTH,
+    floor: BRIDGE_FLOOR,
+    // Closed along the posts' own east edge (see `BRIDGE_POST_COLLIDER`): a
+    // body that lands on this floor at the position it left the street is clear.
+    collider: { x0: 0, y0: 0, x1: BRIDGE_POST_COLLIDER.x1, y1: BRIDGE_FLIGHT_DEPTH * 16 },
+  },
   {
     id: 135n,
     x: BRIDGE_X1 + 1,

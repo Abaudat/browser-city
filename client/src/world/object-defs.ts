@@ -18,6 +18,8 @@ export interface ObjectSource extends ColliderSource {
   readonly interactAt?: ColliderRectSubcells;
   /** FR182: a flight's drop and ramp, native pixels. */
   readonly flight?: FlightDef;
+  /** An undrawn flight (no sprite): nothing is drawn for it. */
+  readonly undrawn?: true;
 }
 
 /** Keyed by `ObjectDef.id`, which is what a `placed_object` row's `defId`
@@ -36,6 +38,7 @@ export function objectDefsById(defs: Defs): ReadonlyMap<number, ObjectSource> {
         ...(object.collider ? { collider: object.collider } : {}),
         ...(object.interactAt ? { interactAt: object.interactAt } : {}),
         ...(object.flight ? { flight: object.flight } : {}),
+        ...(object.sprite ? {} : { undrawn: true as const }),
       },
     ]),
   );

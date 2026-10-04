@@ -2,6 +2,7 @@
 // collision grid and the real resolver. One step at a time on the flight
 // (FR117), and every cell of the street and the deck still reachable
 // (the re-lay closed nothing but the cells it covers).
+
 import { describe, expect, it } from "vitest";
 import {
   BRIDGE_DECK_DEF_ID,
@@ -14,17 +15,12 @@ import { initialFloorWalkState, stepAndTransition } from "../../../src/world/flo
 import { footprintCells } from "../../../src/world/footprint";
 import { step } from "../../../src/world/movement";
 import { cellOf } from "../../../src/world/ownership";
+import { isBodyClear, isCellStandable } from "../../../src/world/standable";
 import { pairTransitions, TransitionIndex } from "../../../src/world/transitions";
 import { WorldIndex } from "../../../src/world/world-index";
 import { cellKey, reachableCells, reachableGrid } from "./reachable";
 import { REACHABLE_GRID } from "./reachable-golden";
-import {
-  committedDefs,
-  isBodyClear,
-  isCellStandable,
-  streetMovementConfig,
-  streetObjectSources,
-} from "./street-world";
+import { committedDefs, streetMovementConfig, streetObjectSources } from "./street-world";
 
 const config = streetMovementConfig();
 const sub = config.subcellsPerCell;
@@ -120,6 +116,62 @@ describe("the footbridge flight on the real grid (FR117)", () => {
     }
     expect(positions, "the sweep covered both flights").toBeGreaterThan(0);
     expect(entered, "and some step did enter an anchor").toBeGreaterThan(0);
+  });
+});
+
+describe("a transition onto its own cell keeps the walker's position (FR117)", () => {
+  it("every body position that steps into such an anchor from a clear position is clear on the target floor", () => {
+    const sameCell = STREET_TRANSITIONS.filter((t) => t.targetX === t.x && t.targetY === t.y);
+    expect(
+      sameCell.length,
+      "the footbridge's anchors are transitions onto their own cell",
+    ).toBeGreaterThan(0);
+    let entries = 0;
+    for (const t of sameCell) {
+      const inCell = (cx: number, feet: number) =>
+        Math.floor(cx / sub) === t.x && Math.floor(feet / sub) === t.y;
+      for (let cx = t.x * sub; cx < (t.x + 1) * sub; cx++) {
+        for (let feet = t.y * sub; feet < (t.y + 1) * sub; feet++) {
+          for (const [dx, dy] of [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+          ] as const) {
+            const fromX = cx - dx;
+            const fromY = feet - dy;
+            if (inCell(fromX, fromY) || !isBodyClear(world, config, t.floor, fromX, fromY))
+              continue;
+            entries++;
+            expect(
+              isBodyClear(world, config, t.targetFloor, cx, feet),
+              `entering (${t.x}, ${t.y}, floor ${t.floor}) at sub-cell (${cx}, ${feet}) lands in a collider on floor ${t.targetFloor}`,
+            ).toBe(true);
+          }
+        }
+      }
+    }
+    expect(entries, "some position does step into an anchor").toBeGreaterThan(0);
+  });
+
+  it("the check is a construction-time refusal: an index whose entry band lands in a collider is refused, naming the cell", () => {
+    const spec = [
+      { x: 5, y: 5, floor: 0, targetX: 5, targetY: 5, targetFloor: 1 },
+      { x: 5, y: 6, floor: 1, targetX: 5, targetY: 6, targetFloor: 0 },
+    ];
+    const clear = (floor: number, cx: number) => !(floor === 1 && cx < 5 * sub + 4);
+    expect(
+      () =>
+        new TransitionIndex(spec, {
+          entryBand: { subcellsPerCell: sub, isBodyClear: (floor, cx) => clear(floor, cx) },
+        }),
+    ).toThrow(/transition \(5, 5, floor 0\) -> floor 1/);
+    expect(
+      () =>
+        new TransitionIndex(spec, {
+          entryBand: { subcellsPerCell: sub, isBodyClear: () => true },
+        }),
+    ).not.toThrow();
   });
 });
 

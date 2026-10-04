@@ -69,6 +69,7 @@ import {
   stairwellRowsAt,
   streetMovementConfig,
   streetObjectSources,
+  streetStandable,
   streetWalkInputs,
 } from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
@@ -365,7 +366,7 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
     const inputs = streetWalkInputs();
     const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
     const nearRailing = defs.objects.find((o) => o.id === STAIRWELL_BOTTOM_RAILING_DEF_ID);
-    if (!nearRailing) throw new Error("no near railing def");
+    if (!nearRailing?.sprite) throw new Error("no near railing def");
     // The railing-only art: the near railing's own sheet (the unit tests
     // assert it is not the treads' sheet), placed from the stairwell's art
     // origin rather than from the def's rect.
@@ -507,6 +508,7 @@ test.describe("story 15.15: the flight offset, mounted", () => {
       streetObjectSources(),
       storey,
       tile,
+      streetStandable,
     );
     const index = new FlightIndex(flights, config);
     const _inputs = streetWalkInputs();
@@ -688,8 +690,26 @@ test.describe("story 15.19: the footbridge flights, mounted", () => {
       streetObjectSources(),
       storey,
       tile,
+      streetStandable,
     );
     const index = new FlightIndex(flights, config);
+    // Every drawn drawable of a higher floor than the street, in world px (native): a street-side
+    // actor must never be drawn under one (floor N+1 draws after all of floor N).
+    const higher = STREET_PROPS.flatMap((prop) => {
+      if (prop.floor <= 0) return [];
+      const bottom = (prop.y + 1) * tile - prop.floor * storey;
+      if (isDefStreetProp(prop)) {
+        const sprite = committedDefs().objects.find((o) => o.id === prop.defId)?.sprite;
+        if (!sprite) return [];
+        return [
+          { x0: prop.x * tile, x1: prop.x * tile + sprite.w, y0: bottom - sprite.h, y1: bottom },
+        ];
+      }
+      const { width, height } = prop.footprint ?? { width: 1, height: 1 };
+      return [
+        { x0: prop.x * tile, x1: (prop.x + width) * tile, y0: bottom - height * tile, y1: bottom },
+      ];
+    });
     mkdirSync(BRIDGE_SHOT_DIR, { recursive: true });
     const size = { width: 1920, height: 1080 };
     const context = await browser.newContext({
@@ -793,6 +813,20 @@ test.describe("story 15.19: the footbridge flights, mounted", () => {
         const cy = s.bounds.y + s.bounds.height;
         expect(Math.abs(cx - viewport.width / 2), `frame ${i} camera x`).toBeLessThanOrEqual(1);
         expect(Math.abs(cy - viewport.height / 2), `frame ${i} camera y`).toBeLessThanOrEqual(1);
+        // (5) A street-floor actor on a flight is drawn whole: no drawable of a higher floor covers
+        // it (walking under the deck, off a flight, is the underpass and is meant to be covered).
+        if (s.floor === 0 && expected !== 0) {
+          const rect = {
+            x0: (s.bounds.x - s.view.offsetX) / s.view.zoom,
+            x1: (s.bounds.x + s.bounds.width - s.view.offsetX) / s.view.zoom,
+            y0: (s.bounds.y - s.view.offsetY) / s.view.zoom,
+            y1: (s.bounds.y + s.bounds.height - s.view.offsetY) / s.view.zoom,
+          };
+          for (const d of higher) {
+            const overlaps = rect.x0 < d.x1 && d.x0 < rect.x1 && rect.y0 < d.y1 && d.y0 < rect.y1;
+            expect(overlaps, `frame ${i}: the actor is drawn under a floor-1 drawable`).toBe(false);
+          }
+        }
         // (4) The deck and the street are both drawn, on the deck and off it:
         // the floor flips and nothing is culled, on the same frame.
         expect(s.streetCulled, `frame ${i} street`).toBe(false);
