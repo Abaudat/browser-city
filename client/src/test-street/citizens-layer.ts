@@ -83,7 +83,7 @@ function poseWalker(
 ): void {
   const { frame, sprite, frames } = state;
   state.walker.frameAt(cityMilliminutes, frame);
-  const px = worldPointPx(frame.x, frame.y, CROWD_FLOOR, tileSizePx, storeyHeightPx, zoom);
+  const px = worldPointPx(frame.x, frame.y, CROWD_FLOOR, tileSizePx, storeyHeightPx, zoom, 0);
   sprite.x = px.x;
   sprite.y = px.y;
   sprite.zIndex = frame.y;
@@ -173,6 +173,7 @@ export async function mountCitizensLayer(
         tileSizePx,
         storeyHeightPx,
         1,
+        0,
       );
       sprite.x = px.x;
       sprite.y = px.y;

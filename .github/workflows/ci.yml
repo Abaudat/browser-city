@@ -827,22 +827,17 @@ jobs:
       # test` (the smoke and perf steps) clears `test-results` when it
       # starts, so uploading after them lost these on every green run.
       # The affordance grammar is a judgement call about what the player
-      # sees, and a pixel count is no substitute for looking at it.
+      # sees, and a pixel count is no substitute for looking at it. Each
+      # story's specs write to `review-shots/<story>/`; a new story adds a
+      # directory, never a step.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: story-1.9-shots
-          path: client/test-results/story-1.9-shots
+          name: review-shots
+          path: client/test-results/review-shots
           if-no-files-found: warn
           # Review evidence, not a record: a week is long enough to look
           # at and short enough not to accumulate.
-          retention-days: 7
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: story-15.13-shots
-          path: client/test-results/story-15.13-shots
-          if-no-files-found: warn
           retention-days: 7
       # The deploy story: the same client/tests/e2e/deploy-smoke.spec.ts
       # deploy.yml runs against the live URL, rehearsed here against a

@@ -9,9 +9,9 @@ use std::collections::BTreeMap;
 use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
-    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS, MAX_DENOMINATIONS,
-    MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES, MIN_FLOOR,
-    NeighbourTermDef, REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode,
+    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, FlightDef, INTERACT_AT_MAX_REACH_CELLS,
+    MAX_DENOMINATIONS, MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES,
+    MIN_FLOOR, NeighbourTermDef, REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode,
     RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
 
@@ -632,6 +632,17 @@ fn fmt_atlas_rect_json(rect: &AtlasRect) -> String {
 /// programming-invariant failure, since `build_atlas` always covers every
 /// object it is given; `.expect` here, not a `Result`, for the same
 /// reason `build.rs`'s own placement lookups do).
+/// `null`, or the flight's three fields (client-only).
+fn fmt_flight_json(flight: Option<FlightDef>) -> String {
+    match flight {
+        None => "null".to_string(),
+        Some(f) => format!(
+            "{{ \"drop_px\": {}, \"from_px\": {}, \"to_px\": {} }}",
+            f.drop_px, f.from_px, f.to_px
+        ),
+    }
+}
+
 pub fn emit_json(
     defs: &Defs,
     defs_version: &str,
@@ -699,9 +710,10 @@ pub fn emit_json(
             .get(&o.id)
             .unwrap_or_else(|| panic!("object '{}' (id {}) has no packed atlas rect", o.key, o.id));
         out.push_str(&format!(
-            "    {{ \"atlas\": {}, \"collider\": {}, \"height\": {}, \"id\": {}, \"interact_at\": {}, \"key\": {}, \"layer\": {}, \"name\": {}, \"sprite\": {}, \"tags\": {}, \"width\": {}, \"window\": {} }}{comma}\n",
+            "    {{ \"atlas\": {}, \"collider\": {}, \"flight\": {}, \"height\": {}, \"id\": {}, \"interact_at\": {}, \"key\": {}, \"layer\": {}, \"name\": {}, \"sprite\": {}, \"tags\": {}, \"width\": {}, \"window\": {} }}{comma}\n",
             fmt_atlas_rect_json(atlas),
             fmt_collider_json(o.collider),
+            fmt_flight_json(o.flight),
             o.height,
             o.id,
             fmt_collider_json(o.interact_at),
@@ -1111,6 +1123,11 @@ mod tests {
                 }),
                 window: false,
                 tags: vec![2],
+                flight: Some(FlightDef {
+                    drop_px: 8,
+                    from_px: 5,
+                    to_px: 34,
+                }),
             }],
             items: vec![ItemDef {
                 id: 1,
@@ -1484,6 +1501,9 @@ mod tests {
             &sample_character_atlas_map(),
         );
         assert!(out.contains("\"tags\": [2]"));
+        assert!(out.contains("\"flight\": { \"drop_px\": 8, \"from_px\": 5, \"to_px\": 34 }"));
+        // Client-only: the generated Rust never learns a flight.
+        assert!(!emit_rust(&sample(), "v1").contains("flight"));
         assert!(out.contains("{ \"id\": 1, \"key\": \"waste\", \"role\": null }"));
         assert!(out.contains("{ \"id\": 2, \"key\": \"seating\", \"role\": null }"));
     }
@@ -1727,6 +1747,7 @@ mod tests {
             interact_at: None,
             window: false,
             tags: vec![],
+            flight: None,
         });
         let manifest = emit_id_manifest(&defs);
         let lines: Vec<&str> = manifest.lines().collect();
