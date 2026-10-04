@@ -354,8 +354,6 @@ jobs:
         run: bash ../scripts/ci/check-author-construction.sh
       - name: story 4.5 FR142, only tables/identity.rs reaches a character from a caller
         run: bash ../scripts/ci/check-character-identity-path.sh
-      - name: story 4.4 FR138, one home for the player_position accessor and for the position reducer call
-        run: bash ../scripts/ci/check-player-position-path.sh
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
@@ -652,9 +650,11 @@ jobs:
         run: bash ../scripts/ci/check-boot-budget-report-current.sh
       - name: story 4.2 AC2, no reducer call under render/, world/ or test-street/, or inside any ticker.add callback
         run: bash ../scripts/ci/check-no-frame-rate-reducers.sh
+      - name: story 4.4 FR138, one home for the player_position accessor and for the position reducer call
+        run: bash ../scripts/ci/check-player-position-path.sh
       - name: story 4.4 NFR32, the client calls exactly the allow-listed reducers and procedures
         run: bash ../scripts/ci/check-client-write-allowlist.sh
-      - name: story 4.4, a spec with a pixel baseline never opts in to remote players
+      - name: story 4.4, remotePlayers appears only in the allow-listed specs
         run: bash ../scripts/ci/check-e2e-remote-players-isolation.sh
 
   client-build:

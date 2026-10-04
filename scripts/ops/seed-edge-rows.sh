@@ -81,6 +81,12 @@ bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_item_instance "[[$A,1,[17000
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_item_placed "[[$A,12,-7,0,3,15,0,77]]"
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_item_held "[[$B,0,1,5,2,0]]"
 
+# A real-shaped player position beside the generic rows: character 9 at a
+# negative cell on floor -1 with non-zero fractions. [character_id, chunk_key,
+# x, y, floor, frac_x, frac_y, updated_at]; chunk_key 77 is not checked
+# against the cell by the restore.
+bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_player_position "[[9,77,-5,-7,-1,13,200,[1700000000000002]]]"
+
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" finish_restore '[]'
 
 echo "seed-edge-rows: ok -- seeded ${#SEEDED[@]} table(s): ${SEEDED[*]:-}" >&2

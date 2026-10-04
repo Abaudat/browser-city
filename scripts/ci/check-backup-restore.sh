@@ -548,6 +548,21 @@ got="$(item_rows_live "$DST" item_held "WHERE instance_id = 5")"
 [ "$got" = '[5,0,1,5,2,0]' ] || fail "restored 'item_held' row 5 is '$got', expected the seeded '[5,0,1,5,2,0]' (container pair and slot intact)"
 ok "every item instance, placed and held row reads back identically from the restored database, and the two seeded instances hold their exact cell/offset and container/slot"
 
+# --- player position: the durable row survives by value --------------------
+# The row carries a Timestamp, an i8 and two u8 columns; the real-shaped row
+# `seed-edge-rows.sh` wrote (character 9, a negative cell on floor -1, non-zero
+# fractions) is read back as a literal, `updated_at` included.
+SRC_POS="$(item_rows_live "$SRC" player_position)"
+DST_POS="$(item_rows_live "$DST" player_position)"
+[ -n "$SRC_POS" ] || fail "'$SRC.player_position' has no rows -- nothing to compare"
+[ "$SRC_POS" = "$DST_POS" ] || fail "restored 'player_position' rows differ from '$SRC's own -- expected:
+$SRC_POS
+got:
+$DST_POS"
+got="$(item_rows_live "$DST" player_position "WHERE character_id = 9")"
+[ "$got" = '[9,77,-5,-7,-1,13,200,1700000000000002]' ] || fail "restored 'player_position' row 9 is '$got', expected the seeded '[9,77,-5,-7,-1,13,200,1700000000000002]' (negative cell, floor, fractions and updated_at intact)"
+ok "every player_position row reads back identically, and the seeded row holds its exact cell, floor, fractions and timestamp"
+
 # --- 5/7: COUNT(*) on both live databases and the auto_inc sequence
 # strictly advancing -- scripts/ops/verify-independent.sh, shared with
 # .github/workflows/backup.yml's rehearsal job (Tim's direction: the

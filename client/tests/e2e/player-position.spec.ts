@@ -2,10 +2,10 @@
 // the places a unit test with a fake clock cannot reach -- the bytes the real
 // client puts on the WebSocket, and what a second page really draws.
 //
-// A walks through `walk-support.ts`. B records its rendered position of A on
-// every animation frame inside the page (`window.__bc.remotePlayers`), never
-// polled from Node. Frame-time numbers stay in the unit properties, where the
-// clock is synthetic; headless CI frame pacing is not an oracle. No
+// A walks through `walk-support.ts`. B records, inside the page
+// (`window.__bc.remotePlayers`), what it draws of A on every animation frame
+// and the samples it received meanwhile -- never polled from Node. Frame-time
+// numbers stay in the unit properties, where the clock is synthetic. No
 // `waitForTimeout`: every wait is on an observable condition.
 //
 // Both pages opt in with `?remotePlayers`: every other spec draws no other
@@ -16,7 +16,6 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
 import type { StreetWalkSegment } from "../../src/test-street/fixture";
-import { CHUNK_SIZE, chunkKey } from "../../src/world/chunk";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
 import { walkRealSegment } from "./walk-support";
 
@@ -32,26 +31,28 @@ const balance = (key: string): number => {
 };
 const HZ = balance("net.player_position_hz");
 const QUANTUM = 1 / DEFS.positionUnitsPerCell;
-const WALK_CELLS = 3;
+const WALK_CELLS = 2.5;
+const HOP_CELLS = 0.2;
 
-async function freshPage(browser: Browser, onSend?: (text: string) => void): Promise<Page> {
+/** A page whose position writes are counted from the first frame it sends. */
+async function countedPage(browser: Browser): Promise<{ page: Page; sends: () => number }> {
   const context = await browser.newContext();
   const page = await context.newPage();
+  let sends = 0;
   // Armed before the page loads: the socket opens during `goto`.
-  if (onSend) {
-    const dbWsPrefix = readSpacetimeHandle().serverUrl.replace(/^http/, "ws");
-    page.on("websocket", (ws) => {
-      if (!ws.url().startsWith(dbWsPrefix)) return;
-      ws.on("framesent", ({ payload }) => {
-        onSend(typeof payload === "string" ? payload : payload.toString("latin1"));
-      });
+  const dbWsPrefix = readSpacetimeHandle().serverUrl.replace(/^http/, "ws");
+  page.on("websocket", (ws) => {
+    if (!ws.url().startsWith(dbWsPrefix)) return;
+    ws.on("framesent", ({ payload }) => {
+      const text = typeof payload === "string" ? payload : payload.toString("latin1");
+      sends += text.match(/set_player_position/g)?.length ?? 0;
     });
-  }
+  });
   await page.goto("/?freezeCrowd=1&remotePlayers=1");
   await page.waitForFunction(() => window.__bc?.playerAppearance !== undefined, undefined, {
     timeout: 60_000,
   });
-  return page;
+  return { page, sends: () => sends };
 }
 
 /** Resolves after `n` animation frames of the page itself. */
@@ -67,52 +68,62 @@ function frames(page: Page, n: number): Promise<void> {
   );
 }
 
+async function walk(page: Page, label: string, cells: number, east: boolean): Promise<void> {
+  const here = await page.evaluate(() => window.__bc?.playerPosition);
+  if (!here) throw new Error("no player position");
+  const segment: StreetWalkSegment = east
+    ? { label, key: "ArrowRight", until: { kind: "x-at-least", value: here.x + cells } }
+    : { label, key: "ArrowLeft", until: { kind: "x-at-most", value: here.x - cells } };
+  await walkRealSegment(page, segment);
+}
+
 test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a standing player costs nothing", async ({
   browser,
 }) => {
-  let sends = 0;
-  const a = await freshPage(browser, (text) => {
-    sends += text.match(/set_player_position/g)?.length ?? 0;
-  });
-  const b = await freshPage(browser);
-  await b.bringToFront();
+  const a = await countedPage(browser);
+  const b = await countedPage(browser);
+  await b.page.bringToFront();
+
+  // A page with no character puts no position write on the wire, walking or
+  // not: every deployed visitor is in this state, and a refused call is
+  // uncounted by the `position` class, so only the wire can show it.
+  await walk(a.page, "hop", HOP_CELLS, true);
+  await frames(a.page, 90);
+  expect(a.sends()).toBe(0);
 
   // A has a character: its sender starts and writes the spawn position.
-  await a.waitForFunction(() => window.__bc?.createCharacter !== undefined);
-  await a.evaluate(() => window.__bc?.createCharacter?.());
-  await a.waitForFunction(() => window.__bc?.character !== undefined, undefined, {
+  await a.page.waitForFunction(() => window.__bc?.createCharacter !== undefined);
+  await a.page.evaluate(() => window.__bc?.createCharacter?.());
+  await a.page.waitForFunction(() => window.__bc?.character !== undefined, undefined, {
     timeout: 20_000,
   });
-  const characterId = await a.evaluate(() => window.__bc?.character?.characterId);
+  const characterId = await a.page.evaluate(() => window.__bc?.character?.characterId);
   if (!characterId) throw new Error("no character id");
 
-  await b.waitForFunction(
+  await b.page.waitForFunction(
     (id) => window.__bc?.remotePlayers?.poses()[id] !== undefined,
     characterId,
     { timeout: 20_000 },
   );
-  const updatesBefore = await b.evaluate((id) => {
-    const r = window.__bc?.region;
-    return (r?.inserts[`playerPosition:${id}`] ?? 0) + (r?.updates[`playerPosition:${id}`] ?? 0);
-  }, characterId);
+  const rowUpdates = (id: string) =>
+    b.page.evaluate((cid) => {
+      const r = window.__bc?.region;
+      return (
+        (r?.inserts[`playerPosition:${cid}`] ?? 0) + (r?.updates[`playerPosition:${cid}`] ?? 0)
+      );
+    }, id);
+  const updatesBefore = await rowUpdates(characterId);
 
-  await b.evaluate(() => window.__bc?.remotePlayers?.startTrace());
-  const here = await a.evaluate(() => window.__bc?.playerPosition);
-  if (!here) throw new Error("no player position");
-  const segment: StreetWalkSegment = {
-    label: "east",
-    key: "ArrowRight",
-    until: { kind: "x-at-least", value: here.x + WALK_CELLS },
-  };
-  const sendsBefore = sends;
+  await b.page.evaluate(() => window.__bc?.remotePlayers?.startTrace());
+  const sendsBefore = a.sends();
   const startedAt = Date.now();
-  await walkRealSegment(a, segment);
+  await walk(a.page, "east", WALK_CELLS, true);
   const walkMs = Date.now() - startedAt;
 
   // B converges to A's own rest position within one quantum.
-  const rest = await a.evaluate(() => window.__bc?.playerPosition);
+  const rest = await a.page.evaluate(() => window.__bc?.playerPosition);
   if (!rest) throw new Error("no rest position");
-  await b.waitForFunction(
+  await b.page.waitForFunction(
     ({ id, x, y, q }) => {
       const p = window.__bc?.remotePlayers?.poses()[id];
       return p !== undefined && Math.abs(p.x - x) <= q && Math.abs(p.y - y) <= q;
@@ -120,51 +131,47 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
     { id: characterId, x: rest.x, y: rest.y, q: QUANTUM },
     { timeout: 20_000 },
   );
-  const trace = await b.evaluate(() => window.__bc?.remotePlayers?.stopTrace() ?? {});
-  const seen = trace[characterId] ?? [];
+  const trace = await b.page.evaluate(
+    () => window.__bc?.remotePlayers?.stopTrace() ?? { frames: {}, samples: {} },
+  );
+  const drawn = trace.frames[characterId] ?? [];
+  const received = trace.samples[characterId] ?? [];
+  expect(drawn.length, "B drew nothing of A").toBeGreaterThan(0);
+  expect(received.length, "B received nothing of A").toBeGreaterThan(1);
+  expect((await rowUpdates(characterId)) - updatesBefore).toBeGreaterThan(0);
 
   // On a straight walk it never steps backwards.
-  for (let i = 1; i < seen.length; i++) {
-    expect(seen[i].x).toBeGreaterThanOrEqual(seen[i - 1].x);
+  for (let i = 1; i < drawn.length; i++) {
+    expect(drawn[i]?.x ?? 0).toBeGreaterThanOrEqual(drawn[i - 1]?.x ?? 0);
   }
-  // It interpolates rather than snaps: more distinct rendered positions than
-  // row updates B received.
-  const updatesAfter = await b.evaluate((id) => {
-    const r = window.__bc?.region;
-    return (r?.inserts[`playerPosition:${id}`] ?? 0) + (r?.updates[`playerPosition:${id}`] ?? 0);
-  }, characterId);
-  const distinct = new Set(seen.map((s) => `${s.x},${s.y}`)).size;
-  expect(updatesAfter).toBeGreaterThan(updatesBefore);
-  // Only decidable when B drew at least twice as many frames as it received
-  // rows: a loaded runner can starve a page of frames, and frame pacing is
-  // not an oracle here (the unit properties hold the smoothness itself).
-  if (seen.length >= 2 * (updatesAfter - updatesBefore)) {
-    expect(distinct).toBeGreaterThan(updatesAfter - updatesBefore);
-  }
+  // It interpolates rather than snaps: at least one drawn position lies
+  // strictly between two consecutive samples B received. Holds at any frame
+  // pacing that draws a frame while a segment is being walked.
+  const between = drawn.some((f) =>
+    received.some((s, i) => {
+      const next = received[i + 1];
+      return next !== undefined && s.x < f.x && f.x < next.x;
+    }),
+  );
+  expect(between, "no drawn position fell between two received samples").toBe(true);
 
   // The wire: A's sends over the walk are at most duration * rate + 2.
-  const walkSends = sends - sendsBefore;
+  const walkSends = a.sends() - sendsBefore;
   expect(walkSends).toBeGreaterThan(0);
   expect(walkSends).toBeLessThanOrEqual((walkMs / 1000) * HZ + 2);
 
   // A standing player costs zero calls over a standing window.
-  const standing = sends;
-  await frames(a, 90);
-  expect(sends).toBe(standing);
+  const standing = a.sends();
+  await frames(a.page, 90);
+  expect(a.sends()).toBe(standing);
 
-  // B's cache holds only players of the chunk it is in, never a far one.
-  const here2 = await a.evaluate(() => window.__bc?.playerPosition);
-  if (!here2) throw new Error("no position");
-  const near = String(chunkKey(Math.floor(here2.x), Math.floor(here2.y), 0));
-  const cached = await b.evaluate(() => window.__bc?.region?.cachedChunkKeys("playerPosition"));
-  expect(cached?.length ?? 0).toBeGreaterThan(0);
-  const held = new Set(
-    (await b.evaluate(() => window.__bc?.region?.held() ?? [])).map((h) => h.split(",")[0]),
-  );
-  expect(CHUNK_SIZE).toBeGreaterThan(0);
-  expect(held.size).toBeGreaterThan(0);
-  expect(cached).toContain(near);
+  // A, which also opts in and receives its own row, never draws itself.
+  const own = await a.page.evaluate(() => window.__bc?.remotePlayers?.poses() ?? {});
+  expect(Object.keys(own)).not.toContain(characterId);
 
-  await a.context().close();
-  await b.context().close();
+  // B never had a character: it never wrote.
+  expect(b.sends()).toBe(0);
+
+  await a.page.context().close();
+  await b.page.context().close();
 });

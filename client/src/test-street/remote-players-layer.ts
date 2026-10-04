@@ -68,20 +68,20 @@ export async function mountRemotePlayersLayer(
     const now = wiring.serverNowMs();
     if (now === undefined) return;
     const skip = wiring.skip();
-    const ids = new Set(wiring.motion.ids());
     for (const [id, d] of drawn) {
-      if (!ids.has(id) || id === skip) {
+      if (!wiring.motion.has(id) || id === skip) {
         layer.removeChild(d.sprite);
         d.sprite.destroy();
         drawn.delete(id);
       }
     }
-    const poses: Record<string, RemotePose> = {};
-    for (const id of ids) {
+    // Built only for a caller that asked for it (a DEV build's e2e hook).
+    const poses: Record<string, RemotePose> | undefined = wiring.onFrame ? {} : undefined;
+    for (const id of wiring.motion.keys()) {
       if (id === skip) continue;
       const pose = wiring.motion.poseAt(id, now);
       if (!pose) continue;
-      poses[id] = pose;
+      if (poses) poses[id] = pose;
       let d = drawn.get(id);
       if (!d) {
         const sprite = new Sprite(frames.frame("idle", "down", 0));
@@ -109,7 +109,7 @@ export async function mountRemotePlayersLayer(
           )
         : frames.frame("idle", facing, 0);
     }
-    wiring.onFrame?.(poses);
+    if (poses) wiring.onFrame?.(poses);
   }
 
   return { update, count: () => drawn.size };

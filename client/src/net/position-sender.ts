@@ -20,6 +20,9 @@ export interface PositionSenderOptions {
 }
 
 export interface PositionSender {
+  /** Final: no call is made after it, even from a tick already queued. A
+   * call on a connection that is not live would be queued by the SDK, one
+   * per period, without bound. */
   stop(): void;
 }
 
@@ -30,6 +33,7 @@ export function startPositionSender(options: PositionSenderOptions): PositionSen
   const clearTimer =
     options.clearInterval ?? ((h) => globalThis.clearInterval(h as ReturnType<typeof setInterval>));
 
+  let stopped = false;
   const scheduler = createPositionScheduler(periodMs, (p: WirePosition) => {
     conn.reducers.setPlayerPosition(p).catch((error: unknown) => {
       console.error("[net] position write refused", error);
@@ -39,9 +43,15 @@ export function startPositionSender(options: PositionSenderOptions): PositionSen
   // Polling at half the period keeps timer jitter from costing a whole
   // period; the scheduler, not the timer, decides what is sent.
   const handle = setTimer(() => {
+    if (stopped) return;
     const p = position();
     if (p) scheduler.tick(now(), quantise(p.x, p.y, p.floor, unitsPerCell));
   }, periodMs / 2);
 
-  return { stop: () => clearTimer(handle) };
+  return {
+    stop: () => {
+      stopped = true;
+      clearTimer(handle);
+    },
+  };
 }

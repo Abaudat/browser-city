@@ -6809,7 +6809,7 @@ proptest! {
         let mut last: BTreeMap<u64, (i32, i32, i8, u8, u8)> = BTreeMap::new();
         for (who, x, y, floor, fx, fy) in writes {
             let before = table.clone();
-            let plan = plan_position(table.get(&who), x, y, floor, fx, fy);
+            let plan = plan_position(table.contains_key(&who), x, y, floor, fx, fy);
             let row = match plan {
                 Ok(Write::Insert(r)) => {
                     prop_assert!(!before.contains_key(&who), "inserted over an existing row");
@@ -6836,33 +6836,49 @@ proptest! {
         }
     }
 
-    /// `inv_player_position_chunk_key_follows_position` (FR138).
+    /// `inv_player_position_chunk_key_follows_position` (FR138): walks that
+    /// mostly stay in range, cross chunk edges and floors, with out-of-range
+    /// inputs mixed in. A write is accepted exactly when the floor and both
+    /// cells are addressable; an accepted one stores the chunk its position
+    /// is in, and is an update exactly when the character already has a row.
     #[test]
     fn inv_player_position_chunk_key_follows_position(
         steps in proptest::collection::vec(
             (
-                prop_oneof![-70i32..70, any::<i32>(), Just(i32::MIN), Just(i32::MAX)],
-                prop_oneof![-70i32..70, any::<i32>(), Just(i32::MIN), Just(i32::MAX)],
-                any::<i8>(),
+                prop_oneof![
+                    6 => -70i32..70,
+                    1 => any::<i32>(),
+                    1 => Just(i32::MIN),
+                    1 => Just(sim::player_position::CELL_MAX + 1),
+                    1 => Just(sim::player_position::CELL_MIN - 1),
+                ],
+                prop_oneof![
+                    6 => -70i32..70,
+                    1 => any::<i32>(),
+                    1 => Just(sim::player_position::CELL_MAX),
+                ],
+                prop_oneof![8 => -1i8..=7, 1 => any::<i8>()],
             ),
             1..40,
         ),
     ) {
-        use sim::player_position::{Write, plan_position};
+        use sim::generated::defs::{MAX_FLOOR, MIN_FLOOR};
+        use sim::player_position::{CELL_MAX, CELL_MIN, Write, plan_position};
         use sim::world::chunk_key;
 
-        let mut current = None;
+        let mut exists = false;
         for (x, y, floor) in steps {
-            match plan_position(current.as_ref(), x, y, floor, 0, 0) {
-                Ok(Write::Insert(r) | Write::Update(r)) => {
-                    prop_assert_eq!(r.chunk_key, chunk_key(x, y, floor));
-                    current = Some(r);
-                }
-                Err(_) => {} // no write: `current` is untouched
+            let addressable = (MIN_FLOOR..=MAX_FLOOR).contains(&(floor as i32))
+                && (CELL_MIN..=CELL_MAX).contains(&x)
+                && (CELL_MIN..=CELL_MAX).contains(&y);
+            let plan = plan_position(exists, x, y, floor, 0, 0);
+            prop_assert_eq!(plan.is_ok(), addressable, "accepted exactly when addressable");
+            if let Ok(w) = plan {
+                let (Write::Insert(r) | Write::Update(r)) = w;
+                prop_assert_eq!(matches!(w, Write::Update(_)), exists);
+                prop_assert_eq!(r.chunk_key, chunk_key(x, y, floor));
+                exists = true;
             }
-        }
-        if let Some(r) = current {
-            prop_assert_eq!(r.chunk_key, chunk_key(r.x, r.y, r.floor));
         }
     }
 
@@ -6877,14 +6893,12 @@ proptest! {
         jump in any::<i32>(),
     ) {
         use sim::player_position::plan_position;
-        let _ = plan_position(None, x, y, floor, fx, fy);
+        let _ = plan_position(false, x, y, floor, fx, fy);
 
         // A jump of any distance between two addressable cells is accepted.
         use sim::player_position::{CELL_MAX, CELL_MIN};
         let a = (jump as i64).clamp(CELL_MIN as i64, CELL_MAX as i64) as i32;
-        let first = plan_position(None, 0, 0, 0, 0, 0).expect("origin");
-        let sim::player_position::Write::Insert(first) = first else { panic!("first write inserts") };
-        prop_assert!(plan_position(Some(&first), a, a, 0, fx, fy).is_ok());
+        prop_assert!(plan_position(true, a, a, 0, fx, fy).is_ok());
     }
 }
 
@@ -6893,20 +6907,46 @@ fn player_position_refuses_an_out_of_range_floor_and_cell() {
     use sim::generated::defs::{MAX_FLOOR, MIN_FLOOR};
     use sim::player_position::{CELL_MAX, CELL_MIN, PositionError, plan_position};
     assert_eq!(
-        plan_position(None, 0, 0, (MAX_FLOOR + 1) as i8, 0, 0),
+        plan_position(false, 0, 0, (MAX_FLOOR + 1) as i8, 0, 0),
         Err(PositionError::FloorOutOfRange)
     );
     assert_eq!(
-        plan_position(None, 0, 0, (MIN_FLOOR - 1) as i8, 0, 0),
+        plan_position(false, 0, 0, (MIN_FLOOR - 1) as i8, 0, 0),
         Err(PositionError::FloorOutOfRange)
     );
     assert_eq!(
-        plan_position(None, CELL_MAX + 1, 0, 0, 0, 0),
+        plan_position(false, CELL_MAX + 1, 0, 0, 0, 0),
         Err(PositionError::CellOutOfRange)
     );
     assert_eq!(
-        plan_position(None, 0, CELL_MIN - 1, 0, 0, 0),
+        plan_position(false, 0, CELL_MIN - 1, 0, 0, 0),
         Err(PositionError::CellOutOfRange)
     );
-    assert!(plan_position(None, CELL_MAX, CELL_MIN, MAX_FLOOR as i8, 255, 255).is_ok());
+    assert!(plan_position(false, CELL_MAX, CELL_MIN, MAX_FLOOR as i8, 255, 255).is_ok());
+}
+
+#[test]
+fn player_position_walk_across_chunk_edges_and_floors_updates_and_crosses() {
+    use sim::player_position::{Write, plan_position};
+    let walk = [
+        (-1, 0, 0),
+        (0, 0, 0),
+        (31, 5, 0),
+        (32, 5, 0),
+        (32, 5, -1),
+        (-33, -40, 7),
+    ];
+    let mut exists = false;
+    let (mut updates, mut crossings) = (0, 0);
+    let mut last = None;
+    for (x, y, f) in walk {
+        let w = plan_position(exists, x, y, f, 0, 0).expect("in range");
+        let (Write::Insert(r) | Write::Update(r)) = w;
+        updates += usize::from(matches!(w, Write::Update(_)));
+        crossings += usize::from(last.is_some_and(|k| k != r.chunk_key));
+        last = Some(r.chunk_key);
+        exists = true;
+    }
+    assert_eq!(updates, walk.len() - 1);
+    assert_eq!(crossings, 4, "four chunk or floor changes along the walk");
 }

@@ -67,10 +67,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     ));
 
     out.push_str(&format!(
-        "/// Units per cell of a position on the wire (`player_position`'s fraction columns).
-pub const POSITION_UNITS_PER_CELL: i32 = {POSITION_UNITS_PER_CELL};
-
-"
+        "/// Units per cell of a position on the wire (`player_position`'s fraction columns).\npub const POSITION_UNITS_PER_CELL: i32 = {POSITION_UNITS_PER_CELL};\n\n"
     ));
 
     out.push_str(&format!(
@@ -660,8 +657,7 @@ pub fn emit_json(
         "  \"collider_subcells_per_cell\": {COLLIDER_SUBCELLS_PER_CELL},\n"
     ));
     out.push_str(&format!(
-        "  \"position_units_per_cell\": {POSITION_UNITS_PER_CELL},
-"
+        "  \"position_units_per_cell\": {POSITION_UNITS_PER_CELL},\n"
     ));
     out.push_str(&format!(
         "  \"interact_at_max_reach_cells\": {INTERACT_AT_MAX_REACH_CELLS},\n"

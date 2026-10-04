@@ -43,6 +43,7 @@ import {
   recordPlayerPositionForE2e,
   recordRegionRowForE2e,
   recordRemotePlayersForE2e,
+  recordRemoteSampleForE2e,
   recordRenderOrderForE2e,
   recordViewTransformForE2e,
   recordVisibilityForE2e,
@@ -71,6 +72,7 @@ import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, windowDefIds } from "./world/object-defs";
+import { dequantise } from "./world/position-codec";
 import { loadPositionConfig, type PositionConfig } from "./world/position-config";
 import { handleId } from "./world/region";
 import { REMOTE_MAX_SAMPLES, REMOTE_SNAP_CELLS, RemoteMotion } from "./world/remote-motion";
@@ -163,7 +165,11 @@ async function main(): Promise<void> {
   let sceneMounted = false;
   let positionSender: PositionSender | undefined;
   // The sender starts once the caller has a character and the scene a
-  // position; never before, and only once per page.
+  // position; never before, and only once per page. Its first send is the
+  // scene's own position, which overwrites the durable row: the scene must
+  // adopt the stored row before this sender starts (story 4.7) the day
+  // anything reads that row. It stops for good when the connection leaves
+  // `connected` (a call on a dead connection is queued by the SDK, unbounded).
   const maybeStartPositionSender = (): void => {
     if (positionSender || !sceneMounted || !latestCharacter || !positionConfig) return;
     positionSender = startPositionSender({
@@ -178,6 +184,7 @@ async function main(): Promise<void> {
     onPing,
     onStatus: (status) => {
       notice.setStatus(status);
+      if (status !== "connected") positionSender?.stop();
       if (status === "disconnected") latch.resolveUnreachable();
     },
     onHandshake: (version) => {
@@ -218,12 +225,9 @@ async function main(): Promise<void> {
         onUpsert: (row) => {
           const p = positionConfig;
           if (!motion || !p) return;
-          motion.upsert(row.characterId, {
-            tMs: row.tMs,
-            x: row.x + row.fracX / p.unitsPerCell,
-            y: row.y + row.fracY / p.unitsPerCell,
-            floor: row.floor,
-          });
+          const at = dequantise(row, p.unitsPerCell);
+          motion.upsert(row.characterId, { tMs: row.tMs, ...at });
+          recordRemoteSampleForE2e(row.characterId, { tMs: row.tMs, x: at.x, y: at.y });
         },
         onRemove: (id) => motion?.remove(id),
       },
@@ -352,7 +356,7 @@ async function main(): Promise<void> {
               return micros === undefined ? undefined : Number(micros / 1000n);
             },
             skip: () => latestCharacter?.characterId.toString(),
-            onFrame: recordRemotePlayersForE2e,
+            onFrame: import.meta.env.DEV ? recordRemotePlayersForE2e : undefined,
           };
         },
         onPlayerMove: (x, y, floor) => {

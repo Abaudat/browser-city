@@ -2,7 +2,7 @@
 //! `player_position` row per character; `sim::player_position` plans every
 //! write. Nothing here validates speed, distance or collision (FR137).
 
-use sim::player_position::{PositionRow, Write, plan_position};
+use sim::player_position::{Write, plan_position};
 use sim::reducer_classes::ReducerClass;
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
@@ -32,17 +32,6 @@ pub struct PlayerPosition {
     pub updated_at: Timestamp,
 }
 
-fn row_of(r: &PlayerPosition) -> PositionRow {
-    PositionRow {
-        x: r.x,
-        y: r.y,
-        floor: r.floor,
-        frac_x: r.frac_x,
-        frac_y: r.frac_y,
-        chunk_key: r.chunk_key,
-    }
-}
-
 /// Writes the caller's own character's position: the reducer takes no
 /// character or identity argument, so no caller can write another's row.
 /// Refused: a caller with no character, a floor outside the declared range,
@@ -61,15 +50,8 @@ pub fn set_player_position(
         return Err("no character".to_string());
     };
     let current = ctx.db.player_position().character_id().find(character_id);
-    let plan = plan_position(
-        current.as_ref().map(row_of).as_ref(),
-        x,
-        y,
-        floor,
-        frac_x,
-        frac_y,
-    )
-    .map_err(|e| e.message().to_string())?;
+    let plan = plan_position(current.is_some(), x, y, floor, frac_x, frac_y)
+        .map_err(|e| e.message().to_string())?;
     let (Write::Insert(r) | Write::Update(r)) = plan;
     let row = PlayerPosition {
         character_id,

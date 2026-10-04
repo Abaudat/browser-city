@@ -41,6 +41,107 @@ const config = (hz: number): RemoteMotionConfig => ({
   maxSamples: REMOTE_MAX_SAMPLES,
 });
 
+interface Interpolator {
+  upsert(id: string, sample: { tMs: number; x: number; y: number; floor: number }): void;
+  poseAt(id: string, serverNowMs: number): { x: number; y: number; floor: number } | undefined;
+}
+
+/** A walker at or below walk speed, with stamp jitter, bursts and late
+ * updates, through any interpolator. */
+function assertContinuity(make: (cfg: RemoteMotionConfig) => Interpolator): void {
+  const frames = fc.array(
+    fc.record({
+      dt: fc.double({ min: 6, max: 34, noNaN: true }),
+      walk: fc.boolean(),
+      turn: fc.constantFrom(-1, 1),
+    }),
+    { minLength: 60, maxLength: 300 },
+  );
+  fc.assert(
+    fc.property(
+      fc.constantFrom(...RATES),
+      frames,
+      fc.double({ min: 0, max: 1, noNaN: true }),
+      fc.double({ min: 0, max: 1, noNaN: true }),
+      fc.integer({ min: 1, max: 2 ** 30 }),
+      (hz, walkFrames, jitterUnit, lagUnit, seed0) => {
+        const cfg = config(hz);
+        const period = cfg.periodMs;
+        const m = make(cfg);
+        // Stamp jitter and network lag stay inside what the delay absorbs:
+        // a quarter period, and the delay less the longest gap between
+        // sends (a period, a slow frame and the jitter).
+        const jitter = (period / 4) * jitterUnit;
+        const lagMax = Math.max(0, cfg.delayMs - 1.25 * period - 40);
+        let seed = seed0;
+        const rand = () => {
+          seed = (seed * 1103515245 + 12345) % 2147483648;
+          return seed / 2147483648;
+        };
+        interface Arrival {
+          at: number;
+          tMs: number;
+          x: number;
+        }
+        const arrivals: Arrival[] = [];
+        let t = 0;
+        let x = 0;
+        let dir = 1;
+        let lastStamp = 0;
+        let lastAt = 0;
+        const sender = createPositionScheduler(period, (p) => {
+          // One ordered socket: the server stamps, and the client receives,
+          // in the order the player sent.
+          const stamp = Math.max(lastStamp, t + rand() * jitter);
+          lastStamp = stamp;
+          const at = Math.max(lastAt, stamp + rand() * lagMax * lagUnit);
+          lastAt = at;
+          arrivals.push({
+            at,
+            tMs: stamp,
+            x: p.x + p.fracX / defs.positionUnitsPerCell,
+          });
+        });
+        const offer = () => sender.tick(t, quantise(x, 0, 0, defs.positionUnitsPerCell));
+        for (const f of walkFrames) {
+          t += f.dt;
+          dir = f.turn;
+          if (f.walk) x += dir * WALK_CELLS_PER_MS * f.dt;
+          offer();
+        }
+        // The display keeps drawing until everything has arrived and rested.
+        const end = t + cfg.delayMs + 2 * period + lagMax + 500;
+        while (t < end) {
+          t += 16;
+          offer();
+        }
+        arrivals.sort((p, q) => p.at - q.at);
+
+        const FRAME = 16;
+        let next = 0;
+        let prev: { x: number; y: number } | undefined;
+        const budget =
+          WALK_CELLS_PER_MS * FRAME * (1 + REMOTE_SPEED_TOLERANCE) + 2 / defs.positionUnitsPerCell;
+        for (let now = 0; now <= end; now += FRAME) {
+          while (next < arrivals.length && (arrivals[next]?.at ?? Infinity) <= now) {
+            const a = arrivals[next++] as Arrival;
+            m.upsert("a", { tMs: a.tMs, x: a.x, y: 0, floor: 0 });
+          }
+          const pose = m.poseAt("a", now);
+          if (pose && prev) {
+            expect(Math.hypot(pose.x - prev.x, pose.y - prev.y)).toBeLessThanOrEqual(budget);
+          }
+          if (pose) prev = pose;
+        }
+        // A stopped player comes to rest exactly on the last sample.
+        const last = arrivals.reduce((p, q) => (q.tMs > p.tMs ? q : p), arrivals[0]);
+        if (last) expect(prev).toMatchObject({ x: last.x, y: 0 });
+      },
+    ),
+    { numRuns: 60 },
+  );
+}
+
 describe("RemoteMotion", () => {
   it("shows a first sample in place, whatever the clock says", () => {
     const m = new RemoteMotion(config(HZ.value));
@@ -57,9 +158,10 @@ describe("RemoteMotion", () => {
           minLength: 2,
           maxLength: 30,
         }),
-        fc.integer({ min: 0, max: 10_000 }),
-        (hz, steps, probe) => {
-          const m = new RemoteMotion(config(hz));
+        fc.array(fc.integer({ min: 0, max: 400 }), { minLength: 1, maxLength: 40 }),
+        (hz, steps, probeSteps) => {
+          const cfg = config(hz);
+          const m = new RemoteMotion(cfg);
           let t = 1000;
           let x = 0;
           const samples: { tMs: number; x: number }[] = [];
@@ -69,113 +171,35 @@ describe("RemoteMotion", () => {
             samples.push({ tMs: t, x });
             m.upsert("a", { tMs: t, x, y: 0, floor: 0 });
           }
-          const now = probe + 500;
-          const pose = m.poseAt("a", now);
-          expect(pose).toBeDefined();
-          const xs = samples.map((s) => s.x);
-          // On the hull of the samples still buffered, so inside all of them.
-          expect(pose?.x).toBeGreaterThanOrEqual(Math.min(...xs) - 1e-9);
-          expect(pose?.x).toBeLessThanOrEqual(Math.max(...xs) + 1e-9);
-          const newest = samples[samples.length - 1];
-          if (now - config(hz).delayMs >= newest.tMs) expect(pose?.x).toBe(newest.x);
+          // Rising probe times, from before the first sample to past the last.
+          let now = 1000 + cfg.delayMs - 200;
+          for (const step of probeSteps) {
+            now += step;
+            const pose = m.poseAt("a", now);
+            expect(pose).toBeDefined();
+            const at = now - cfg.delayMs;
+            const first = samples[0] as { tMs: number; x: number };
+            const last = samples[samples.length - 1] as { tMs: number; x: number };
+            if (at <= first.tMs) {
+              expect(pose?.x).toBe(first.x);
+            } else if (at >= last.tMs) {
+              // Never extrapolated past the newest sample.
+              expect(pose?.x).toBe(last.x);
+            } else {
+              const i = samples.findIndex((s, k) => s.tMs <= at && (samples[k + 1]?.tMs ?? 0) > at);
+              const lo = samples[i] as { tMs: number; x: number };
+              const hi = samples[i + 1] as { tMs: number; x: number };
+              expect(pose?.x).toBeGreaterThanOrEqual(Math.min(lo.x, hi.x) - 1e-9);
+              expect(pose?.x).toBeLessThanOrEqual(Math.max(lo.x, hi.x) + 1e-9);
+            }
+          }
         },
       ),
     );
   });
 
   it("inv_remote_motion_is_continuous", () => {
-    const frames = fc.array(
-      fc.record({
-        dt: fc.double({ min: 6, max: 34, noNaN: true }),
-        walk: fc.boolean(),
-        turn: fc.constantFrom(-1, 1),
-      }),
-      { minLength: 60, maxLength: 300 },
-    );
-    fc.assert(
-      fc.property(
-        fc.constantFrom(...RATES),
-        frames,
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        fc.integer({ min: 1, max: 2 ** 30 }),
-        (hz, walkFrames, jitterUnit, lagUnit, seed0) => {
-          const cfg = config(hz);
-          const period = cfg.periodMs;
-          const m = new RemoteMotion(cfg);
-          // Stamp jitter and network lag stay inside what the delay absorbs:
-          // a quarter period, and the delay less the longest gap between
-          // sends (a period, a slow frame and the jitter).
-          const jitter = (period / 4) * jitterUnit;
-          const lagMax = Math.max(0, cfg.delayMs - 1.25 * period - 40);
-          let seed = seed0;
-          const rand = () => {
-            seed = (seed * 1103515245 + 12345) % 2147483648;
-            return seed / 2147483648;
-          };
-          interface Arrival {
-            at: number;
-            tMs: number;
-            x: number;
-          }
-          const arrivals: Arrival[] = [];
-          let t = 0;
-          let x = 0;
-          let dir = 1;
-          let lastStamp = 0;
-          let lastAt = 0;
-          const sender = createPositionScheduler(period, (p) => {
-            // One ordered socket: the server stamps, and the client receives,
-            // in the order the player sent.
-            const stamp = Math.max(lastStamp, t + rand() * jitter);
-            lastStamp = stamp;
-            const at = Math.max(lastAt, stamp + rand() * lagMax * lagUnit);
-            lastAt = at;
-            arrivals.push({
-              at,
-              tMs: stamp,
-              x: p.x + p.fracX / defs.positionUnitsPerCell,
-            });
-          });
-          const offer = () => sender.tick(t, quantise(x, 0, 0, defs.positionUnitsPerCell));
-          for (const f of walkFrames) {
-            t += f.dt;
-            dir = f.turn;
-            if (f.walk) x += dir * WALK_CELLS_PER_MS * f.dt;
-            offer();
-          }
-          // The display keeps drawing until everything has arrived and rested.
-          const end = t + cfg.delayMs + 2 * period + lagMax + 500;
-          while (t < end) {
-            t += 16;
-            offer();
-          }
-          arrivals.sort((p, q) => p.at - q.at);
-
-          const FRAME = 16;
-          let next = 0;
-          let prev: { x: number; y: number } | undefined;
-          const budget =
-            WALK_CELLS_PER_MS * FRAME * (1 + REMOTE_SPEED_TOLERANCE) +
-            2 / defs.positionUnitsPerCell;
-          for (let now = 0; now <= end; now += FRAME) {
-            while (next < arrivals.length && arrivals[next].at <= now) {
-              const a = arrivals[next++];
-              m.upsert("a", { tMs: a.tMs, x: a.x, y: 0, floor: 0 });
-            }
-            const pose = m.poseAt("a", now);
-            if (pose && prev) {
-              expect(Math.hypot(pose.x - prev.x, pose.y - prev.y)).toBeLessThanOrEqual(budget);
-            }
-            if (pose) prev = pose;
-          }
-          // A stopped player comes to rest exactly on the last sample.
-          const last = arrivals.reduce((p, q) => (q.tMs > p.tMs ? q : p), arrivals[0]);
-          if (last) expect(prev).toMatchObject({ x: last.x, y: 0 });
-        },
-      ),
-      { numRuns: 60 },
-    );
+    assertContinuity((cfg) => new RemoteMotion(cfg));
   });
 
   it("a floor change, a gap beyond the snap distance, and a first sample never glide", () => {
@@ -215,14 +239,15 @@ describe("RemoteMotion", () => {
     expect(m.ids()).toEqual([]);
   });
 
-  it("a snap-to-latest interpolator fails the continuity budget (negative control)", () => {
-    // Jumping to each newest sample moves a walker's whole send period at once.
-    const period = 1000 / HZ.value;
-    const jump = WALK_CELLS_PER_MS * period;
-    const oneFrame = 16;
-    expect(jump).toBeGreaterThan(
-      WALK_CELLS_PER_MS * oneFrame * (1 + REMOTE_SPEED_TOLERANCE) + 2 / defs.positionUnitsPerCell,
-    );
+  it("a snap-to-latest interpolator fails inv_remote_motion_is_continuous (negative control)", () => {
+    const snap = (): Interpolator => {
+      const latest = new Map<string, { x: number; y: number; floor: number }>();
+      return {
+        upsert: (id, sample) => latest.set(id, sample),
+        poseAt: (id) => latest.get(id),
+      };
+    };
+    expect(() => assertContinuity(snap)).toThrow();
   });
 });
 

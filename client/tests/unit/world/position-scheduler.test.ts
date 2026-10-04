@@ -1,6 +1,10 @@
 // Story 4.4 (FR138): when a position is sent. Pure, with an injected
 // monotonic clock. Every property reads the dial's declared range from the
 // committed defs, never a rate literal, so retuning the rate rewrites no test.
+// Each property is its own `fc.assert` with the expectation inside, so a
+// regression reports a counterexample and the seed that reproduces it
+// (NFR50); a negative control is the same assertion run on a wrong sender,
+// expected to throw.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
@@ -50,68 +54,128 @@ const walkArb = fc.record({
   stride: fc.integer({ min: 1, max: 3 }),
 });
 
-function violations(factory: Factory): Set<string> {
-  const out = new Set<string>();
+interface Run {
+  readonly sends: { t: number; p: WirePosition }[];
+  readonly times: number[];
+  readonly moveFrames: number;
+  readonly rest: WirePosition;
+  readonly period: number;
+  readonly hz: number;
+}
+
+/** The walker stops after `moving` frames; the display keeps drawing for two
+ * more periods, so a trailing edge has frames to ride on. */
+function drive(
+  factory: Factory,
+  moveTimes: number[],
+  moving: number,
+  stride: number,
+  hz: number,
+): Run {
+  const period = 1000 / hz;
+  const times = [...moveTimes];
+  const last = times[times.length - 1] ?? 0;
+  for (let t = last + 1000 / 60; t <= last + 2 * period; t += 1000 / 60) times.push(t);
+  const sends: { t: number; p: WirePosition }[] = [];
+  let now = 0;
+  const s = factory(period, (p) => sends.push({ t: now, p }));
+  const moveFrames = Math.min(moving, moveTimes.length);
+  let x = 0;
+  let rest = pos(0);
+  times.forEach((t, i) => {
+    now = t;
+    if (i < moveFrames) x += stride;
+    rest = pos(x);
+    s.tick(t, rest);
+  });
+  return { sends, times, moveFrames, rest, period, hz };
+}
+
+function property(check: (run: Run) => void, factory: Factory): void {
   fc.assert(
-    fc.property(
-      framesArb,
-      walkArb,
-      fc.constantFrom(...RATES),
-      (moveTimes, { moving, stride }, hz) => {
-        const period = 1000 / hz;
-        // The walker stops after `moving` frames; the display keeps drawing
-        // for two more periods, so a trailing edge has frames to ride on.
-        const times = [...moveTimes];
-        const last = times[times.length - 1] ?? 0;
-        for (let t = last + 1000 / 60; t <= last + 2 * period; t += 1000 / 60) times.push(t);
-        const sends: { t: number; p: WirePosition }[] = [];
-        let now = 0;
-        const s = factory(period, (p) => sends.push({ t: now, p }));
-        let x = 0;
-        let rest = pos(0);
-        const moveFrames = Math.min(moving, moveTimes.length);
-        times.forEach((t, i) => {
-          now = t;
-          if (i < moveFrames) x += stride;
-          rest = pos(x);
-          s.tick(t, rest);
-        });
-        // inv_position_send_rate_never_exceeds_dial
-        for (let i = 0; i < sends.length; i++) {
-          for (let j = i; j < sends.length; j++) {
-            const w = sends[j].t - sends[i].t;
-            if (j - i + 1 > (w / 1000) * hz + 1 + 1e-9) out.add("rate");
-          }
-        }
-        // inv_idle_player_sends_nothing: the rest position is sent once.
-        if (sends.filter((e) => e.p.x === rest.x).length > 1) out.add("idle");
-        // inv_last_position_always_lands: within one period of the last
-        // movement, plus the frame that carries it.
-        const maxGap = Math.max(...times.map((t, i) => (i === 0 ? 0 : t - times[i - 1])));
-        const landed = sends.find((e) => e.p.x === rest.x);
-        const stopAt = times[moveFrames - 1] ?? 0;
-        if (!landed || landed.t - stopAt > period + maxGap + 1e-9) out.add("last");
-      },
+    fc.property(framesArb, walkArb, fc.constantFrom(...RATES), (moveTimes, w, hz) =>
+      check(drive(factory, moveTimes, w.moving, w.stride, hz)),
     ),
     { numRuns: 150 },
   );
-  return out;
 }
+
+const assertRate = (factory: Factory) =>
+  property((run) => {
+    for (let i = 0; i < run.sends.length; i++) {
+      for (let j = i; j < run.sends.length; j++) {
+        const windowMs = (run.sends[j]?.t ?? 0) - (run.sends[i]?.t ?? 0);
+        expect(j - i + 1).toBeLessThanOrEqual((windowMs / 1000) * run.hz + 1 + 1e-9);
+      }
+    }
+  }, factory);
+
+const assertIdle = (factory: Factory) =>
+  property((run) => {
+    expect(run.sends.filter((e) => e.p.x === run.rest.x).length).toBeLessThanOrEqual(1);
+  }, factory);
+
+const assertLands = (factory: Factory) =>
+  property((run) => {
+    const maxGap = Math.max(
+      ...run.times.map((t, i) => (i === 0 ? 0 : t - (run.times[i - 1] ?? 0))),
+    );
+    const landed = run.sends.find((e) => e.p.x === run.rest.x);
+    const stopAt = run.times[run.moveFrames - 1] ?? 0;
+    expect(landed, "the rest position was never sent").toBeDefined();
+    expect((landed?.t ?? 0) - stopAt).toBeLessThanOrEqual(run.period + maxGap + 1e-9);
+  }, factory);
 
 const real: Factory = (period, send) => createPositionScheduler(period, send);
 
+const noTrailingEdge: Factory = (period, send) => {
+  let last = Number.NEGATIVE_INFINITY;
+  let prev: WirePosition | undefined;
+  return {
+    tick: (now, p) => {
+      const moved = prev !== undefined && prev.x !== p.x;
+      prev = p;
+      if (moved && now - last >= period) {
+        last = now;
+        send(p);
+      }
+    },
+  };
+};
+
+const perFrame: Factory = (_period, send) => {
+  let prev: WirePosition | undefined;
+  return {
+    tick: (_now, p) => {
+      if (!prev || prev.x !== p.x) send(p);
+      prev = p;
+    },
+  };
+};
+
+const repeater: Factory = (period, send) => {
+  let last = Number.NEGATIVE_INFINITY;
+  return {
+    tick: (now, p) => {
+      if (now - last >= period) {
+        last = now;
+        send(p);
+      }
+    },
+  };
+};
+
 describe("the position send scheduler", () => {
-  const realViolations = violations(real);
   it("inv_position_send_rate_never_exceeds_dial", () => {
-    expect(realViolations.has("rate")).toBe(false);
+    assertRate(real);
   });
 
   it("inv_idle_player_sends_nothing", () => {
-    expect(realViolations.has("idle")).toBe(false);
+    assertIdle(real);
   });
 
   it("inv_last_position_always_lands", () => {
-    expect(realViolations.has("last")).toBe(false);
+    assertLands(real);
   });
 
   it("sends on the first tick, then nothing while unchanged", () => {
@@ -133,49 +197,15 @@ describe("the position send scheduler", () => {
 
   describe("negative controls: each wrong sender fails its property", () => {
     it("a sender with no trailing edge fails inv_last_position_always_lands", () => {
-      const noTrailingEdge: Factory = (period, send) => {
-        let last = Number.NEGATIVE_INFINITY;
-        let prev: WirePosition | undefined;
-        return {
-          tick: (now, p) => {
-            const moved = prev !== undefined && prev.x !== p.x;
-            prev = p;
-            if (moved && now - last >= period) {
-              last = now;
-              send(p);
-            }
-          },
-        };
-      };
-      expect(violations(noTrailingEdge).has("last")).toBe(true);
+      expect(() => assertLands(noTrailingEdge)).toThrow();
     });
 
     it("a sender called per frame fails inv_position_send_rate_never_exceeds_dial", () => {
-      const perFrame: Factory = (_period, send) => {
-        let prev: WirePosition | undefined;
-        return {
-          tick: (_now, p) => {
-            if (!prev || prev.x !== p.x) send(p);
-            prev = p;
-          },
-        };
-      };
-      expect(violations(perFrame).has("rate")).toBe(true);
+      expect(() => assertRate(perFrame)).toThrow();
     });
 
     it("a sender that repeats the rest position fails inv_idle_player_sends_nothing", () => {
-      const repeater: Factory = (period, send) => {
-        let last = Number.NEGATIVE_INFINITY;
-        return {
-          tick: (now, p) => {
-            if (now - last >= period) {
-              last = now;
-              send(p);
-            }
-          },
-        };
-      };
-      expect(violations(repeater).has("idle")).toBe(true);
+      expect(() => assertIdle(repeater)).toThrow();
     });
   });
 });

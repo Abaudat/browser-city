@@ -84,6 +84,17 @@ describe("startPositionSender", () => {
     expect(r.calls[1].x).toBe(2);
   });
 
+  it("no reducer call is made after stop, even from a tick already queued (a dead connection would queue it)", () => {
+    const r = rig();
+    r.set({ x: 1, y: 1, floor: 0 });
+    r.advance(50);
+    expect(r.calls).toHaveLength(1);
+    r.sender.stop();
+    r.set({ x: 9, y: 9, floor: 0 });
+    for (let i = 0; i < 20; i++) r.advance(50);
+    expect(r.calls).toHaveLength(1);
+  });
+
   it("stop clears the timer", () => {
     const r = rig();
     r.sender.stop();

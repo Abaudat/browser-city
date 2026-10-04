@@ -16,6 +16,11 @@ max = 20
 
 [[balance]]
 # How far behind the server clock a remote player is drawn, so two samples
+# bracket the drawn instant. The drawn delay is `max(this key, 2 send periods)`
+# (`remoteDelayMs`), so it moves with the rate above: at any rate under 8 Hz
+# the committed 250 is overridden (5 Hz draws 400 ms), and at 1 Hz the drawn
+# delay (2000 ms) is outside this key's own max. Whoever tunes the rate reads
+# the delay from that rule, not from this value.
 key = "net.player_interpolation_delay_ms"
 value = 250
 min = 100

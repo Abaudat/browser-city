@@ -50,7 +50,11 @@ declare global {
         poses: () => Record<string, { x: number; y: number; floor: number }>;
         /** Records every frame's poses until `stopTrace` returns them. */
         startTrace: () => void;
-        stopTrace: () => Record<string, { t: number; x: number; y: number; floor: number }[]>;
+        /** What was drawn each frame, and the samples received meanwhile. */
+        stopTrace: () => {
+          frames: Record<string, { t: number; x: number; y: number; floor: number }[]>;
+          samples: Record<string, { tMs: number; x: number; y: number }[]>;
+        };
       };
       /** Story 4.3 (FR136): the interest region as the client holds it. */
       region?: {
@@ -499,6 +503,7 @@ export function recordRegionRowForE2e(
 /** Story 4.4: the remote players' per-frame poses, from the scene's own
  * ticker -- recorded in the page, never polled from the test runner. */
 let remoteTrace: Record<string, { t: number; x: number; y: number; floor: number }[]> | undefined;
+let remoteSamples: Record<string, { tMs: number; x: number; y: number }[]> = {};
 let remotePoses: Record<string, { x: number; y: number; floor: number }> = {};
 
 export function recordRemotePlayersForE2e(
@@ -515,6 +520,17 @@ export function recordRemotePlayersForE2e(
   }
 }
 
+/** Story 4.4: a sample as received, recorded while a trace runs. */
+export function recordRemoteSampleForE2e(
+  id: string,
+  sample: { tMs: number; x: number; y: number },
+): void {
+  if (!import.meta.env.DEV || !remoteTrace) return;
+  const list = remoteSamples[id] ?? [];
+  list.push(sample);
+  remoteSamples[id] = list;
+}
+
 export function exposeRemotePlayersForE2e(): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
@@ -522,10 +538,12 @@ export function exposeRemotePlayersForE2e(): void {
     poses: () => remotePoses,
     startTrace: () => {
       remoteTrace = {};
+      remoteSamples = {};
     },
     stopTrace: () => {
-      const out = remoteTrace ?? {};
+      const out = { frames: remoteTrace ?? {}, samples: remoteSamples };
       remoteTrace = undefined;
+      remoteSamples = {};
       return out;
     },
   };

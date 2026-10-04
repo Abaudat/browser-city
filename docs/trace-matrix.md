@@ -952,7 +952,7 @@ sections above.
 
 ## Player position
 
-Story 4.4 (FR138, NFR32): a player's position is one durable public row per character, sent at a dialled rate and drawn smoothly by every other client. One row per acceptance criterion. Same Guard-path discipline as the sections above.
+Story 4.4 (FR138, NFR32): a player's position is one durable public row per character, sent at a dialled rate and drawn smoothly by every other client. One row per acceptance criterion of the story, then the guards it adds. Same Guard-path discipline as the sections above.
 
 | Requirement | Status | Guard |
 | --- | --- | --- |
@@ -962,17 +962,21 @@ Story 4.4 (FR138, NFR32): a player's position is one durable public row per char
 | AC2: one row per player, the last write, no event table, no second channel, the `position` counter grows by the calls made (NFR17) | covered | `scripts/ci/check-player-position.sh` |
 | AC2: the write path and the accessor each have one home | covered | `scripts/ci/check-player-position-path.sh`; `scripts/ci/tests/test-check-player-position-path.sh` |
 | AC2: the reducer takes no character argument, a caller with no character is refused, and an out-of-range floor or cell is refused while a jump is accepted (FR137) | covered | `scripts/ci/check-player-position.sh`; `server/sim/tests/invariants.rs` -- `player_position_refuses_an_out_of_range_floor_and_cell` |
-| AC3: the position reaches the server as integers; every collider face is exact | covered | `client/tests/unit/world/position-codec.test.ts` -- `represents every collider face exactly` |
-| AC3: sending is rate-limited, silent at rest and always lands the rest position | covered | `client/tests/unit/world/position-scheduler.test.ts` -- `inv_last_position_always_lands`; `client/tests/unit/net/position-sender.test.ts` -- `a standing player costs no further calls, and a move is sent within a period` |
-| AC3: on the wire a walk sends at most `duration * rate + 2` and a standing player sends nothing | covered | `client/tests/e2e/player-position.spec.ts` |
+| AC2: the position reaches the server as integers; every collider face is exact | covered | `client/tests/unit/world/position-codec.test.ts` -- `represents every collider face exactly` |
+| AC2: sending is rate-limited, silent at rest and always lands the rest position | covered | `client/tests/unit/world/position-scheduler.test.ts` -- `inv_last_position_always_lands`; `client/tests/unit/net/position-sender.test.ts` -- `a standing player costs no further calls, and a move is sent within a period` |
+| AC2: on the wire a walk sends at most `duration * rate + 2`, a standing player sends nothing, and a page with no character sends nothing | covered | `client/tests/e2e/player-position.spec.ts` |
 | AC4: the rate is one dial with a min and a max, read once; the delay derives from it; no second literal | covered | `client/tests/unit/world/position-config.test.ts` -- `derives the sender period and the interpolation delay from the one key` |
 | AC4: ten players at the top of the dial out-write twenty thousand citizens (NFR14) | covered | `client/tests/unit/world/position-config.test.ts` -- `AC4: ten players at the top of the dial out-write twenty thousand citizens (NFR14)` |
-| AC5: a remote player is drawn between samples, never extrapolated, continuously, snapping on a floor change or teleport | covered | `client/tests/unit/world/remote-motion.test.ts` -- `a floor change, a gap beyond the snap distance, and a first sample never glide`, `a pause holds the older position until one period before the newer sample` |
-| AC5: a second page converges to the walker's rest position, never steps backwards on a straight walk and draws more positions than it received rows | covered | `client/tests/e2e/player-position.spec.ts` |
-| AC6: the position subscription is one chunk equality; a far player never enters the cache | covered | `client/tests/unit/net/region-queries.test.ts` -- `every query is one equality on chunk_key and nothing else`; `scripts/ci/check-player-position.sh` |
+| AC3: a remote player is drawn between samples, never extrapolated, continuously, snapping on a floor change or teleport | covered | `client/tests/unit/world/remote-motion.test.ts` -- `a floor change, a gap beyond the snap distance, and a first sample never glide`, `a pause holds the older position until one period before the newer sample` |
+| AC3: a second page converges to the walker's rest position, never steps backwards on a straight walk and draws more positions than it received rows | covered | `client/tests/e2e/player-position.spec.ts` |
+| AC3: the position subscription is one chunk equality; a far player never enters the cache | covered | `client/tests/unit/net/region-queries.test.ts` -- `every query is one equality on chunk_key and nothing else`; `scripts/ci/check-player-position.sh` |
+| AC3: the writer never draws itself | covered | `client/tests/e2e/player-position.spec.ts` |
 | NFR32: the client's reducer and procedure calls are an exact allow-list | covered | `scripts/ci/check-client-write-allowlist.sh`; `scripts/ci/tests/test-check-client-write-allowlist.sh` |
-| Existing specs draw no other players: a spec with a baseline never opts in | covered | `scripts/ci/check-e2e-remote-players-isolation.sh`; `scripts/ci/tests/test-check-e2e-remote-players-isolation.sh` |
-| The row survives a backup and restore, and a restart | covered | `scripts/ci/check-backup-restore.sh`; `scripts/ci/check-player-position.sh` |
+| Existing specs draw no other players: `remotePlayers` appears only in the allow-listed specs, support files included | covered | `scripts/ci/check-e2e-remote-players-isolation.sh`; `scripts/ci/tests/test-check-e2e-remote-players-isolation.sh` |
+| The row survives a backup and restore (negative cell, floor -1, fractions and `updated_at` exact), and a restart | covered | `scripts/ci/check-backup-restore.sh`; `scripts/ci/check-player-position.sh` |
+| The sender makes no call after the connection leaves `connected` | covered | `client/tests/unit/net/position-sender.test.ts` -- `no reducer call is made after stop, even from a tick already queued (a dead connection would queue it)` |
+| Every page load overwrites the durable row with the fixture spawn until the scene adopts the stored row before the sender starts | deferred | story 4.7 |
+| A player who has left is still drawn where they stopped: the row is never deleted and there is no presence | deferred | story 4.9 |
 
 ## Stock and holders
 

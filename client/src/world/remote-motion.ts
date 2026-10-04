@@ -78,6 +78,15 @@ export class RemoteMotion {
     return [...this.buffers.keys()];
   }
 
+  /** The characters held, without a copy. */
+  keys(): IterableIterator<string> {
+    return this.buffers.keys();
+  }
+
+  has(id: string): boolean {
+    return this.buffers.has(id);
+  }
+
   bufferedSamples(id: string): number {
     return this.buffers.get(id)?.length ?? 0;
   }

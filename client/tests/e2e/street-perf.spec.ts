@@ -158,7 +158,9 @@ test("the frame path stays inside its work budget for a whole walked session (NF
   // `viewport`, so this stays true even run from a config someone else
   // changed.
   await page.setViewportSize({ width: 1920, height: 1080 });
-  await page.goto("/");
+  // Opts in to remote players: the gate must hold the subscription and the
+  // layer every production client runs (its own instance, so no leftovers).
+  await page.goto("/?remotePlayers=1");
   await page.waitForFunction(() => window.__bc?.playerAppearance !== undefined, undefined, {
     timeout: 60_000,
   });

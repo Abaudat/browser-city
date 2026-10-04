@@ -47,10 +47,10 @@ pub enum Write {
 }
 
 /// The write for a character reporting `(x, y, floor)` plus the fraction of
-/// the cell in 1/`POSITION_UNITS_PER_CELL`. `current` is the character's
-/// own row, none before its first report.
+/// the cell in 1/`POSITION_UNITS_PER_CELL`. `row_exists` is whether the character's
+/// own row exists (false before its first report).
 pub fn plan_position(
-    current: Option<&PositionRow>,
+    row_exists: bool,
     x: i32,
     y: i32,
     floor: i8,
@@ -69,8 +69,9 @@ pub fn plan_position(
         frac_y,
         chunk_key,
     };
-    Ok(match current {
-        None => Write::Insert(row),
-        Some(_) => Write::Update(row),
+    Ok(if row_exists {
+        Write::Update(row)
+    } else {
+        Write::Insert(row)
     })
 }
