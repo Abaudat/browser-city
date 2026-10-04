@@ -157,8 +157,15 @@ test("a drop after a successful connect shows 'Connection lost' within 2s, and t
   const handle = readSpacetimeHandle();
   const wsPattern = `${handle.serverUrl.replace(/^http/, "ws")}/**`;
 
+  // Only the first socket reaches the server: the client now reconnects by
+  // itself (story 4.8), and a later socket let through would race
+  // "Connection lost" with "Reconnected".
   let serverRoute: ReturnType<WebSocketRoute["connectToServer"]> | undefined;
   await page.routeWebSocket(wsPattern, (ws) => {
+    if (serverRoute) {
+      ws.close();
+      return;
+    }
     serverRoute = ws.connectToServer();
   });
 
@@ -211,7 +218,9 @@ test("a route that aborts at boot shows 'Connecting…', then 'Connection lost' 
   // Never actually reaches the real server -- the connection fails before
   // any handshake completes, exactly like a server that is unreachable at
   // boot.
+  let attempts = 0;
   await page.routeWebSocket(wsPattern, (ws) => {
+    attempts += 1;
     ws.close();
   });
 
@@ -225,6 +234,10 @@ test("a route that aborts at boot shows 'Connecting…', then 'Connection lost' 
   // sitting past the debounce showed a notice on its own either way.
   await expect(notice(page)).toHaveText("Connection lost");
   await expect(page.locator("#test-street canvas")).toBeAttached({ timeout: 20_000 });
+  // The client keeps retrying, but on the backoff schedule and not in a
+  // tight loop: the first retries wait up to 1 s, 2 s, 4 s.
+  await expect.poll(() => attempts, { timeout: 15_000 }).toBeGreaterThan(1);
+  expect(attempts).toBeLessThanOrEqual(12);
   // The street scene mounts from local defs (`fetchDefs`), independently
   // of the SpacetimeDB socket above -- so it still renders even though
   // the connection never came up at all (NFR42).

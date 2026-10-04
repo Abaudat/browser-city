@@ -7,14 +7,12 @@
 // recovery (nothing in this game pulses or flashes, `docs/ux.md`'s
 // motion rule).
 //
-// The wording is a claim about what is actually true today (Artie/
-// Quentin's direction, cycle 2): this build never retries a dropped
-// connection (reconnection is story 4.16's work), so the notice never
-// says "reconnecting" -- that would promise something that is not
-// happening. "Connecting…" and "Connection lost" are the only two
-// not-connected messages; "Reconnected" only ever plays if something
-// calls `setStatus("connected")` after a drop, which nothing in this
-// build does yet (kept for 4.16 to wire, not dead weight to delete).
+// The wording never promises more than is true (Artie/Quentin's
+// direction, cycle 2): the notice never says "reconnecting", shows no
+// countdown and offers no retry. "Connecting…" and "Connection lost" are
+// the only two not-connected messages; the client retries by itself (story
+// 4.8), and "Reconnected" plays when `setStatus("connected")` follows a
+// shown "Connection lost".
 //
 // A generic notice slot, not a single-purpose "offline" banner (Artie's
 // direction): `setStatus` takes `ConnectionStatus`
