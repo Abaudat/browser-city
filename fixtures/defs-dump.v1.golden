@@ -194,6 +194,8 @@ balance identity.link_prompt_min_character_age_days value=1 min=0 max=365
 balance movement.player_body_height_subcells value=4 min=1 max=16
 balance movement.player_body_width_subcells value=8 min=1 max=16
 balance movement.walk_speed_millicells_per_s value=2200 min=100 max=20000
+balance net.player_interpolation_delay_ms value=250 min=100 max=1000
+balance net.player_position_hz value=10 min=1 max=20
 balance render.highlight_alpha value=50 min=1 max=100
 balance render.storey_height_px value=48 min=1 max=256
 balance render.tile_size_px value=16 min=1 max=64

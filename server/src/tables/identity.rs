@@ -141,7 +141,7 @@ pub fn caller_issuer(ctx: &ReducerContext) -> Result<u64, String> {
 }
 
 /// The only path from an identity to its character.
-fn character_of(ctx: &ReducerContext, identity: Identity) -> Option<u64> {
+pub(super) fn character_of(ctx: &ReducerContext, identity: Identity) -> Option<u64> {
     ctx.db
         .character_identity()
         .identity()

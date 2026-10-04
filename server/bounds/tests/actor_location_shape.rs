@@ -58,7 +58,12 @@ fn actor_location_is_public_and_indexes_chunk_and_actor() {
 #[test]
 fn every_actor_kind_names_an_existing_table() {
     let schema = parse_module_schema(&module_src_dir());
-    for kind in actor_kind::CODES {
+    // A character carries its own chunk on `player_position`, so it never
+    // has an `actor_location` row; its kind code stays minted.
+    for kind in actor_kind::CODES
+        .iter()
+        .filter(|k| k.code != actor_kind::CHARACTER)
+    {
         let entry = ACTOR_TABLES
             .iter()
             .find(|(k, _)| *k == kind.code)
@@ -70,6 +75,16 @@ fn every_actor_kind_names_an_existing_table() {
             entry.1
         );
     }
+}
+
+#[test]
+fn a_character_is_never_located_through_actor_location() {
+    assert!(
+        ACTOR_TABLES
+            .iter()
+            .all(|(k, _)| *k != actor_kind::CHARACTER),
+        "a character's chunk is `player_position.chunk_key`; one fact, one row, one write"
+    );
 }
 
 #[test]

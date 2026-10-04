@@ -16,6 +16,7 @@ import type {
   BuildingArea,
   FloorTransition,
   PlacedObject,
+  PlayerPosition,
   RoomArea,
 } from "./bindings/types";
 import { startNetClockSync, type VisibilitySource } from "./clock-sync";
@@ -28,6 +29,7 @@ import {
   type RegionTableName,
   sdkRegionBackend,
 } from "./region-subscription";
+import { type PlayerPositionRow, plainPlayerRow } from "./remote-rows";
 
 export type { HandshakeVersion } from "../boot/handshake";
 export type { ConnectionStatus } from "./connection-status";
@@ -75,7 +77,19 @@ export interface CharacterReport {
   readonly linked: boolean;
 }
 
-export type RegionRow = PlacedObject | FloorTransition | BuildingArea | RoomArea | ActorLocation;
+export type RegionRow =
+  | PlacedObject
+  | FloorTransition
+  | BuildingArea
+  | RoomArea
+  | ActorLocation
+  | PlayerPosition;
+
+/** Story 4.4: the other players, as plain data. An update is an upsert. */
+export interface PlayerRowListener {
+  onUpsert(row: PlayerPositionRow): void;
+  onRemove(characterId: string): void;
+}
 
 /** Streamed rows as plain data, registered once per table. The SDK client
  * cache stays the only store of them: nothing here keeps a second copy. */
@@ -91,6 +105,10 @@ export interface RegionRowListener {
 export interface RegionWiring {
   readonly controller: RegionController;
   readonly rows?: RegionRowListener;
+  readonly players?: PlayerRowListener;
+  /** Subscribe to `player_position`. A DEV build may switch it off;
+   * absent means yes. */
+  readonly remotePlayers?: boolean;
 }
 
 export interface ConnectOptions {
@@ -181,10 +199,13 @@ export function connect(options: ConnectOptions): DbConnection {
         ]);
       // Story 4.3: a new connection is a new region manager, built around
       // the player's current position.
-      region?.controller.attach(sdkRegionBackend(connection), {
-        onError: () => onStatus?.("disconnected"),
-        onInitialApplied: () => markBoot(BOOT_MARK.REGION_APPLIED),
-      });
+      region?.controller.attach(
+        sdkRegionBackend(connection, { remotePlayers: region.remotePlayers }),
+        {
+          onError: () => onStatus?.("disconnected"),
+          onInitialApplied: () => markBoot(BOOT_MARK.REGION_APPLIED),
+        },
+      );
       // Story 4.1: the first stamped round trip rides the same connect
       // moment; a reconnect is a new `connect()` and so a new sync.
       if (clock) clockSync = startNetClockSync(connection, clock.serverClock, clock.visibility);
@@ -236,6 +257,13 @@ export function connect(options: ConnectOptions): DbConnection {
       table.onUpdate((_ctx, oldRow, row) => rows.onUpdate(name, oldRow, row));
       table.onDelete((_ctx, row) => rows.onDelete(name, row));
     }
+  }
+
+  const players = region?.players;
+  if (players) {
+    conn.db.playerPosition.onInsert((_ctx, row) => players.onUpsert(plainPlayerRow(row)));
+    conn.db.playerPosition.onUpdate((_ctx, _old, row) => players.onUpsert(plainPlayerRow(row)));
+    conn.db.playerPosition.onDelete((_ctx, row) => players.onRemove(String(row.characterId)));
   }
 
   if (clock) {

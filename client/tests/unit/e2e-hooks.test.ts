@@ -4,12 +4,15 @@ import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
   exposeRegionForE2e,
+  exposeRemotePlayersForE2e,
   recordAppearanceTextureIdsForE2e,
   recordFrameWorkForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerPositionForE2e,
   recordRegionRowForE2e,
+  recordRemotePlayersForE2e,
+  recordRemoteSampleForE2e,
   recordRenderOrderForE2e,
   recordVisibilityForE2e,
   recordWorldClockForE2e,
@@ -303,5 +306,40 @@ describe("sceneRegionFeed (story 4.3)", () => {
     feed(3, 0, 0);
     expect(seen).toEqual([1, 2]);
     expect(moved).toEqual([9]);
+  });
+});
+
+describe("the remote players' hook", () => {
+  it("keeps the latest poses, and records frames and received samples only while a trace runs", () => {
+    exposeRemotePlayersForE2e();
+    const hook = window.__bc?.remotePlayers;
+    expect(hook).toBeDefined();
+
+    // Nothing is kept for a trace that has not started.
+    recordRemoteSampleForE2e("7", { tMs: 1, x: 0, y: 0 });
+    recordRemotePlayersForE2e({ "7": { x: 1, y: 2, floor: 0 } });
+    expect(hook?.poses()).toEqual({ "7": { x: 1, y: 2, floor: 0 } });
+
+    hook?.startTrace();
+    recordRemoteSampleForE2e("7", { tMs: 2, x: 1, y: 2 });
+    recordRemoteSampleForE2e("7", { tMs: 3, x: 2, y: 2 });
+    recordRemotePlayersForE2e({ "7": { x: 1.5, y: 2, floor: 0 } });
+    recordRemotePlayersForE2e({ "7": { x: 2, y: 2, floor: 0 } });
+    const trace = hook?.stopTrace();
+    expect(trace?.samples["7"]?.map((s) => s.tMs)).toEqual([2, 3]);
+    expect(trace?.frames["7"]?.map((f) => f.x)).toEqual([1.5, 2]);
+
+    // Stopped: later frames and samples are not kept.
+    recordRemoteSampleForE2e("7", { tMs: 4, x: 3, y: 2 });
+    recordRemotePlayersForE2e({ "7": { x: 3, y: 2, floor: 0 } });
+    expect(hook?.stopTrace()).toEqual({ frames: {}, samples: {} });
+  });
+
+  it("is absent from a production build", () => {
+    vi.stubEnv("DEV", false);
+    exposeRemotePlayersForE2e();
+    recordRemotePlayersForE2e({ "1": { x: 0, y: 0, floor: 0 } });
+    recordRemoteSampleForE2e("1", { tMs: 1, x: 0, y: 0 });
+    expect(window.__bc).toBeUndefined();
   });
 });

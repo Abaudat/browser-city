@@ -11,8 +11,8 @@ use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
     COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, FlightDef, INTERACT_AT_MAX_REACH_CELLS,
     MAX_DENOMINATIONS, MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES,
-    MIN_FLOOR, NeighbourTermDef, REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode,
-    RawDirection, RoleDef, RuleKindDef, SpriteRect,
+    MIN_FLOOR, NeighbourTermDef, POSITION_UNITS_PER_CELL, REAL_MS_PER_CITY_MINUTE,
+    RawAdjacencyRelation, RawCoherenceMode, RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
 
 // `RawLandUse::as_str` is used via the fully-qualified method call above,
@@ -64,6 +64,10 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str(&format!(
         "/// Sub-cells per cell, the fixed unit a `collider` rect is declared in.\npub const COLLIDER_SUBCELLS_PER_CELL: i32 = {COLLIDER_SUBCELLS_PER_CELL};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// Units per cell of a position on the wire (`player_position`'s fraction columns).\npub const POSITION_UNITS_PER_CELL: i32 = {POSITION_UNITS_PER_CELL};\n\n"
     ));
 
     out.push_str(&format!(
@@ -662,6 +666,9 @@ pub fn emit_json(
     ));
     out.push_str(&format!(
         "  \"collider_subcells_per_cell\": {COLLIDER_SUBCELLS_PER_CELL},\n"
+    ));
+    out.push_str(&format!(
+        "  \"position_units_per_cell\": {POSITION_UNITS_PER_CELL},\n"
     ));
     out.push_str(&format!(
         "  \"interact_at_max_reach_cells\": {INTERACT_AT_MAX_REACH_CELLS},\n"
@@ -1378,16 +1385,17 @@ mod tests {
         assert!(lines[1].contains("\"generated_by\""));
         assert!(lines[2].contains("\"defs_version\": \"abc123\""));
         assert!(lines[3].contains("\"collider_subcells_per_cell\": 16"));
-        assert!(lines[4].contains("\"interact_at_max_reach_cells\": 2"));
-        assert!(lines[5].contains("\"max_footprint_cells\": 8"));
-        assert!(lines[6].contains("\"min_floor\": -1"));
-        assert!(lines[7].contains("\"max_floor\": 7"));
-        assert!(lines[8].contains("\"max_shelf_life_minutes\": 525600"));
-        assert!(lines[9].contains("\"max_face_value\": 1000"));
-        assert!(lines[10].contains("\"max_denominations\": 16"));
-        assert!(lines[11].contains("\"denomination_unit\": 0"));
-        assert!(lines[12].contains("\"real_ms_per_city_minute\": 2500"));
-        assert!(lines[13].contains("\"atlas_max_pages_per_group\": 2"));
+        assert!(lines[4].contains("\"position_units_per_cell\": 256"));
+        assert!(lines[5].contains("\"interact_at_max_reach_cells\": 2"));
+        assert!(lines[6].contains("\"max_footprint_cells\": 8"));
+        assert!(lines[7].contains("\"min_floor\": -1"));
+        assert!(lines[8].contains("\"max_floor\": 7"));
+        assert!(lines[9].contains("\"max_shelf_life_minutes\": 525600"));
+        assert!(lines[10].contains("\"max_face_value\": 1000"));
+        assert!(lines[11].contains("\"max_denominations\": 16"));
+        assert!(lines[12].contains("\"denomination_unit\": 0"));
+        assert!(lines[13].contains("\"real_ms_per_city_minute\": 2500"));
+        assert!(lines[14].contains("\"atlas_max_pages_per_group\": 2"));
         assert!(!out.contains('\r'));
     }
 

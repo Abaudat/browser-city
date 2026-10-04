@@ -227,7 +227,14 @@ export const REGION_QUERIES = {
   buildingArea: (k: bigint) => tables.buildingArea.where((r) => r.chunkKey.eq(k)).build(),
   roomArea: (k: bigint) => tables.roomArea.where((r) => r.chunkKey.eq(k)).build(),
   actorLocation: (k: bigint) => tables.actorLocation.where((r) => r.chunkKey.eq(k)).build(),
+  playerPosition: (k: bigint) => tables.playerPosition.where((r) => r.chunkKey.eq(k)).build(),
 } as const;
+
+/** What a DEV build may switch off: nothing but the other players. */
+export interface RegionQueryOptions {
+  /** Subscribe to `player_position`. Always true in a production build. */
+  readonly remotePlayers?: boolean;
+}
 
 /** The tables the region streams, by accessor name. */
 export type RegionTableName = keyof typeof REGION_QUERIES;
@@ -237,13 +244,18 @@ export const REGION_TABLE_NAMES = Object.keys(REGION_QUERIES) as RegionTableName
 /** The queries one handle holds: for every table and every floor of its
  * band, `chunk_key = <that chunk>` -- one pure equality, never anything
  * else, so the engine can parameterise and share it. */
-export function regionQueries(key: HandleKey, range: FloorRange) {
+export function regionQueries(key: HandleKey, range: FloorRange, options: RegionQueryOptions = {}) {
   const chunkKeys = chunkKeysOfHandle(key, range);
-  return Object.values(REGION_QUERIES).flatMap((query) => chunkKeys.map((k) => query(k)));
+  return Object.entries(REGION_QUERIES)
+    .filter(([name]) => name !== "playerPosition" || options.remotePlayers !== false)
+    .flatMap(([, query]) => chunkKeys.map((k) => query(k)));
 }
 
 /** The SDK backend: one `subscribe` per handle with its typed queries. */
-export function sdkRegionBackend(conn: DbConnection): RegionBackend {
+export function sdkRegionBackend(
+  conn: DbConnection,
+  options: RegionQueryOptions = {},
+): RegionBackend {
   return {
     subscribe(key, range, cb) {
       const handle = conn
@@ -253,7 +265,7 @@ export function sdkRegionBackend(conn: DbConnection): RegionBackend {
           console.error("[net] region subscription failed", ctx.event);
           cb.onError(String(ctx.event));
         })
-        .subscribe(regionQueries(key, range));
+        .subscribe(regionQueries(key, range, options));
       return {
         unsubscribe: () => handle.unsubscribeThen(() => cb.onEnded()),
       };

@@ -44,6 +44,18 @@ declare global {
        * it stays 0 for the whole stale-defs window before the scene
        * mounts at all. */
       frameCount?: number;
+      /** Story 4.4 (FR138): the other players as this page draws them. */
+      remotePlayers?: {
+        /** Where each drawn remote player is, by character id, now. */
+        poses: () => Record<string, { x: number; y: number; floor: number }>;
+        /** Records every frame's poses until `stopTrace` returns them. */
+        startTrace: () => void;
+        /** What was drawn each frame, and the samples received meanwhile. */
+        stopTrace: () => {
+          frames: Record<string, { t: number; x: number; y: number; floor: number }[]>;
+          samples: Record<string, { tMs: number; x: number; y: number }[]>;
+        };
+      };
       /** Story 4.3 (FR136): the interest region as the client holds it. */
       region?: {
         /** Ids (`cx,cy,band`) of the handles currently wanted. */
@@ -485,5 +497,55 @@ export function recordRegionRowForE2e(
   bucket.region = region;
   const id = `${table}:${String(Object.values(row)[0])}`;
   region[kind][id] = (region[kind][id] ?? 0) + 1;
+  window.__bc = bucket;
+}
+
+/** Story 4.4: the remote players' per-frame poses, from the scene's own
+ * ticker -- recorded in the page, never polled from the test runner. */
+let remoteTrace: Record<string, { t: number; x: number; y: number; floor: number }[]> | undefined;
+let remoteSamples: Record<string, { tMs: number; x: number; y: number }[]> = {};
+let remotePoses: Record<string, { x: number; y: number; floor: number }> = {};
+
+export function recordRemotePlayersForE2e(
+  poses: Readonly<Record<string, { x: number; y: number; floor: number }>>,
+): void {
+  if (!import.meta.env.DEV) return;
+  remotePoses = { ...poses };
+  if (!remoteTrace) return;
+  const t = performance.now();
+  for (const [id, p] of Object.entries(poses)) {
+    const list = remoteTrace[id] ?? [];
+    list.push({ t, x: p.x, y: p.y, floor: p.floor });
+    remoteTrace[id] = list;
+  }
+}
+
+/** Story 4.4: a sample as received, recorded while a trace runs. */
+export function recordRemoteSampleForE2e(
+  id: string,
+  sample: { tMs: number; x: number; y: number },
+): void {
+  if (!import.meta.env.DEV || !remoteTrace) return;
+  const list = remoteSamples[id] ?? [];
+  list.push(sample);
+  remoteSamples[id] = list;
+}
+
+export function exposeRemotePlayersForE2e(): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.remotePlayers = {
+    poses: () => remotePoses,
+    startTrace: () => {
+      remoteTrace = {};
+      remoteSamples = {};
+    },
+    stopTrace: () => {
+      const out = { frames: remoteTrace ?? {}, samples: remoteSamples };
+      remoteTrace = undefined;
+      remoteSamples = {};
+      return out;
+    },
+  };
   window.__bc = bucket;
 }

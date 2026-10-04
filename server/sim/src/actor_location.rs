@@ -11,10 +11,7 @@ use crate::world::chunk_key;
 
 /// Each actor kind's own table accessor. Feeds `actor_location`'s row
 /// bound (`bounds/tests/schema_shape.rs`).
-pub const ACTOR_TABLES: &[(u32, &str)] = &[
-    (actor_kind::CHARACTER, "character"),
-    (actor_kind::CITIZEN, "citizen"),
-];
+pub const ACTOR_TABLES: &[(u32, &str)] = &[(actor_kind::CITIZEN, "citizen")];
 
 /// What `actor_location` stores about where an actor is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
