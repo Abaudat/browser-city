@@ -1038,7 +1038,7 @@ max = 1000
 # catchments are exactly AC3's own quadrants; never a hardcoded 2x2 of
 # the site -- a grown site (Epic 14) adds catchments, it never re-judges
 # an old one.
-key = "generation.building_types.catchment_extent_cells"
+key = "generation.catchment_extent_cells"
 value = 256
 min = 1
 max = 100000

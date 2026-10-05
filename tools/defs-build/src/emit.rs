@@ -9,10 +9,11 @@ use std::collections::BTreeMap;
 use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
-    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, FlightDef, INTERACT_AT_MAX_REACH_CELLS,
-    MAX_DENOMINATIONS, MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES,
-    MIN_FLOOR, NeighbourTermDef, POSITION_UNITS_PER_CELL, REAL_MS_PER_CITY_MINUTE,
-    RawAdjacencyRelation, RawCoherenceMode, RawDirection, RoleDef, RuleKindDef, SpriteRect,
+    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, DistributionScopeDef, FlightDef,
+    INTERACT_AT_MAX_REACH_CELLS, MAX_DENOMINATIONS, MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS,
+    MAX_SHELF_LIFE_MINUTES, MIN_FLOOR, NeighbourTermDef, POSITION_UNITS_PER_CELL,
+    REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode, RawDirection, RoleDef,
+    RuleKindDef, SpriteRect,
 };
 
 // `RawLandUse::as_str` is used via the fully-qualified method call above,
@@ -497,8 +498,15 @@ fn fmt_rule_kind_rust(kind: &RuleKindDef) -> String {
             tolerance_percent,
             min_spacing,
             max_distance,
+            scope,
         } => format!(
-            "crate::rules::RuleKind::Distribution {{ subject: {subject}, per: {per}, ratio: {ratio}, tolerance_percent: {tolerance_percent}, min_spacing: {min_spacing}, max_distance: {max_distance} }}"
+            "crate::rules::RuleKind::Distribution {{ subject: {subject}, per: {per}, ratio: {ratio}, tolerance_percent: {tolerance_percent}, min_spacing: {min_spacing}, max_distance: {max_distance}, scope: {} }}",
+            match scope {
+                DistributionScopeDef::Site => "crate::rules::DistributionScope::Site".to_string(),
+                DistributionScopeDef::Catchment { extent_cells } => format!(
+                    "crate::rules::DistributionScope::Catchment {{ extent_cells: {extent_cells} }}"
+                ),
+            }
         ),
         RuleKindDef::Coherence {
             subject,
@@ -1635,6 +1643,7 @@ mod tests {
                     tolerance_percent: 50,
                     min_spacing: 3,
                     max_distance: 10,
+                    scope: DistributionScopeDef::Site,
                 },
             },
             RuleDef {
@@ -1675,7 +1684,7 @@ mod tests {
             "kind: crate::rules::RuleKind::Placement { subject: 1, container: Some(2), floor_min: Some(-1), floor_max: Some(2) }"
         ));
         assert!(out.contains(
-            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 4, tolerance_percent: 50, min_spacing: 3, max_distance: 10 }"
+            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 4, tolerance_percent: 50, min_spacing: 3, max_distance: 10, scope: crate::rules::DistributionScope::Site }"
         ));
         assert!(out.contains(
             "kind: crate::rules::RuleKind::Coherence { subject: 1, within: 2, mode: crate::rules::CoherenceMode::Forbid }"

@@ -123,7 +123,7 @@ fn frozen_config() -> GenerationConfig {
         workplace_target_count_per_million_cells: 1312,
         workplace_count_tolerance_percent: 30,
         workplace_mean_count_tolerance_percent: 5,
-        building_type_catchment_extent_cells: 256,
+        catchment_extent_cells: 256,
     }
 }
 
@@ -250,6 +250,7 @@ const FROZEN_RULES: &[RuleDef] = &[
             tolerance_percent: 20,
             min_spacing: 10,
             max_distance: 2000,
+            scope: sim::rules::DistributionScope::Site,
         },
     },
 ];

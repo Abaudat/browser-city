@@ -70,12 +70,12 @@ use crate::rng::{Rng, seed_from_ids};
 use crate::rules::TagId;
 use crate::world::Rect;
 
+use super::GenerationConfig;
 use super::envelopes::{Envelope, EnvelopeMap, row_bounds_by_block_front};
 use super::plots::PlotMap;
 use super::rect_seed_key;
 use super::site::front_cell;
 use super::streets::{self, Side, StreetNetwork};
-use super::{GenerationConfig, SiteBounds};
 
 pub const PASS_ID: u64 = super::PASS_BUILDING_TYPE;
 
@@ -147,21 +147,6 @@ struct Context {
     x: i32,
     y: i32,
     catchment: (i32, i32),
-}
-
-/// The fixed-extent square [`Context::catchment`] an envelope's own
-/// front cell falls in -- integer floor division, so every cell belongs
-/// to exactly one catchment and no cell can land ambiguously on a
-/// dividing line. At the committed 512-cell site and a 256-cell extent
-/// this *is* AC3's own four quadrants; shared by the generator and
-/// `inv_generation_no_quadrant_lacks_its_required_services` so the two
-/// never compute it two different ways.
-pub fn catchment_of(x: i32, y: i32, site: SiteBounds, extent: i32) -> (i32, i32) {
-    let extent = extent.max(1);
-    (
-        (x - site.x0).div_euclid(extent),
-        (y - site.y0).div_euclid(extent),
-    )
 }
 
 /// Whether `plot_bounds`' own row-axis edge is a corner: the outer edge
@@ -303,7 +288,7 @@ fn build_context(
                 site_context: site_context_of(corner, street_class),
                 x,
                 y,
-                catchment: catchment_of(x, y, site, cfg.building_type_catchment_extent_cells),
+                catchment: crate::rules::catchment_of(x, y, cfg.catchment_extent_cells),
             }
         })
         .collect()
@@ -967,21 +952,6 @@ mod tests {
                 row.key
             );
         }
-    }
-
-    #[test]
-    fn catchment_of_a_512_site_at_a_256_extent_is_exactly_the_four_quadrants() {
-        let site = SiteBounds {
-            x0: 0,
-            y0: 0,
-            x1: 512,
-            y1: 512,
-        };
-        assert_eq!(catchment_of(0, 0, site, 256), (0, 0));
-        assert_eq!(catchment_of(255, 255, site, 256), (0, 0));
-        assert_eq!(catchment_of(256, 0, site, 256), (1, 0));
-        assert_eq!(catchment_of(0, 256, site, 256), (0, 1));
-        assert_eq!(catchment_of(511, 511, site, 256), (1, 1));
     }
 
     #[test]

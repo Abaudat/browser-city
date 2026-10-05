@@ -755,15 +755,42 @@ fn build_placement_rules(
         .collect()
 }
 
+/// The balance key a `scope = "catchment"` row copies its extent from --
+/// one source for the generator's own catchment tiling and every row.
+const CATCHMENT_EXTENT_KEY: &str = "generation.catchment_extent_cells";
+
 fn build_distribution_rules(
     entries: &[DistributionEntry],
     tag_ids: &BTreeMap<&str, u32>,
+    balance: &[BalanceEntry],
 ) -> Result<Vec<RuleDef>, DefsError> {
     entries
         .iter()
         .map(|e| {
             let subject = resolve_rule_tag(&e.subject, &e.path, &e.key.value, "subject", tag_ids)?;
             let per = resolve_rule_tag(&e.per, &e.path, &e.key.value, "per", tag_ids)?;
+            let scope = match e.scope {
+                RawDistributionScope::Site => DistributionScopeDef::Site,
+                RawDistributionScope::Catchment => {
+                    let extent = balance
+                        .iter()
+                        .find(|b| b.key.value == CATCHMENT_EXTENT_KEY)
+                        .ok_or_else(|| {
+                            DefsError::new(
+                                &e.path,
+                                e.key.line,
+                                e.key.col,
+                                format!(
+                                    "distribution rule '{}' has scope = \"catchment\" but no '{CATCHMENT_EXTENT_KEY}' balance key exists to take its extent from",
+                                    e.key.value
+                                ),
+                            )
+                        })?;
+                    DistributionScopeDef::Catchment {
+                        extent_cells: extent.value.value as i32,
+                    }
+                }
+            };
             Ok(RuleDef {
                 id: e.id.value,
                 key: e.key.value.clone(),
@@ -774,6 +801,7 @@ fn build_distribution_rules(
                     tolerance_percent: e.tolerance_percent.value as u32,
                     min_spacing: e.min_spacing,
                     max_distance: e.max_distance.value,
+                    scope,
                 },
             })
         })
@@ -2768,7 +2796,11 @@ pub fn validate(
     // with the plain-shape assembly further down.
     let mut rules: Vec<RuleDef> = Vec::new();
     rules.extend(build_placement_rules(&raw.placements, &tag_ids)?);
-    rules.extend(build_distribution_rules(&raw.distributions, &tag_ids)?);
+    rules.extend(build_distribution_rules(
+        &raw.distributions,
+        &tag_ids,
+        &raw.balance,
+    )?);
     rules.extend(build_coherence_rules(&raw.coherences, &tag_ids)?);
     let adjacency_rules = build_adjacency_rules(&raw.adjacencies, &tag_ids)?;
     check_no_symmetric_forbid_duplicates(&raw.adjacencies, &adjacency_rules)?;

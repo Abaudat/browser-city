@@ -555,6 +555,7 @@ fn five_rules(tags: [TagId; 6]) -> Vec<RuleDef> {
                 tolerance_percent: 50,
                 min_spacing: 3,
                 max_distance: 10,
+                scope: sim::rules::DistributionScope::Site,
             },
         },
         RuleDef {
@@ -731,6 +732,7 @@ proptest! {
                 tolerance_percent: 0,
                 min_spacing: spacing,
                 max_distance: spacing,
+                scope: sim::rules::DistributionScope::Site,
             },
         };
 
@@ -989,6 +991,7 @@ proptest! {
                 rule_id: 1,
                 subject: subject_cell,
                 other: Some(other_cell),
+                catchment: None,
             }]
         );
 
@@ -3209,15 +3212,14 @@ proptest! {
         let content = GenerationContent::committed();
         let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
             content.building_types.iter().map(|b| (b.id, b)).collect();
-        let site = cfg.site();
-        let extent = cfg.building_type_catchment_extent_cells;
+        let extent = cfg.catchment_extent_cells;
         let d = sim::generation::plan(seed, &cfg, &content).unwrap();
 
         let mut quadrant_of: std::collections::BTreeMap<u32, (i32, i32)> =
             std::collections::BTreeMap::new();
         for e in d.envelopes.envelopes() {
             let (fx, fy) = sim::generation::site::front_cell(e.footprint, e.front);
-            quadrant_of.insert(e.plot, sim::generation::building_types::catchment_of(fx, fy, site, extent));
+            quadrant_of.insert(e.plot, sim::rules::catchment_of(fx, fy, extent));
         }
 
         let mut dist_rows: Vec<sim::rules::DistributionRow> = content
@@ -3367,8 +3369,7 @@ fn the_no_eligible_land_exemption_fires_rarely_over_seeds_0_to_256() {
     let content = GenerationContent::committed();
     let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
-    let site = cfg.site();
-    let extent = cfg.building_type_catchment_extent_cells;
+    let extent = cfg.catchment_extent_cells;
 
     let mut dist_rows: Vec<sim::rules::DistributionRow> = content
         .rules
@@ -3392,10 +3393,7 @@ fn the_no_eligible_land_exemption_fires_rarely_over_seeds_0_to_256() {
             std::collections::BTreeMap::new();
         for e in d.envelopes.envelopes() {
             let (fx, fy) = sim::generation::site::front_cell(e.footprint, e.front);
-            quadrant_of.insert(
-                e.plot,
-                sim::generation::building_types::catchment_of(fx, fy, site, extent),
-            );
+            quadrant_of.insert(e.plot, sim::rules::catchment_of(fx, fy, extent));
         }
         let all_subject_tags: std::collections::BTreeSet<TagId> =
             dist_rows.iter().map(|r| r.subject).collect();
@@ -3517,8 +3515,7 @@ fn the_quadrant_floor_is_not_vacuous_for_every_multi_instance_row_over_seeds_0_t
     let content = GenerationContent::committed();
     let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
-    let site = cfg.site();
-    let extent = cfg.building_type_catchment_extent_cells;
+    let extent = cfg.catchment_extent_cells;
 
     // High-ratio rows resolve to about one instance across the whole
     // site (`the_three_singleton_ratios_resolve_to_about_one_across_
@@ -3552,10 +3549,7 @@ fn the_quadrant_floor_is_not_vacuous_for_every_multi_instance_row_over_seeds_0_t
             std::collections::BTreeMap::new();
         for e in d.envelopes.envelopes() {
             let (fx, fy) = sim::generation::site::front_cell(e.footprint, e.front);
-            quadrant_of.insert(
-                e.plot,
-                sim::generation::building_types::catchment_of(fx, fy, site, extent),
-            );
+            quadrant_of.insert(e.plot, sim::rules::catchment_of(fx, fy, extent));
         }
         let assigned_by_plot: std::collections::BTreeMap<u32, u32> = d
             .building_types
@@ -5019,6 +5013,7 @@ fn a_catchments_own_unmet_floor_is_placed_from_the_site_wide_remainder() {
             tolerance_percent: 20,
             min_spacing: 1,
             max_distance: 2000,
+            scope: sim::rules::DistributionScope::Site,
         },
     }];
     let content = GenerationContent {

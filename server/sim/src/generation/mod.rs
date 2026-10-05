@@ -534,7 +534,7 @@ pub struct GenerationConfig {
     /// row's own target is allocated over -- 256 at launch, so at the
     /// committed 512x512 site this *is* AC3's own quadrants; never a
     /// hardcoded 2x2 of the site (Derek's direction).
-    pub building_type_catchment_extent_cells: i32,
+    pub catchment_extent_cells: i32,
 }
 
 fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
@@ -755,10 +755,7 @@ impl GenerationConfig {
                 balance,
                 "generation.building_types.workplace_mean_count_tolerance_percent",
             ),
-            building_type_catchment_extent_cells: get(
-                balance,
-                "generation.building_types.catchment_extent_cells",
-            ) as i32,
+            catchment_extent_cells: get(balance, "generation.catchment_extent_cells") as i32,
         };
 
         if cfg.coarse_cell_size_cells <= 0
@@ -1396,12 +1393,7 @@ mod tests {
                 0,
                 100,
             ),
-            seed(
-                "generation.building_types.catchment_extent_cells",
-                256,
-                1,
-                100000,
-            ),
+            seed("generation.catchment_extent_cells", 256, 1, 100000),
         ]
     }
 

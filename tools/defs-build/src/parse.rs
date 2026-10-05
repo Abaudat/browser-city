@@ -376,6 +376,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         tolerance_percent: located(text, &d.tolerance_percent),
                         min_spacing: d.min_spacing,
                         max_distance: located(text, &d.max_distance),
+                        scope: d.scope.unwrap_or(RawDistributionScope::Site),
                     });
                 }
                 for coh in file.coherence {

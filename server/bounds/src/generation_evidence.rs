@@ -23,8 +23,8 @@
 use sim::generated::defs;
 use sim::generation::{
     Block, BuildingTypeMap, EnvelopeMap, EnvelopeOutcome, GenerationConfig, GenerationContent,
-    LandUse, PlotMap, Side, StreetClass, StreetNetwork, block_land_use, building_types,
-    land_use::LandUseMap, streets,
+    LandUse, PlotMap, Side, StreetClass, StreetNetwork, block_land_use, land_use::LandUseMap,
+    streets,
 };
 
 /// The three fixed seeds every evidence SVG renders -- committed once,
@@ -1030,7 +1030,7 @@ impl CatchmentFigures {
 }
 
 fn catchment_figures(
-    site: sim::generation::SiteBounds,
+    _site: sim::generation::SiteBounds,
     cfg: &GenerationConfig,
     content: &GenerationContent,
     by_id: &std::collections::BTreeMap<u32, &defs::BuildingTypeDef>,
@@ -1038,7 +1038,7 @@ fn catchment_figures(
     bt: &BuildingTypeMap,
     em: &EnvelopeMap,
 ) -> CatchmentFigures {
-    let extent = cfg.building_type_catchment_extent_cells.max(1);
+    let extent = cfg.catchment_extent_cells.max(1);
     let front_of_envelope: std::collections::BTreeMap<u32, (i32, i32)> = em
         .envelopes()
         .map(|e| {
@@ -1066,7 +1066,7 @@ fn catchment_figures(
         let Some(&(x, y)) = front_of_envelope.get(&a.plot) else {
             continue;
         };
-        let c = building_types::catchment_of(x, y, site, extent);
+        let c = sim::rules::catchment_of(x, y, extent);
         catchments.insert(c);
         let def = by_id[&a.building_type];
         for row in &dist_rows {
@@ -1112,7 +1112,7 @@ fn catchment_figures(
             let Some(&(x, y)) = front_of_envelope.get(&e.plot) else {
                 continue;
             };
-            let c = building_types::catchment_of(x, y, site, extent);
+            let c = sim::rules::catchment_of(x, y, extent);
             catchments.insert(c);
             *eligible.entry((row.id, c.0, c.1)).or_insert(0) += 1;
         }
@@ -1377,7 +1377,7 @@ pub fn building_types_svg(
 
     body.push_str(&catchment_map_wash(
         site,
-        cfg.building_type_catchment_extent_cells,
+        cfg.catchment_extent_cells,
         &figures,
     ));
 

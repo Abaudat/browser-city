@@ -914,6 +914,15 @@ pub enum RawCoherenceMode {
     Forbid,
 }
 
+/// `scope = "site" | "catchment"` on a `[[distribution]]` row (story
+/// 3.7); absent means `site`.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RawDistributionScope {
+    Site,
+    Catchment,
+}
+
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RawAdjacencyRelation {
@@ -955,6 +964,8 @@ pub struct RawDistributionRule {
     pub tolerance_percent: Spanned<i32>,
     pub min_spacing: u32,
     pub max_distance: Spanned<u32>,
+    #[serde(default)]
+    pub scope: Option<RawDistributionScope>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1253,6 +1264,7 @@ pub struct DistributionEntry {
     pub tolerance_percent: Located<i32>,
     pub min_spacing: u32,
     pub max_distance: Located<u32>,
+    pub scope: RawDistributionScope,
 }
 
 #[derive(Debug)]
@@ -1598,6 +1610,14 @@ pub struct NeighbourTermDef {
     pub present: bool,
 }
 
+/// `sim::rules::DistributionScope`, resolved: a catchment row carries the
+/// extent `generation.catchment_extent_cells` holds at build time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DistributionScopeDef {
+    Site,
+    Catchment { extent_cells: i32 },
+}
+
 /// The validated, resolved (tag key -> id) shape of each rule kind --
 /// mirrors `sim::rules::RuleKind` variant for variant, field for field
 /// (Crew's decision: the two are hand-kept in sync, exactly like
@@ -1619,6 +1639,7 @@ pub enum RuleKindDef {
         tolerance_percent: u32,
         min_spacing: u32,
         max_distance: u32,
+        scope: DistributionScopeDef,
     },
     Coherence {
         subject: u32,

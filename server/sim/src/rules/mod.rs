@@ -171,6 +171,43 @@ pub struct NeighbourTerm {
     pub present: bool,
 }
 
+/// A `Distribution` row's judging scope (story 3.7): the whole site, or
+/// each fixed-extent, world-absolute square ([`catchment_of`]) on its own.
+/// Data on the row -- `scope = "catchment"` in `defs/rules/*.toml`, with
+/// `extent_cells` copied from `generation.catchment_extent_cells` by
+/// `tools/defs-build` -- never a sixth kind and never a per-key branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DistributionScope {
+    /// One verdict over the whole site: ratio, spacing and coverage.
+    Site,
+    /// One verdict per catchment of `extent_cells` x `extent_cells`
+    /// world cells, anchored to world-absolute coordinates.
+    Catchment { extent_cells: i32 },
+}
+
+/// The catchment `(cx, cy)` containing world-absolute `(x, y)` --
+/// `div_euclid`, so every cell belongs to exactly one catchment and a
+/// grown site never re-tiles an old one. The one definition: the
+/// evaluator, the generator and the evidence renderer all call this.
+pub fn catchment_of(x: i32, y: i32, extent_cells: i32) -> (i32, i32) {
+    let extent = extent_cells.max(1);
+    (x.div_euclid(extent), y.div_euclid(extent))
+}
+
+/// A distribution row's ratio target over `basis` `per` cells: `(expected,
+/// lower, upper)`. The one formula -- [`evaluate`] judges a count against
+/// it and the generator's allocation reads its floor from it, so the two
+/// can never disagree about what a row owes.
+pub fn distribution_target(basis: u64, ratio: u32, tolerance_percent: u32) -> (u64, u64, u64) {
+    let expected = basis / (ratio.max(1) as u64);
+    let tolerance = (expected * tolerance_percent as u64).div_ceil(100);
+    (
+        expected,
+        expected.saturating_sub(tolerance),
+        expected + tolerance,
+    )
+}
+
 /// The closed set of five constraint kinds (FR111/AC2). Exhaustively
 /// matched in [`evaluate`] with no `_ =>` arm: adding a sixth variant is a
 /// compile error everywhere this type is matched, until every match is
@@ -205,8 +242,14 @@ pub enum RuleKind {
     /// so a cluster in one corner of an otherwise-empty city can satisfy
     /// `min_spacing` while leaving most of `per` uncovered.
     /// `max_distance` is always positive (`tools/defs-build` refuses
-    /// zero). Both measured over the whole site -- a distribution is a
-    /// global density, not a per-container one. Zero `per` cells means
+    /// zero). Measured over the whole site under [`DistributionScope::
+    /// Site`], or per catchment under [`DistributionScope::Catchment`]:
+    /// ratio and coverage judged inside each catchment from that
+    /// catchment's own cells only (coverage from a neighbouring catchment
+    /// does not count), spacing still pairwise across a catchment line,
+    /// each violation reported in the later catchment's verdict
+    /// (`(cx, cy)` order) so ground added later never moves an earlier
+    /// catchment's verdict. Zero `per` cells means
     /// the ratio check is vacuously satisfied (never a division by
     /// zero); zero `subject` cells means every `per` cell is
     /// uncovered by construction (nothing to cover it).
@@ -217,6 +260,7 @@ pub enum RuleKind {
         tolerance_percent: u32,
         min_spacing: u32,
         max_distance: u32,
+        scope: DistributionScope,
     },
     /// Whether `subject` may (`Allow`) or may never (`Forbid`) appear
     /// within a real area that also contains `within`.
@@ -289,6 +333,7 @@ pub struct DistributionRow {
     pub tolerance_percent: u32,
     pub min_spacing: u32,
     pub max_distance: u32,
+    pub scope: DistributionScope,
 }
 
 /// A `Coherence` row's own fields, read-only (PR #317 cycle 3) -- the
@@ -320,6 +365,7 @@ impl RuleDef {
                 tolerance_percent,
                 min_spacing,
                 max_distance,
+                scope,
             } => Some(DistributionRow {
                 id: self.id,
                 key: self.key,
@@ -329,6 +375,7 @@ impl RuleDef {
                 tolerance_percent,
                 min_spacing,
                 max_distance,
+                scope,
             }),
             RuleKind::Placement { .. }
             | RuleKind::Coherence { .. }
@@ -377,6 +424,11 @@ pub struct Violation {
     pub rule_id: u32,
     pub subject: Cell,
     pub other: Option<Cell>,
+    /// The catchment a [`DistributionScope::Catchment`] row judged this
+    /// violation in; `None` for every other row, so their output is
+    /// exactly what it was before scoping existed. Last field: it sorts
+    /// after the three above, never reordering an unscoped row's output.
+    pub catchment: Option<(i32, i32)>,
 }
 
 /// A grid bucket key for a spatial-binning check: `radius` cells per
@@ -406,32 +458,50 @@ fn distribution_spacing_violations(
     rule_id: u32,
     subjects: &[Cell],
     min_spacing: u32,
+    scope: DistributionScope,
 ) -> Vec<Violation> {
     if min_spacing == 0 {
         return Vec::new();
     }
+    // Site scope blames the later cell of a too-close pair (one
+    // violation per such cell, once deduplicated). Catchment scope blames
+    // whichever cell sits in the later catchment, so ground added in a
+    // later catchment never moves an earlier catchment's verdict.
+    let blame = |cell: Cell, other: Cell| -> Violation {
+        match scope {
+            DistributionScope::Site => Violation {
+                rule_id,
+                subject: cell,
+                other: None,
+                catchment: None,
+            },
+            DistributionScope::Catchment { extent_cells } => {
+                let cc = (catchment_of(cell.x, cell.y, extent_cells), cell);
+                let oc = (catchment_of(other.x, other.y, extent_cells), other);
+                let (c, blamed) = cc.max(oc);
+                Violation {
+                    rule_id,
+                    subject: blamed,
+                    other: None,
+                    catchment: Some(c),
+                }
+            }
+        }
+    };
     let mut violations = Vec::new();
     let mut buckets: BTreeMap<(i8, i32, i32), Vec<Cell>> = BTreeMap::new();
     for &cell in subjects {
         let (f, bx, by) = bucket_of(cell, min_spacing);
-        let mut too_close = false;
         for dx in -1..=1 {
             for dy in -1..=1 {
                 if let Some(placed) = buckets.get(&(f, bx + dx, by + dy)) {
                     for &other in placed {
                         if chebyshev(cell, other) < min_spacing as i64 {
-                            too_close = true;
+                            violations.push(blame(cell, other));
                         }
                     }
                 }
             }
-        }
-        if too_close {
-            violations.push(Violation {
-                rule_id,
-                subject: cell,
-                other: None,
-            });
         }
         buckets.entry((f, bx, by)).or_default().push(cell);
     }
@@ -463,6 +533,7 @@ fn distribution_coverage_violations(
                 rule_id,
                 subject: cell,
                 other: None,
+                catchment: None,
             })
             .collect();
     }
@@ -492,8 +563,48 @@ fn distribution_coverage_violations(
                 rule_id,
                 subject: p,
                 other: None,
+                catchment: None,
             });
         }
+    }
+    violations
+}
+
+/// The ratio and coverage halves of one Distribution verdict over
+/// `subjects` and `per_cells` -- the whole site, or one catchment's own
+/// cells (`catchment` names it on every violation reported).
+fn distribution_judge(
+    rule_id: u32,
+    subjects: &[Cell],
+    per_cells: &[Cell],
+    (ratio, tolerance_percent, max_distance): (u32, u32, u32),
+    catchment: Option<(i32, i32)>,
+) -> Vec<Violation> {
+    let mut violations = Vec::new();
+    let basis = per_cells.len() as u64;
+    if basis > 0 {
+        let actual = subjects.len() as u64;
+        let (_, lower, upper) = distribution_target(basis, ratio, tolerance_percent);
+        if actual < lower || actual > upper {
+            let anchor = subjects.first().copied().or(per_cells.first().copied());
+            if let Some(anchor) = anchor {
+                violations.push(Violation {
+                    rule_id,
+                    subject: anchor,
+                    other: None,
+                    catchment,
+                });
+            }
+        }
+    }
+    violations.extend(distribution_coverage_violations(
+        rule_id,
+        subjects,
+        per_cells,
+        max_distance,
+    ));
+    for v in &mut violations {
+        v.catchment = catchment;
     }
     violations
 }
@@ -534,6 +645,7 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                             rule_id: rule.id,
                             subject: cell,
                             other: None,
+                            catchment: None,
                         });
                     }
                 }
@@ -545,24 +657,44 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                 tolerance_percent,
                 min_spacing,
                 max_distance,
+                scope,
             } => {
                 let subjects = site.subjects_in_area(None, subject);
                 let per_cells = site.subjects_in_area(None, per);
-                let basis = per_cells.len() as u64;
-                if basis > 0 {
-                    let actual = subjects.len() as u64;
-                    let expected = basis / (ratio.max(1) as u64);
-                    let tolerance = (expected * tolerance_percent as u64).div_ceil(100);
-                    let lower = expected.saturating_sub(tolerance);
-                    let upper = expected + tolerance;
-                    if actual < lower || actual > upper {
-                        let anchor = subjects.first().copied().or(per_cells.first().copied());
-                        if let Some(anchor) = anchor {
-                            violations.push(Violation {
-                                rule_id: rule.id,
-                                subject: anchor,
-                                other: None,
-                            });
+                match scope {
+                    DistributionScope::Site => {
+                        violations.extend(distribution_judge(
+                            rule.id,
+                            subjects,
+                            per_cells,
+                            (ratio, tolerance_percent, max_distance),
+                            None,
+                        ));
+                    }
+                    DistributionScope::Catchment { extent_cells } => {
+                        let group = |cells: &[Cell]| {
+                            let mut by: BTreeMap<(i32, i32), Vec<Cell>> = BTreeMap::new();
+                            for &c in cells {
+                                by.entry(catchment_of(c.x, c.y, extent_cells))
+                                    .or_default()
+                                    .push(c);
+                            }
+                            by
+                        };
+                        let subjects_by = group(subjects);
+                        let per_by = group(per_cells);
+                        for (&catchment, per_in) in &per_by {
+                            let subjects_in = subjects_by
+                                .get(&catchment)
+                                .map(Vec::as_slice)
+                                .unwrap_or(&[]);
+                            violations.extend(distribution_judge(
+                                rule.id,
+                                subjects_in,
+                                per_in,
+                                (ratio, tolerance_percent, max_distance),
+                                Some(catchment),
+                            ));
                         }
                     }
                 }
@@ -570,12 +702,7 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                     rule.id,
                     subjects,
                     min_spacing,
-                ));
-                violations.extend(distribution_coverage_violations(
-                    rule.id,
-                    subjects,
-                    per_cells,
-                    max_distance,
+                    scope,
                 ));
             }
             RuleKind::Coherence {
@@ -597,6 +724,7 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                             rule_id: rule.id,
                             subject: cell,
                             other: None,
+                            catchment: None,
                         });
                     }
                 }
@@ -624,6 +752,7 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                                     rule_id: rule.id,
                                     subject: cell,
                                     other: None,
+                                    catchment: None,
                                 });
                             }
                         }
@@ -641,6 +770,7 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                                         rule_id: rule.id,
                                         subject: cell,
                                         other,
+                                        catchment: None,
                                     });
                                 }
                             }
@@ -661,6 +791,7 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                             rule_id: rule.id,
                             subject: cell,
                             other: None,
+                            catchment: None,
                         });
                         continue;
                     }
@@ -671,6 +802,7 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                                 rule_id: rule.id,
                                 subject: cell,
                                 other: None,
+                                catchment: None,
                             });
                         }
                     }
@@ -737,7 +869,8 @@ mod tests {
             vec![Violation {
                 rule_id: 1,
                 subject: c(0, 0, 3),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -787,7 +920,8 @@ mod tests {
             vec![Violation {
                 rule_id: 2,
                 subject: c(1, 1, 5),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -805,6 +939,7 @@ mod tests {
                 tolerance_percent: 0,
                 min_spacing: 3,
                 max_distance: 50,
+                scope: DistributionScope::Site,
             },
         }
     }
@@ -844,6 +979,7 @@ mod tests {
                 tolerance_percent: 0,
                 min_spacing: 0,
                 max_distance: 50,
+                scope: DistributionScope::Site,
             },
         };
         let violations = evaluate(RuleSet::for_test(&[rule]), &site);
@@ -874,6 +1010,7 @@ mod tests {
                 tolerance_percent: 50,
                 min_spacing: 0,
                 max_distance: 200,
+                scope: DistributionScope::Site,
             },
         };
         let at_tolerance = SiteBuilder::new()
@@ -915,6 +1052,7 @@ mod tests {
                 tolerance_percent: 100,
                 min_spacing: 5,
                 max_distance: 50,
+                scope: DistributionScope::Site,
             },
         };
         let site = SiteBuilder::new()
@@ -927,7 +1065,8 @@ mod tests {
             vec![Violation {
                 rule_id: 5,
                 subject: c(1, 0, 0),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -944,6 +1083,7 @@ mod tests {
                 tolerance_percent: 0,
                 min_spacing: 4,
                 max_distance: 50,
+                scope: DistributionScope::Site,
             },
         };
         let mut builder = SiteBuilder::new();
@@ -974,6 +1114,7 @@ mod tests {
                 tolerance_percent: 100,
                 min_spacing: 3,
                 max_distance: 5,
+                scope: DistributionScope::Site,
             },
         };
         let site = SiteBuilder::new()
@@ -989,7 +1130,8 @@ mod tests {
             vec![Violation {
                 rule_id: 14,
                 subject: c(100, 0, 0),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -1006,6 +1148,7 @@ mod tests {
                 tolerance_percent: 100,
                 min_spacing: 0,
                 max_distance: 5,
+                scope: DistributionScope::Site,
             },
         };
         let at_bound = SiteBuilder::new()
@@ -1023,7 +1166,8 @@ mod tests {
             vec![Violation {
                 rule_id: 15,
                 subject: c(6, 0, 0),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -1040,6 +1184,7 @@ mod tests {
                 tolerance_percent: 100,
                 min_spacing: 0,
                 max_distance: 5,
+                scope: DistributionScope::Site,
             },
         };
         let site = SiteBuilder::new().cell(c(0, 0, 0), &[SEATING]).build();
@@ -1048,7 +1193,8 @@ mod tests {
             vec![Violation {
                 rule_id: 16,
                 subject: c(0, 0, 0),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -1068,6 +1214,7 @@ mod tests {
                 tolerance_percent: 1000,
                 min_spacing: 3,
                 max_distance: 20,
+                scope: DistributionScope::Site,
             },
         };
         let mut builder = SiteBuilder::new();
@@ -1085,7 +1232,8 @@ mod tests {
             vec![Violation {
                 rule_id: 17,
                 subject: c(490, 0, 0),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -1132,7 +1280,8 @@ mod tests {
             vec![Violation {
                 rule_id: 7,
                 subject: c(0, 0, 0),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -1222,7 +1371,8 @@ mod tests {
             vec![Violation {
                 rule_id: 9,
                 subject: c(0, 1, 0),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -1304,6 +1454,7 @@ mod tests {
                 rule_id: 10,
                 subject: c(0, 1, 0),
                 other: Some(c(0, 0, 0)),
+                catchment: None,
             }]
         );
     }
@@ -1356,11 +1507,13 @@ mod tests {
                     rule_id: 10,
                     subject: c(0, 0, 0),
                     other: Some(c(0, -1, 0)),
+                    catchment: None,
                 },
                 Violation {
                     rule_id: 10,
                     subject: c(0, 0, 0),
                     other: Some(c(1, 0, 0)),
+                    catchment: None,
                 },
             ]
         );
@@ -1513,7 +1666,8 @@ mod tests {
             vec![Violation {
                 rule_id: 12,
                 subject: c(0, 0, 0),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -1575,7 +1729,8 @@ mod tests {
             vec![Violation {
                 rule_id: 18,
                 subject: c(0, 0, 0),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -1607,7 +1762,8 @@ mod tests {
             vec![Violation {
                 rule_id: 19,
                 subject: c(0, 0, 0),
-                other: None
+                other: None,
+                catchment: None
             }]
         );
     }
@@ -1647,22 +1803,26 @@ mod tests {
                 Violation {
                     rule_id: 1,
                     subject: c(1, 0, 3),
-                    other: None
+                    other: None,
+                    catchment: None
                 },
                 Violation {
                     rule_id: 1,
                     subject: c(5, 0, 3),
-                    other: None
+                    other: None,
+                    catchment: None
                 },
                 Violation {
                     rule_id: 2,
                     subject: c(1, 0, 3),
-                    other: None
+                    other: None,
+                    catchment: None
                 },
                 Violation {
                     rule_id: 2,
                     subject: c(5, 0, 3),
-                    other: None
+                    other: None,
+                    catchment: None
                 },
             ]
         );
