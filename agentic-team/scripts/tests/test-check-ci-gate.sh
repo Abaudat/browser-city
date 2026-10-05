@@ -171,19 +171,21 @@ check "exits non-zero" 1 bash -c "exit $CODE"
 
 echo
 echo "red: the e2e shard matrix (one aggregate result) failed or was cancelled"
-for R in failure cancelled; do
+matrix_red() {
+  local R="$1" WF OUT CODE
   WF="$(fresh_workflow)"
-  MATRIX_RED='{
+  OUT="$(run_check '{
   "changes": {"result": "success"},
   "check": {"result": "success"},
   "client-check": {"result": "success"},
   "client-build": {"result": "success"},
   "e2e": {"result": "'"$R"'"}
-}'
-  OUT="$(run_check "$MATRIX_RED" "$ALL_CHANGED" "$WF" 2>&1)"; CODE=$?
-  check "e2e matrix $R: exits non-zero" 1 bash -c "exit $CODE"
-  check "e2e matrix $R: names the job" 0 bash -c     "printf '%s' \"\$1\" | grep -qF \"'e2e' did not succeed (result: '$R')\"" _ "$OUT"
-done
+}' "$ALL_CHANGED" "$WF" 2>&1)"; CODE=$?
+  check "$2" 1 bash -c "exit $CODE"
+  check "$3" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"'e2e' did not succeed (result: '$R')\"" _ "$OUT"
+}
+matrix_red failure "e2e matrix failure: exits non-zero" "e2e matrix failure: names the job"
+matrix_red cancelled "e2e matrix cancelled: exits non-zero" "e2e matrix cancelled: names the job"
 
 echo
 echo "red: needs-json is missing an entry for a job ci.yml's 'ci:' needs"
