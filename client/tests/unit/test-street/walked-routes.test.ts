@@ -33,6 +33,7 @@ describe("every walked route", () => {
         "bin-reach",
         "railing-foot",
         "flight-walk",
+        "footbridge-walk",
       ]),
     );
   });

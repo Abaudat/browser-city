@@ -17,6 +17,10 @@ object 16 platform_stair_flight
 object 17 platform_stair_railing
 object 18 registry_post
 object 19 stairwell_well
+object 20 bridge_stairs_street
+object 21 bridge_stairs_deck
+object 22 bridge_stairs_abutment
+object 23 bridge_stairs_tread
 item 1 bottle
 item 2 recycled_glass
 item 3 coin_1

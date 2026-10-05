@@ -18,6 +18,7 @@ import {
   committedDefs,
   streetMovementConfig,
   streetObjectSources,
+  streetStandable,
 } from "../test-street/street-world";
 
 const SRC = fileURLToPath(new URL("../../../src/", import.meta.url));
@@ -56,6 +57,7 @@ describe("the flight offset is draw-only (FR182)", () => {
       streetObjectSources(),
       storey,
       TILE,
+      streetStandable,
     );
     const index = new FlightIndex(flights, streetMovementConfig());
     fc.assert(
@@ -83,7 +85,14 @@ describe("the flight offset is draw-only (FR182)", () => {
     const defs = committedDefs();
     const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
     const index = new FlightIndex(
-      buildFlights(STREET_TRANSITIONS, streetPlacedRows(), streetObjectSources(), storey, TILE),
+      buildFlights(
+        STREET_TRANSITIONS,
+        streetPlacedRows(),
+        streetObjectSources(),
+        storey,
+        TILE,
+        streetStandable,
+      ),
       streetMovementConfig(),
     );
     fc.assert(

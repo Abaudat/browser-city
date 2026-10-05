@@ -41,7 +41,12 @@ fn real_object_keys() -> Vec<String> {
     let mut text_files = fsio::read_text(&root, &fsio::list_defs_sources(&root).unwrap()).unwrap();
     text_files.sort_by(|a, b| a.0.cmp(&b.0));
     let raw = parse::parse_all(&text_files).unwrap();
-    raw.objects.iter().map(|o| o.key.value.clone()).collect()
+    // An undrawn flight has no card: it is walk data, with nothing to show.
+    raw.objects
+        .iter()
+        .filter(|o| o.sprite.is_some())
+        .map(|o| o.key.value.clone())
+        .collect()
 }
 
 #[test]

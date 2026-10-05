@@ -1,0 +1,10 @@
+[[object]]
+id = 1
+key = "treads"
+name = "Treads"
+layer = "furniture"
+width = 1
+height = 1
+collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
+flight = { drop_px = 8, from_px = 5, to_px = 12 }
+tags = ["fixture"]

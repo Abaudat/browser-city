@@ -41,6 +41,7 @@ import {
   streetBollardRoute,
   streetBridgeLapRoute,
   streetColliderSources,
+  streetFootbridgeRoute,
   streetNearRailingPressRoute,
   streetPlacedRows,
   streetSubwayApproachRoute,
@@ -60,6 +61,7 @@ import { loadMovementConfig } from "../../../src/world/movement-config";
 import type { ObjectSource } from "../../../src/world/object-defs";
 import { objectDefsById, windowDefIds } from "../../../src/world/object-defs";
 import { OwnershipIndex } from "../../../src/world/ownership";
+import { isBodyClear, isCellStandable } from "../../../src/world/standable";
 import {
   forwardOpenNeighbor,
   pairTransitions,
@@ -115,6 +117,14 @@ export function streetWorldIndex(): WorldIndex {
   return world;
 }
 
+let cachedStreetWorld: WorldIndex | undefined;
+/** Whether a body can stand in a whole cell of the street: the one predicate
+ * `buildFlights` is given for the real street. */
+export function streetStandable(x: number, y: number, floor: number): boolean {
+  cachedStreetWorld ??= streetWorldIndex();
+  return isCellStandable(cachedStreetWorld, streetMovementConfig(), x, y, floor);
+}
+
 /** The street's own `TransitionIndex`. Pair symmetry (both halves: real
  * mirrored pairing and standability) is checked unconditionally by the
  * constructor itself (story 15.2, cycle 2, Quentin's finding 5) -- this
@@ -128,6 +138,10 @@ export function streetTransitionIndex(): TransitionIndex {
   const config = streetMovementConfig();
   return new TransitionIndex(STREET_TRANSITIONS, {
     isStandable: (x, y, floor) => isCellStandable(world, config, x, y, floor),
+    entryBand: {
+      subcellsPerCell: config.subcellsPerCell,
+      isBodyClear: (floor, cx, feet) => isBodyClear(world, config, floor, cx, feet),
+    },
   });
 }
 
@@ -274,53 +288,6 @@ export function streetWalkInputs(): StreetWalkInputs {
     subwayTreadRowY: subwayTreadRowY(),
     nearRailingRestY: nearRailingRestY(),
   };
-}
-
-/** Whether the real player body, with its horizontal centre at `cx` and its
- * feet at `feet` (sub-cell units), overlaps no collider entry in the real
- * grid (half-open, so touching a face is not overlapping). An overlap
- * test, not a probe step: the resolver never blocks a body that already
- * overlaps a collider, so a probe reads a cell inside a wall as
- * standable. */
-export function isBodyClear(
-  world: WorldIndex,
-  config: MovementConfig,
-  floor: number,
-  cx: number,
-  feet: number,
-): boolean {
-  const s = config.subcellsPerCell;
-  const halfWidth = config.bodyWidthSubcells / 2;
-  const body = {
-    x0: cx - halfWidth,
-    x1: cx + halfWidth,
-    y0: feet - config.bodyHeightSubcells,
-    y1: feet,
-  };
-  for (let cy = Math.floor(body.y0 / s); cy <= Math.floor((body.y1 - 1) / s); cy++) {
-    for (let cellX = Math.floor(body.x0 / s); cellX <= Math.floor((body.x1 - 1) / s); cellX++) {
-      for (const { rect } of world.entriesInCell(floor, cellX, cy)) {
-        if (rect.x0 < body.x1 && body.x0 < rect.x1 && rect.y0 < body.y1 && body.y0 < rect.y1) {
-          return false;
-        }
-      }
-    }
-  }
-  return true;
-}
-
-/** Whether a whole cell can be stood on, on its own floor: the real
- * player body, centred in the cell the way a floor transition lands it,
- * overlaps no collider entry in the real grid. */
-export function isCellStandable(
-  world: WorldIndex,
-  config: MovementConfig,
-  x: number,
-  y: number,
-  floor: number,
-): boolean {
-  const s = config.subcellsPerCell;
-  return isBodyClear(world, config, floor, (x + 0.5) * s, (y + 0.5) * s);
 }
 
 /** Whether a body can stand in `cell` pressed flush against its edge shared
@@ -651,5 +618,6 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     { name: "west-open-spot", segments: westOpenSpotRoute(), start: fresh },
     { name: "railing-foot", segments: railingFootRoute(), start: fresh },
     { name: "flight-walk", segments: flightWalkRoute(), start: fresh },
+    { name: "footbridge-walk", segments: streetFootbridgeRoute(inputs), start: fresh },
   ];
 }

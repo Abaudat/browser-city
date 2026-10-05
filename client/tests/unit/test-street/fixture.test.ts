@@ -29,14 +29,14 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
   it("has exactly the committed number of defId-placed rows, one per def-owned cell", () => {
     // Every `defId` row in this fixture, individually: the two shopfront
     // windows, the counter, the bin, the lamppost, the four parapet cells,
-    // the four deck cells, the two foot stairs, the street stairwell's
+    // the four deck cells, the footbridge's two (undrawn) flights, two tread rows and three abutment rows, the street stairwell's
     // four rows (top railing, treads, well, bottom railing), the platform's two
     // (flight, railing) and the shops'
     // wall runs -- 14 `wall_face` cells (north and south runs) and 12
     // `wall_segment` cells (west, east and party runs). One-cell defs are
     // placed once per cell (`sprite` never repeats), so this counts
     // *placed rows*, not distinct props.
-    expect(defRows.length).toBe(47);
+    expect(defRows.length).toBe(52);
   });
 
   it("names only real, currently-declared defs/objects keys", () => {
@@ -51,7 +51,10 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
     );
     expect([...keys].sort()).toEqual([
       "bridge_deck",
-      "foot_stairs",
+      "bridge_stairs_abutment",
+      "bridge_stairs_deck",
+      "bridge_stairs_street",
+      "bridge_stairs_tread",
       "lamppost",
       "platform_stair_flight",
       "platform_stair_railing",

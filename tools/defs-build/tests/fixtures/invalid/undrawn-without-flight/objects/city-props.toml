@@ -1,0 +1,8 @@
+[[object]]
+id = 1
+key = "ghost"
+name = "Ghost"
+layer = "ground_objects"
+width = 1
+height = 1
+tags = ["fixture"]
