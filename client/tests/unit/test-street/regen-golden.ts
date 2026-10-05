@@ -31,6 +31,7 @@ import {
   lamppostRestY,
   streetObjectSources,
   streetOwnershipIndex,
+  streetThresholdDefIds,
   streetWindowDefIds,
 } from "./street-world";
 
@@ -51,6 +52,7 @@ const props = () =>
     rankOf,
     ownership,
     windowDefIds: streetWindowDefIds(),
+    thresholdDefIds: streetThresholdDefIds(),
     objectDefs: streetObjectSources(),
   });
 

@@ -91,6 +91,15 @@ declare global {
        * street actually resolved a texture from -- `AtlasPageLoader.
        * boundPageCount()` at mount time. */
       distinctBoundAtlasPages?: number;
+      /** Story 2.14: each mounted doorway sprite (a threshold and its
+       * wall-top band) -- its resolved texture size and how far above its
+       * sort anchor it is drawn. */
+      doorways?: readonly {
+        readonly stableId: string;
+        readonly textureWidth: number;
+        readonly textureHeight: number;
+        readonly liftPx: number;
+      }[];
       /** Story 2.7 (NFR12): every distinct `TextureSource` reachable from
        * the mounted display list, *unfiltered* -- see
        * `recordAllBoundTextureSourcesForE2e`. */
@@ -323,6 +332,16 @@ export function recordDistinctBoundAtlasPagesForE2e(count: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.distinctBoundAtlasPages = count;
+  window.__bc = bucket;
+}
+
+/** Story 2.14: the mounted doorway sprites, read once at mount. */
+export function recordDoorwaysForE2e(
+  doorways: NonNullable<NonNullable<typeof window.__bc>["doorways"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.doorways = doorways;
   window.__bc = bucket;
 }
 

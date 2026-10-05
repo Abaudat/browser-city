@@ -39,6 +39,8 @@ png = "=0.18.1"
 # proptests.
 [dev-dependencies]
 proptest = "=1.11.0"
+# Reads the emitted `defs.json` back in the real-defs integration tests.
+serde_json = "1"
 
 # Story 2.7 (Tim's direction, cycle 2): the `defs` CI job's own unit/
 # fixture run decodes ~500 real vendor-sheet PNGs in a debug build --

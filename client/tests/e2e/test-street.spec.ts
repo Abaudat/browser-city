@@ -96,6 +96,7 @@ import {
   type StreetWalkSegment,
   streetBollardRoute,
   streetWalkRoute,
+  THRESHOLD_ARCH_SLATE_DEF_ID,
   TRASH_BIN_DEF_ID,
   WINDOW_DEF_ID,
 } from "../../src/test-street/fixture";
@@ -105,6 +106,7 @@ import {
   streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
+  streetThresholdDefIds,
   streetWalkInputs,
   streetWindowDefIds,
 } from "../unit/test-street/street-world";
@@ -340,6 +342,7 @@ function expectedOrderFor(x: number, y: number, floor: number): string[] {
     rankOf,
     ownership,
     windowDefIds: streetWindowDefIds(),
+    thresholdDefIds: streetThresholdDefIds(),
     objectDefs: streetObjectSources(),
   });
   const player = buildCharacterDrawable(rankOf("characters"), x, y, floor);
@@ -677,8 +680,28 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   //
   // Story 15.3: -2, the stairwell's raw sheet (both flights) and the raw
   // wall sheet (the retraction stub) now draw through the atlas.
+  //
+  // Story 2.14: -1, the interior floor fill now draws from the atlas
+  // (`floor_pale_stone`) instead of its own raw sheet.
   const allBoundTextureSources = await page.evaluate(() => window.__bc?.allBoundTextureSources);
-  expect(allBoundTextureSources).toBe(18);
+  expect(allBoundTextureSources).toBe(17);
+
+  // Story 2.14: each shop door really draws -- a threshold with its full
+  // 16x32 art and a wall-top band with a texture, lifted above its anchor
+  // (a negative screen offset) by the threshold's own sprite height.
+  const doorways = await page.evaluate(() => window.__bc?.doorways);
+  const thresholdPx = committedDefs().objects.find(
+    (o) => o.id === THRESHOLD_ARCH_SLATE_DEF_ID,
+  )?.sprite;
+  expect(doorways, "the scene recorded no doorway sprites").toHaveLength(4);
+  for (const doorway of doorways ?? []) {
+    expect(doorway.textureWidth).toBeGreaterThan(0);
+    expect(doorway.textureHeight).toBeGreaterThan(0);
+  }
+  expect(
+    doorways?.filter((d) => d.textureHeight === thresholdPx?.h && d.liftPx === 0),
+  ).toHaveLength(2);
+  expect(doorways?.filter((d) => d.liftPx > 0)).toHaveLength(2);
 
   // FR120, from inside: this building's own near-side walls are gone, and
   // the neighbour's are not -- keyed on the enclosure id, never proximity.
@@ -701,6 +724,7 @@ test("one walk down the test street: collision, depth order, retraction, floors 
     rankOf,
     ownership,
     windowDefIds: streetWindowDefIds(),
+    thresholdDefIds: streetThresholdDefIds(),
     objectDefs: streetObjectSources(),
   })
     .filter((d) => d.rank < FIRST_POOL_RANK)

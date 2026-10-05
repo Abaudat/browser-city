@@ -1,7 +1,4 @@
-# Real objects for the outdoor ground-level roles (`wall`/`fixture`
-# already covered by `defs/objects/city-props.toml`). `floor`/`threshold`
-# carry no real object yet -- story 2.14 (issue #300) gives the atlas
-# packer a path for the sheets they need.
+# Outdoor ground roles: grass, pavement, road.
 
 [[object]]
 id = 9

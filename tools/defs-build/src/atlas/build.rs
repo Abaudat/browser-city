@@ -29,24 +29,29 @@ pub struct AtlasBuildOutput {
     pub atlas_by_character_part: BTreeMap<(PartKind, String), AtlasRect>,
 }
 
-/// NFR12's scene-side half (story 2.7's three-term rule, Tim's direction):
-/// a scene is the shared group ([`crate::model::ATLAS_SHARED_GROUP`]) plus
-/// at most one themed group -- a player is never on the street and inside
-/// a themed interior at once -- plus the fixed
-/// [`crate::model::CHARACTER_COMPOSITE_PAGES`] every scene with a crowd on
-/// it binds. Character-part groups
+/// NFR12's scene-side half: the pure arithmetic behind
+/// [`check_max_bound_pages`]. A scene is the shared group
+/// ([`crate::model::ATLAS_SHARED_GROUP`], street kit and interior shell
+/// alike) plus at most one themed group plus the fixed
+/// [`crate::model::CHARACTER_COMPOSITE_PAGES`]. Character-part groups
 /// ([`crate::model::CHARACTER_GROUP_PREFIX`]) are CPU-only compositing
 /// sources, never bound to the GPU, so they are excluded from both the
-/// shared and the worst-other-group terms -- only the flat
-/// `CHARACTER_COMPOSITE_PAGES` constant stands in for them. Fails naming
-/// all three terms and the total when that sum exceeds
-/// [`crate::model::ATLAS_MAX_BOUND_PAGES`].
-fn check_max_bound_pages(pages: &[PageMeta]) -> Result<(), String> {
+/// shared and the worst-other terms.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScenePageBudget {
+    pub shared: usize,
+    /// The largest non-shared, non-character group (`""`, 0 when none).
+    pub worst_other: (String, usize),
+    pub character: usize,
+    pub total: usize,
+}
+
+pub fn scene_page_budget(pages: &[PageMeta]) -> ScenePageBudget {
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
     for page in pages {
         *counts.entry(page.group.as_str()).or_insert(0) += 1;
     }
-    let shared_count = counts
+    let shared = counts
         .get(crate::model::ATLAS_SHARED_GROUP)
         .copied()
         .unwrap_or(0);
@@ -56,18 +61,32 @@ fn check_max_bound_pages(pages: &[PageMeta]) -> Result<(), String> {
             **g != crate::model::ATLAS_SHARED_GROUP
                 && !g.starts_with(crate::model::CHARACTER_GROUP_PREFIX)
         })
-        .max_by_key(|(_, count)| **count);
+        .max_by_key(|(_, count)| **count)
+        .map(|(g, c)| (g.to_string(), *c))
+        .unwrap_or_default();
+    let character = crate::model::CHARACTER_COMPOSITE_PAGES as usize;
+    let total = shared + worst_other.1 + character;
+    ScenePageBudget {
+        shared,
+        worst_other,
+        character,
+        total,
+    }
+}
 
-    let (other_group, other_count) = match worst_other {
-        Some((g, c)) => (*g, *c),
-        None => ("", 0),
-    };
-    let character_pages = crate::model::CHARACTER_COMPOSITE_PAGES as usize;
-    let total = shared_count + other_count + character_pages;
-    if total > crate::model::ATLAS_MAX_BOUND_PAGES {
+/// Fails naming all three terms and the total when [`scene_page_budget`]'s
+/// total exceeds [`crate::model::ATLAS_MAX_BOUND_PAGES`].
+fn check_max_bound_pages(pages: &[PageMeta]) -> Result<(), String> {
+    let b = scene_page_budget(pages);
+    if b.total > crate::model::ATLAS_MAX_BOUND_PAGES {
         return Err(format!(
-            "a scene binding '{}' ({shared_count} page(s)), '{other_group}' ({other_count} page(s)) and {character_pages} character composite page(s) (CHARACTER_COMPOSITE_PAGES) would bind {total} pages, more than ATLAS_MAX_BOUND_PAGES ({})",
+            "a scene binding '{}' ({} page(s)), '{}' ({} page(s)) and {} character composite page(s) (CHARACTER_COMPOSITE_PAGES) would bind {} pages, more than ATLAS_MAX_BOUND_PAGES ({})",
             crate::model::ATLAS_SHARED_GROUP,
+            b.shared,
+            b.worst_other.0,
+            b.worst_other.1,
+            b.character,
+            b.total,
             crate::model::ATLAS_MAX_BOUND_PAGES
         ));
     }
@@ -551,8 +570,14 @@ mod tests {
         bytes.insert(CITY_PROPS.to_string(), tiny_png(16, 16, [1, 2, 3, 255]));
         bytes.insert(CAMPING.to_string(), tiny_png(16, 16, [4, 5, 6, 255]));
         let street: BTreeMap<String, String> = [
-            ("city_props".to_string(), "street".to_string()),
-            ("camping".to_string(), "street".to_string()),
+            (
+                "city_props".to_string(),
+                crate::model::ATLAS_SHARED_GROUP.to_string(),
+            ),
+            (
+                "camping".to_string(),
+                crate::model::ATLAS_SHARED_GROUP.to_string(),
+            ),
         ]
         .into_iter()
         .collect();
@@ -567,7 +592,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out.pages.len(), 1, "merged themes share one page group");
-        assert_eq!(out.pages[0].group, "street");
+        assert_eq!(out.pages[0].group, crate::model::ATLAS_SHARED_GROUP);
         let r1 = out.atlas_by_object_id[&1];
         let r2 = out.atlas_by_object_id[&2];
         assert_eq!(r1.page, r2.page);
@@ -722,5 +747,37 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The budget formula beyond what the caps can reach: `pack_all` never
+    /// lets a group exceed `ATLAS_MAX_PAGES_PER_GROUP`, so a real build
+    /// cannot get here (the const assertion in `model.rs` guards that); this
+    /// hand-built page list pins the arithmetic itself -- every term
+    /// reported, 8 passes, 9 fails naming the terms and the total.
+    #[test]
+    fn scene_page_budget_reports_every_term_and_the_bound_is_exact() {
+        let page = |g: &str| PageMeta {
+            group: g.to_string(),
+            width: 2048,
+            height: 16,
+        };
+        let mut pages = vec![page(crate::model::ATLAS_SHARED_GROUP); 2];
+        pages.extend(vec![page("kitchen"); 4]);
+        pages.push(page("character_body"));
+        let b = scene_page_budget(&pages);
+        assert_eq!(b.shared, 2);
+        assert_eq!(b.worst_other, ("kitchen".to_string(), 4));
+        assert_eq!(
+            b.character,
+            crate::model::CHARACTER_COMPOSITE_PAGES as usize
+        );
+        assert_eq!(b.total, crate::model::ATLAS_MAX_BOUND_PAGES);
+        assert!(check_max_bound_pages(&pages).is_ok());
+        pages.push(page("kitchen"));
+        let err = check_max_bound_pages(&pages).unwrap_err();
+        assert!(err.contains(crate::model::ATLAS_SHARED_GROUP), "{err}");
+        assert!(err.contains("kitchen"), "{err}");
+        assert!(err.contains("CHARACTER_COMPOSITE_PAGES"), "{err}");
+        assert!(err.contains(&format!("{} pages", b.total + 1)), "{err}");
     }
 }

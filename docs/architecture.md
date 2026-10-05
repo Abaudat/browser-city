@@ -1279,10 +1279,9 @@ rule above.
 - A page's group comes from two steps: the sheet's own theme-sorter
   directory segment (e.g. `ME_Theme_Sorter_16x16/3_City_Props_Singles_
   16x16` -> `city_props`), then `defs/atlas/page-groups.toml`'s own
-  `theme -> group` table, which every street-kit theme (terrain, city
-  props, generic/floor-modular buildings, and whichever themed folders
-  the street kit borrows single props from) maps to one shared
-  `ATLAS_SHARED_GROUP` (`"street"`) group; a themed district keeps its
+  `theme -> group` table, which every theme drawn in any scene -- street
+  kit and interior shell (`room_builder`) -- maps to the one shared
+  `ATLAS_SHARED_GROUP` (`"shared"`) group; a themed district keeps its
   own group. A sheet under `Room_Builder_subfiles/`, with no theme-sorter
   subfolder of its own, has theme `room_builder`. A theme absent from the
   table fails the build naming it, and
@@ -1292,16 +1291,17 @@ rule above.
   (body/eyes/hairstyle/outfit/accessory; see "Appearance" above for the
   CPU-only, per-look-compositing use they serve). A group never spans
   more than `ATLAS_MAX_PAGES_PER_GROUP` (2) pages. A scene is the shared
-  group plus at most one themed group -- a player is never on the street
-  and inside a themed interior at once -- plus the fixed
+  group plus the worst single themed group, plus the fixed
   `CHARACTER_COMPOSITE_PAGES` every scene with a crowd on it binds: the
   shared group's own page count, plus the *worst* other group's own page
   count (`character_*` groups excluded -- they are CPU-only, never
   bound), plus `CHARACTER_COMPOSITE_PAGES`, never spans more than
   `ATLAS_MAX_BOUND_PAGES` (8); a failure names all three terms and the
-  total. `atlas_max_pages_per_group`/`character_composite_pages` are
-  emitted into `defs.json`; the scene rule itself is the packer's own,
-  the client has no use for it.
+  total.
+  `2 × ATLAS_MAX_PAGES_PER_GROUP + CHARACTER_COMPOSITE_PAGES <=
+  ATLAS_MAX_BOUND_PAGES` is a compile-time assertion. `atlas_max_pages_per_group`/
+  `character_composite_pages` are emitted into `defs.json`; the scene
+  rule itself is the packer's own, the client has no use for it.
 - Every packed rect carries a permanent 1px border of extruded
   (edge-repeated, never transparent) pixels on every side -- nearest-
   neighbour sampling plus this stops bleed at a fractional camera
