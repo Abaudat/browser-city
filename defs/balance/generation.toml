@@ -1021,10 +1021,12 @@ max = 1000
 # 5,000 genuinely random seeds): mean 61.2, stddev 3.4; mean -
 # 5.5*stddev = 42.5, and the real measured min over that same run is
 # 44 -- above it. 40 leaves real margin under both. Re-derive after
-# every retune. Story 3.7 re-measure (affluence bands in place): 600,000
-# seeds, mean 61.2, minimum 43, and one proptest seed (13796749279512995753,
-# a city whose commercial land all sits in poor neighbourhoods, so the
-# rich-end types are scarce) at 39. 36 stays under that tail.
+# every retune. Story 3.7 derivation (affluence bands in place): the
+# unbanded sigma floor is 42 (mean 61.2 less 5.5 sigma of 3.4); trades
+# hosted only by end-banded types may be absent from a district whose
+# commercial land lies wholly at the other end, at most
+# `generation.neighbourhood.max_end_stranded_professions` (6) of them, so
+# the floor is 42 - 6 = 36. Over 600,000 seeds the minimum is 43.
 key = "generation.building_types.profession_count_per_city_min"
 value = 36
 min = 1
@@ -1193,6 +1195,13 @@ key = "generation.neighbourhood.busy_screen_min_citizens"
 value = 18
 min = 0
 max = 100000
+
+[[balance]]
+# At most this many professions are hosted only by types a bottom-third (or only by types a top-third) affluence neighbourhood cannot hold: a town's trades follow its money, so a district whose commercial land lies wholly at the other end may lack them. Counted, never open-ended; 6 today on the poor side (3 on the rich side), and no launch job (FR14) may be one.
+key = "generation.neighbourhood.max_end_stranded_professions"
+value = 6
+min = 0
+max = 1000
 
 [[balance]]
 # Pooled over seeds 0..256, a commercial core screen is at least this percent of a whole-city screen (measured 192: 37.8 against 19.7).

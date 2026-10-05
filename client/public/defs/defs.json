@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "13a020f309a62d4b",
+  "defs_version": "0929ce377a5f33bd",
   "collider_subcells_per_cell": 16,
   "position_units_per_cell": 256,
   "interact_at_max_reach_cells": 2,
@@ -213,6 +213,7 @@
     { "key": "generation.neighbourhood.legibility_min_shops", "max": 100000, "min": 1, "value": 25 },
     { "key": "generation.neighbourhood.legibility_pole_shop_mix_percent", "max": 100, "min": 1, "value": 25 },
     { "key": "generation.neighbourhood.legible_step", "max": 100, "min": 1, "value": 30 },
+    { "key": "generation.neighbourhood.max_end_stranded_professions", "max": 1000, "min": 0, "value": 6 },
     { "key": "generation.neighbourhood.min_apart_neighbourhoods", "max": 12, "min": 2, "value": 3 },
     { "key": "generation.neighbourhood.min_corners", "max": 4, "min": 1, "value": 3 },
     { "key": "generation.neighbourhood.min_home_cells", "max": 100000, "min": 0, "value": 80 },

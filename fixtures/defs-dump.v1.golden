@@ -160,6 +160,7 @@ balance generation.neighbourhood.legibility_min_shop_mix_percent value=8 min=1 m
 balance generation.neighbourhood.legibility_min_shops value=25 min=1 max=100000
 balance generation.neighbourhood.legibility_pole_shop_mix_percent value=25 min=1 max=100
 balance generation.neighbourhood.legible_step value=30 min=1 max=100
+balance generation.neighbourhood.max_end_stranded_professions value=6 min=0 max=1000
 balance generation.neighbourhood.min_apart_neighbourhoods value=3 min=2 max=12
 balance generation.neighbourhood.min_corners value=3 min=1 max=4
 balance generation.neighbourhood.min_home_cells value=80 min=0 max=100000

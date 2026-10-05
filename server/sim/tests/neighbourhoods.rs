@@ -930,3 +930,43 @@ fn welfare_offices_and_shelters_are_placed_on_every_land_use() {
 fn seed_12259442226072579830_has_somewhere_affordable_to_begin() {
     district_shows_its_guaranteed_character(12259442226072579830).unwrap();
 }
+
+/// A town's trades follow its money: a profession hosted only by types a
+/// bottom-third neighbourhood cannot hold (or only by types a top-third one
+/// cannot) may be absent from a district whose commercial land lies wholly
+/// at the other end. The set is counted, never open-ended, and no launch
+/// job (FR14: the barista) is in it -- so banding a type that strands
+/// another trade fails here until someone decides it on purpose.
+#[test]
+fn trades_stranded_by_an_end_band_are_few_and_none_is_a_launch_job() {
+    let nc = setup().0.neighbourhood;
+    let max = key("max_end_stranded_professions") as usize;
+    let holds = |b: &defs::BuildingTypeDef, lo: i32, hi: i32| {
+        b.affluence_min <= hi && b.affluence_max >= lo
+    };
+    for (end, from, to) in [
+        ("bottom", nc.affluence_min, nc.poor_to()),
+        ("top", nc.rich_from(), nc.affluence_max),
+    ] {
+        let mut hosts: BTreeMap<&str, Vec<&defs::BuildingTypeDef>> = BTreeMap::new();
+        for b in defs::BUILDING_TYPES {
+            for &p in b.professions {
+                hosts.entry(p).or_default().push(b);
+            }
+        }
+        let stranded: Vec<&str> = hosts
+            .iter()
+            .filter(|(_, types)| types.iter().all(|b| !holds(b, from, to)))
+            .map(|(p, _)| *p)
+            .collect();
+        assert!(
+            stranded.len() <= max,
+            "{} professions are hosted only by types the {end} third cannot hold (> {max}): {stranded:?}",
+            stranded.len()
+        );
+        assert!(
+            !stranded.contains(&"barista"),
+            "a launch job is stranded at the {end} end"
+        );
+    }
+}

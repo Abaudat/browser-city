@@ -6458,7 +6458,9 @@ fn city_profession_depth(seed: u64) -> i64 {
 /// and its profession depth was 39 under the per-city floor of 40: the
 /// property was `inv_generation_profession_depth_never_collapses_in_one_city`,
 /// and the fix was re-deriving the floor from the re-measured tail (600,000
-/// seeds: minimum 43; this seed 39) rather than loosening any band.
+/// seeds: minimum 43; this seed 39), a derivation: the unbanded sigma floor
+/// (42) less `max_end_stranded_professions` (6). The trades stranded by end
+/// bands are content, counted by a defs-level test, not a defect.
 #[test]
 fn seed_13796749279512995753_keeps_the_per_city_profession_depth() {
     let floor = sim::balance::value(

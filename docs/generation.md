@@ -610,9 +610,12 @@ tail, not a re-expression of the excess budget at an arbitrary distance.
   end types are banded (`launderette` and `vacant_unit` toward the poor
   end; `bookshop`, `gym`, `hotel`, `restaurant` and `villa` toward the
   rich end; `cottage` is the poor-end dwelling of the sparse edge, so a
-  low-density neighbourhood in the bottom band still has homes). A band
-  that drops a profession under `min_employers_per_profession` is widened,
-  never the tolerance. `defs-build`'s coverage check runs over land use x
+  low-density neighbourhood in the bottom band still has homes). A trade
+  hosted only by end-banded types may be absent from a district whose
+  commercial land lies wholly at the other end (a town's trades follow its
+  money); no launch job (FR14) may be such a trade, and the set is counted:
+  at most `max_end_stranded_professions` per end, held by a test, so banding
+  a type that strands another trade fails until it is decided on purpose. `defs-build`'s coverage check runs over land use x
   density x affluence, so the fill stays total. Building age never gates a
   type: each building records its own age and initial physical state
   instead (`BuildingTypeMap::states`).
@@ -745,7 +748,8 @@ disagree.
 | generation.neighbourhood.min_patch_span_viewports | committed | Land use | no neighbourhood patch is narrower than this many viewports either way, unless merging further would leave fewer patches than `min_corners` |
 | generation.neighbourhood.viewport_width_cells | committed | Land use | cells across one screen (1080p, 3x zoom, `render.tile_size_px`) |
 | generation.neighbourhood.viewport_height_cells | committed | Land use | cells down one screen |
-| generation.neighbourhood.dwelling_tag_id | committed | Land use | the id of the tag marking one home, by which crowding finds a dwelling; tag ids are append-only and a test holds that it names `dwelling` |
+| generation.neighbourhood.dwelling_tag_id | committed | Land use | the id of the tag marking one home, by which crowding finds a dwelling; tag ids are append-only and a test holds that it names `dwelling`. The first sim system outside generation that needs to find dwellings moves the marker onto the tag itself |
+| generation.neighbourhood.max_end_stranded_professions | committed | Land use | at most this many professions are hosted only by types a bottom-third (or only a top-third) affluence neighbourhood cannot hold -- trades that follow a town's money; no launch job may be one |
 | generation.neighbourhood.citizens_per_dwelling | committed | Land use | a term of the street-crowding proxy, not an occupancy: what a dwelling adds to a screen |
 | generation.neighbourhood.citizens_per_post | committed | Land use | a term of the same proxy: what one workplace post adds to a screen |
 | generation.neighbourhood.busy_screen_min_citizens | committed | Land use | per-seed guard: a commercial core at the top of the density range supports at least this many crowding units a screen |
