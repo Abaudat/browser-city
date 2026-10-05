@@ -8,14 +8,27 @@ import type { TestCase, TestModule, Vitest } from "vitest/node";
 export interface DurationEntry {
   file: string;
   name: string;
-  durationMs: number;
+  /** `null` when vitest measured none: the guard fails on it, never reads it as fast. */
+  durationMs: number | null;
   timeoutMs: number;
+  /** Resolved `retry` and `repeats` (0 when unset): a re-run must never decide a verdict. */
+  retry: number;
+  repeats: number;
   state: string;
 }
 
 export interface DurationReport {
   defaultTimeoutMs: number;
   tests: DurationEntry[];
+}
+
+function retryCount(retry: unknown): number {
+  if (typeof retry === "number") return retry;
+  if (retry && typeof retry === "object") {
+    const count = (retry as { count?: unknown }).count;
+    return typeof count === "number" ? count : 1;
+  }
+  return 0;
 }
 
 /** One entry per test that ran. `timeoutMs` is the test's resolved timeout
@@ -33,11 +46,14 @@ export function buildReport(
     for (const t of mod.children.allTests() as Iterable<TestCase>) {
       const state = t.result().state;
       if (state === "skipped" || state === "pending") continue;
+      const duration = t.diagnostic()?.duration;
       tests.push({
         file,
         name: t.fullName,
-        durationMs: Math.round((t.diagnostic()?.duration ?? 0) * 100) / 100,
+        durationMs: duration === undefined ? null : Math.round(duration * 100) / 100,
         timeoutMs: t.options.timeout ?? defaultTimeoutMs,
+        retry: retryCount(t.options.retry),
+        repeats: t.options.repeats ?? 0,
         state,
       });
     }

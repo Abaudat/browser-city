@@ -239,7 +239,12 @@ describe("RemoteMotion", () => {
     expect(m.ids()).toEqual([]);
   });
 
-  it("a snap-to-latest interpolator fails inv_remote_motion_is_continuous (negative control)", () => {
+  // CI worst case under coverage: 1.40 s (run 37229489003); the shrinking of a deliberately failing property is the work, and the control must run it, so the work
+  // cannot shrink. 60 s is over 10x that.
+  const NEGATIVE_CONTROL_TIMEOUT_MS = 60_000;
+  it("a snap-to-latest interpolator fails inv_remote_motion_is_continuous (negative control)", {
+    timeout: NEGATIVE_CONTROL_TIMEOUT_MS,
+  }, () => {
     const snap = (): Interpolator => {
       const latest = new Map<string, { x: number; y: number; floor: number }>();
       return {

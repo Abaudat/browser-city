@@ -465,7 +465,12 @@ describe("the street's own flights (conformance)", () => {
     }
   });
 
-  it("no two adjacent standable feet positions differ by more than the steepest slope (never off the surface)", () => {
+  // CI worst case under coverage: 1.19 s (run 37229489003); the exhaustive scan of every sub-cell is the property under test (already one pass per grid), so the work
+  // cannot shrink. 60 s is over 10x that.
+  const EXHAUSTIVE_SCAN_TIMEOUT_MS = 60_000;
+  it("no two adjacent standable feet positions differ by more than the steepest slope (never off the surface)", {
+    timeout: EXHAUSTIVE_SCAN_TIMEOUT_MS,
+  }, () => {
     const index = new FlightIndex(flights, config);
     const world = streetWorldIndex();
     const sub = config.subcellsPerCell;
@@ -511,7 +516,8 @@ describe("the street's own flights (conformance)", () => {
         }
       }
     }
-    // The exhaustive scan compares exactly this many adjacent pairs.
+    // The exhaustive scan compares exactly this many adjacent pairs. The count
+    // changes with the street fixture; re-pin it from the loop's own `pairs`.
     expect(pairs).toBe(1_141_946);
     expect(nonZero).toBeGreaterThan(0);
   });

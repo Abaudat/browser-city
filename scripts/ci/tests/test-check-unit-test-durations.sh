@@ -6,11 +6,10 @@ TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "$TEST_DIR/harness.sh"
 REPO_ROOT="$(cd -- "$TEST_DIR/../../.." && pwd)"
 CHECK="$REPO_ROOT/scripts/ci/check-unit-test-durations.sh"
-
-# report <dir> <state> <durationMs> <timeoutMs>: a one-test report.
+# report <dir> <state> <durationMs> <timeoutMs> [retry [repeats]]: a one-test report.
 report() {
-  printf '{"defaultTimeoutMs":5000,"tests":[{"file":"tests/unit/a.test.ts","name":"slow one","durationMs":%s,"timeoutMs":%s,"state":"%s"}]}\n' \
-    "$3" "$4" "$2" > "$1/d.json"
+  printf '{"defaultTimeoutMs":5000,"tests":[{"file":"tests/unit/a.test.ts","name":"slow one","durationMs":%s,"timeoutMs":%s,"retry":%s,"repeats":%s,"state":"%s"}]}\n' \
+    "$3" "$4" "${5:-0}" "${6:-0}" "$2" > "$1/d.json"
 }
 cfg() { printf 'export default { test: { testTimeout: 5000 } };\n' > "$1/vitest.config.ts"; }
 run() { bash "$CHECK" "$1/d.json" "$1/vitest.config.ts" 2>&1; }
@@ -57,7 +56,29 @@ check_contains "and says why" "sets retry" "$(run "$d")"
 printf '// retry: never\nexport default {};\n' > "$d/vitest.config.ts"
 check "a retry in a comment is not a retry" 0 bash "$CHECK" "$d/d.json" "$d/vitest.config.ts"
 
-check "the real client config sets no retry" 0 bash -c "! grep -Eq '^[^/]*\bretry\s*:' '$REPO_ROOT/client/vitest.config.ts'"
+report "$d" passed 100 5000 0 0
+check "retry 0 and repeats 0 pass" 0 bash "$CHECK" "$d/d.json" "$d/vitest.config.ts"
+report "$d" passed 100 5000 2 0
+check "a per-test retry fails" 1 bash "$CHECK" "$d/d.json" "$d/vitest.config.ts"
+check_contains "and names the test and the retry" "slow one: retry 2" "$(run "$d")"
+report "$d" passed 100 5000 0 3
+check "a per-test repeats fails" 1 bash "$CHECK" "$d/d.json" "$d/vitest.config.ts"
+report "$d" passed null 5000
+check "a test with no measured duration fails" 1 bash "$CHECK" "$d/d.json" "$d/vitest.config.ts"
+printf '{"tests":[{"file":"a","name":"b","durationMs":1,"timeoutMs":5000,"state":"passed"}]}
+' > "$d/old.json"
+check "a report without retry/repeats fails" 1 bash "$CHECK" "$d/old.json" "$d/vitest.config.ts"
+
+report "$d" passed 100 5000
+printf '{ "scripts": { "test": "vitest run --retry 2" } }
+' > "$d/package.json"
+check "a --retry flag fails" 1 bash "$CHECK" "$d/d.json" "$d/vitest.config.ts" "$d/package.json"
+printf '{ "scripts": { "test": "vitest run" } }
+' > "$d/package.json"
+check "a flag file without --retry passes" 0 bash "$CHECK" "$d/d.json" "$d/vitest.config.ts" "$d/package.json"
+
+cfg "$d"
+check "the real config, package.json and ci.yml are clean" 0 bash "$CHECK" "$d/d.json" "$REPO_ROOT/client/vitest.config.ts"
 
 summary
 exit $?

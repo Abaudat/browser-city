@@ -106,7 +106,7 @@ const constantDeltasArb = fc
 
 // Two 200-case properties with thousands of expects each: the case count is
 // the property under test, so the work cannot shrink. CI worst case under
-// coverage: 5.26 s (run 37219562625); 60 s is over 10x that.
+// coverage: 4.10 s (run 37229489003); 60 s is over 10x that.
 const PROPERTY_TIMEOUT_MS = 60_000;
 
 describe("camera scroll during a continuous walk", { timeout: PROPERTY_TIMEOUT_MS }, () => {

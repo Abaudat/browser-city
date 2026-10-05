@@ -74,7 +74,10 @@ describe("planRegion", () => {
   });
 
   // enter(pos) <= held <= keep(pos) over any walk
-  it("inv_interest_held_set_is_between_enter_and_keep", () => {
+  // CI worst case under coverage: 1.16 s (run 37229489003); the property's case count is the thing under test, so the work
+  // cannot shrink. 60 s is over 10x that.
+  const PROPERTY_TIMEOUT_MS = 60_000;
+  it("inv_interest_held_set_is_between_enter_and_keep", { timeout: PROPERTY_TIMEOUT_MS }, () => {
     expect(REGION_LEAVE_RADIUS_CHUNKS).toBeGreaterThan(REGION_RADIUS_CHUNKS);
     const step = fc.oneof(
       pos(), // a teleport

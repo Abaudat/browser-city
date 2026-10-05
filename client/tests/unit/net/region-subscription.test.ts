@@ -330,7 +330,10 @@ describe("RegionSubscriptions", () => {
   });
 
   // any schedule of crossings and deliveries ends with live handles == held set <= bound
-  it("inv_interest_handles_never_leak", () => {
+  // CI worst case under coverage: 0.73 s (run 37229489003); the property's case count is the thing under test, so the work
+  // cannot shrink. 60 s is over 10x that.
+  const PROPERTY_TIMEOUT_MS = 60_000;
+  it("inv_interest_handles_never_leak", { timeout: PROPERTY_TIMEOUT_MS }, () => {
     const pos = fc.record({
       x: fc.integer({ min: -400, max: 400 }),
       y: fc.integer({ min: -400, max: 400 }),
@@ -558,8 +561,8 @@ describe("RegionController", () => {
 });
 
 // The 10,000-step session length is the property under test, so the work
-// cannot shrink. CI worst case under coverage: 5.26 s (run 37219562625); 60 s
-// is over 10x that, the same stated bound `camera-scroll.test.ts` gives its walk.
+// cannot shrink. CI worst case under coverage: 5.26 s (run 37219562625; 4.03 s
+// in run 37229489003); 60 s is over 10x that, the same stated bound `camera-scroll.test.ts` gives its walk.
 const LONG_WALK_TIMEOUT_MS = 60_000;
 
 describe("a long session never accumulates what it left behind", {
