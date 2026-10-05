@@ -32,7 +32,8 @@ fn real_page_groups() -> BTreeMap<String, String> {
 #[test]
 fn every_real_room_builder_sheet_resolves_to_a_page_group() {
     let root = repo_root();
-    let dir = root.join("ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles");
+    let dir =
+        root.join("ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles");
     let groups = real_page_groups();
     let mut seen = 0;
     for entry in std::fs::read_dir(&dir).unwrap() {

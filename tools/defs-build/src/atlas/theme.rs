@@ -258,7 +258,11 @@ mod tests {
             let sheet = format!(
                 "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_{name}_16x16.png"
             );
-            assert_eq!(theme_group(&sheet).as_deref(), Ok("room_builder"), "{sheet}");
+            assert_eq!(
+                theme_group(&sheet).as_deref(),
+                Ok("room_builder"),
+                "{sheet}"
+            );
             assert_eq!(shadow_variant(&sheet), ShadowVariant::Default, "{sheet}");
         }
     }

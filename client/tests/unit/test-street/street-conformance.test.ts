@@ -1340,7 +1340,10 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
   // ground pass still paints it outside any def's own footprint. Never
   // grows silently: a key lands here only by a human adding it, and this
   // test fails the day it stops colliding, so the list can only shrink.
-  const ACCEPTED_SHEET_COLLISIONS = new Set(["sidewalk"]);
+  // `floorSheet` (story 2.14): the harness floor fill is cropped from the
+  // same sheet `floor_pale_stone` is, at the same rect; drawing it through
+  // the atlas is the scene rewiring story 2.14 left out.
+  const ACCEPTED_SHEET_COLLISIONS = new Set(["sidewalk", "floorSheet"]);
 
   it("no ModernTileset/ import a real StreetProp row still uses names a sheet a real defs/objects entry's own sprite already names", () => {
     const sheets = sheetByAssetKey();

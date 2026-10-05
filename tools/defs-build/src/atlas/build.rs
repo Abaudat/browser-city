@@ -565,8 +565,14 @@ mod tests {
         bytes.insert(CITY_PROPS.to_string(), tiny_png(16, 16, [1, 2, 3, 255]));
         bytes.insert(CAMPING.to_string(), tiny_png(16, 16, [4, 5, 6, 255]));
         let street: BTreeMap<String, String> = [
-            ("city_props".to_string(), crate::model::ATLAS_SHARED_GROUP.to_string()),
-            ("camping".to_string(), crate::model::ATLAS_SHARED_GROUP.to_string()),
+            (
+                "city_props".to_string(),
+                crate::model::ATLAS_SHARED_GROUP.to_string(),
+            ),
+            (
+                "camping".to_string(),
+                crate::model::ATLAS_SHARED_GROUP.to_string(),
+            ),
         ]
         .into_iter()
         .collect();
@@ -755,7 +761,10 @@ mod tests {
         let b = scene_page_budget(&pages);
         assert_eq!(b.shared, 2);
         assert_eq!(b.worst_other, ("kitchen".to_string(), 4));
-        assert_eq!(b.character, crate::model::CHARACTER_COMPOSITE_PAGES as usize);
+        assert_eq!(
+            b.character,
+            crate::model::CHARACTER_COMPOSITE_PAGES as usize
+        );
         assert_eq!(b.total, crate::model::ATLAS_MAX_BOUND_PAGES);
         assert!(check_max_bound_pages(&pages).is_ok());
         pages.push(page("kitchen"));
