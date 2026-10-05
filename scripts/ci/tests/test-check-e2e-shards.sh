@@ -73,6 +73,8 @@ check "no e2e timeout fails" 1 bash "$CHECK" "$(variant '0,/timeout-minutes: 10/
 check "e2e-perf timeout 25 fails" 1 bash "$CHECK" "$(variant 's/^(    timeout-minutes: )10$/\1X/; 0,/X/s//10/; s/X/25/')" "$GCFG"
 check "perf inside the shard job fails" 1 bash "$CHECK" "$(variant 's|^(      - run: npm run test:e2e -- .*)$|\1\n      - run: npm run test:e2e:perf|')" "$GCFG"
 check "deploy smoke inside the shard job fails" 1 bash "$CHECK" "$(variant 's|^(      - run: npm run test:e2e -- .*)$|\1\n      - run: node serve-for-deploy-smoke.mjs|')" "$GCFG"
+check "e2e-perf without perf fails" 1 bash "$CHECK" "$(variant 's|^      - run: npm run test:e2e:perf$|      - run: echo skipped|')" "$GCFG"
+check "e2e-perf without the deploy-smoke rehearsal fails" 1 bash "$CHECK" "$(variant 's|^      - run: node tests/e2e/serve-for-deploy-smoke.mjs$|      - run: echo skipped|')" "$GCFG"
 check "an unsharded artifact name fails" 1 bash "$CHECK" "$(variant 's/name: review-shots-shard-\$\{\{ matrix.shard \}\}/name: review-shots/')" "$GCFG"
 check "no e2e-perf job fails" 1 bash "$CHECK" "$(variant 's/^  e2e-perf:/  other:/')" "$GCFG"
 check "workers other than 1 on CI fails" 1 bash "$CHECK" "$d/ci.yml" "$(cfg '  workers: process.env.CI ? 4 : undefined,')"
