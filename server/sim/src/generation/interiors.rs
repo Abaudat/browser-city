@@ -924,6 +924,7 @@ fn attempt_layout(
 /// shuffling pass 5's list or perturbing a neighbour cannot move it.
 /// Each attempt seeds its own stream from the building's own bounds plus
 /// the attempt index.
+#[cfg(any(test, feature = "test-fixtures"))]
 pub fn lay_out(
     city_seed: u64,
     envelope: &Envelope,

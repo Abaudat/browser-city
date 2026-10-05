@@ -7225,6 +7225,12 @@ fn kind_counts(
     let mut low_band_dwelling = false;
     for a in d.building_types.assignments() {
         let def = by_id[&a.building_type];
+        // A type with no room program is a deliberate Shell (a vacant
+        // unit carries the shop tag and no posts): it is nobody's
+        // enterable kind, so it is not "placed" for the share either.
+        if def.rooms.is_empty() {
+            continue;
+        }
         let interior = enterable_plots.get(&a.plot);
         let kinds = [
             def.tags.contains(&dwelling),
