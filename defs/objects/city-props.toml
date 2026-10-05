@@ -135,7 +135,7 @@ width = 1
 # it and never contributes collision to it (FR117). Story 2.4 (FR128):
 # explicitly walkable, not merely absent a collider -- `underfoot`.
 archetype = "underfoot_flat"
-tags = ["bridge", "underfoot", "fixture"]
+tags = ["stairs", "bridge", "underfoot", "fixture"]
 
 [[object]]
 id = 8
@@ -297,7 +297,7 @@ height = 2
 # Walked north from the foot row: the feet's screen rise over the 16 px ramp is
 # the 16 px run and the 24 px drop, five treads of 8 px.
 flight = { drop_px = 24, from_px = 0, to_px = 16 }
-tags = ["bridge", "underfoot", "fixture"]
+tags = ["stairs", "bridge", "underfoot", "fixture"]
 
 [[object]]
 id = 21
@@ -308,7 +308,7 @@ width = 2
 height = 2
 # Walked south from the deck: the same ramp, the other way.
 flight = { drop_px = 24, from_px = 0, to_px = 16 }
-tags = ["bridge", "underfoot", "fixture"]
+tags = ["stairs", "bridge", "underfoot", "fixture"]
 
 # The treads where the stairs are walked: two nosings, the first tread's
 # surface down (the landing lip above it is not drawn: the deck tile is the
@@ -321,7 +321,7 @@ layer = "ground_objects"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png", x = 0, y = 21, w = 32, h = 16 }
 width = 2
 height = 1
-tags = ["bridge", "underfoot", "fixture"]
+tags = ["stairs", "bridge", "underfoot", "fixture"]
 
 # The treads over the street cells the stairs' art covers on screen above the
 # flights: drawn and closed, one row each, so a walker never stands in front
@@ -335,4 +335,4 @@ sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_
 width = 2
 height = 1
 collider = { x0 = 0, y0 = 0, x1 = 32, y1 = 16 }
-tags = ["bridge", "fixture"]
+tags = ["stairs", "bridge", "fixture"]
