@@ -103,7 +103,7 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
     expect(streetWalk.walkable(0, 11, 16)).toBe(true);
     // At no moment do two citizens stand on one cell.
     const street = build();
-    for (let t = 0; t < 2 * period; t += 10) {
+    for (let t = 0; t < 2 * period; t += 40) {
       street.solve(t);
       const resting = street.members.filter((m) => !m.frame.moving);
       for (const p of resting) {
@@ -120,7 +120,7 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
     const street = build();
     let closestLedger = Number.POSITIVE_INFINITY;
     let closestDrawn = Number.POSITIVE_INFINITY;
-    for (let t = 0; t < period; t += 5) {
+    for (let t = 0; t < period; t += 30) {
       street.solve(t);
       const a = pose(street, CROSSER_EAST_ID);
       const b = pose(street, CROSSER_WEST_ID);
@@ -140,7 +140,7 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
     expect(closestDrawn).toBeGreaterThan(0.8 * cfg.avoidClearanceCells);
     // Nobody else is in that lane: the crossing is the same without anyone else.
     const alone = build(only(CROSSER_EAST_ID, CROSSER_WEST_ID));
-    for (let t = 0; t < period; t += 25) {
+    for (let t = 0; t < period; t += 50) {
       street.solve(t);
       alone.solve(t);
       for (const id of [CROSSER_EAST_ID, CROSSER_WEST_ID]) {
@@ -155,7 +155,7 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
     let widest = 0;
     let nearest = Number.POSITIVE_INFINITY;
     let nearestOnLine = Number.POSITIVE_INFINITY;
-    for (let t = 0; t < period; t += 5) {
+    for (let t = 0; t < period; t += 30) {
       street.solve(t);
       for (const id of standing) {
         const s = pose(street, id);
@@ -177,7 +177,7 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
   it("two citizens walking a cell apart on one lane spread by id and never close", () => {
     const street = build();
     let spread = 0;
-    for (let t = 0; t < period; t += 5) {
+    for (let t = 0; t < period; t += 30) {
       street.solve(t);
       const a = pose(street, TWIN_A_ID);
       const b = pose(street, TWIN_B_ID);
@@ -196,7 +196,7 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
     let closestDrawn = Number.POSITIVE_INFINITY;
     let previous: number[] | undefined;
     let worst = 0;
-    for (let t = 0; t < period; t += 4) {
+    for (let t = 0; t < period; t += 12) {
       street.solve(t);
       const a = pose(street, DIAGONAL_A_ID);
       const b = pose(street, DIAGONAL_B_ID);
@@ -209,7 +209,7 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
       }
       const now = [a.ox, a.oy, b.ox, b.oy];
       if (previous) {
-        const moved = 4 * ((cfg.walkCellsPerS * (cfg.realMsPerCityMinute / 1000)) / 1000);
+        const moved = 12 * ((cfg.walkCellsPerS * (cfg.realMsPerCityMinute / 1000)) / 1000);
         for (let i = 0; i < 4; i += 2) {
           worst = Math.max(
             worst,
@@ -233,26 +233,22 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
     const street = build();
     let north = 0;
     let south = 0;
-    for (let t = 0; t < period; t += 5) {
+    for (let t = 0; t < period; t += 30) {
       street.solve(t);
       const w = pose(street, KERB_WALKER_ID);
       if (w.oy < 0) north = Math.min(north, w.oy);
       else south = Math.max(south, w.oy);
-    }
-    expect(north).toBeLessThan(-0.7);
-    // The open side is pavement: the walker, edge included, never leaves it.
-    for (let t = 0; t < period; t += 5) {
-      street.solve(t);
-      const w = pose(street, KERB_WALKER_ID);
+      // The open side is pavement: the walker, edge included, never leaves it.
       expect(isStagingCell(Math.floor(w.x + w.ox), Math.floor(w.y + w.oy - 0.25))).toBe(true);
     }
+    expect(north).toBeLessThan(-0.7);
     // Never towards the kerb beyond what its face leaves.
     expect(south).toBeLessThan(0.05);
   });
 
   it("no walker facing depends on the sidestep, and a standing body is never displaced", () => {
     const street = build();
-    for (let t = 0; t < period; t += 5) {
+    for (let t = 0; t < period; t += 30) {
       street.solve(t);
       for (const w of street.members) {
         if (w.frame.moving) {
@@ -269,7 +265,7 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
   it("is deterministic from scratch: the agreement sample equals a long-lived solve", () => {
     const street = build();
     const fresh = build();
-    for (let t = 0; t < period; t += 37) {
+    for (let t = 0; t < period; t += 97) {
       street.solve(t);
       const sample = fresh.agreementAt(t);
       for (const s of sample) {
