@@ -149,7 +149,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub struct BuildingTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub land_uses: [bool; 4],\n    pub density_min: i32,\n    pub density_max: i32,\n    pub min_interior_width_cells: u32,\n    pub min_interior_depth_cells: u32,\n    pub weight: u32,\n    pub requires_site: [bool; 4],\n    pub prefers_site: [bool; 4],\n    pub density_affinity: i32,\n    pub professions: &'static [&'static str],\n}\n\n",
+        "pub struct BuildingTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub land_uses: [bool; 4],\n    pub density_min: i32,\n    pub density_max: i32,\n    pub min_interior_width_cells: u32,\n    pub min_interior_depth_cells: u32,\n    pub weight: u32,\n    pub requires_site: [bool; 4],\n    pub prefers_site: [bool; 4],\n    pub density_affinity: i32,\n    pub professions: &'static [&'static str],\n    pub rooms: &'static [u32],\n    pub optional_rooms: &'static [u32],\n}\n\n",
     );
     out.push_str("pub const BUILDING_TYPES: &[BuildingTypeDef] = &[\n");
     for b in &defs.building_types {
@@ -167,8 +167,10 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
             b.prefers_site[0], b.prefers_site[1], b.prefers_site[2], b.prefers_site[3]
         );
         let professions = fmt_str_slice(&b.professions);
+        let rooms = fmt_u32_slice(&b.rooms);
+        let optional_rooms = fmt_u32_slice(&b.optional_rooms);
         out.push_str(&format!(
-            "    BuildingTypeDef {{ id: {}, key: {:?}, tags: &{tags}, land_uses: {land_uses}, density_min: {}, density_max: {}, min_interior_width_cells: {}, min_interior_depth_cells: {}, weight: {}, requires_site: {requires_site}, prefers_site: {prefers_site}, density_affinity: {}, professions: &{professions} }},\n",
+            "    BuildingTypeDef {{ id: {}, key: {:?}, tags: &{tags}, land_uses: {land_uses}, density_min: {}, density_max: {}, min_interior_width_cells: {}, min_interior_depth_cells: {}, weight: {}, requires_site: {requires_site}, prefers_site: {prefers_site}, density_affinity: {}, professions: &{professions}, rooms: &{rooms}, optional_rooms: &{optional_rooms} }},\n",
             b.id,
             b.key,
             b.density_min,
@@ -177,6 +179,24 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
             b.min_interior_depth_cells,
             b.weight,
             b.density_affinity,
+        ));
+    }
+    out.push_str("];\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str(
+        "pub struct RoomTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub min_width_cells: u32,\n    pub min_depth_cells: u32,\n    pub weight: u32,\n}\n\n",
+    );
+    out.push_str("pub const ROOM_TYPES: &[RoomTypeDef] = &[\n");
+    for r in &defs.room_types {
+        out.push_str(&format!(
+            "    RoomTypeDef {{ id: {}, key: {:?}, tags: &{}, min_width_cells: {}, min_depth_cells: {}, weight: {} }},\n",
+            r.id,
+            r.key,
+            fmt_u32_slice(&r.tags),
+            r.min_width_cells,
+            r.min_depth_cells,
+            r.weight,
         ));
     }
     out.push_str("];\n\n");
@@ -334,15 +354,20 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("pub struct RoleDef {\n    pub layers: &'static [u32],\n}\n\n");
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub struct TagDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub role: Option<RoleDef>,\n}\n\n",
+        "pub enum TagStructure {\n    Wall,\n    WallRun,\n    Floor,\n    Threshold,\n    Entrance,\n    Pavement,\n}\n\n",
+    );
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str(
+        "pub struct TagDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub role: Option<RoleDef>,\n    pub structure: Option<TagStructure>,\n}\n\n",
     );
     out.push_str("pub const TAGS: &[TagDef] = &[\n");
     for t in &defs.tags {
         out.push_str(&format!(
-            "    TagDef {{ id: {}, key: {:?}, role: {} }},\n",
+            "    TagDef {{ id: {}, key: {:?}, role: {}, structure: {} }},\n",
             t.id,
             t.key,
-            fmt_role_rust(&t.role)
+            fmt_role_rust(&t.role),
+            fmt_structure_rust(t.structure)
         ));
     }
     out.push_str("];\n\n");
@@ -364,6 +389,13 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 fn fmt_u32_slice(items: &[u32]) -> String {
     let inner: Vec<String> = items.iter().map(|i| i.to_string()).collect();
     format!("[{}]", inner.join(", "))
+}
+
+fn fmt_structure_rust(structure: Option<crate::model::RawStructure>) -> String {
+    match structure {
+        None => "None".to_string(),
+        Some(s) => format!("Some(TagStructure::{})", s.variant()),
+    }
 }
 
 fn fmt_role_rust(role: &Option<RoleDef>) -> String {
@@ -941,6 +973,11 @@ pub fn emit_id_manifest(defs: &Defs) -> String {
     for b in &building_types {
         lines.push(format!("building_type {} {}", b.id, b.key));
     }
+    let mut room_types = defs.room_types.clone();
+    room_types.sort_by_key(|r| r.id);
+    for r in &room_types {
+        lines.push(format!("room_type {} {}", r.id, r.key));
+    }
     let mut bodies = defs.bodies.clone();
     bodies.sort_by_key(|b| b.id);
     for b in &bodies {
@@ -1062,7 +1099,10 @@ mod tests {
                 prefers_site: [false, false, false, false],
                 density_affinity: 0,
                 professions: vec!["sanitation_worker".into()],
+                rooms: vec![],
+                optional_rooms: vec![],
             }],
+            room_types: vec![],
             balance: vec![BalanceDef {
                 key: "citizen.bar_decay.rest".into(),
                 value: 10,
@@ -1134,11 +1174,13 @@ mod tests {
                     id: 1,
                     key: "waste".into(),
                     role: None,
+                    structure: None,
                 },
                 TagDef {
                     id: 2,
                     key: "seating".into(),
                     role: None,
+                    structure: None,
                 },
             ],
             rules: vec![RuleDef {
@@ -1478,8 +1520,8 @@ mod tests {
     fn emit_rust_renders_the_tag_table_and_the_rules_table() {
         let out = emit_rust(&sample(), "v1");
         assert!(out.contains("pub const TAGS: &[TagDef] = &["));
-        assert!(out.contains("TagDef { id: 1, key: \"waste\", role: None }"));
-        assert!(out.contains("TagDef { id: 2, key: \"seating\", role: None }"));
+        assert!(out.contains("TagDef { id: 1, key: \"waste\", role: None, structure: None }"));
+        assert!(out.contains("TagDef { id: 2, key: \"seating\", role: None, structure: None }"));
         assert!(out.contains("pub const RULES: &[crate::rules::RuleDef] = &["));
         assert!(out.contains(
             "crate::rules::RuleDef { id: 1, key: \"no_seating_above_floor_2\", kind: crate::rules::RuleKind::Placement { subject: 2, container: None, floor_min: None, floor_max: Some(2) } }"

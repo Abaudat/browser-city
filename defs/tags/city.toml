@@ -26,6 +26,7 @@ key = "shopfront"
 [[tag]]
 id = 6
 key = "wall"
+structure = "wall"
 # Story 2.9 (AC1, FR119): a role tag's own payload -- the closed list of
 # layer names an object of this role may sit on. `id`/`key` are
 # untouched (the append-only manifest guard covers those two alone), so
@@ -58,6 +59,7 @@ key = "underfoot"
 [[tag]]
 id = 16
 key = "wall_run"
+structure = "wall_run"
 
 # Marks a `threshold` that opens onto the exterior (pavement or road),
 # distinguishing a building's own street door from an interior door
@@ -67,3 +69,4 @@ key = "wall_run"
 [[tag]]
 id = 17
 key = "entrance"
+structure = "entrance"

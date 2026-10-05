@@ -507,6 +507,38 @@ pub struct RawBuildingType {
     pub density_affinity: i32,
     #[serde(default)]
     pub professions: Vec<String>,
+    /// The room program's required core, an ordered list of
+    /// `defs/room-types/` keys, the front room first. Empty means the
+    /// type is a solid `Shell` -- legal only for a type with neither
+    /// `professions` nor the `dwelling` tag.
+    #[serde(default)]
+    pub rooms: Vec<String>,
+    /// The ordered optional tail: each room is taken while the footprint
+    /// still holds it, so size buys rooms rather than bigger rooms.
+    #[serde(default)]
+    pub optional_rooms: Vec<String>,
+}
+
+/// A room type is a def kind. A row carries `tags`, the smallest floor
+/// it may be laid out on and a weight (its share of spare width) --
+/// nothing else. What a room owes (a light, a bed, a stock shelf) is a
+/// `[[requirement]]` row over one of its tags, never a field here.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawRoomType {
+    pub id: Spanned<u32>,
+    pub key: Spanned<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub min_width_cells: u32,
+    pub min_depth_cells: u32,
+    pub weight: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoomTypeFile {
+    pub room_type: Vec<RawRoomType>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -793,6 +825,39 @@ pub struct RawTag {
     /// AC1 asks for is this table, never a second kind (Tim's direction).
     #[serde(default)]
     pub role: Option<RawRole>,
+    /// Which structural part of a generated interior this tag *is* -- the
+    /// closed vocabulary `sim::generation::interiors` reads instead of a
+    /// quoted tag key. A `role` only names the layers an object may sit
+    /// on, which cannot tell a floor from a pavement (both draw on
+    /// `ground`), so the part is its own field.
+    #[serde(default)]
+    pub structure: Option<RawStructure>,
+}
+
+/// The closed set of structural parts [`RawTag::structure`] names.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum RawStructure {
+    Wall,
+    WallRun,
+    Floor,
+    Threshold,
+    Entrance,
+    Pavement,
+}
+
+impl RawStructure {
+    /// This variant's own name in the emitted `defs::TagStructure` enum.
+    pub fn variant(self) -> &'static str {
+        match self {
+            RawStructure::Wall => "Wall",
+            RawStructure::WallRun => "WallRun",
+            RawStructure::Floor => "Floor",
+            RawStructure::Threshold => "Threshold",
+            RawStructure::Entrance => "Entrance",
+            RawStructure::Pavement => "Pavement",
+        }
+    }
 }
 
 /// A role tag's own payload: the closed list of layer *names* an object
@@ -1025,6 +1090,19 @@ pub struct BuildingTypeEntry {
     pub prefers_site: Vec<RawSiteContext>,
     pub density_affinity: i32,
     pub professions: Vec<String>,
+    pub rooms: Vec<String>,
+    pub optional_rooms: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct RoomTypeEntry {
+    pub path: PathBuf,
+    pub id: Located<u32>,
+    pub key: Located<String>,
+    pub tags: Vec<String>,
+    pub min_width_cells: u32,
+    pub min_depth_cells: u32,
+    pub weight: u32,
 }
 
 #[derive(Debug)]
@@ -1126,6 +1204,7 @@ pub struct TagEntry {
     pub id: Located<u32>,
     pub key: Located<String>,
     pub role: Option<RawRole>,
+    pub structure: Option<RawStructure>,
 }
 
 #[derive(Debug)]
@@ -1217,6 +1296,7 @@ impl_id_key_entry!(RecipeEntry);
 impl_id_key_entry!(ProfessionEntry);
 impl_id_key_entry!(ChainEntry);
 impl_id_key_entry!(BuildingTypeEntry);
+impl_id_key_entry!(RoomTypeEntry);
 impl_id_key_entry!(BodyEntry);
 impl_id_key_entry!(EyesEntry);
 impl_id_key_entry!(HairstyleEntry);
@@ -1239,6 +1319,7 @@ pub struct RawDefs {
     pub professions: Vec<ProfessionEntry>,
     pub chains: Vec<ChainEntry>,
     pub building_types: Vec<BuildingTypeEntry>,
+    pub room_types: Vec<RoomTypeEntry>,
     pub balance: Vec<BalanceEntry>,
     pub page_groups: Vec<PageGroupEntry>,
     pub archetypes: Vec<ArchetypeEntry>,
@@ -1350,6 +1431,21 @@ pub struct BuildingTypeDef {
     /// workplace, never a second stored bool. No per-post headcount:
     /// nothing reads one yet.
     pub professions: Vec<String>,
+    /// Resolved room-type ids of the required core, front room first;
+    /// empty iff the type is a `Shell`.
+    pub rooms: Vec<u32>,
+    /// Resolved room-type ids of the optional tail, in declared order.
+    pub optional_rooms: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoomTypeDef {
+    pub id: u32,
+    pub key: String,
+    pub tags: Vec<u32>,
+    pub min_width_cells: u32,
+    pub min_depth_cells: u32,
+    pub weight: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1461,6 +1557,8 @@ pub struct TagDef {
     pub id: u32,
     pub key: String,
     pub role: Option<RoleDef>,
+    /// The structural part this tag names, when it names one.
+    pub structure: Option<RawStructure>,
 }
 
 /// One resolved (tag key -> id) [`RawNeighbourTerm`].
@@ -1526,6 +1624,7 @@ pub struct Defs {
     pub professions: Vec<ProfessionDef>,
     pub chains: Vec<ChainDef>,
     pub building_types: Vec<BuildingTypeDef>,
+    pub room_types: Vec<RoomTypeDef>,
     pub balance: Vec<BalanceDef>,
     pub bodies: Vec<BodyDef>,
     pub eyes: Vec<EyesDef>,

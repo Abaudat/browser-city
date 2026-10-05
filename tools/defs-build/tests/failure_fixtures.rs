@@ -722,6 +722,89 @@ fn a_density_covered_only_by_a_site_restricted_building_type_is_named() {
     );
 }
 
+/// Story 3.5: the room-type kind and the room program a building type
+/// names -- each way the data can be wrong has its own fixture.
+#[test]
+fn a_room_narrower_than_two_cells_is_named() {
+    let err = build_err("room-type-too-narrow");
+    assert_eq!(
+        err.to_string(),
+        "defs/room-types/rooms.toml:3:7: room type 'fixture_hall' has min_width_cells 1 -- no room may be narrower than two walkable cells"
+    );
+}
+
+#[test]
+fn a_room_type_with_no_access_tag_is_named() {
+    let err = build_err("room-type-no-access-tag");
+    assert_eq!(
+        err.to_string(),
+        "defs/room-types/rooms.toml:3:7: room type 'fixture_hall' carries 0 access tags -- exactly one of public, staff or private"
+    );
+}
+
+#[test]
+fn a_room_type_with_two_access_tags_is_named() {
+    let err = build_err("room-type-two-access-tags");
+    assert_eq!(
+        err.to_string(),
+        "defs/room-types/rooms.toml:3:7: room type 'fixture_hall' carries 2 access tags -- exactly one of public, staff or private"
+    );
+}
+
+#[test]
+fn a_program_naming_an_unknown_room_type_is_named() {
+    let err = build_err("building-type-unknown-room");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' names unknown room type 'no_such_room' in rooms"
+    );
+}
+
+#[test]
+fn a_dwelling_that_is_a_shell_is_named() {
+    let err = build_err("building-type-dwelling-is-a-shell");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' is a dwelling or a workplace with no rooms -- only a type with neither may be a solid Shell"
+    );
+}
+
+#[test]
+fn a_workplace_that_is_a_shell_is_named() {
+    let err = build_err("building-type-workplace-is-a-shell");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' is a dwelling or a workplace with no rooms -- only a type with neither may be a solid Shell"
+    );
+}
+
+#[test]
+fn a_program_too_large_for_its_own_minimum_interior_is_named() {
+    let err = build_err("building-type-program-too-large");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' room program needs at least a 2x7 interior, but its own minimum interior is 5x5"
+    );
+}
+
+#[test]
+fn a_public_room_behind_a_private_front_room_is_named() {
+    let err = build_err("building-type-front-room-not-public");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' has a public room but its front room 'fixture_den' is not public"
+    );
+}
+
+#[test]
+fn a_workplace_with_no_staff_room_is_named() {
+    let err = build_err("building-type-workplace-without-staff-room");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' is a workplace but its core rooms include no staff room"
+    );
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -807,6 +890,15 @@ fn every_known_category_has_a_fixture_directory() {
         "building-type-density-gap",
         "building-type-interior-too-large",
         "building-type-site-restricted",
+        "room-type-too-narrow",
+        "room-type-no-access-tag",
+        "room-type-two-access-tags",
+        "building-type-unknown-room",
+        "building-type-dwelling-is-a-shell",
+        "building-type-workplace-is-a-shell",
+        "building-type-program-too-large",
+        "building-type-front-room-not-public",
+        "building-type-workplace-without-staff-room",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

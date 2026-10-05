@@ -1,0 +1,113 @@
+# Story 3.5 (FR110): the room grammar's vocabulary -- a small shared set
+# a building type's program (`defs/building-types/*.toml`'s `rooms` and
+# `optional_rooms`) is composed from, never one room type per building
+# type. A row is its tags, the smallest floor it may be laid out on (two
+# walkable cells either way: no room narrower than that) and a weight
+# (its share of the spare width beside its neighbours) -- nothing else.
+# What a room owes (a light, a bed, a stock shelf) is a `[[requirement]]`
+# row over one of its tags (`defs/rules/interiors.toml`), never a field
+# here. Access (`public`/`staff`/`private`) is exactly one tag per room.
+
+[[room_type]]
+id = 1
+key = "living_room"
+tags = ["room", "private", "dining"]
+min_width_cells = 3
+min_depth_cells = 2
+weight = 3
+
+[[room_type]]
+id = 2
+key = "kitchen"
+tags = ["room", "private", "cooking"]
+min_width_cells = 2
+min_depth_cells = 2
+weight = 2
+
+[[room_type]]
+id = 3
+key = "bathroom"
+tags = ["room", "private", "washing"]
+min_width_cells = 2
+min_depth_cells = 2
+weight = 1
+
+[[room_type]]
+id = 4
+key = "bedroom"
+tags = ["room", "private", "sleeping"]
+min_width_cells = 2
+min_depth_cells = 2
+weight = 2
+
+[[room_type]]
+id = 5
+key = "shop_floor"
+tags = ["room", "public", "trading"]
+min_width_cells = 3
+min_depth_cells = 2
+weight = 4
+
+[[room_type]]
+id = 6
+key = "cafe_floor"
+tags = ["room", "public", "trading", "seated_service"]
+min_width_cells = 4
+min_depth_cells = 3
+weight = 4
+
+[[room_type]]
+id = 7
+key = "stock_room"
+tags = ["room", "staff"]
+min_width_cells = 2
+min_depth_cells = 2
+weight = 1
+
+[[room_type]]
+id = 8
+key = "office"
+tags = ["room", "staff", "working"]
+min_width_cells = 3
+min_depth_cells = 2
+weight = 2
+
+[[room_type]]
+id = 9
+key = "front_hall"
+tags = ["room", "public", "trading"]
+min_width_cells = 3
+min_depth_cells = 2
+weight = 3
+
+[[room_type]]
+id = 10
+key = "ward"
+tags = ["room", "public", "sleeping"]
+min_width_cells = 3
+min_depth_cells = 2
+weight = 2
+
+[[room_type]]
+id = 11
+key = "dormitory"
+tags = ["room", "public", "sleeping"]
+min_width_cells = 3
+min_depth_cells = 2
+weight = 2
+
+[[room_type]]
+id = 12
+key = "workroom"
+tags = ["room", "staff", "making"]
+min_width_cells = 3
+min_depth_cells = 2
+weight = 3
+
+[[room_type]]
+id = 13
+key = "classroom"
+tags = ["room", "public", "working"]
+min_width_cells = 3
+min_depth_cells = 2
+weight = 2

@@ -13,6 +13,8 @@
 [[building_type]]
 id = 26
 key = "workshop"
+rooms = ["workroom", "stock_room"]
+optional_rooms = ["office"]
 tags = ["workshop"]
 land_uses = ["industrial"]
 density_min = 0
@@ -25,6 +27,8 @@ professions = ["machinist", "foreman"]
 [[building_type]]
 id = 27
 key = "warehouse"
+rooms = ["stock_room", "office"]
+optional_rooms = ["workroom"]
 tags = ["warehouse"]
 land_uses = ["industrial"]
 density_min = 0
@@ -37,6 +41,8 @@ professions = ["warehouse_worker", "forklift_operator", "supervisor", "driver"]
 [[building_type]]
 id = 28
 key = "depot"
+rooms = ["workroom", "office"]
+optional_rooms = ["stock_room"]
 tags = ["municipal_service", "depot"]
 land_uses = ["industrial"]
 density_min = 0
@@ -50,6 +56,8 @@ professions = ["dispatcher", "mechanic", "sanitation_worker", "driver"]
 [[building_type]]
 id = 29
 key = "bottling_plant"
+rooms = ["workroom", "stock_room"]
+optional_rooms = ["office"]
 tags = ["workshop"]
 land_uses = ["industrial"]
 density_min = 0
@@ -62,6 +70,8 @@ professions = ["machine_operator", "quality_inspector", "warehouse_worker", "sup
 [[building_type]]
 id = 30
 key = "recycling_facility"
+rooms = ["workroom", "stock_room"]
+optional_rooms = ["office"]
 tags = ["workshop"]
 land_uses = ["industrial"]
 density_min = 0
@@ -74,6 +84,8 @@ professions = ["sorter", "machine_operator", "forklift_operator", "supervisor", 
 [[building_type]]
 id = 31
 key = "print_works"
+rooms = ["workroom", "stock_room"]
+optional_rooms = ["office"]
 tags = ["workshop"]
 land_uses = ["industrial"]
 density_min = 0
@@ -86,6 +98,8 @@ professions = ["printer_operator", "bookbinder", "machine_operator"]
 [[building_type]]
 id = 32
 key = "vehicle_repair_garage"
+rooms = ["workroom", "stock_room"]
+optional_rooms = ["office"]
 tags = ["workshop"]
 land_uses = ["industrial"]
 density_min = 0
@@ -98,6 +112,8 @@ professions = ["mechanic", "receptionist", "parts_clerk"]
 [[building_type]]
 id = 33
 key = "builders_yard"
+rooms = ["workroom", "stock_room"]
+optional_rooms = ["office"]
 tags = ["workshop"]
 land_uses = ["industrial"]
 density_min = 0
@@ -110,6 +126,8 @@ professions = ["yard_worker", "forklift_operator", "sales_assistant", "foreman",
 [[building_type]]
 id = 34
 key = "food_plant"
+rooms = ["workroom", "stock_room"]
+optional_rooms = ["office"]
 tags = ["workshop"]
 land_uses = ["industrial"]
 density_min = 0
