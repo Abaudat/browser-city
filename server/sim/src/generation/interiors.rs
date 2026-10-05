@@ -700,7 +700,7 @@ fn place_fixtures(
             } else {
                 2
             };
-            order.push(((x, y), score, rng.next_u64()));
+            order.push(((x, y), score, rng.below(1 << 40)));
         }
     }
     // Camera preference first; then (only if that leaves a room unable to
@@ -812,13 +812,13 @@ fn attempt_layout(
     thickness: i32,
 ) -> Option<Interior> {
     let footprint = envelope.footprint;
-    let flip = rng.next_u64() & 1 == 1;
+    let flip = rng.below(2) == 1;
     let frame = Frame::new(footprint, envelope.front, thickness, flip);
     let (w, d) = (frame.w, frame.d);
     let front = program[0];
     let mut back: Vec<&defs::RoomTypeDef> = program[1..].to_vec();
     for i in (1..back.len()).rev() {
-        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
+        let j = rng.below(i as u64 + 1) as usize;
         back.swap(i, j);
     }
     let k = back.len() as i32;
@@ -835,7 +835,7 @@ fn attempt_layout(
         }
         // The front band takes at most half the spare depth, so the back
         // rooms are never squeezed to their minimum by a cavernous front.
-        let df = lo + (rng.next_u64() % ((hi - lo) / 2 + 1) as u64) as i32;
+        let df = lo + rng.below(((hi - lo) / 2 + 1) as u64) as i32;
         let min_total: i32 =
             back.iter().map(|r| r.min_width_cells as i32).sum::<i32>() + thickness * (k - 1);
         let extra = w - min_total;
@@ -887,7 +887,7 @@ fn attempt_layout(
             rect,
             room_type: room.id,
         });
-        let door_u = u0 + (rng.next_u64() % (u1 - u0) as u64) as i32;
+        let door_u = u0 + rng.below((u1 - u0) as u64) as i32;
         let door = frame.cell(door_u, df);
         thresholds.push(Threshold {
             x: door.0,
