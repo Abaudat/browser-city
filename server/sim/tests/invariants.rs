@@ -7477,7 +7477,7 @@ proptest! {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
         let d = &city.district;
-        let (placed, enterable, low_band_dwelling) = kind_counts(&d, &content, &cfg);
+        let (placed, enterable, low_band_dwelling) = kind_counts(d, &content, &cfg);
         let verdict = kind_spread_verdict(placed, enterable, d.interiors.enterable_count(), &cfg);
         prop_assert!(verdict.is_ok(), "seed {seed}: {verdict:?}");
         prop_assert!(low_band_dwelling, "seed {seed}: no enterable dwelling in the lowest density band");
