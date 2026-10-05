@@ -39,9 +39,10 @@
 # `next` is the whole of scoping. There is no sprint planning step: the
 # backlog is one pool, and whenever the team is free the orchestrator starts
 # the story `next` names -- no open blocker, then highest Priority, then
-# smallest Size, then lowest number -- from whichever epic it hangs off. What
-# orders the work is the board's Priority and Size plus GitHub's native issue
-# dependencies, which is why `write-story` takes a story's blockers as a
+# needed by the earliest milestone, then lowest number -- from whichever epic
+# it hangs off. What orders the work is the board's Priority, GitHub's native
+# issue dependencies and the milestones the task graph fences off
+# (scripts/team-dashboard/milestones.json), which is why `write-story` takes a story's blockers as a
 # required argument and `write-blockers` exists for a story already open: a
 # story opened without them is one the picker may start before its
 # foundations exist.
@@ -87,7 +88,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: bc-issue.sh <command> [args]
   adopt-alerts                -- put every open, off-board `alert` issue on the board (Backlog/Blocker/XS)
-  next                        -- the startable story: no open blocker, by priority, then size
+  next                        -- the startable story: no open blocker, by priority, then earliest milestone
   active                      -- every sub-issue in an active status, [{number,status}] by number
   transition <issue> <status> -- set Status (and close on Done)
   scope <issue>                -- comma-joined leads in scope, quentin always
@@ -175,6 +176,12 @@ _bc_issue_title() {
 # empty, CRLF or regex-metacharacter-bearing denylist without ever touching
 # the real one.
 _BC_DEMO_DENYLIST_FILE="${BC_DEMO_DENYLIST_FILE:-$_BC_ISSUE_DIR/prompts/demo-checklist-denylist.txt}"
+
+# `next`'s second key: the milestones, in order, that the task graph fences
+# off -- each its gate stories and everything they are transitively blocked
+# by. One file, shared with the dashboard, so the order the graph draws is the
+# order the team works in. BC_MILESTONES_FILE overrides the path for tests.
+_BC_MILESTONES_FILE="${BC_MILESTONES_FILE:-$_BC_ISSUE_DIR/../../scripts/team-dashboard/milestones.json}"
 
 # _bc_demo_escape_word <word> -> the word with every ERE metacharacter
 # backslash-escaped, so a denylist entry like "node.js" or "C++" is matched
@@ -493,8 +500,13 @@ next)
   # an issue closed by hand keeps whatever Status it had, hence the OPEN gate.
   # Of those, the startable ones are the ones no open issue blocks
   # (project_items drops closed blockers), and the order among them is
-  # Priority, then Size -- the small story first, so something ships sooner
-  # and unblocks more -- then issue number.
+  # Priority, then the earliest milestone that needs the story -- a gate of
+  # it, or anything a gate is transitively blocked by; a story no milestone
+  # needs comes after every one that some milestone does -- then issue number.
+  # The closure walks the whole board, not just the pool: a Backlog story
+  # behind an in-flight one is still on that milestone's path. A missing or
+  # malformed milestones file is exit 2, never a silent fall back to issue
+  # order.
   #
   # BC_ONLY_ISSUE narrows the pool to one story. It exists for the e2e run:
   # with no sprint to fence its throwaway story in, a run would otherwise
@@ -504,13 +516,22 @@ next)
         and ((.labels|index("demo"))|not)
         and ($only == "" or (.number|tostring) == $only)) ]
   ')"
-  pick="$(printf '%s' "$pool" | "$JQ" -c '
+  miles="$("$JQ" -ce 'if type == "array" and all(.[]; (.gates | type) == "array")
+      then [ .[].gates ] else error("not a list of milestones with gates") end'     "$_BC_MILESTONES_FILE" 2>/dev/null)"     || { echo "bc-issue next: could not read milestones: $_BC_MILESTONES_FILE" >&2; exit 2; }
+  # {"<number>": <index of the first milestone that needs it>}
+  mrank="$(printf '%s' "$items" | "$JQ" -c --argjson miles "$miles" '
+    (map({key: (.number|tostring), value: (.blockedBy // [])}) | from_entries) as $deps
+    | def closure: . as $s
+        | ([ $s[], ($s[] | $deps[tostring] // [] | .[]) ] | unique) as $n
+        | if $n == $s then $s else $n | closure end;
+    reduce ($miles | to_entries[]) as $m ({};
+      reduce ($m.value | unique | closure[] | tostring) as $k (.; .[$k] //= $m.key))
+  ')" || { echo "bc-issue next: could not rank by milestone" >&2; exit 2; }
+  pick="$(printf '%s' "$pool" | "$JQ" -c --argjson mrank "$mrank" --argjson nmiles "$(printf '%s' "$miles" | "$JQ" length)" '
     def prank: if . == "Blocker" then 0 elif . == "Critical" then 1
                 elif . == "Standard" then 2 elif . == "Low" then 3 else 4 end;
-    def srank: if . == "XS" then 0 elif . == "S" then 1 elif . == "M" then 2
-                elif . == "L" then 3 elif . == "XL" then 4 else 5 end;
     [ .[] | select((.blockedBy // []) | length == 0) ]
-    | sort_by([(.priority|prank), (.size|srank), .number])
+    | sort_by([(.priority|prank), ($mrank[.number|tostring] // $nmiles), .number])
     | .[0] // empty
     | {number, parent}
   ')"

@@ -276,7 +276,7 @@ start_dev_cycle() {
   # =========================================================================
   # starting-dev-cycle -- fewer lanes open than $BC_MAX_ACTIVE: start a new
   # dev cycle beside them. The pick comes from the whole backlog, any epic --
-  # the highest-priority, smallest story no open issue blocks -- and is scoped onto the sprint in
+  # the highest-priority story no open issue blocks, earliest milestone first -- and is scoped onto the sprint in
   # play here, as it starts: this is the only way work ever reaches a sprint,
   # so the team stops only when the backlog has nothing startable, never
   # because a plan ran out. Status is transitioned BEFORE any side effect it

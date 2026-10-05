@@ -67,8 +67,8 @@ story — never more than one per request — as a sub-issue of **the epic story
 - `<blocked-by-csv>` is the issue numbers of the open stories that must be
   merged before this one can be built or verified, e.g. `97,132`, or `-` for
   none. Think before writing `-`: the team starts, from the whole backlog and
-  in no epic order, whichever story has the highest priority and smallest size
-  **and no open blocker** — so a story with no blockers may be started next,
+  in no epic order, whichever story has the highest priority, then is needed by
+  the earliest milestone, **and has no open blocker** — so a story with no blockers may be started next,
   before anything you merely assumed would come first. Name the specific
   stories whose systems, tables or decisions this one uses, in any epic; do
   not name an epic, and do not list a story just because its number is lower.
@@ -90,7 +90,7 @@ Rules:
   and never comment on the PR any other way.
 - `write-story` puts the new story in `Backlog` on no sprint. That is
   correct: nothing is planned into a sprint — the team starts it when it is
-  the highest-priority, smallest story with no open blocker, so its priority
+  the highest-priority story with no open blocker, earliest milestone first, so its priority
   and its blockers are what place it, and its epic is what ties it to the
   work in play. Never set Status, Size, Priority or a sprint any other way.
 - Base the ruling only on the epic, the thread and the requirements you were
