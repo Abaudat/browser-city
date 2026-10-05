@@ -36,6 +36,8 @@ export interface BodyPose {
   /** Cells to the nearest end of the current edge, so the nearest corner of
    * the walked path or end of the leg; 0 when not moving. */
   vertexDistance: number;
+  /** Cells per milliminute walked along the current edge; 0 when not moving. */
+  speed: number;
 }
 
 export function createBodyPose(): BodyPose {
@@ -48,6 +50,7 @@ export function createBodyPose(): BodyPose {
     headingX: 0,
     headingY: 0,
     vertexDistance: 0,
+    speed: 0,
   };
 }
 
@@ -110,6 +113,55 @@ function buildSegment(points: Float64Array): SegmentPath {
   return { points, along, length: along[along.length - 1] as number };
 }
 
+/** The walked distance of every point where the heading changes, and of both
+ * ends of the leg, in order. A waypoint the path runs straight through is not
+ * one. */
+function findCorners(
+  segments: readonly SegmentPath[],
+  starts: readonly number[],
+  total: number,
+): Float64Array<ArrayBuffer> {
+  const found: number[] = [0];
+  let hx = 0;
+  let hy = 0;
+  let have = false;
+  for (let s = 0; s < segments.length; s++) {
+    const seg = segments[s] as SegmentPath;
+    const pts = seg.points;
+    for (let e = 0; e + 3 < pts.length; e += 2) {
+      const ex = (pts[e + 2] as number) - (pts[e] as number);
+      const ey = (pts[e + 3] as number) - (pts[e + 1] as number);
+      const len = Math.sqrt(ex * ex + ey * ey);
+      if (len === 0) continue;
+      const ux = ex / len;
+      const uy = ey / len;
+      if (have && hx * ux + hy * uy < 1 - 1e-9) {
+        found.push((starts[s] as number) + (seg.along[e / 2] as number));
+      }
+      hx = ux;
+      hy = uy;
+      have = true;
+    }
+  }
+  found.push(total);
+  return new Float64Array(found);
+}
+
+/** The distance from `at` to the nearest of the sorted `corners`. */
+function distanceToCorner(corners: Float64Array, at: number): number {
+  let lo = 0;
+  let hi = corners.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((corners[mid] as number) < at) lo = mid + 1;
+    else hi = mid;
+  }
+  let best = Number.POSITIVE_INFINITY;
+  if (lo < corners.length) best = (corners[lo] as number) - at;
+  if (lo > 0) best = Math.min(best, at - (corners[lo - 1] as number));
+  return best;
+}
+
 export class Body {
   readonly #leg: Leg;
   readonly #walk: Walkability;
@@ -120,6 +172,8 @@ export class Body {
   #segments: SegmentPath[] = [];
   #segmentStart: number[] = [];
   #total = 0;
+  /** Walked distances of the corners of the route and its two ends. */
+  #corners: Float64Array<ArrayBuffer> = new Float64Array(0);
   #cursor = 0;
   #edge = 0;
   #searches = 0;
@@ -171,6 +225,7 @@ export class Body {
       const only = waypoints[0] as Cell;
       this.#segments.push(buildSegment(Float64Array.of(only.x + 0.5, only.y + 0.5)));
       this.#segmentStart.push(0);
+      this.#corners = Float64Array.of(0);
       return;
     }
     for (let i = 1; i < waypoints.length; i++) {
@@ -196,6 +251,7 @@ export class Body {
       this.#segments.push(segment);
       this.#total += segment.length;
     }
+    this.#corners = findCorners(this.#segments, this.#segmentStart, this.#total);
   }
 
   /** Writes the pose at city time `t` (milliminutes) into `out`. */
@@ -210,6 +266,7 @@ export class Body {
     out.headingX = 0;
     out.headingY = 0;
     out.vertexDistance = 0;
+    out.speed = 0;
     const first = this.#segments[0] as SegmentPath;
     if (last === 0 || t < (instants[0] as number)) {
       out.x = first.points[0] as number;
@@ -255,7 +312,8 @@ export class Body {
     out.y = (pts[e * 2 + 1] as number) + ey * f;
     out.headingX = ex / edge;
     out.headingY = ey / edge;
-    out.vertexDistance = Math.min(d - (along[e] as number), (along[e + 1] as number) - d);
+    out.vertexDistance = distanceToCorner(this.#corners, out.distance);
+    out.speed = segment.length / (b - a);
     out.moving = true;
   }
 

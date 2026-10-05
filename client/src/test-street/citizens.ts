@@ -30,6 +30,7 @@
 // needs to *not misrepresent* it, never to reproduce it bit for bit.
 
 import type { Defs, Family, HairstyleDef } from "../defs/types";
+import type { Walkability } from "../l3/micro-path";
 import type { AppearanceTuple } from "../render/appearance/composite";
 import type { TimetableSpec } from "./timetable";
 
@@ -368,12 +369,15 @@ export const WALKER_SPECS: Readonly<Record<string, TimetableSpec>> = {
 };
 
 /** Story 5.2: the demo staging for local avoidance, as timetable data (story
- * 5.5 deletes it with the rest). It sits on its own patch of pavement just
+ * 5.5 deletes it with the rest). It sits on its own island of pavement just
  * south of the street, in view from the street's south edge on an ordinary
- * window (`stagingBounds`). Lanes two rows apart do not reach each other.
- * Two citizens meet head-on in an empty lane; one walks past a standing
- * citizen on its line and past another a cell off it; two walk one lane a cell
- * apart. No two citizens ever stand on one cell. */
+ * window (`isStagingCell`); like the crowd's plaza it is test-street
+ * scaffolding, never to be copied into a generated street. Lanes two rows
+ * apart do not reach each other. The cases: two citizens meeting head-on in an
+ * empty lane; one walking past a standing citizen on its line with another a
+ * cell to its side; two walking one lane a cell apart; two on crossing
+ * diagonals; one passing a standing citizen with the pavement's kerb on its
+ * right. No two citizens ever stand on one cell. */
 export const CROSSER_EAST_ID = "crosser-east";
 export const CROSSER_WEST_ID = "crosser-west";
 export const PASSER_ID = "passer";
@@ -381,22 +385,44 @@ export const BYSTANDER_ID = "bystander";
 export const BYSTANDER_OFF_LINE_ID = "bystander-off-line";
 export const TWIN_A_ID = "twin-a";
 export const TWIN_B_ID = "twin-b";
+export const DIAGONAL_A_ID = "diagonal-a";
+export const DIAGONAL_B_ID = "diagonal-b";
+export const KERB_WALKER_ID = "kerb-walker";
+export const KERB_STANDER_ID = "kerb-stander";
 
-/** The pavement the staging stands on, in world cells: below the street's
- * ring and left of the stairwell's railings. */
-export function stagingBounds(): { x0: number; y0: number; x1: number; y1: number } {
-  return { x0: -10, y0: 11, x1: 12, y1: 15 };
+const STAGE_X0 = -9;
+const STAGE_Y0 = 11;
+const STAGE_Y1 = 15;
+/** The pavement reaches east along its last row, under the stairwell's rows. */
+const STAGE_MAIN_X1 = 13;
+const STAGE_EAST_X1 = 18;
+/** The kerb: the row beyond the pavement's last row is not walkable here. */
+const KERB_X0 = 11;
+
+/** Whether the cell `(x, y)` is staging pavement. */
+export function isStagingCell(x: number, y: number): boolean {
+  if (y < STAGE_Y0 || y >= STAGE_Y1 || x < STAGE_X0) return false;
+  return x < STAGE_MAIN_X1 || (y === STAGE_Y1 - 1 && x < STAGE_EAST_X1);
 }
 
-const STAGE_TOP = 11;
-const PASSING_ROW = STAGE_TOP + 1;
-const LANES_ROW = STAGE_TOP + 3;
-const PASSER_X0 = 3;
-const PASSER_X1 = 10;
-const CROSSING_X0 = 3;
-const CROSSING_X1 = 9;
-const TWINS_X0 = -9;
-const TWINS_X1 = -1;
+/** The staging's bounding box in cells, for placement checks. */
+export function stagingBounds(): { x0: number; y0: number; x1: number; y1: number } {
+  return { x0: STAGE_X0, y0: STAGE_Y0, x1: STAGE_EAST_X1, y1: STAGE_Y1 };
+}
+
+/** Whether the cell is the kerb beyond the staging pavement's last row. */
+export function isStagingKerb(x: number, y: number): boolean {
+  return y === STAGE_Y1 && x >= KERB_X0 && x < STAGE_EAST_X1;
+}
+
+/** `base` with the staging's kerb added: the row beyond the pavement is a wall
+ * for every L3 body, so a walker beside it has no room on that side. */
+export function withStagingKerb(base: Walkability): Walkability {
+  return {
+    revision: () => base.revision(),
+    walkable: (floor, x, y) => !isStagingKerb(x, y) && base.walkable(floor, x, y),
+  };
+}
 
 function lane(row: number, x0: number, x1: number, reverse = false): TimetableSpec {
   const a = { x: x0, y: row, floor: CROWD_FLOOR };
@@ -409,52 +435,64 @@ function lane(row: number, x0: number, x1: number, reverse = false): TimetableSp
   };
 }
 
+function diagonal(from: { x: number; y: number }, to: { x: number; y: number }): TimetableSpec {
+  return {
+    out: [
+      { ...from, floor: CROWD_FLOOR },
+      { ...to, floor: CROWD_FLOOR },
+    ],
+    dwellMs: 1500,
+    homeFacing: "right",
+    outFacing: "right",
+  };
+}
+
 export const AVOIDANCE_SPECS: Readonly<Record<string, TimetableSpec>> = {
-  [CROSSER_EAST_ID]: lane(LANES_ROW, CROSSING_X0, CROSSING_X1),
-  [CROSSER_WEST_ID]: lane(LANES_ROW, CROSSING_X0, CROSSING_X1, true),
-  [PASSER_ID]: lane(PASSING_ROW, PASSER_X0, PASSER_X1),
+  [CROSSER_EAST_ID]: lane(12, 0, 8),
+  [CROSSER_WEST_ID]: lane(12, 0, 8, true),
+  [PASSER_ID]: lane(14, 1, 8),
   // One lane, one cell apart, the same length: they walk together the whole way.
-  [TWIN_A_ID]: lane(LANES_ROW, TWINS_X0, TWINS_X1),
-  [TWIN_B_ID]: lane(LANES_ROW, TWINS_X0 - 1, TWINS_X1 - 1),
+  [TWIN_A_ID]: lane(14, -8, -3),
+  [TWIN_B_ID]: lane(14, -9, -4),
+  [DIAGONAL_A_ID]: diagonal({ x: -9, y: 11 }, { x: -4, y: 13 }),
+  [DIAGONAL_B_ID]: diagonal({ x: -4, y: 11 }, { x: -9, y: 13 }),
+  [KERB_WALKER_ID]: lane(14, 12, 17),
 };
 
-/** The standing citizen the passer walks past on its own line, halfway along. */
-export const BYSTANDER_CELL = {
-  x: (PASSER_X0 + PASSER_X1 + 1) / 2,
-  y: PASSING_ROW,
-};
+/** The standing citizens: the passer's on its line, one to its side, and the one
+ * the kerb walker passes on its line. */
+export const BYSTANDER_CELL = { x: 5, y: 14 };
+export const BYSTANDER_OFF_LINE_CELL = { x: 6, y: 13 };
+export const KERB_STANDER_CELL = { x: 14, y: 14 };
 
-/** The standing citizen a cell off the passer's line: the passer walks on. */
-export const BYSTANDER_OFF_LINE_CELL = {
-  x: BYSTANDER_CELL.x + 1,
-  y: PASSING_ROW - 1,
+export const AVOIDANCE_STANDERS: Readonly<Record<string, { x: number; y: number }>> = {
+  [BYSTANDER_ID]: BYSTANDER_CELL,
+  [BYSTANDER_OFF_LINE_ID]: BYSTANDER_OFF_LINE_CELL,
+  [KERB_STANDER_ID]: KERB_STANDER_CELL,
 };
 
 export function buildAvoidanceFixtures(defs: Defs): CitizenFixture[] {
-  const walking = [CROSSER_EAST_ID, CROSSER_WEST_ID, PASSER_ID, TWIN_A_ID, TWIN_B_ID];
-  const fixtures: CitizenFixture[] = walking.map((id, k) => {
-    const spec = AVOIDANCE_SPECS[id] as TimetableSpec;
+  const fixtures: CitizenFixture[] = [];
+  let k = 0;
+  for (const [id, spec] of Object.entries(AVOIDANCE_SPECS)) {
     const origin = spec.out[0] as { x: number; y: number };
-    return {
+    fixtures.push({
       id,
-      tuple: tupleFor(defs, "adult", ADULT_COUNT + 4 + k),
+      tuple: tupleFor(defs, "adult", ADULT_COUNT + 4 + k++),
       gridX: origin.x + 0.5,
       gridY: origin.y + 0.5,
       facing: spec.homeFacing,
-    };
-  });
-  [
-    { id: BYSTANDER_ID, cell: BYSTANDER_CELL },
-    { id: BYSTANDER_OFF_LINE_ID, cell: BYSTANDER_OFF_LINE_CELL },
-  ].forEach(({ id, cell }, k) => {
+    });
+  }
+  for (const [id, cell] of Object.entries(AVOIDANCE_STANDERS)) {
     fixtures.push({
       id,
-      tuple: tupleFor(defs, "adult", ADULT_COUNT + 4 + walking.length + k),
+      tuple: tupleFor(defs, "adult", ADULT_COUNT + 4 + k++),
       gridX: cell.x + 0.5,
       gridY: cell.y + 0.5,
       facing: "down",
     });
-  });
+  }
   return fixtures;
 }
 

@@ -18,11 +18,18 @@ const gait = { strideCells: cfg.strideCells, framesPerCycle: 6 };
 const all = () => true;
 
 /** The most a sidestep may move per cell of ground the bodies cover between
- * two frames. Passing on one line or to one side changes it by about a third
- * per cell. The steepest part is the blend between "on one line" (the right
- * hand rule) and "to one side" (step away), where two paths that cross change
- * sides: the clearance over the tie band, twice (both bodies move). */
-const LIPSCHITZ = (2 * dials.clearanceCells) / dials.tieBandCells + 4;
+ * two frames, from the dials alone. Each of these moves it by its steepest
+ * slope: the distance weight and the corner ramp (a smoothstep, 3/2 at its
+ * steepest, times the clearance), the wall slope, and a crossing pair's fade
+ * through "which side" (a half clearance wide, two bodies moving, shared
+ * clearance). Five times: both bodies move, the slopes add up, and the steepest cases (a crossing pair near its fade) sit above the typical ones. */
+const CROSSING_FADE = 0.5;
+const LIPSCHITZ =
+  5 *
+  ((1.5 * dials.clearanceCells) / dials.radiusCells +
+    (1.5 * dials.clearanceCells) / cfg.avoidRampCells +
+    1 / 3 +
+    2 / CROSSING_FADE);
 const STEP = 6;
 const RUNS = 25;
 const HORIZON = 4500;
@@ -43,7 +50,10 @@ describe("avoidance is continuous in time (FR64)", () => {
         fc.array(cell, { maxLength: 25 }),
         fc.array(leg, { minLength: 1, maxLength: 3 }),
         fc.array(cell, { maxLength: 3 }),
-        (walls, legs, standing) => {
+        (walls, legs, standingRaw) => {
+          // Two citizens on one cell is an L2 defect, not a case to draw.
+          const onRoutes = new Set(legs.flatMap((l) => l.route.map(([x, y]) => `${x},${y}`)));
+          const standing = standingRaw.filter(([x, y]) => !onRoutes.has(`${x},${y}`));
           const grid = new TestGrid();
           for (const [x, y] of walls) grid.block(x, y);
           for (const l of legs) for (const [x, y] of l.route) grid.unblock(x, y);
@@ -113,5 +123,58 @@ describe("avoidance is continuous in time (FR64)", () => {
     );
     // Not vacuous: sidesteps happened, and steeply enough to matter.
     expect(sidesteps).toBeGreaterThan(200);
+  });
+
+  it("a waypoint the path runs straight through is not a corner: the same sidestep with or without it", () => {
+    const run = (waypoints: number[]) => {
+      const grid = new TestGrid();
+      const east = new CitizenBody(grid, CFG, gait, "east", lifeDials());
+      const west = new CitizenBody(grid, CFG, gait, "west", lifeDials());
+      const legE = {
+        kind: "transit" as const,
+        key: 1,
+        leg: {
+          waypoints: waypoints.map((x) => ({ x, y: 6, floor: 0 })),
+          departAt: 0,
+          arriveAt: 2000,
+        },
+        startFacing: "right" as const,
+        endFacing: "right" as const,
+      };
+      const legW = {
+        ...legE,
+        leg: {
+          waypoints: [...waypoints].reverse().map((x) => ({ x, y: 6, floor: 0 })),
+          departAt: 0,
+          arriveAt: 2000,
+        },
+      };
+      const fe = createCitizenFrame();
+      const fw = createCitizenFrame();
+      const field = new AvoidanceField();
+      const offsets: number[] = [];
+      for (let t = 0; t <= 2000; t += 20) {
+        field.reset();
+        east.frameAt(legE, t, fe);
+        west.frameAt(legW, t, fw);
+        field.add("east", fe.x, fe.y, 0, fe.headingX, fe.headingY, fe.moving, fe.ramp, fe.speed);
+        field.add("west", fw.x, fw.y, 0, fw.headingX, fw.headingY, fw.moving, fw.ramp, fw.speed);
+        field.resolve(dials, grid, all);
+        offsets.push(field.offsetY(0));
+      }
+      return offsets;
+    };
+    const plain = run([0, 12]);
+    // Straight-through waypoints, every few cells and every cell.
+    for (const through of [
+      [0, 4, 8, 12],
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+    ]) {
+      const inserted = run(through);
+      expect(Math.max(...plain.map((o, i) => Math.abs(o - (inserted[i] as number))))).toBeLessThan(
+        0.05,
+      );
+    }
+    expect(Math.max(...plain.map(Math.abs))).toBeGreaterThan(0.4);
   });
 });

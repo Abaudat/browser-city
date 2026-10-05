@@ -5,10 +5,12 @@
 // client that joined a moment ago and one that watched all along draw the same
 // frame.
 //
-// The rules (Derek, Artie): the city passes on the right, relative to heading,
-// when the other body is on the walker's line; when it is already to one side
-// the walker steps away from it. A body whose line clears the other by the
-// clearance walks straight. Two walkers share the clearance; a walker passing a
+// The rules (Derek, Artie): the side of a pass comes from the closest-approach
+// miss of the two bodies' straight-line motion (a quantity that holds for the
+// whole encounter, so the side never changes mid-pass, and that is the lateral
+// gap for a standing body). On one line (the tie band) the city passes on the
+// right, relative to heading; otherwise each steps away from the other's side.
+// A body whose line already clears the other by the clearance walks straight. Two walkers share the clearance; a walker passing a
 // standing citizen gives it whole. The sidestep is lateral only, so time and
 // arrival never move and facing stays the ledger heading's. Two walkers on one
 // heading and one line spread by id order.
@@ -17,7 +19,10 @@
 // at both ends of a leg (`ramp`), and a neighbour's own rule changes (its
 // heading, arriving) only where its own ramp is zero, because its contribution
 // is blended from the walker rule to the standing rule by that ramp. The
-// distance to a wall limits the sidestep continuously, with a slope.
+// distance to a wall, or to another standing body, limits the sidestep
+// continuously, with a slope. A walker passing a standing body goes to the
+// side with room for the clearance, decided once for the pass at the point
+// abeam of the stander.
 //
 // Which bodies a client computes is a matter of what it holds: a body is
 // resolved only when its chunk and the chunks round it are held (`isHeld`), so
@@ -50,9 +55,10 @@ const WALL_SLOPE = 1 / 3;
 /** A blocked tile is a disc this big (cells) round its centre, for the
  * distance a sidestep may keep from it. */
 const TILE_RADIUS_CELLS = 0.5;
-/** Cells round a body searched for blocked tiles: a limit reaches
- * `clearance / slope` along. */
-const WALL_WINDOW_CELLS = 4;
+/** Of the clearance, how wide a crossing pair fades through "which side". */
+const CROSSING_FADE = 0.5;
+/** Of the clearance, how much more room on the other side swings the pass to it. */
+const SIDE_SWING = 0.25;
 const CAPPED = 1;
 const BLOCKED = 2;
 
@@ -69,15 +75,17 @@ export function rampOf(vertexDistance: number, rampCells: number): number {
   return smooth(vertexDistance / rampCells);
 }
 
-/** The direction (+1 right, -1 left) a body steps for another whose line is
- * `gap` to its right (negative: to its left): `tie` on one line, away beyond
- * the band, blended between so it never jumps. */
-function directionFor(gap: number, tie: number, band: number): number {
-  const away = gap > 0 ? -1 : 1;
+/** The direction (+1 right, -1 left) a body steps for another that passes
+ * `gap` to its right (negative: to its left): `tie` on one line (within
+ * `band`), away from it otherwise. Where the bodies cross each other's lines
+ * rather than run alongside (`width` > 0) the gap changes during the pass, so
+ * the direction fades through zero over `width` instead of switching. */
+function directionFor(gap: number, tie: number, band: number, width: number): number {
   const a = gap < 0 ? -gap : gap;
   if (a <= band) return tie;
-  if (a >= 2 * band) return away;
-  const t = (a - band) / band;
+  const away = gap > 0 ? -1 : 1;
+  if (a >= band + width) return away;
+  const t = (a - band) / width;
   return tie * (1 - t) + away * t;
 }
 
@@ -89,6 +97,7 @@ export class AvoidanceField {
   #hx = new Float64Array(0);
   #hy = new Float64Array(0);
   #ramp = new Float64Array(0);
+  #speed = new Float64Array(0);
   #floor = new Int32Array(0);
   #moving = new Uint8Array(0);
   #offX = new Float64Array(0);
@@ -98,7 +107,9 @@ export class AvoidanceField {
   #cellY = new Int32Array(0);
   #rank = new Int32Array(0);
   #candD = new Float64Array(0);
+  #candMiss = new Float64Array(0);
   #candJ = new Int32Array(0);
+  #found = 0;
   #order: number[] = [];
   #cells: number[] = [];
   /** Pair distances examined in the last `resolve`. */
@@ -160,6 +171,8 @@ export class AvoidanceField {
     this.#hx = f64(this.#hx);
     this.#hy = f64(this.#hy);
     this.#ramp = f64(this.#ramp);
+    this.#speed = f64(this.#speed);
+    this.#candMiss = f64(this.#candMiss);
     this.#offX = f64(this.#offX);
     this.#offY = f64(this.#offY);
     this.#candD = f64(this.#candD);
@@ -183,6 +196,7 @@ export class AvoidanceField {
     headingY: number,
     moving: boolean,
     ramp: number,
+    speed = 0,
   ): number {
     if (this.#n === this.#x.length) this.#grow();
     const i = this.#n++;
@@ -194,6 +208,7 @@ export class AvoidanceField {
     this.#hy[i] = headingY;
     this.#moving[i] = moving ? 1 : 0;
     this.#ramp[i] = moving ? ramp : 0;
+    this.#speed[i] = moving ? speed : 0;
     this.#offX[i] = 0;
     this.#offY[i] = 0;
     this.#flags[i] = 0;
@@ -276,6 +291,8 @@ export class AvoidanceField {
   #resolveBody(i: number, dials: AvoidDials, walk: Walkability): void {
     const radius = dials.radiusCells;
     const clearance = dials.clearanceCells;
+    // Crossing paths fade through zero over half a clearance of gap.
+    const fade = clearance * CROSSING_FADE;
     const xi = this.#x[i] as number;
     const yi = this.#y[i] as number;
     const floor = this.#floor[i] as number;
@@ -335,30 +352,111 @@ export class AvoidanceField {
       this.#candD[b + 1] = d;
     }
 
+    this.#found = found;
+    const vix = hx * (this.#speed[i] as number);
+    const viy = hy * (this.#speed[i] as number);
+    // First, how each neighbour passes a standing body would: its miss.
+    for (let a = 0; a < found; a++) {
+      const j = this.#candJ[a] as number;
+      closestApproach((this.#x[j] as number) - xi, (this.#y[j] as number) - yi, -vix, -viy, rx, ry);
+      this.#candMiss[a] = missOut;
+    }
     let acc = 0;
     for (let a = 0; a < found; a++) {
       const j = this.#candJ[a] as number;
       const d = this.#candD[a] as number;
-      const gap = ((this.#x[j] as number) - xi) * rx + ((this.#y[j] as number) - yi) * ry;
-      const shortfall = Math.max(0, clearance - (gap < 0 ? -gap : gap));
+      const dpx = (this.#x[j] as number) - xi;
+      const dpy = (this.#y[j] as number) - yi;
       const weight = smooth(1 - d / radius);
       // A walker neighbour shares the clearance and has a heading; a standing
       // one gives none. Blended by the neighbour's own ramp, so a neighbour
       // turning a corner or arriving changes the rule where its ramp is zero.
       const settled = this.#ramp[j] as number;
-      let tie = 1;
+      let asWalker = 0;
       if (settled > 0) {
+        const vjx = (this.#hx[j] as number) * (this.#speed[j] as number);
+        const vjy = (this.#hy[j] as number) * (this.#speed[j] as number);
+        closestApproach(dpx, dpy, vjx - vix, vjy - viy, rx, ry);
+        let tie = 1;
         const same = hx * (this.#hx[j] as number) + hy * (this.#hy[j] as number) > 0;
         if (same && (this.#ids[i] as string) > (this.#ids[j] as string)) tie = -1;
+        asWalker =
+          directionFor(gapOut, tie, dials.tieBandCells, crossOut * fade) *
+          Math.max(0, clearance - missOut) *
+          0.5;
       }
-      const asWalker = directionFor(gap, tie, dials.tieBandCells) * shortfall * 0.5;
-      const asStander = directionFor(gap, 1, dials.tieBandCells) * shortfall;
+      let asStander = 0;
+      if (settled < 1) {
+        closestApproach(dpx, dpy, -vix, -viy, rx, ry);
+        const shortfall = Math.max(0, clearance - missOut);
+        if (shortfall > 0) {
+          // A walking neighbour's gap moves with it: fade through "which side"
+          // over its ramp instead of switching, so that it stops (ramp zero)
+          // into a plain switch without a jump.
+          let dir = directionFor(gapOut, 1, dials.tieBandCells, fade * settled);
+          // Pass on the side with room for the clearance, decided at the point
+          // abeam of the neighbour, which holds for the whole pass.
+          const along = dpx * hx + dpy * hy;
+          const px = xi + hx * along;
+          const py = yi + hy * along;
+          const here = this.#roomOn(
+            floor,
+            px,
+            py,
+            hx,
+            hy,
+            dir * rx,
+            dir * ry,
+            shortfall,
+            dials,
+            walk,
+            j,
+            0,
+          );
+          if (here < shortfall) {
+            const other = this.#roomOn(
+              floor,
+              px,
+              py,
+              hx,
+              hy,
+              -dir * rx,
+              -dir * ry,
+              shortfall,
+              dials,
+              walk,
+              j,
+              0,
+            );
+            // Go the other way as the room there beats the room here, and as
+            // the room here falls short of the clearance: a smooth swing, so
+            // rooms that tie never flip the side from one frame to the next.
+            const lacking = smooth((shortfall - here) / (SIDE_SWING * shortfall));
+            const better = smooth((other - here) / (SIDE_SWING * shortfall));
+            dir *= 1 - 2 * lacking * better;
+          }
+          asStander = dir * shortfall;
+        }
+      }
       acc += weight * (settled * asWalker + (1 - settled) * asStander);
     }
     if (acc === 0) return;
     const side = acc < 0 ? -1 : 1;
     const want = Math.min(clearance, side * acc) * (this.#ramp[i] as number);
-    const allowed = this.#roomOn(floor, xi, yi, hx, hy, side * rx, side * ry, want, dials, walk);
+    const allowed = this.#roomOn(
+      floor,
+      xi,
+      yi,
+      hx,
+      hy,
+      side * rx,
+      side * ry,
+      want,
+      dials,
+      walk,
+      -1,
+      1,
+    );
     const used = Math.min(want, allowed);
     if (used < want) {
       this.blockedSteps++;
@@ -396,9 +494,11 @@ export class AvoidanceField {
   }
 
   /** How far the body at `(x, y)` may sidestep along `(sx, sy)` before its
-   * edge meets a blocked tile, at most `want`. Every blocked tile limits it by
-   * its distance across, rising with a slope along the walk, so the limit
-   * moves continuously as the body passes a wall's end. */
+   * edge meets a blocked tile or a standing body, at most `want`. Every
+   * obstacle limits it by its distance across, rising with a slope along the
+   * walk, so the limit moves continuously as the body passes a wall's end.
+   * `skip` is a neighbour not to count (the one being passed); `mode` 1 counts
+   * only standing bodies the walker already clears. */
   #roomOn(
     floor: number,
     x: number,
@@ -410,13 +510,17 @@ export class AvoidanceField {
     want: number,
     dials: AvoidDials,
     walk: Walkability,
+    skip: number,
+    mode: number,
   ): number {
     let room = want;
     const reach = TILE_RADIUS_CELLS + dials.halfWidthCells;
-    const x0 = Math.floor(x) - WALL_WINDOW_CELLS;
-    const y0 = Math.floor(y) - WALL_WINDOW_CELLS;
-    for (let ty = y0; ty <= y0 + 2 * WALL_WINDOW_CELLS; ty++) {
-      for (let tx = x0; tx <= x0 + 2 * WALL_WINDOW_CELLS; tx++) {
+    // A limit reaches the clearance this far along the walk.
+    const span = Math.ceil(reach + (dials.clearanceCells + reach) / WALL_SLOPE);
+    const x0 = Math.floor(x) - span;
+    const y0 = Math.floor(y) - span;
+    for (let ty = y0; ty <= y0 + 2 * span; ty++) {
+      for (let tx = x0; tx <= x0 + 2 * span; tx++) {
         if (walk.walkable(floor, tx, ty)) continue;
         const dx = tx + 0.5 - x;
         const dy = ty + 0.5 - y;
@@ -424,12 +528,80 @@ export class AvoidanceField {
         if (across <= 0) continue;
         const along = dx * hx + dy * hy;
         const past = (along < 0 ? -along : along) - reach;
-        const limit = across - reach + (past > 0 ? past * WALL_SLOPE : 0);
+        const limit = fadeIn(
+          across,
+          reach,
+          across - reach + (past > 0 ? past * WALL_SLOPE : 0),
+          want,
+        );
         if (limit < room) room = limit;
       }
     }
+    const reachBody = 2 * dials.halfWidthCells;
+    for (let a = 0; a < this.#found; a++) {
+      const j = this.#candJ[a] as number;
+      if (j === skip || this.#moving[j]) continue;
+      if (mode === 1 && (this.#candMiss[a] as number) < dials.clearanceCells) continue;
+      const dx = (this.#x[j] as number) - x;
+      const dy = (this.#y[j] as number) - y;
+      const across = dx * sx + dy * sy;
+      if (across <= 0) continue;
+      const along = dx * hx + dy * hy;
+      const past = (along < 0 ? -along : along) - reachBody;
+      const limit = fadeIn(
+        across,
+        reachBody,
+        across - reachBody + (past > 0 ? past * WALL_SLOPE : 0),
+        want,
+      );
+      if (limit < room) room = limit;
+    }
     return room < 0 ? 0 : room;
   }
+}
+
+/** An obstacle's `limit` on the room, faded in as it comes round to the side
+ * the body steps to (`across` from 0 to `reach`), so an obstacle level with the
+ * body's own line, which only just counts as on that side, limits nothing yet:
+ * the limit never jumps as the obstacle passes from one side to the other. */
+function fadeIn(across: number, reach: number, limit: number, want: number): number {
+  const s = smooth(across / reach);
+  return limit * s + (want + 1) * (1 - s);
+}
+
+/** Written by `closestApproach`: the side (positive: right of the heading) and
+ * the size of the miss. */
+let gapOut = 0;
+let missOut = 0;
+/** How much of the relative motion crosses the heading: 0 alongside, 1 across. */
+let crossOut = 0;
+
+/** Where two bodies at constant velocities pass: `dp` is the other's position
+ * from this body, `dv` its velocity from this body's. The miss is the
+ * separation at closest approach, held for the whole pass; its side is along
+ * `(rx, ry)`. With no relative motion, the lateral gap. */
+function closestApproach(
+  dpx: number,
+  dpy: number,
+  dvx: number,
+  dvy: number,
+  rx: number,
+  ry: number,
+): void {
+  const vv = dvx * dvx + dvy * dvy;
+  if (vv < 1e-18) {
+    gapOut = dpx * rx + dpy * ry;
+    missOut = gapOut < 0 ? -gapOut : gapOut;
+    crossOut = 0;
+    return;
+  }
+  const across = dvx * rx + dvy * ry;
+  crossOut = (across < 0 ? -across : across) / Math.sqrt(vv);
+  const t = -(dpx * dvx + dpy * dvy) / vv;
+  const px = dpx + dvx * t;
+  const py = dpy + dvy * t;
+  gapOut = px * rx + py * ry;
+  missOut = Math.sqrt(px * px + py * py);
 }
 
 function heldWhole(

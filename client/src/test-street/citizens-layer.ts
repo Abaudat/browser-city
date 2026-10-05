@@ -39,6 +39,7 @@ import {
   buildUniformedWalkerFixture,
   buildWalkerFixture,
   CROWD_FLOOR,
+  isStagingCell,
   plazaBounds,
   stagingBounds,
   WALKER_SPECS,
@@ -157,6 +158,7 @@ export async function mountCitizensLayer(
     const stage = stagingBounds();
     for (let y = stage.y0; y < stage.y1; y++) {
       for (let x = stage.x0; x < stage.x1; x++) {
+        if (!isStagingCell(x, y)) continue;
         const tile = new Sprite(sidewalkTexture);
         tile.x = snapToScreenPx(x * tileSizePx, zoom);
         tile.y = snapToScreenPx(y * tileSizePx, zoom);

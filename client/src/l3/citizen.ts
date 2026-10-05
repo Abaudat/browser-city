@@ -54,6 +54,8 @@ export interface CitizenFrame {
   moving: boolean;
   headingX: number;
   headingY: number;
+  /** Cells per milliminute along its edge (0 when standing). */
+  speed: number;
   /** How far into its sidestep a walker is: 0 at both ends of a leg. */
   ramp: number;
   /** The flavour a standing citizen is showing (`NO_FLAVOUR` for none). */
@@ -76,6 +78,7 @@ export function createCitizenFrame(): CitizenFrame {
     headingX: 0,
     headingY: 0,
     ramp: 0,
+    speed: 0,
     flavour: NO_FLAVOUR,
   };
 }
@@ -150,6 +153,7 @@ export class CitizenBody {
     out.headingX = 0;
     out.headingY = 0;
     out.ramp = 0;
+    out.speed = 0;
     const f = this.#flavourFrame;
     flavourAt(this.#id, t, facing, this.#life, until, f);
     out.animation = f.animation;
@@ -190,6 +194,7 @@ export class CitizenBody {
       out.headingX = pose.headingX;
       out.headingY = pose.headingY;
       out.ramp = rampOf(pose.vertexDistance, this.#life.rampCells);
+      out.speed = pose.speed;
       out.animation = "walk";
       out.direction = facingOfHeading(pose.headingX, pose.headingY);
       out.frameIndex = walkFrame(

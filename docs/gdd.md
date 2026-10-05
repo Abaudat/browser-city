@@ -716,7 +716,7 @@ Aliveness is measured **per screen, not per database**. A busy street at rush ho
 
 ### Ambient Citizen Behaviour
 
-A standing citizen is alive: an idle animation and, now and then, a small gesture. A gesture carries no institutional meaning (a glance, a look around, a shift of weight; never anything that reads as work, a transaction, a call or reading a notice). Phone and book use the provided sheet rows once the appearance layouts carry them; sit waits for a story that binds a body to a seat. Never ambient: sleep, push cart, pick up, gift, lift, throw, hit, punch, stab, gun rows, hurt. A flavour is only drawn for a citizen whose every composed layer has its row. Players get none. No emotes, bubbles, icons or sound cues.
+A standing citizen is alive: an idle animation and, now and then, a small gesture. A gesture carries no institutional meaning (a glance, a look around, a shift of weight; never anything that reads as work, a transaction, a call or reading a notice). Sit waits for a story that binds a body to a seat. Never ambient: sleep, push cart, pick up, gift, lift, throw, hit, punch, stab, gun rows, hurt. A flavour is only drawn for a citizen whose every composed layer has its row. Players get none. No emotes, bubbles, icons or sound cues.
 
 Walkers pass on their right, a body's width apart; a standing citizen is never moved, and nobody stops or waits to let anyone by.
 

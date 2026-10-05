@@ -5,9 +5,16 @@
 // e2e hook (a pure function of the ledger, ids and time, never of what was
 // drawn); no sleeps, nothing waits on a wall clock. The math lives in the
 // unit properties; this guards the wiring.
+import { readFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 // Pulls in `declare global { interface Window { __bc } }` -- types only.
 import type {} from "../../src/net/e2e-hooks";
+import { AVOIDANCE_SPECS, AVOIDANCE_STANDERS, stagingBounds } from "../../src/test-street/citizens";
+
+const defs = JSON.parse(readFileSync("public/defs/defs.json", "utf8")) as {
+  balance: { key: string; value: number }[];
+};
+const TILE_SIZE_PX = defs.balance.find((b) => b.key === "render.tile_size_px")?.value ?? 0;
 
 interface Sample {
   readonly id: string;
@@ -80,7 +87,7 @@ test("two clients with different views agree on every citizen's L3 state", async
   }
 });
 
-test("the staged crossing, the pass and the pair are on screen at 1366x768 from the street's south edge", async ({
+test("the whole staging is on screen at 1366x768 from the street's south edge", async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -92,25 +99,39 @@ test("the staged crossing, the pass and the pair are on screen at 1366x768 from 
     timeout: 20_000,
   });
   await page.keyboard.up("ArrowDown");
-  const inView = await page.evaluate(() => {
-    const view = window.__bc?.viewTransform;
-    const canvas = document.querySelector("#test-street canvas");
-    if (!view || !(canvas instanceof HTMLCanvasElement)) throw new Error("no scene");
-    const rect = canvas.getBoundingClientRect();
-    const TILE = 16;
-    // Foot of a body on each staged cell: the crossing lane's middle, the
-    // passer's stander, the stander a cell off its line, the pair's lane.
-    const cells: [string, number, number][] = [
-      ["crossing", 6.5, 14.5],
-      ["passer's stander", 7.5, 12.5],
-      ["stander off its line", 8.5, 11.5],
-      ["pair", -5.5, 14.5],
-    ];
-    return cells.map(([name, x, y]) => {
-      const px = x * TILE * view.zoom + view.offsetX;
-      const py = y * TILE * view.zoom + view.offsetY;
-      return { name, ok: px >= 0 && px <= rect.width && py >= 0 && py <= rect.height };
-    });
-  });
-  for (const c of inView) expect(c, c.name).toEqual({ name: c.name, ok: true });
+
+  // Every lane end and every standing citizen, with a cell of body above the
+  // foot, and the corners of the box they span: read from the fixture.
+  const feet: [number, number][] = [];
+  for (const spec of Object.values(AVOIDANCE_SPECS)) {
+    for (const c of [spec.out[0], spec.out[spec.out.length - 1]] as { x: number; y: number }[]) {
+      feet.push([c.x + 0.5, c.y + 0.5]);
+    }
+  }
+  for (const c of Object.values(AVOIDANCE_STANDERS)) feet.push([c.x + 0.5, c.y + 0.5]);
+  const xs = feet.map(([x]) => x);
+  const ys = feet.map(([, y]) => y);
+  const corners: [number, number][] = [
+    [Math.min(...xs) - 0.5, Math.min(...ys) - 1.5],
+    [Math.max(...xs) + 0.5, Math.max(...ys)],
+  ];
+  const points = [...feet, ...corners];
+  const bounds = stagingBounds();
+  points.push([bounds.x0, bounds.y0], [bounds.x1 - 8, bounds.y1]);
+
+  const outside = await page.evaluate(
+    ({ points, tile }) => {
+      const view = window.__bc?.viewTransform;
+      const canvas = document.querySelector("#test-street canvas");
+      if (!view || !(canvas instanceof HTMLCanvasElement)) throw new Error("no scene");
+      const rect = canvas.getBoundingClientRect();
+      return points.filter(([x, y]) => {
+        const px = x * tile * view.zoom + view.offsetX;
+        const py = y * tile * view.zoom + view.offsetY;
+        return px < 0 || px > rect.width || py < 0 || py > rect.height;
+      });
+    },
+    { points, tile: TILE_SIZE_PX },
+  );
+  expect(outside).toEqual([]);
 });

@@ -3,17 +3,22 @@ import { CitizenBody } from "../../../src/l3/citizen";
 import { pathConfigOf, walkFramesPerCycle } from "../../../src/l3/config";
 import {
   AVOIDANCE_SPECS,
-  BYSTANDER_CELL,
+  AVOIDANCE_STANDERS,
   BYSTANDER_ID,
-  BYSTANDER_OFF_LINE_CELL,
   BYSTANDER_OFF_LINE_ID,
   buildAvoidanceFixtures,
   CROSSER_EAST_ID,
   CROSSER_WEST_ID,
+  DIAGONAL_A_ID,
+  DIAGONAL_B_ID,
+  isStagingCell,
+  isStagingKerb,
+  KERB_WALKER_ID,
   PASSER_ID,
   stagingBounds,
   TWIN_A_ID,
   TWIN_B_ID,
+  withStagingKerb,
 } from "../../../src/test-street/citizens";
 import { lifeDialsFor, StreetLife, standState } from "../../../src/test-street/street-life";
 import { Timetable } from "../../../src/test-street/timetable";
@@ -21,41 +26,38 @@ import { npcWalkability } from "../../../src/world/npc-walkable";
 import { l3Config } from "../l3/defs-config";
 import { committedDefs, streetWorldIndex } from "./street-world";
 
-const streetWalk = npcWalkability(streetWorldIndex());
-
 const cfg = l3Config();
 const defs = committedDefs();
 const path = pathConfigOf(cfg);
-const open = { revision: () => 0, walkable: () => true };
+const streetWalk = npcWalkability(streetWorldIndex());
+const walk = withStagingKerb(streetWalk);
 const gait = { strideCells: cfg.strideCells, framesPerCycle: walkFramesPerCycle(defs, "adult") };
 const life = lifeDialsFor(defs, cfg, "adult");
 
-const walking = [CROSSER_EAST_ID, CROSSER_WEST_ID, PASSER_ID, TWIN_A_ID, TWIN_B_ID];
-const standing = [
-  { id: BYSTANDER_ID, cell: BYSTANDER_CELL },
-  { id: BYSTANDER_OFF_LINE_ID, cell: BYSTANDER_OFF_LINE_CELL },
-];
-const period = new Timetable(AVOIDANCE_SPECS[CROSSER_EAST_ID] as never, cfg, open, path)
+const walking = Object.keys(AVOIDANCE_SPECS);
+const standing = Object.keys(AVOIDANCE_STANDERS);
+const period = new Timetable(AVOIDANCE_SPECS[CROSSER_EAST_ID] as never, cfg, walk, path)
   .periodMilli;
 
-/** The staging as the street's life holds it, optionally without some citizens. */
+/** The staging as the street's life holds it, without the citizens named. */
 function build(without: readonly string[] = []) {
-  const street = new StreetLife(cfg, open);
+  const street = new StreetLife(cfg, walk);
   for (const id of walking) {
     if (without.includes(id)) continue;
     const make = () => ({
-      timetable: new Timetable(AVOIDANCE_SPECS[id] as never, cfg, open, path),
-      body: new CitizenBody(open, path, gait, id, life),
+      timetable: new Timetable(AVOIDANCE_SPECS[id] as never, cfg, walk, path),
+      body: new CitizenBody(walk, path, gait, id, life),
     });
     street.add({ id, ...make(), remake: make });
   }
-  for (const { id, cell } of standing) {
+  for (const id of standing) {
     if (without.includes(id)) continue;
-    const make = () => ({ body: new CitizenBody(open, path, gait, id, life) });
+    const cell = AVOIDANCE_STANDERS[id] as { x: number; y: number };
+    const make = () => ({ body: new CitizenBody(walk, path, gait, id, life) });
     street.add({
       id,
       ...make(),
-      stand: standState({ x: Math.floor(cell.x), y: Math.floor(cell.y) }, 0, "down"),
+      stand: standState(cell, 0, "down"),
       standAt: { x: cell.x + 0.5, y: cell.y + 0.5 },
       remake: make,
     });
@@ -75,30 +77,30 @@ function pose(street: StreetLife, id: string) {
   };
 }
 
+const only = (...ids: string[]) => [...walking, ...standing].filter((id) => !ids.includes(id));
+
 describe("the avoidance staging on the test street (story 5.2)", () => {
-  it("is plain data on its own pavement, and no two citizens ever stand on one cell", () => {
+  it("is plain data on its own pavement, walkable, and no two citizens ever stand on one cell", () => {
     const b = stagingBounds();
     const fixtures = buildAvoidanceFixtures(defs);
-    expect(fixtures.map((f) => f.id).sort()).toEqual(
-      [...walking, ...standing.map((s) => s.id)].sort(),
-    );
+    expect(fixtures.map((f) => f.id).sort()).toEqual([...walking, ...standing].sort());
     for (const f of fixtures) {
+      expect(isStagingCell(Math.floor(f.gridX), Math.floor(f.gridY))).toBe(true);
       expect(f.gridX).toBeGreaterThan(b.x0);
       expect(f.gridX).toBeLessThan(b.x1);
-      expect(f.gridY).toBeGreaterThan(b.y0);
-      expect(f.gridY).toBeLessThan(b.y1);
     }
-    // Every cell on every lane is on that pavement, and none is a wall of the street.
+    // Every cell of every lane is staging pavement the street leaves open; the
+    // kerb is a wall.
     for (const id of walking) {
       const route = (AVOIDANCE_SPECS[id] as unknown as { out: { x: number; y: number }[] }).out;
       for (const c of route) {
-        expect(c.x).toBeGreaterThanOrEqual(b.x0);
-        expect(c.x).toBeLessThan(b.x1);
-        expect(c.y).toBeGreaterThanOrEqual(b.y0);
-        expect(c.y).toBeLessThan(b.y1);
-        expect(streetWalk.walkable(0, c.x, c.y)).toBe(true);
+        expect(isStagingCell(c.x, c.y)).toBe(true);
+        expect(walk.walkable(0, c.x, c.y)).toBe(true);
       }
     }
+    expect(isStagingKerb(14, 15)).toBe(true);
+    expect(walk.walkable(0, 14, 15)).toBe(false);
+    expect(streetWalk.walkable(0, 14, 15)).toBe(true);
     // At no moment do two citizens stand on one cell.
     const street = build();
     for (let t = 0; t < 2 * period; t += 10) {
@@ -137,34 +139,39 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
     expect(closestLedger).toBeLessThan(0.2);
     expect(closestDrawn).toBeGreaterThan(0.8 * cfg.avoidClearanceCells);
     // Nobody else is in that lane: the crossing is the same without anyone else.
-    const alone = build([PASSER_ID, TWIN_A_ID, TWIN_B_ID, BYSTANDER_ID, BYSTANDER_OFF_LINE_ID]);
+    const alone = build(only(CROSSER_EAST_ID, CROSSER_WEST_ID));
     for (let t = 0; t < period; t += 25) {
       street.solve(t);
       alone.solve(t);
       for (const id of [CROSSER_EAST_ID, CROSSER_WEST_ID]) {
-        expect(pose(street, id).oy).toBeCloseTo(pose(alone, id).oy, 9);
+        // Only the standing citizen a cell off the lane may limit the room by a hair.
+        expect(Math.abs(pose(street, id).oy - pose(alone, id).oy)).toBeLessThan(0.02);
       }
     }
   });
 
-  it("a walker steps round the standing citizen on its line and is left alone by one a cell off it", () => {
+  it("a walker steps round the standing citizen on its line, on the side with room, and walks into neither", () => {
     const street = build();
-    const without = build([BYSTANDER_OFF_LINE_ID]);
     let widest = 0;
+    let nearest = Number.POSITIVE_INFINITY;
+    let nearestOnLine = Number.POSITIVE_INFINITY;
     for (let t = 0; t < period; t += 5) {
       street.solve(t);
-      without.solve(t);
-      for (const id of [BYSTANDER_ID, BYSTANDER_OFF_LINE_ID]) {
+      for (const id of standing) {
         const s = pose(street, id);
         expect([s.ox, s.oy]).toEqual([0, 0]);
       }
       const p = pose(street, PASSER_ID);
       if (!p.frame.moving) expect([p.ox, p.oy]).toEqual([0, 0]);
       widest = Math.max(widest, Math.abs(p.oy));
-      // The stander a cell off the line changes nothing for the passer.
-      expect(p.oy).toBeCloseTo(pose(without, PASSER_ID).oy, 9);
+      const far = pose(street, BYSTANDER_OFF_LINE_ID);
+      nearest = Math.min(nearest, Math.hypot(p.x + p.ox - far.x, p.y + p.oy - far.y));
+      const near = pose(street, BYSTANDER_ID);
+      nearestOnLine = Math.min(nearestOnLine, Math.hypot(p.x + p.ox - near.x, p.y + p.oy - near.y));
     }
     expect(widest).toBeGreaterThan(0.6);
+    expect(nearest).toBeGreaterThan(0.85);
+    expect(nearestOnLine).toBeGreaterThan(0.8 * cfg.avoidClearanceCells);
   });
 
   it("two citizens walking a cell apart on one lane spread by id and never close", () => {
@@ -183,13 +190,69 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
     expect(spread).toBeGreaterThan(0.6);
   });
 
+  it("two citizens on crossing diagonals pass each other without a jump", () => {
+    const street = build();
+    let closestLedger = Number.POSITIVE_INFINITY;
+    let closestDrawn = Number.POSITIVE_INFINITY;
+    let previous: number[] | undefined;
+    let worst = 0;
+    for (let t = 0; t < period; t += 4) {
+      street.solve(t);
+      const a = pose(street, DIAGONAL_A_ID);
+      const b = pose(street, DIAGONAL_B_ID);
+      if (a.frame.moving && b.frame.moving) {
+        closestLedger = Math.min(closestLedger, Math.hypot(a.x - b.x, a.y - b.y));
+        closestDrawn = Math.min(
+          closestDrawn,
+          Math.hypot(a.x + a.ox - b.x - b.ox, a.y + a.oy - b.y - b.oy),
+        );
+      }
+      const now = [a.ox, a.oy, b.ox, b.oy];
+      if (previous) {
+        const moved = 4 * ((cfg.walkCellsPerS * (cfg.realMsPerCityMinute / 1000)) / 1000);
+        for (let i = 0; i < 4; i += 2) {
+          worst = Math.max(
+            worst,
+            Math.hypot(
+              (now[i] as number) - (previous[i] as number),
+              (now[i + 1] as number) - (previous[i + 1] as number),
+            ) /
+              (2 * moved),
+          );
+        }
+      }
+      previous = now;
+    }
+    expect(closestLedger).toBeLessThan(0.5);
+    expect(closestDrawn).toBeGreaterThan(0.5);
+    // At most a few cells of sidestep per cell walked: no snap.
+    expect(worst).toBeLessThan(6);
+  });
+
+  it("a walker passes a standing citizen with the kerb on its right by taking the open side", () => {
+    const street = build();
+    let north = 0;
+    let south = 0;
+    for (let t = 0; t < period; t += 5) {
+      street.solve(t);
+      const w = pose(street, KERB_WALKER_ID);
+      if (w.oy < 0) north = Math.min(north, w.oy);
+      else south = Math.max(south, w.oy);
+    }
+    expect(north).toBeLessThan(-0.7);
+    // Never towards the kerb beyond what its face leaves.
+    expect(south).toBeLessThan(0.05);
+  });
+
   it("no walker facing depends on the sidestep, and a standing body is never displaced", () => {
     const street = build();
     for (let t = 0; t < period; t += 5) {
       street.solve(t);
       for (const w of street.members) {
         if (w.frame.moving) {
-          expect(w.frame.direction).toBe(w.frame.headingX > 0 ? "right" : "left");
+          if (Math.abs(w.frame.headingX) > Math.abs(w.frame.headingY)) {
+            expect(w.frame.direction).toBe(w.frame.headingX > 0 ? "right" : "left");
+          }
         } else {
           expect([street.offsetX(w), street.offsetY(w)]).toEqual([0, 0]);
         }

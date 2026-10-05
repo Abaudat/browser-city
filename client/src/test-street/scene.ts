@@ -70,7 +70,12 @@ import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
 import { ASSET_URLS, type PixelRect } from "./assets";
-import { buildCommuterAppearanceTuple, buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
+import {
+  buildCommuterAppearanceTuple,
+  buildPlayerAppearanceTuple,
+  CROWD_FLOOR,
+  withStagingKerb,
+} from "./citizens";
 import { type CitizensLayerHandle, type L3BodyReport, mountCitizensLayer } from "./citizens-layer";
 import { COMMUTER_ID, COMMUTER_SPEC, COMMUTER_STABLE_ID } from "./commuter";
 import {
@@ -1343,7 +1348,7 @@ export async function mountStreetScene(
   // no pinned order or baseline moves; absent altogether while the crowd is
   // frozen for a screenshot. Posed from city time alone: no clock, no body.
   const l3Config = loadL3Config(defs);
-  const npcWalk = npcWalkability(worldIndex);
+  const npcWalk = withStagingKerb(npcWalkability(worldIndex));
   const l3Path = pathConfigOf(l3Config);
   const msPerMilliminute = l3Config.realMsPerCityMinute / 1000;
   // Every ledger-driven citizen on the street -- the commuter and the crowd's

@@ -159,7 +159,7 @@ function solveAll(
         f.y = m.standAt.y;
       }
     }
-    m.index = field.add(m.id, f.x, f.y, f.floor, f.headingX, f.headingY, f.moving, f.ramp);
+    m.index = field.add(m.id, f.x, f.y, f.floor, f.headingX, f.headingY, f.moving, f.ramp, f.speed);
   }
   field.resolve(dials, walk, ALL_CHUNKS_HELD);
 }
