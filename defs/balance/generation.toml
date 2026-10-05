@@ -1041,8 +1041,11 @@ max = 100
 
 [[balance]]
 # No required kind may exceed this share of the enterable set -- 97 flats
-# and one of each other kind must fail.
+# and one of each other kind must fail. Dwellings are the largest kind by
+# far: over 1,500 seeds their share of placed buildings has mean 64.1% and
+# maximum 74.7%, and a random `proptest` seed found 75.3% -- so 85, never
+# "the measured maximum plus margin".
 key = "generation.interiors.max_kind_share_percent"
-value = 75
+value = 85
 min = 1
 max = 100

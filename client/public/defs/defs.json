@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "ab309d99aa838ca0",
+  "defs_version": "6f3a0c2728f8f2a6",
   "collider_subcells_per_cell": 16,
   "interact_at_max_reach_cells": 2,
   "max_footprint_cells": 8,
@@ -148,7 +148,7 @@
     { "key": "generation.interiors.dwelling_min_enterable_percent", "max": 100, "min": 0, "value": 90 },
     { "key": "generation.interiors.enterable_target_percent", "max": 100, "min": 1, "value": 98 },
     { "key": "generation.interiors.enterable_target_tolerance_percent", "max": 100, "min": 0, "value": 1 },
-    { "key": "generation.interiors.max_kind_share_percent", "max": 100, "min": 1, "value": 75 },
+    { "key": "generation.interiors.max_kind_share_percent", "max": 100, "min": 1, "value": 85 },
     { "key": "generation.interiors.max_layout_attempts", "max": 64, "min": 1, "value": 8 },
     { "key": "generation.interiors.max_rejected_percent", "max": 100, "min": 0, "value": 5 },
     { "key": "generation.interiors.min_enterable_count", "max": 100000, "min": 1, "value": 100 },

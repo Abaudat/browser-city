@@ -201,7 +201,8 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     );
     let vocab = sim::generation::interiors::Vocabulary::new(&content);
     for (plot, _, interior) in io.laid() {
-        let cells = sim::generation::interiors::site_cells(interior, &vocab).len() as i64;
+        let cells =
+            sim::generation::interiors::building_site(interior, &vocab).occupied_cells() as i64;
         assert!(
             cells <= area_of(plot) + interior.approach.len() as i64,
             "plot {plot}: a per-building verdict site holds {cells} cells, more than its own footprint and approach"

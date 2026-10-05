@@ -173,21 +173,23 @@ impl GenerationContent<'static> {
     }
 }
 
-/// One finished city plan: every implemented pass's own output, in order.
-/// Never a `PlacedObject` -- still the abstract plan this module has
-/// always handed down (FR110).
+/// Passes 1-5 of a city plan: land use, streets, plots, envelopes and
+/// building types -- everything above the interiors. Pass 6 costs a
+/// layout and a rule verdict per building, an order of magnitude more
+/// than the five passes before it together, so a harness that reads
+/// nothing of the interiors plans only this ([`plan_skeleton`]); a
+/// [`District`] is a skeleton plus the interiors and derefs to it.
 #[derive(Debug, Clone)]
-pub struct District {
+pub struct Skeleton {
     pub land_use: LandUseMap,
     pub streets: StreetNetwork,
     pub plots: PlotMap,
     pub envelopes: EnvelopeMap,
     pub building_types: BuildingTypeMap,
-    pub interiors: InteriorMap,
 }
 
-impl District {
-    /// AC4's own verdict on this finished district: `Err(GenerationError::
+impl Skeleton {
+    /// AC4's own verdict on this finished plan: `Err(GenerationError::
     /// BuildingCountOutOfTolerance)` when the realised placed-envelope
     /// count sits outside [`GenerationConfig::building_count_band`] for
     /// its own site -- a property of the whole plan, never folded into
@@ -196,6 +198,52 @@ impl District {
         envelopes::check_building_count(&self.envelopes, self.plots.site(), cfg)
     }
 
+    /// AC4's workplace-count verdict: every placed envelope whose
+    /// assigned type has at least one post (Tim's direction: a workplace
+    /// is derived, never a stored category), against
+    /// [`GenerationConfig::workplace_count_band`].
+    pub fn check_workplace_count(
+        &self,
+        cfg: &GenerationConfig,
+        content: &GenerationContent,
+    ) -> Result<(), GenerationError> {
+        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+            content.building_types.iter().map(|b| (b.id, b)).collect();
+        let got = self
+            .building_types
+            .assignments()
+            .iter()
+            .filter(|a| building_types::is_workplace(by_id[&a.building_type]))
+            .count() as i64;
+        let site_cells = self.plots.site().width() * self.plots.site().height();
+        let (min, max) = cfg.workplace_count_band(site_cells);
+        if got < min || got > max {
+            return Err(GenerationError::WorkplaceCountOutOfTolerance { got, min, max });
+        }
+        Ok(())
+    }
+}
+
+/// One finished city plan: every implemented pass's own output, in order.
+/// Never a `PlacedObject` -- still the abstract plan this module has
+/// always handed down (FR110). Derefs to its [`Skeleton`], so
+/// `district.plots` and `district.check_building_count(..)` read as they
+/// always have.
+#[derive(Debug, Clone)]
+pub struct District {
+    pub skeleton: Skeleton,
+    pub interiors: InteriorMap,
+}
+
+impl std::ops::Deref for District {
+    type Target = Skeleton;
+
+    fn deref(&self) -> &Skeleton {
+        &self.skeleton
+    }
+}
+
+impl District {
     /// Builds this district's own [`DistrictSite`] -- the one adapter
     /// both this check and pass 5's own placement build from the same
     /// fields (FR112).
@@ -247,31 +295,6 @@ impl District {
             None => Ok(()),
         }
     }
-
-    /// AC4's workplace-count verdict: every placed envelope whose
-    /// assigned type has at least one post (Tim's direction: a workplace
-    /// is derived, never a stored category), against
-    /// [`GenerationConfig::workplace_count_band`].
-    pub fn check_workplace_count(
-        &self,
-        cfg: &GenerationConfig,
-        content: &GenerationContent,
-    ) -> Result<(), GenerationError> {
-        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
-            content.building_types.iter().map(|b| (b.id, b)).collect();
-        let got = self
-            .building_types
-            .assignments()
-            .iter()
-            .filter(|a| building_types::is_workplace(by_id[&a.building_type]))
-            .count() as i64;
-        let site_cells = self.plots.site().width() * self.plots.site().height();
-        let (min, max) = cfg.workplace_count_band(site_cells);
-        if got < min || got > max {
-            return Err(GenerationError::WorkplaceCountOutOfTolerance { got, min, max });
-        }
-        Ok(())
-    }
 }
 
 /// Chains every implemented pass, in FR110's own order, with no verdict
@@ -282,19 +305,41 @@ pub fn plan(
     cfg: &GenerationConfig,
     content: &GenerationContent,
 ) -> Result<District, GenerationError> {
+    let skeleton = plan_skeleton(city_seed, cfg, content)?;
+    let interiors = interiors::run(
+        city_seed,
+        &skeleton.envelopes,
+        &skeleton.building_types,
+        &skeleton.plots,
+        cfg,
+        content,
+    );
+    Ok(District {
+        skeleton,
+        interiors,
+    })
+}
+
+/// Passes 1-5 only: what a harness that reads nothing of the interiors
+/// calls, so it never pays for pass 6 (see [`Skeleton`]). The first five
+/// passes run exactly as [`plan`] runs them -- the same seeds, the same
+/// outputs.
+pub fn plan_skeleton(
+    city_seed: u64,
+    cfg: &GenerationConfig,
+    content: &GenerationContent,
+) -> Result<Skeleton, GenerationError> {
     let land_use = land_use::run(city_seed, cfg.site(), cfg)?;
     let streets = streets::run(city_seed, &land_use, cfg);
     let plots = plots::run(city_seed, &land_use, &streets, cfg);
     let envelopes = envelopes::run(city_seed, &plots, cfg);
     let building_types = building_types::run(city_seed, &envelopes, &plots, &streets, cfg, content);
-    let interiors = interiors::run(city_seed, &envelopes, &building_types, &plots, cfg, content);
-    Ok(District {
+    Ok(Skeleton {
         land_use,
         streets,
         plots,
         envelopes,
         building_types,
-        interiors,
     })
 }
 
@@ -1464,7 +1509,7 @@ mod tests {
                 0,
                 100,
             ),
-            seed("generation.interiors.max_kind_share_percent", 75, 1, 100),
+            seed("generation.interiors.max_kind_share_percent", 85, 1, 100),
         ]
     }
 

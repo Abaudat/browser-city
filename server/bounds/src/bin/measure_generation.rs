@@ -120,7 +120,7 @@ fn main() {
     let mut detour_excess_max: (i64, u64, (i32, i32), (i32, i32)) = (i64::MIN, 0, (0, 0), (0, 0));
 
     for seed in 0..SEED_COUNT {
-        let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).expect("pass 1 is total");
         let (net, pm, em) = (&d.streets, &d.plots, &d.envelopes);
 
         for s in net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES) {

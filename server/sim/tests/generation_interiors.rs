@@ -149,3 +149,74 @@ fn a_rule_the_layout_cannot_satisfy_by_one_cell_is_refused_by_its_own_key() {
         "the planted rule must be refused by its own key, got {violations:?}"
     );
 }
+
+/// One laid-out interior from the committed content, for the planted-
+/// violation tests below.
+fn laid_interior() -> (interiors::Interior, GenerationContent<'static>) {
+    let content = GenerationContent::committed();
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let vocab = Vocabulary::new(&content);
+    let def = content
+        .building_types
+        .iter()
+        .find(|b| b.rooms.len() >= 3)
+        .expect("a type with three core rooms");
+    let (plot, env) = plot_and_envelope();
+    let InteriorOutcome::Laid { interior, .. } =
+        interiors::lay_out(15, &env, &plot, def, &cfg, &content, &vocab)
+    else {
+        panic!("the committed content lays this building out");
+    };
+    (interior, content)
+}
+
+fn violated_keys(
+    interior: &interiors::Interior,
+    content: &GenerationContent<'static>,
+) -> std::collections::BTreeSet<&'static str> {
+    let vocab = Vocabulary::new(content);
+    interiors::check_layout(interior, &vocab, content.rules)
+        .iter()
+        .filter_map(|v| content.rules.key_of(v.rule_id))
+        .collect()
+}
+
+/// AC2: each structural requirement row, planted alone in an otherwise
+/// untouched layout, is refused by its own rule key -- never by a second
+/// validator, never silently accepted.
+#[test]
+fn a_missing_door_entrance_or_approach_is_refused_by_key() {
+    let (interior, content) = laid_interior();
+    assert!(
+        violated_keys(&interior, &content).is_empty(),
+        "the untouched layout is accepted"
+    );
+
+    // A back room with no door.
+    let mut no_door = interior.clone();
+    let back = no_door.thresholds.iter().position(|t| !t.entrance).unwrap();
+    no_door.thresholds.remove(back);
+    assert!(violated_keys(&no_door, &content).contains("room_has_a_door"));
+
+    // No street door at all.
+    let mut no_entrance = interior.clone();
+    no_entrance.thresholds.retain(|t| !t.entrance);
+    assert!(violated_keys(&no_entrance, &content).contains("building_has_an_entrance"));
+
+    // A door that opens onto bare ground.
+    let mut no_pavement = interior.clone();
+    no_pavement.approach.clear();
+    assert!(violated_keys(&no_pavement, &content).contains("entrance_opens_onto_pavement"));
+
+    // A fixture standing in front of a door.
+    let vocab = Vocabulary::new(&content);
+    let mut blocked = interior.clone();
+    let t = *blocked.thresholds.iter().find(|t| t.entrance).unwrap();
+    blocked.fixtures.push(interiors::Fixture {
+        x: t.x,
+        y: t.y - 1,
+        tag: vocab.parts.fixture,
+        room: 0,
+    });
+    assert!(violated_keys(&blocked, &content).contains("door_never_blocked_by_a_fixture"));
+}

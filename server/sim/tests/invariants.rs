@@ -2242,7 +2242,7 @@ proptest! {
     fn inv_generation_every_plot_fronts_a_street(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (net, pm) = (&d.streets, &d.plots);
         prop_assert!(!pm.plots().is_empty());
         let offenders = pm.landlocked_plots(net.blocks(), cfg.plot_frontage_min_cells);
@@ -2254,7 +2254,7 @@ proptest! {
     fn inv_generation_plots_tile_their_block(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (net, pm) = (&d.streets, &d.plots);
 
         for p in pm.plots() {
@@ -2293,7 +2293,7 @@ proptest! {
     fn inv_generation_open_plot_percent_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let pm = &d.plots;
         prop_assert!(
             pm.open_count_percent() <= cfg.plot_max_open_percent_by_count,
@@ -2314,7 +2314,7 @@ proptest! {
     fn inv_generation_unplotted_percent_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (net, pm) = (&d.streets, &d.plots);
         prop_assert!(
             pm.unplotted_percent(net.blocks()) <= cfg.plot_max_unplotted_percent,
@@ -2418,7 +2418,7 @@ proptest! {
     fn inv_generation_envelope_size_within_its_class_band(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (pm, em) = (&d.plots, &d.envelopes);
         for e in em.envelopes() {
             let p = pm.plots()[e.plot as usize];
@@ -2441,7 +2441,7 @@ proptest! {
     fn inv_generation_envelope_inside_its_own_plot(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (pm, em) = (&d.plots, &d.envelopes);
         for e in em.envelopes() {
             let p = pm.plots()[e.plot as usize];
@@ -2462,7 +2462,7 @@ proptest! {
     fn inv_generation_envelope_gaps_are_zero_or_at_least_two(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (pm, em) = (&d.plots, &d.envelopes);
         // Every pair of envelopes in one block, whichever face each
         // belongs to, on both axes: the rule is about what the player
@@ -2505,7 +2505,7 @@ proptest! {
     fn inv_generation_open_plots_are_never_slivers(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         for p in d.plots.plots().iter().filter(|p| p.open) {
             let short = p.bounds.width().min(p.bounds.height());
             if short >= cfg.plot_open_min_side_cells as i64 {
@@ -2527,7 +2527,7 @@ proptest! {
         use sim::generation::Side;
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let touches = |p: Rect, block: Rect, side: Side| -> bool {
             match side {
                 Side::North => p.y0 == block.y0,
@@ -2563,7 +2563,7 @@ proptest! {
     fn inv_generation_plot_state_is_consistent(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         for p in d.plots.plots() {
             prop_assert!(p.open || p.front.is_some(), "seed {seed}: non-open plot {:?} has no front", p.bounds);
         }
@@ -2575,7 +2575,7 @@ proptest! {
     fn inv_generation_envelope_sizes_are_varied(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         let sizes: std::collections::BTreeSet<(i64, i64)> = em.envelopes().map(|e| (e.along_face_cells(), e.depth_cells())).collect();
         prop_assert!(
@@ -2592,7 +2592,7 @@ proptest! {
     fn inv_generation_envelope_mean_size_within_a_weak_per_city_band(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         let (mut sum_w, mut sum_d, mut n) = (0i64, 0i64, 0i64);
         for e in em.envelopes() {
@@ -2627,7 +2627,7 @@ proptest! {
     fn inv_generation_envelope_rejection_rate_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         prop_assert!(
             em.rejected_percent() <= cfg.envelope_max_rejected_plot_percent,
@@ -2643,7 +2643,7 @@ proptest! {
         // `generate` is the entry point under test here; the hand-chain
         // below is what must still yield plots when its count check errs.
         let _ = sim::generation::generate(seed, &cfg, &content);
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let pm = &d.plots;
         prop_assert!(!pm.plots().is_empty());
     }
@@ -2656,7 +2656,7 @@ proptest! {
     fn inv_generation_every_envelope_has_exactly_one_type(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         prop_assert_eq!(
             d.building_types.assignments().len(),
             d.envelopes.placed_count() as usize
@@ -2681,7 +2681,7 @@ proptest! {
     fn inv_generation_every_placed_type_matches_its_own_land_use_and_density_band(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
             content.building_types.iter().map(|b| (b.id, b)).collect();
         for a in d.building_types.assignments() {
@@ -2758,7 +2758,7 @@ proptest! {
         const MULTI_INSTANCE_RATIO_CEILING: u32 = 250;
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
             content.building_types.iter().map(|b| (b.id, b)).collect();
         let mut tag_counts: std::collections::BTreeMap<TagId, u64> = std::collections::BTreeMap::new();
@@ -2833,7 +2833,7 @@ proptest! {
     fn inv_generation_building_type_independent_of_envelope_order(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let original: std::collections::BTreeMap<u32, u32> = d
             .building_types
             .assignments()
@@ -2881,7 +2881,7 @@ proptest! {
             "generation.building_types.profession_count_per_city_min",
         );
 
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let mut employers: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
         for a in d.building_types.assignments() {
             let def = by_id[&a.building_type];
@@ -2952,7 +2952,7 @@ proptest! {
             content.building_types.iter().map(|b| (b.id, b)).collect();
         let site = cfg.site();
         let extent = cfg.building_type_catchment_extent_cells;
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
 
         let mut quadrant_of: std::collections::BTreeMap<u32, (i32, i32)> =
             std::collections::BTreeMap::new();
@@ -3128,7 +3128,7 @@ fn the_no_eligible_land_exemption_fires_rarely_over_seeds_0_to_256() {
     let mut exempted = 0u64;
 
     for seed in 0..256u64 {
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let mut quadrant_of: std::collections::BTreeMap<u32, (i32, i32)> =
             std::collections::BTreeMap::new();
         for e in d.envelopes.envelopes() {
@@ -3288,7 +3288,7 @@ fn the_quadrant_floor_is_not_vacuous_for_every_multi_instance_row_over_seeds_0_t
         dist_rows.iter().map(|r| (r.id, 0u64)).collect();
 
     for seed in 0..256u64 {
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let mut quadrant_of: std::collections::BTreeMap<u32, (i32, i32)> =
             std::collections::BTreeMap::new();
         for e in d.envelopes.envelopes() {
@@ -3441,7 +3441,7 @@ fn the_three_singleton_ratios_resolve_to_about_one_across_the_measured_seed_rang
         let mut min_actual = u64::MAX;
         let mut max_actual = 0u64;
         for seed in 0..256u64 {
-            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+            let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
             let mut per = 0u64;
             let mut actual = 0u64;
             for a in d.building_types.assignments() {
@@ -3557,7 +3557,7 @@ fn inv_generation_envelope_mean_size_matches_the_committed_band() {
     let content = GenerationContent::committed();
     let (mut sum_w, mut sum_d, mut n) = (0i64, 0i64, 0i64);
     for seed in 0u64..256 {
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         for e in em.envelopes() {
             sum_w += e.along_face_cells();
@@ -3596,7 +3596,7 @@ fn inv_generation_building_count_mean_matches_the_scale_baseline() {
     let n: i64 = 256;
     let sum: i64 = (0..n as u64)
         .map(|seed| {
-            sim::generation::plan(seed, &cfg, &content)
+            sim::generation::plan_skeleton(seed, &cfg, &content)
                 .unwrap()
                 .envelopes
                 .placed_count()
@@ -3627,7 +3627,7 @@ fn inv_generation_workplace_count_mean_matches_the_scale_baseline() {
     let n: i64 = 256;
     let sum: i64 = (0..n as u64)
         .map(|seed| {
-            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+            let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
             d.building_types
                 .assignments()
                 .iter()
@@ -3675,7 +3675,7 @@ fn inv_generation_profession_depth_matches_the_scale_baseline() {
     let n: i64 = 256;
     let sum: i64 = (0..n as u64)
         .map(|seed| {
-            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+            let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
             let mut employers: std::collections::BTreeMap<&str, u64> =
                 std::collections::BTreeMap::new();
             for a in d.building_types.assignments() {
@@ -3815,21 +3815,24 @@ fn planted_district(
     blocks: Vec<sim::generation::Block>,
 ) -> sim::generation::District {
     sim::generation::District {
-        land_use: land_use::LandUseMap::test_fixture(
-            site,
-            512,
-            1,
-            1,
-            0,
-            0,
-            vec![land_use::LandUseCell {
-                use_: sim::generation::LandUse::Residential,
-                density: 0,
-            }],
-        ),
-        streets: streets::StreetNetwork::test_fixture(site, Vec::new(), blocks),
-        plots: plots::PlotMap::test_fixture(site, plot_list),
-        envelopes: envelopes::EnvelopeMap::test_fixture(outcomes),
+        skeleton: sim::generation::Skeleton {
+            land_use: land_use::LandUseMap::test_fixture(
+                site,
+                512,
+                1,
+                1,
+                0,
+                0,
+                vec![land_use::LandUseCell {
+                    use_: sim::generation::LandUse::Residential,
+                    density: 0,
+                }],
+            ),
+            streets: streets::StreetNetwork::test_fixture(site, Vec::new(), blocks),
+            plots: plots::PlotMap::test_fixture(site, plot_list),
+            envelopes: envelopes::EnvelopeMap::test_fixture(outcomes),
+            building_types: sim::generation::BuildingTypeMap::test_fixture(assignments.clone()),
+        },
         interiors: sim::generation::InteriorMap::test_fixture(
             assignments
                 .iter()
@@ -3839,7 +3842,6 @@ fn planted_district(
                 })
                 .collect(),
         ),
-        building_types: sim::generation::BuildingTypeMap::test_fixture(assignments),
     }
 }
 
@@ -4299,48 +4301,106 @@ fn interior_footprint_cells(i: &sim::generation::Interior) -> Vec<(i32, i32)> {
     out
 }
 
-/// The cells a body can stand on: room floor not holding a fixture, every
-/// threshold and every approach cell.
-fn walkable_cells(i: &sim::generation::Interior) -> std::collections::BTreeSet<(i32, i32)> {
-    let fixtures: std::collections::BTreeSet<(i32, i32)> =
-        i.fixtures.iter().map(|f| (f.x, f.y)).collect();
-    let mut out = std::collections::BTreeSet::new();
-    for r in &i.rooms {
-        for y in r.rect.y0..r.rect.y1 {
-            for x in r.rect.x0..r.rect.x1 {
-                if !fixtures.contains(&(x, y)) {
-                    out.insert((x, y));
+/// The cells a body can stand on -- room floor not holding a fixture,
+/// every threshold and every approach cell -- as a dense grid over the
+/// footprint and its approach, and a flood fill from the street.
+struct Walk {
+    x0: i32,
+    y0: i32,
+    w: usize,
+    h: usize,
+    walkable: Vec<bool>,
+    reached: Vec<bool>,
+}
+
+impl Walk {
+    fn of(i: &sim::generation::Interior) -> Walk {
+        let mut b = i.footprint;
+        for &(x, y) in &i.approach {
+            b.x0 = b.x0.min(x);
+            b.y0 = b.y0.min(y);
+            b.x1 = b.x1.max(x + 1);
+            b.y1 = b.y1.max(y + 1);
+        }
+        let (w, h) = (b.width() as usize, b.height() as usize);
+        let mut walk = Walk {
+            x0: b.x0,
+            y0: b.y0,
+            w,
+            h,
+            walkable: vec![false; w * h],
+            reached: vec![false; w * h],
+        };
+        for r in &i.rooms {
+            for y in r.rect.y0..r.rect.y1 {
+                for x in r.rect.x0..r.rect.x1 {
+                    let ix = walk.ix(x, y).unwrap();
+                    walk.walkable[ix] = true;
+                }
+            }
+        }
+        for f in &i.fixtures {
+            let ix = walk.ix(f.x, f.y).unwrap();
+            walk.walkable[ix] = false;
+        }
+        for t in &i.thresholds {
+            let ix = walk.ix(t.x, t.y).unwrap();
+            walk.walkable[ix] = true;
+        }
+        for &(x, y) in &i.approach {
+            let ix = walk.ix(x, y).unwrap();
+            walk.walkable[ix] = true;
+        }
+        if let Some(&(sx, sy)) = i.approach.first() {
+            walk.flood(sx, sy);
+        }
+        walk
+    }
+
+    fn ix(&self, x: i32, y: i32) -> Option<usize> {
+        let (dx, dy) = (x - self.x0, y - self.y0);
+        (dx >= 0 && dy >= 0 && (dx as usize) < self.w && (dy as usize) < self.h)
+            .then(|| dy as usize * self.w + dx as usize)
+    }
+
+    fn flood(&mut self, sx: i32, sy: i32) {
+        let Some(start) = self.ix(sx, sy) else {
+            return;
+        };
+        if !self.walkable[start] {
+            return;
+        }
+        let mut stack = vec![start];
+        self.reached[start] = true;
+        while let Some(i) = stack.pop() {
+            let (x, y) = (self.x0 + (i % self.w) as i32, self.y0 + (i / self.w) as i32);
+            for (nx, ny) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
+                if let Some(n) = self.ix(nx, ny)
+                    && self.walkable[n]
+                    && !self.reached[n]
+                {
+                    self.reached[n] = true;
+                    stack.push(n);
                 }
             }
         }
     }
-    for t in &i.thresholds {
-        out.insert((t.x, t.y));
-    }
-    for &c in &i.approach {
-        out.insert(c);
-    }
-    out
-}
 
-fn flood(
-    start: (i32, i32),
-    walkable: &std::collections::BTreeSet<(i32, i32)>,
-) -> std::collections::BTreeSet<(i32, i32)> {
-    let mut seen = std::collections::BTreeSet::new();
-    if !walkable.contains(&start) {
-        return seen;
+    /// Whether a body walking from the street reaches `(x, y)`.
+    fn reaches(&self, x: i32, y: i32) -> bool {
+        self.ix(x, y).is_some_and(|i| self.reached[i])
     }
-    let mut stack = vec![start];
-    seen.insert(start);
-    while let Some((x, y)) = stack.pop() {
-        for n in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
-            if walkable.contains(&n) && seen.insert(n) {
-                stack.push(n);
-            }
-        }
+
+    /// Whether `(x, y)` has a reachable walkable cell beside it.
+    fn reachable_beside(&self, x: i32, y: i32) -> bool {
+        [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+            .iter()
+            .any(|&(nx, ny)| self.reaches(nx, ny))
     }
-    seen
+
+    fn reaches_any_of(&self, r: Rect) -> bool {
+        (r.y0..r.y1).any(|y| (r.x0..r.x1).any(|x| self.reaches(x, y)))
+    }
 }
 
 fn tag_id(key: &str) -> TagId {
@@ -4356,25 +4416,17 @@ fn is_enterable(
     content: &GenerationContent,
     vocab: &sim::generation::interiors::Vocabulary,
 ) -> bool {
-    let walkable = walkable_cells(i);
-    let Some(&start) = i.approach.first() else {
+    let walk = Walk::of(i);
+    if i.approach.is_empty() {
         return false;
-    };
-    let reach = flood(start, &walkable);
+    }
     for r in &i.rooms {
-        let reachable_floor = (r.rect.y0..r.rect.y1)
-            .flat_map(|y| (r.rect.x0..r.rect.x1).map(move |x| (x, y)))
-            .any(|c| reach.contains(&c));
-        if !reachable_floor {
+        if !walk.reaches_any_of(r.rect) {
             return false;
         }
     }
     for f in &i.fixtures {
-        let (x, y) = (f.x, f.y);
-        let beside = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
-            .iter()
-            .any(|n| reach.contains(n));
-        if !beside {
+        if !walk.reachable_beside(f.x, f.y) {
             return false;
         }
     }
@@ -4515,7 +4567,9 @@ proptest! {
         let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         let by_plot: std::collections::BTreeMap<u32, &envelopes::Envelope> =
             d.envelopes.envelopes().map(|e| (e.plot, e)).collect();
-        let mut claimed: std::collections::BTreeSet<(i32, i32)> = std::collections::BTreeSet::new();
+        let site = cfg.site();
+        let width = site.width() as usize;
+        let mut claimed = vec![false; width * site.height() as usize];
         for (plot, _, interior) in d.interiors.laid() {
             let env = by_plot[&plot];
             prop_assert_eq!(interior.footprint, env.footprint, "seed {}: plot {}", seed, plot);
@@ -4540,16 +4594,19 @@ proptest! {
             }
             for y in env.footprint.y0..env.footprint.y1 {
                 for x in env.footprint.x0..env.footprint.x1 {
-                    prop_assert!(claimed.insert((x, y)), "seed {seed}: cell ({x}, {y}) claimed by two buildings");
+                    let i = y as usize * width + x as usize;
+                    prop_assert!(!claimed[i], "seed {seed}: cell ({x}, {y}) claimed by two buildings");
+                    claimed[i] = true;
                 }
             }
         }
     }
 
     /// `inv_generation_every_emitted_interior_validates_clean` (story 3.5
-    /// AC2, FR112): the committed rule set is the one source -- the
-    /// per-building verdict (`evaluate_local`) accepts every emitted
-    /// interior and `District::check_rules` the whole district -- and the
+    /// AC2, FR112): the committed rule set is the one source --
+    /// `District::check_rules` (every kind, over every emitted interior's
+    /// own cells as `DistrictSite` presents them) accepts the whole
+    /// district -- and the
     /// cell-level walkability the real player body will need: reachable
     /// from the street, beside every fixture, rooms at least two walkable
     /// cells either way. (`sim::validation::validate` takes placed
@@ -4560,28 +4617,18 @@ proptest! {
     fn inv_generation_every_emitted_interior_validates_clean(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let vocab = sim::generation::interiors::Vocabulary::new(&content);
         let d = sim::generation::plan(seed, &cfg, &content).unwrap();
         for (plot, _, interior) in d.interiors.laid() {
-            let violations = sim::generation::interiors::check_layout(interior, &vocab, content.rules);
-            prop_assert!(violations.is_empty(), "seed {seed}: plot {plot}: {violations:?}");
-            let walkable = walkable_cells(interior);
-            let reach = flood(interior.approach[0], &walkable);
+            let walk = Walk::of(interior);
             for t in &interior.thresholds {
-                prop_assert!(reach.contains(&(t.x, t.y)), "seed {seed}: plot {plot}: a doorway is unreachable");
+                prop_assert!(walk.reaches(t.x, t.y), "seed {seed}: plot {plot}: a doorway is unreachable");
             }
             for r in &interior.rooms {
                 prop_assert!(r.rect.width() >= 2 && r.rect.height() >= 2, "seed {seed}: a room under two cells");
-                let any = (r.rect.y0..r.rect.y1)
-                    .flat_map(|y| (r.rect.x0..r.rect.x1).map(move |x| (x, y)))
-                    .any(|c| reach.contains(&c));
-                prop_assert!(any, "seed {seed}: plot {plot}: a room's floor is unreachable");
+                prop_assert!(walk.reaches_any_of(r.rect), "seed {seed}: plot {plot}: a room's floor is unreachable");
             }
             for f in &interior.fixtures {
-                let beside = [(f.x + 1, f.y), (f.x - 1, f.y), (f.x, f.y + 1), (f.x, f.y - 1)]
-                    .iter()
-                    .any(|n| reach.contains(n));
-                prop_assert!(beside, "seed {seed}: plot {plot}: nobody can stand at a fixture");
+                prop_assert!(walk.reachable_beside(f.x, f.y), "seed {seed}: plot {plot}: nobody can stand at a fixture");
             }
         }
         prop_assert!(d.check_rules(&content).is_ok(), "seed {seed}: {:?}", d.check_rules(&content).err());
@@ -4666,47 +4713,63 @@ proptest! {
 
         let mut building_ids = std::collections::BTreeSet::new();
         let mut room_ids = std::collections::BTreeSet::new();
-        let footprints: Vec<(u64, Rect)> = d
-            .interiors
-            .laid()
-            .map(|(_, _, i)| (sim::generation::rect_seed_key(i.footprint), i.footprint))
-            .collect();
+        // Who owns each cell, by footprint, over the site with a margin --
+        // the expected answer for a cell just outside a shell (a
+        // neighbour's id at a party wall, nobody's otherwise).
+        let site = cfg.site();
+        let margin = 2;
+        let width = (site.width() + 2 * margin as i64) as usize;
+        let height = (site.height() + 2 * margin as i64) as usize;
+        let mut owner_by_cell = vec![NO_OWNER; width * height];
+        let cell_ix = |x: i32, y: i32| {
+            ((y + margin) as usize) * width + (x + margin) as usize
+        };
         for (_, _, interior) in d.interiors.laid() {
             let bid = sim::generation::rect_seed_key(interior.footprint);
-            prop_assert!(building_ids.insert(bid), "seed {seed}: building id {bid} is not unique");
             for y in interior.footprint.y0..interior.footprint.y1 {
                 for x in interior.footprint.x0..interior.footprint.x1 {
-                    prop_assert_eq!(world.ownership_at(x, y, 0).building_id, bid, "seed {} ({}, {})", seed, x, y);
+                    owner_by_cell[cell_ix(x, y)] = bid;
                 }
             }
+        }
+        for (_, _, interior) in d.interiors.laid() {
+            let fp = interior.footprint;
+            let bid = sim::generation::rect_seed_key(fp);
+            prop_assert!(building_ids.insert(bid), "seed {seed}: building id {bid} is not unique");
+
+            // The room each footprint cell must answer: a room's floor and
+            // the doorway it owns answer its id, a wall answers none.
+            let (fw, fh) = (fp.width() as usize, fp.height() as usize);
+            let local = |x: i32, y: i32| ((y - fp.y0) as usize) * fw + (x - fp.x0) as usize;
+            let mut want_room = vec![NO_OWNER; fw * fh];
             let mut ids_in_building = std::collections::BTreeSet::new();
-            for (idx, room) in interior.rooms.iter().enumerate() {
+            let mut rids = Vec::new();
+            for room in &interior.rooms {
                 let rid = sim::generation::rect_seed_key(room.rect);
                 prop_assert!(room_ids.insert(rid), "seed {seed}: room id {rid} is not unique across the district");
                 prop_assert!(ids_in_building.insert(rid));
+                rids.push(rid);
                 for y in room.rect.y0..room.rect.y1 {
                     for x in room.rect.x0..room.rect.x1 {
-                        prop_assert_eq!(world.ownership_at(x, y, 0).room_id, rid);
+                        want_room[local(x, y)] = rid;
                     }
                 }
-                for t in interior.thresholds.iter().filter(|t| t.room == idx) {
-                    let own = world.ownership_at(t.x, t.y, 0);
-                    prop_assert_eq!(own.room_id, rid);
-                    prop_assert_eq!(own.building_id, bid);
+            }
+            for t in &interior.thresholds {
+                want_room[local(t.x, t.y)] = rids[t.room];
+            }
+            for y in fp.y0..fp.y1 {
+                for x in fp.x0..fp.x1 {
+                    let own = world.ownership_at(x, y, 0);
+                    prop_assert_eq!(own.building_id, bid, "seed {} ({}, {})", seed, x, y);
+                    prop_assert_eq!(own.room_id, want_room[local(x, y)], "seed {} ({}, {})'s room", seed, x, y);
                 }
             }
-            for (x, y) in interior.walls() {
-                prop_assert_eq!(world.ownership_at(x, y, 0).room_id, NO_OWNER, "seed {} wall ({}, {}) is in a room", seed, x, y);
-            }
-            // The cell just outside the shell is never this building's:
-            // it answers its own neighbour's id at a party wall and
-            // nobody's otherwise.
-            let fp = interior.footprint;
             for x in fp.x0..fp.x1 {
                 for y in [fp.y0 - 1, fp.y1] {
-                    let want = footprints.iter().find(|(_, r)| r.contains(x, y)).map_or(NO_OWNER, |(id, _)| *id);
-                    prop_assert_eq!(world.ownership_at(x, y, 0).building_id, want);
-                    prop_assert_ne!(world.ownership_at(x, y, 0).building_id, bid);
+                    let got = world.ownership_at(x, y, 0).building_id;
+                    prop_assert_eq!(got, owner_by_cell[cell_ix(x, y)]);
+                    prop_assert_ne!(got, bid);
                 }
             }
         }
@@ -4792,12 +4855,14 @@ proptest! {
         let public = tag_id("public");
         let room_tags: std::collections::BTreeMap<u32, &[TagId]> =
             content.room_types.iter().map(|r| (r.id, r.tags)).collect();
-        let mut floor_owner: std::collections::BTreeMap<(i32, i32), u32> = std::collections::BTreeMap::new();
+        let site = cfg.site();
+        let width = site.width() as usize;
+        let mut floor_owner = vec![u32::MAX; width * site.height() as usize];
         for (plot, _, interior) in d.interiors.laid() {
             for r in &interior.rooms {
                 for y in r.rect.y0..r.rect.y1 {
                     for x in r.rect.x0..r.rect.x1 {
-                        floor_owner.insert((x, y), plot);
+                        floor_owner[y as usize * width + x as usize] = plot;
                     }
                 }
             }
@@ -4837,8 +4902,11 @@ proptest! {
             }
             for t in &interior.thresholds {
                 for &(x, y) in &[(t.x + 1, t.y), (t.x - 1, t.y), (t.x, t.y + 1), (t.x, t.y - 1)] {
-                    if let Some(&other) = floor_owner.get(&(x, y)) {
-                        prop_assert_eq!(other, plot, "seed {}: plot {}'s doorway opens onto plot {}'s floor", seed, plot, other);
+                    if x >= 0 && y >= 0 && (x as usize) < width {
+                        let other = floor_owner.get(y as usize * width + x as usize).copied().unwrap_or(u32::MAX);
+                        if other != u32::MAX {
+                            prop_assert_eq!(other, plot, "seed {}: plot {}'s doorway opens onto plot {}'s floor", seed, plot, other);
+                        }
                     }
                 }
             }

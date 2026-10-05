@@ -24,7 +24,7 @@
 //! tags is read through `RuleDef::as_requirement` and its fixture placed
 //! on a free floor cell. Then the candidate is handed to
 //! [`crate::rules::evaluate_local`] over a site built by the same adapter
-//! `DistrictSite` uses ([`site_cells`]): any violation refuses the
+//! `DistrictSite` uses ([`add_building`]): any violation refuses the
 //! attempt, a fresh stream (seeded from the building's own bounds plus
 //! the attempt index) tries again, and after
 //! `generation.interiors.max_layout_attempts` the building is `Rejected`.
@@ -52,7 +52,7 @@ use crate::world::{AreaSpec, Rect, clip_rect_to_chunks};
 use super::building_types::BuildingTypeMap;
 use super::envelopes::{Envelope, EnvelopeMap};
 use super::plots::{Plot, PlotMap};
-use super::site::{DistrictSite, front_cell};
+use super::site::{AreaSlot, DistrictSite, ProfileId, SiteBuilder, front_cell};
 use super::streets::Side;
 use super::{GenerationConfig, GenerationContent, GenerationError, rect_seed_key};
 
@@ -333,17 +333,6 @@ fn push_clipped(out: &mut Vec<AreaSpec>, owner_id: u64, rect: Rect) {
     }
 }
 
-/// One cell of a building as the rule engine sees it: its tags and the
-/// areas that contain it. The one adapter shared by this pass's own
-/// per-building verdict and `DistrictSite` (FR112).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SiteCell {
-    pub x: i32,
-    pub y: i32,
-    pub tags: Vec<TagId>,
-    pub areas: Vec<AreaId>,
-}
-
 const AREA_KIND_BUILDING: u64 = 1;
 const AREA_KIND_ROOM: u64 = 2;
 
@@ -358,63 +347,60 @@ pub fn room_area_id(rect: Rect) -> AreaId {
     seed_from_ids(AREA_KIND_ROOM, rect_seed_key(rect))
 }
 
-/// Every cell of `interior` the rule engine needs, floor 0. Wall cells
-/// carry the wall tags; floor cells the floor tag (a fixture cell adds
-/// the fixture tag and its own required tag); a threshold the threshold
-/// and wall-run tags (and `entrance` for the street door); the floor cell
-/// just inside each room's own doorway additionally carries that room
-/// type's tags -- the marker the requirement rows' containers match; the
-/// approach cells carry pavement.
-pub fn site_cells(interior: &Interior, vocab: &Vocabulary) -> Vec<SiteCell> {
+/// Adds every cell of `interior` the rule engine needs to `builder`,
+/// floor 0 -- the one adapter `DistrictSite` and this pass's own
+/// per-building verdict share. A wall cell carries the wall tags; a
+/// floor cell the floor tag (a fixture cell adds the fixture tag and its
+/// own required tag); a threshold the threshold and wall-run tags (and
+/// `entrance` for the street door); the floor cell just inside each
+/// room's own doorway additionally carries that room type's tags -- the
+/// marker the requirement rows' containers match; the approach cells
+/// carry pavement. Walls, floors and thresholds are in the building area;
+/// floors, fixtures and a room's own doorway also in the room's.
+pub fn add_building(builder: &mut SiteBuilder, interior: &Interior, vocab: &Vocabulary) {
     let p = vocab.parts;
-    let building = building_area_id(interior.footprint);
-    let room_ids: Vec<AreaId> = interior
+    let fp = interior.footprint;
+    let building = builder.area(building_area_id(fp));
+    let room_areas: Vec<AreaSlot> = interior
         .rooms
         .iter()
-        .map(|r| room_area_id(r.rect))
+        .map(|r| builder.area(room_area_id(r.rect)))
         .collect();
-    let mut cells: BTreeMap<(i32, i32), SiteCell> = BTreeMap::new();
-    let mut put = |x: i32, y: i32, tags: &[TagId], areas: &[AreaId]| {
-        let e = cells.entry((x, y)).or_insert_with(|| SiteCell {
-            x,
-            y,
-            tags: Vec::new(),
-            areas: Vec::new(),
-        });
-        for &t in tags {
-            if !e.tags.contains(&t) {
-                e.tags.push(t);
-            }
-        }
-        for &a in areas {
-            if !e.areas.contains(&a) {
-                e.areas.push(a);
-            }
-        }
-    };
-    for (x, y) in interior.walls() {
-        put(x, y, &[p.wall, p.wall_run], &[building]);
-    }
+
+    let wall = builder.profile(&[p.wall, p.wall_run], &[building]);
+    builder.set_rect(fp, wall);
     for (i, room) in interior.rooms.iter().enumerate() {
-        for y in room.rect.y0..room.rect.y1 {
-            for x in room.rect.x0..room.rect.x1 {
-                put(x, y, &[p.floor], &[building, room_ids[i]]);
-            }
-        }
+        let floor = builder.profile(&[p.floor], &[building, room_areas[i]]);
+        builder.set_rect(room.rect, floor);
     }
+    let mut fixture_profiles: Vec<((usize, TagId), ProfileId)> = Vec::new();
     for f in &interior.fixtures {
-        put(f.x, f.y, &[p.fixture, f.tag], &[]);
+        let prof = match fixture_profiles.iter().find(|(k, _)| *k == (f.room, f.tag)) {
+            Some(&(_, prof)) => prof,
+            None => {
+                let prof = builder.profile(
+                    &[p.floor, p.fixture, f.tag],
+                    &[building, room_areas[f.room]],
+                );
+                fixture_profiles.push(((f.room, f.tag), prof));
+                prof
+            }
+        };
+        builder.set(f.x, f.y, prof);
     }
     for t in &interior.thresholds {
         let mut tags = vec![p.threshold, p.wall_run];
         if t.entrance {
             tags.push(p.entrance);
         }
-        put(t.x, t.y, &tags, &[building, room_ids[t.room]]);
-        // The room's own marker: the cell just inside the doorway it owns
-        // (a floor cell, so only the building and room areas contain it --
-        // never the block area the street door's own cell also sits in,
-        // which would owe the room's requirements to the whole block).
+        let prof = builder.profile(&tags, &[building, room_areas[t.room]]);
+        builder.set(t.x, t.y, prof);
+    }
+    // The room's own marker: the cell just inside the doorway it owns (a
+    // floor cell, so only the building and room areas contain it -- never
+    // the block area the street door's own cell also sits in, which would
+    // owe the room's requirements to the whole block).
+    for t in &interior.thresholds {
         let room = &interior.rooms[t.room];
         if let Some((x, y)) = [
             (t.x + 1, t.y),
@@ -425,26 +411,40 @@ pub fn site_cells(interior: &Interior, vocab: &Vocabulary) -> Vec<SiteCell> {
         .into_iter()
         .find(|&(x, y)| room.rect.contains(x, y))
         {
-            put(x, y, vocab.room(room.room_type).tags, &[]);
+            let mut tags = vec![p.floor];
+            tags.extend_from_slice(vocab.room(room.room_type).tags);
+            let prof = builder.profile(&tags, &[building, room_areas[t.room]]);
+            builder.merge(x, y, prof);
         }
     }
+    let pavement = builder.profile(&[p.pavement], &[]);
     for &(x, y) in &interior.approach {
-        put(x, y, &[p.pavement], &[]);
+        builder.set(x, y, pavement);
     }
-    let mut out: Vec<SiteCell> = cells.into_values().collect();
-    for c in &mut out {
-        c.tags.sort_unstable();
-        c.areas.sort_unstable();
+}
+
+/// The rule site of exactly one building: a [`DistrictSite`] over the
+/// footprint and the approach, nothing else -- every per-building
+/// verdict is windowed to its own building, never the district's.
+pub fn building_site(interior: &Interior, vocab: &Vocabulary) -> DistrictSite {
+    let fp = interior.footprint;
+    let mut bounds = fp;
+    for &(x, y) in &interior.approach {
+        bounds.x0 = bounds.x0.min(x);
+        bounds.y0 = bounds.y0.min(y);
+        bounds.x1 = bounds.x1.max(x + 1);
+        bounds.y1 = bounds.y1.max(y + 1);
     }
-    out
+    let mut builder = SiteBuilder::new(bounds);
+    add_building(&mut builder, interior, vocab);
+    builder.finish()
 }
 
 /// The accept/reject step: `crate::rules::evaluate_local` over the site
 /// of this one building, built by the same adapter `DistrictSite` uses.
 /// Empty means the layout may be emitted.
 pub fn check_layout(interior: &Interior, vocab: &Vocabulary, rules: RuleSet<'_>) -> Vec<Violation> {
-    let site = DistrictSite::from_cells(&site_cells(interior, vocab));
-    crate::rules::evaluate_local(rules, &site)
+    crate::rules::evaluate_local(rules, &building_site(interior, vocab))
 }
 
 /// The layout's own frame: local `(u, v)` with `u` along the front face
@@ -577,33 +577,94 @@ fn fixtures_owed(
     out
 }
 
-/// Whether the cells of `rect` not in `occupied` are one 4-connected
-/// region containing `anchor`, and every occupied cell touches one of
-/// them -- the lane a citizen walks from the door to every fixture.
-fn lane_holds(rect: Rect, occupied: &BTreeSet<(i32, i32)>, anchor: (i32, i32)) -> bool {
-    let free = |c: (i32, i32)| rect.contains(c.0, c.1) && !occupied.contains(&c);
-    if !free(anchor) {
-        return false;
+/// A room's floor as a small dense grid, for the lane check: which cells
+/// hold a fixture, and a reusable flood-fill scratch so a placement
+/// trial costs one pass over the room and no allocation.
+struct RoomGrid {
+    x0: i32,
+    y0: i32,
+    w: usize,
+    h: usize,
+    occupied: Vec<bool>,
+    occupied_count: usize,
+    seen: Vec<u32>,
+    stamp: u32,
+    stack: Vec<usize>,
+}
+
+impl RoomGrid {
+    fn new(rect: Rect) -> Self {
+        let (w, h) = (rect.width() as usize, rect.height() as usize);
+        RoomGrid {
+            x0: rect.x0,
+            y0: rect.y0,
+            w,
+            h,
+            occupied: vec![false; w * h],
+            occupied_count: 0,
+            seen: vec![0; w * h],
+            stamp: 0,
+            stack: Vec::new(),
+        }
     }
-    let mut seen: BTreeSet<(i32, i32)> = BTreeSet::new();
-    let mut stack = vec![anchor];
-    seen.insert(anchor);
-    while let Some((x, y)) = stack.pop() {
-        for n in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
-            if free(n) && seen.insert(n) {
-                stack.push(n);
+
+    fn index(&self, c: (i32, i32)) -> usize {
+        (c.1 - self.y0) as usize * self.w + (c.0 - self.x0) as usize
+    }
+
+    fn neighbours(&self, i: usize) -> [Option<usize>; 4] {
+        let (x, y) = (i % self.w, i / self.w);
+        [
+            (x + 1 < self.w).then(|| i + 1),
+            (x > 0).then(|| i - 1),
+            (y + 1 < self.h).then(|| i + self.w),
+            (y > 0).then(|| i - self.w),
+        ]
+    }
+
+    /// Whether the free cells are one 4-connected region containing the
+    /// `anchor` cell, and every occupied cell touches one of them -- the
+    /// lane a citizen walks from the door to every fixture.
+    fn lane_holds(&mut self, anchor: usize) -> bool {
+        if self.occupied[anchor] {
+            return false;
+        }
+        self.stamp += 1;
+        let stamp = self.stamp;
+        self.stack.clear();
+        self.stack.push(anchor);
+        self.seen[anchor] = stamp;
+        let mut reached = 1usize;
+        while let Some(i) = self.stack.pop() {
+            for n in self.neighbours(i).into_iter().flatten() {
+                if !self.occupied[n] && self.seen[n] != stamp {
+                    self.seen[n] = stamp;
+                    reached += 1;
+                    self.stack.push(n);
+                }
+            }
+        }
+        if reached != self.w * self.h - self.occupied_count {
+            return false;
+        }
+        (0..self.w * self.h).filter(|&i| self.occupied[i]).all(|i| {
+            self.neighbours(i)
+                .into_iter()
+                .flatten()
+                .any(|n| self.seen[n] == stamp)
+        })
+    }
+
+    fn set(&mut self, i: usize, value: bool) {
+        if self.occupied[i] != value {
+            self.occupied[i] = value;
+            if value {
+                self.occupied_count += 1;
+            } else {
+                self.occupied_count -= 1;
             }
         }
     }
-    let free_total = ((rect.width() * rect.height()) as usize) - occupied.len();
-    if seen.len() != free_total {
-        return false;
-    }
-    occupied.iter().all(|&(x, y)| {
-        [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
-            .iter()
-            .any(|n| seen.contains(n))
-    })
 }
 
 /// Places `owed` on free floor cells of `rect`, backed onto the north
@@ -617,7 +678,7 @@ fn lane_holds(rect: Rect, occupied: &BTreeSet<(i32, i32)>, anchor: (i32, i32)) -
 fn place_fixtures(
     rng: &mut Rng,
     rect: Rect,
-    reserved: &BTreeSet<(i32, i32)>,
+    reserved: &[(i32, i32)],
     anchor: (i32, i32),
     owed: &[(TagId, u32)],
     room: usize,
@@ -642,54 +703,75 @@ fn place_fixtures(
             order.push(((x, y), score, rng.next_u64()));
         }
     }
-    // Camera preference first; then farthest from the doorway.
+    // Camera preference first; then (only if that leaves a room unable to
+    // hold its fixtures) farthest from the doorway.
+    let mut grid = RoomGrid::new(rect);
+    let anchor_ix = grid.index(anchor);
+    let reserved_ix: Vec<usize> = reserved.iter().map(|&c| grid.index(c)).collect();
     let mut by_camera = order.clone();
     by_camera.sort_by_key(|&(c, score, key)| (score, key, c));
+    if let Some(placed) = fill_in_order(&mut grid, &reserved_ix, anchor_ix, owed, room, &by_camera)
+    {
+        return Some(placed);
+    }
     let mut by_lane = order;
     by_lane.sort_by_key(|&(c, _, key)| {
         let dist = (c.0 - anchor.0).abs() + (c.1 - anchor.1).abs();
         (std::cmp::Reverse(dist), key, c)
     });
-    for candidates in [by_camera, by_lane] {
-        if let Some(placed) = fill_in_order(rect, reserved, anchor, owed, room, &candidates) {
-            return Some(placed);
-        }
+    if let Some(placed) = fill_in_order(&mut grid, &reserved_ix, anchor_ix, owed, room, &by_lane) {
+        return Some(placed);
     }
     None
 }
 
 /// Takes the first free candidate, in order, that leaves a lane, for each
-/// owed fixture in turn.
+/// owed fixture in turn; leaves `grid` empty again whether or not it
+/// succeeds.
 fn fill_in_order(
-    rect: Rect,
-    reserved: &BTreeSet<(i32, i32)>,
-    anchor: (i32, i32),
+    grid: &mut RoomGrid,
+    reserved: &[usize],
+    anchor: usize,
     owed: &[(TagId, u32)],
     room: usize,
     order: &[((i32, i32), u8, u64)],
 ) -> Option<Vec<Fixture>> {
-    let mut occupied: BTreeSet<(i32, i32)> = BTreeSet::new();
+    for i in 0..grid.occupied.len() {
+        grid.set(i, false);
+    }
     let mut out = Vec::new();
-    for &(tag, count) in owed {
+    let mut ok = true;
+    'owed: for &(tag, count) in owed {
         for _ in 0..count {
-            let pick = order.iter().map(|&(c, _, _)| c).find(|c| {
-                if occupied.contains(c) || reserved.contains(c) {
-                    return false;
+            let mut picked = None;
+            for &(c, _, _) in order {
+                let i = grid.index(c);
+                if grid.occupied[i] || reserved.contains(&i) {
+                    continue;
                 }
-                let mut with = occupied.clone();
-                with.insert(*c);
-                lane_holds(rect, &with, anchor)
-            })?;
-            occupied.insert(pick);
+                grid.set(i, true);
+                if grid.lane_holds(anchor) {
+                    picked = Some(c);
+                    break;
+                }
+                grid.set(i, false);
+            }
+            let Some(c) = picked else {
+                ok = false;
+                break 'owed;
+            };
             out.push(Fixture {
-                x: pick.0,
-                y: pick.1,
+                x: c.0,
+                y: c.1,
                 tag,
                 room,
             });
         }
     }
-    Some(out)
+    for i in 0..grid.occupied.len() {
+        grid.set(i, false);
+    }
+    ok.then_some(out)
 }
 
 /// The run of cells from the entrance out to the street: the setback
@@ -793,8 +875,8 @@ fn attempt_layout(
         room: 0,
         entrance: true,
     });
-    let mut reserved: Vec<BTreeSet<(i32, i32)>> = vec![BTreeSet::new(); 1 + back.len()];
-    reserved[0].insert(frame.cell(entrance_u, 0));
+    let mut reserved: Vec<Vec<(i32, i32)>> = vec![Vec::new(); 1 + back.len()];
+    reserved[0].push(frame.cell(entrance_u, 0));
     let mut anchors: Vec<(i32, i32)> = vec![frame.cell(entrance_u, 0)];
     let mut cursor = 0;
     for (i, room) in back.iter().enumerate() {
@@ -813,9 +895,9 @@ fn attempt_layout(
             room: i + 1,
             entrance: false,
         });
-        reserved[0].insert(frame.cell(door_u, df - 1));
+        reserved[0].push(frame.cell(door_u, df - 1));
         let inside = frame.cell(door_u, df + thickness);
-        reserved[i + 1].insert(inside);
+        reserved[i + 1].push(inside);
         anchors.push(inside);
     }
 
@@ -851,6 +933,33 @@ pub fn lay_out(
     content: &GenerationContent,
     vocab: &Vocabulary,
 ) -> InteriorOutcome {
+    let rows = requirement_rows(content);
+    lay_out_with(city_seed, envelope, plot, def, cfg, content, vocab, &rows)
+}
+
+/// Every committed requirement row, by id -- read once per run, not once
+/// per building.
+fn requirement_rows(content: &GenerationContent) -> Vec<RequirementRow> {
+    let mut rows: Vec<RequirementRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_requirement())
+        .collect();
+    rows.sort_by_key(|r| r.id);
+    rows
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lay_out_with(
+    city_seed: u64,
+    envelope: &Envelope,
+    plot: &Plot,
+    def: &defs::BuildingTypeDef,
+    cfg: &GenerationConfig,
+    content: &GenerationContent,
+    vocab: &Vocabulary,
+    rows: &[RequirementRow],
+) -> InteriorOutcome {
     let plot_index = envelope.plot;
     if def.rooms.is_empty() {
         return InteriorOutcome::Shell {
@@ -868,12 +977,6 @@ pub fn lay_out(
             attempts: 0,
         };
     };
-    let mut rows: Vec<RequirementRow> = content
-        .rules
-        .iter()
-        .filter_map(|r| r.as_requirement())
-        .collect();
-    rows.sort_by_key(|r| r.id);
 
     let building_seed = seed_from_ids(
         seed_from_ids(city_seed, PASS_ID),
@@ -887,7 +990,7 @@ pub fn lay_out(
             envelope,
             plot,
             &program,
-            &rows,
+            rows,
             &vocab.parts,
             thickness,
         ) else {
@@ -921,6 +1024,7 @@ pub fn run(
     content: &GenerationContent,
 ) -> InteriorMap {
     let vocab = Vocabulary::new(content);
+    let rows = requirement_rows(content);
     let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
     let outcomes = envelopes
@@ -935,7 +1039,7 @@ pub fn run(
                 .get(&assignment.building_type)
                 .expect("assignment names a real committed building type");
             let plot = &plots.plots()[envelope.plot as usize];
-            lay_out(city_seed, envelope, plot, def, cfg, content, &vocab)
+            lay_out_with(city_seed, envelope, plot, def, cfg, content, &vocab, &rows)
         })
         .collect();
     InteriorMap { outcomes }
@@ -1211,55 +1315,6 @@ mod tests {
             seen_rows, owed,
             "every fixture-owing requirement row was planted and refused"
         );
-    }
-
-    #[test]
-    fn a_missing_door_entrance_or_approach_is_refused_by_key() {
-        let c = content();
-        let vocab = Vocabulary::new(&c);
-        let (interior, _, _) = laid(type_with_core(3), FOOTPRINT, 3, 15);
-        assert!(
-            check_layout(&interior, &vocab, c.rules).is_empty(),
-            "the untouched layout is accepted"
-        );
-        let keys = |i: &Interior| -> BTreeSet<&'static str> {
-            check_layout(i, &vocab, c.rules)
-                .iter()
-                .filter_map(|v| c.rules.key_of(v.rule_id))
-                .collect()
-        };
-
-        // A back room with no door.
-        let mut no_door = interior.clone();
-        let back = no_door.thresholds.iter().position(|t| !t.entrance).unwrap();
-        no_door.thresholds.remove(back);
-        assert!(keys(&no_door).contains("room_has_a_door"));
-
-        // No street door at all.
-        let mut no_entrance = interior.clone();
-        no_entrance.thresholds.retain(|t| !t.entrance);
-        assert!(keys(&no_entrance).contains("building_has_an_entrance"));
-
-        // A door that opens onto bare ground.
-        let mut no_pavement = interior.clone();
-        no_pavement.approach.clear();
-        assert!(keys(&no_pavement).contains("entrance_opens_onto_pavement"));
-
-        // A fixture standing in front of a door.
-        let mut blocked = interior.clone();
-        let t = blocked
-            .thresholds
-            .iter()
-            .find(|t| t.entrance)
-            .copied()
-            .unwrap();
-        blocked.fixtures.push(Fixture {
-            x: t.x,
-            y: t.y - 1,
-            tag: vocab.parts.fixture,
-            room: 0,
-        });
-        assert!(keys(&blocked).contains("door_never_blocked_by_a_fixture"));
     }
 
     #[test]
