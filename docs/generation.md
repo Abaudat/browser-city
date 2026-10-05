@@ -268,11 +268,98 @@ document's own opening paragraph forbids.
 
 ### Interior layout
 
-- **Receives:** a building's own type and envelope.
-- **Hands down:** the room grammar's own composition (walls, floor,
-  doors) and enterable status.
-- **Reads:** affluence.
-- **Evidence:** (added when the pass lands.)
+- **Receives:** every placed envelope (pass 4), its assigned building
+  type (pass 5) and its plot (pass 3, for the street edge the entrance
+  walks out to).
+- **Hands down:** one outcome per placed envelope, in envelope order --
+  a laid-out ground floor (rooms as rects, thresholds, required
+  fixtures, the entrance's approach; walls are the footprint minus
+  rooms and thresholds, never stored), a solid `Shell`, or a typed,
+  counted `Rejected` with no interior at all. All of it in world
+  coordinates on the street's own tilemap: the interior of a building at
+  `(x, y)` is found at `(x, y)`. Ground floor only: upper storeys and
+  back doors are later additions. Tags and cells, never an object or a
+  sprite -- which sprite dresses a room is the theme pass's.
+- **Reads:** the type's room program, the footprint and its own front,
+  the plot's front edge, and the committed requirement rows. Not
+  affluence: no pass has authored it on the field yet, and this one
+  neither reads nor imitates it.
+- **Enterable is a consequence, never a selection.** A building is
+  enterable exactly when it was laid out: its type has a room program
+  and its footprint held it. There is no quota and no "best hundred";
+  the district clears `generation.interiors.min_enterable_count` (FR114's
+  figure) by a wide margin, and `generate` fails below it. A building is
+  a `Shell` only when its type has neither `professions` nor the
+  `dwelling` tag (a workplace nobody can walk into is a mechanical seam
+  between an AI-held and a player-held post), enforced at defs build. A
+  building that is the subject of a committed distribution row and comes
+  out `Rejected` is a typed error: an institution that cannot be entered
+  is a missing institution. One street entrance per building.
+- **A program is a core plus a tail.** `rooms` is the required core, front
+  room first; `optional_rooms` an ordered tail taken while the footprint
+  holds it -- size buys rooms, not bigger rooms. A front band holds the
+  front room, one partition, and the remaining rooms stand side by side
+  behind it, each through its own doorway in the partition.
+- **Access is a room-type tag:** exactly one of `public`, `staff` or
+  `private` per room type -- what "back room" means (a staff room), and
+  what keys, opening hours and the guard's door round read later. From
+  the entrance every public room is reachable without crossing a staff or
+  private room, and a type with a public room has one as its front room.
+  Room-to-room reachability is not one of the five rule kinds; it is held
+  as an invariant over tags (see "Does not fit").
+- **What a room owes is rows.** Each room type's own tags name the
+  requirement rows it owes (`defs/rules/interiors.toml`); the pass places
+  exactly the fixtures those rows ask for and the one engine judges the
+  result (`evaluate_local`). The line between this pass and prop
+  placement is one test: a fixture a citizen will act at to meet a need
+  or hold a post belongs here; anything only looked at belongs to the
+  prop pass. `stock` is an empty container in a staff room -- no item, no
+  quantity, no cash in any till; the light has no on/off state. Every
+  fixture has a walkable cell beside it, reachable from the entrance.
+
+| Room type's function | Anchors the pass places |
+| --- | --- |
+| sleeping | a bed |
+| cooking | a cooker |
+| washing | a basin |
+| dining | a table set |
+| trading (a public floor that sells, serves or receives) | a till or service counter |
+| seated service | two table sets |
+| working | a desk |
+| making | a workbench |
+| staff (any back room) | a stock fixture |
+| every room | a light |
+
+- **Composition (camera-driven).** The south wall retracts, so the north
+  wall is the display wall: fixtures back onto the north wall first, then
+  the side walls, then the open floor, and the south wall last. A
+  doorway's cell and the cell either side of it stay clear, and every
+  fixture keeps a lane to the entrance at least one cell wide; no room
+  is narrower than two walkable cells. The entry room of a dwelling is a
+  living room, never a bathroom; businesses put the public room on the
+  street side and staff and stock behind it.
+- **Variety** comes from the footprint-driven room split (the front
+  band's depth and each back room's width), mirrored arrangements, the
+  order of the back rooms and the choice of fixture cells, all drawn from
+  a stream seeded by the building's own bounds and the attempt index --
+  never list position, so a retry in one building never shifts its
+  neighbour. A building the rule engine refuses is rebuilt, up to
+  `generation.interiors.max_layout_attempts`, then `Rejected`.
+- **Ownership.** Each building's footprint is a `building_area` (walls
+  included) and each room's floor plus the doorway it owns a `room_area`
+  (several rects sharing one room id; never a wall), emitted through
+  `clip_rect_to_chunks` with position-derived owner ids, so growing the
+  city next door never renumbers an existing building. Nothing in the
+  ownership data encodes building = tenancy: a later unit groups stable
+  room ids.
+- **Evidence:** [`docs/generation/interiors-seed-1.svg`](generation/interiors-seed-1.svg),
+  [`-seed-2`](generation/interiors-seed-2.svg), [`-seed-3`](generation/interiors-seed-3.svg)
+  -- the enterable set as a footprint map tinted by derived kind (housing,
+  commercial, industrial, institutional; a shell grey, a rejected
+  building red), then a contact sheet of twelve laid-out interiors per
+  kind side by side at viewport scale (rooms as rects, never one element
+  per cell), and a legend of every room type and fixture; same
+  regen-and-diff guard as the rows above.
 
 ### Prop placement
 
@@ -411,6 +498,16 @@ disagree.
 | generation.building_types.profession_count_per_city_min | committed | Building type | a weak, any-seed floor on the count of professions held by at least `min_employers_per_profession` distinct placed workplaces in one city -- the per-city half the pooled mean above says nothing about |
 | generation.building_types.min_employers_per_profession | committed | Building type | the GDD's own "5+ employers each" -- the minimum distinct placed workplaces a profession must be held by to count toward the target above; a singleton institution's own post is deliberately excluded |
 | generation.building_types.catchment_extent_cells | committed | Building type | AC3's own catchment: the fixed-extent square (world cells) a `[[distribution]]` row's own site-wide target is allocated over -- 256 at launch, exactly the four quadrants of a 512x512 site |
+| generation.interiors.max_layout_attempts | committed | Interior layout | how many times one building's layout may be rebuilt before it is `Rejected` -- the loop is never unbounded |
+| generation.interiors.min_enterable_count | committed | Interior layout | FR114's floor on the enterable count (`docs/gdd.md`'s Scale Baseline); `generate` fails below it |
+| generation.interiors.max_rejected_percent | committed | Interior layout | the maximum percent of attempted layouts that may be `Rejected`, asserted per city |
+| generation.interiors.enterable_target_percent | committed | Interior layout | the enterable share of placed buildings, pooled over the fixed seed range 0..256 |
+| generation.interiors.enterable_target_tolerance_percent | committed | Interior layout | the pooled band around the target above |
+| generation.interiors.dwelling_min_enterable_percent | committed | Interior layout | the minimum percent of placed dwellings that must be enterable |
+| generation.interiors.shop_min_enterable_percent | committed | Interior layout | the same minimum for shops |
+| generation.interiors.cafe_min_enterable_percent | committed | Interior layout | the same minimum for cafes |
+| generation.interiors.back_room_min_enterable_percent | committed | Interior layout | the same minimum for institutional back rooms (a staff room in a type sited on institutional land use) |
+| generation.interiors.max_kind_share_percent | committed | Interior layout | no required kind may exceed this share of the enterable set |
 
 ## placement
 | key | status | pass | scope | reads | intent |
@@ -571,6 +668,15 @@ assumed:
   direction for this story: no per-container scoping in the engine
   itself, since that is a real engine feature, not something this
   story's own generator change should carry quietly).
+
+- **Room-to-room reachability cannot be a rule.** "From the entrance every
+  public room is reachable without crossing a staff or private room" is a
+  property of the room graph, which none of the five kinds can state
+  (adjacency sees four neighbours, a requirement counts cells in an area).
+  It holds by construction -- every back room is reached from the front
+  room through its own doorway -- and is checked over tags by
+  `inv_generation_public_rooms_are_reachable_without_crossing_staff_or_
+  private`, never a per-type branch in the pass.
 
 A rule that cannot be expressed as one of the five kinds over tags for
 any other reason is written here too, with why -- a signal that a

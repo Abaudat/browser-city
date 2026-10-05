@@ -609,8 +609,11 @@ fn lane_holds(rect: Rect, occupied: &BTreeSet<(i32, i32)>, anchor: (i32, i32)) -
 /// Places `owed` on free floor cells of `rect`, backed onto the north
 /// wall first, then the side walls, the open floor and last the south
 /// wall (which retracts); never on a `reserved` cell (a door and the
-/// cell in front of it); every placement leaves a lane. `None` when the
-/// room cannot hold them.
+/// cell in front of it); every placement leaves a lane. A snug room the
+/// camera preference paints into a corner (the north row can be the one
+/// beside the doorway) is retried farthest-from-the-doorway first, which
+/// always leaves the doorway's own side free. `None` when the room
+/// cannot hold them either way.
 fn place_fixtures(
     rng: &mut Rng,
     rect: Rect,
@@ -639,8 +642,32 @@ fn place_fixtures(
             order.push(((x, y), score, rng.next_u64()));
         }
     }
-    order.sort_by_key(|&(c, score, key)| (score, key, c));
+    // Camera preference first; then farthest from the doorway.
+    let mut by_camera = order.clone();
+    by_camera.sort_by_key(|&(c, score, key)| (score, key, c));
+    let mut by_lane = order;
+    by_lane.sort_by_key(|&(c, _, key)| {
+        let dist = (c.0 - anchor.0).abs() + (c.1 - anchor.1).abs();
+        (std::cmp::Reverse(dist), key, c)
+    });
+    for candidates in [by_camera, by_lane] {
+        if let Some(placed) = fill_in_order(rect, reserved, anchor, owed, room, &candidates) {
+            return Some(placed);
+        }
+    }
+    None
+}
 
+/// Takes the first free candidate, in order, that leaves a lane, for each
+/// owed fixture in turn.
+fn fill_in_order(
+    rect: Rect,
+    reserved: &BTreeSet<(i32, i32)>,
+    anchor: (i32, i32),
+    owed: &[(TagId, u32)],
+    room: usize,
+    order: &[((i32, i32), u8, u64)],
+) -> Option<Vec<Fixture>> {
     let mut occupied: BTreeSet<(i32, i32)> = BTreeSet::new();
     let mut out = Vec::new();
     for &(tag, count) in owed {
@@ -724,7 +751,9 @@ fn attempt_layout(
         if hi < lo {
             return None;
         }
-        let df = lo + (rng.next_u64() % (hi - lo + 1) as u64) as i32;
+        // The front band takes at most half the spare depth, so the back
+        // rooms are never squeezed to their minimum by a cavernous front.
+        let df = lo + (rng.next_u64() % ((hi - lo) / 2 + 1) as u64) as i32;
         let min_total: i32 =
             back.iter().map(|r| r.min_width_cells as i32).sum::<i32>() + thickness * (k - 1);
         let extra = w - min_total;

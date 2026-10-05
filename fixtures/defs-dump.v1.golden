@@ -129,8 +129,8 @@ balance generation.envelopes.wall_thickness_cells value=1 min=1 max=4
 balance generation.interiors.back_room_min_enterable_percent value=90 min=0 max=100
 balance generation.interiors.cafe_min_enterable_percent value=90 min=0 max=100
 balance generation.interiors.dwelling_min_enterable_percent value=90 min=0 max=100
-balance generation.interiors.enterable_target_percent value=97 min=1 max=100
-balance generation.interiors.enterable_target_tolerance_percent value=3 min=0 max=100
+balance generation.interiors.enterable_target_percent value=98 min=1 max=100
+balance generation.interiors.enterable_target_tolerance_percent value=1 min=0 max=100
 balance generation.interiors.max_kind_share_percent value=75 min=1 max=100
 balance generation.interiors.max_layout_attempts value=8 min=1 max=64
 balance generation.interiors.max_rejected_percent value=5 min=0 max=100

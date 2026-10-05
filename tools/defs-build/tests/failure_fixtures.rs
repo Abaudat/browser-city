@@ -805,7 +805,6 @@ fn a_workplace_with_no_staff_room_is_named() {
     );
 }
 
-
 /// Story 3.5: a tag naming a structural part is only half a vocabulary --
 /// the generator reads each part through exactly one tag, so once any tag
 /// names one every part must be named, once.

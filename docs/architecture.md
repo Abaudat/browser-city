@@ -768,8 +768,8 @@ behind a flag not exposed in production (FR168).
 
 `defs/` is the single source of truth for game content data (NFR31),
 subdivided into `objects/`, `items/`, `recipes/`, `professions/`,
-`chains/`, `appearance/`, `balance/`, `tags/`, `rules/` and
-`archetypes/`, each a directory of TOML files
+`chains/`, `building-types/`, `room-types/`, `appearance/`, `balance/`,
+`tags/`, `rules/` and `archetypes/`, each a directory of TOML files
 (the naming table's `city-props.toml`). Neither build target writes here
 and neither runs the generator: `tools/defs-build/` is a standalone Rust binary crate
 outside both the server and client dependency graphs (its own
@@ -991,6 +991,15 @@ resolved to codes at build time. Every `[[object]]` carries exactly one
 role tag in its ordinary `tags` list -- zero, two, or a layer outside the
 role's own `layers` all fail the build by object key.
 
+A tag's own `[[tag]]` row may also carry `structure = "<part>"`, one of
+wall, wall_run, floor, threshold, entrance, pavement, fixture -- the
+closed vocabulary `sim::generation::interiors` builds from, resolved to
+`defs::TagDef::structure`; once any tag names a part, exactly one tag
+names each. `sim::rules::evaluate_local` is `evaluate` over every kind
+except Distribution (whole-site by construction), the verdict one
+building's own site can be given; `RuleDef::as_requirement` reads a
+`[[requirement]]` row's fields without matching on the kind enum.
+
 Five closed kinds, one TOML array table each under `defs/rules/*.toml`,
 any file: `[[placement]]`, `[[distribution]]`, `[[coherence]]`,
 `[[adjacency]]`, `[[requirement]]`. `RuleKind` is a closed Rust enum
@@ -1103,20 +1112,23 @@ or plot's draws.
 `generation::plan(city_seed, &cfg, &content) -> Result<District,
 GenerationError>` chains every implemented pass in order with no verdict
 on the result (only pass 1's own site check can fail). `content` is
-`GenerationContent { rules: RuleSet<'_>, building_types: &[BuildingTypeDef]
-}` -- every content table a pass reads, loaded once
-(`GenerationContent::committed()` wraps `RuleSet::committed()` and
-`defs::BUILDING_TYPES`) and passed down as a struct, never a literal read
-from `defs::` inside a pass; one signature, no `plan_with` twin.
+`GenerationContent { rules: RuleSet<'_>, building_types, room_types, tags }`
+-- every content table a pass reads, loaded once
+(`GenerationContent::committed()` wraps `RuleSet::committed()`,
+`defs::BUILDING_TYPES`, `defs::ROOM_TYPES` and `defs::TAGS`) and passed
+down as a struct, never a literal read from `defs::` inside a pass; one
+signature, no `plan_with` twin.
 `District::check_building_count(&cfg)` holds AC4's building-count
 verdict; `District::check_rules(&content)` holds FR112's verdict over the
 finished district's own `DistrictSite` (`sim::rules::evaluate` must find
 no violation); `District::check_workplace_count(&cfg, &content)` holds
-AC4's workplace-count verdict, the same two-band shape as building count.
-`generation::generate` is `plan` plus all three, in that order, and is
-what production calls. `scripts/ci/check-generation-entry-point.sh` fails
-the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`
-call under `server/sim/tests/` or `server/bounds/` not marked `//
+AC4's workplace-count verdict, the same two-band shape as building count;
+`District::check_enterable_count(&cfg)` and
+`District::check_institutions_enterable(&content)` hold pass 6's two
+verdicts. `generation::generate` is `plan` plus all five, in that order,
+and is what production calls. `scripts/ci/check-generation-entry-point.sh` fails
+the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`/
+`interiors::run(` call under `server/sim/tests/` or `server/bounds/` not marked `//
 generation-entry-point: allow` -- the marker is reserved for the
 independence properties and the golden's pass-2-run-twice test, which
 deliberately feed one pass a perturbed or repeated predecessor;
@@ -1126,8 +1138,9 @@ is the one error type across every implemented pass (`InvalidConfig` from
 coarse_cell_size_cells }` from pass 1, `BuildingCountOutOfTolerance {
 got, min, max }` from the district's own count check, `RuleViolations {
 count, first }` from `check_rules`, `WorkplaceCountOutOfTolerance { got,
-min, max }` from `check_workplace_count`) -- never a `Result<_, String>`
-per pass.
+min, max }` from `check_workplace_count`, `EnterableCountBelowFloor {
+got, min }` and `InstitutionNotEnterable { plot, building_type }` from
+pass 6's verdicts) -- never a `Result<_, String>` per pass.
 
 Coordinates are world-absolute `i32` cells throughout; `SiteBounds` is
 `sim::world::Rect` reused, never a second rect type. `GenerationConfig::
@@ -1241,14 +1254,11 @@ wall-clock, since maximum independent set on a spacing graph is NP-hard
 and this runs inside world creation) for a fuller selection: a top-
 ranked candidate that conflicts (by `min_spacing`) with every other
 real candidate, none of which conflict with each other, must never
-strand an achievable target (found by `proptest`, PR #317 cycle 3) --
-the search only ever decides whether a candidate already offered in
-rank order is kept, never reorders the pool itself. On a `target`
-genuinely unreachable from the pool, `place_row` returns the largest
-real selection the search found within its own budget, never an empty
-one (PR #317 cycle 4: an earlier version popped every tentative choice
-back out on failure, silently placing zero where `target - 1` was
-real).
+strand an achievable target -- the search only ever decides whether a
+candidate already offered in rank order is kept, never reorders the pool
+itself. On a `target` genuinely unreachable from the pool, `place_row`
+returns the largest real selection the search found within its own
+budget, never an empty one.
 
 The per-catchment floor is a real, unconditional guarantee, never
 discounted by the row's own site-wide `tolerance_percent` (that
@@ -1266,12 +1276,52 @@ required_services` (`server/sim/tests/invariants.rs`) asserts `placed
 that same `k` independently -- never skipping the assertion outright,
 even where `k` is `0`.
 
+Pass 6 (interior layout, FR110/FR114) hands down one
+`InteriorOutcome` per placed envelope, in envelope order:
+`interiors::run(city_seed, &envelopes, &building_types, &plots, &cfg,
+&content) -> InteriorMap`. `Laid { interior, attempts }` is
+enterable -- derived, never a stored flag; `Shell` is a type whose
+`rooms` program is empty (legal only for a type with neither
+`professions` nor the `dwelling` tag, enforced by `tools/defs-build`);
+`Rejected { reason, attempts }` is a typed, counted refusal with no
+interior. An `Interior` is ground-floor rects and cells in world
+coordinates -- `rooms` (a `Rect` and a `defs::RoomTypeDef` id),
+`thresholds` (a cell, the room that owns it, whether it is the street
+entrance), `fixtures` (a cell and a tag id, never an object) and the
+entrance's `approach` (the straight cell run from the entrance to the
+street's first cell, presented as pavement); walls are the footprint
+minus rooms and thresholds, never stored. The entrance is the
+envelope's own `front_cell`. A room type (`defs/room-types/*.toml`) is
+`tags` (exactly one of the three access tags, a `room` tag, a function
+tag), a minimum width and depth of two cells or more, and a weight;
+`BuildingTypeDef` gains `rooms` (the required core, front room first)
+and `optional_rooms` (taken while the footprint holds them). What a room
+owes is a `[[requirement]]` row over one of its tags
+(`defs/rules/interiors.toml`), placed by the pass through
+`RuleDef::as_requirement` and verified by `sim::rules::evaluate_local`
+(every kind except Distribution, over one building's own site); a
+violation refuses the attempt, a fresh stream seeded from the
+building's bounds plus the attempt index tries again, up to
+`generation.interiors.max_layout_attempts`. The structural parts the
+pass builds from (wall, wall run, floor, threshold, entrance, pavement,
+fixture) are tags carrying a `structure` field
+(`defs::TagDef::structure`), never a quoted key.
+
+Ownership is emitted as `sim::world::AreaSpec` rows, only through
+`clip_rect_to_chunks`: `InteriorMap::building_areas` (the whole
+footprint, walls included) and `InteriorMap::room_areas` (a room's floor
+plus the doorway it owns -- one room id spanning several rects -- never
+a wall), owner ids `rect_seed_key(footprint)` / `rect_seed_key(room
+rect)`.
+
 `DistrictSite` (`generation::site`) is the one `RuleSite` a *finished*
 district presents to `sim::rules::evaluate` -- one subject cell per
 typed building (its front-edge midpoint, floor 0, tagged with its own
 type's `tags`), one area per block (`AreaId = rect_seed_key(block
-bounds)`) -- built once, from the same fields, by `District::
-check_rules`. Pass 5's own constructive placement shares only
+bounds)`) and, for each laid-out building, its interior's cells
+(`interiors::site_cells`, the adapter pass 6's own per-building verdict
+shares) in a building area and its rooms' areas -- built once, from the
+same fields, by `District::check_rules`. Pass 5's own constructive placement shares only
 `front_cell`, the same one-subject-cell rule, since `evaluate` needs a
 finished district's full tag/area index, never a partial one; it never
 calls `evaluate` per candidate, and is whole-site. `scripts/ci/
@@ -1291,13 +1341,13 @@ vacant/yard -- six fixed classes, a fixed palette, so two unrelated
 types can never collide onto one swatch), marks every envelope whose
 own type is the subject of a committed distribution row this pass
 actually feeds with a marker shape read from that one row list's own
-position (map and legend share the identical list and index -- a
-second, `placed`-filtered list with its own index was PR #317 cycle 3's
-own map/legend mismatch), overlays a dashed catchment grid with a pink
-wash over a physically-short catchment (no text on the map -- PR #317
-cycle 4: five-line label plates on the map itself covered half a
-catchment; the per/owed/placed figures now live in a panel below the
-map, one line per catchment). `cargo run -p bounds --bin dump-generation`
+position (map and legend share the identical list and index), overlays a
+dashed catchment grid with a pink wash over a physically-short
+catchment (no text on the map; the per/owed/placed figures live in a
+panel below it, one line per catchment). Pass 6's file shows the
+enterable set by derived kind and a contact sheet of laid-out interiors
+per kind at viewport scale, rooms as rects.
+`cargo run -p bounds --bin dump-generation`
 regenerates them; `bounds/tests/generation_evidence_current.rs` fails
 the build if the committed files and a fresh render ever disagree.
 
@@ -1310,7 +1360,7 @@ deliberately unrelated ids/keys, not live `defs::BALANCE`/
 `defs::BUILDING_TYPES`, so a balance or content retune alone never
 forces a version bump, and the same shape of output against a wholly
 different content table is itself proof the generator never branches on
-a content key. `server/sim/tests/goldens/generation_v5.golden` is keyed
+a content key. `server/sim/tests/goldens/generation_v<n>.golden` is keyed
 to it, guarded by `check-golden-version-bump.sh`'s `generation_*` arm the
 same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
 

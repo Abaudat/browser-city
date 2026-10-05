@@ -1846,7 +1846,6 @@ fn check_tag_structures(entries: &[TagEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
-
 /// Story 2.9 (AC1, FR119): a role tag's own `layers` list must name real,
 /// non-deprecated layers -- exactly the same two refusals an object's own
 /// `layer` field gets (`resolve_object_layer`), since a role that could
