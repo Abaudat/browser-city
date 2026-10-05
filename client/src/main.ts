@@ -34,6 +34,7 @@ import {
   recordAppearanceTextureIdsForE2e,
   recordCharacterForE2e,
   recordDistinctBoundAtlasPagesForE2e,
+  recordDoorwaysForE2e,
   recordFrameWorkForE2e,
   recordHighlightForE2e,
   recordIdentityForE2e,
@@ -76,7 +77,7 @@ import { ServerClock } from "./time/server-clock";
 import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
-import { objectDefsById, windowDefIds } from "./world/object-defs";
+import { objectDefsById, thresholdDefIds, windowDefIds } from "./world/object-defs";
 import { dequantise } from "./world/position-codec";
 import { loadPositionConfig, type PositionConfig } from "./world/position-config";
 import { handleId } from "./world/region";
@@ -636,6 +637,7 @@ async function startStreetScene(
     movementConfig,
     objectDefs: objectDefsById(defs),
     windowDefIds: windowDefIds(defs),
+    thresholdDefIds: thresholdDefIds(defs),
     startWithCrowdFrozen: freezeCrowdForE2e,
     cityMilliminutes,
     crowdIdenticalTuples: identicalCrowdForE2e,
@@ -703,6 +705,7 @@ async function startStreetScene(
   exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
   recordPlayerAppearanceForE2e(handle.playerAppearance);
   recordDistinctBoundAtlasPagesForE2e(handle.distinctBoundAtlasPages);
+  recordDoorwaysForE2e(handle.doorways);
   recordAllBoundTextureSourcesForE2e(handle.allBoundTextureSources);
   exposePlayerScreenBoundsForE2e(handle.playerScreenBounds);
   exposeCommuterDrawnForE2e(handle.commuterDrawn);

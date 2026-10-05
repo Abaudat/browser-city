@@ -49,15 +49,6 @@ fn every_real_room_builder_sheet_resolves_to_a_page_group() {
     assert!(seen > 0, "no sheets found in {dir:?} -- vacuous");
 }
 
-/// The text of `field`'s value in one `defs.json` row (`"field": 12` or
-/// `"field": "text"`), or `None`.
-fn field<'a>(row: &'a str, field: &str) -> Option<&'a str> {
-    let needle = format!("\"{field}\": ");
-    let rest = &row[row.find(&needle)? + needle.len()..];
-    let end = rest.find([',', '}']).unwrap_or(rest.len());
-    Some(rest[..end].trim().trim_matches('"'))
-}
-
 /// The real mixed scene, read from the emitted `defs.json` -- the artefact
 /// the client loads -- through the production build: every street-kit
 /// object and the interior shell objects resolve to shared-group pages, and
@@ -69,22 +60,20 @@ fn the_real_mixed_street_and_interior_shell_scene_fits_the_bound_page_budget() {
         .unwrap()
         .json;
 
-    let pages: Vec<(String, PageMeta)> = json
-        .lines()
-        .filter(|l| l.contains("\"file\":") && l.contains("\"group\":"))
-        .map(|l| {
-            (
-                field(l, "file").unwrap().to_string(),
-                PageMeta {
-                    group: field(l, "group").unwrap().to_string(),
-                    width: field(l, "width").unwrap().parse().unwrap(),
-                    height: field(l, "height").unwrap().parse().unwrap(),
-                },
-            )
+    let doc: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let pages: Vec<PageMeta> = doc["atlas_pages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| PageMeta {
+            group: p["group"].as_str().unwrap().to_string(),
+            width: p["width"].as_u64().unwrap() as u32,
+            height: p["height"].as_u64().unwrap() as u32,
         })
         .collect();
     assert!(!pages.is_empty(), "no atlas_pages in defs.json -- vacuous");
 
+    let objects = doc["objects"].as_array().unwrap();
     for key in [
         "floor_pale_stone",
         "threshold_arch_slate",
@@ -93,21 +82,19 @@ fn the_real_mixed_street_and_interior_shell_scene_fits_the_bound_page_budget() {
         "road_asphalt",
         "grass_ground",
     ] {
-        let row = json
-            .lines()
-            .find(|l| field(l, "key") == Some(key))
+        let object = objects
+            .iter()
+            .find(|o| o["key"] == key)
             .unwrap_or_else(|| panic!("real object '{key}' is missing from defs.json"));
-        let atlas = &row[row.find("\"atlas\"").unwrap()..];
-        let page: usize = field(atlas, "page").unwrap().parse().unwrap();
+        let page = object["atlas"]["page"].as_u64().unwrap() as usize;
         assert_eq!(
-            pages[page].1.group,
+            pages[page].group,
             model::ATLAS_SHARED_GROUP,
             "'{key}' must pack onto the shared group"
         );
     }
 
-    let metas: Vec<PageMeta> = pages.into_iter().map(|(_, m)| m).collect();
-    let budget = scene_page_budget(&metas);
+    let budget = scene_page_budget(&pages);
     assert!(
         budget.total <= model::ATLAS_MAX_BOUND_PAGES,
         "real scene budget {budget:?} exceeds ATLAS_MAX_BOUND_PAGES ({})",

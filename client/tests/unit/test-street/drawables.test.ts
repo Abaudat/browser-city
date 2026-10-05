@@ -9,14 +9,13 @@ import {
   passOfLayer,
 } from "../../../src/render/layer-table";
 import { compareDrawables } from "../../../src/render/sort-key";
-import { SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
+import { fromSortUnits, SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import { CROWD_FLOOR } from "../../../src/test-street/citizens";
 import {
   buildCharacterDrawable,
   buildPropDrawables,
   updateCharacterDrawable,
-  WALL_TOP_BAND_LIFT_PX,
 } from "../../../src/test-street/drawables";
 import {
   BRIDGE_FLIGHT_X0,
@@ -61,6 +60,7 @@ import {
   STREET_VISIBILITY_ON_SUBWAY_LANDING,
 } from "./golden";
 import {
+  committedDefs,
   lamppostRestY,
   nearRailingRestY,
   shopfrontExitRestY,
@@ -69,6 +69,7 @@ import {
   streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
+  streetThresholdDefIds,
   streetWalkInputs,
   streetWindowDefIds,
   streetWorldIndex,
@@ -102,6 +103,7 @@ function buildStreetProps() {
     rankOf,
     ownership: streetOwnershipIndex(),
     windowDefIds: streetWindowDefIds(),
+    thresholdDefIds: streetThresholdDefIds(),
     objectDefs: streetObjectSources(),
   });
 }
@@ -905,7 +907,10 @@ describe("story 2.14: a shop door's threshold", () => {
   });
 
   it("has a wall-top band companion at the same sort point, lifted above it, retracting with it, and no wall stub", () => {
-    const band = props.filter((d) => "liftPx" in d && d.liftPx === WALL_TOP_BAND_LIFT_PX);
+    const thresholdDef = committedDefs().objects.find((o) => o.id === THRESHOLD_ARCH_SLATE_DEF_ID);
+    const band = props.filter(
+      (d) => "liftSourcePx" in d && d.liftSourcePx === thresholdDef?.sprite?.h,
+    );
     expect(band).toHaveLength(2);
     for (const b of band) {
       const owner = thresholds.find((t) => t.x === b.x && t.y === b.y);
@@ -915,6 +920,21 @@ describe("story 2.14: a shop door's threshold", () => {
     }
     for (const t of thresholds) {
       expect(props.some((d) => d.isStub && d.x === t.x && d.y === t.y)).toBe(false);
+    }
+  });
+
+  it("draws a character standing in the doorway behind the lintel and the band, never over them", () => {
+    for (const t of thresholds) {
+      const character = buildCharacterDrawable(
+        rankOf("characters"),
+        fromSortUnits(t.x),
+        fromSortUnits(t.y) - 0.5,
+        t.floor,
+      );
+      expect(compareDrawables(character, t)).toBeLessThan(0);
+      const band = props.find((d) => d.stableId === t.stableId + 600_000n);
+      expect(band, "a band shares its threshold's sort point").toBeDefined();
+      if (band) expect(compareDrawables(character, band)).toBeLessThan(0);
     }
   });
 });

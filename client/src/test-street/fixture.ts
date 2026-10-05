@@ -1132,16 +1132,20 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
  * 1.7: carries its own `floor` so `scene.ts` can cull it the same way
  * every other drawable is culled (FR122), through `render/pixi-
  * visibility.ts`'s `VisibilityApplier`, never a second, ad hoc rule. */
-export interface StreetGroundTiles {
-  /** A raw `ASSET_URLS` texture, or -- for a real def -- `defId`. Exactly
-   * one is set. */
-  readonly assetKey?: string;
-  readonly defId?: number;
+export type StreetGroundTiles = StreetGroundRect &
+  ({ readonly assetKey: string } | { readonly defId: number });
+
+interface StreetGroundRect {
   readonly floor: number;
   readonly x0: number;
   readonly y0: number;
   readonly x1: number;
   readonly y1: number;
+}
+
+/** Label of a ground group, for failure messages. */
+export function groundTilesLabel(tiles: StreetGroundTiles): string {
+  return "assetKey" in tiles ? tiles.assetKey : `def:${tiles.defId}`;
 }
 
 /** Interior floor and exterior pavement are two distinct textures
@@ -1164,6 +1168,26 @@ export const INTERIOR_FLOOR_TILES_B: StreetGroundTiles = {
   y0: NORTH_WALL_Y,
   x1: EAST_WALL_X_B + 1,
   y1: SOUTH_WALL_Y,
+};
+
+/** The sill of each shop door is the shop's floor, not the pavement that
+ * runs under the front wall row. */
+export const DOOR_SILL_TILES_A: StreetGroundTiles = {
+  defId: FLOOR_PALE_STONE_DEF_ID,
+  floor: STREET_FLOOR,
+  x0: DOOR_X_A,
+  y0: SOUTH_WALL_Y,
+  x1: DOOR_X_A + 1,
+  y1: SOUTH_WALL_Y + 1,
+};
+
+export const DOOR_SILL_TILES_B: StreetGroundTiles = {
+  defId: FLOOR_PALE_STONE_DEF_ID,
+  floor: STREET_FLOOR,
+  x0: DOOR_X_B,
+  y0: SOUTH_WALL_Y,
+  x1: DOOR_X_B + 1,
+  y1: SOUTH_WALL_Y + 1,
 };
 
 /** The pavement: every standable street row south of the terrace. */
@@ -1230,6 +1254,8 @@ export const STREET_GROUND_TILES: readonly StreetGroundTiles[] = [
   INTERIOR_FLOOR_TILES,
   INTERIOR_FLOOR_TILES_B,
   SIDEWALK_TILES,
+  DOOR_SILL_TILES_A,
+  DOOR_SILL_TILES_B,
   SUBWAY_ENTRANCE_TILES,
   BRIDGE_FOOT_TILES,
   PLATFORM_FLOOR_TILES,

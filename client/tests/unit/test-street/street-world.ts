@@ -59,7 +59,7 @@ import { footprintCells, footprintOrigin } from "../../../src/world/footprint";
 import type { MovementConfig } from "../../../src/world/movement";
 import { loadMovementConfig } from "../../../src/world/movement-config";
 import type { ObjectSource } from "../../../src/world/object-defs";
-import { objectDefsById, windowDefIds } from "../../../src/world/object-defs";
+import { objectDefsById, thresholdDefIds, windowDefIds } from "../../../src/world/object-defs";
 import { OwnershipIndex } from "../../../src/world/ownership";
 import { isBodyClear, isCellStandable } from "../../../src/world/standable";
 import {
@@ -94,6 +94,11 @@ export function streetOwnershipIndex(): OwnershipIndex {
  * `defs.json` -- never a literal restated in a test. */
 export function streetWindowDefIds(): ReadonlySet<number> {
   return windowDefIds(committedDefs());
+}
+
+/** The def ids carrying the `threshold` role in the committed defs. */
+export function streetThresholdDefIds() {
+  return thresholdDefIds(committedDefs());
 }
 
 /** Every def source the street scene indexes: `defs/objects` (footprints,

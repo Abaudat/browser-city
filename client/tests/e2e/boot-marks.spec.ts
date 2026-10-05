@@ -138,8 +138,9 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // -- ATLAS_BYTES_BUDGET is that byte figure times 1.05, rounded up to the
 // next 16 KiB. Story 15.3: 27 requests -- the stairwell is three
 // `defs/objects` rows and the retraction stub is `wall_segment`, so the raw
-// `Stairs_Complete_2` and wall sheets are no longer fetched (the byte budget stays, an upper bound). Story 2.14: 26 -- the interior
-// floor draws from the atlas instead of its own raw sheet.
+// `Stairs_Complete_2` and wall sheets are no longer fetched (the byte
+// budget stays, an upper bound). Story 2.14: 26 -- the interior floor
+// draws from the atlas instead of its own raw sheet.
 const ATLAS_REQUEST_COUNT = 26;
 const ATLAS_BYTES_BUDGET = Math.ceil((1_451_572 * 1.05) / (16 * 1024)) * (16 * 1024);
 

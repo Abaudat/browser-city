@@ -20,6 +20,8 @@ export interface ObjectSource extends ColliderSource {
   readonly flight?: FlightDef;
   /** An undrawn flight (no sprite): nothing is drawn for it. */
   readonly undrawn?: true;
+  /** The sprite's own height in source pixels (absent when undrawn). */
+  readonly spriteHeightPx?: number;
 }
 
 /** Keyed by `ObjectDef.id`, which is what a `placed_object` row's `defId`
@@ -38,7 +40,7 @@ export function objectDefsById(defs: Defs): ReadonlyMap<number, ObjectSource> {
         ...(object.collider ? { collider: object.collider } : {}),
         ...(object.interactAt ? { interactAt: object.interactAt } : {}),
         ...(object.flight ? { flight: object.flight } : {}),
-        ...(object.sprite ? {} : { undrawn: true as const }),
+        ...(object.sprite ? { spriteHeightPx: object.sprite.h } : { undrawn: true as const }),
       },
     ]),
   );
@@ -50,6 +52,14 @@ export function objectDefsById(defs: Defs): ReadonlyMap<number, ObjectSource> {
  * literal. */
 export function windowDefIds(defs: Defs): ReadonlySet<number> {
   return new Set(defs.objects.filter((o) => o.window).map((o) => o.id));
+}
+
+/** The def ids carrying the `threshold` role tag, resolved by tag key (never
+ * a tag id or an object key) -- the one place the client learns which
+ * objects are doorways. */
+export function thresholdDefIds(defs: Defs): ReadonlySet<number> {
+  const tagIds = new Set(defs.tags.filter((t) => t.key === "threshold").map((t) => t.id));
+  return new Set(defs.objects.filter((o) => o.tags.some((id) => tagIds.has(id))).map((o) => o.id));
 }
 
 /** Every real `defs/objects` entry, keyed by its own `id` (story 2.13,

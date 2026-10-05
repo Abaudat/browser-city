@@ -1297,10 +1297,11 @@ rule above.
   count (`character_*` groups excluded -- they are CPU-only, never
   bound), plus `CHARACTER_COMPOSITE_PAGES`, never spans more than
   `ATLAS_MAX_BOUND_PAGES` (8); a failure names all three terms and the
-  total. At the per-group cap that is 2 + 2 + 2 = 6 of 8, asserted at
-  compile time against the constants. `atlas_max_pages_per_group`/`character_composite_pages` are
-  emitted into `defs.json`; the scene rule itself is the packer's own,
-  the client has no use for it.
+  total.
+  `2 × ATLAS_MAX_PAGES_PER_GROUP + CHARACTER_COMPOSITE_PAGES <=
+  ATLAS_MAX_BOUND_PAGES` is a compile-time assertion. `atlas_max_pages_per_group`/
+  `character_composite_pages` are emitted into `defs.json`; the scene
+  rule itself is the packer's own, the client has no use for it.
 - Every packed rect carries a permanent 1px border of extruded
   (edge-repeated, never transparent) pixels on every side -- nearest-
   neighbour sampling plus this stops bleed at a fractional camera

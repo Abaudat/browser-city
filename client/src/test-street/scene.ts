@@ -188,6 +188,8 @@ export interface MountStreetSceneOptions {
   /** The def ids `defs/` marks `window = true` (story 1.7, FR121) --
    * resolved once by the caller from the fetched document. */
   readonly windowDefIds: ReadonlySet<number>;
+  /** The def ids carrying the `threshold` role, resolved once by the caller. */
+  readonly thresholdDefIds: ReadonlySet<number>;
   /** Called once after every real re-sort (including the first one) with
    * the resulting `stableId` order -- the render path's own event, never
    * polled every frame (Quentin's direction). */
@@ -356,6 +358,15 @@ export interface StreetSceneHandle {
    * DEV-only `window.__bc` hook against, the same way it does for the
    * crowd's own texture identity count. */
   readonly distinctBoundAtlasPages: number;
+  /** Story 2.14: every mounted threshold sprite and its wall-top band --
+   * resolved texture size and lift above the sort anchor, for the e2e
+   * proof that the doorways really draw. */
+  readonly doorways: readonly {
+    readonly stableId: string;
+    readonly textureWidth: number;
+    readonly textureHeight: number;
+    readonly liftPx: number;
+  }[];
   /** Every distinct `TextureSource` reachable from the mounted display
    * list right now, *unfiltered* (`countAllBoundTextureSources` over
    * `app.stage`, never narrowed to a known-page set) -- for
@@ -557,7 +568,7 @@ function assetNudgePx(drawable: PropDrawable): number {
 
 /** How far above its sort anchor a drawable is drawn (screen px). */
 function liftPx(drawable: PropDrawable): number {
-  return isDefPropDrawable(drawable) ? (drawable.liftPx ?? 0) : 0;
+  return isDefPropDrawable(drawable) ? (drawable.liftSourcePx ?? 0) * ZOOM : 0;
 }
 
 /** A debug-only label for a drawable (`PoolEntry.label`,
@@ -769,6 +780,7 @@ export async function mountStreetScene(
     movementConfig,
     objectDefs,
     windowDefIds,
+    thresholdDefIds,
     onOrderChange,
     onPlayerMove,
     remotePlayers: remotePlayersWiring,
@@ -909,7 +921,7 @@ export async function mountStreetScene(
   const groundSprites: Sprite[] = [];
   for (const tiles of STREET_GROUND_TILES) {
     const groundTexture =
-      tiles.defId !== undefined
+      "defId" in tiles
         ? await atlasPageLoader.objectCellTexture(
             defs,
             objectDefById(objectDefIndex, tiles.defId),
@@ -917,7 +929,7 @@ export async function mountStreetScene(
             tileSizePx,
             0,
           )
-        : textureFor(tiles.assetKey ?? "", textures);
+        : textureFor(tiles.assetKey, textures);
     const container = groundContainerFor(tiles.floor);
     const offset = floorOffsetPx(tiles.floor, storeyHeightPx);
     for (let y = tiles.y0; y < tiles.y1; y++) {
@@ -940,6 +952,7 @@ export async function mountStreetScene(
     rankOf: (layer) => rankOf(layerCodeByName(layer)),
     ownership,
     windowDefIds,
+    thresholdDefIds,
     objectDefs,
   });
 
@@ -1831,6 +1844,19 @@ export async function mountStreetScene(
     citizensLayer,
     remotePlayers,
     distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache),
+    doorways: entries.flatMap((entry) => {
+      const d = entry.drawable;
+      if (!isDefPropDrawable(d) || !(thresholdDefIds.has(d.defId) || d.liftSourcePx)) return [];
+      const sprite = entry.view as Sprite;
+      return [
+        {
+          stableId: String(d.stableId),
+          textureWidth: sprite.texture.width,
+          textureHeight: sprite.texture.height,
+          liftPx: liftPx(d),
+        },
+      ];
+    }),
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
     commuterDrawn: () => commuterDrawn(),
     l3Bodies: () => [...commuterDiagnostics(), ...citizensLayer.l3Bodies()],

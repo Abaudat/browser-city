@@ -18,7 +18,6 @@ import {
   type StreetFootprint,
   type StreetLayer,
   type StreetPropByDef,
-  THRESHOLD_ARCH_SLATE_DEF_ID,
   WALL_SEGMENT_DEF_ID,
 } from "./fixture";
 
@@ -38,9 +37,10 @@ interface PropDrawableBase extends Drawable, VisibilityDrawable {
  * `AtlasPageLoader.objectCellTexture` -- never carries `assetKey`. */
 export interface PropDrawableByDef extends PropDrawableBase {
   readonly defId: number;
-  /** Screen pixels the sprite is drawn above its sort anchor (the wall-top
-   * band over a doorway); sorting and visibility are unchanged. */
-  readonly liftPx?: number;
+  /** Source pixels the sprite is drawn above its sort anchor (the wall-top
+   * band over a doorway: its threshold's own sprite height); sorting and
+   * visibility are unchanged. */
+  readonly liftSourcePx?: number;
 }
 
 /** A drawable for a prop placed by a hand-picked asset key into `scene.ts`'s
@@ -74,16 +74,11 @@ export function isDefPropDrawable(drawable: PropDrawable): drawable is PropDrawa
  * real wall is drawn -- Artie's cycle-2 finding). */
 const STUB_ID_OFFSET = 500_000n;
 
-/** The wall-top band companion's stable-id offset (see
- * [`WALL_TOP_BAND_LIFT_PX`]). */
+/** The wall-top band companion's stable-id offset. A threshold is shorter
+ * than the `wall_face` run beside it; the band is the flush `wall_segment`
+ * swatch drawn above the threshold's own sprite height, sorted and
+ * retracted with the threshold itself (never a colliding wall cell). */
 const BAND_ID_OFFSET = 600_000n;
-
-/** `threshold_arch_slate` is 32px tall: one cell of opening plus 16px of
- * lintel, where the `wall_face` run beside it rises 48px. The remaining
- * 16px of the wall-top band is the flush `wall_segment` swatch drawn this
- * far above the doorway cell's bottom edge, sorted and retracted with the
- * threshold itself (never a colliding wall cell). */
-export const WALL_TOP_BAND_LIFT_PX = 32;
 
 /** The def ids `defs/` marks as windows (FR121) -- resolved once by the
  * caller (`world/object-defs.ts`'s `windowDefIds`), never looked up while
@@ -92,6 +87,9 @@ export interface BuildPropDrawablesOptions {
   readonly rankOf: (layer: StreetLayer) => number;
   readonly ownership: OwnershipIndex;
   readonly windowDefIds: ReadonlySet<number>;
+  /** The def ids carrying the `threshold` role (`world/object-defs.ts`'s
+   * `thresholdDefIds`). */
+  readonly thresholdDefIds: ReadonlySet<number>;
   /** Real `defs/objects` footprints (story 2.13, Tim's direction, cycle
    * 2): a `defId` row's own extent is read from here, from the resolved
    * def's own `width`/`height`, never a hand-restated `footprint` field
@@ -100,7 +98,12 @@ export interface BuildPropDrawablesOptions {
    * def's own real art the way a restated number could. */
   readonly objectDefs: ReadonlyMap<
     number,
-    { readonly width: number; readonly height: number; readonly undrawn?: true }
+    {
+      readonly width: number;
+      readonly height: number;
+      readonly spriteHeightPx?: number;
+      readonly undrawn?: true;
+    }
   >;
 }
 
@@ -135,7 +138,7 @@ const STUB_LAYER_CODE = layerCodeByName("furniture");
  * (Tim's direction: a generated building must retract correctly with no
  * fixture-only tag to remember). */
 export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDrawable[] {
-  const { rankOf, ownership, windowDefIds, objectDefs } = options;
+  const { rankOf, ownership, windowDefIds, thresholdDefIds, objectDefs } = options;
   const drawables: PropDrawable[] = [];
   for (const prop of STREET_PROPS) {
     // An undrawn flight (story 15.19) is walk data: nothing to draw.
@@ -193,7 +196,7 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
       // to invert that into "hidden while the parent shows, normal while
       // it's retracted" rather than applying the ordinary retraction rule
       // a real wall follows.
-      const isThreshold = isDef && prop.defId === THRESHOLD_ARCH_SLATE_DEF_ID;
+      const isThreshold = isDef && thresholdDefIds.has(prop.defId);
       if (isThreshold) {
         drawables.push({
           x: toSortUnits(anchor.x),
@@ -211,7 +214,7 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
           isWindow: false,
           isNearSide,
           isStub: false,
-          liftPx: WALL_TOP_BAND_LIFT_PX,
+          liftSourcePx: objectDefs.get(prop.defId)?.spriteHeightPx ?? 0,
         });
       }
       // A doorway has no wall stub: an opening stays an opening.
