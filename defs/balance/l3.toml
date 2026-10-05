@@ -53,20 +53,39 @@ max = 16777216
 # only: a pure function of ledger poses, ids and city time.
 
 [[balance]]
-# Two bodies closer than this (millicells) step around each other; the
-# sidestep is zero at this distance and grows smoothly as they close.
+# Walkers start easing round another body this far out (millicells), and
+# ignore it beyond; the sidestep is zero at this distance and grows smoothly as
+# they close. About four cells keeps the path's slope near one in three.
 key = "l3.avoid_radius_millicells"
-value = 1500
+value = 4000
 min = 500
 max = 8000
 
 [[balance]]
-# The largest sidestep of one body from its ledger pose, in millicells. Under
-# half a cell, so a body never leaves its tile's neighbourhood.
-key = "l3.avoid_max_offset_millicells"
-value = 450
-min = 0
-max = 499
+# The gap two bodies keep at closest approach (millicells): about a body's
+# width. Two walkers share it; a walker passing a standing citizen gives it
+# whole. A body whose line already clears the other by this walks straight.
+key = "l3.avoid_clearance_millicells"
+value = 900
+min = 200
+max = 2000
+
+[[balance]]
+# A sidestep is zero at either end of a leg and at every corner of its path,
+# and eases in over this distance (millicells) from each.
+key = "l3.avoid_ramp_millicells"
+value = 3000
+min = 500
+max = 8000
+
+[[balance]]
+# Two bodies whose lines are closer than this (millicells) are on one line,
+# where the right-hand convention decides; further apart, each steps away from
+# the other.
+key = "l3.avoid_tie_band_millicells"
+value = 50
+min = 10
+max = 500
 
 [[balance]]
 # Neighbours one body steps around at once; any more are ignored, in a fixed

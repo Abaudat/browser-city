@@ -33,10 +33,22 @@ export interface BodyPose {
   /** Unit direction of travel on the current edge; 0, 0 when not moving. */
   headingX: number;
   headingY: number;
+  /** Cells to the nearest end of the current edge, so the nearest corner of
+   * the walked path or end of the leg; 0 when not moving. */
+  vertexDistance: number;
 }
 
 export function createBodyPose(): BodyPose {
-  return { x: 0, y: 0, floor: 0, moving: false, distance: 0, headingX: 0, headingY: 0 };
+  return {
+    x: 0,
+    y: 0,
+    floor: 0,
+    moving: false,
+    distance: 0,
+    headingX: 0,
+    headingY: 0,
+    vertexDistance: 0,
+  };
 }
 
 /** The straight-line distance between two waypoints. The square root of an
@@ -197,6 +209,7 @@ export class Body {
     out.moving = false;
     out.headingX = 0;
     out.headingY = 0;
+    out.vertexDistance = 0;
     const first = this.#segments[0] as SegmentPath;
     if (last === 0 || t < (instants[0] as number)) {
       out.x = first.points[0] as number;
@@ -242,6 +255,7 @@ export class Body {
     out.y = (pts[e * 2 + 1] as number) + ey * f;
     out.headingX = ex / edge;
     out.headingY = ey / edge;
+    out.vertexDistance = Math.min(d - (along[e] as number), (along[e + 1] as number) - d);
     out.moving = true;
   }
 

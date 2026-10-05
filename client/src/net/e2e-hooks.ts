@@ -140,7 +140,7 @@ declare global {
         id: string;
         x: number;
         y: number;
-        activity: "walk" | "idle" | "glance";
+        activity: string;
         frameIndex: number;
         facing: string;
         offsetX: number;

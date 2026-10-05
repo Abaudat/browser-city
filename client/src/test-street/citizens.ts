@@ -64,7 +64,7 @@ const KID_COUNT = 6;
  * `y = 10`), so the crowd never overlaps a wall, a prop or the void
  * outside either. */
 export const PLAZA_X0 = 0;
-export const PLAZA_Y0 = 16;
+export const PLAZA_Y0 = 12;
 
 /** The floor every crowd fixture lives on -- read by `scene.ts` to
  * register the crowd's own container as a floor-0 visibility member, and
@@ -347,9 +347,9 @@ export const UNIFORMED_WALKER_ID = "uniformed-walker";
 export const WALKER_SPECS: Readonly<Record<string, TimetableSpec>> = {
   [WALKER_ID]: {
     out: [
-      { x: PLAZA_X0 + STRIP_WIDTH + 2, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
-      { x: PLAZA_X0 + STRIP_WIDTH + 5, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
-      { x: PLAZA_X0 + STRIP_WIDTH + 5, y: PLAZA_Y0 + 3, floor: CROWD_FLOOR },
+      { x: PLAZA_X0 + STRIP_WIDTH + 16, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
+      { x: PLAZA_X0 + STRIP_WIDTH + 19, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
+      { x: PLAZA_X0 + STRIP_WIDTH + 19, y: PLAZA_Y0 + 3, floor: CROWD_FLOOR },
     ],
     dwellMs: 1500,
     homeFacing: "down",
@@ -357,9 +357,9 @@ export const WALKER_SPECS: Readonly<Record<string, TimetableSpec>> = {
   },
   [UNIFORMED_WALKER_ID]: {
     out: [
-      { x: PLAZA_X0 + STRIP_WIDTH + 8, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
-      { x: PLAZA_X0 + STRIP_WIDTH + 11, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
-      { x: PLAZA_X0 + STRIP_WIDTH + 11, y: PLAZA_Y0 + 3, floor: CROWD_FLOOR },
+      { x: PLAZA_X0 + STRIP_WIDTH + 22, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
+      { x: PLAZA_X0 + STRIP_WIDTH + 25, y: PLAZA_Y0 + 1, floor: CROWD_FLOOR },
+      { x: PLAZA_X0 + STRIP_WIDTH + 25, y: PLAZA_Y0 + 3, floor: CROWD_FLOOR },
     ],
     dwellMs: 1500,
     homeFacing: "down",
@@ -368,26 +368,28 @@ export const WALKER_SPECS: Readonly<Record<string, TimetableSpec>> = {
 };
 
 /** Story 5.2: the demo staging for local avoidance, as timetable data (story
- * 5.5 deletes it with the rest). Two citizens meeting head-on on open
- * pavement, one walking past a standing citizen, two leaving one node
- * together. Everyone walks the same row from end to end, so the pairs meet
- * mid-leg. */
+ * 5.5 deletes it with the rest), on the first rows of the plaza so an ordinary
+ * window reaches it. Two citizens meeting head-on in an empty lane; one walking
+ * past a standing citizen on its line and past another a cell off it; two
+ * walking one lane a cell apart. No two citizens rest on one cell. */
 export const CROSSER_EAST_ID = "crosser-east";
 export const CROSSER_WEST_ID = "crosser-west";
 export const PASSER_ID = "passer";
 export const BYSTANDER_ID = "bystander";
+export const BYSTANDER_OFF_LINE_ID = "bystander-off-line";
 export const TWIN_A_ID = "twin-a";
 export const TWIN_B_ID = "twin-b";
 
 const LANE_X0 = PLAZA_X0 + STRIP_WIDTH + 2;
-const LANE_X1 = PLAZA_X0 + STRIP_WIDTH + 13;
-const CROSSING_ROW = PLAZA_Y0;
-const PASSING_ROW = PLAZA_Y0 + 4;
-const TWINS_ROW = PLAZA_Y0 + 6;
+const LANE_X1 = PLAZA_X0 + STRIP_WIDTH + 8;
+const CROSSING_X1 = PLAZA_X0 + STRIP_WIDTH + 6;
+const CROSSING_ROW = PLAZA_Y0 + 1;
+const PASSING_ROW = PLAZA_Y0;
+const TWINS_ROW = PLAZA_Y0 + 2;
 
-function lane(row: number, reverse = false): TimetableSpec {
-  const a = { x: LANE_X0, y: row, floor: CROWD_FLOOR };
-  const b = { x: LANE_X1, y: row, floor: CROWD_FLOOR };
+function lane(row: number, x0: number, x1: number, reverse = false): TimetableSpec {
+  const a = { x: x0, y: row, floor: CROWD_FLOOR };
+  const b = { x: x1, y: row, floor: CROWD_FLOOR };
   return {
     out: reverse ? [b, a] : [a, b],
     dwellMs: 1500,
@@ -397,18 +399,24 @@ function lane(row: number, reverse = false): TimetableSpec {
 }
 
 export const AVOIDANCE_SPECS: Readonly<Record<string, TimetableSpec>> = {
-  [CROSSER_EAST_ID]: lane(CROSSING_ROW),
-  [CROSSER_WEST_ID]: lane(CROSSING_ROW, true),
-  [PASSER_ID]: lane(PASSING_ROW),
-  [TWIN_A_ID]: lane(TWINS_ROW),
-  [TWIN_B_ID]: lane(TWINS_ROW),
+  [CROSSER_EAST_ID]: lane(CROSSING_ROW, LANE_X0, CROSSING_X1),
+  [CROSSER_WEST_ID]: lane(CROSSING_ROW, LANE_X0, CROSSING_X1, true),
+  [PASSER_ID]: lane(PASSING_ROW, LANE_X0, LANE_X1),
+  // One lane, one cell apart, the same length: they walk together the whole way.
+  [TWIN_A_ID]: lane(TWINS_ROW, LANE_X0, LANE_X1),
+  [TWIN_B_ID]: lane(TWINS_ROW, LANE_X0 - 1, LANE_X1 - 1),
 };
 
-/** Where the standing citizen the passer walks past stands: on the passer's
- * own row, halfway along it. */
+/** The standing citizen the passer walks past on its own line, halfway along. */
 export const BYSTANDER_CELL = {
-  x: (LANE_X0 + LANE_X1 - 1) / 2,
+  x: (LANE_X0 + LANE_X1) / 2,
   y: PASSING_ROW,
+};
+
+/** The standing citizen a cell off the passer's line: the passer walks on. */
+export const BYSTANDER_OFF_LINE_CELL = {
+  x: BYSTANDER_CELL.x + 1,
+  y: PASSING_ROW - 1,
 };
 
 export function buildAvoidanceFixtures(defs: Defs): CitizenFixture[] {
@@ -424,12 +432,17 @@ export function buildAvoidanceFixtures(defs: Defs): CitizenFixture[] {
       facing: spec.homeFacing,
     };
   });
-  fixtures.push({
-    id: BYSTANDER_ID,
-    tuple: tupleFor(defs, "adult", ADULT_COUNT + 4 + walking.length),
-    gridX: BYSTANDER_CELL.x + 0.5,
-    gridY: BYSTANDER_CELL.y + 0.5,
-    facing: "down",
+  [
+    { id: BYSTANDER_ID, cell: BYSTANDER_CELL },
+    { id: BYSTANDER_OFF_LINE_ID, cell: BYSTANDER_OFF_LINE_CELL },
+  ].forEach(({ id, cell }, k) => {
+    fixtures.push({
+      id,
+      tuple: tupleFor(defs, "adult", ADULT_COUNT + 4 + walking.length + k),
+      gridX: cell.x + 0.5,
+      gridY: cell.y + 0.5,
+      facing: "down",
+    });
   });
   return fixtures;
 }
@@ -438,7 +451,7 @@ export function buildWalkerFixture(defs: Defs): CitizenFixture {
   return {
     id: WALKER_ID,
     tuple: tupleFor(defs, "adult", ADULT_COUNT),
-    gridX: PLAZA_X0 + STRIP_WIDTH + 2,
+    gridX: PLAZA_X0 + STRIP_WIDTH + 16,
     gridY: PLAZA_Y0 + 1.5,
     facing: "down",
   };
@@ -449,7 +462,7 @@ export function buildUniformedWalkerFixture(defs: Defs): CitizenFixture {
     id: UNIFORMED_WALKER_ID,
     tuple: tupleFor(defs, "adult", ADULT_COUNT + 1),
     professionKey: "sanitation_worker",
-    gridX: PLAZA_X0 + STRIP_WIDTH + 8,
+    gridX: PLAZA_X0 + STRIP_WIDTH + 22,
     gridY: PLAZA_Y0 + 1.5,
     facing: "down",
   };
@@ -482,7 +495,7 @@ export function plazaBounds(): { x0: number; y0: number; x1: number; y1: number 
     // the right leg) -- a few spare cells of pavement past that so a
     // close-crop screenshot centred on it there has room on every side,
     // not just up to the world's own edge.
-    x1: PLAZA_X0 + STRIP_WIDTH + 14,
+    x1: PLAZA_X0 + STRIP_WIDTH + 28,
     y1: PLAZA_Y0 + STRIP_DEPTH + 2,
   };
 }

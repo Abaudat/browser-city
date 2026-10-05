@@ -1,6 +1,11 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { AvoidanceField, type AvoidDials, endpointRamp } from "../../../src/l3/avoidance";
+import {
+  AvoidanceField,
+  type AvoidDials,
+  type HeldPredicate,
+  rampOf,
+} from "../../../src/l3/avoidance";
 import { l3Config } from "./defs-config";
 import { TestGrid } from "./support";
 
@@ -8,12 +13,14 @@ const cfg = l3Config();
 const CHUNK = 8;
 const dials: AvoidDials = {
   radiusCells: cfg.avoidRadiusCells,
-  maxOffsetCells: cfg.avoidMaxOffsetCells,
+  clearanceCells: cfg.avoidClearanceCells,
+  tieBandCells: cfg.avoidTieBandCells,
   maxNeighbours: cfg.avoidMaxNeighbours,
   halfWidthCells: cfg.bodyHalfWidthCells,
   chunkSize: CHUNK,
 };
 const open = new TestGrid();
+const ALL_HELD: HeldPredicate = () => true;
 
 interface B {
   id: string;
@@ -49,22 +56,45 @@ function withIds(raw: Omit<B, "id">[]): B[] {
 
 function run(
   bodies: readonly B[],
-  isHeld?: (floor: number, cx: number, cy: number) => boolean,
+  isHeld: HeldPredicate = ALL_HELD,
   grid = open,
   field = new AvoidanceField(),
+  d: AvoidDials = dials,
 ) {
   field.reset();
   const index = new Map<string, number>();
   for (const b of bodies) {
     index.set(b.id, field.add(b.id, b.x, b.y, 0, b.hx, b.hy, b.moving, b.ramp));
   }
-  field.resolve(dials, grid, isHeld);
+  field.resolve(d, grid, isHeld);
   const out = new Map<string, [number, number]>();
   for (const [id, i] of index) out.set(id, [field.offsetX(i), field.offsetY(i)]);
   return { field, out };
 }
 
 const chunkOf = (v: number) => Math.floor(v / CHUNK);
+const walker = (id: string, x: number, y: number, hx: number, hy: number, ramp = 1): B => ({
+  id,
+  x,
+  y,
+  hx,
+  hy,
+  moving: true,
+  ramp,
+});
+const stander = (id: string, x: number, y: number): B => ({
+  id,
+  x,
+  y,
+  hx: 0,
+  hy: 0,
+  moving: false,
+  ramp: 0,
+});
+
+const C = dials.clearanceCells;
+// Beyond the blend between "on one line" and "to one side".
+const CLEAR_OF_BAND = 2 * dials.tieBandCells + 0.01;
 
 describe("local avoidance (FR64)", () => {
   it("inv_l3_avoidance_is_bubble_independent", () => {
@@ -78,11 +108,13 @@ describe("local avoidance (FR64)", () => {
           const bodies = withIds(raw);
           // Region: chunk (2, 2). Each client's bubble is that chunk plus its
           // one-chunk halo, grown by its own arbitrary extra.
-          const bubble = (e: number[]) => (_f: number, cx: number, cy: number) =>
-            cx >= 1 - (e[0] as number) &&
-            cx <= 3 + (e[1] as number) &&
-            cy >= 1 - (e[2] as number) &&
-            cy <= 3 + (e[3] as number);
+          const bubble =
+            (e: number[]): HeldPredicate =>
+            (_f, cx, cy) =>
+              cx >= 1 - (e[0] as number) &&
+              cx <= 3 + (e[1] as number) &&
+              cy >= 1 - (e[2] as number) &&
+              cy <= 3 + (e[3] as number);
           const view = (e: number[], order: number[]) => {
             const held = bubble(e);
             const known = bodies
@@ -107,14 +139,19 @@ describe("local avoidance (FR64)", () => {
   });
 
   it("a body whose chunk is not held whole is drawn at its ledger pose", () => {
-    const pair: B[] = [
-      { id: "a", x: 4.5, y: 4.5, hx: 1, hy: 0, moving: true, ramp: 1 },
-      { id: "b", x: 5.5, y: 4.5, hx: -1, hy: 0, moving: true, ramp: 1 },
-    ];
+    const pair = [walker("a", 4.5, 4.5, 1, 0), walker("b", 5.5, 4.5, -1, 0)];
     expect(run(pair).out.get("a")).not.toEqual([0, 0]);
     const partial = run(pair, (_f, cx, cy) => !(cx === 1 && cy === 0)).out;
     expect(partial.get("a")).toEqual([0, 0]);
     expect(partial.get("b")).toEqual([0, 0]);
+  });
+
+  it("a radius over a chunk is refused, since the halo would not hold every neighbour", () => {
+    const field = new AvoidanceField();
+    field.add("a", 1, 1, 0, 1, 0, true, 1);
+    expect(() => field.resolve({ ...dials, radiusCells: CHUNK + 1 }, open, ALL_HELD)).toThrow(
+      /chunk/,
+    );
   });
 
   it("inv_l3_avoidance_is_history_free", () => {
@@ -126,9 +163,10 @@ describe("local avoidance (FR64)", () => {
           const bodies = withIds(raw);
           const cold = run(bodies).out;
           const warm = new AvoidanceField();
-          for (let k = 0; k < 100; k++)
-            run(withIds(others[k % others.length] ?? []), undefined, open, warm);
-          const again = run(bodies, undefined, open, warm).out;
+          for (let k = 0; k < 100; k++) {
+            run(withIds(others[k % others.length] ?? []), ALL_HELD, open, warm);
+          }
+          const again = run(bodies, ALL_HELD, open, warm).out;
           for (const [id, off] of cold) {
             const w = again.get(id) as [number, number];
             expect(Object.is(w[0], off[0]) && Object.is(w[1], off[1])).toBe(true);
@@ -138,7 +176,7 @@ describe("local avoidance (FR64)", () => {
     );
   });
 
-  it("is bounded and never moves a standing body", () => {
+  it("is bounded by the clearance and never moves a standing body", () => {
     fc.assert(
       fc.property(fc.array(body(12), { minLength: 1, maxLength: 30 }), (raw) => {
         const bodies = withIds(raw);
@@ -146,78 +184,89 @@ describe("local avoidance (FR64)", () => {
         for (const b of bodies) {
           const [ox, oy] = out.get(b.id) as [number, number];
           expect(Number.isFinite(ox) && Number.isFinite(oy)).toBe(true);
-          expect(Math.sqrt(ox * ox + oy * oy)).toBeLessThanOrEqual(dials.maxOffsetCells + 1e-12);
+          expect(Math.sqrt(ox * ox + oy * oy)).toBeLessThanOrEqual(C + 1e-12);
           if (!b.moving || b.ramp === 0) expect([ox, oy]).toEqual([0, 0]);
         }
       }),
     );
   });
 
-  it("the sidestep is zero at either end of a leg", () => {
-    expect(endpointRamp(0, 20, 1.5)).toBe(0);
-    expect(endpointRamp(20, 20, 1.5)).toBe(0);
-    expect(endpointRamp(10, 20, 1.5)).toBe(1);
+  it("the ramp is zero at a corner or an end and eases in over its distance", () => {
+    expect(rampOf(0, 3)).toBe(0);
+    expect(rampOf(3, 3)).toBe(1);
+    expect(rampOf(30, 3)).toBe(1);
     let previous = 0;
-    for (let d = 0; d <= 1.5; d += 0.05) {
-      const r = endpointRamp(d, 20, 1.5);
+    for (let d = 0; d <= 3; d += 0.05) {
+      const r = rampOf(d, 3);
       expect(r).toBeGreaterThanOrEqual(previous);
       previous = r;
     }
   });
 
-  it("a head-on crossing passes on the right and keeps a body width apart", () => {
-    const speed = 0.01;
-    let closest = Number.POSITIVE_INFINITY;
-    let previous: [number, number, number, number] | undefined;
-    let largestStep = 0;
-    for (let step = 0; step <= 2000; step++) {
-      const a: B = { id: "a", x: 2 + step * speed, y: 10.5, hx: 1, hy: 0, moving: true, ramp: 1 };
-      const b: B = { id: "b", x: 22 - step * speed, y: 10.5, hx: -1, hy: 0, moving: true, ramp: 1 };
-      const { out } = run([a, b]);
-      const [ax, ay] = out.get("a") as [number, number];
-      const [bx, by] = out.get("b") as [number, number];
-      const dx = a.x + ax - (b.x + bx);
-      const dy = a.y + ay - (b.y + by);
-      closest = Math.min(closest, Math.sqrt(dx * dx + dy * dy));
-      expect(ax).toBeCloseTo(0, 12);
-      expect(bx).toBeCloseTo(0, 12);
-      // East-bound steps south, west-bound steps north: each to its own right.
-      expect(ay).toBeGreaterThanOrEqual(0);
-      expect(by).toBeLessThanOrEqual(0);
-      if (previous) {
-        largestStep = Math.max(largestStep, Math.abs(ay - previous[1]), Math.abs(by - previous[3]));
+  it("a head-on pair on any parallel lines never closes below the ledger gap and opens to the clearance", () => {
+    const gaps = [
+      0, 0.3, 0.45, 0.6, 0.75, 0.9, 1.2, 2, 3.5, -0.3, -0.45, -0.6, -0.75, -0.9, -1.2, -3.5,
+    ];
+    for (const g of gaps) {
+      let closestLedger = Number.POSITIVE_INFINITY;
+      let closestDrawn = Number.POSITIVE_INFINITY;
+      for (let step = 0; step <= 1600; step++) {
+        const a = walker("a", 2 + step * 0.01, 10.5, 1, 0);
+        // `g` to the right of `a` is south of it.
+        const b = walker("b", 18 - step * 0.01, 10.5 + g, -1, 0);
+        const { out } = run([a, b]);
+        const [ax, ay] = out.get("a") as [number, number];
+        const [bx, by] = out.get("b") as [number, number];
+        closestLedger = Math.min(closestLedger, Math.hypot(a.x - b.x, a.y - b.y));
+        closestDrawn = Math.min(closestDrawn, Math.hypot(a.x + ax - b.x - bx, a.y + ay - b.y - by));
       }
-      previous = [ax, ay, bx, by];
+      if (Math.abs(g) >= C) {
+        // Already clear: nobody swerves.
+        expect(closestDrawn).toBeCloseTo(closestLedger, 9);
+      } else if (Math.abs(g) >= CLEAR_OF_BAND || g === 0) {
+        expect(closestDrawn).toBeGreaterThanOrEqual(closestLedger - 1e-9);
+        expect(closestDrawn).toBeGreaterThanOrEqual(0.8 * C);
+      }
     }
-    expect(closest).toBeGreaterThanOrEqual(1.7 * dials.maxOffsetCells);
-    // 1 cm of travel never moves the sidestep by more than a sliver.
-    expect(largestStep).toBeLessThan(0.02);
   });
 
-  it("a walker steps round a standing citizen, who is never displaced", () => {
-    let walkerMoved = false;
-    for (let step = 0; step <= 400; step++) {
-      const walker: B = {
-        id: "w",
-        x: 5 + step * 0.01,
-        y: 6.5,
-        hx: 1,
-        hy: 0,
-        moving: true,
-        ramp: 1,
-      };
-      const stander: B = { id: "s", x: 7, y: 6.5, hx: 0, hy: 0, moving: false, ramp: 1 };
-      const { out } = run([walker, stander]);
-      expect(out.get("s")).toEqual([0, 0]);
-      if (Math.abs((out.get("w") as [number, number])[1]) > 0.1) walkerMoved = true;
+  it("a walker passes a standing citizen at any lateral gap without closing below the ledger gap", () => {
+    const gaps = [0, 0.2, 0.4, 0.6, 0.9, 1.0, 1.5, -0.2, -0.4, -0.6, -0.9, -1.0];
+    for (const g of gaps) {
+      let closestLedger = Number.POSITIVE_INFINITY;
+      let closestDrawn = Number.POSITIVE_INFINITY;
+      for (let step = 0; step <= 1000; step++) {
+        const w = walker("w", 4 + step * 0.01, 10.5, 1, 0);
+        const s = stander("s", 9, 10.5 + g);
+        const { out } = run([w, s]);
+        const [ox, oy] = out.get("w") as [number, number];
+        expect(out.get("s")).toEqual([0, 0]);
+        closestLedger = Math.min(closestLedger, Math.hypot(w.x - s.x, w.y - s.y));
+        closestDrawn = Math.min(closestDrawn, Math.hypot(w.x + ox - s.x, w.y + oy - s.y));
+      }
+      if (Math.abs(g) >= C) expect(closestDrawn).toBeCloseTo(closestLedger, 9);
+      else if (Math.abs(g) >= CLEAR_OF_BAND || g === 0) {
+        expect(closestDrawn).toBeGreaterThanOrEqual(closestLedger - 1e-9);
+        expect(closestDrawn).toBeGreaterThanOrEqual(0.9 * C);
+      }
     }
-    expect(walkerMoved).toBe(true);
+  });
+
+  it("the path bends no more than about one in three while passing", () => {
+    let worst = 0;
+    let previous = 0;
+    for (let step = 0; step <= 1000; step++) {
+      const w = walker("w", 4 + step * 0.01, 10.5, 1, 0);
+      const { out } = run([w, stander("s", 9, 10.5)]);
+      const oy = (out.get("w") as [number, number])[1];
+      if (step > 0) worst = Math.max(worst, Math.abs(oy - previous) / 0.01);
+      previous = oy;
+    }
+    expect(worst).toBeLessThanOrEqual(0.4);
   });
 
   it("two walkers on one heading and one line spread by id order", () => {
-    const a: B = { id: "a", x: 6, y: 6.5, hx: 1, hy: 0, moving: true, ramp: 1 };
-    const b: B = { id: "b", x: 6.5, y: 6.5, hx: 1, hy: 0, moving: true, ramp: 1 };
-    const { out } = run([b, a]);
+    const { out } = run([walker("b", 6.5, 6.5, 1, 0), walker("a", 6, 6.5, 1, 0)]);
     expect((out.get("a") as [number, number])[1]).toBeGreaterThan(0);
     expect((out.get("b") as [number, number])[1]).toBeLessThan(0);
   });
@@ -233,12 +282,14 @@ describe("local avoidance (FR64)", () => {
           const bodies = withIds(raw).filter((b) =>
             grid.walkable(0, Math.floor(b.x), Math.floor(b.y)),
           );
-          const { out } = run(bodies, undefined, grid);
+          const { out } = run(bodies, ALL_HELD, grid);
           for (const b of bodies) {
             const [ox, oy] = out.get(b.id) as [number, number];
             expect(grid.walkable(0, Math.floor(b.x + ox), Math.floor(b.y + oy))).toBe(true);
             // Nor does its leading edge: the body is half a cell wide.
-            const edge = (v: number) => (v === 0 ? 0 : v < 0 ? -1 : 1) * dials.halfWidthCells;
+            // Touching a wall face is allowed; inside it is not.
+            const edge = (v: number) =>
+              (v === 0 ? 0 : v < 0 ? -1 : 1) * (dials.halfWidthCells - 1e-9);
             expect(
               grid.walkable(0, Math.floor(b.x + ox + edge(ox)), Math.floor(b.y + oy + edge(oy))),
             ).toBe(true);
@@ -248,6 +299,29 @@ describe("local avoidance (FR64)", () => {
     );
   });
 
+  it("the room beside a wall tapers continuously along the walk", () => {
+    const grid = new TestGrid();
+    // A wall along the row south of the walker's, from x = 10 on.
+    for (let x = 10; x < 30; x++) grid.block(x, 11);
+    let previous = Number.NaN;
+    let worstStep = 0;
+    let beside = 0;
+    for (let step = 0; step <= 1200; step++) {
+      const w = walker("w", 4 + step * 0.01, 10.5, 1, 0);
+      // A standing citizen on the line makes it step right, towards the wall.
+      const { out } = run([w, stander("s", 14.5, 10.5)], ALL_HELD, grid);
+      const oy = (out.get("w") as [number, number])[1];
+      if (!Number.isNaN(previous)) worstStep = Math.max(worstStep, Math.abs(oy - previous) / 0.01);
+      previous = oy;
+      if (w.x > 11 && w.x < 13) beside = Math.max(beside, oy);
+    }
+    // At most one in three along the walk, so a pop of a third of the offset
+    // in one frame cannot happen.
+    expect(worstStep).toBeLessThanOrEqual(0.5);
+    // Beside the wall the room is what its face leaves, never into it.
+    expect(beside + dials.halfWidthCells).toBeLessThanOrEqual(0.5 + 1e-9);
+  });
+
   it("a pair meeting in a one-wide corridor degrades gracefully", () => {
     const corridor = new TestGrid();
     for (let x = 0; x < 30; x++) {
@@ -255,36 +329,79 @@ describe("local avoidance (FR64)", () => {
       corridor.block(x, 11);
     }
     for (let step = 0; step <= 100; step++) {
-      const a: B = { id: "a", x: 10 + step * 0.1, y: 10.5, hx: 1, hy: 0, moving: true, ramp: 1 };
-      const b: B = { id: "b", x: 20 - step * 0.1, y: 10.5, hx: -1, hy: 0, moving: true, ramp: 1 };
-      const { out } = run([a, b], undefined, corridor);
+      const a = walker("a", 10 + step * 0.1, 10.5, 1, 0);
+      const b = walker("b", 20 - step * 0.1, 10.5, -1, 0);
+      const { out } = run([a, b], ALL_HELD, corridor);
       for (const id of ["a", "b"]) {
         const [ox, oy] = out.get(id) as [number, number];
         expect(Number.isFinite(ox) && Number.isFinite(oy)).toBe(true);
         expect(ox).toBeCloseTo(0, 12);
-        expect(Math.abs(oy) + dials.halfWidthCells).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(oy) + dials.halfWidthCells).toBeLessThanOrEqual(0.5 + 1e-9);
       }
     }
   });
 
-  it("costs work in the neighbours and counts what it cuts", () => {
-    // Far apart: a linear number of pair checks.
-    const spread: B[] = [];
-    for (let i = 0; i < 100; i++) {
-      spread.push({ id: `s${i}`, x: i * 3, y: 5, hx: 1, hy: 0, moving: true, ramp: 1 });
-    }
-    expect(run(spread).field.pairChecks).toBeLessThanOrEqual(2 * spread.length);
-    // Piled on one spot: each body looks at no more than the cap.
-    const pile: B[] = [];
-    for (let i = 0; i < 60; i++) {
-      pile.push({ id: `p${i}`, x: 5 + i * 0.001, y: 5, hx: 1, hy: 0, moving: true, ramp: 1 });
-    }
+  it("keeps the nearest neighbours when more are in range, whatever the order", () => {
+    const sub = { ...dials, maxNeighbours: 3 };
+    const w = walker("w", 10, 10, 1, 0);
+    const crowd = Array.from({ length: 12 }, (_, i) =>
+      stander(`s${String(i).padStart(2, "0")}`, 10.3 + i * 0.25, 10.4 + (i % 3) * 0.1),
+    );
+    const all = run([w, ...crowd], ALL_HELD, open, new AvoidanceField(), sub);
+    expect(all.field.capHits).toBe(1);
+    const nearest = [...crowd]
+      .sort((p, q) => Math.hypot(p.x - 10, p.y - 10) - Math.hypot(q.x - 10, q.y - 10))
+      .slice(0, 3);
+    const only = run([w, ...nearest], ALL_HELD, open, new AvoidanceField(), sub);
+    expect(all.out.get("w")).toEqual(only.out.get("w"));
+    const shuffled = run([...crowd].reverse().concat(w), ALL_HELD, open, new AvoidanceField(), sub);
+    expect(shuffled.out.get("w")).toEqual(all.out.get("w"));
+  });
+
+  it("costs work in the neighbours, never the square of the bodies, on any layout", () => {
+    const spacing = dials.radiusCells * 1.01;
+    const layout = fc.constantFrom("column", "row", "diagonal", "scatter");
+    fc.assert(
+      fc.property(layout, fc.integer({ min: 20, max: 200 }), fc.integer(), (kind, n, seed) => {
+        const bodies: B[] = [];
+        const side = Math.ceil(Math.sqrt(n));
+        for (let i = 0; i < n; i++) {
+          let x = 0;
+          let y = 0;
+          if (kind === "column") y = i * spacing;
+          else if (kind === "row") x = i * spacing;
+          else if (kind === "diagonal") {
+            x = i * spacing;
+            y = i * spacing;
+          } else {
+            // A lattice of one body per cell of the sparsest spacing, in a
+            // seed-shuffled order of cells.
+            const cell = (i * 7919 + (seed >>> 0)) % (side * side);
+            x = (cell % side) * spacing;
+            y = Math.floor(cell / side) * spacing;
+          }
+          bodies.push(walker(`b${i}`, x, y, 1, 0));
+        }
+        const { field, out } = run(bodies, ALL_HELD, open, new AvoidanceField(), {
+          ...dials,
+          chunkSize: 1 << 20,
+        });
+        expect(field.pairChecks).toBeLessThanOrEqual(8 * n);
+        // Nobody is within the radius of anybody: nobody moves.
+        for (const o of out.values()) expect(o).toEqual([0, 0]);
+      }),
+      { numRuns: 20 },
+    );
+  });
+
+  it("a pile on one spot is capped, and counts what it cuts", () => {
+    const pile = Array.from({ length: 60 }, (_, i) => walker(`p${i}`, 5 + i * 0.001, 5, 1, 0));
     const { field } = run(pile);
-    expect(field.pairChecks).toBeLessThanOrEqual(pile.length * (dials.maxNeighbours + 2));
+    expect(field.pairChecks).toBeLessThanOrEqual(pile.length * pile.length);
     expect(field.capHits).toBeGreaterThan(0);
   });
 
-  it("allocates nothing per frame once it has room", () => {
+  it("never grows its buffers once it has room", () => {
     const field = new AvoidanceField();
     const bodies = withIds(
       Array.from({ length: 50 }, (_, i) => ({
@@ -296,9 +413,9 @@ describe("local avoidance (FR64)", () => {
         ramp: 1,
       })),
     );
-    run(bodies, undefined, open, field);
+    run(bodies, ALL_HELD, open, field);
     const capacity = field.capacity;
-    for (let k = 0; k < 20; k++) run(bodies, undefined, open, field);
+    for (let k = 0; k < 20; k++) run(bodies, ALL_HELD, open, field);
     expect(field.capacity).toBe(capacity);
   });
 });

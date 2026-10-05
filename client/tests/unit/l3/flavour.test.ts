@@ -3,22 +3,18 @@ import { describe, expect, it } from "vitest";
 import {
   createFlavourFrame,
   type FlavourDials,
+  type FlavourRow,
   flavourAt,
   flavourBucketOf,
   flavourKindOf,
 } from "../../../src/l3/flavour";
 import type { Facing } from "../../../src/l3/gait";
 import { SALTS, seedOf } from "../../../src/l3/seed";
-import { l3Config } from "./defs-config";
+import { lifeDials } from "./defs-config";
 
-const cfg = l3Config();
-const dials: FlavourDials = {
-  bucketMilliminutes: cfg.flavourBucketMilliminutes,
-  glancePercent: cfg.flavourGlancePercent,
-  glanceMilliminutes: cfg.flavourGlanceMilliminutes,
-  idleFrameMilliminutes: cfg.idleFrameMilliminutes,
-  idleFrames: 6,
-};
+const dials: FlavourDials = lifeDials();
+const glance = dials.rows[0] as FlavourRow;
+const GLANCE = "glance";
 const FACINGS: Facing[] = ["down", "up", "left", "right"];
 const id = fc.string({ minLength: 1, maxLength: 16 });
 const instant = fc.integer({ min: 0, max: 50_000_000 });
@@ -53,7 +49,8 @@ describe("flavour (FR65, NFR26)", () => {
           const cold = at(who, t, rest);
           expect(Object.is(warm.direction, cold.direction)).toBe(true);
           expect(Object.is(warm.frameIndex, cold.frameIndex)).toBe(true);
-          expect(Object.is(warm.glancing, cold.glancing)).toBe(true);
+          expect(Object.is(warm.flavour, cold.flavour)).toBe(true);
+          expect(Object.is(warm.animation, cold.animation)).toBe(true);
         },
       ),
     );
@@ -76,11 +73,11 @@ describe("flavour (FR65, NFR26)", () => {
     let glances = 0;
     const draws = 4000;
     for (let i = 0; i < draws; i++) {
-      if (flavourKindOf(`c${i % 40}`, Math.floor(i / 40), dials) === "glance") glances++;
+      if (flavourKindOf(`c${i % 40}`, Math.floor(i / 40), dials) === GLANCE) glances++;
     }
     const share = (glances / draws) * 100;
-    expect(share).toBeGreaterThan(dials.glancePercent - 6);
-    expect(share).toBeLessThan(dials.glancePercent + 6);
+    expect(share).toBeGreaterThan(glance.weightPercent - 6);
+    expect(share).toBeLessThan(glance.weightPercent + 6);
     expect(share).toBeLessThan(50);
   });
 
@@ -94,7 +91,7 @@ describe("flavour (FR65, NFR26)", () => {
         let last = -1;
         for (let t = start; t < start + dials.bucketMilliminutes; t += 100) {
           const f = at(who, t, "down");
-          if (f.glancing) {
+          if (f.flavour) {
             expect(f.direction).not.toBe("down");
             if (first < 0) first = t;
             last = t;
@@ -104,7 +101,7 @@ describe("flavour (FR65, NFR26)", () => {
         }
         if (first >= 0) {
           seen++;
-          expect(last - first).toBeLessThanOrEqual(dials.glanceMilliminutes);
+          expect(last - first).toBeLessThanOrEqual(glance.durationMilliminutes);
         }
       }
     }
@@ -114,7 +111,7 @@ describe("flavour (FR65, NFR26)", () => {
   it("no glance is drawn that would not end before the next departure", () => {
     for (let n = 0; n < 60; n++) {
       for (let t = 0; t < 60_000; t += 137) {
-        expect(at(`c${n}`, t, "up", t).glancing).toBe(false);
+        expect(at(`c${n}`, t, "up", t).flavour).toBe("");
       }
     }
   });
@@ -124,10 +121,10 @@ describe("flavour (FR65, NFR26)", () => {
     for (let n = 0; n < 80; n++) {
       const who = `citizen-${n}`;
       for (let b = 1; b < 30; b++) {
-        if (flavourKindOf(who, b, dials) !== "glance") continue;
+        if (flavourKindOf(who, b, dials) !== GLANCE) continue;
         const start = findBucketStart(who, b);
         for (let t = start; t < start + dials.bucketMilliminutes; t += 5) {
-          if (at(who, t).glancing) {
+          if (at(who, t).flavour) {
             onsets.add((t - start) / 5);
             break;
           }
@@ -143,16 +140,64 @@ describe("flavour (FR65, NFR26)", () => {
       fc.property(id, instant, (who, t) => {
         const f = at(who, t);
         expect(f.frameIndex).toBeGreaterThanOrEqual(0);
-        expect(f.frameIndex).toBeLessThan(dials.idleFrames);
+        expect(f.frameIndex).toBeLessThan(dials.frames.idle as number);
       }),
     );
     const seen = new Set<number>();
-    for (let t = 0; t < dials.idleFrameMilliminutes * dials.idleFrames; t++) {
+    for (let t = 0; t < dials.idleFrameMilliminutes * (dials.frames.idle as number); t++) {
       seen.add(at("c", t).frameIndex);
     }
-    expect(seen.size).toBe(dials.idleFrames);
+    expect(seen.size).toBe(dials.frames.idle as number);
     const phases = new Set<number>();
     for (let n = 0; n < 60; n++) phases.add(at(`c${n}`, 0).frameIndex);
     expect(phases.size).toBeGreaterThan(3);
+  });
+
+  it("selection is a weighted draw over the catalogue's eligible rows, nothing the remainder", () => {
+    const reading: FlavourRow = {
+      id: "reading",
+      weightPercent: 30,
+      durationMilliminutes: 2000,
+      animation: "read",
+      facing: "rest",
+    };
+    const both: FlavourDials = { ...dials, rows: [glance, reading], frames: { idle: 6, read: 4 } };
+    const without: FlavourDials = { ...both, frames: { idle: 6 } };
+    const counts = new Map<string, number>();
+    for (let i = 0; i < 6000; i++) {
+      const kind = flavourKindOf(`c${i % 60}`, Math.floor(i / 60), both);
+      counts.set(kind, (counts.get(kind) ?? 0) + 1);
+      // A citizen with no `read` row anywhere is never drawn reading.
+      expect(flavourKindOf(`c${i % 60}`, Math.floor(i / 60), without)).not.toBe("reading");
+    }
+    const share = (kind: string) => ((counts.get(kind) ?? 0) / 6000) * 100;
+    expect(Math.abs(share("reading") - 30)).toBeLessThan(5);
+    expect(Math.abs(share("glance") - glance.weightPercent)).toBeLessThan(5);
+    expect(share("")).toBeGreaterThan(30);
+  });
+
+  it("a row plays its own animation and keeps the rest facing when it says so", () => {
+    const reading: FlavourRow = {
+      id: "reading",
+      weightPercent: 100,
+      durationMilliminutes: 2000,
+      animation: "read",
+      facing: "rest",
+    };
+    const only: FlavourDials = { ...dials, rows: [reading], frames: { idle: 6, read: 4 } };
+    let seen = 0;
+    for (let t = 0; t < 40_000; t += 50) {
+      const out = createFlavourFrame();
+      flavourAt("c", t, "up", only, Number.POSITIVE_INFINITY, out);
+      if (out.flavour === "reading") {
+        seen++;
+        expect(out.animation).toBe("read");
+        expect(out.direction).toBe("up");
+        expect(out.frameIndex).toBeLessThan(4);
+      } else {
+        expect(out.animation).toBe("idle");
+      }
+    }
+    expect(seen).toBeGreaterThan(10);
   });
 });

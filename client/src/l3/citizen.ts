@@ -3,10 +3,16 @@
 // t_arrive)`. Pose comes from `Body`, the walk frame from distance walked, the
 // facing from the path; nothing here reads a clock or keeps a position.
 
-import { endpointRamp } from "./avoidance";
+import { rampOf } from "./avoidance";
 import { Body, type BodyPose, type Cell, createBodyPose, type Leg } from "./body";
 import type { L3Config } from "./config";
-import { createFlavourFrame, type FlavourDials, type FlavourFrame, flavourAt } from "./flavour";
+import {
+  createFlavourFrame,
+  type FlavourDials,
+  type FlavourFrame,
+  flavourAt,
+  NO_FLAVOUR,
+} from "./flavour";
 import { type Facing, facingOfHeading, phaseOffsetFor, walkFrame } from "./gait";
 import type { PathConfig, Walkability } from "./micro-path";
 
@@ -34,7 +40,7 @@ export interface CitizenFrame {
   x: number;
   y: number;
   floor: number;
-  animation: "walk" | "idle";
+  animation: string;
   direction: Facing;
   frameIndex: number;
   /** Cells walked along the current leg (0 when standing at a node). */
@@ -50,8 +56,8 @@ export interface CitizenFrame {
   headingY: number;
   /** How far into its sidestep a walker is: 0 at both ends of a leg. */
   ramp: number;
-  /** A standing citizen is showing a glance. */
-  glancing: boolean;
+  /** The flavour a standing citizen is showing (`NO_FLAVOUR` for none). */
+  flavour: string;
 }
 
 export function createCitizenFrame(): CitizenFrame {
@@ -70,12 +76,13 @@ export function createCitizenFrame(): CitizenFrame {
     headingX: 0,
     headingY: 0,
     ramp: 0,
-    glancing: false,
+    flavour: NO_FLAVOUR,
   };
 }
 
 /** What a citizen's life on screen needs besides its pose: the flavour dials
- * and the distance over which a sidestep eases in from either end of a leg. */
+ * and the distance over which a sidestep eases in from either end of an edge
+ * of its path. Every body driven by a ledger leg has them. */
 export interface LifeDials extends FlavourDials {
   readonly rampCells: number;
 }
@@ -100,23 +107,23 @@ export class CitizenBody {
   readonly #gait: GaitDials;
   readonly #phase: number;
   readonly #id: string;
-  readonly #flavour: LifeDials | undefined;
+  readonly #life: LifeDials;
   readonly #flavourFrame: FlavourFrame = createFlavourFrame();
   readonly #pose: BodyPose = createBodyPose();
   #body: Body | undefined;
   #key = Number.NaN;
 
-  /** With `flavour`, a standing citizen plays its idle row on city time and
-   * now and then glances; without, it stands on frame 0. */
+  /** A standing citizen plays its idle row on city time and now and then a
+   * flavour; a walker's sidestep eases from `life.rampCells`. */
   constructor(
     walk: Walkability,
     path: PathConfig,
     gait: GaitDials,
     citizenId: string,
-    flavour?: LifeDials,
+    life: LifeDials,
   ) {
     this.#id = citizenId;
-    this.#flavour = flavour;
+    this.#life = life;
     this.#walk = walk;
     this.#path = path;
     this.#gait = gait;
@@ -143,13 +150,12 @@ export class CitizenBody {
     out.headingX = 0;
     out.headingY = 0;
     out.ramp = 0;
-    out.glancing = false;
-    if (!this.#flavour) return;
     const f = this.#flavourFrame;
-    flavourAt(this.#id, t, facing, this.#flavour, until, f);
+    flavourAt(this.#id, t, facing, this.#life, until, f);
+    out.animation = f.animation;
     out.direction = f.direction;
     out.frameIndex = f.frameIndex;
-    out.glancing = f.glancing;
+    out.flavour = f.flavour;
   }
 
   /** Writes the frame to draw for `state` at city time `t` (milliminutes). */
@@ -180,10 +186,10 @@ export class CitizenBody {
     out.arriveAt = state.leg.arriveAt;
     if (pose.moving) {
       out.moving = true;
-      out.glancing = false;
+      out.flavour = NO_FLAVOUR;
       out.headingX = pose.headingX;
       out.headingY = pose.headingY;
-      out.ramp = endpointRamp(pose.distance, this.#body.totalLength, this.#flavour?.rampCells ?? 0);
+      out.ramp = rampOf(pose.vertexDistance, this.#life.rampCells);
       out.animation = "walk";
       out.direction = facingOfHeading(pose.headingX, pose.headingY);
       out.frameIndex = walkFrame(

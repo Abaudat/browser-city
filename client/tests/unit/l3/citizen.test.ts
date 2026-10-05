@@ -7,7 +7,7 @@ import {
 } from "../../../src/l3/citizen";
 import { walkFramesPerCycle } from "../../../src/l3/config";
 import { committedDefs } from "../test-street/street-world";
-import { l3Config } from "./defs-config";
+import { l3Config, lifeDials, quietLife } from "./defs-config";
 import { CFG, TestGrid } from "./support";
 
 const cfg = l3Config();
@@ -52,7 +52,7 @@ describe("walkFramesPerCycle", () => {
 
 describe("CitizenBody", () => {
   it("At(node): idle on the node, facing as the node says", () => {
-    const body = new CitizenBody(new TestGrid(), CFG, gait, "c");
+    const body = new CitizenBody(new TestGrid(), CFG, gait, "c", quietLife());
     const f = frameOf(body, { kind: "at", node: { x: 3, y: 4, floor: 0 }, facing: "left" }, 0);
     expect(f).toMatchObject({
       x: 3.5,
@@ -64,7 +64,7 @@ describe("CitizenBody", () => {
   });
 
   it("InTransit: idle facing the start before depart, the end from arrive on", () => {
-    const body = new CitizenBody(new TestGrid(), CFG, gait, "c");
+    const body = new CitizenBody(new TestGrid(), CFG, gait, "c", quietLife());
     expect(frameOf(body, transit, 999)).toMatchObject({
       animation: "idle",
       direction: "up",
@@ -78,7 +78,7 @@ describe("CitizenBody", () => {
   });
 
   it("walks in the walk row facing its travel, the frame following distance", () => {
-    const body = new CitizenBody(new TestGrid(), CFG, gait, "c");
+    const body = new CitizenBody(new TestGrid(), CFG, gait, "c", quietLife());
     const seen = new Set<number>();
     for (let t = 1001; t < 3000; t += 5) {
       const f = frameOf(body, transit, t);
@@ -91,16 +91,16 @@ describe("CitizenBody", () => {
 
   it("the frame is the same at the same distance whatever the pace (no sliding feet)", () => {
     const slow = { ...transit, leg: { ...transit.leg, arriveAt: 5000 } };
-    const a = new CitizenBody(new TestGrid(), CFG, gait, "c");
-    const b = new CitizenBody(new TestGrid(), CFG, gait, "c");
+    const a = new CitizenBody(new TestGrid(), CFG, gait, "c", quietLife());
+    const b = new CitizenBody(new TestGrid(), CFG, gait, "c", quietLife());
     // Half way along each leg: the same distance, whatever the time.
     expect(frameOf(a, transit, 2000).frameIndex).toBe(frameOf(b, slow, 3000).frameIndex);
   });
 
   it("a late joiner and a long-lived body agree on every frame", () => {
-    const old = new CitizenBody(new TestGrid(), CFG, gait, "c");
+    const old = new CitizenBody(new TestGrid(), CFG, gait, "c", quietLife());
     for (let t = 900; t < 3100; t += 13) {
-      const joiner = new CitizenBody(new TestGrid(), CFG, gait, "c");
+      const joiner = new CitizenBody(new TestGrid(), CFG, gait, "c", quietLife());
       expect(frameOf(joiner, transit, t)).toEqual(frameOf(old, transit, t));
     }
   });
@@ -108,14 +108,16 @@ describe("CitizenBody", () => {
   it("different citizens start their cycle at different frames", () => {
     const frames = new Set(
       ["a", "b", "c", "d", "e", "f"].map(
-        (id) => frameOf(new CitizenBody(new TestGrid(), CFG, gait, id), transit, 1001).frameIndex,
+        (id) =>
+          frameOf(new CitizenBody(new TestGrid(), CFG, gait, id, quietLife()), transit, 1001)
+            .frameIndex,
       ),
     );
     expect(frames.size).toBeGreaterThan(1);
   });
 
   it("a new leg key builds a new body; the same key reuses it", () => {
-    const body = new CitizenBody(new TestGrid(), CFG, gait, "c");
+    const body = new CitizenBody(new TestGrid(), CFG, gait, "c", quietLife());
     frameOf(body, transit, 1500);
     frameOf(body, transit, 1600);
     expect(body.searchCount).toBe(1);
@@ -127,7 +129,7 @@ describe("CitizenBody", () => {
   it("reports its diagnostics: fallbacks and per-segment pace", () => {
     const grid = new TestGrid();
     grid.block(10, 0);
-    const body = new CitizenBody(grid, CFG, gait, "c");
+    const body = new CitizenBody(grid, CFG, gait, "c", quietLife());
     expect(body.diagnostics(1, cfg)).toBeUndefined();
     frameOf(body, transit, 1500);
     const d = body.diagnostics(1, cfg);
@@ -138,14 +140,7 @@ describe("CitizenBody", () => {
 });
 
 describe("CitizenBody with flavour (story 5.2)", () => {
-  const flavour = {
-    bucketMilliminutes: cfg.flavourBucketMilliminutes,
-    glancePercent: cfg.flavourGlancePercent,
-    glanceMilliminutes: cfg.flavourGlanceMilliminutes,
-    idleFrameMilliminutes: cfg.idleFrameMilliminutes,
-    idleFrames: 6,
-    rampCells: cfg.avoidRadiusCells,
-  };
+  const flavour = lifeDials();
   const make = (id = "c") => new CitizenBody(new TestGrid(), CFG, gait, id, flavour);
   const stand = { kind: "at", node: { x: 3, y: 4, floor: 0 }, facing: "left" } as const;
 
@@ -214,5 +209,28 @@ describe("CitizenBody with flavour (story 5.2)", () => {
     expect(mid.ramp).toBe(1);
     expect(frameOf(body, transit, 1000).ramp).toBe(0);
     expect(frameOf(body, transit, 3000).ramp).toBe(0);
+  });
+
+  it("the ramp is zero at every corner of the path, not only at the ends of the leg", () => {
+    const corner: TransitState = {
+      ...transit,
+      key: 7,
+      leg: {
+        waypoints: [
+          { x: 0, y: 0, floor: 0 },
+          { x: 12, y: 0, floor: 0 },
+          { x: 12, y: 12, floor: 0 },
+        ],
+        departAt: 1000,
+        arriveAt: 5000,
+      },
+    };
+    const body = make();
+    expect(frameOf(body, corner, 2000).ramp).toBe(1);
+    // The corner is the middle waypoint, halfway through the leg's time.
+    const atCorner = frameOf(body, corner, 3000);
+    expect(atCorner.ramp).toBeLessThan(0.01);
+    expect(frameOf(body, corner, 2999).ramp).toBeLessThan(0.05);
+    expect(frameOf(body, corner, 4000).ramp).toBe(1);
   });
 });

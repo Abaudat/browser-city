@@ -12,12 +12,15 @@ describe("loadL3Config", () => {
 
   it("reads the avoidance and flavour dials as named values", () => {
     const cfg = loadL3Config(committedDefs());
-    expect(cfg.avoidRadiusCells).toBeCloseTo(1.5, 9);
-    expect(cfg.avoidMaxOffsetCells).toBeCloseTo(0.45, 9);
-    expect(cfg.avoidMaxOffsetCells).toBeLessThan(0.5);
+    expect(cfg.avoidRadiusCells).toBeCloseTo(4, 9);
+    expect(cfg.avoidClearanceCells).toBeCloseTo(0.9, 9);
+    expect(cfg.avoidRampCells).toBeCloseTo(3, 9);
+    expect(cfg.avoidTieBandCells).toBeCloseTo(0.05, 9);
     expect(cfg.avoidMaxNeighbours).toBeGreaterThan(0);
-    expect(cfg.flavourBucketMilliminutes).toBeGreaterThan(cfg.flavourGlanceMilliminutes);
-    expect(cfg.flavourGlancePercent).toBeLessThan(50);
+    expect(cfg.flavourRows.map((r) => r.id)).toEqual(["glance"]);
+    const glance = cfg.flavourRows[0];
+    expect(glance?.durationMilliminutes).toBeLessThan(cfg.flavourBucketMilliminutes);
+    expect(glance?.weightPercent).toBeLessThan(50);
     expect(cfg.idleFrameMilliminutes).toBeGreaterThan(0);
   });
 
@@ -25,7 +28,9 @@ describe("loadL3Config", () => {
     const defs = committedDefs();
     for (const key of [
       "l3.avoid_radius_millicells",
-      "l3.avoid_max_offset_millicells",
+      "l3.avoid_clearance_millicells",
+      "l3.avoid_ramp_millicells",
+      "l3.avoid_tie_band_millicells",
       "l3.avoid_max_neighbours",
       "l3.flavour_bucket_milliminutes",
       "l3.flavour_glance_percent",

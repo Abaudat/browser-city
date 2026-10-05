@@ -79,3 +79,43 @@ test("two clients with different views agree on every citizen's L3 state", async
     await b.close();
   }
 });
+
+test("the staged crossing, the pass and the pair are on screen at 1366x768 after a walk east", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await ready(page);
+  // South to the pavement's edge, then east along it.
+  await page.keyboard.down("ArrowDown");
+  await page.waitForFunction(() => (window.__bc?.playerPosition?.y ?? 0) > 7.3, undefined, {
+    timeout: 20_000,
+  });
+  await page.keyboard.up("ArrowDown");
+  await page.keyboard.down("ArrowRight");
+  await page.waitForFunction(() => (window.__bc?.playerPosition?.x ?? 0) > 17, undefined, {
+    timeout: 20_000,
+  });
+  await page.keyboard.up("ArrowRight");
+  const inView = await page.evaluate(() => {
+    const view = window.__bc?.viewTransform;
+    const canvas = document.querySelector("#test-street canvas");
+    if (!view || !(canvas instanceof HTMLCanvasElement)) throw new Error("no scene");
+    const rect = canvas.getBoundingClientRect();
+    const TILE = 16;
+    // Foot of a body standing on each staged cell: a crossing lane end, the
+    // passer's stander, the stander a cell off its line, the pair's lane end.
+    const cells: [string, number, number][] = [
+      ["crossing", 26.5, 13.5],
+      ["passer's stander", 27.5, 12.5],
+      ["stander off its line", 28.5, 11.5],
+      ["pair", 30.5, 14.5],
+    ];
+    return cells.map(([name, x, y]) => {
+      const px = x * TILE * view.zoom + view.offsetX;
+      const py = y * TILE * view.zoom + view.offsetY;
+      return { name, ok: px >= 0 && px <= rect.width && py >= 0 && py <= rect.height };
+    });
+  });
+  for (const c of inView) expect(c, c.name).toEqual({ name: c.name, ok: true });
+});
