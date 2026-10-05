@@ -1,7 +1,7 @@
-//! The determinism harness for stories 3.2-3.4 (FR110 passes 1-5): same
+//! The determinism harness for stories 3.2-3.5 (FR110 passes 1-6): same
 //! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
-//! all five passes for a fixed seed set and compares a readable summary
-//! plus a digest against the committed `tests/goldens/generation_v6.
+//! all six passes for a fixed seed set and compares a readable summary
+//! plus a digest against the committed `tests/goldens/generation_v7.
 //! golden`, so a diff names what moved rather than just "hash differs".
 //! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
 //! bump.sh` fails a PR that touches the golden without bumping that
@@ -19,7 +19,8 @@
 //!
 //! Story 3.4 extends the same discipline to content: [`frozen_content`]
 //! freezes a tiny building-type table under deliberately unrelated
-//! ids/keys (never `defs::BUILDING_TYPES`') and an empty rule set --
+//! ids/keys (never `defs::BUILDING_TYPES`'), a handful of room types and
+//! structural tags (story 3.5, same unrelated ids) and a small rule set --
 //! retuning `defs/building-types/*.toml` or `defs/rules/generation.toml`
 //! (also covered by `defs_version`) must never force a version bump
 //! either, and the generator producing the same shape of output against
@@ -30,7 +31,7 @@
 //! running pass 2 twice over one pass-1 output is byte-identical (pass 2
 //! never mutates its own input).
 
-use sim::generated::defs::BuildingTypeDef;
+use sim::generated::defs::{BuildingTypeDef, RoomTypeDef, TagDef, TagStructure};
 use sim::generation::streets::DETOUR_SAMPLE_MAX_NODES;
 use sim::generation::{
     GENERATION_VERSION, GenerationConfig, GenerationContent, LandUse, envelopes, land_use, plan,
@@ -40,7 +41,7 @@ use sim::rules::{CoherenceMode, RuleDef, RuleKind, RuleSet};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v6.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v7.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -123,6 +124,13 @@ fn frozen_config() -> GenerationConfig {
         workplace_count_tolerance_percent: 30,
         workplace_mean_count_tolerance_percent: 5,
         building_type_catchment_extent_cells: 256,
+        interior_max_layout_attempts: 8,
+        interior_min_enterable_count: 1,
+        interior_max_rejected_percent: 5,
+        interior_enterable_target_percent: 90,
+        interior_enterable_target_tolerance_percent: 10,
+        interior_kind_min_enterable_percent: [0, 0, 0, 0],
+        interior_max_kind_share_percent: 100,
     }
 }
 
@@ -151,8 +159,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
-        rooms: &[],
-        optional_rooms: &[],
+        rooms: &[9401],
+        optional_rooms: &[9402],
     },
     BuildingTypeDef {
         id: 9005,
@@ -168,7 +176,7 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
-        rooms: &[],
+        rooms: &[9402],
         optional_rooms: &[],
     },
     BuildingTypeDef {
@@ -185,7 +193,7 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &["frozen_clerk"],
-        rooms: &[],
+        rooms: &[9401, 9403],
         optional_rooms: &[],
     },
     BuildingTypeDef {
@@ -202,7 +210,7 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
-        rooms: &[],
+        rooms: &[9403, 9401],
         optional_rooms: &[],
     },
     BuildingTypeDef {
@@ -219,7 +227,7 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
-        rooms: &[],
+        rooms: &[9401, 9402],
         optional_rooms: &[],
     },
     BuildingTypeDef {
@@ -236,12 +244,57 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
-        rooms: &[],
+        rooms: &[9401],
         optional_rooms: &[],
     },
 ];
 
+/// Unrelated ids and keys again: the seven structural parts, one room
+/// tag, three room-function tags and two fixture tags -- the pass reads
+/// every one of them through `structure`/the rule rows, never a key.
+const FROZEN_TAGS: &[TagDef] = &[
+    TagDef { id: 9301, key: "frozen_solid", role: None, structure: Some(TagStructure::Wall) },
+    TagDef { id: 9302, key: "frozen_solid_run", role: None, structure: Some(TagStructure::WallRun) },
+    TagDef { id: 9303, key: "frozen_ground_inside", role: None, structure: Some(TagStructure::Floor) },
+    TagDef { id: 9304, key: "frozen_gap", role: None, structure: Some(TagStructure::Threshold) },
+    TagDef { id: 9305, key: "frozen_way_in", role: None, structure: Some(TagStructure::Entrance) },
+    TagDef { id: 9306, key: "frozen_paving", role: None, structure: Some(TagStructure::Pavement) },
+    TagDef { id: 9307, key: "frozen_object", role: None, structure: Some(TagStructure::Fixture) },
+    TagDef { id: 9320, key: "frozen_room", role: None, structure: None },
+    TagDef { id: 9311, key: "frozen_open", role: None, structure: None },
+    TagDef { id: 9312, key: "frozen_cosy", role: None, structure: None },
+    TagDef { id: 9313, key: "frozen_back", role: None, structure: None },
+    TagDef { id: 9330, key: "frozen_lamp", role: None, structure: None },
+    TagDef { id: 9331, key: "frozen_crate", role: None, structure: None },
+];
+
+const FROZEN_ROOM_TYPES: &[RoomTypeDef] = &[
+    RoomTypeDef { id: 9401, key: "frozen_hall", tags: &[9320, 9311], min_width_cells: 3, min_depth_cells: 2, weight: 2 },
+    RoomTypeDef { id: 9402, key: "frozen_den", tags: &[9320, 9312], min_width_cells: 2, min_depth_cells: 2, weight: 1 },
+    RoomTypeDef { id: 9403, key: "frozen_store", tags: &[9320, 9313], min_width_cells: 2, min_depth_cells: 2, weight: 1 },
+];
+
 const FROZEN_RULES: &[RuleDef] = &[
+    RuleDef {
+        id: 9203,
+        key: "frozen_lit_rooms",
+        kind: RuleKind::Requirement {
+            container: 9320,
+            requires: 9330,
+            min: 1,
+            max: None,
+        },
+    },
+    RuleDef {
+        id: 9204,
+        key: "frozen_stocked_back_rooms",
+        kind: RuleKind::Requirement {
+            container: 9313,
+            requires: 9331,
+            min: 2,
+            max: None,
+        },
+    },
     RuleDef {
         id: 9201,
         key: "frozen_coherence",
@@ -269,6 +322,8 @@ fn frozen_content() -> GenerationContent<'static> {
     GenerationContent {
         rules: RuleSet::for_test(FROZEN_RULES),
         building_types: FROZEN_BUILDING_TYPES,
+        room_types: FROZEN_ROOM_TYPES,
+        tags: FROZEN_TAGS,
     }
 }
 
@@ -293,6 +348,7 @@ fn plan_digest(
     pm: &plots::PlotMap,
     em: &envelopes::EnvelopeMap,
     bt: &sim::generation::BuildingTypeMap,
+    io: &sim::generation::InteriorMap,
 ) -> u64 {
     let mut text = String::new();
     for cy in 0..lu.rows() {
@@ -352,18 +408,70 @@ fn plan_digest(
             a.plot, a.building_type
         ));
     }
+    for o in io.outcomes() {
+        match o {
+            sim::generation::InteriorOutcome::Laid {
+                plot,
+                interior,
+                attempts,
+                ..
+            } => {
+                text.push_str(&format!("interior laid plot={plot} attempts={attempts}
+"));
+                for r in &interior.rooms {
+                    text.push_str(&format!(
+                        "room {},{},{},{} type={}
+",
+                        r.rect.x0, r.rect.y0, r.rect.x1, r.rect.y1, r.room_type
+                    ));
+                }
+                for t in &interior.thresholds {
+                    text.push_str(&format!(
+                        "threshold {},{} room={} entrance={}
+",
+                        t.x, t.y, t.room, t.entrance
+                    ));
+                }
+                for f in &interior.fixtures {
+                    text.push_str(&format!(
+                        "fixture {},{} tag={} room={}
+",
+                        f.x, f.y, f.tag, f.room
+                    ));
+                }
+                text.push_str(&format!("approach {:?}
+", interior.approach));
+            }
+            sim::generation::InteriorOutcome::Shell { plot, .. } => {
+                text.push_str(&format!("interior shell plot={plot}
+"));
+            }
+            sim::generation::InteriorOutcome::Rejected {
+                plot,
+                reason,
+                attempts,
+                ..
+            } => {
+                text.push_str(&format!(
+                    "interior rejected plot={plot} reason={reason:?} attempts={attempts}
+"
+                ));
+            }
+        }
+    }
     fnv1a(&text)
 }
 
 fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     let content = frozen_content();
     let d = plan(seed, cfg, &content).expect("frozen_config's own site is always valid");
-    let (lu, net, pm, em, bt) = (
+    let (lu, net, pm, em, bt, io) = (
         &d.land_use,
         &d.streets,
         &d.plots,
         &d.envelopes,
         &d.building_types,
+        &d.interiors,
     );
     let count_verdict = d.check_building_count(cfg).is_ok();
 
@@ -389,7 +497,7 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     let distinct_types = bt.distinct_types().len();
 
     format!(
-        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} types_placed={types_placed} distinct_types={distinct_types} count_ok={count_verdict} digest={:016x}",
+        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} types_placed={types_placed} distinct_types={distinct_types} enterable={} shells={} interiors_rejected={} count_ok={count_verdict} digest={:016x}",
         count(LandUse::Residential),
         count(LandUse::Commercial),
         count(LandUse::Industrial),
@@ -397,7 +505,10 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
         net.edges().len(),
         net.blocks().len(),
         pm.plots().len(),
-        plan_digest(lu, net, pm, em, bt),
+        io.enterable_count(),
+        io.shell_count(),
+        io.rejected_count(),
+        plan_digest(lu, net, pm, em, bt, io),
     )
 }
 
@@ -413,7 +524,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v6.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v7.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );
@@ -463,8 +574,10 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
     let em_b = envelopes::run(SEEDS[0], &pm_b, &cfg); // generation-entry-point: allow
     let bt_a = sim::generation::building_types::run(SEEDS[0], &em_a, &pm_a, &net_a, &cfg, &content); // generation-entry-point: allow
     let bt_b = sim::generation::building_types::run(SEEDS[0], &em_b, &pm_b, &net_b, &cfg, &content); // generation-entry-point: allow
+    let io_a = sim::generation::interiors::run(SEEDS[0], &em_a, &bt_a, &pm_a, &cfg, &content); // generation-entry-point: allow
+    let io_b = sim::generation::interiors::run(SEEDS[0], &em_b, &bt_b, &pm_b, &cfg, &content); // generation-entry-point: allow
     assert_eq!(
-        plan_digest(&lu, &net_a, &pm_a, &em_a, &bt_a),
-        plan_digest(&lu, &net_b, &pm_b, &em_b, &bt_b)
+        plan_digest(&lu, &net_a, &pm_a, &em_a, &bt_a, &io_a),
+        plan_digest(&lu, &net_b, &pm_b, &em_b, &bt_b, &io_b)
     );
 }

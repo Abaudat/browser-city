@@ -3820,6 +3820,15 @@ fn planted_district(
         streets: streets::StreetNetwork::test_fixture(site, Vec::new(), blocks),
         plots: plots::PlotMap::test_fixture(site, plot_list),
         envelopes: envelopes::EnvelopeMap::test_fixture(outcomes),
+        interiors: sim::generation::InteriorMap::test_fixture(
+            assignments
+                .iter()
+                .map(|a| sim::generation::InteriorOutcome::Shell {
+                    plot: a.plot,
+                    building_type: a.building_type,
+                })
+                .collect(),
+        ),
         building_types: sim::generation::BuildingTypeMap::test_fixture(assignments),
     }
 }
@@ -4219,6 +4228,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
     let content = GenerationContent {
         rules: sim::rules::RuleSet::for_test(&[]),
         building_types: &types,
+        room_types: &[],
+        tags: &[],
     };
 
     for seed in 0..200u64 {

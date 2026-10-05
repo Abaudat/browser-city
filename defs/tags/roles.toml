@@ -45,4 +45,5 @@ role = { layers = ["walls"] }
 [[tag]]
 id = 15
 key = "fixture"
+structure = "fixture"
 role = { layers = ["furniture", "objects"] }

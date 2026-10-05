@@ -32,6 +32,7 @@
 
 pub mod building_types;
 pub mod envelopes;
+pub mod interiors;
 pub mod land_use;
 pub mod plots;
 pub mod site;
@@ -39,6 +40,7 @@ pub mod streets;
 
 pub use building_types::{BuildingTypeMap, TypeAssignment};
 pub use envelopes::{Envelope, EnvelopeMap, EnvelopeOutcome, RejectReason};
+pub use interiors::{Interior, InteriorMap, InteriorOutcome};
 pub use land_use::{LandUse, LandUseCell, LandUseMap, Region};
 pub use plots::{Plot, PlotMap};
 pub use site::DistrictSite;
@@ -60,9 +62,9 @@ pub fn rect_seed_key(r: SiteBounds) -> u64 {
 
 /// Bumped whenever any implemented pass's algorithm or seeding changes in
 /// a way that could move its output for a fixed seed -- `tests/goldens/
-/// generation_v6.golden` is keyed to this, exactly like `sim::rng::
+/// generation_v7.golden` is keyed to this, exactly like `sim::rng::
 /// RNG_VERSION`/`sim::appearance::APPEARANCE_VERSION`.
-pub const GENERATION_VERSION: u32 = 6;
+pub const GENERATION_VERSION: u32 = 7;
 
 /// Every way generation itself can fail, across every implemented pass --
 /// one type, never a `Result<_, String>` per pass.
@@ -91,6 +93,14 @@ pub enum GenerationError {
     /// max]` -- the same shape as [`GenerationError::
     /// BuildingCountOutOfTolerance`].
     WorkplaceCountOutOfTolerance { got: i64, min: i64, max: i64 },
+    /// Pass 6 (FR114): fewer enterable interiors than
+    /// `generation.interiors.min_enterable_count`.
+    EnterableCountBelowFloor { got: i64, min: i64 },
+    /// Pass 6 (Derek's direction): a building that is the subject of a
+    /// committed `[[distribution]]` row came out `Rejected` -- an
+    /// institution nobody can walk into is a missing institution, the
+    /// same standing as pass 5's own unplaceable one.
+    InstitutionNotEnterable { plot: u32, building_type: u32 },
 }
 
 impl std::fmt::Display for GenerationError {
@@ -117,6 +127,17 @@ impl std::fmt::Display for GenerationError {
                 f,
                 "generation::building_types: workplace count {got} is outside tolerance [{min}, {max}]"
             ),
+            GenerationError::EnterableCountBelowFloor { got, min } => write!(
+                f,
+                "generation::interiors: enterable interior count {got} is below the floor {min}"
+            ),
+            GenerationError::InstitutionNotEnterable {
+                plot,
+                building_type,
+            } => write!(
+                f,
+                "generation::interiors: the building on plot {plot} (type id {building_type}) is a distributed institution but has no enterable interior"
+            ),
         }
     }
 }
@@ -132,6 +153,10 @@ impl std::error::Error for GenerationError {}
 pub struct GenerationContent<'a> {
     pub rules: RuleSet<'a>,
     pub building_types: &'a [defs::BuildingTypeDef],
+    /// Pass 6's vocabulary: the room grammar's rows and the tag table the
+    /// structural parts (wall, floor, threshold...) are resolved from.
+    pub room_types: &'a [defs::RoomTypeDef],
+    pub tags: &'a [defs::TagDef],
 }
 
 impl GenerationContent<'static> {
@@ -142,6 +167,8 @@ impl GenerationContent<'static> {
         GenerationContent {
             rules: RuleSet::committed(),
             building_types: defs::BUILDING_TYPES,
+            room_types: defs::ROOM_TYPES,
+            tags: defs::TAGS,
         }
     }
 }
@@ -156,6 +183,7 @@ pub struct District {
     pub plots: PlotMap,
     pub envelopes: EnvelopeMap,
     pub building_types: BuildingTypeMap,
+    pub interiors: InteriorMap,
 }
 
 impl District {
@@ -180,7 +208,27 @@ impl District {
             &self.streets,
             self.building_types.assignments(),
             &by_id,
+            &self.interiors,
+            &interiors::Vocabulary::new(content),
         )
+    }
+
+    /// FR114's verdict: the count of enterable interiors (every building
+    /// pass 6 laid out -- derived from the outcome, never a stored flag)
+    /// against [`GenerationConfig::interior_min_enterable_count`]. A
+    /// floor, not a cap.
+    pub fn check_enterable_count(&self, cfg: &GenerationConfig) -> Result<(), GenerationError> {
+        interiors::check_enterable_count(&self.interiors, cfg)
+    }
+
+    /// Derek's direction: a building that is the subject of a committed
+    /// `[[distribution]]` row and came out `Rejected` is a typed error,
+    /// read generically off the rule set -- never a list of names.
+    pub fn check_institutions_enterable(
+        &self,
+        content: &GenerationContent,
+    ) -> Result<(), GenerationError> {
+        interiors::check_institutions_enterable(&self.interiors, content)
     }
 
     /// FR112's other half over a *finished* district: `sim::rules::
@@ -239,19 +287,29 @@ pub fn plan(
     let plots = plots::run(city_seed, &land_use, &streets, cfg);
     let envelopes = envelopes::run(city_seed, &plots, cfg);
     let building_types = building_types::run(city_seed, &envelopes, &plots, &streets, cfg, content);
+    let interiors = interiors::run(
+        city_seed,
+        &envelopes,
+        &building_types,
+        &plots,
+        cfg,
+        content,
+    );
     Ok(District {
         land_use,
         streets,
         plots,
         envelopes,
         building_types,
+        interiors,
     })
 }
 
 /// The one entry point production calls: [`plan`], then
-/// [`District::check_building_count`], [`District::check_rules`] and
-/// [`District::check_workplace_count`] -- a seed whose district fails any
-/// of the three is a world that fails to create.
+/// [`District::check_building_count`], [`District::check_rules`],
+/// [`District::check_workplace_count`], [`District::check_enterable_count`]
+/// and [`District::check_institutions_enterable`] -- a seed whose district
+/// fails any of them is a world that fails to create.
 pub fn generate(
     city_seed: u64,
     cfg: &GenerationConfig,
@@ -261,6 +319,8 @@ pub fn generate(
     district.check_building_count(cfg)?;
     district.check_rules(content)?;
     district.check_workplace_count(cfg, content)?;
+    district.check_enterable_count(cfg)?;
+    district.check_institutions_enterable(content)?;
     Ok(district)
 }
 
@@ -519,6 +579,27 @@ pub struct GenerationConfig {
     /// committed 512x512 site this *is* AC3's own quadrants; never a
     /// hardcoded 2x2 of the site (Derek's direction).
     pub building_type_catchment_extent_cells: i32,
+
+    // --- interiors (pass 6) -------------------------------------------
+    /// How many times one building's layout may be rebuilt before it
+    /// comes out as a typed `Rejected` outcome -- never unbounded.
+    pub interior_max_layout_attempts: u32,
+    /// FR114's floor on the enterable count (`generate` fails below it).
+    pub interior_min_enterable_count: i64,
+    /// The maximum percent of attempted layouts that may be `Rejected`,
+    /// asserted per city.
+    pub interior_max_rejected_percent: i64,
+    /// AC3's pooled band: the enterable share of placed buildings must
+    /// sit within `tolerance` of this percent, pooled over a fixed seed
+    /// range.
+    pub interior_enterable_target_percent: i64,
+    pub interior_enterable_target_tolerance_percent: i64,
+    /// The minimum percent of what pass 5 placed of each required kind
+    /// that must be enterable, kind order: dwelling, shop, cafe, back
+    /// room.
+    pub interior_kind_min_enterable_percent: [i64; 4],
+    /// No required kind may exceed this share of the enterable set.
+    pub interior_max_kind_share_percent: i64,
 }
 
 fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
@@ -740,6 +821,32 @@ impl GenerationConfig {
                 balance,
                 "generation.building_types.catchment_extent_cells",
             ) as i32,
+
+            interior_max_layout_attempts: get(balance, "generation.interiors.max_layout_attempts")
+                as u32,
+            interior_min_enterable_count: get(balance, "generation.interiors.min_enterable_count"),
+            interior_max_rejected_percent: get(
+                balance,
+                "generation.interiors.max_rejected_percent",
+            ),
+            interior_enterable_target_percent: get(
+                balance,
+                "generation.interiors.enterable_target_percent",
+            ),
+            interior_enterable_target_tolerance_percent: get(
+                balance,
+                "generation.interiors.enterable_target_tolerance_percent",
+            ),
+            interior_kind_min_enterable_percent: [
+                get(balance, "generation.interiors.dwelling_min_enterable_percent"),
+                get(balance, "generation.interiors.shop_min_enterable_percent"),
+                get(balance, "generation.interiors.cafe_min_enterable_percent"),
+                get(balance, "generation.interiors.back_room_min_enterable_percent"),
+            ],
+            interior_max_kind_share_percent: get(
+                balance,
+                "generation.interiors.max_kind_share_percent",
+            ),
         };
 
         if cfg.coarse_cell_size_cells <= 0
@@ -936,6 +1043,12 @@ impl GenerationConfig {
                     cfg.envelope_max_width_cells
                 )));
             }
+        }
+        if cfg.envelope_wall_thickness_cells != 1 {
+            return Err(GenerationError::InvalidConfig(format!(
+                "GenerationConfig: generation.envelopes.wall_thickness_cells ({}) must be 1 -- an interior doorway is one threshold cell between two floor cells, which a thicker partition cannot form",
+                cfg.envelope_wall_thickness_cells
+            )));
         }
         let overall_min_footprint_w = (0..4)
             .map(|i| {

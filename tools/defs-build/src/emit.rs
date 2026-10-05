@@ -354,7 +354,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("pub struct RoleDef {\n    pub layers: &'static [u32],\n}\n\n");
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub enum TagStructure {\n    Wall,\n    WallRun,\n    Floor,\n    Threshold,\n    Entrance,\n    Pavement,\n}\n\n",
+        "pub enum TagStructure {\n    Wall,\n    WallRun,\n    Floor,\n    Threshold,\n    Entrance,\n    Pavement,\n    Fixture,\n}\n\n",
     );
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(

@@ -844,6 +844,7 @@ pub enum RawStructure {
     Threshold,
     Entrance,
     Pavement,
+    Fixture,
 }
 
 impl RawStructure {
@@ -856,6 +857,7 @@ impl RawStructure {
             RawStructure::Threshold => "Threshold",
             RawStructure::Entrance => "Entrance",
             RawStructure::Pavement => "Pavement",
+            RawStructure::Fixture => "Fixture",
         }
     }
 }

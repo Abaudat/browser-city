@@ -805,6 +805,28 @@ fn a_workplace_with_no_staff_room_is_named() {
     );
 }
 
+
+/// Story 3.5: a tag naming a structural part is only half a vocabulary --
+/// the generator reads each part through exactly one tag, so once any tag
+/// names one every part must be named, once.
+#[test]
+fn a_structural_part_no_tag_names_is_named() {
+    let err = build_err("tag-structure-part-missing");
+    assert_eq!(
+        err.to_string(),
+        "defs/tags/structure.toml:3:7: structure 'wall_run' is declared by no tag -- once any tag names a structural part, exactly one tag must name each"
+    );
+}
+
+#[test]
+fn a_structural_part_two_tags_name_is_named() {
+    let err = build_err("tag-structure-part-declared-twice");
+    assert_eq!(
+        err.to_string(),
+        "defs/tags/structure.toml:8:7: structure 'wall' is declared by both 'solid' and 'solid_too'"
+    );
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -890,6 +912,8 @@ fn every_known_category_has_a_fixture_directory() {
         "building-type-density-gap",
         "building-type-interior-too-large",
         "building-type-site-restricted",
+        "tag-structure-part-missing",
+        "tag-structure-part-declared-twice",
         "room-type-too-narrow",
         "room-type-no-access-tag",
         "room-type-two-access-tags",

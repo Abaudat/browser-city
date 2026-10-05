@@ -1782,6 +1782,70 @@ fn check_object_walkability_tag(entries: &[LoweredObjectEntry]) -> Result<(), De
     }
     Ok(())
 }
+/// Story 3.5: the generator reads each structural part through exactly
+/// one tag (`defs::TagDef::structure`), never a quoted key. So once any
+/// tag names a part every part must be named, and by one tag only -- a
+/// no-op when no tag names any (a fixture tree with no generation
+/// vocabulary).
+fn check_tag_structures(entries: &[TagEntry]) -> Result<(), DefsError> {
+    const ALL: [RawStructure; 7] = [
+        RawStructure::Wall,
+        RawStructure::WallRun,
+        RawStructure::Floor,
+        RawStructure::Threshold,
+        RawStructure::Entrance,
+        RawStructure::Pavement,
+        RawStructure::Fixture,
+    ];
+    let declared: Vec<&TagEntry> = entries.iter().filter(|t| t.structure.is_some()).collect();
+    let Some(first) = declared.first() else {
+        return Ok(());
+    };
+    let snake = |s: RawStructure| match s {
+        RawStructure::Wall => "wall",
+        RawStructure::WallRun => "wall_run",
+        RawStructure::Floor => "floor",
+        RawStructure::Threshold => "threshold",
+        RawStructure::Entrance => "entrance",
+        RawStructure::Pavement => "pavement",
+        RawStructure::Fixture => "fixture",
+    };
+    for part in ALL {
+        let namers: Vec<&&TagEntry> = declared
+            .iter()
+            .filter(|t| t.structure == Some(part))
+            .collect();
+        match namers.as_slice() {
+            [] => {
+                return Err(DefsError::new(
+                    &first.path,
+                    first.key.line,
+                    first.key.col,
+                    format!(
+                        "structure '{}' is declared by no tag -- once any tag names a structural part, exactly one tag must name each",
+                        snake(part)
+                    ),
+                ));
+            }
+            [_] => {}
+            [a, b, ..] => {
+                return Err(DefsError::new(
+                    &b.path,
+                    b.key.line,
+                    b.key.col,
+                    format!(
+                        "structure '{}' is declared by both '{}' and '{}'",
+                        snake(part),
+                        a.key.value,
+                        b.key.value
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 
 /// Story 2.9 (AC1, FR119): a role tag's own `layers` list must name real,
 /// non-deprecated layers -- exactly the same two refusals an object's own
@@ -2718,6 +2782,7 @@ pub fn validate(
         &raw.balance,
     )?;
     check_tag_role_layers(&raw.tags, layer_codes)?;
+    check_tag_structures(&raw.tags)?;
     check_placement_floor_range(&raw.placements)?;
     check_distribution_ranges(&raw.distributions)?;
     check_requirement_range(&raw.requirements)?;

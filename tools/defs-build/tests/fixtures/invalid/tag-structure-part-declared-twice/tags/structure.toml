@@ -1,0 +1,39 @@
+[[tag]]
+id = 200
+key = "solid"
+structure = "wall"
+
+[[tag]]
+id = 201
+key = "solid_too"
+structure = "wall"
+
+[[tag]]
+id = 202
+key = "wall_run_part"
+structure = "wall_run"
+
+[[tag]]
+id = 203
+key = "floor_part"
+structure = "floor"
+
+[[tag]]
+id = 204
+key = "threshold_part"
+structure = "threshold"
+
+[[tag]]
+id = 205
+key = "entrance_part"
+structure = "entrance"
+
+[[tag]]
+id = 206
+key = "pavement_part"
+structure = "pavement"
+
+[[tag]]
+id = 207
+key = "fixture_part"
+structure = "fixture"

@@ -10,9 +10,13 @@
 //! One subject cell per typed building (its front-edge midpoint, floor
 //! 0), one area per block (`AreaId` = [`super::rect_seed_key`] of the
 //! block's own bounds) -- no site-wide area (it would make every
-//! coherence row fire) and no per-envelope area (pass 6 does not exist
-//! yet). Built once, like `sim::validation::PlacedSite`: every query is
-//! `O(1)` off a map indexed here, never a rescan.
+//! coherence row fire). Every laid-out building (pass 6) adds its own
+//! cells: walls, floors, thresholds, fixtures and the entrance's
+//! approach, each in the building area and, for a room's cells, the room
+//! area ([`super::interiors::site_cells`], the one adapter this and the
+//! pass's own per-building verdict share). Built once, like
+//! `sim::validation::PlacedSite`: every query is `O(1)` off a map
+//! indexed here, never a rescan.
 
 use std::collections::BTreeMap;
 
@@ -20,6 +24,7 @@ use crate::generated::defs;
 use crate::rules::{AreaId, Cell, RuleSite, TagId};
 
 use super::envelopes::EnvelopeMap;
+use super::interiors::{InteriorMap, InteriorOutcome, SiteCell, Vocabulary, site_cells};
 use super::plots::PlotMap;
 use super::rect_seed_key;
 use super::streets::{Side, StreetNetwork};
@@ -60,6 +65,8 @@ impl DistrictSite {
         streets: &StreetNetwork,
         assignments: &[super::building_types::TypeAssignment],
         building_types_by_id: &BTreeMap<u32, &defs::BuildingTypeDef>,
+        interiors: &InteriorMap,
+        vocab: &Vocabulary,
     ) -> Self {
         let mut tags: BTreeMap<Cell, Vec<TagId>> = BTreeMap::new();
         let mut areas: BTreeMap<Cell, Vec<AreaId>> = BTreeMap::new();
@@ -92,6 +99,38 @@ impl DistrictSite {
             }
         }
 
+        // One outcome per placed envelope, in the same order: a laid-out
+        // building's own cells join the maps (its entrance cell is the
+        // same front cell the type's own tags already sit on).
+        debug_assert_eq!(interiors.outcomes().len(), assignments.len());
+        for outcome in interiors.outcomes() {
+            if let InteriorOutcome::Laid { interior, .. } = outcome {
+                add_cells(&mut tags, &mut areas, &site_cells(interior, vocab));
+            }
+        }
+        Self::from_maps(tags, areas)
+    }
+
+    /// The site of exactly the cells given -- what a pass's own
+    /// per-building verdict builds (`interiors::check_layout`), the same
+    /// code over one building.
+    pub fn from_cells(cells: &[SiteCell]) -> Self {
+        let mut tags = BTreeMap::new();
+        let mut areas = BTreeMap::new();
+        add_cells(&mut tags, &mut areas, cells);
+        Self::from_maps(tags, areas)
+    }
+
+    fn from_maps(
+        mut tags: BTreeMap<Cell, Vec<TagId>>,
+        mut areas: BTreeMap<Cell, Vec<AreaId>>,
+    ) -> Self {
+        for v in tags.values_mut() {
+            v.sort_unstable();
+        }
+        for v in areas.values_mut() {
+            v.sort_unstable();
+        }
         let mut subjects_index: BTreeMap<(Option<AreaId>, TagId), Vec<Cell>> = BTreeMap::new();
         for (&cell, cell_tags) in &tags {
             let cell_areas = areas.get(&cell).cloned().unwrap_or_default();
@@ -117,6 +156,30 @@ impl DistrictSite {
             empty_tags: Vec::new(),
             empty_areas: Vec::new(),
             empty_cells: Vec::new(),
+        }
+    }
+}
+
+fn add_cells(
+    tags: &mut BTreeMap<Cell, Vec<TagId>>,
+    areas: &mut BTreeMap<Cell, Vec<AreaId>>,
+    cells: &[SiteCell],
+) {
+    for c in cells {
+        let cell = Cell::new(c.x, c.y, 0);
+        let t = tags.entry(cell).or_default();
+        for &tag in &c.tags {
+            if !t.contains(&tag) {
+                t.push(tag);
+            }
+        }
+        if !c.areas.is_empty() {
+            let a = areas.entry(cell).or_default();
+            for &area in &c.areas {
+                if !a.contains(&area) {
+                    a.push(area);
+                }
+            }
         }
     }
 }
@@ -183,7 +246,17 @@ mod tests {
         let types = building_types::run(seed, &em, &pm, &net, &c, &content);
         let by_id: Map<u32, &defs::BuildingTypeDef> =
             content.building_types.iter().map(|b| (b.id, b)).collect();
-        let site = DistrictSite::build(&em, &pm, &net, types.assignments(), &by_id);
+        let interiors = crate::generation::interiors::run(seed, &em, &types, &pm, &c, &content);
+        let vocab = crate::generation::interiors::Vocabulary::new(&content);
+        let site = DistrictSite::build(
+            &em,
+            &pm,
+            &net,
+            types.assignments(),
+            &by_id,
+            &interiors,
+            &vocab,
+        );
         let assignments = types.assignments().to_vec();
         Built {
             site,
