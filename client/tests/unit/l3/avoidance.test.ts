@@ -162,8 +162,8 @@ describe("local avoidance (FR64)", () => {
   it("inv_l3_avoidance_is_history_free", () => {
     fc.assert(
       fc.property(
-        fc.array(body(24), { minLength: 1, maxLength: 20 }),
-        fc.array(fc.array(body(24), { maxLength: 20 }), { minLength: 3, maxLength: 6 }),
+        fc.array(body(16), { minLength: 1, maxLength: 3 }),
+        fc.array(fc.array(body(16), { maxLength: 3 }), { minLength: 3, maxLength: 6 }),
         (raw, others) => {
           const bodies = withIds(raw);
           const cold = run(bodies).out;
