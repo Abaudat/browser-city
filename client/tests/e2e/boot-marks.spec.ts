@@ -194,7 +194,7 @@ test("the atlas request count and byte total the mount actually fetches, once se
   // number for number; this gate's job is only ever "can it see the
   // things `allBoundTextureSources` also sees", never "does it equal it".
   expect(
-    urls.some((u) => /\/atlas\/street-/.test(u)),
+    urls.some((u) => /\/atlas\/shared-/.test(u)),
     `this gate never saw the packed street atlas page -- it cannot be measuring what it budgets. Fetched:\n${urls.join("\n")}`,
   ).toBe(true);
   expect(

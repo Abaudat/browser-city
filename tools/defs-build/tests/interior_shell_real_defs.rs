@@ -88,7 +88,7 @@ fn the_real_mixed_street_and_interior_shell_scene_fits_the_bound_page_budget() {
         fsio::read_bytes(&root, &bufs)
             .unwrap()
             .into_iter()
-            .map(|(p, b)| (p.to_string_lossy().replace('\', "/"), b))
+            .map(|(p, b)| (p.to_string_lossy().replace('\\', "/"), b))
             .collect()
     };
     let object_bytes = read(&object_sheet_paths);

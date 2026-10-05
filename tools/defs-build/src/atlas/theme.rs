@@ -243,14 +243,24 @@ mod tests {
     }
 
     #[test]
-    fn derives_the_room_builder_theme_for_a_flat_non_theme_sorter_folder() {
-        assert_eq!(
-            theme_group(
-                "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png"
-            )
-            .as_deref(),
-            Ok("room_builder")
-        );
+    fn derives_the_room_builder_theme_for_every_flat_room_builder_sheet() {
+        for name in [
+            "3d_walls",
+            "Arched_Entryways",
+            "Baseboards",
+            "borders",
+            "Floor_Connectors",
+            "Floor_Paths",
+            "Floor_Shadows",
+            "Floors",
+            "Walls",
+        ] {
+            let sheet = format!(
+                "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_{name}_16x16.png"
+            );
+            assert_eq!(theme_group(&sheet).as_deref(), Ok("room_builder"), "{sheet}");
+            assert_eq!(shadow_variant(&sheet), ShadowVariant::Default, "{sheet}");
+        }
     }
 
     #[test]

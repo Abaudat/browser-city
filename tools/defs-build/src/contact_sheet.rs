@@ -948,7 +948,7 @@ mod tests {
     fn atlas_pages() -> Vec<AtlasPageDef> {
         vec![AtlasPageDef {
             file: "street-0123456789abcdef.png".into(),
-            group: "street".into(),
+            group: crate::model::ATLAS_SHARED_GROUP.into(),
             width: 2048,
             height: 16,
         }]
@@ -1193,7 +1193,7 @@ mod tests {
 
         let pages_a = vec![AtlasPageDef {
             file: "street-aaaaaaaaaaaaaaaa.png".into(),
-            group: "street".into(),
+            group: crate::model::ATLAS_SHARED_GROUP.into(),
             width: 2048,
             height: 16,
         }];
@@ -1204,7 +1204,7 @@ mod tests {
         // An unrelated leading page, of a different group, that no card
         // references -- exactly a themed page gaining/losing a page, or a
         // character-part page changing, while this object's own page is
-        // untouched. The same "street" page now sits at global index 1.
+        // untouched. The same shared page now sits at global index 1.
         let pages_b = vec![
             AtlasPageDef {
                 file: "character_body-zzzzzzzzzzzzzzzz.png".into(),
@@ -1214,7 +1214,7 @@ mod tests {
             },
             AtlasPageDef {
                 file: "street-aaaaaaaaaaaaaaaa.png".into(),
-                group: "street".into(),
+                group: crate::model::ATLAS_SHARED_GROUP.into(),
                 width: 2048,
                 height: 16,
             },
@@ -1241,7 +1241,7 @@ mod tests {
             },
             AtlasPageDef {
                 file: "street-aaaaaaaaaaaaaaaa.png".into(),
-                group: "street".into(),
+                group: crate::model::ATLAS_SHARED_GROUP.into(),
                 width: 2048,
                 height: 16,
             },
@@ -1250,6 +1250,6 @@ mod tests {
         c.atlas.page = 1;
         let html = build(&[c], Some(16), &pages, "v1", "m1");
         assert!(!html.contains("character_body"));
-        assert!(html.contains(".page-street-0 {"));
+        assert!(html.contains(&format!(".page-{}-0 {{", crate::model::ATLAS_SHARED_GROUP)));
     }
 }

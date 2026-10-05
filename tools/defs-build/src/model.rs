@@ -149,14 +149,14 @@ pub const ATLAS_MAX_PAGES_PER_GROUP: usize = 2;
 /// groups and their own page counts.
 pub const ATLAS_MAX_BOUND_PAGES: usize = 8;
 
-/// The one page group every theme a street kit's own single props draw
-/// from shares (`defs/atlas/page-groups.toml`'s own table) -- a themed
+/// The one page group every theme drawn in any scene (street kit and
+/// interior shell) shares (`defs/atlas/page-groups.toml`'s own table) -- a themed
 /// district keeps its own group instead. At least one row in that table
 /// must map to this group; a table that maps nothing to it is a build
 /// error, because the shared set a street scene always binds is a
 /// structural requirement, not a convention any one row happens to
 /// establish.
-pub const ATLAS_SHARED_GROUP: &str = "street";
+pub const ATLAS_SHARED_GROUP: &str = "shared";
 
 /// Story 2.7: every character-part page group's own name starts with this
 /// prefix (`character_body`, `character_eyes`, ...) -- CPU-only compositing
@@ -837,7 +837,7 @@ pub struct BalanceFile {
 /// actually packs onto. Artie's direction: every street-kit theme
 /// (terrain, city props, generic/floor-modular buildings, and whichever
 /// themed folders the street kit borrows single props from) maps to one
-/// shared `"street"` group; a themed district keeps its own group. A
+/// shared `"shared"` group; a themed district keeps its own group. A
 /// theme with no row here is a build error naming the theme -- there is
 /// no silent per-theme-folder default.
 #[derive(Debug, Deserialize)]

@@ -66,7 +66,7 @@ fn every_real_objects_key_appears_in_the_sheet_exactly_once() {
 /// background-size: WpxHpx; }` rule, parsed straight out of the emitted
 /// `<style>` block -- never re-derived from `atlas.rs`'s own numbers, so
 /// an emission bug here is caught even if the packer itself is correct.
-/// `class` is the part after `.page-` (e.g. `street-0`), keyed by group
+/// `class` is the part after `.page-` (e.g. `shared-0`), keyed by group
 /// plus in-group ordinal rather than the global `atlas_pages` index
 /// (Tim's direction, cycle 2): an unrelated group gaining or losing a
 /// page must never renumber another group's own classes.

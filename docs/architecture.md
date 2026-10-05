@@ -1264,11 +1264,10 @@ rule above.
 - A page's group comes from two steps: the sheet's own theme-sorter
   directory segment (e.g. `ME_Theme_Sorter_16x16/3_City_Props_Singles_
   16x16` -> `city_props`), then `defs/atlas/page-groups.toml`'s own
-  `theme -> group` table, which every street-kit theme (terrain, city
-  props, generic/floor-modular buildings, and whichever themed folders
-  the street kit borrows single props from) maps to one shared
-  `ATLAS_SHARED_GROUP` (`"street"`) group; a themed district keeps its
-  own group. A sheet under `Room_Builder_subfiles/`, with no theme-sorter
+  `theme -> group` table, which every theme drawn in any scene -- street
+  kit and interior shell (`room_builder`) -- maps to the one shared
+  `ATLAS_SHARED_GROUP` (`"shared"`) group (1 page, 128 px tall today);
+  a themed district keeps its own group. A sheet under `Room_Builder_subfiles/`, with no theme-sorter
   subfolder of its own, has theme `room_builder`. A theme absent from the
   table fails the build naming it, and
   so does a table that maps nothing at all to `ATLAS_SHARED_GROUP`, or

@@ -1,0 +1,29 @@
+# Interior shell objects, cut from `Room_Builder_subfiles/` sheets. Only
+# the cells a scene draws are listed; every other sheet cell stays unused.
+
+# Pale stone room fill. Every finish on the Floors sheet is a 3x2 block of
+# six tiles and only the bottom-middle one is unshadowed; the other five
+# carry a baked wall shadow and are never a room fill.
+[[object]]
+id = 20
+key = "floor_pale_stone"
+name = "Pale Stone Floor"
+layer = "ground"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png", x = 208, y = 560, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "floor"]
+
+# A one-cell doorway: the centre of the slate arch, same finish as
+# `wall_face`, so its cap lines up with the wall's. Opening below, lintel
+# above; no collider. For north/south wall runs only -- west/east runs
+# are flush swatches with no face to cut an arch into.
+[[object]]
+id = 21
+key = "threshold_arch_slate"
+name = "Slate Threshold"
+layer = "walls"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Arched_Entryways_16x16.png", x = 104, y = 352, w = 16, h = 32 }
+width = 1
+height = 2
+tags = ["underfoot", "threshold", "wall_run"]

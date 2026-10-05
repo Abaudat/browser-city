@@ -103,7 +103,7 @@ pub fn validate_page_groups(raw: &RawDefs) -> Result<BTreeMap<String, String>, D
             0,
             0,
             format!(
-                "no theme maps to '{ATLAS_SHARED_GROUP}' -- the shared group every street scene binds is a structural requirement, not a convention; map at least one theme to it"
+                "no theme maps to '{ATLAS_SHARED_GROUP}' -- the shared group every scene binds is a structural requirement, not a convention; map at least one theme to it"
             ),
         ));
     }
@@ -4371,11 +4371,11 @@ mod tests {
     fn validate_page_groups_returns_the_theme_to_group_table() {
         let f = files(&[(
             "defs/atlas/page-groups.toml",
-            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"kitchen\"\n",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"shared\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"kitchen\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
         let table = validate_page_groups(&raw).unwrap();
-        assert_eq!(table.get("camping").map(String::as_str), Some("street"));
+        assert_eq!(table.get("camping").map(String::as_str), Some("shared"));
         assert_eq!(table.get("kitchen").map(String::as_str), Some("kitchen"));
     }
 
@@ -4383,7 +4383,7 @@ mod tests {
     fn validate_page_groups_rejects_a_theme_declared_twice() {
         let f = files(&[(
             "defs/atlas/page-groups.toml",
-            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"other\"\n",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"shared\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"other\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
         let err = validate_page_groups(&raw).unwrap_err();
@@ -4415,7 +4415,7 @@ mod tests {
     fn validate_page_groups_rejects_a_theme_mapped_to_a_character_prefixed_group() {
         let f = files(&[(
             "defs/atlas/page-groups.toml",
-            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"character_body\"\n",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"shared\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"character_body\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
         let err = validate_page_groups(&raw).unwrap_err();
