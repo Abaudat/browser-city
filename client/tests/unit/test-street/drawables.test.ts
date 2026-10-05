@@ -9,7 +9,7 @@ import {
   passOfLayer,
 } from "../../../src/render/layer-table";
 import { compareDrawables } from "../../../src/render/sort-key";
-import { SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
+import { fromSortUnits, SORT_SUBDIVISIONS, toSortUnits } from "../../../src/render/sort-units";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
 import { CROWD_FLOOR } from "../../../src/test-street/citizens";
 import {
@@ -44,6 +44,7 @@ import {
   streetDefId,
   streetNearRailingPressRoute,
   streetPlacedRows,
+  THRESHOLD_ARCH_SLATE_DEF_ID,
   wallRunCellId,
 } from "../../../src/test-street/fixture";
 import type { Vec2 } from "../../../src/world/movement";
@@ -59,6 +60,7 @@ import {
   STREET_VISIBILITY_ON_SUBWAY_LANDING,
 } from "./golden";
 import {
+  committedDefs,
   lamppostRestY,
   nearRailingRestY,
   shopfrontExitRestY,
@@ -67,6 +69,7 @@ import {
   streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
+  streetThresholdDefIds,
   streetWalkInputs,
   streetWindowDefIds,
   streetWorldIndex,
@@ -100,6 +103,7 @@ function buildStreetProps() {
     rankOf,
     ownership: streetOwnershipIndex(),
     windowDefIds: streetWindowDefIds(),
+    thresholdDefIds: streetThresholdDefIds(),
     objectDefs: streetObjectSources(),
   });
 }
@@ -886,6 +890,51 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
     for (const id of [82n, 15n]) {
       const p = props.find((q) => q.stableId === id);
       expect(p && passOfLayer(p.layerCode)).toBe("pool");
+    }
+  });
+});
+
+describe("story 2.14: a shop door's threshold", () => {
+  const props = buildStreetProps();
+  const thresholds = props.filter((d) => "defId" in d && d.defId === THRESHOLD_ARCH_SLATE_DEF_ID);
+
+  it("is placed at both shop doors, and retracts with its wall run", () => {
+    expect(thresholds).toHaveLength(2);
+    for (const t of thresholds) {
+      expect(t.isNearSide).toBe(true);
+      expect(t.ownerBuildingId).not.toBe(NO_OWNER);
+    }
+  });
+
+  it("has a wall-top band companion at the same sort point, lifted above it, retracting with it, and no wall stub", () => {
+    const thresholdDef = committedDefs().objects.find((o) => o.id === THRESHOLD_ARCH_SLATE_DEF_ID);
+    const band = props.filter(
+      (d) => "liftSourcePx" in d && d.liftSourcePx === thresholdDef?.sprite?.h,
+    );
+    expect(band).toHaveLength(2);
+    for (const b of band) {
+      const owner = thresholds.find((t) => t.x === b.x && t.y === b.y);
+      expect(owner, "a band must share its threshold's sort point").toBeDefined();
+      expect(b.isNearSide).toBe(owner?.isNearSide);
+      expect(b.ownerBuildingId).toBe(owner?.ownerBuildingId);
+    }
+    for (const t of thresholds) {
+      expect(props.some((d) => d.isStub && d.x === t.x && d.y === t.y)).toBe(false);
+    }
+  });
+
+  it("draws a character standing in the doorway behind the lintel and the band, never over them", () => {
+    for (const t of thresholds) {
+      const character = buildCharacterDrawable(
+        rankOf("characters"),
+        fromSortUnits(t.x),
+        fromSortUnits(t.y) - 0.5,
+        t.floor,
+      );
+      expect(compareDrawables(character, t)).toBeLessThan(0);
+      const band = props.find((d) => d.stableId === t.stableId + 600_000n);
+      expect(band, "a band shares its threshold's sort point").toBeDefined();
+      if (band) expect(compareDrawables(character, band)).toBeLessThan(0);
     }
   });
 });

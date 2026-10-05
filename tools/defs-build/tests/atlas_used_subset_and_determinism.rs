@@ -51,7 +51,7 @@ fn tile_size_balance() -> &'static str {
 /// theme maps to `ATLAS_SHARED_GROUP`) without changing which page group
 /// any of these fixtures' real themes land in.
 fn page_groups_toml() -> &'static str {
-    "[[page_group]]\ntheme = \"city_props\"\ngroup = \"city_props\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"camping\"\n\n[[page_group]]\ntheme = \"school\"\ngroup = \"school\"\n\n[[page_group]]\ntheme = \"atlas_required\"\ngroup = \"street\"\n"
+    "[[page_group]]\ntheme = \"city_props\"\ngroup = \"city_props\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"camping\"\n\n[[page_group]]\ntheme = \"school\"\ngroup = \"school\"\n\n[[page_group]]\ntheme = \"atlas_required\"\ngroup = \"shared\"\n"
 }
 
 #[test]
