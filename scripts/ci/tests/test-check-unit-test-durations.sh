@@ -69,6 +69,7 @@ printf '{"tests":[{"file":"a","name":"b","durationMs":1,"timeoutMs":5000,"state"
 ' > "$d/old.json"
 check "a report without retry/repeats fails" 1 bash "$CHECK" "$d/old.json" "$d/vitest.config.ts"
 
+report "$d" passed 100 5000
 cfg "$d"
 check "the real config is clean" 0 bash "$CHECK" "$d/d.json" "$REPO_ROOT/client/vitest.config.ts"
 
