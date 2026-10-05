@@ -315,6 +315,15 @@ export class TransitionIndex {
         );
       }
     }
+    // A guard the caller can switch off by omitting it is no guard: a transition
+    // onto its own cell keeps the walker's position, so the index is refused
+    // unless it can check that position is clear on both floors.
+    const sameCell = transitions.find((t) => t.targetX === t.x && t.targetY === t.y);
+    if (sameCell && !options?.entryBand) {
+      throw new Error(
+        `TransitionIndex: transition (${sameCell.x}, ${sameCell.y}, floor ${sameCell.floor}) targets its own cell, which keeps the walker's position, but no entryBand was given to check it`,
+      );
+    }
   }
 
   /** The floor transition anchored at this cell, if any (FR117).

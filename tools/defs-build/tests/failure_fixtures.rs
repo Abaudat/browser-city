@@ -519,6 +519,16 @@ fn an_undrawn_flight_with_a_collider_is_named() {
 }
 
 #[test]
+fn an_undrawn_flight_not_tagged_underfoot_is_named() {
+    let err = build_err("undrawn-flight-not-underfoot");
+    assert!(
+        err.message
+            .contains("object 'treads' declares no sprite but is not tagged 'underfoot'"),
+        "{err}"
+    );
+}
+
+#[test]
 fn a_non_boolean_window_is_named() {
     let err = build_err("non-boolean-window");
     assert!(err.message.contains("expected") || err.message.contains("boolean"));
@@ -1067,6 +1077,7 @@ fn every_known_category_has_a_fixture_directory() {
         "flight-ramp-beyond-footprint",
         "undrawn-without-flight",
         "undrawn-flight-with-collider",
+        "undrawn-flight-not-underfoot",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)

@@ -41,6 +41,10 @@ const allRows = streetPlacedRows();
 const world = worldOf(allRows);
 const transitions = new TransitionIndex(STREET_TRANSITIONS, {
   isStandable: (x, y, floor) => isCellStandable(world, config, x, y, floor),
+  entryBand: {
+    subcellsPerCell: sub,
+    isBodyClear: (floor, cx, feet) => isBodyClear(world, config, floor, cx, feet),
+  },
 });
 const anchors = new Set(STREET_TRANSITIONS.map((t) => cellKey(t.floor, t.x, t.y)));
 

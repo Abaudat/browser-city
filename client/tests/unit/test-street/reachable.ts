@@ -47,6 +47,10 @@ export function reachableCells(
   const sub = config.subcellsPerCell;
   const index = new TransitionIndex(specs, {
     isStandable: (x, y, floor) => isCellStandable(world, config, x, y, floor),
+    entryBand: {
+      subcellsPerCell: sub,
+      isBodyClear: (floor, cx, feet) => isBodyClear(world, config, floor, cx, feet),
+    },
   });
   const floors = fixtureFloors();
   const lowest = floors[0] ?? 0;

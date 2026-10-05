@@ -4,6 +4,7 @@
 // addressing, whole-cell collision, floor transitions and building/room
 // ownership are all checked here now (story 1.7 ports the last two,
 // closing trace-matrix row 116).
+
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -12,6 +13,7 @@ import type { ColliderSource } from "../../../src/world/collision-grid";
 import { CollisionGrid } from "../../../src/world/collision-grid";
 import { NO_OWNER, type OwnershipArea, OwnershipIndex } from "../../../src/world/ownership";
 import { TransitionIndex, type TransitionSpec } from "../../../src/world/transitions";
+import { OPEN_ENTRY_BAND } from "./entry-band";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -213,7 +215,10 @@ describe("world conformance fixture", () => {
     // own fixture (`fixtures/world-conformance.v1.json`), whose two
     // transitions are one-way test data, not story 15.2's own real-world
     // pair-symmetry shape -- unrelated to what this test proves.
-    const index = new TransitionIndex(specs, { skipPairSymmetry: true });
+    const index = new TransitionIndex(specs, {
+      skipPairSymmetry: true,
+      entryBand: OPEN_ENTRY_BAND,
+    });
     const transitionCases = fixture.cases.filter((c) => c.expect_transition !== null);
     expect(transitionCases.length).toBeGreaterThan(0);
     for (const c of fixture.cases) {

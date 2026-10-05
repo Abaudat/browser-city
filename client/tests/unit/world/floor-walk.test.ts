@@ -2,6 +2,7 @@
 // 1.7): a transition is edge-triggered (entered by walking), never
 // level-triggered by a key still held -- the class of bug that let two
 // mutually-targeting transitions bounce a player between floors forever.
+
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { CollisionGridQuery, GridEntry } from "../../../src/world/collision-grid";
@@ -13,6 +14,7 @@ import {
 import type { MovementConfig } from "../../../src/world/movement";
 import { TransitionIndex } from "../../../src/world/transitions";
 import { sizeProbe } from "../setup/size-probe";
+import { OPEN_ENTRY_BAND } from "./entry-band";
 
 /** Open space, no colliders -- this module's own logic is what is under
  * test, not `movement.ts`'s collision resolution (already covered by
@@ -58,7 +60,7 @@ describe("stepAndTransition", () => {
   // before any of these tests got to run at all.
   const transitions = new TransitionIndex(
     [{ x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 }],
-    { skipPairSymmetry: true },
+    { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND },
   );
 
   it("does not consult the transition index at all while the step stays inside the same cell", () => {
@@ -90,7 +92,7 @@ describe("stepAndTransition", () => {
   it("lands at the centre of the target cell when that is another cell", () => {
     const elsewhere = new TransitionIndex(
       [{ x: 5, y: 0, floor: 0, targetX: 9, targetY: 3, targetFloor: -1 }],
-      { skipPairSymmetry: true },
+      { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND },
     );
     const state: FloorWalkState = { x: 4.9, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
     const result = stepAndTransition(
@@ -137,7 +139,7 @@ describe("stepAndTransition", () => {
         { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
         { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
       ],
-      { skipPairSymmetry: true },
+      { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND },
     );
 
     const probe = sizeProbe({ min: 1, max: 30 });
@@ -190,7 +192,7 @@ describe("stepAndTransition", () => {
         { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
         { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
       ],
-      { skipPairSymmetry: true },
+      { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND },
     );
     const directions = [
       { x: 1, y: 0 },
