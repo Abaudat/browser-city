@@ -566,9 +566,10 @@ function assetNudgePx(drawable: PropDrawable): number {
   return isDefPropDrawable(drawable) ? 0 : (SCREEN_Y_NUDGE_PX[drawable.assetKey] ?? 0);
 }
 
-/** How far above its sort anchor a drawable is drawn (screen px). */
+/** How far above its sort anchor a drawable is drawn, in the world
+ * container's own (native) pixels. */
 function liftPx(drawable: PropDrawable): number {
-  return isDefPropDrawable(drawable) ? (drawable.liftSourcePx ?? 0) * ZOOM : 0;
+  return isDefPropDrawable(drawable) ? (drawable.liftSourcePx ?? 0) : 0;
 }
 
 /** A debug-only label for a drawable (`PoolEntry.label`,
