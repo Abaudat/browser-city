@@ -363,6 +363,17 @@ fn check_building_type_ranges(entries: &[BuildingTypeEntry]) -> Result<(), DefsE
                 ),
             ));
         }
+        if e.affluence_min > e.affluence_max {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "building type '{}' has affluence_min ({}) greater than affluence_max ({})",
+                    e.key.value, e.affluence_min, e.affluence_max
+                ),
+            ));
+        }
         if e.land_uses.is_empty() {
             return Err(DefsError::new(
                 &e.path,
@@ -397,7 +408,8 @@ fn check_building_type_ranges(entries: &[BuildingTypeEntry]) -> Result<(), DefsE
 /// by a `requires_site`-restricted or oversized type passed every
 /// separate check and still aborted world creation, the exact shape the
 /// `hospital` regression this cycle found). For every land use and every
-/// density in `generation.land_use.density_min..density_max`, at least
+/// density in `generation.land_use.density_min..density_max` and every
+/// affluence in `generation.neighbourhood.affluence_min..affluence_max`, at least
 /// one `weight > 0` type must, at once: carry no `requires_site`
 /// restriction (the only site contexts `check_building_type_density_
 /// coverage` can prove exist on *every* envelope of a given land use and
@@ -427,6 +439,11 @@ fn check_building_type_density_coverage(
     ) else {
         return Ok(());
     };
+
+    // The affluence dial's own range (story 3.7); a fixture with no
+    // neighbourhood keys sees the whole `0..=100` default band.
+    let affluence_min = get("generation.neighbourhood.affluence_min").unwrap_or(0);
+    let affluence_max = get("generation.neighbourhood.affluence_max").unwrap_or(100);
 
     const LAND_USES: [(usize, &str); 4] = [
         (0, "residential"),
@@ -458,11 +475,15 @@ fn check_building_type_density_coverage(
                 format!("no weight > 0 building type is eligible for land use '{use_name}' at all"),
             ));
         }
-        for density in density_min..=density_max {
+        for (density, affluence) in (density_min..=density_max)
+            .flat_map(|d| (affluence_min..=affluence_max).map(move |a| (d, a)))
+        {
             let jointly_eligible = fill_rows.iter().any(|e| {
                 e.requires_site.is_empty()
                     && density >= e.density_min as i64
                     && density <= e.density_max as i64
+                    && affluence >= e.affluence_min as i64
+                    && affluence <= e.affluence_max as i64
                     && (e.min_interior_width_cells as i64) <= min_w
                     && (e.min_interior_depth_cells as i64) <= min_d
             });
@@ -472,7 +493,7 @@ fn check_building_type_density_coverage(
                     first.key.line,
                     first.key.col,
                     format!(
-                        "no weight > 0 building type with no site-context restriction covers land use '{use_name}' at density {density} and fits its own smallest envelope ({min_w}x{min_d} interior) -- a defs-authoring gap the fill step would hit on a real seed"
+                        "no weight > 0 building type with no site-context restriction covers land use '{use_name}' at density {density} and affluence {affluence} and fits its own smallest envelope ({min_w}x{min_d} interior) -- a defs-authoring gap the fill step would hit on a real seed"
                     ),
                 ));
             }
@@ -662,16 +683,50 @@ fn check_placement_floor_range(entries: &[PlacementEntry]) -> Result<(), DefsErr
 /// fixtures for both).
 fn check_distribution_ranges(entries: &[DistributionEntry]) -> Result<(), DefsError> {
     for e in entries {
-        if e.ratio.value <= 0 {
-            return Err(DefsError::new(
-                &e.path,
-                e.ratio.line,
-                e.ratio.col,
-                format!(
-                    "distribution rule '{}' has ratio {} -- ratio must be a positive integer",
-                    e.key.value, e.ratio.value
-                ),
-            ));
+        // Exactly one of `ratio` or the `reads` triple (story 3.7); a read
+        // is never on a site-scoped row.
+        let at = |l: &Located<i32>| (l.line, l.col);
+        let fail = |at: (usize, usize), msg: String| DefsError::new(&e.path, at.0, at.1, msg);
+        let key_at = (e.key.line, e.key.col);
+        match (&e.ratio, e.reads, &e.ratio_at_min, &e.ratio_at_max) {
+            (Some(_), None, None, None) => {}
+            (None, Some(_), Some(_), Some(_)) => {
+                if e.scope != RawDistributionScope::Catchment {
+                    return Err(fail(
+                        key_at,
+                        format!(
+                            "distribution rule '{}' reads a neighbourhood parameter but is scoped site -- a read is per catchment",
+                            e.key.value
+                        ),
+                    ));
+                }
+            }
+            _ => {
+                return Err(fail(
+                    key_at,
+                    format!(
+                        "distribution rule '{}' must set either `ratio`, or `reads` with both `ratio_at_min` and `ratio_at_max` -- never a mix",
+                        e.key.value
+                    ),
+                ));
+            }
+        }
+        for (name, value) in [
+            ("ratio", &e.ratio),
+            ("ratio_at_min", &e.ratio_at_min),
+            ("ratio_at_max", &e.ratio_at_max),
+        ] {
+            if let Some(l) = value
+                && l.value <= 0
+            {
+                return Err(fail(
+                    at(l),
+                    format!(
+                        "distribution rule '{}' has {name} {} -- {name} must be a positive integer",
+                        e.key.value, l.value
+                    ),
+                ));
+            }
         }
         if e.tolerance_percent.value <= 0 {
             return Err(DefsError::new(
@@ -767,6 +822,40 @@ fn build_distribution_rules(
     entries
         .iter()
         .map(|e| {
+            let reads = match (e.reads, &e.ratio_at_min, &e.ratio_at_max) {
+                (Some(parameter), Some(lo), Some(hi)) => {
+                    let get = |suffix: &str| {
+                        let key = format!(
+                            "generation.neighbourhood.{}_{suffix}",
+                            parameter.key_segment()
+                        );
+                        balance
+                            .iter()
+                            .find(|b| b.key.value == key)
+                            .map(|b| b.value.value as i32)
+                            .ok_or_else(|| {
+                                DefsError::new(
+                                    &e.path,
+                                    e.key.line,
+                                    e.key.col,
+                                    format!(
+                                        "distribution rule '{}' reads '{}' but no '{key}' balance key exists to take its range from",
+                                        e.key.value,
+                                        parameter.key_segment()
+                                    ),
+                                )
+                            })
+                    };
+                    Some(ParameterReadDef {
+                        parameter,
+                        ratio_at_min: lo.value as u32,
+                        ratio_at_max: hi.value as u32,
+                        min: get("min")?,
+                        max: get("max")?,
+                    })
+                }
+                _ => None,
+            };
             let subject = resolve_rule_tag(&e.subject, &e.path, &e.key.value, "subject", tag_ids)?;
             let per = resolve_rule_tag(&e.per, &e.path, &e.key.value, "per", tag_ids)?;
             let scope = match e.scope {
@@ -797,11 +886,16 @@ fn build_distribution_rules(
                 kind: RuleKindDef::Distribution {
                     subject,
                     per,
-                    ratio: e.ratio.value as u32,
+                    ratio: e
+                        .ratio
+                        .as_ref()
+                        .or(e.ratio_at_min.as_ref())
+                        .map_or(1, |r| r.value as u32),
                     tolerance_percent: e.tolerance_percent.value as u32,
                     min_spacing: e.min_spacing,
                     max_distance: e.max_distance.value,
                     scope,
+                    reads,
                 },
             })
         })
@@ -3098,6 +3192,8 @@ pub fn validate(
             land_uses: crate::model::land_use_mask(&b.land_uses),
             density_min: b.density_min,
             density_max: b.density_max,
+            affluence_min: b.affluence_min,
+            affluence_max: b.affluence_max,
             min_interior_width_cells: b.min_interior_width_cells,
             min_interior_depth_cells: b.min_interior_depth_cells,
             weight: b.weight,

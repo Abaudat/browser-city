@@ -91,6 +91,12 @@
 //! million-seed loop is what would make this sweep slow, not what a
 //! ratio statistic needs. Prints this sweep's own wall-clock too.
 
+//! Story 3.7: a rows sweep (`-- rows <n>` runs only it) over the committed
+//! `[[distribution]]` rows -- the seeds `check_rules` rejects and each row's
+//! pooled mean placed count, the two figures a retune of `defs/rules/
+//! generation.toml` must hold (zero failing seeds; means within 10% of the
+//! previous figures).
+//!
 //! Story 4.21 (the workplace-band flake): a band sweep over its own seed
 //! range and salt (`cargo run -p bounds --release --bin measure-generation
 //! -- bands <n>` runs only it; the full run does it first, at
@@ -401,6 +407,88 @@ band sweep: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})"
     );
 }
 
+/// The rows sweep's own default seed count when no `rows <n>` argument is
+/// given.
+const ROWS_SEED_COUNT_DEFAULT: u64 = 20_000;
+/// A sixth, distinct salt for the rows sweep -- see
+/// [`MEASURE_DETOUR_SEED_SALT`].
+const MEASURE_ROWS_SEED_SALT: u64 = 0xB0F0_5EE5;
+
+/// Story 3.7: the retune loop for the committed `[[distribution]]` rows
+/// (`cargo run -p bounds --release --bin measure-generation -- rows 1000000`
+/// runs only it). Per seed it runs `plan` and evaluates the committed rules
+/// over the finished district (`District::check_rules`' own verdict, never a
+/// second judgement): the seeds that fail -- a catchment whose land cannot
+/// hold what a scoped row owes outside its tolerance -- and, per row, the
+/// pooled mean placed count the row's comment quotes. Parallel across
+/// threads; every seed is derived from its own index, so the result never
+/// depends on thread scheduling.
+fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
+    use sim::rules::RuleSite;
+    let rows: Vec<sim::rules::DistributionRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .filter(|row| {
+            content
+                .building_types
+                .iter()
+                .any(|b| b.tags.contains(&row.per))
+        })
+        .collect();
+    let threads = std::thread::available_parallelism().map_or(4, |t| t.get()) as u64;
+    type Partial = (Vec<(u64, String)>, Vec<u64>);
+    let partials: Vec<Partial> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads)
+            .map(|t| {
+                let rows = &rows;
+                scope.spawn(move || {
+                    let mut failing: Vec<(u64, String)> = Vec::new();
+                    let mut placed = vec![0u64; rows.len()];
+                    let mut i = t;
+                    while i < n {
+                        let seed = seed_from_ids(MEASURE_ROWS_SEED_SALT, i);
+                        let d = sim::generation::plan(seed, cfg, content)
+                            .expect("the committed config plans every seed");
+                        let site = d.site(content);
+                        if let Err(e) = d.check_rules(content) {
+                            failing.push((seed, e.to_string()));
+                        }
+                        for (k, row) in rows.iter().enumerate() {
+                            placed[k] += site.subjects_in_area(None, row.subject).len() as u64;
+                        }
+                        i += threads;
+                    }
+                    (failing, placed)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("a sweep thread panicked"))
+            .collect()
+    });
+    let mut failing: Vec<(u64, String)> = partials.iter().flat_map(|p| p.0.clone()).collect();
+    failing.sort();
+    println!(
+        "
+rows sweep: {n} seeds, {threads} threads"
+    );
+    println!("  seeds failing check_rules: {}", failing.len());
+    for (seed, why) in failing.iter().take(10) {
+        println!("    {seed}: {why}");
+    }
+    for (k, row) in rows.iter().enumerate() {
+        let total: u64 = partials.iter().map(|p| p.1[k]).sum();
+        println!(
+            "  {}: pooled mean placed {}.{:02}",
+            content.rules.key_of(row.id).unwrap_or("?"),
+            total / n,
+            total * 100 / n % 100
+        );
+    }
+}
+
 fn main() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).expect("committed balance is valid");
     let content = GenerationContent::committed();
@@ -415,6 +503,17 @@ fn main() {
             })
             .unwrap_or(BAND_SEED_COUNT_DEFAULT);
         band_sweep(&cfg, &content, n);
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("rows") {
+        let n = std::env::args()
+            .nth(2)
+            .map(|s| {
+                s.parse()
+                    .unwrap_or_else(|e| panic!("rows count {s:?}: {e}"))
+            })
+            .unwrap_or(ROWS_SEED_COUNT_DEFAULT);
+        rows_sweep(&cfg, &content, n);
         return;
     }
     band_sweep(&cfg, &content, BAND_SEED_COUNT_DEFAULT);

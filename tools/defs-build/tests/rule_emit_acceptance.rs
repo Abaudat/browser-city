@@ -97,7 +97,7 @@ fn every_remaining_kind_renders_its_own_exact_rule_kind_literal() {
     );
     assert!(
         distribution.contains(
-            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 3, tolerance_percent: 4, min_spacing: 5, max_distance: 6, scope: crate::rules::DistributionScope::Site }"
+            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 3, tolerance_percent: 4, min_spacing: 5, max_distance: 6, scope: crate::rules::DistributionScope::Site, reads: None }"
         ),
         "distribution literal not found:\n{distribution}"
     );
@@ -124,10 +124,52 @@ max = 100000
 ",
     );
     assert!(
-        scoped
-            .contains("scope: crate::rules::DistributionScope::Catchment { extent_cells: 256 } }"),
+        scoped.contains(
+            "scope: crate::rules::DistributionScope::Catchment { extent_cells: 256 }, reads: None }"
+        ),
         "scoped literal not found:
 {scoped}"
+    );
+
+    // A catchment row reading a parameter copies the parameter's own balance
+    // range into the row.
+    let reading = emit_rust_with(
+        "[[distribution]]
+id = 1
+key = \"d\"
+subject = \"a\"
+per = \"b\"
+tolerance_percent = 4
+min_spacing = 5
+max_distance = 6
+scope = \"catchment\"
+reads = \"affluence\"
+ratio_at_min = 30
+ratio_at_max = 90
+",
+        "[[balance]]
+key = \"generation.catchment_extent_cells\"
+value = 256
+min = 1
+max = 100000
+
+[[balance]]
+key = \"generation.neighbourhood.affluence_min\"
+value = 0
+min = 0
+max = 1000
+
+[[balance]]
+key = \"generation.neighbourhood.affluence_max\"
+value = 100
+min = 1
+max = 1000
+",
+    );
+    assert!(
+        reading.contains("ratio: 30, tolerance_percent: 4, min_spacing: 5, max_distance: 6, scope: crate::rules::DistributionScope::Catchment { extent_cells: 256 }, reads: Some(crate::rules::ParameterRead { parameter: crate::rules::Parameter::Affluence, ratio_at_min: 30, ratio_at_max: 90, min: 0, max: 100 }) }"),
+        "reading literal not found:
+{reading}"
     );
 
     let coherence = emit_rust_for(

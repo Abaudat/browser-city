@@ -537,6 +537,8 @@ mod tests {
             front: Some(front),
             land_use: use_,
             density,
+            building_age: 50,
+            affluence: 50,
             open,
         }
     }

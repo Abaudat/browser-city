@@ -60,6 +60,7 @@ use crate::world::Rect;
 
 use super::GenerationConfig;
 use super::envelopes::{Envelope, EnvelopeMap, row_bounds_by_block_front};
+use super::neighbourhoods;
 use super::plots::PlotMap;
 use super::rect_seed_key;
 use super::site::front_cell;
@@ -84,16 +85,45 @@ pub struct TypeAssignment {
 #[derive(Debug, Clone)]
 pub struct BuildingTypeMap {
     assignments: Vec<TypeAssignment>,
+    states: Vec<BuildingState>,
+}
+
+/// One placed building's own age and initial physical state (story 3.7,
+/// FR113): the sim's quantities the gentrification loop later reads and
+/// mutates. `age` is its neighbourhood's plus a small keyed spread;
+/// `physical_state` is 0 (worn) to 100 (kept), derived once from age and
+/// the neighbourhood's affluence -- nothing mutates it here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BuildingState {
+    pub plot: u32,
+    pub building_age: i32,
+    pub physical_state: i32,
 }
 
 impl BuildingTypeMap {
     #[cfg(any(test, feature = "test-fixtures"))]
     pub fn test_fixture(assignments: Vec<TypeAssignment>) -> Self {
-        BuildingTypeMap { assignments }
+        let states = assignments
+            .iter()
+            .map(|a| BuildingState {
+                plot: a.plot,
+                building_age: 0,
+                physical_state: 0,
+            })
+            .collect();
+        BuildingTypeMap {
+            assignments,
+            states,
+        }
     }
 
     pub fn assignments(&self) -> &[TypeAssignment] {
         &self.assignments
+    }
+
+    /// One [`BuildingState`] per assignment, in the same order.
+    pub fn states(&self) -> &[BuildingState] {
+        &self.states
     }
 
     /// Every distinct building type this district places at least once,
@@ -124,6 +154,9 @@ mod site_context_index {
 struct Context {
     land_use_idx: usize,
     density: i32,
+    /// The block's neighbourhood's dials (FR113).
+    building_age: i32,
+    affluence: i32,
     interior_width: i32,
     interior_depth: i32,
     /// `[corner, arterial, street, lane]` -- [`site_context_index`]'s
@@ -223,6 +256,8 @@ fn hard_eligible(b: &defs::BuildingTypeDef, ctx: &Context) -> bool {
     b.land_uses[ctx.land_use_idx]
         && ctx.density >= b.density_min
         && ctx.density <= b.density_max
+        && ctx.affluence >= b.affluence_min
+        && ctx.affluence <= b.affluence_max
         && (b.min_interior_width_cells as i32) <= ctx.interior_width
         && (b.min_interior_depth_cells as i32) <= ctx.interior_depth
         && (0..4).all(|i| !b.requires_site[i] || ctx.site_context[i])
@@ -270,6 +305,8 @@ fn build_context(
             Context {
                 land_use_idx: plot.land_use as usize,
                 density: plot.density,
+                building_age: plot.building_age,
+                affluence: plot.affluence,
                 interior_width: (e.along_face_cells() - 2 * wall as i64) as i32,
                 interior_depth: (e.depth_cells() - 2 * wall as i64) as i32,
                 site_context: site_context_of(corner, street_class),
@@ -525,6 +562,8 @@ pub fn placement_search_node_budget_probe(
             ctx.push(Context {
                 land_use_idx: 0,
                 density: 50,
+                building_age: 50,
+                affluence: 50,
                 interior_width: 5,
                 interior_depth: 5,
                 site_context: [false; 4],
@@ -632,6 +671,10 @@ pub fn run(
                 .iter()
                 .any(|b| b.tags.contains(&row.subject) && hard_eligible(b, &ctx[i]))
         };
+        // A subject that is itself a `per` member (a cafe is a shop) may only
+        // replace a `per` member, so placing it never moves the basis the
+        // row's own target -- and its verdict -- is computed from.
+        let subject_is_per = subject_def.is_some_and(|b| b.tags.contains(&row.per));
 
         let resolve = |i: usize| -> u32 {
             content
@@ -659,20 +702,41 @@ pub fn run(
             crate::rules::DistributionScope::Catchment { extent_cells } => {
                 let catchment_of =
                     |i: usize| crate::rules::catchment_of(ctx[i].x, ctx[i].y, extent_cells);
-                let mut per_by_catchment: BTreeMap<(i32, i32), u64> = BTreeMap::new();
+                // Per catchment: the `per` count, and the sum of the parameter
+                // the row reads over those cells (the evaluator's own mean).
+                let mut per_by_catchment: BTreeMap<(i32, i32), (u64, i64)> = BTreeMap::new();
                 for (i, &id) in final_type.iter().enumerate() {
                     if by_id[&id].tags.contains(&row.per) {
-                        *per_by_catchment.entry(catchment_of(i)).or_insert(0) += 1;
+                        let value = row.reads.map_or(0, |read| match read.parameter {
+                            crate::rules::Parameter::BuildingAge => ctx[i].building_age,
+                            crate::rules::Parameter::Affluence => ctx[i].affluence,
+                        });
+                        let entry = per_by_catchment.entry(catchment_of(i)).or_insert((0, 0));
+                        entry.0 += 1;
+                        entry.1 += value as i64;
                     }
                 }
-                for (&c, &per_in) in &per_by_catchment {
-                    let target = target_of(per_in);
+                for (&c, &(per_in, parameter_sum)) in &per_by_catchment {
+                    let ratio_here = row.ratio_for(
+                        row.reads
+                            .map(|_| (parameter_sum / per_in.max(1) as i64) as i32),
+                    );
+                    let target = crate::rules::distribution_target(
+                        per_in,
+                        ratio_here,
+                        row.tolerance_percent,
+                    )
+                    .0;
                     if target == 0 {
                         continue;
                     }
                     let mut pool: Vec<usize> = (0..placed.len())
                         .filter(|&i| {
-                            !overridden[i] && catchment_of(i) == c && eligible_for_subject(i)
+                            !overridden[i]
+                                && catchment_of(i) == c
+                                && eligible_for_subject(i)
+                                && (!subject_is_per
+                                    || by_id[&final_type[i]].tags.contains(&row.per))
                         })
                         .collect();
                     pool.sort_by_key(|&i| rank_key(i));
@@ -689,7 +753,11 @@ pub fn run(
                     continue;
                 }
                 let mut pool: Vec<usize> = (0..placed.len())
-                    .filter(|&i| !overridden[i] && eligible_for_subject(i))
+                    .filter(|&i| {
+                        !overridden[i]
+                            && eligible_for_subject(i)
+                            && (!subject_is_per || by_id[&final_type[i]].tags.contains(&row.per))
+                    })
                     .collect();
                 pool.sort_by_key(|&i| rank_key(i));
                 let chosen = place_row(&pool, target, row.min_spacing, &ctx, &mut chosen_cells);
@@ -709,7 +777,31 @@ pub fn run(
             building_type,
         })
         .collect();
-    BuildingTypeMap { assignments }
+    let states = placed
+        .iter()
+        .zip(&ctx)
+        .map(|(e, c)| {
+            let age = neighbourhoods::building_age(
+                pass_seed,
+                rect_seed_key(e.footprint),
+                c.building_age,
+                &cfg.neighbourhood,
+            );
+            BuildingState {
+                plot: e.plot,
+                building_age: age,
+                physical_state: neighbourhoods::initial_physical_state(
+                    age,
+                    c.affluence,
+                    &cfg.neighbourhood,
+                ),
+            }
+        })
+        .collect();
+    BuildingTypeMap {
+        assignments,
+        states,
+    }
 }
 
 /// A building type is a workplace iff its own `professions` list is
@@ -877,7 +969,7 @@ mod tests {
     }
 
     #[test]
-    fn a_committed_distribution_row_never_exceeds_its_own_site_wide_target() {
+    fn a_committed_distribution_row_never_exceeds_its_own_site_wide_ceiling() {
         let (em, pm, net) = district_for(3);
         let c = cfg();
         let content = GenerationContent::committed();
@@ -899,10 +991,17 @@ mod tests {
         dist_rows.sort_by_key(|d| d.id);
         for row in &dist_rows {
             let actual = per_counts.get(&row.subject).copied().unwrap_or(0);
-            let target = per_counts.get(&row.per).copied().unwrap_or(0) / (row.ratio.max(1) as u64);
+            // The most a row can owe over the whole site: its basis over its
+            // smallest ratio (a row that reads a parameter owes by its two
+            // ends, so the smaller end bounds every catchment).
+            let smallest = row
+                .reads
+                .map_or(row.ratio, |r| r.ratio_at_min.min(r.ratio_at_max))
+                .max(1);
+            let target = per_counts.get(&row.per).copied().unwrap_or(0) / smallest as u64;
             assert!(
                 actual <= target,
-                "rule {} placed {actual} subjects, its own site-wide target is {target}",
+                "rule {} placed {actual} subjects, its own site-wide ceiling is {target}",
                 row.key
             );
         }
@@ -920,6 +1019,8 @@ mod tests {
             .map(|i| Context {
                 land_use_idx: 0,
                 density: 50,
+                building_age: 50,
+                affluence: 50,
                 interior_width: 5,
                 interior_depth: 5,
                 site_context: [false; 4],
@@ -955,6 +1056,8 @@ mod tests {
         let cell = |x: i32| Context {
             land_use_idx: 0,
             density: 50,
+            building_age: 50,
+            affluence: 50,
             interior_width: 5,
             interior_depth: 5,
             site_context: [false; 4],
@@ -985,6 +1088,8 @@ mod tests {
         let cell = |x: i32| Context {
             land_use_idx: 0,
             density: 50,
+            building_age: 50,
+            affluence: 50,
             interior_width: 5,
             interior_depth: 5,
             site_context: [false; 4],
@@ -1020,6 +1125,8 @@ mod tests {
         let cell = |x: i32| Context {
             land_use_idx: 1,
             density: 50,
+            building_age: 50,
+            affluence: 50,
             interior_width: 8,
             interior_depth: 8,
             site_context: [false; 4],
@@ -1055,6 +1162,8 @@ mod tests {
                 ctx.push(Context {
                     land_use_idx: 0,
                     density: 50,
+                    building_age: 50,
+                    affluence: 50,
                     interior_width: 5,
                     interior_depth: 5,
                     site_context: [false; 4],
@@ -1108,6 +1217,8 @@ mod tests {
                 .map(|&x| Context {
                     land_use_idx: 0,
                     density: 50,
+                    building_age: 50,
+                    affluence: 50,
                     interior_width: 5,
                     interior_depth: 5,
                     site_context: [false; 4],

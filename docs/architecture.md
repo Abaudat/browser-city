@@ -1483,7 +1483,7 @@ is the one error type across every implemented pass (`InvalidConfig` from
 `GenerationConfig::from_balance`, `InvalidSite { site,
 coarse_cell_size_cells }` from pass 1, `BuildingCountOutOfTolerance {
 got, min, max }` from the district's own count check, `RuleViolations {
-count, first }` from `check_rules`, `WorkplaceCountOutOfTolerance { got,
+count, rule_key, first }` from `check_rules`, `WorkplaceCountOutOfTolerance { got,
 min, max }` from `check_workplace_count`) -- never a `Result<_, String>`
 per pass.
 
@@ -1498,6 +1498,18 @@ balance::value` panics on that, the same as every other balance read in
 config error. Pass 1 (`land_use::run`) itself also returns `Result`,
 refusing (never silently truncating) a site whose extent is not a whole
 multiple of the coarse cell size.
+
+Pass 1 also authors the neighbourhood dials (FR113):
+`streets::neighbourhood_rects` -- a pure function of the seed, the arterial
+lines pass 2 draws first from its own stream -- partitions the site into
+neighbourhoods, and `neighbourhoods::author` draws building age and
+affluence for each from its own keyed streams, then repairs the district
+guarantees `docs/generation.md` states. `LandUseMap::at_world` returns the
+four dials as `NeighbourhoodParams`; pass 3 stamps each plot with its
+neighbourhood's two; pass 5 filters building types by their affluence band
+and records each building's age and initial physical state
+(`BuildingTypeMap::states`). `District::block_desirability` and
+`District::citizens_per_screen` derive from those and store nothing.
 
 A measured generation ceiling (`generation.streets.max_detour_
 excess_cells`) is set from `cargo run -p bounds --release --bin

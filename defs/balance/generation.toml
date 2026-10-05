@@ -1028,17 +1028,177 @@ min = 1
 max = 1000
 
 [[balance]]
-# AC3 (Derek's/Tim's direction, PR #317 cycle 1): a distribution row's
-# own target is allocated per catchment -- a fixed-extent square of the
-# parameter field, proportional to the dwellings in that catchment,
-# rounded down, the site's own remaining budget then apportioned to the
-# catchments with the largest remainder first (so the sum across
-# catchments matches the whole-site floor(dwellings/ratio) the engine's
-# own Distribution check reads). 256 at launch: the site is 512x512, so
-# catchments are exactly AC3's own quadrants; never a hardcoded 2x2 of
-# the site -- a grown site (Epic 14) adds catchments, it never re-judges
-# an old one.
+# The fixed-extent, world-absolute square a `scope = "catchment"`
+# distribution row is judged and allocated over. 256 at launch: the site is
+# 512x512, so catchments are its four quadrants; a grown site adds
+# catchments, it never re-tiles or re-judges an old one.
 key = "generation.catchment_extent_cells"
 value = 256
 min = 1
 max = 100000
+
+[[balance]]
+# The building-age dial runs from newer (this) to older (the max) -- an integer, never a year.
+key = "generation.neighbourhood.building_age_min"
+value = 0
+min = 0
+max = 1000
+
+[[balance]]
+key = "generation.neighbourhood.building_age_max"
+value = 100
+min = 1
+max = 1000
+
+[[balance]]
+# The affluence dial runs from poorer (this) to richer (the max). `[[building_type]]` `affluence_min`/`affluence_max` bands read this range.
+key = "generation.neighbourhood.affluence_min"
+value = 0
+min = 0
+max = 1000
+
+[[balance]]
+key = "generation.neighbourhood.affluence_max"
+value = 100
+min = 1
+max = 1000
+
+[[balance]]
+# Percent of neighbourhoods drawn in an end third of a dial rather than its middle third: wide steps between neighbours, never a smooth ramp.
+key = "generation.neighbourhood.extreme_share_percent"
+value = 80
+min = 0
+max = 100
+
+[[balance]]
+# The smallest gap on one dial between two neighbourhoods that reads as two different places; each dial's two end thirds are at least this far apart.
+key = "generation.neighbourhood.legible_step"
+value = 30
+min = 1
+max = 100
+
+[[balance]]
+# Affluence at or below this is the bottom band: every district holds at least one such neighbourhood with dwellings (somewhere affordable to begin).
+key = "generation.neighbourhood.poor_band_max"
+value = 25
+min = 0
+max = 1000
+
+[[balance]]
+# The fewest of the four corners (old/new x poor/rich) a district shows, so age and affluence never move as one axis.
+key = "generation.neighbourhood.min_corners"
+value = 3
+min = 1
+max = 4
+
+[[balance]]
+# A district holds at least this many neighbourhoods pairwise a legible step apart on some dial.
+key = "generation.neighbourhood.min_apart_neighbourhoods"
+value = 3
+min = 2
+max = 12
+
+[[balance]]
+# A building's own age sits within this of its neighbourhood's.
+key = "generation.neighbourhood.building_age_spread"
+value = 8
+min = 0
+max = 100
+
+[[balance]]
+# Weight of newness in a building's initial physical state (0 worn, 100 kept).
+key = "generation.neighbourhood.state_weight_age"
+value = 40
+min = 0
+max = 100
+
+[[balance]]
+# Weight of affluence in the same -- old and poor is worn, old and rich is kept.
+key = "generation.neighbourhood.state_weight_affluence"
+value = 60
+min = 0
+max = 100
+
+[[balance]]
+# Mean physical state at or below this is wholly undesirable; desirability rises from 0 here to 100 at fully kept.
+key = "generation.neighbourhood.desirability_state_floor"
+value = 25
+min = 0
+max = 99
+
+[[balance]]
+# No neighbourhood is narrower than this many viewport widths (or heights) of street: character comes in places bigger than a screen.
+key = "generation.neighbourhood.min_patch_span_viewports"
+value = 2
+min = 1
+max = 10
+
+[[balance]]
+# A bottom-band neighbourhood counts as somewhere affordable to begin only if it holds at least this many residential coarse cells.
+key = "generation.neighbourhood.min_home_cells"
+value = 30
+min = 0
+max = 100000
+
+[[balance]]
+# A 1080p screen at 3x zoom and 16 px tiles (`render.tile_size_px`) shows this many cells across...
+key = "generation.neighbourhood.viewport_width_cells"
+value = 40
+min = 1
+max = 10000
+
+[[balance]]
+# ...and this many down.
+key = "generation.neighbourhood.viewport_height_cells"
+value = 22
+min = 1
+max = 10000
+
+[[balance]]
+# Citizens a dwelling supports; with the post weight below, a whole screen averages NFR15a's one citizen per 52.4 cells (~17.6).
+key = "generation.neighbourhood.citizens_per_dwelling"
+value = 2
+min = 1
+max = 1000
+
+[[balance]]
+# Citizens one workplace post supports -- a commercial core is busy by its posts, a residential edge quiet by its few dwellings.
+key = "generation.neighbourhood.citizens_per_post"
+value = 3
+min = 0
+max = 1000
+
+[[balance]]
+# A commercial core at the top of the density range supports at least this many citizens on one screen -- above NFR15a's ~17.6 average (measured minimum 22 over 5,000 seeds).
+key = "generation.neighbourhood.busy_screen_min_citizens"
+value = 20
+min = 0
+max = 100000
+
+[[balance]]
+# A residential edge at the bottom of the density range supports at most this percent of the same district's commercial core (measured maximum 60).
+key = "generation.neighbourhood.quiet_edge_max_percent_of_core"
+value = 75
+min = 1
+max = 100
+
+[[balance]]
+# Two neighbourhoods a legible step apart on a dial differ in their placed building types, ages, states and shop types by at least this total-variation percent on one of them (measured minimum 75 over 3,000 seeds, affluence-only pairs; building age is the sim-side carrier of the age dial).
+key = "generation.neighbourhood.legibility_min_distance_percent"
+value = 50
+min = 1
+max = 100
+
+[[balance]]
+# Neighbourhoods are compared only when each holds at least this many buildings, so a handful of buildings never reads as a distribution.
+key = "generation.neighbourhood.legibility_min_buildings"
+value = 40
+min = 1
+max = 100000
+
+[[balance]]
+# Two halves of the site, with identical dials and density, differ in their placed building types by at most this total-variation percent: where a neighbourhood sits never decides what it holds.
+key = "generation.neighbourhood.position_independence_max_distance_percent"
+value = 15
+min = 1
+max = 100

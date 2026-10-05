@@ -12,7 +12,10 @@ A rule kind is one of five closed shapes under `defs/rules/*.toml`:
 `[[requirement]]`. Each row names real tags (`defs/tags/*.toml`) and
 carries a permanent `id`/`key`. `sim::rules::evaluate` is the one
 evaluator; see `docs/architecture.md`'s "Rules" section for the full
-grammar of each kind.
+grammar of each kind. A `[[distribution]]` row takes `scope = "catchment"`
+(default `site`) to be judged per catchment, and a catchment row may give
+its number as `reads = "affluence"` (or `"building_age"`) with
+`ratio_at_min`/`ratio_at_max` instead of `ratio`.
 
 ## Building types
 
@@ -20,7 +23,9 @@ grammar of each kind.
 envelope *is* -- `sim::generation::building_types` reads this kind, never
 a Rust enum. A row: permanent `id`/`key`; `tags` (real tags, like an
 object's own); `land_uses` (one or more of `residential`/`commercial`/
-`industrial`/`institutional`); `density_min`/`density_max`; `min_interior_
+`industrial`/`institutional`); `density_min`/`density_max` and
+`affluence_min`/`affluence_max` (an inclusive band over the affluence dial,
+the whole range by default); `min_interior_
 width_cells`/`min_interior_depth_cells`; `weight` (the ordinary weighted-
 fill draw -- `0` means "placed only by a `[[distribution]]` row's own
 override, never fill"); `professions` (`{ profession = "<key>", headcount

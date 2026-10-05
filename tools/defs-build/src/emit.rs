@@ -191,7 +191,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub struct BuildingTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub land_uses: [bool; 4],\n    pub density_min: i32,\n    pub density_max: i32,\n    pub min_interior_width_cells: u32,\n    pub min_interior_depth_cells: u32,\n    pub weight: u32,\n    pub requires_site: [bool; 4],\n    pub prefers_site: [bool; 4],\n    pub density_affinity: i32,\n    pub professions: &'static [&'static str],\n}\n\n",
+        "pub struct BuildingTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub land_uses: [bool; 4],\n    pub density_min: i32,\n    pub density_max: i32,\n    pub affluence_min: i32,\n    pub affluence_max: i32,\n    pub min_interior_width_cells: u32,\n    pub min_interior_depth_cells: u32,\n    pub weight: u32,\n    pub requires_site: [bool; 4],\n    pub prefers_site: [bool; 4],\n    pub density_affinity: i32,\n    pub professions: &'static [&'static str],\n}\n\n",
     );
     out.push_str("pub const BUILDING_TYPES: &[BuildingTypeDef] = &[\n");
     for b in &defs.building_types {
@@ -210,11 +210,13 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
         );
         let professions = fmt_str_slice(&b.professions);
         out.push_str(&format!(
-            "    BuildingTypeDef {{ id: {}, key: {:?}, tags: &{tags}, land_uses: {land_uses}, density_min: {}, density_max: {}, min_interior_width_cells: {}, min_interior_depth_cells: {}, weight: {}, requires_site: {requires_site}, prefers_site: {prefers_site}, density_affinity: {}, professions: &{professions} }},\n",
+            "    BuildingTypeDef {{ id: {}, key: {:?}, tags: &{tags}, land_uses: {land_uses}, density_min: {}, density_max: {}, affluence_min: {}, affluence_max: {}, min_interior_width_cells: {}, min_interior_depth_cells: {}, weight: {}, requires_site: {requires_site}, prefers_site: {prefers_site}, density_affinity: {}, professions: &{professions} }},\n",
             b.id,
             b.key,
             b.density_min,
             b.density_max,
+            b.affluence_min,
+            b.affluence_max,
             b.min_interior_width_cells,
             b.min_interior_depth_cells,
             b.weight,
@@ -499,12 +501,24 @@ fn fmt_rule_kind_rust(kind: &RuleKindDef) -> String {
             min_spacing,
             max_distance,
             scope,
+            reads,
         } => format!(
-            "crate::rules::RuleKind::Distribution {{ subject: {subject}, per: {per}, ratio: {ratio}, tolerance_percent: {tolerance_percent}, min_spacing: {min_spacing}, max_distance: {max_distance}, scope: {} }}",
+            "crate::rules::RuleKind::Distribution {{ subject: {subject}, per: {per}, ratio: {ratio}, tolerance_percent: {tolerance_percent}, min_spacing: {min_spacing}, max_distance: {max_distance}, scope: {}, reads: {} }}",
             match scope {
                 DistributionScopeDef::Site => "crate::rules::DistributionScope::Site".to_string(),
                 DistributionScopeDef::Catchment { extent_cells } => format!(
                     "crate::rules::DistributionScope::Catchment {{ extent_cells: {extent_cells} }}"
+                ),
+            },
+            match reads {
+                None => "None".to_string(),
+                Some(r) => format!(
+                    "Some(crate::rules::ParameterRead {{ parameter: crate::rules::Parameter::{}, ratio_at_min: {}, ratio_at_max: {}, min: {}, max: {} }})",
+                    r.parameter.rust_variant(),
+                    r.ratio_at_min,
+                    r.ratio_at_max,
+                    r.min,
+                    r.max
                 ),
             }
         ),
@@ -1174,6 +1188,8 @@ mod tests {
                 land_uses: [true, false, false, false],
                 density_min: 0,
                 density_max: 100,
+                affluence_min: 0,
+                affluence_max: 100,
                 min_interior_width_cells: 6,
                 min_interior_depth_cells: 6,
                 weight: 10,
@@ -1644,6 +1660,7 @@ mod tests {
                     min_spacing: 3,
                     max_distance: 10,
                     scope: DistributionScopeDef::Site,
+                    reads: None,
                 },
             },
             RuleDef {
@@ -1684,7 +1701,7 @@ mod tests {
             "kind: crate::rules::RuleKind::Placement { subject: 1, container: Some(2), floor_min: Some(-1), floor_max: Some(2) }"
         ));
         assert!(out.contains(
-            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 4, tolerance_percent: 50, min_spacing: 3, max_distance: 10, scope: crate::rules::DistributionScope::Site }"
+            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 4, tolerance_percent: 50, min_spacing: 3, max_distance: 10, scope: crate::rules::DistributionScope::Site, reads: None }"
         ));
         assert!(out.contains(
             "kind: crate::rules::RuleKind::Coherence { subject: 1, within: 2, mode: crate::rules::CoherenceMode::Forbid }"

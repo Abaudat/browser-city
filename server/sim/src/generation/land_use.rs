@@ -36,11 +36,15 @@
 
 use std::collections::BTreeSet;
 
-use super::{GenerationConfig, SiteBounds};
+use super::{GenerationConfig, SiteBounds, neighbourhoods, streets};
 use crate::rng::{Rng, seed_from_ids};
 use crate::world::Rect;
 
 pub const PASS_ID: u64 = super::PASS_LAND_USE;
+
+/// The one dial value a hand-built [`LandUseMap::test_fixture`] carries --
+/// a fixture has no config to take a mid-range from.
+const FIXTURE_DIAL: i32 = 50;
 
 /// The four land uses FR110/the GDD name (`docs/generation.md`'s
 /// "Land-use mix is not a scalar"). No fifth "empty" variant exists --
@@ -65,12 +69,35 @@ impl LandUse {
 
 /// One coarse cell's own value: a land use and a density -- "nothing finer
 /// than the four uses plus the parameter field" (Artie's direction).
-/// Building age and affluence are not read by any pass yet (3.7 adds them
-/// to this same struct).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LandUseCell {
     pub use_: LandUse,
     pub density: i32,
+}
+
+/// The four dials at one world point (FR113): the sim's own readable
+/// quantities, never generator-private knobs. The gentrification loop
+/// reads and later mutates these same fields. Land use and density come
+/// from the coarse field; building age and affluence are constant across
+/// the neighbourhood the point sits in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NeighbourhoodParams {
+    pub use_: LandUse,
+    pub density: i32,
+    pub building_age: i32,
+    pub affluence: i32,
+}
+
+/// A neighbourhood: the ground between arterials, with its two authored
+/// dials. `bounds` is half-open, world-absolute.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Neighbourhood {
+    pub bounds: Rect,
+    pub building_age: i32,
+    pub affluence: i32,
+    /// Neighbourhoods narrower than the minimum patch span share a patch
+    /// (and so their dials) with a neighbour: the lowest member's index.
+    pub patch: usize,
 }
 
 /// A 4-connected component of equal land use over the coarse grid
@@ -97,6 +124,7 @@ pub struct LandUseMap {
     peak_cx: i32,
     peak_cy: i32,
     cells: Vec<LandUseCell>,
+    neighbourhoods: Vec<Neighbourhood>,
 }
 
 impl LandUseMap {
@@ -125,7 +153,27 @@ impl LandUseMap {
             peak_cx,
             peak_cy,
             cells,
+            neighbourhoods: vec![Neighbourhood {
+                bounds: site,
+                building_age: FIXTURE_DIAL,
+                affluence: FIXTURE_DIAL,
+                patch: 0,
+            }],
         }
+    }
+
+    /// Every neighbourhood, in `(y, x)` row order -- a partition of the
+    /// site.
+    pub fn neighbourhoods(&self) -> &[Neighbourhood] {
+        &self.neighbourhoods
+    }
+
+    /// The neighbourhood containing world-absolute `(x, y)`, `None`
+    /// outside [`Self::site`].
+    pub fn neighbourhood_at(&self, x: i32, y: i32) -> Option<&Neighbourhood> {
+        self.neighbourhoods
+            .iter()
+            .find(|n| x >= n.bounds.x0 && x < n.bounds.x1 && y >= n.bounds.y0 && y < n.bounds.y1)
     }
 
     pub fn site(&self) -> SiteBounds {
@@ -189,15 +237,22 @@ impl LandUseMap {
         self.coarse_index(cx, cy).map(|i| self.cells[i])
     }
 
-    /// The coarse cell covering world-absolute `(x, y)`, `None` outside
+    /// The four dials at world-absolute `(x, y)`, `None` outside
     /// [`Self::site`].
-    pub fn at_world(&self, x: i32, y: i32) -> Option<LandUseCell> {
+    pub fn at_world(&self, x: i32, y: i32) -> Option<NeighbourhoodParams> {
         if !self.site.contains(x, y) {
             return None;
         }
         let cx = (x - self.site.x0) / self.cell_size;
         let cy = (y - self.site.y0) / self.cell_size;
-        self.coarse_at(cx, cy)
+        let cell = self.coarse_at(cx, cy)?;
+        let hood = self.neighbourhood_at(x, y)?;
+        Some(NeighbourhoodParams {
+            use_: cell.use_,
+            density: cell.density,
+            building_age: hood.building_age,
+            affluence: hood.affluence,
+        })
     }
 
     /// Every 4-connected component of equal land use, sorted by
@@ -1089,6 +1144,43 @@ pub fn run(
         }
     }
 
+    // The neighbourhoods and their dials: authored from their own keyed
+    // streams, after (and never perturbing) the draws above.
+    let hoods: Vec<neighbourhoods::HoodInput> = streets::neighbourhood_rects(city_seed, site, cfg)
+        .into_iter()
+        .map(|bounds| {
+            let mut residential_cells = 0i64;
+            for cy in 0..rows {
+                for cx in 0..cols {
+                    let (wx, wy) = (
+                        site.x0 + cx * cell_size + cell_size / 2,
+                        site.y0 + cy * cell_size + cell_size / 2,
+                    );
+                    let inside =
+                        wx >= bounds.x0 && wx < bounds.x1 && wy >= bounds.y0 && wy < bounds.y1;
+                    if inside && cells[(cy * cols + cx) as usize].use_ == LandUse::Residential {
+                        residential_cells += 1;
+                    }
+                }
+            }
+            neighbourhoods::HoodInput {
+                bounds,
+                residential_cells,
+            }
+        })
+        .collect();
+    let authored = neighbourhoods::author(city_seed, &hoods, &cfg.neighbourhood);
+    let neighbourhoods = hoods
+        .iter()
+        .zip(authored.dials.iter().zip(authored.patch.iter()))
+        .map(|(h, (d, &patch))| Neighbourhood {
+            bounds: h.bounds,
+            building_age: d.building_age,
+            affluence: d.affluence,
+            patch,
+        })
+        .collect();
+
     Ok(LandUseMap {
         site,
         cell_size,
@@ -1097,6 +1189,7 @@ pub fn run(
         peak_cx,
         peak_cy,
         cells,
+        neighbourhoods,
     })
 }
 
@@ -1320,7 +1413,8 @@ mod tests {
             for cy in 0..map.rows.min(4) {
                 let wx = c.site().x0 + cx * cell_size;
                 let wy = c.site().y0 + cy * cell_size;
-                assert_eq!(map.at_world(wx, wy), map.coarse_at(cx, cy));
+                let at = map.at_world(wx, wy).map(|p| (p.use_, p.density));
+                assert_eq!(at, map.coarse_at(cx, cy).map(|c| (c.use_, c.density)));
             }
         }
     }

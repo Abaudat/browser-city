@@ -17,8 +17,14 @@ fn rules_with_ratio(key: &str, new_ratio: u32) -> Vec<RuleDef> {
         .map(|r| {
             let mut r = *r;
             if r.key == key
-                && let RuleKind::Distribution { ratio, .. } = &mut r.kind
+                && let RuleKind::Distribution { ratio, reads, .. } = &mut r.kind
             {
+                // A row that reads a parameter owes by its two ends; moving
+                // the number moves both.
+                if let Some(read) = reads {
+                    read.ratio_at_min = read.ratio_at_min * new_ratio / (*ratio).max(1);
+                    read.ratio_at_max = read.ratio_at_max * new_ratio / (*ratio).max(1);
+                }
                 *ratio = new_ratio;
             }
             r

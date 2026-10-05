@@ -11,7 +11,10 @@ mod support;
 
 use proptest::prelude::*;
 use sim::rules::testing::{Site, SiteBuilder};
-use sim::rules::{Cell, DistributionScope, RuleDef, RuleKind, TagId, Violation, catchment_of};
+use sim::rules::{
+    Cell, DistributionScope, Parameter, ParameterRead, RuleDef, RuleKind, RuleSet, RuleSite, TagId,
+    Violation, catchment_of,
+};
 use sim::validation::{Check, Defect, Location};
 use support::eval;
 
@@ -35,6 +38,7 @@ fn row(scope: DistributionScope) -> RuleDef {
             min_spacing: 3,
             max_distance: 1000,
             scope,
+            reads: None,
         },
     }
 }
@@ -211,6 +215,8 @@ fn site_of(contents: &[CatchmentContent]) -> Site {
 }
 
 proptest! {
+    #![proptest_config(ProptestConfig { failure_persistence: None, ..ProptestConfig::default() })]
+
     /// The city grows by whole catchments: appending ground in later
     /// catchments, with arbitrary content, never moves catchment (0, 0)'s
     /// verdict -- its violation list included, element for element.
@@ -266,4 +272,148 @@ fn a_defect_in_a_catchment_renders_both_the_rule_key_and_the_catchment() {
         defect.to_string(),
         "service_present at (10, 9, 0) in catchment (1, 0)"
     );
+}
+
+// --- a catchment row may read one neighbourhood parameter ----------------
+
+/// A [`Site`] that also answers one parameter per cell.
+struct WithParameter {
+    site: Site,
+    affluence: std::collections::BTreeMap<Cell, i32>,
+}
+
+impl RuleSite for WithParameter {
+    fn tags_at(&self, cell: Cell) -> &[TagId] {
+        self.site.tags_at(cell)
+    }
+    fn areas_containing(&self, cell: Cell) -> &[sim::rules::AreaId] {
+        self.site.areas_containing(cell)
+    }
+    fn subjects_in_area(&self, area: Option<sim::rules::AreaId>, tag: TagId) -> &[Cell] {
+        self.site.subjects_in_area(area, tag)
+    }
+    fn parameter_at(&self, cell: Cell, parameter: Parameter) -> Option<i32> {
+        match parameter {
+            Parameter::Affluence => self.affluence.get(&cell).copied(),
+            Parameter::BuildingAge => None,
+        }
+    }
+}
+
+fn reading_row() -> RuleDef {
+    let mut r = row(catchment_scope());
+    if let RuleKind::Distribution { ratio, reads, .. } = &mut r.kind {
+        *ratio = 5;
+        *reads = Some(ParameterRead {
+            parameter: Parameter::Affluence,
+            ratio_at_min: 5,
+            ratio_at_max: 20,
+            min: 0,
+            max: 100,
+        });
+    }
+    r
+}
+
+/// Ten dwellings and two services in each of two catchments; the west
+/// catchment's dwellings sit at affluence `west`, the east's at `east`.
+fn two_catchments_at(west: i32, east: i32) -> WithParameter {
+    let site = catchment_cells(
+        catchment_cells(SiteBuilder::new(), 0, &[(1, 2), (6, 2)]),
+        10,
+        &[(1, 2), (6, 2)],
+    )
+    .build();
+    let mut affluence = std::collections::BTreeMap::new();
+    for dx in 0..EXTENT {
+        affluence.insert(c(dx, 9), west);
+        affluence.insert(c(10 + dx, 9), east);
+    }
+    WithParameter { site, affluence }
+}
+
+#[test]
+fn a_row_that_reads_a_parameter_owes_each_catchment_by_its_own_mean() {
+    let rules = [reading_row()];
+    let run = |site: &WithParameter| sim::rules::evaluate(RuleSet::for_test(&rules), site);
+    // Poor west owes ratio 5 (ten dwellings -> 2); rich east owes ratio 20
+    // (ten dwellings -> 0), so its two services are over the upper bound.
+    let violations = run(&two_catchments_at(0, 100));
+    assert!(!violations.is_empty());
+    assert!(
+        violations.iter().all(|v| v.catchment == Some((1, 0))),
+        "{violations:?}"
+    );
+    // Swap the dwellings' affluence and the verdict moves with it.
+    let swapped = run(&two_catchments_at(100, 0));
+    assert!(
+        swapped.iter().all(|v| v.catchment == Some((0, 0))),
+        "{swapped:?}"
+    );
+    assert!(!swapped.is_empty());
+    // Equal means owe equally: both pass.
+    assert_eq!(run(&two_catchments_at(0, 0)), vec![]);
+}
+
+#[test]
+fn ratio_at_interpolates_between_the_two_ends_and_clamps() {
+    let read = ParameterRead {
+        parameter: Parameter::Affluence,
+        ratio_at_min: 20,
+        ratio_at_max: 60,
+        min: 0,
+        max: 100,
+    };
+    assert_eq!(read.ratio_at(0), 20);
+    assert_eq!(read.ratio_at(50), 40);
+    assert_eq!(read.ratio_at(100), 60);
+    assert_eq!(read.ratio_at(-30), 20);
+    assert_eq!(read.ratio_at(500), 60);
+    // A thinning-to-thickening row runs the other way.
+    let down = ParameterRead {
+        ratio_at_min: 60,
+        ratio_at_max: 20,
+        ..read
+    };
+    assert_eq!(down.ratio_at(50), 40);
+    assert!(down.ratio_at(100) < down.ratio_at(0));
+}
+
+/// The committed rows read affluence the way the design states: cafes
+/// thicken as it rises, welfare offices and shelters thin.
+#[test]
+fn cafes_thicken_and_welfare_and_shelters_thin_as_affluence_rises() {
+    let committed: Vec<_> = RuleSet::committed()
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .collect();
+    let by_key = |key: &str| {
+        *committed
+            .iter()
+            .find(|r| r.key == key)
+            .unwrap_or_else(|| panic!("committed rows carry '{key}'"))
+    };
+    let (poor, rich) = (0, 100);
+    let cafe = by_key("cafe_present");
+    assert!(
+        cafe.ratio_for(Some(rich)) < cafe.ratio_for(Some(poor)),
+        "a smaller ratio is a thicker row"
+    );
+    for key in ["welfare_office_present", "shelter_present"] {
+        let r = by_key(key);
+        assert!(
+            r.ratio_for(Some(rich)) > r.ratio_for(Some(poor)),
+            "{key} thins as affluence rises"
+        );
+        assert_eq!(
+            r.reads.map(|read| read.parameter),
+            Some(Parameter::Affluence)
+        );
+    }
+    // Rows that read nothing keep their one number.
+    for key in ["depot_present", "council_present", "hospital_present"] {
+        let r = by_key(key);
+        assert_eq!(r.reads, None);
+        assert_eq!(r.ratio_for(Some(rich)), r.ratio_for(None));
+    }
 }

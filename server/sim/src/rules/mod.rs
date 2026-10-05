@@ -131,6 +131,13 @@ pub trait RuleSite {
     /// indexes this once rather than rescanning every cell per call --
     /// `testing::SiteBuilder::build` is the worked example.
     fn subjects_in_area(&self, area: Option<AreaId>, tag: TagId) -> &[Cell];
+    /// The value of neighbourhood `parameter` at `cell`, `None` when this
+    /// site carries none -- what a catchment row that reads a parameter
+    /// averages over its `per` cells. Defaults to `None`: only a site that
+    /// has authored the parameters answers.
+    fn parameter_at(&self, _cell: Cell, _parameter: Parameter) -> Option<i32> {
+        None
+    }
 }
 
 /// `mode = "allow" | "forbid"` on a `[[coherence]]` row.
@@ -192,6 +199,40 @@ pub enum DistributionScope {
 pub fn catchment_of(x: i32, y: i32, extent_cells: i32) -> (i32, i32) {
     let extent = extent_cells.max(1);
     (x.div_euclid(extent), y.div_euclid(extent))
+}
+
+/// A neighbourhood parameter a catchment-scoped `Distribution` row may read
+/// (story 3.7, FR113): the sim's own quantities, never a content key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Parameter {
+    BuildingAge,
+    Affluence,
+}
+
+/// A row's two-ended ratio read against one parameter: `ratio_at_min` where
+/// the parameter sits at `min`, `ratio_at_max` at `max`, integer-interpolated
+/// on the catchment's own mean of the parameter over its `per` cells -- the
+/// idiom `block_size_min/max_cells` already uses. Data on the row: no curve,
+/// no expression, no per-key branch. `min`/`max` are copied from the
+/// parameter's own balance range by `tools/defs-build`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParameterRead {
+    pub parameter: Parameter,
+    pub ratio_at_min: u32,
+    pub ratio_at_max: u32,
+    pub min: i32,
+    pub max: i32,
+}
+
+impl ParameterRead {
+    /// The ratio at parameter value `value`, clamped to the parameter's
+    /// range, never below 1.
+    pub fn ratio_at(&self, value: i32) -> u32 {
+        let span = (self.max - self.min).max(1) as i64;
+        let v = (value.clamp(self.min, self.max) - self.min) as i64;
+        let (lo, hi) = (self.ratio_at_min as i64, self.ratio_at_max as i64);
+        (lo + (hi - lo) * v / span).max(1) as u32
+    }
 }
 
 /// A distribution row's ratio target over `basis` `per` cells: `(expected,
@@ -263,6 +304,10 @@ pub enum RuleKind {
         min_spacing: u32,
         max_distance: u32,
         scope: DistributionScope,
+        /// `Some` only on a [`DistributionScope::Catchment`] row: `ratio`
+        /// is then read per catchment from the mean of one parameter
+        /// (`ratio` itself is the fallback when no `per` cell reports it).
+        reads: Option<ParameterRead>,
     },
     /// Whether `subject` may (`Allow`) or may never (`Forbid`) appear
     /// within a real area that also contains `within`.
@@ -336,6 +381,20 @@ pub struct DistributionRow {
     pub min_spacing: u32,
     pub max_distance: u32,
     pub scope: DistributionScope,
+    pub reads: Option<ParameterRead>,
+}
+
+impl DistributionRow {
+    /// The ratio this row owes a catchment whose `per` cells average
+    /// `mean_parameter` on the parameter the row reads -- `ratio` itself
+    /// when the row reads none or no cell reports one. The one function the
+    /// evaluator and the generator both call.
+    pub fn ratio_for(&self, mean_parameter: Option<i32>) -> u32 {
+        match (self.reads, mean_parameter) {
+            (Some(read), Some(mean)) => read.ratio_at(mean),
+            _ => self.ratio,
+        }
+    }
 }
 
 /// A `Coherence` row's own fields, read-only (PR #317 cycle 3) -- the
@@ -368,6 +427,7 @@ impl RuleDef {
                 min_spacing,
                 max_distance,
                 scope,
+                reads,
             } => Some(DistributionRow {
                 id: self.id,
                 key: self.key,
@@ -378,6 +438,7 @@ impl RuleDef {
                 min_spacing,
                 max_distance,
                 scope,
+                reads,
             }),
             RuleKind::Placement { .. }
             | RuleKind::Coherence { .. }
@@ -666,6 +727,7 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                 min_spacing,
                 max_distance,
                 scope,
+                reads,
             } => {
                 let subjects = site.subjects_in_area(None, subject);
                 let per_cells = site.subjects_in_area(None, per);
@@ -696,11 +758,28 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                                 .get(&catchment)
                                 .map(Vec::as_slice)
                                 .unwrap_or(&[]);
+                            let ratio_here = match reads {
+                                None => ratio,
+                                Some(read) => {
+                                    let values: Vec<i32> = per_in
+                                        .iter()
+                                        .filter_map(|&c| site.parameter_at(c, read.parameter))
+                                        .collect();
+                                    match values.len() {
+                                        0 => ratio,
+                                        n => read.ratio_at(
+                                            (values.iter().map(|&v| v as i64).sum::<i64>()
+                                                / n as i64)
+                                                as i32,
+                                        ),
+                                    }
+                                }
+                            };
                             violations.extend(distribution_judge(
                                 rule.id,
                                 subjects_in,
                                 per_in,
-                                (ratio, tolerance_percent, max_distance),
+                                (ratio_here, tolerance_percent, max_distance),
                                 Some(catchment),
                             ));
                         }
@@ -948,6 +1027,7 @@ mod tests {
                 min_spacing: 3,
                 max_distance: 50,
                 scope: DistributionScope::Site,
+                reads: None,
             },
         }
     }
@@ -988,6 +1068,7 @@ mod tests {
                 min_spacing: 0,
                 max_distance: 50,
                 scope: DistributionScope::Site,
+                reads: None,
             },
         };
         let violations = evaluate(RuleSet::for_test(&[rule]), &site);
@@ -1019,6 +1100,7 @@ mod tests {
                 min_spacing: 0,
                 max_distance: 200,
                 scope: DistributionScope::Site,
+                reads: None,
             },
         };
         let at_tolerance = SiteBuilder::new()
@@ -1061,6 +1143,7 @@ mod tests {
                 min_spacing: 5,
                 max_distance: 50,
                 scope: DistributionScope::Site,
+                reads: None,
             },
         };
         let site = SiteBuilder::new()
@@ -1092,6 +1175,7 @@ mod tests {
                 min_spacing: 4,
                 max_distance: 50,
                 scope: DistributionScope::Site,
+                reads: None,
             },
         };
         let mut builder = SiteBuilder::new();
@@ -1123,6 +1207,7 @@ mod tests {
                 min_spacing: 3,
                 max_distance: 5,
                 scope: DistributionScope::Site,
+                reads: None,
             },
         };
         let site = SiteBuilder::new()
@@ -1157,6 +1242,7 @@ mod tests {
                 min_spacing: 0,
                 max_distance: 5,
                 scope: DistributionScope::Site,
+                reads: None,
             },
         };
         let at_bound = SiteBuilder::new()
@@ -1193,6 +1279,7 @@ mod tests {
                 min_spacing: 0,
                 max_distance: 5,
                 scope: DistributionScope::Site,
+                reads: None,
             },
         };
         let site = SiteBuilder::new().cell(c(0, 0, 0), &[SEATING]).build();
@@ -1223,6 +1310,7 @@ mod tests {
                 min_spacing: 3,
                 max_distance: 20,
                 scope: DistributionScope::Site,
+                reads: None,
             },
         };
         let mut builder = SiteBuilder::new();

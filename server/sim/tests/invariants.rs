@@ -601,6 +601,7 @@ fn five_rules(tags: [TagId; 6]) -> Vec<RuleDef> {
                 min_spacing: 3,
                 max_distance: 10,
                 scope: sim::rules::DistributionScope::Site,
+                reads: None,
             },
         },
         RuleDef {
@@ -779,6 +780,7 @@ proptest! {
                 min_spacing: spacing,
                 max_distance: spacing,
                 scope: sim::rules::DistributionScope::Site,
+                reads: None,
             },
         };
 
@@ -3474,6 +3476,8 @@ fn envelope_footprints_from_two_different_plots_never_overlap() {
         front: Some(Side::South),
         land_use: LandUse::Residential,
         density: cfg.plot_high_density_threshold,
+        building_age: 50,
+        affluence: 50,
         open: false,
     };
     let right = plots::Plot {
@@ -3487,6 +3491,8 @@ fn envelope_footprints_from_two_different_plots_never_overlap() {
         front: Some(Side::South),
         land_use: LandUse::Residential,
         density: cfg.plot_high_density_threshold,
+        building_age: 50,
+        affluence: 50,
         open: false,
     };
     let mut rng_a = Rng::new(1);
@@ -3528,6 +3534,8 @@ fn open_percent_fixtures_fail_a_district_of_mostly_open_plots() {
         front: None,
         land_use: LandUse::Residential,
         density: 50,
+        building_age: 50,
+        affluence: 50,
         open: true,
     };
     let real_plot = plots::Plot {
@@ -3541,6 +3549,8 @@ fn open_percent_fixtures_fail_a_district_of_mostly_open_plots() {
         front: Some(Side::South),
         land_use: LandUse::Residential,
         density: 50,
+        building_age: 50,
+        affluence: 50,
         open: false,
     };
     let mut fixture_plots: Vec<plots::Plot> = (0..9).map(open_plot).collect();
@@ -3635,6 +3645,8 @@ fn check_rules_reports_a_planted_min_spacing_violation_by_its_own_rule_key() {
             front: Some(Side::South),
             land_use: LandUse::Industrial,
             density: 50,
+            building_age: 50,
+            affluence: 50,
             open: false,
         })
         .collect();
@@ -3673,11 +3685,13 @@ fn check_rules_reports_a_planted_min_spacing_violation_by_its_own_rule_key() {
 }
 
 /// Companion to the min-spacing test above: 400 `villa`s in one catchment
-/// plus one `depot`, one `council`, one `hospital` and two
-/// `welfare_office`s in the same catchment satisfy every row but one --
-/// and zero `shelter`s, which `shelter_present` owes that catchment (its
-/// ratio lower bound is above zero), so it is the one row violated. All
-/// `form_low`, one area, so the coherence row stays silent too.
+/// plus one `council`, one `hospital`, two `welfare_office`s and two
+/// `shelter`s in the same catchment satisfy every row but one -- and zero
+/// `depot`s: a whole-site row with no subject reports every dwelling
+/// uncovered, so `depot_present` is the one row violated. (A catchment row
+/// tolerates an empty catchment, its lower bound being 0; a site row never
+/// tolerates an absent institution.) All `form_low`, one area, so the
+/// coherence row stays silent too.
 #[test]
 fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_key() {
     use sim::generation::{LandUse, Side};
@@ -3699,8 +3713,8 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
         .rules
         .iter()
         .filter_map(|r| r.as_distribution())
-        .find(|r| r.key == "shelter_present")
-        .expect("committed content carries a 'shelter_present' distribution row");
+        .find(|r| r.key == "depot_present")
+        .expect("committed content carries a 'depot_present' distribution row");
 
     // 400 dwellings on a 20x20 grid, spaced 12 cells apart on each axis.
     let mut footprints = Vec::new();
@@ -3721,11 +3735,12 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
     // below the dwelling grid in the same catchment, well spaced from
     // each other (min_spacing never enters this test's own scope).
     let extra_keys = [
-        "depot",
         "council",
         "hospital",
         "welfare_office",
         "welfare_office",
+        "shelter",
+        "shelter",
     ];
     for (i, &key) in extra_keys.iter().enumerate() {
         let x0 = (i as i32) * 60;
@@ -3747,6 +3762,8 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
             front: Some(Side::South),
             land_use: LandUse::Residential,
             density: 20,
+            building_age: 50,
+            affluence: 50,
             open: false,
         })
         .collect();
@@ -3774,18 +3791,14 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
 
     let err = d
         .check_rules(&content)
-        .expect_err("300 dwellings, every other institution present, and zero shelters must violate shelter_present");
+        .expect_err("400 dwellings, every other institution present, and zero depots must violate depot_present");
     match err {
         sim::generation::GenerationError::RuleViolations { first, .. } => {
             assert_eq!(
                 first.rule_id, row.id,
-                "the reported violation must name shelter_present's own rule id"
+                "the reported violation must name depot_present's own rule id"
             );
-            assert_eq!(
-                first.catchment,
-                Some((0, 0)),
-                "the reported violation must name the catchment that owes the shelter"
-            );
+            assert_eq!(first.catchment, None, "a site row names no catchment");
         }
         other => panic!("expected RuleViolations, got {other:?}"),
     }
@@ -3905,6 +3918,8 @@ fn check_rules_reports_a_planted_coherence_violation_by_its_own_rule_key() {
             front: Some(Side::South),
             land_use: LandUse::Residential,
             density: 50,
+            building_age: 50,
+            affluence: 50,
             open: false,
         })
         .collect();
@@ -3976,6 +3991,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
         front: Some(Side::South),
         land_use: LandUse::Residential,
         density: 50,
+        building_age: 50,
+        affluence: 50,
         open: false,
     };
     let site = sim::generation::SiteBounds {
@@ -4002,6 +4019,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
         land_uses: [true, false, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 6,
         min_interior_depth_cells: 6,
         weight: 1,
@@ -4017,6 +4036,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
         land_uses: [true, false, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 20,
         min_interior_depth_cells: 20,
         weight: 1,
@@ -4298,6 +4319,8 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         land_uses: [true, false, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 4,
         min_interior_depth_cells: 4,
         weight: 1,
@@ -4316,6 +4339,8 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         land_uses: [false, true, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 4,
         min_interior_depth_cells: 4,
         weight: 0,
@@ -4337,6 +4362,8 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         land_uses: [false, true, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 4,
         min_interior_depth_cells: 4,
         weight: 1,
@@ -4357,6 +4384,7 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
             min_spacing: 1,
             max_distance: 2000,
             scope,
+            reads: None,
         },
     }];
     let content = GenerationContent {
@@ -4382,6 +4410,8 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
             front: Some(sim::generation::Side::South),
             land_use: sim::generation::LandUse::Residential,
             density: 20,
+            building_age: 50,
+            affluence: 50,
             open: false,
         });
         outcomes.push(sim::generation::EnvelopeOutcome::Placed(
@@ -4407,6 +4437,8 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
             front: Some(sim::generation::Side::South),
             land_use: sim::generation::LandUse::Commercial,
             density: 20,
+            building_age: 50,
+            affluence: 50,
             open: false,
         });
         outcomes.push(sim::generation::EnvelopeOutcome::Placed(

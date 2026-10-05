@@ -1,0 +1,11 @@
+[[distribution]]
+id = 1
+key = "waste_per_seating"
+subject = "waste"
+per = "seating"
+reads = "affluence"
+ratio_at_min = 10
+ratio_at_max = 20
+tolerance_percent = 10
+min_spacing = 3
+max_distance = 10

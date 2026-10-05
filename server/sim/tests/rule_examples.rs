@@ -110,6 +110,77 @@ fn render(rule_set: &RuleSet<'static>, v: Violation) -> String {
     .to_string()
 }
 
+/// Story 3.7 (FR113, "no fifth mechanism"): `docs/generation.md`'s
+/// neighbourhood-parameters table has exactly four rows, one per dial --
+/// the sim-side half is `neighbourhoods.rs`'s
+/// `the_parameter_field_carries_exactly_four_dials`.
+#[test]
+fn the_documented_parameter_table_has_exactly_four_rows() {
+    let text = std::fs::read_to_string(repo_root().join("docs/generation.md"))
+        .unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
+    let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
+    assert_eq!(
+        doc.parameter_names,
+        ["Density", "Building age", "Affluence", "Land-use mix"],
+        "the four dials, and no fifth mechanism"
+    );
+}
+
+/// Story 3.7: a distribution row reads a parameter exactly when its
+/// `reads` cell in `docs/generation.md` names it -- and every other row's
+/// cell is `-`.
+#[test]
+fn every_rows_reads_cell_names_the_parameter_it_reads() {
+    let text = std::fs::read_to_string(repo_root().join("docs/generation.md"))
+        .unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
+    let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
+    let documented: std::collections::BTreeMap<&str, Vec<String>> = doc
+        .sections
+        .values()
+        .flatten()
+        .map(|row| (row.key.as_str(), row.reads.clone()))
+        .collect();
+    for rule in defs::RULES {
+        let expected: Vec<String> = rule
+            .as_distribution()
+            .and_then(|row| row.reads)
+            .map(|read| match read.parameter {
+                sim::rules::Parameter::Affluence => "Affluence".to_string(),
+                sim::rules::Parameter::BuildingAge => "Building age".to_string(),
+            })
+            .into_iter()
+            .collect();
+        assert_eq!(
+            documented.get(rule.key),
+            Some(&expected),
+            "'{}': the `reads` cell in docs/generation.md must name exactly what the row reads",
+            rule.key
+        );
+    }
+}
+
+/// Every `generation.*` balance key has a row in `docs/generation.md`'s
+/// `## parameters` table (and the table names no key that is not committed).
+#[test]
+fn every_generation_balance_key_has_a_row_in_the_parameters_table() {
+    let text = std::fs::read_to_string(repo_root().join("docs/generation.md"))
+        .unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
+    let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
+    let documented: std::collections::BTreeSet<&str> =
+        doc.parameters.iter().map(|r| r.key.as_str()).collect();
+    let committed: std::collections::BTreeSet<&str> = defs::BALANCE
+        .iter()
+        .map(|b| b.key)
+        .filter(|k| k.starts_with("generation."))
+        .collect();
+    let undocumented: Vec<_> = committed.difference(&documented).collect();
+    let stale: Vec<_> = documented.difference(&committed).collect();
+    assert!(
+        undocumented.is_empty() && stale.is_empty(),
+        "docs/generation.md's `## parameters` table disagrees with defs/balance: undocumented {undocumented:?}, stale {stale:?}"
+    );
+}
+
 /// AC2: a rule row added to `defs/rules/*.toml` with no matching case (or
 /// a `rules:` header naming a key that is no longer committed) fails this
 /// test by name.

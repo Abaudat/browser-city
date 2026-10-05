@@ -31,6 +31,7 @@
 //! never mutates its own input).
 
 use sim::generated::defs::BuildingTypeDef;
+use sim::generation::neighbourhoods::NeighbourhoodConfig;
 use sim::generation::streets::DETOUR_SAMPLE_MAX_NODES;
 use sim::generation::{
     GENERATION_VERSION, GenerationConfig, GenerationContent, LandUse, envelopes, land_use, plan,
@@ -56,6 +57,26 @@ fn frozen_config() -> GenerationConfig {
         land_use_max_leaf_cells: 10,
         land_use_split_jitter_pct: 30,
         land_use_max_recursion_depth: 8,
+        neighbourhood: NeighbourhoodConfig {
+            building_age_min: 0,
+            building_age_max: 100,
+            affluence_min: 0,
+            affluence_max: 100,
+            extreme_share_percent: 80,
+            legible_step: 30,
+            poor_band_max: 25,
+            min_corners: 3,
+            building_age_spread: 8,
+            state_weight_age: 40,
+            state_weight_affluence: 60,
+            desirability_state_floor: 25,
+            viewport_width_cells: 40,
+            viewport_height_cells: 22,
+            min_patch_span_viewports: 2,
+            min_home_cells: 30,
+            citizens_per_dwelling: 2,
+            citizens_per_post: 3,
+        },
         density_min: 10,
         density_max: 100,
         density_peak_offset_min_pct: 15,
@@ -145,6 +166,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [true, false, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 4,
         min_interior_depth_cells: 4,
         weight: 1,
@@ -160,6 +183,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [true, false, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 4,
         min_interior_depth_cells: 4,
         weight: 1,
@@ -175,6 +200,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [false, true, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 6,
         min_interior_depth_cells: 6,
         weight: 1,
@@ -190,6 +217,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [false, false, true, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 8,
         min_interior_depth_cells: 8,
         weight: 1,
@@ -205,6 +234,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [false, false, false, true],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 8,
         min_interior_depth_cells: 8,
         weight: 1,
@@ -220,6 +251,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [false, false, false, true],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 8,
         min_interior_depth_cells: 8,
         weight: 0,
@@ -251,6 +284,7 @@ const FROZEN_RULES: &[RuleDef] = &[
             min_spacing: 10,
             max_distance: 2000,
             scope: sim::rules::DistributionScope::Site,
+            reads: None,
         },
     },
 ];
@@ -305,7 +339,7 @@ fn plan_digest(
     }
     for p in pm.plots() {
         text.push_str(&format!(
-            "plot {},{},{},{} block={} front={:?} use={:?} density={} open={}\n",
+            "plot {},{},{},{} block={} front={:?} use={:?} density={} age={} affluence={} open={}\n",
             p.bounds.x0,
             p.bounds.y0,
             p.bounds.x1,
@@ -314,6 +348,8 @@ fn plan_digest(
             p.front,
             p.land_use,
             p.density,
+            p.building_age,
+            p.affluence,
             p.open
         ));
     }
@@ -340,6 +376,13 @@ fn plan_digest(
         text.push_str(&format!(
             "type plot={} building_type={}\n",
             a.plot, a.building_type
+        ));
+    }
+    for st in bt.states() {
+        text.push_str(&format!(
+            "state plot={} age={} physical_state={}
+",
+            st.plot, st.building_age, st.physical_state
         ));
     }
     fnv1a(&text)

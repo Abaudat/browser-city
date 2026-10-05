@@ -148,6 +148,7 @@ building_type 43 fire_station
 building_type 44 transit_office
 building_type 45 vacant_unit
 building_type 46 storage_yard
+building_type 47 cottage
 body 1 body_01
 body 2 body_02
 body 3 body_03

@@ -188,7 +188,12 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     dist_rows.sort_by_key(|r| r.id);
     for row in &dist_rows {
         let basis = tag_counts.get(&row.per).copied().unwrap_or(0);
-        let ratio = row.ratio.max(1) as u64;
+        // A row that reads a parameter owes by its two ends; the smaller
+        // bounds every catchment.
+        let ratio = row
+            .reads
+            .map_or(row.ratio, |r| r.ratio_at_min.min(r.ratio_at_max))
+            .max(1) as u64;
         let ceiling = basis / ratio;
         let chosen = tag_counts.get(&row.subject).copied().unwrap_or(0);
         assert!(

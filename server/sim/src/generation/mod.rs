@@ -48,6 +48,7 @@ pub mod land_use;
 #[cfg(not(feature = "test-fixtures"))]
 #[allow(dead_code)]
 mod land_use;
+pub mod neighbourhoods;
 #[cfg(feature = "test-fixtures")]
 pub mod plots;
 #[cfg(not(feature = "test-fixtures"))]
@@ -61,9 +62,9 @@ pub mod streets;
 #[allow(dead_code)]
 mod streets;
 
-pub use building_types::{BuildingTypeMap, TypeAssignment};
+pub use building_types::{BuildingState, BuildingTypeMap, TypeAssignment};
 pub use envelopes::{Envelope, EnvelopeMap, EnvelopeOutcome, RejectReason};
-pub use land_use::{LandUse, LandUseCell, LandUseMap, Region};
+pub use land_use::{LandUse, LandUseCell, LandUseMap, Neighbourhood, NeighbourhoodParams, Region};
 pub use plots::{Plot, PlotMap};
 pub use record::{DistrictRecord, RuleSetVersion, create};
 
@@ -285,6 +286,123 @@ impl District {
         }
         Ok(())
     }
+
+    /// One placed building's own age and initial physical state, `None`
+    /// for a plot that holds no building (story 3.7, FR113: a readable
+    /// quantity of the sim, never a generator internal).
+    pub fn building_state(&self, plot: u32) -> Option<BuildingState> {
+        self.building_types
+            .states()
+            .iter()
+            .find(|s| s.plot == plot)
+            .copied()
+    }
+
+    /// The integer mean initial physical state of every building on
+    /// `block`, `None` for a block with no building.
+    pub fn block_mean_physical_state(&self, block: u32) -> Option<i32> {
+        let (sum, n) = self
+            .building_types
+            .states()
+            .iter()
+            .filter(|s| self.plots.plots()[s.plot as usize].block == block)
+            .fold((0i64, 0i64), |(sum, n), s| {
+                (sum + s.physical_state as i64, n + 1)
+            });
+        (n > 0).then(|| (sum / n) as i32)
+    }
+
+    /// A block's desirability, 0 to 100: [`neighbourhoods::desirability_of`]
+    /// over its mean physical state, `None` for a block with no building.
+    /// Derived on demand, never stored; affluence is not an input.
+    pub fn block_desirability(&self, block: u32, cfg: &GenerationConfig) -> Option<i32> {
+        self.block_mean_physical_state(block)
+            .map(|mean| neighbourhoods::desirability_of(mean, &cfg.neighbourhood))
+    }
+
+    /// The citizens one building supports: its dwelling (a type eligible on
+    /// residential land) times `citizens_per_dwelling`, plus every post it
+    /// staffs times `citizens_per_post`. Derived, never stored.
+    fn supported_by(def: &defs::BuildingTypeDef, cfg: &GenerationConfig) -> u64 {
+        let mut n = 0u64;
+        if def.land_uses[LandUse::Residential as usize] {
+            n += cfg.neighbourhood.citizens_per_dwelling.max(0) as u64;
+        }
+        n + def.professions.len() as u64 * cfg.neighbourhood.citizens_per_post.max(0) as u64
+    }
+
+    /// The citizens the buildings whose entrance (front cell) falls inside
+    /// `window` can support (NFR15a, FR113's crowding).
+    pub fn supported_citizens(
+        &self,
+        window: SiteBounds,
+        cfg: &GenerationConfig,
+        content: &GenerationContent,
+    ) -> u64 {
+        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+            content.building_types.iter().map(|b| (b.id, b)).collect();
+        let mut total = 0u64;
+        for (e, a) in self
+            .envelopes
+            .envelopes()
+            .zip(self.building_types.assignments())
+        {
+            let (x, y) = site::front_cell(e.footprint, e.front);
+            if x >= window.x0 && x < window.x1 && y >= window.y0 && y < window.y1 {
+                total += Self::supported_by(by_id[&a.building_type], cfg);
+            }
+        }
+        total
+    }
+
+    /// The mean citizens one screen (`viewport_width_cells` x
+    /// `viewport_height_cells`) supports over the coarse cells of land use
+    /// `use_` whose density lies in `density`, `None` when no coarse cell
+    /// qualifies -- a commercial core at the top of the density range reads
+    /// busy and a residential edge at the bottom reads quiet from the one
+    /// function. Integer, area-weighted.
+    pub fn citizens_per_screen(
+        &self,
+        use_: LandUse,
+        density: std::ops::RangeInclusive<i32>,
+        cfg: &GenerationConfig,
+        content: &GenerationContent,
+    ) -> Option<u64> {
+        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+            content.building_types.iter().map(|b| (b.id, b)).collect();
+        let cell = self.land_use.cell_size().max(1);
+        let site = self.land_use.site();
+        let qualifies = |x: i32, y: i32| {
+            self.land_use
+                .at_world(x, y)
+                .is_some_and(|p| p.use_ == use_ && density.contains(&p.density))
+        };
+        let mut cells = 0u64;
+        for cy in 0..self.land_use.rows() {
+            for cx in 0..self.land_use.cols() {
+                if qualifies(site.x0 + cx * cell, site.y0 + cy * cell) {
+                    cells += 1;
+                }
+            }
+        }
+        if cells == 0 {
+            return None;
+        }
+        let mut total = 0u64;
+        for (e, a) in self
+            .envelopes
+            .envelopes()
+            .zip(self.building_types.assignments())
+        {
+            let (x, y) = site::front_cell(e.footprint, e.front);
+            if qualifies(x, y) {
+                total += Self::supported_by(by_id[&a.building_type], cfg);
+            }
+        }
+        let screen = cfg.neighbourhood.viewport_width_cells.max(1) as u64
+            * cfg.neighbourhood.viewport_height_cells.max(1) as u64;
+        Some(total * screen / (cells * (cell as u64) * (cell as u64)))
+    }
 }
 
 /// FR110's seven passes, coarse to fine -- append-only, never renumbered.
@@ -325,6 +443,9 @@ pub struct GenerationConfig {
     /// 256)").
     pub density_peak_offset_min_pct: i32,
     pub density_peak_offset_max_pct: i32,
+    /// The building-age and affluence dials and what is derived from them
+    /// (story 3.7, FR113).
+    pub neighbourhood: neighbourhoods::NeighbourhoodConfig,
     /// Area shares of the site's coarse cells: each use's target is
     /// `round(total_cells * share_pct / 100)` cells, grown leaf by leaf
     /// (`land_use::takes_leaf`), residential taking the remainder.
@@ -635,6 +756,7 @@ impl GenerationConfig {
                 balance,
                 "generation.land_use.density_peak_offset_max_pct",
             ) as i32,
+            neighbourhood: neighbourhoods::NeighbourhoodConfig::from_balance(balance),
             share_residential_pct: get(balance, "generation.land_use.share_residential_pct") as i32,
             share_commercial_pct: get(balance, "generation.land_use.share_commercial_pct") as i32,
             share_industrial_pct: get(balance, "generation.land_use.share_industrial_pct") as i32,
@@ -811,6 +933,11 @@ impl GenerationConfig {
             return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: land_use.max_leaf_cells ({}) must be at least twice land_use.min_leaf_cells ({}) -- otherwise an over-sized axis could be too small to legally split",
                 cfg.land_use_max_leaf_cells, cfg.land_use_min_leaf_cells
+            )));
+        }
+        if let Err(msg) = cfg.neighbourhood.check() {
+            return Err(GenerationError::InvalidConfig(format!(
+                "GenerationConfig: neighbourhood: {msg}"
             )));
         }
         if cfg.density_min > cfg.density_max {
@@ -1415,6 +1542,59 @@ mod tests {
                 100,
             ),
             seed("generation.catchment_extent_cells", 256, 1, 100000),
+            seed("generation.neighbourhood.building_age_min", 0, 0, 100000),
+            seed("generation.neighbourhood.building_age_max", 100, 0, 100000),
+            seed("generation.neighbourhood.affluence_min", 0, 0, 100000),
+            seed("generation.neighbourhood.affluence_max", 100, 0, 100000),
+            seed(
+                "generation.neighbourhood.extreme_share_percent",
+                80,
+                0,
+                100000,
+            ),
+            seed("generation.neighbourhood.legible_step", 30, 0, 100000),
+            seed("generation.neighbourhood.poor_band_max", 25, 0, 100000),
+            seed("generation.neighbourhood.min_corners", 3, 0, 100000),
+            seed("generation.neighbourhood.building_age_spread", 8, 0, 100000),
+            seed("generation.neighbourhood.state_weight_age", 40, 0, 100000),
+            seed(
+                "generation.neighbourhood.state_weight_affluence",
+                60,
+                0,
+                100000,
+            ),
+            seed(
+                "generation.neighbourhood.desirability_state_floor",
+                25,
+                0,
+                100000,
+            ),
+            seed(
+                "generation.neighbourhood.viewport_width_cells",
+                40,
+                0,
+                100000,
+            ),
+            seed(
+                "generation.neighbourhood.viewport_height_cells",
+                22,
+                0,
+                100000,
+            ),
+            seed(
+                "generation.neighbourhood.min_patch_span_viewports",
+                2,
+                0,
+                100000,
+            ),
+            seed("generation.neighbourhood.min_home_cells", 30, 0, 100000),
+            seed(
+                "generation.neighbourhood.citizens_per_dwelling",
+                2,
+                0,
+                100000,
+            ),
+            seed("generation.neighbourhood.citizens_per_post", 3, 0, 100000),
         ]
     }
 

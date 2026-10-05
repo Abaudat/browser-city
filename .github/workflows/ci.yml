@@ -312,6 +312,8 @@ jobs:
         run: bash ../../scripts/ci/check-rule-engine-no-content-keys.sh
       - name: story 3.4, the generator never hardcodes a content key
         run: bash ../../scripts/ci/check-generator-no-content-keys.sh
+      - name: story 3.7 FR113, no neighbourhood or region identity -- the four dials alone decide character
+        run: bash ../../scripts/ci/check-generator-no-neighbourhood-identity.sh
       # RULE_SOURCE_SKIP_TREE_CHECK=1 (Quentin's direction, cycle 2): this
       # job's own filter does not own the resolved-feature-graph question
       # -- it runs from tools/defs-build's own workspace, not server's --
@@ -378,6 +380,8 @@ jobs:
         run: bash ../scripts/ci/check-rule-engine-no-content-keys.sh "$GITHUB_WORKSPACE/tools/defs-build/goldens/defs-manifest.golden" "$GITHUB_WORKSPACE/server/sim/src/cash.rs"
       - name: story 3.4, the generator never hardcodes a content key
         run: bash ../scripts/ci/check-generator-no-content-keys.sh
+      - name: story 3.7 FR113, no neighbourhood or region identity -- the four dials alone decide character
+        run: bash ../scripts/ci/check-generator-no-neighbourhood-identity.sh
       - name: story 2.11 AC1/AC4, the generator and the harness read one rule source
         run: bash ../scripts/ci/check-rule-source.sh
 
@@ -411,6 +415,11 @@ jobs:
         run: |
           echo "PROPTEST_CASES=$PROPTEST_CASES PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED"
           echo "reproduce: PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED PROPTEST_CASES=$PROPTEST_CASES cargo test -p <crate> --release -- <test>" | tee -a "$GITHUB_STEP_SUMMARY"
+      # Story 3.7, Quentin's direction: the rule engine's own examples and
+      # the scoping tests are cheap -- run them before the 4096-case
+      # proptests so a broken evaluator fails in seconds.
+      - name: the rule engine's examples and scoping tests, first
+        run: cargo test -p sim --release --test rule_examples --test rule_scoping --test catchment_floor
       - name: native tests, including the property suite, in release
         run: cargo test --workspace --exclude browser_city --exclude sched_timing_spike --exclude boot_budget_spike --release
       - run: bash ../scripts/ci/check-trace-matrix.sh
