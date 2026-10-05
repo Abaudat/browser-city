@@ -138,8 +138,9 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // -- ATLAS_BYTES_BUDGET is that byte figure times 1.05, rounded up to the
 // next 16 KiB. Story 15.3: 27 requests -- the stairwell is three
 // `defs/objects` rows and the retraction stub is `wall_segment`, so the raw
-// `Stairs_Complete_2` and wall sheets are no longer fetched (the byte budget stays, an upper bound).
-const ATLAS_REQUEST_COUNT = 27;
+// `Stairs_Complete_2` and wall sheets are no longer fetched (the byte budget stays, an upper bound). Story 2.14: 26 -- the interior
+// floor draws from the atlas instead of its own raw sheet.
+const ATLAS_REQUEST_COUNT = 26;
 const ATLAS_BYTES_BUDGET = Math.ceil((1_451_572 * 1.05) / (16 * 1024)) * (16 * 1024);
 
 test("the atlas request count and byte total the mount actually fetches, once settled, stay inside budget (NFR1)", async ({
@@ -175,8 +176,8 @@ test("the atlas request count and byte total the mount actually fetches, once se
   //
   // The reconciliation against `allBoundTextureSources = 17`
   // (`test-street.spec.ts`), written down once because it is what would
-  // have caught the Resource-Timing gate's own blindness: this gate's 25
-  // requests are 14 raw `ModernTileset/` sheets (`scene.ts`'s own
+  // have caught the Resource-Timing gate's own blindness: this gate's requests
+  // are 14 raw `ModernTileset/` sheets (`scene.ts`'s own
   // `ASSET_URLS`) + 1 packed `shared` atlas page + 10 character part-
   // sheet fetches (`character-part-pages.ts`'s own main-thread `fetch`,
   // never a Worker) -- only 6 distinct part-sheet files, each fetched
