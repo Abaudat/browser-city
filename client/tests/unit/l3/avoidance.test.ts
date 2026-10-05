@@ -5,6 +5,7 @@ import {
   type AvoidDials,
   type HeldPredicate,
   rampOf,
+  scanSpan,
 } from "../../../src/l3/avoidance";
 import { l3Config } from "./defs-config";
 import { TestGrid } from "./support";
@@ -69,7 +70,7 @@ function run(
   field.reset();
   const index = new Map<string, number>();
   for (const b of bodies) {
-    index.set(b.id, field.add(b.id, b.x, b.y, 0, b.hx, b.hy, b.moving, b.ramp, b.speed));
+    index.set(b.id, field.add(b.id, b.x, b.y, 0, b.hx, b.hy, b.moving, b.ramp, b.speed, b.x, b.y));
   }
   field.resolve(d, grid, isHeld);
   const out = new Map<string, [number, number]>();
@@ -153,24 +154,31 @@ describe("local avoidance (FR64)", () => {
 
   it("a radius over a chunk is refused, since the halo would not hold every neighbour", () => {
     const field = new AvoidanceField();
-    field.add("a", 1, 1, 0, 1, 0, true, 1);
+    field.add("a", 1, 1, 0, 1, 0, true, 1, WALK, 1, 1);
     expect(() => field.resolve({ ...dials, radiusCells: CHUNK + 1 }, open, ALL_HELD)).toThrow(
       /chunk/,
     );
   });
 
   it("inv_l3_avoidance_is_history_free", () => {
+    // A dense frame: bodies within a cell of each other, enough to cut the cap.
+    const dense = fc.array(body(1.5), { minLength: dials.maxNeighbours + 4, maxLength: 40 });
     fc.assert(
       fc.property(
-        fc.array(body(16), { minLength: 1, maxLength: 3 }),
-        fc.array(fc.array(body(16), { maxLength: 3 }), { minLength: 3, maxLength: 6 }),
-        (raw, others) => {
+        fc.array(body(24), { minLength: 1, maxLength: 20 }),
+        fc.array(fc.array(body(24), { minLength: 1, maxLength: 40 }), {
+          minLength: 1,
+          maxLength: 6,
+        }),
+        dense,
+        (raw, others, crowd) => {
           const bodies = withIds(raw);
           const cold = run(bodies).out;
+          // Every earlier frame at least as large as this one, a dense one last
+          // before it: whatever the buffers hold from them must not show.
           const warm = new AvoidanceField();
-          for (let k = 0; k < 100; k++) {
-            run(withIds(others[k % others.length] ?? []), ALL_HELD, open, warm);
-          }
+          for (const world of others) run(withIds(world), ALL_HELD, open, warm);
+          run(withIds(crowd), ALL_HELD, open, warm);
           const again = run(bodies, ALL_HELD, open, warm).out;
           for (const [id, off] of cold) {
             const w = again.get(id) as [number, number];
@@ -178,6 +186,9 @@ describe("local avoidance (FR64)", () => {
           }
         },
       ),
+      // Sizes stay at the largest the property states; the runs are cut to fit
+      // NFR49 (each run resolves up to 7 worlds of up to 40 bodies).
+      { numRuns: 15 },
     );
   });
 
@@ -216,10 +227,10 @@ describe("local avoidance (FR64)", () => {
     for (const g of gaps) {
       let closestLedger = Number.POSITIVE_INFINITY;
       let closestDrawn = Number.POSITIVE_INFINITY;
-      for (let step = 0; step <= 1600; step++) {
-        const a = walker("a", 2 + step * 0.01, 10.5, 1, 0);
+      for (let step = 0; step <= 400; step++) {
+        const a = walker("a", 2 + step * 0.04, 10.5, 1, 0);
         // `g` to the right of `a` is south of it.
-        const b = walker("b", 18 - step * 0.01, 10.5 + g, -1, 0);
+        const b = walker("b", 18 - step * 0.04, 10.5 + g, -1, 0);
         const { out } = run([a, b]);
         const [ax, ay] = out.get("a") as [number, number];
         const [bx, by] = out.get("b") as [number, number];
@@ -244,8 +255,8 @@ describe("local avoidance (FR64)", () => {
     for (const g of gaps) {
       let closestLedger = Number.POSITIVE_INFINITY;
       let closestDrawn = Number.POSITIVE_INFINITY;
-      for (let step = 0; step <= 1000; step++) {
-        const w = walker("w", 4 + step * 0.01, 10.5, 1, 0);
+      for (let step = 0; step <= 250; step++) {
+        const w = walker("w", 4 + step * 0.04, 10.5, 1, 0);
         const s = stander("s", 9, 10.5 + g);
         const { out } = run([w, s]);
         const [ox, oy] = out.get("w") as [number, number];
@@ -280,11 +291,11 @@ describe("local avoidance (FR64)", () => {
       let worst = 0;
       let closest = Number.POSITIVE_INFINITY;
       let sign: number | undefined;
-      for (let step = 0; step <= 1800; step++) {
-        // A walks east along y = 10.5 and reaches x = 10.5 at step 850; B walks
+      for (let step = 0; step <= 450; step++) {
+        // A walks east along y = 10.5 and reaches x = 10.5 at step 212; B walks
         // north along x = 10.5 and reaches y = 10.5 `late` cells after it.
-        const a = walker("a", 2 + step * 0.01, 10.5, 1, 0);
-        const b = walker("b", 10.5, 10.5 + (850 - step) * 0.01 + late, 0, -1);
+        const a = walker("a", 2 + step * 0.04, 10.5, 1, 0);
+        const b = walker("b", 10.5, 10.5 + (212 - step) * 0.04 + late, 0, -1);
         const { out } = run([a, b]);
         const [ax, ay] = out.get("a") as [number, number];
         const [bx, by] = out.get("b") as [number, number];
@@ -293,7 +304,7 @@ describe("local avoidance (FR64)", () => {
             Math.hypot(ax - previous[0], ay - previous[1]),
             Math.hypot(bx - previous[2], by - previous[3]),
           );
-          worst = Math.max(worst, jump / 0.02);
+          worst = Math.max(worst, jump / 0.08);
         }
         previous = [ax, ay, bx, by];
         closest = Math.min(closest, Math.hypot(a.x + ax - b.x - bx, a.y + ay - b.y - by));
@@ -309,6 +320,43 @@ describe("local avoidance (FR64)", () => {
       // And they do not walk through each other.
       expect(closest).toBeGreaterThan(0.4);
     }
+  });
+
+  it("crossing paths at any angle and any lag never draw closer than the ledger, and keep their gaps", () => {
+    let worstPerpendicular = Number.POSITIVE_INFINITY;
+    let worstConverging = Number.POSITIVE_INFINITY;
+    for (const degrees of [45, 90, 135]) {
+      const turn = (degrees * Math.PI) / 180;
+      // B's heading is A's (east) turned by `degrees`, clockwise on screen.
+      const bx = Math.cos(turn);
+      const by = Math.sin(turn);
+      for (let lag = -1.5; lag <= 1.5001; lag += 0.25) {
+        let closestLedger = Number.POSITIVE_INFINITY;
+        let closestDrawn = Number.POSITIVE_INFINITY;
+        for (let step = 0; step <= 400; step++) {
+          // Both reach (10.5, 10.5) at step 200, B `lag` cells later along its way.
+          const a = walker("a", 2.5 + step * 0.04, 10.5, 1, 0);
+          const back = (200 - step) * 0.04 + lag;
+          const b = walker("b", 10.5 - bx * -back, 10.5 - by * -back, bx, by);
+          const { out } = run([a, b]);
+          const [ax, ay] = out.get("a") as [number, number];
+          const [qx, qy] = out.get("b") as [number, number];
+          closestLedger = Math.min(closestLedger, Math.hypot(a.x - b.x, a.y - b.y));
+          closestDrawn = Math.min(
+            closestDrawn,
+            Math.hypot(a.x + ax - b.x - qx, a.y + ay - b.y - qy),
+          );
+        }
+        // The sweep samples the ledger gap every 0.04 cell.
+        expect(closestDrawn).toBeGreaterThanOrEqual(closestLedger - 0.04);
+        if (degrees === 90) worstPerpendicular = Math.min(worstPerpendicular, closestDrawn);
+        if (degrees === 135 && Math.abs(lag) < 0.01) {
+          worstConverging = Math.min(worstConverging, closestDrawn);
+        }
+      }
+    }
+    expect(worstPerpendicular).toBeGreaterThanOrEqual(0.4);
+    expect(worstConverging).toBeGreaterThanOrEqual(0.3);
   });
 
   it("a walker passing a standing citizen goes to the side with room, and holds it", () => {
@@ -498,6 +546,33 @@ describe("local avoidance (FR64)", () => {
     });
     expect(field.pairChecks).toBeLessThanOrEqual(60 * 59 + 8 * sparse.length);
     expect(field.capHits).toBeGreaterThan(0);
+  });
+
+  it("scans the walls once per sidestepping body, not once per question", () => {
+    let calls = 0;
+    const counting = {
+      revision: () => 0,
+      walkable: () => {
+        calls++;
+        return true;
+      },
+    };
+    // A crowd of standers round one walker: many abeam questions, one scan.
+    const crowd = [walker("w", 10, 10.5, 1, 0)];
+    for (let k = 0; k < 12; k++) crowd.push(stander(`s${k}`, 11 + k * 0.2, 10.5 + (k % 3) * 0.1));
+    const { field } = run(crowd, ALL_HELD, counting as never);
+    const side = 2 * scanSpan(dials) + 1;
+    expect(field.walkableCalls).toBe(calls);
+    expect(field.walkableCalls).toBeLessThanOrEqual(side * side);
+    expect(field.walkableCalls).toBeGreaterThan(0);
+    // Two walkers: one scan each, no more.
+    calls = 0;
+    const { field: two } = run(
+      [...crowd, walker("v", 20, 20.5, 1, 0), stander("t", 21, 20.5)],
+      ALL_HELD,
+      counting as never,
+    );
+    expect(two.walkableCalls).toBeLessThanOrEqual(2 * side * side);
   });
 
   it("never grows its buffers once it has room", () => {

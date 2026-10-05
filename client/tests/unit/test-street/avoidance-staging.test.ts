@@ -98,9 +98,9 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
         expect(walk.walkable(0, c.x, c.y)).toBe(true);
       }
     }
-    expect(isStagingKerb(14, 15)).toBe(true);
-    expect(walk.walkable(0, 14, 15)).toBe(false);
-    expect(streetWalk.walkable(0, 14, 15)).toBe(true);
+    expect(isStagingKerb(11, 16)).toBe(true);
+    expect(walk.walkable(0, 11, 16)).toBe(false);
+    expect(streetWalk.walkable(0, 11, 16)).toBe(true);
     // At no moment do two citizens stand on one cell.
     const street = build();
     for (let t = 0; t < 2 * period; t += 10) {
@@ -240,6 +240,12 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
       else south = Math.max(south, w.oy);
     }
     expect(north).toBeLessThan(-0.7);
+    // The open side is pavement: the walker, edge included, never leaves it.
+    for (let t = 0; t < period; t += 5) {
+      street.solve(t);
+      const w = pose(street, KERB_WALKER_ID);
+      expect(isStagingCell(Math.floor(w.x + w.ox), Math.floor(w.y + w.oy - 0.25))).toBe(true);
+    }
     // Never towards the kerb beyond what its face leaves.
     expect(south).toBeLessThan(0.05);
   });

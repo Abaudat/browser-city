@@ -18,19 +18,24 @@ const gait = { strideCells: cfg.strideCells, framesPerCycle: 6 };
 const all = () => true;
 
 /** The most a sidestep may move per cell of ground the bodies cover between
- * two frames, from the dials alone. Each of these moves it by its steepest
- * slope: the distance weight and the corner ramp (a smoothstep, 3/2 at its
- * steepest, times the clearance), the wall slope, and a crossing pair's fade
- * through "which side" (a half clearance wide, two bodies moving, shared
- * clearance). Five times: both bodies move, the slopes add up, and the steepest cases (a crossing pair near its fade) sit above the typical ones. */
-const CROSSING_FADE = 0.5;
+ * two frames, from the dials and the rule's own constants, no fudge factor.
+ * Each term is a steepest slope times the clearance: the distance weight and the
+ * corner ramp (a smoothstep, 3/2 at its steepest), a wall's slope (one in three)
+ * and its fade-in over the body's reach (0.75 cell), a standing body's fade-in
+ * over a quarter of the radius, and the swing to the side with room (a
+ * smoothstep over a quarter of the clearance, driven at the wall slope). Twice,
+ * for both bodies moving. */
+const WALL_SLOPE = 1 / 3;
+const REACH = 0.75;
 const LIPSCHITZ =
-  5 *
-  ((1.5 * dials.clearanceCells) / dials.radiusCells +
-    (1.5 * dials.clearanceCells) / cfg.avoidRampCells +
-    1 / 3 +
-    2 / CROSSING_FADE);
-const STEP = 6;
+  2 *
+  (1.5 * (dials.clearanceCells / dials.radiusCells) +
+    1.5 * (dials.clearanceCells / cfg.avoidRampCells) +
+    WALL_SLOPE +
+    (1.5 * dials.clearanceCells) / REACH +
+    (1.5 * dials.clearanceCells) / (0.25 * dials.radiusCells) +
+    (1.5 * WALL_SLOPE) / 0.25);
+const STEP = 36;
 const RUNS = 25;
 const HORIZON = 4500;
 
@@ -40,6 +45,99 @@ const leg = fc.record({
   start: fc.nat(1500),
   length: fc.integer({ min: 700, max: 2600 }),
 });
+
+/** The steepest sidestep change per cell of ground covered over a whole run of
+ * the legs and standing citizens, the way the scene poses them. */
+function sweep(
+  grid: TestGrid,
+  legs: { route: number[][]; start: number; length: number }[],
+  standing: number[][],
+  horizon = HORIZON,
+  stride = 1,
+): number {
+  const members = [
+    ...legs.map((l, i) => ({
+      id: `walker-${i}`,
+      body: new CitizenBody(grid, CFG, gait, `walker-${i}`, lifeDials()),
+      state: {
+        kind: "transit" as const,
+        key: 1,
+        leg: {
+          waypoints: (l.route as number[][]).map(([x, y]) => ({
+            x: x as number,
+            y: y as number,
+            floor: 0,
+          })),
+          departAt: l.start,
+          arriveAt: l.start + l.length,
+        },
+        startFacing: "down" as const,
+        endFacing: "down" as const,
+      },
+      frame: createCitizenFrame(),
+    })),
+    ...standing.map(([x, y], i) => ({
+      id: `stander-${i}`,
+      body: new CitizenBody(grid, CFG, gait, `stander-${i}`, lifeDials()),
+      state: {
+        kind: "at" as const,
+        node: { x: x as number, y: y as number, floor: 0 },
+        facing: "down" as const,
+      },
+      frame: createCitizenFrame(),
+    })),
+  ];
+  const field = new AvoidanceField();
+  let before: { ox: number[]; oy: number[]; px: number[]; py: number[] } | undefined;
+  let worst = 0;
+  for (let t = 0; t <= horizon; t += stride) {
+    field.reset();
+    for (const m of members) {
+      m.body.frameAt(m.state, t, m.frame);
+      const f = m.frame;
+      field.add(
+        m.id,
+        f.x,
+        f.y,
+        f.floor,
+        f.headingX,
+        f.headingY,
+        f.moving,
+        f.ramp,
+        f.speed,
+        f.anchorX,
+        f.anchorY,
+      );
+    }
+    field.resolve(dials, grid, all);
+    const now = {
+      ox: members.map((_, i) => field.offsetX(i)),
+      oy: members.map((_, i) => field.offsetY(i)),
+      px: members.map((m) => m.frame.x),
+      py: members.map((m) => m.frame.y),
+    };
+    if (before) {
+      let moved = 0;
+      for (let i = 0; i < members.length; i++) {
+        moved += Math.hypot(
+          (now.px[i] as number) - (before.px[i] as number),
+          (now.py[i] as number) - (before.py[i] as number),
+        );
+      }
+      if (moved > 0) {
+        for (let i = 0; i < members.length; i++) {
+          const jump = Math.hypot(
+            (now.ox[i] as number) - (before.ox[i] as number),
+            (now.oy[i] as number) - (before.oy[i] as number),
+          );
+          worst = Math.max(worst, jump / moved);
+        }
+      }
+    }
+    before = now;
+  }
+  return worst;
+}
 
 describe("avoidance is continuous in time (FR64)", () => {
   it("inv_l3_avoidance_is_continuous", () => {
@@ -88,7 +186,19 @@ describe("avoidance is continuous in time (FR64)", () => {
             for (const m of members) {
               m.body.frameAt(m.state, t, m.frame);
               const f: CitizenFrame = m.frame;
-              field.add(m.id, f.x, f.y, f.floor, f.headingX, f.headingY, f.moving, f.ramp);
+              field.add(
+                m.id,
+                f.x,
+                f.y,
+                f.floor,
+                f.headingX,
+                f.headingY,
+                f.moving,
+                f.ramp,
+                f.speed,
+                f.anchorX,
+                f.anchorY,
+              );
             }
             field.resolve(dials, grid, all);
             const now = {
@@ -157,8 +267,32 @@ describe("avoidance is continuous in time (FR64)", () => {
         field.reset();
         east.frameAt(legE, t, fe);
         west.frameAt(legW, t, fw);
-        field.add("east", fe.x, fe.y, 0, fe.headingX, fe.headingY, fe.moving, fe.ramp, fe.speed);
-        field.add("west", fw.x, fw.y, 0, fw.headingX, fw.headingY, fw.moving, fw.ramp, fw.speed);
+        field.add(
+          "east",
+          fe.x,
+          fe.y,
+          0,
+          fe.headingX,
+          fe.headingY,
+          fe.moving,
+          fe.ramp,
+          fe.speed,
+          fe.anchorX,
+          fe.anchorY,
+        );
+        field.add(
+          "west",
+          fw.x,
+          fw.y,
+          0,
+          fw.headingX,
+          fw.headingY,
+          fw.moving,
+          fw.ramp,
+          fw.speed,
+          fw.anchorX,
+          fw.anchorY,
+        );
         field.resolve(dials, grid, all);
         offsets.push(field.offsetY(0));
       }
@@ -176,5 +310,78 @@ describe("avoidance is continuous in time (FR64)", () => {
       );
     }
     expect(Math.max(...plain.map(Math.abs))).toBeGreaterThan(0.4);
+  });
+
+  it("a counterexample once found by exploration stays fixed", () => {
+    const grid = new TestGrid();
+    grid.block(7, 2);
+    const worst = sweep(
+      grid,
+      [
+        {
+          route: [
+            [6, 0],
+            [10, 7],
+          ],
+          start: 0,
+          length: 1090,
+        },
+        {
+          route: [
+            [9, 4],
+            [6, 5],
+          ],
+          start: 743,
+          length: 1871,
+        },
+      ],
+      [],
+    );
+    expect(worst).toBeLessThanOrEqual(LIPSCHITZ);
+  });
+
+  it("a neighbour that stops anywhere near a walker's line never snaps it", () => {
+    let worst = 0;
+    for (const side of [-1, 1]) {
+      for (const past of [0, 0.2, 0.5, 1.0]) {
+        for (const ahead of [1.5, 3.5]) {
+          // A walks east along y = 6 on a long leg; B walks north up x = 6 + ahead
+          // and stops `past` beyond A's line, on `side` of it.
+          const grid = new TestGrid();
+          const stopY = 6 + side * past;
+          const cell = Math.floor(stopY);
+          grid.unblock(Math.floor(6 + ahead), cell);
+          worst = Math.max(
+            worst,
+            sweep(
+              grid,
+              [
+                {
+                  route: [
+                    [0, 6],
+                    [20, 6],
+                  ],
+                  start: 0,
+                  length: 5000,
+                },
+                {
+                  route: [
+                    [Math.floor(6 + ahead), 6 + side * 6],
+                    [Math.floor(6 + ahead), cell],
+                  ],
+                  start: 0,
+                  length: 1400,
+                },
+              ],
+              [],
+              1500,
+              4,
+            ),
+          );
+        }
+      }
+    }
+    // Order of the one-in-three slope everything else meets.
+    expect(worst).toBeLessThanOrEqual(0.5);
   });
 });

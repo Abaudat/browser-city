@@ -157,9 +157,23 @@ function solveAll(
       if (m.standAt) {
         f.x = m.standAt.x;
         f.y = m.standAt.y;
+        f.anchorX = f.x;
+        f.anchorY = f.y;
       }
     }
-    m.index = field.add(m.id, f.x, f.y, f.floor, f.headingX, f.headingY, f.moving, f.ramp, f.speed);
+    m.index = field.add(
+      m.id,
+      f.x,
+      f.y,
+      f.floor,
+      f.headingX,
+      f.headingY,
+      f.moving,
+      f.ramp,
+      f.speed,
+      f.anchorX,
+      f.anchorY,
+    );
   }
   field.resolve(dials, walk, ALL_CHUNKS_HELD);
 }

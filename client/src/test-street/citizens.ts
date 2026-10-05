@@ -392,17 +392,22 @@ export const KERB_STANDER_ID = "kerb-stander";
 
 const STAGE_X0 = -9;
 const STAGE_Y0 = 11;
-const STAGE_Y1 = 15;
+const STAGE_Y1 = 16;
 /** The pavement reaches east along its last row, under the stairwell's rows. */
 const STAGE_MAIN_X1 = 13;
 const STAGE_EAST_X1 = 18;
 /** The kerb: the row beyond the pavement's last row is not walkable here. */
-const KERB_X0 = 11;
+const KERB_X0 = 7;
+/** The kerb walker's own row, the pavement's last, with two rows of pavement
+ * to its left until the stairwell's foot. */
+const KERB_ROW = STAGE_Y1 - 1;
+const KERB_LANE_X0 = 8;
 
 /** Whether the cell `(x, y)` is staging pavement. */
 export function isStagingCell(x: number, y: number): boolean {
   if (y < STAGE_Y0 || y >= STAGE_Y1 || x < STAGE_X0) return false;
-  return x < STAGE_MAIN_X1 || (y === STAGE_Y1 - 1 && x < STAGE_EAST_X1);
+  if (y === KERB_ROW) return x >= KERB_LANE_X0 && x < STAGE_EAST_X1;
+  return x < STAGE_MAIN_X1 || (y === KERB_ROW - 1 && x < STAGE_EAST_X1);
 }
 
 /** The staging's bounding box in cells, for placement checks. */
@@ -456,14 +461,14 @@ export const AVOIDANCE_SPECS: Readonly<Record<string, TimetableSpec>> = {
   [TWIN_B_ID]: lane(14, -9, -4),
   [DIAGONAL_A_ID]: diagonal({ x: -9, y: 11 }, { x: -4, y: 13 }),
   [DIAGONAL_B_ID]: diagonal({ x: -4, y: 11 }, { x: -9, y: 13 }),
-  [KERB_WALKER_ID]: lane(14, 12, 17),
+  [KERB_WALKER_ID]: lane(KERB_ROW, KERB_LANE_X0, 17),
 };
 
 /** The standing citizens: the passer's on its line, one to its side, and the one
  * the kerb walker passes on its line. */
 export const BYSTANDER_CELL = { x: 5, y: 14 };
 export const BYSTANDER_OFF_LINE_CELL = { x: 6, y: 13 };
-export const KERB_STANDER_CELL = { x: 14, y: 14 };
+export const KERB_STANDER_CELL = { x: 11, y: KERB_ROW };
 
 export const AVOIDANCE_STANDERS: Readonly<Record<string, { x: number; y: number }>> = {
   [BYSTANDER_ID]: BYSTANDER_CELL,

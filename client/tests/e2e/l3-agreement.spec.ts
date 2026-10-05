@@ -14,7 +14,12 @@ import { AVOIDANCE_SPECS, AVOIDANCE_STANDERS, stagingBounds } from "../../src/te
 const defs = JSON.parse(readFileSync("public/defs/defs.json", "utf8")) as {
   balance: { key: string; value: number }[];
 };
-const TILE_SIZE_PX = defs.balance.find((b) => b.key === "render.tile_size_px")?.value ?? 0;
+const tileSize = defs.balance.find((b) => b.key === "render.tile_size_px")?.value;
+if (tileSize === undefined) throw new Error("no render.tile_size_px balance key");
+const TILE_SIZE_PX = tileSize;
+/** Walking south, the player is on the street pavement's south edge from here
+ * (the lamppost row is 8; the body rests just short of it). */
+const PAVEMENT_EDGE_PLAYER_Y = 7.3;
 
 interface Sample {
   readonly id: string;
@@ -95,20 +100,26 @@ test("the whole staging is on screen at 1366x768 from the street's south edge", 
   await ready(page);
   // South to the street's edge.
   await page.keyboard.down("ArrowDown");
-  await page.waitForFunction(() => (window.__bc?.playerPosition?.y ?? 0) > 7.3, undefined, {
-    timeout: 20_000,
-  });
+  await page.waitForFunction(
+    (y) => (window.__bc?.playerPosition?.y ?? 0) > y,
+    PAVEMENT_EDGE_PLAYER_Y,
+    {
+      timeout: 20_000,
+    },
+  );
   await page.keyboard.up("ArrowDown");
 
   // Every lane end and every standing citizen, with a cell of body above the
   // foot, and the corners of the box they span: read from the fixture.
+  // The foot of the lowest row is a hair below the viewport; its body is what is
+  // checked, half a cell above the foot.
   const feet: [number, number][] = [];
   for (const spec of Object.values(AVOIDANCE_SPECS)) {
     for (const c of [spec.out[0], spec.out[spec.out.length - 1]] as { x: number; y: number }[]) {
-      feet.push([c.x + 0.5, c.y + 0.5]);
+      feet.push([c.x + 0.5, c.y]);
     }
   }
-  for (const c of Object.values(AVOIDANCE_STANDERS)) feet.push([c.x + 0.5, c.y + 0.5]);
+  for (const c of Object.values(AVOIDANCE_STANDERS)) feet.push([c.x + 0.5, c.y]);
   const xs = feet.map(([x]) => x);
   const ys = feet.map(([, y]) => y);
   const corners: [number, number][] = [
@@ -117,7 +128,7 @@ test("the whole staging is on screen at 1366x768 from the street's south edge", 
   ];
   const points = [...feet, ...corners];
   const bounds = stagingBounds();
-  points.push([bounds.x0, bounds.y0], [bounds.x1 - 8, bounds.y1]);
+  points.push([bounds.x0, bounds.y0], [bounds.x1 - 1, bounds.y1 - 1]);
 
   const outside = await page.evaluate(
     ({ points, tile }) => {
