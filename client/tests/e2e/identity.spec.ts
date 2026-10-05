@@ -249,6 +249,8 @@ test("a token minted for another application cannot link a character", async ({ 
     await characterOf(page);
     await linkThroughProvider(page);
     await failed;
+    // The resumed page has no character until `my_character` delivers it again.
+    await characterOf(page);
     expect(await page.evaluate(() => window.__bc?.character?.linked)).toBe(false);
     await page.context().close();
   } finally {

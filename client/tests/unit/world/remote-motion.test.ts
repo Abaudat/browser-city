@@ -47,7 +47,10 @@ interface Interpolator {
 
 /** A walker at or below walk speed, with stamp jitter, bursts and late
  * updates, through any interpolator. */
-function assertContinuity(make: (cfg: RemoteMotionConfig) => Interpolator): void {
+function assertContinuity(
+  make: (cfg: RemoteMotionConfig) => Interpolator,
+  params: fc.Parameters<unknown> = {},
+): void {
   const frames = fc.array(
     fc.record({
       dt: fc.double({ min: 6, max: 34, noNaN: true }),
@@ -137,7 +140,7 @@ function assertContinuity(make: (cfg: RemoteMotionConfig) => Interpolator): void
         if (last) expect(prev).toMatchObject({ x: last.x, y: 0 });
       },
     ),
-    { numRuns: 60 },
+    { numRuns: 60, ...params },
   );
 }
 
@@ -247,7 +250,8 @@ describe("RemoteMotion", () => {
         poseAt: (id) => latest.get(id),
       };
     };
-    expect(() => assertContinuity(snap)).toThrow();
+    // Stop at the first failure: the control needs the failure, not a minimal one.
+    expect(() => assertContinuity(snap, { endOnFailure: true })).toThrow();
   });
 });
 

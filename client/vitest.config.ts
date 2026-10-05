@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     include: ["tests/unit/**/*.test.ts"],
     environment: "node",
+    // The one per-test budget (NFR49): scripts/ci/check-unit-test-durations.sh
+    // and docs/architecture.md measure against it.
+    testTimeout: 5_000,
+    reporters: ["default", "./tests/unit/setup/duration-report.ts"],
     setupFiles: ["tests/unit/setup/property-seed.ts"],
     coverage: {
       provider: "v8",

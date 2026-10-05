@@ -429,7 +429,10 @@ describe("properties", () => {
     );
   });
 
-  it("inv_npc_never_enters_a_blocked_tile", () => {
+  // CI worst case under coverage: 1.13 s (run 37229489003); the property's case count is the thing under test, so the work
+  // cannot shrink. 60 s is over 10x that.
+  const PROPERTY_TIMEOUT_MS = 60_000;
+  it("inv_npc_never_enters_a_blocked_tile", { timeout: PROPERTY_TIMEOUT_MS }, () => {
     type Cmd =
       | { k: "advance"; dt: number }
       | { k: "insert"; x: number; y: number }

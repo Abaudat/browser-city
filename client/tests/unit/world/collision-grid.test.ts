@@ -265,7 +265,10 @@ describe("inv_collision_grid_matches_rebuild", () => {
   // A sequence of random insert/delete/update calls always equals a
   // fresh build of the survivors -- including which chunks are allocated,
   // so a grid that never frees an emptied chunk fails here.
-  it("inv_collision_grid_matches_rebuild", () => {
+  // CI worst case under coverage: 0.68 s (run 37229489003); the property's case count is the thing under test, so the work
+  // cannot shrink. 60 s is over 10x that.
+  const PROPERTY_TIMEOUT_MS = 60_000;
+  it("inv_collision_grid_matches_rebuild", { timeout: PROPERTY_TIMEOUT_MS }, () => {
     const probe = sizeProbe({ min: 0, max: 40 });
     fc.assert(
       fc.property(
