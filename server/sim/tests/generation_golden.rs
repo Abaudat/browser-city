@@ -151,6 +151,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     },
     BuildingTypeDef {
         id: 9005,
@@ -166,6 +168,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     },
     BuildingTypeDef {
         id: 9002,
@@ -181,6 +185,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &["frozen_clerk"],
+        rooms: &[],
+        optional_rooms: &[],
     },
     BuildingTypeDef {
         id: 9003,
@@ -196,6 +202,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     },
     BuildingTypeDef {
         id: 9004,
@@ -211,6 +219,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     },
     BuildingTypeDef {
         id: 9006,
@@ -226,6 +236,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     },
 ];
 

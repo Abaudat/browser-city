@@ -1,10 +1,14 @@
-rules: waste_per_three_seating
+rules: waste_per_three_seating walled_room_has_waste_bin
 expect: fail
 floor: 0
 legend: S=seating
+area: 1 0,0 3,1
 grid:
 SSS
 violations:
 waste_per_three_seating at (0, 0, 0)
 waste_per_three_seating at (1, 0, 0)
 waste_per_three_seating at (2, 0, 0)
+walled_room_has_waste_bin at (0, 0, 0)
+walled_room_has_waste_bin at (1, 0, 0)
+walled_room_has_waste_bin at (2, 0, 0)

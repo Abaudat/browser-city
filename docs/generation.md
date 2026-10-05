@@ -430,13 +430,14 @@ disagree.
 ## coherence
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| no_counter_in_a_stairwell | committed | Interior layout | room | - | **placeholder** -- a shop till standing on a stairwell landing |
+| no_counter_in_a_stairwell | committed | Interior layout | room | - | a till or service counter sharing an area with a stairwell; the pass lays out the ground floor only, so no stairwell exists for it to fire on yet |
 | no_high_rise_within_a_low_rise_block | committed | Building type | building | - | AC1, "no skyscraper among villas": a `form_high` building never shares a block with a `form_low` one -- the form-class scale is `defs/tags/generation.toml`'s own vocabulary, never a type key |
 
 ## adjacency
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| counter_faces_a_shopfront | committed | Interior layout | cell | - | **placeholder** -- a till with its back to a blank wall, no shopfront anywhere on its own perimeter |
+| counter_faces_a_shopfront | committed | Interior layout | cell | - | a till or service counter with no walkable floor on any side -- nobody can stand at it (the key names the placeholder this row replaced) |
+| door_never_blocked_by_a_fixture | committed | Interior layout | cell | - | a fixture standing on any cell beside a threshold, inside or out -- a door a prop blocks |
 | road_never_touches_wall | committed | Building envelope | cell | - | the carriageway running straight into a building wall with no pavement between them |
 | road_never_touches_ground | committed | Building envelope | cell | - | asphalt bleeding directly into bare ground with no pavement edge |
 | floor_never_touches_bare_ground | committed | Building envelope | cell | - | an interior floor tile exposed straight to bare ground, as if the wall around it were missing |
@@ -449,10 +450,20 @@ disagree.
 ## requirement
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| walled_room_has_waste_bin | committed | Interior layout | room | - | **placeholder** -- stands in for a future room-completeness rule; describes nothing a real room looks like yet |
+| walled_room_has_waste_bin | committed | Prop placement | room | - | **placeholder** -- a room holding seating with no waste bin; stays on `seating`, so it cannot fire on anything the interior-layout pass emits, and the prop-placement pass makes it real |
 | room_has_a_door | committed | Interior layout | room | - | a sealed room a player can see into but never enter |
 | building_has_an_entrance | committed | Building envelope | building | - | a building with no door anywhere on its own perimeter |
-| footprint_sized_for_interior_usability | planned | Building envelope | building | - | a building whose frontage looks generous but whose interior is too cramped to hold the room grammar it needs |
+| footprint_sized_for_interior_usability | committed | Interior layout | room | - | a laid-out room too cramped to use: fewer than four floor cells, two walkable cells either way; the static half (a type whose own minimum interior cannot hold its program) is refused at defs build |
+| room_has_a_light | committed | Interior layout | room | - | a room with no light fixture in it |
+| business_has_stock_space | committed | Interior layout | room | - | a staff room -- the back room of any type with posts -- with no stock fixture: an empty container, never an item |
+| bedroom_has_a_bed | committed | Interior layout | room | - | a sleeping room with no bed |
+| kitchen_has_a_cooker | committed | Interior layout | room | - | a cooking room with no cooker |
+| bathroom_has_a_basin | committed | Interior layout | room | - | a washing room with no basin |
+| living_room_has_a_table_set | committed | Interior layout | room | - | a dining room with no table set |
+| shop_floor_has_a_counter | committed | Interior layout | room | - | a room open to the public that trades with no till or service counter in it |
+| cafe_has_two_table_sets | committed | Interior layout | room | - | a seated-service room with fewer than two table sets |
+| office_has_a_desk | committed | Interior layout | room | - | a working room with no desk |
+| workroom_has_a_workbench | committed | Interior layout | room | - | a making room with no workbench |
 
 ## Must never be seen
 
@@ -470,12 +481,12 @@ names; `unclaimed` otherwise -- checked mechanically, not by eye.
 | A road that dead-ends into a wall with no terminating piece | adjacency | | unclaimed |
 | A door that opens directly onto the road | adjacency | | unclaimed |
 | A door that opens onto another wall | adjacency | | unclaimed |
-| A door blocked by a prop sitting on its own threshold cell | requirement | | unclaimed |
+| A door blocked by a prop sitting on its own threshold cell | adjacency | door_never_blocked_by_a_fixture | claimed |
 | Street furniture placed on the carriageway | placement | | unclaimed |
 | Pavement furniture leaving less than one walkable cell of pavement | adjacency | | unclaimed |
 | The same facade repeated side by side with no variation, beyond what a real terrace would do | distribution | | unclaimed |
 | The same prop sprite repeated side by side with no variation | distribution | | unclaimed |
-| A shopfront with no counter behind it | requirement | | unclaimed |
+| A shopfront with no counter behind it | requirement | shop_floor_has_a_counter | claimed |
 | A building with no entrance anywhere on its own perimeter | requirement | building_has_an_entrance | claimed |
 | Interior-sheet props placed on the street | coherence | | unclaimed |
 | Exterior-sheet props placed indoors | coherence | | unclaimed |

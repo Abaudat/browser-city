@@ -1,0 +1,21 @@
+rules: room_has_a_light
+expect: fail
+floor: 0
+legend: W=wall+wall_run F=floor l=floor+fixture+lighting 1=floor+room+private+sleeping 2=floor+room+private+cooking 3=floor+room+private+washing 4=floor+room+private+dining X=floor+room+private+sleeping+fixture b=floor+fixture+bed k=floor+fixture+cooker s=floor+fixture+basin t=floor+fixture+table_set D=threshold+wall_run+entrance P=pavement
+area: 1 0,0 17,4
+area: 2 1,1 4,3
+area: 2 2,3 3,4
+area: 3 5,1 8,3
+area: 3 6,3 7,4
+area: 4 9,1 12,3
+area: 4 10,3 11,4
+area: 5 13,1 16,3
+area: 5 14,3 15,4
+grid:
+WWWWWWWWWWWWWWWWW
+WFFbWlFkWlFsWlFtW
+WF1FWF2FWF3FWF4FW
+WWDWWWDWWWDWWWDWW
+..P...P...P...P..
+violations:
+room_has_a_light at (2, 2, 0)

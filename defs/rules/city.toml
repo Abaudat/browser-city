@@ -25,7 +25,6 @@ ratio = 3
 tolerance_percent = 50
 min_spacing = 4
 max_distance = 12
-
 # Coherence: a shop counter never shares a room with a stairwell.
 [[coherence]]
 id = 3
@@ -34,21 +33,29 @@ subject = "counter"
 within = "stairs"
 mode = "forbid"
 
-# Adjacency: a shop counter must have a shopfront somewhere on its
-# perimeter.
+# Adjacency: a counter must have walkable floor on at least one side --
+# a till nobody can stand at is a prop, not a counter (Derek's direction:
+# every fixture a citizen acts at has a cell beside it to act from). The
+# key is permanent; it named the placeholder this row replaced.
 [[adjacency]]
 id = 4
 key = "counter_faces_a_shopfront"
 a = "counter"
-b = "shopfront"
 relation = "require"
+rotate = true
+alternatives = [
+  [
+    { direction = "north", tag = "floor" },
+  ],
+]
 
-# Requirement: a room containing a wall run has at least one waste bin
-# (a placeholder standing in for a future "every dwelling has a door"
-# row, since dwellings do not exist yet).
+# Requirement: a room holding seating has a waste bin -- still a
+# placeholder for the prop-placement pass (waste bins and seating are its
+# vocabulary), kept on `seating` so it can never fire on anything the
+# interior-layout pass emits.
 [[requirement]]
 id = 5
 key = "walled_room_has_waste_bin"
-container = "wall"
+container = "seating"
 requires = "waste"
 min = 1

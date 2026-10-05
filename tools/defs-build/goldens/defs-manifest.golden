@@ -713,3 +713,15 @@ rule 22 council_present
 rule 23 hospital_present
 rule 24 welfare_office_present
 rule 25 shelter_present
+rule 26 room_has_a_light
+rule 27 business_has_stock_space
+rule 28 bedroom_has_a_bed
+rule 29 kitchen_has_a_cooker
+rule 30 bathroom_has_a_basin
+rule 31 living_room_has_a_table_set
+rule 32 shop_floor_has_a_counter
+rule 33 cafe_has_two_table_sets
+rule 34 office_has_a_desk
+rule 35 workroom_has_a_workbench
+rule 36 door_never_blocked_by_a_fixture
+rule 37 footprint_sized_for_interior_usability

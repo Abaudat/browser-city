@@ -4195,6 +4195,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     };
     let too_big = defs::BuildingTypeDef {
         id: 9002,
@@ -4210,6 +4212,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     };
     let types = [fits, too_big];
     let content = GenerationContent {
