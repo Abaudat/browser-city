@@ -320,28 +320,12 @@ impl District {
             .map(|mean| neighbourhoods::desirability_of(mean, &cfg.neighbourhood))
     }
 
-    /// The tags a building carries to count as a dwelling: the `per` tag of
-    /// every committed distribution row -- the one definition, read off the
-    /// rules, never a tag key.
-    fn dwelling_tags(content: &GenerationContent) -> std::collections::BTreeSet<u32> {
-        content
-            .rules
-            .iter()
-            .filter_map(|r| r.as_distribution())
-            .map(|r| r.per)
-            .collect()
-    }
-
-    /// The citizens one building supports: its dwelling (a type carrying a
-    /// dwelling tag) times `citizens_per_dwelling`, plus every post it
+    /// The citizens one building supports: its dwelling (a type carrying the
+    /// configured dwelling tag) times `citizens_per_dwelling`, plus every post it
     /// staffs times `citizens_per_post`. Derived, never stored.
-    fn supported_by(
-        def: &defs::BuildingTypeDef,
-        cfg: &GenerationConfig,
-        dwelling_tags: &std::collections::BTreeSet<u32>,
-    ) -> u64 {
+    fn supported_by(def: &defs::BuildingTypeDef, cfg: &GenerationConfig) -> u64 {
         let mut n = 0u64;
-        if def.tags.iter().any(|t| dwelling_tags.contains(t)) {
+        if def.tags.contains(&cfg.neighbourhood.dwelling_tag_id) {
             n += cfg.neighbourhood.citizens_per_dwelling.max(0) as u64;
         }
         n + def.professions.len() as u64 * cfg.neighbourhood.citizens_per_post.max(0) as u64
@@ -357,7 +341,6 @@ impl District {
     ) -> u64 {
         let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
             content.building_types.iter().map(|b| (b.id, b)).collect();
-        let dwelling_tags = Self::dwelling_tags(content);
         let mut total = 0u64;
         for (e, a) in self
             .envelopes
@@ -366,7 +349,7 @@ impl District {
         {
             let (x, y) = site::front_cell(e.footprint, e.front);
             if x >= window.x0 && x < window.x1 && y >= window.y0 && y < window.y1 {
-                total += Self::supported_by(by_id[&a.building_type], cfg, &dwelling_tags);
+                total += Self::supported_by(by_id[&a.building_type], cfg);
             }
         }
         total
@@ -405,7 +388,6 @@ impl District {
         if cells == 0 {
             return None;
         }
-        let dwelling_tags = Self::dwelling_tags(content);
         let mut total = 0u64;
         for (e, a) in self
             .envelopes
@@ -414,7 +396,7 @@ impl District {
         {
             let (x, y) = site::front_cell(e.footprint, e.front);
             if qualifies(x, y) {
-                total += Self::supported_by(by_id[&a.building_type], cfg, &dwelling_tags);
+                total += Self::supported_by(by_id[&a.building_type], cfg);
             }
         }
         let screen = cfg.neighbourhood.viewport_width_cells.max(1) as u64
@@ -1605,7 +1587,8 @@ mod tests {
                 0,
                 100000,
             ),
-            seed("generation.neighbourhood.min_home_cells", 30, 0, 100000),
+            seed("generation.neighbourhood.min_home_cells", 80, 0, 100000),
+            seed("generation.neighbourhood.dwelling_tag_id", 18, 1, 100000),
             seed(
                 "generation.neighbourhood.citizens_per_dwelling",
                 2,

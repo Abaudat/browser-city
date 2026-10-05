@@ -360,6 +360,11 @@ fn weighted_fill(
 /// candidates and an unreachable target), where exhaustive search is
 /// NP-hard in general and must not be allowed to run away inside a
 /// world-creation path.
+/// How many times a row re-reads what it owes after its own placements.
+const MAX_SETTLE_ROUNDS: u32 = 4;
+/// How many whole passes over the distribution rows may follow each other.
+const MAX_ROW_PASSES: u32 = 4;
+
 pub const PLACEMENT_SEARCH_NODE_BUDGET: u64 = 20_000;
 
 /// The plain first-fit-in-rank-order scan: the floor every real search
@@ -608,114 +613,157 @@ pub fn run(
 
     let mut overridden: Vec<bool> = vec![false; placed.len()];
 
-    for row in &dist_rows {
-        // `per` cells are read fresh from `final_type` as this row runs, so a
-        // prior row's own overrides are always reflected.
-        // The subject type's own siting preferences -- a property of
-        // the type, read once per row, never per candidate.
-        let subject_def = content
-            .building_types
-            .iter()
-            .find(|b| b.tags.contains(&row.subject));
-        let prefers_site = subject_def.map(|b| b.prefers_site).unwrap_or([false; 4]);
-        let affinity = subject_def.map(|b| b.density_affinity).unwrap_or(0);
+    // A later row's placements can move an earlier row's basis (the dwellings
+    // it stands on, or the mean it reads), so the rows run again, each only
+    // topping its scopes up, until a whole pass places nothing.
+    for _pass in 0..MAX_ROW_PASSES {
+        let mut changed = false;
+        for row in &dist_rows {
+            // `per` cells are read fresh from `final_type` as this row runs, so a
+            // prior row's own overrides are always reflected.
+            // The subject type's own siting preferences -- a property of
+            // the type, read once per row, never per candidate.
+            let subject_def = content
+                .building_types
+                .iter()
+                .find(|b| b.tags.contains(&row.subject));
+            let prefers_site = subject_def.map(|b| b.prefers_site).unwrap_or([false; 4]);
+            let affinity = subject_def.map(|b| b.density_affinity).unwrap_or(0);
 
-        let draw_key = |i: usize| -> u64 {
-            seed_from_ids(
-                seed_from_ids(pass_seed, row.id as u64),
-                rect_seed_key(placed[i].footprint),
-            )
-        };
-
-        // Best first: most `prefers_site` matches, then `density_
-        // affinity`'s own direction, then the seeded draw key -- a
-        // distance search never enters this ranking (Derek's direction:
-        // "farthest-point is a tie-break at most, never ahead of
-        // affinity"), and the draw key alone already totally orders any
-        // real candidate set, so a distance tie-break would never fire.
-        let rank_key = |i: usize| -> (i64, i64, u64) {
-            let match_count = (0..4)
-                .filter(|&k| prefers_site[k] && ctx[i].site_context[k])
-                .count() as i64;
-            let density_score = match affinity {
-                a if a > 0 => -(ctx[i].density as i64),
-                a if a < 0 => ctx[i].density as i64,
-                _ => 0,
+            let draw_key = |i: usize| -> u64 {
+                seed_from_ids(
+                    seed_from_ids(pass_seed, row.id as u64),
+                    rect_seed_key(placed[i].footprint),
+                )
             };
-            (-match_count, density_score, draw_key(i))
-        };
 
-        let eligible_for_subject = |i: usize| -> bool {
-            content
-                .building_types
-                .iter()
-                .any(|b| b.tags.contains(&row.subject) && hard_eligible(b, &ctx[i]))
-        };
+            // Best first: most `prefers_site` matches, then `density_
+            // affinity`'s own direction, then the seeded draw key -- a
+            // distance search never enters this ranking (Derek's direction:
+            // "farthest-point is a tie-break at most, never ahead of
+            // affinity"), and the draw key alone already totally orders any
+            // real candidate set, so a distance tie-break would never fire.
+            let rank_key = |i: usize| -> (i64, i64, u64) {
+                let match_count = (0..4)
+                    .filter(|&k| prefers_site[k] && ctx[i].site_context[k])
+                    .count() as i64;
+                let density_score = match affinity {
+                    a if a > 0 => -(ctx[i].density as i64),
+                    a if a < 0 => ctx[i].density as i64,
+                    _ => 0,
+                };
+                (-match_count, density_score, draw_key(i))
+            };
 
-        let resolve = |i: usize| -> u32 {
-            content
-                .building_types
-                .iter()
-                .filter(|b| b.tags.contains(&row.subject) && hard_eligible(b, &ctx[i]))
-                .min_by_key(|b| b.id)
-                .expect("candidate was pre-filtered to carry an eligible subject-tagged type")
-                .id
-        };
+            let eligible_for_subject = |i: usize| -> bool {
+                content
+                    .building_types
+                    .iter()
+                    .any(|b| b.tags.contains(&row.subject) && hard_eligible(b, &ctx[i]))
+            };
 
-        let mut chosen_cells: Vec<(i32, i32)> = Vec::new();
-        // A subject that is itself a `per` member replaces only a `per`
-        // member, so placing it never moves the count its row is judged on.
-        let subject_is_per = subject_def.is_some_and(|b| b.tags.contains(&row.per));
+            let resolve = |i: usize| -> u32 {
+                content
+                    .building_types
+                    .iter()
+                    .filter(|b| b.tags.contains(&row.subject) && hard_eligible(b, &ctx[i]))
+                    .min_by_key(|b| b.id)
+                    .expect("candidate was pre-filtered to carry an eligible subject-tagged type")
+                    .id
+            };
 
-        // What the row owes each scope, from the one function the evaluator
-        // judges by: this row's `per` cells with the parameter it reads.
-        let read = match row.ratio {
-            crate::rules::RowRatio::Read(r) => Some(r.parameter),
-            crate::rules::RowRatio::Fixed(_) => None,
-        };
-        let targets = row.targets(
-            final_type
-                .iter()
-                .enumerate()
-                .filter(|(_, id)| by_id[id].tags.contains(&row.per))
-                .map(|(i, _)| {
-                    let value = read.map(|p| match p {
-                        crate::rules::Parameter::BuildingAge => ctx[i].building_age,
-                        crate::rules::Parameter::Affluence => ctx[i].affluence,
-                    });
-                    (crate::rules::Cell::new(ctx[i].x, ctx[i].y, 0), value)
-                }),
-        );
-
-        // A catchment owes what the row owes it and is placed from its own
-        // land in catchment order -- earlier catchments' subjects already
-        // constrain the spacing of later ones. A catchment whose land cannot
-        // hold what it owes is left short, never padded from elsewhere:
-        // `check_rules` reports it. A site row is placed from the whole site.
-        for (scope_key, t) in &targets {
-            if t.expected == 0 {
-                continue;
-            }
-            let mut pool: Vec<usize> = (0..placed.len())
-                .filter(|&i| {
-                    !overridden[i]
-                        && eligible_for_subject(i)
-                        && (!subject_is_per || by_id[&final_type[i]].tags.contains(&row.per))
-                        && match (row.scope, scope_key) {
-                            (
-                                crate::rules::DistributionScope::Catchment { extent_cells },
-                                Some(c),
-                            ) => crate::rules::catchment_of(ctx[i].x, ctx[i].y, extent_cells) == *c,
-                            _ => true,
-                        }
-                })
+            // Subjects already standing (an earlier pass) keep their spacing.
+            let mut chosen_cells: Vec<(i32, i32)> = (0..placed.len())
+                .filter(|&i| by_id[&final_type[i]].tags.contains(&row.subject))
+                .map(|i| (ctx[i].x, ctx[i].y))
                 .collect();
-            pool.sort_by_key(|&i| rank_key(i));
-            let chosen = place_row(&pool, t.expected, row.min_spacing, &ctx, &mut chosen_cells);
-            for &i in &chosen {
-                final_type[i] = resolve(i);
-                overridden[i] = true;
+            // What the row owes each scope, from the one function the evaluator
+            // judges by: this row's `per` cells with the parameter it reads, on
+            // the types as they stand now.
+            let read = match row.ratio {
+                crate::rules::RowRatio::Read(r) => Some(r.parameter),
+                crate::rules::RowRatio::Fixed(_) => None,
+            };
+            let owed = |final_type: &[u32]| {
+                row.targets(
+                    final_type
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, id)| by_id[id].tags.contains(&row.per))
+                        .map(|(i, _)| {
+                            let value = read.map(|p| match p {
+                                crate::rules::Parameter::BuildingAge => ctx[i].building_age,
+                                crate::rules::Parameter::Affluence => ctx[i].affluence,
+                            });
+                            (crate::rules::Cell::new(ctx[i].x, ctx[i].y, 0), value)
+                        }),
+                )
+            };
+
+            // A catchment owes what the row owes it and is placed from its own
+            // land in catchment order -- earlier catchments' subjects already
+            // constrain the spacing of later ones. A subject that replaces a
+            // `per` member changes the basis (and so the number) the verdict is
+            // judged on, so the count is re-read from the types as they now
+            // stand and topped up until it settles. A catchment whose land
+            // cannot hold what it owes is left short, never padded from
+            // elsewhere: `check_rules` reports it. A site row is placed from the
+            // whole site.
+            for scope_key in owed(&final_type).keys() {
+                let in_scope = |i: usize| match (row.scope, scope_key) {
+                    (crate::rules::DistributionScope::Catchment { extent_cells }, Some(c)) => {
+                        crate::rules::catchment_of(ctx[i].x, ctx[i].y, extent_cells) == *c
+                    }
+                    _ => true,
+                };
+                let mut placed_here = (0..placed.len())
+                    .filter(|&i| in_scope(i) && by_id[&final_type[i]].tags.contains(&row.subject))
+                    .count() as u64;
+                for _ in 0..MAX_SETTLE_ROUNDS {
+                    let Some(t) = owed(&final_type).get(scope_key).copied() else {
+                        break;
+                    };
+                    if t.expected <= placed_here {
+                        break;
+                    }
+                    let mut pool: Vec<usize> = (0..placed.len())
+                        .filter(|&i| {
+                            !overridden[i]
+                                && eligible_for_subject(i)
+                                && match (row.scope, scope_key) {
+                                    (
+                                        crate::rules::DistributionScope::Catchment { extent_cells },
+                                        Some(c),
+                                    ) => {
+                                        crate::rules::catchment_of(ctx[i].x, ctx[i].y, extent_cells)
+                                            == *c
+                                    }
+                                    _ => true,
+                                }
+                        })
+                        .collect();
+                    pool.sort_by_key(|&i| rank_key(i));
+                    let chosen = place_row(
+                        &pool,
+                        t.expected - placed_here,
+                        row.min_spacing,
+                        &ctx,
+                        &mut chosen_cells,
+                    );
+                    if chosen.is_empty() {
+                        break;
+                    }
+                    placed_here += chosen.len() as u64;
+                    changed = true;
+                    for &i in &chosen {
+                        final_type[i] = resolve(i);
+                        overridden[i] = true;
+                    }
+                }
             }
+        }
+        if !changed {
+            break;
         }
     }
 

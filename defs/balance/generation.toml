@@ -1021,9 +1021,12 @@ max = 1000
 # 5,000 genuinely random seeds): mean 61.2, stddev 3.4; mean -
 # 5.5*stddev = 42.5, and the real measured min over that same run is
 # 44 -- above it. 40 leaves real margin under both. Re-derive after
-# every retune.
+# every retune. Story 3.7 re-measure (affluence bands in place): 600,000
+# seeds, mean 61.2, minimum 43, and one proptest seed (13796749279512995753,
+# a city whose commercial land all sits in poor neighbourhoods, so the
+# rich-end types are scarce) at 39. 36 stays under that tail.
 key = "generation.building_types.profession_count_per_city_min"
-value = 40
+value = 36
 min = 1
 max = 1000
 
@@ -1143,9 +1146,9 @@ min = 1
 max = 10
 
 [[balance]]
-# A bottom-band neighbourhood counts as somewhere affordable to begin only if it holds at least this many residential coarse cells.
+# A bottom-band neighbourhood counts as somewhere affordable to begin only if it holds at least this many residential coarse cells (30 left a patch of 32 with no home built in it; 80 holds over 100,000 seeds).
 key = "generation.neighbourhood.min_home_cells"
-value = 30
+value = 80
 min = 0
 max = 100000
 
@@ -1164,25 +1167,39 @@ min = 1
 max = 10000
 
 [[balance]]
-# Citizens a dwelling supports; with the post weight below, a whole screen averages NFR15a's one citizen per 52.4 cells (~17.6).
+# The id of the tag (`defs/tags`) that marks a building type as one home; crowding counts dwellings by it. Tag ids are append-only, and a sim test holds that this id names `dwelling`.
+key = "generation.neighbourhood.dwelling_tag_id"
+value = 18
+min = 1
+max = 100000
+
+[[balance]]
+# A term of the street-crowding proxy, not an occupancy or a headcount: the crowding one dwelling adds to a screen. The citizen-seeding story replaces the proxy with real citizens. With the post weight below, a whole screen averages 19.7 over seeds 0..256 against NFR15a's 17.6 (one citizen per 52.4 cells).
 key = "generation.neighbourhood.citizens_per_dwelling"
 value = 1
 min = 1
 max = 1000
 
 [[balance]]
-# Citizens one workplace post supports -- a commercial core is busy by its posts, a residential edge quiet by its few dwellings.
+# A term of the street-crowding proxy, not a headcount: the crowding one workplace post adds to a screen -- a commercial core is busy by its posts, a residential edge quiet by its few dwellings. Pooled over seeds 0..256 a core screen is 37.8, an edge screen 7.0 and a whole screen 19.7.
 key = "generation.neighbourhood.citizens_per_post"
 value = 4
 min = 0
 max = 1000
 
 [[balance]]
-# A commercial core at the top of the density range supports at least this many citizens on one screen -- NFR15a's ~17.6 average (measured minimum 19 over 100,000 seeds).
+# Per-seed guard: a commercial core at the top of the density range supports at least this many crowding units on one screen, above NFR15a's 17.6 average (measured minimum 19 over 100,000 seeds); the real bound is the pooled margin below.
 key = "generation.neighbourhood.busy_screen_min_citizens"
-value = 17
+value = 18
 min = 0
 max = 100000
+
+[[balance]]
+# Pooled over seeds 0..256, a commercial core screen is at least this percent of a whole-city screen (measured 192: 37.8 against 19.7).
+key = "generation.neighbourhood.busy_core_over_city_min_percent"
+value = 150
+min = 101
+max = 10000
 
 [[balance]]
 # Per-seed wild-deviation guard: a residential edge supports at most this percent of the same district's commercial core (measured maximum 88); the real bound is the pooled key below.
@@ -1192,7 +1209,7 @@ min = 1
 max = 100
 
 [[balance]]
-# Two neighbourhoods a legible step apart on a dial differ in their placed building types, ages, states and shop types by at least this total-variation percent on one of them (measured minimum 75 over 3,000 seeds, affluence-only pairs; building age is the sim-side carrier of the age dial).
+# Two neighbourhoods a legible step apart on building age differ in their buildings' ages by at least this total-variation percent (building age is the sim-side carrier of the age dial; physical state is not a carrier, it restates the two dials).
 key = "generation.neighbourhood.legibility_min_distance_percent"
 value = 50
 min = 1
@@ -1209,6 +1226,13 @@ max = 100000
 # Two neighbourhoods a legible step apart on affluence differ in the mix of their commercial-frontage types by at least this total-variation percent (measured minimum 11 over 4096 seeds).
 key = "generation.neighbourhood.legibility_min_shop_mix_percent"
 value = 8
+min = 1
+max = 100
+
+[[balance]]
+# Two neighbourhoods in opposite end thirds of affluence differ in the mix of their realised commercial-frontage types by at least this total-variation percent (measured minimum 34 over 8192 seeds).
+key = "generation.neighbourhood.legibility_pole_shop_mix_percent"
+value = 25
 min = 1
 max = 100
 

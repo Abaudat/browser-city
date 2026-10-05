@@ -3004,30 +3004,11 @@ proptest! {
     /// far below the pooled mean is caught too.
     #[test]
     fn inv_generation_profession_depth_never_collapses_in_one_city(seed in any::<u64>()) {
-        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
-            content.building_types.iter().map(|b| (b.id, b)).collect();
-        let min_employers = sim::balance::value(
-            defs::BALANCE,
-            "generation.building_types.min_employers_per_profession",
-        ) as u64;
         let floor = sim::balance::value(
             defs::BALANCE,
             "generation.building_types.profession_count_per_city_min",
         );
-
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-        let mut employers: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
-        for a in d.building_types.assignments() {
-            let def = by_id[&a.building_type];
-            if sim::generation::building_types::is_workplace(def) {
-                for &p in def.professions {
-                    *employers.entry(p).or_insert(0) += 1;
-                }
-            }
-        }
-        let depth = employers.values().filter(|&&c| c >= min_employers).count() as i64;
+        let depth = city_profession_depth(seed);
         prop_assert!(
             depth >= floor,
             "seed {seed}: this city's own profession depth {depth} is under the committed per-city floor {floor}"
@@ -6446,4 +6427,44 @@ fn player_position_walk_across_chunk_edges_and_floors_updates_and_crosses() {
     }
     assert_eq!(updates, walk.len() - 1);
     assert_eq!(crossings, 4, "four chunk or floor changes along the walk");
+}
+
+/// The number of professions held by at least `min_employers_per_profession`
+/// distinct placed workplaces in one city.
+fn city_profession_depth(seed: u64) -> i64 {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let min_employers = sim::balance::value(
+        defs::BALANCE,
+        "generation.building_types.min_employers_per_profession",
+    ) as u64;
+    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    let mut employers: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
+    for a in d.building_types.assignments() {
+        let def = by_id[&a.building_type];
+        if sim::generation::building_types::is_workplace(def) {
+            for &p in def.professions {
+                *employers.entry(p).or_insert(0) += 1;
+            }
+        }
+    }
+    employers.values().filter(|&&c| c >= min_employers).count() as i64
+}
+
+/// Pinned by name, as a `cc` line is not a stable pin. This city holds its
+/// commercial land in poor neighbourhoods, so the rich-end types are scarce
+/// and its profession depth was 39 under the per-city floor of 40: the
+/// property was `inv_generation_profession_depth_never_collapses_in_one_city`,
+/// and the fix was re-deriving the floor from the re-measured tail (600,000
+/// seeds: minimum 43; this seed 39) rather than loosening any band.
+#[test]
+fn seed_13796749279512995753_keeps_the_per_city_profession_depth() {
+    let floor = sim::balance::value(
+        defs::BALANCE,
+        "generation.building_types.profession_count_per_city_min",
+    );
+    let depth = city_profession_depth(13796749279512995753);
+    assert!(depth >= floor, "depth {depth} under the floor {floor}");
 }

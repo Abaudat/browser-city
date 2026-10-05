@@ -67,6 +67,8 @@ pub struct NeighbourhoodConfig {
     /// A bottom-band patch must hold at least this many residential coarse
     /// cells to count as somewhere affordable to begin.
     pub min_home_cells: i64,
+    /// The tag id marking one home -- the only way crowding finds a dwelling.
+    pub dwelling_tag_id: u32,
     pub citizens_per_dwelling: i32,
     pub citizens_per_post: i32,
 }
@@ -93,6 +95,7 @@ impl NeighbourhoodConfig {
             viewport_height_cells: g("viewport_height_cells"),
             min_patch_span_viewports: g("min_patch_span_viewports"),
             min_home_cells: g("min_home_cells") as i64,
+            dwelling_tag_id: g("dwelling_tag_id") as u32,
             citizens_per_dwelling: g("citizens_per_dwelling"),
             citizens_per_post: g("citizens_per_post"),
         }
@@ -392,6 +395,14 @@ pub fn author(city_seed: u64, hoods: &[HoodInput], cfg: &NeighbourhoodConfig) ->
     let has_step = |dials: &[Dials], value: &dyn Fn(&Dials) -> i32| {
         pairs().any(|(u, v)| (value(&dials[u]) - value(&dials[v])).abs() >= cfg.legible_step)
     };
+    // The guaranteed affluence step is a strong one: an adjacent pair in
+    // opposite end thirds, so the screen across it is the dial's whole range.
+    let is_pole_pair = |a: i32, b: i32| {
+        (a <= cfg.poor_to() && b >= cfg.rich_from()) || (b <= cfg.poor_to() && a >= cfg.rich_from())
+    };
+    let has_pole_step = |dials: &[Dials]| {
+        pairs().any(|(u, v)| is_pole_pair(dials[u].affluence, dials[v].affluence))
+    };
 
     let mut dials: Vec<Dials> = reps
         .iter()
@@ -425,7 +436,7 @@ pub fn author(city_seed: u64, hoods: &[HoodInput], cfg: &NeighbourhoodConfig) ->
                 .unwrap_or(home);
 
             // 2. A legible step between adjacent patches on affluence.
-            if !has_step(&dials, &|d| d.affluence)
+            if !has_pole_step(&dials)
                 && let Some(n) = (0..units).find(|&n| n != poor && touching[poor][n])
             {
                 dials[n].affluence = rich_value;
@@ -454,15 +465,13 @@ pub fn author(city_seed: u64, hoods: &[HoodInput], cfg: &NeighbourhoodConfig) ->
             // from patches the steps above do not lean on where possible.
             let mut present = distinct_corners(&dials, cfg);
             if present.len() < cfg.min_corners {
-                let step_pair = |value: &dyn Fn(&Dials) -> i32, dials: &[Dials]| {
-                    pairs().find(|&(u, v)| {
-                        (value(&dials[u]) - value(&dials[v])).abs() >= cfg.legible_step
-                    })
-                };
+                let age_pair = pairs().find(|&(u, v)| {
+                    (dials[u].building_age - dials[v].building_age).abs() >= cfg.legible_step
+                });
                 let mut protected = vec![poor];
                 for pair in [
-                    step_pair(&|d| d.affluence, &dials),
-                    step_pair(&|d| d.building_age, &dials),
+                    pairs().find(|&(u, v)| is_pole_pair(dials[u].affluence, dials[v].affluence)),
+                    age_pair,
                 ]
                 .into_iter()
                 .flatten()
@@ -504,7 +513,7 @@ pub fn author(city_seed: u64, hoods: &[HoodInput], cfg: &NeighbourhoodConfig) ->
     // shows three corners.
     if units >= 3 {
         let settled = distinct_corners(&dials, cfg).len() >= cfg.min_corners.min(units)
-            && has_step(&dials, &|d| d.affluence)
+            && has_pole_step(&dials)
             && has_step(&dials, &|d| d.building_age);
         if !settled {
             let poor_value = cfg.affluence_min + (cfg.poor_band_max - cfg.affluence_min) / 2;

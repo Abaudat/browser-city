@@ -104,6 +104,89 @@ fn the_parameter_field_carries_exactly_four_dials() {
 
 // --- the field: plateaus that step only at arterials ---------------------
 
+/// The district-level guarantees, shared with the named pin.
+fn district_shows_its_guaranteed_character(seed: u64) -> Result<(), TestCaseError> {
+    let (cfg, content) = setup();
+    let d = plan(seed, &cfg, &content).unwrap();
+    let nc = cfg.neighbourhood;
+    let ps = patches(&d);
+
+    let step = key("legible_step");
+    let mut aff_step = false;
+    let mut age_step = false;
+    for (i, (_, a, ra)) in ps.iter().enumerate() {
+        for (_, b, rb) in &ps[i + 1..] {
+            if patches_adjacent(ra, rb) {
+                // The affluence step is a strong one: opposite end thirds.
+                aff_step |= (a.affluence <= nc.poor_to() && b.affluence >= nc.rich_from())
+                    || (b.affluence <= nc.poor_to() && a.affluence >= nc.rich_from());
+                age_step |= (a.building_age - b.building_age).abs() >= step;
+            }
+        }
+    }
+    prop_assert!(
+        aff_step,
+        "seed {seed}: no adjacent pair in opposite end thirds on affluence"
+    );
+    prop_assert!(
+        age_step,
+        "seed {seed}: no adjacent pair a legible step apart on age"
+    );
+
+    let corners: std::collections::BTreeSet<_> = ps
+        .iter()
+        .filter_map(|(_, dials, _)| corner(*dials, &nc))
+        .collect();
+    prop_assert!(
+        corners.len() >= key("min_corners") as usize,
+        "seed {seed}: only {} of the four corners",
+        corners.len()
+    );
+
+    // The largest set of patches pairwise a legible step apart on some
+    // dial (a clique; a district has a handful of patches).
+    let far = |a: &Dials, b: &Dials| {
+        (a.affluence - b.affluence).abs() >= step || (a.building_age - b.building_age).abs() >= step
+    };
+    let n = ps.len();
+    let mut apart: Vec<usize> = Vec::new();
+    for mask in 0u32..(1 << n) {
+        let members: Vec<usize> = (0..n).filter(|i| mask >> i & 1 == 1).collect();
+        if members.len() > apart.len()
+            && members
+                .iter()
+                .enumerate()
+                .all(|(i, &a)| members[i + 1..].iter().all(|&b| far(&ps[a].1, &ps[b].1)))
+        {
+            apart = members;
+        }
+    }
+    prop_assert!(
+        apart.len() >= key("min_apart_neighbourhoods") as usize,
+        "seed {seed}: only {} neighbourhoods a legible step apart",
+        apart.len()
+    );
+
+    // Somewhere affordable to begin: a bottom-band place that holds homes.
+    let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let homes_in_poor_band = d
+        .envelopes
+        .envelopes()
+        .zip(d.building_types.assignments())
+        .any(|(e, a)| {
+            let (x, y) = sim::generation::site::front_cell(e.footprint, e.front);
+            let params = d.land_use.at_world(x, y).unwrap();
+            params.affluence <= key("poor_band_max")
+                && by_id[&a.building_type].land_uses[LandUse::Residential as usize]
+        });
+    prop_assert!(
+        homes_in_poor_band,
+        "seed {seed}: no dwelling in the bottom affluence band"
+    );
+    Ok(())
+}
+
 proptest! {
     #![proptest_config(support::persisted(REGRESSIONS_PATH))]
 
@@ -160,69 +243,7 @@ proptest! {
     /// `min_apart_neighbourhoods` patches pairwise a legible step apart.
     #[test]
     fn every_district_shows_its_guaranteed_character(seed in any::<u64>()) {
-        let (cfg, content) = setup();
-        let d = plan(seed, &cfg, &content).unwrap();
-        let nc = cfg.neighbourhood;
-        let ps = patches(&d);
-
-        let step = key("legible_step");
-        let mut aff_step = false;
-        let mut age_step = false;
-        for (i, (_, a, ra)) in ps.iter().enumerate() {
-            for (_, b, rb) in &ps[i + 1..] {
-                if patches_adjacent(ra, rb) {
-                    aff_step |= (a.affluence - b.affluence).abs() >= step;
-                    age_step |= (a.building_age - b.building_age).abs() >= step;
-                }
-            }
-        }
-        prop_assert!(aff_step, "seed {seed}: no adjacent pair a legible step apart on affluence");
-        prop_assert!(age_step, "seed {seed}: no adjacent pair a legible step apart on age");
-
-        let corners: std::collections::BTreeSet<_> =
-            ps.iter().filter_map(|(_, dials, _)| corner(*dials, &nc)).collect();
-        prop_assert!(
-            corners.len() >= key("min_corners") as usize,
-            "seed {seed}: only {} of the four corners", corners.len()
-        );
-
-        // The largest set of patches pairwise a legible step apart on some
-        // dial (a clique; a district has a handful of patches).
-        let far = |a: &Dials, b: &Dials| {
-            (a.affluence - b.affluence).abs() >= step
-                || (a.building_age - b.building_age).abs() >= step
-        };
-        let n = ps.len();
-        let mut apart: Vec<usize> = Vec::new();
-        for mask in 0u32..(1 << n) {
-            let members: Vec<usize> = (0..n).filter(|i| mask >> i & 1 == 1).collect();
-            if members.len() > apart.len()
-                && members.iter().enumerate().all(|(i, &a)| {
-                    members[i + 1..].iter().all(|&b| far(&ps[a].1, &ps[b].1))
-                })
-            {
-                apart = members;
-            }
-        }
-        prop_assert!(
-            apart.len() >= key("min_apart_neighbourhoods") as usize,
-            "seed {seed}: only {} neighbourhoods a legible step apart", apart.len()
-        );
-
-        // Somewhere affordable to begin: a bottom-band place that holds homes.
-        let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
-            content.building_types.iter().map(|b| (b.id, b)).collect();
-        let homes_in_poor_band = d
-            .envelopes
-            .envelopes()
-            .zip(d.building_types.assignments())
-            .any(|(e, a)| {
-                let (x, y) = sim::generation::site::front_cell(e.footprint, e.front);
-                let params = d.land_use.at_world(x, y).unwrap();
-                params.affluence <= key("poor_band_max")
-                    && by_id[&a.building_type].land_uses[LandUse::Residential as usize]
-            });
-        prop_assert!(homes_in_poor_band, "seed {seed}: no dwelling in the bottom affluence band");
+        district_shows_its_guaranteed_character(seed)?;
     }
 
     /// No patch is narrower than `min_patch_span_viewports` viewports,
@@ -449,66 +470,100 @@ fn total_variation(a: &BTreeMap<i64, u64>, b: &BTreeMap<i64, u64>) -> i64 {
 
 type Histograms = BTreeMap<usize, BTreeMap<i64, u64>>;
 
+/// Two neighbourhoods a legible step apart differ, without any label, in a
+/// carrier a player can see -- each dial judged on its own. A pair apart on
+/// affluence must clear `legibility_min_shop_mix_percent` of total-variation
+/// distance on the mix of commercial-frontage types alone, and a pair in
+/// opposite end thirds `legibility_pole_shop_mix_percent`; a pair apart on
+/// age clears `legibility_min_distance_percent` on building age (the
+/// sim-side carrier of the age dial, which holds by construction: age is the
+/// neighbourhood's value plus a small spread). Physical state is not a
+/// carrier: it restates the two dials.
+/// The body of the legibility property, shared with the named pins.
+fn legible_steps_differ_in_a_drawn_carrier(seed: u64) -> Result<(), TestCaseError> {
+    let (cfg, content) = setup();
+    let d = plan(seed, &cfg, &content).unwrap();
+    let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let (mut frontage, mut ages): (Histograms, Histograms) = Default::default();
+    for (e, a, s) in d
+        .envelopes
+        .envelopes()
+        .zip(d.building_types.assignments())
+        .zip(d.building_types.states())
+        .map(|((e, a), s)| (e, a, s))
+    {
+        let (x, y) = sim::generation::site::front_cell(e.footprint, e.front);
+        let patch = d.land_use.neighbourhood_at(x, y).unwrap().patch;
+        *ages
+            .entry(patch)
+            .or_default()
+            .entry((s.building_age / 10) as i64)
+            .or_insert(0) += 1;
+        if by_id[&a.building_type].land_uses[LandUse::Commercial as usize] {
+            *frontage
+                .entry(patch)
+                .or_default()
+                .entry(a.building_type as i64)
+                .or_insert(0) += 1;
+        }
+    }
+    let step = key("legible_step");
+    let min_shops = key("legibility_min_shops") as u64;
+    let shop_threshold = key("legibility_min_shop_mix_percent") as i64;
+    let age_threshold = key("legibility_min_distance_percent") as i64;
+    let pole_threshold = key("legibility_pole_shop_mix_percent") as i64;
+    let nc = cfg.neighbourhood;
+    let empty = BTreeMap::new();
+    let count = |p: usize| {
+        frontage
+            .get(&p)
+            .map(|m| m.values().sum::<u64>())
+            .unwrap_or(0)
+    };
+    let ps = patches(&d);
+    for (i, (p, a, _)) in ps.iter().enumerate() {
+        for (q, b, _) in &ps[i + 1..] {
+            let tv = |h: &Histograms| {
+                total_variation(h.get(p).unwrap_or(&empty), h.get(q).unwrap_or(&empty))
+            };
+            if (a.affluence - b.affluence).abs() >= step
+                && count(*p) >= min_shops
+                && count(*q) >= min_shops
+            {
+                let shop_mix = tv(&frontage);
+                prop_assert!(
+                    shop_mix >= shop_threshold,
+                    "seed {seed}: patches {p} and {q} are a legible step apart on affluence but their shop mix differs by only {shop_mix}% (< {shop_threshold}%)"
+                );
+            }
+            let poles = (a.affluence <= nc.poor_to() && b.affluence >= nc.rich_from())
+                || (b.affluence <= nc.poor_to() && a.affluence >= nc.rich_from());
+            if poles && count(*p) >= min_shops && count(*q) >= min_shops {
+                let shop_mix = tv(&frontage);
+                prop_assert!(
+                    shop_mix >= pole_threshold,
+                    "seed {seed}: patches {p} and {q} are in opposite end thirds on affluence but their realised shop mix differs by only {shop_mix}% (< {pole_threshold}%)"
+                );
+            }
+            if (a.building_age - b.building_age).abs() >= step {
+                let age = tv(&ages);
+                prop_assert!(
+                    age >= age_threshold,
+                    "seed {seed}: patches {p} and {q} are a legible step apart on age but their building ages differ by only {age}% (< {age_threshold}%)"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 proptest! {
     #![proptest_config(support::persisted(REGRESSIONS_PATH))]
 
-    /// Two neighbourhoods a legible step apart differ, without any label,
-    /// in a carrier a player can see -- each dial judged on its own. A pair
-    /// apart on affluence must clear `legibility_min_shop_mix_percent` of
-    /// total-variation distance on the mix of commercial-frontage types
-    /// alone; a pair apart on age clears `legibility_min_distance_percent`
-    /// on building age (the sim-side carrier of the age dial, which holds by
-    /// construction: age is the neighbourhood's value plus a small spread).
-    /// Physical state is not a carrier: it restates the two dials.
     #[test]
     fn neighbourhoods_a_legible_step_apart_differ_in_a_drawn_carrier(seed in any::<u64>()) {
-        let (cfg, content) = setup();
-        let d = plan(seed, &cfg, &content).unwrap();
-        let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
-            content.building_types.iter().map(|b| (b.id, b)).collect();
-        let (mut frontage, mut ages): (Histograms, Histograms) = Default::default();
-        for (e, a, s) in d
-            .envelopes
-            .envelopes()
-            .zip(d.building_types.assignments())
-            .zip(d.building_types.states())
-            .map(|((e, a), s)| (e, a, s))
-        {
-            let (x, y) = sim::generation::site::front_cell(e.footprint, e.front);
-            let patch = d.land_use.neighbourhood_at(x, y).unwrap().patch;
-            *ages.entry(patch).or_default().entry((s.building_age / 10) as i64).or_insert(0) += 1;
-            if by_id[&a.building_type].land_uses[LandUse::Commercial as usize] {
-                *frontage.entry(patch).or_default().entry(a.building_type as i64).or_insert(0) += 1;
-            }
-        }
-        let step = key("legible_step");
-        let min_shops = key("legibility_min_shops") as u64;
-        let shop_threshold = key("legibility_min_shop_mix_percent") as i64;
-        let age_threshold = key("legibility_min_distance_percent") as i64;
-        let empty = BTreeMap::new();
-        let count = |p: usize| frontage.get(&p).map(|m| m.values().sum::<u64>()).unwrap_or(0);
-        let ps = patches(&d);
-        for (i, (p, a, _)) in ps.iter().enumerate() {
-            for (q, b, _) in &ps[i + 1..] {
-                let tv = |h: &Histograms| {
-                    total_variation(h.get(p).unwrap_or(&empty), h.get(q).unwrap_or(&empty))
-                };
-                if (a.affluence - b.affluence).abs() >= step && count(*p) >= min_shops && count(*q) >= min_shops {
-                    let shop_mix = tv(&frontage);
-                    prop_assert!(
-                        shop_mix >= shop_threshold,
-                        "seed {seed}: patches {p} and {q} are a legible step apart on affluence but their shop mix differs by only {shop_mix}% (< {shop_threshold}%)"
-                    );
-                }
-                if (a.building_age - b.building_age).abs() >= step {
-                    let age = tv(&ages);
-                    prop_assert!(
-                        age >= age_threshold,
-                        "seed {seed}: patches {p} and {q} are a legible step apart on age but their building ages differ by only {age}% (< {age_threshold}%)"
-                    );
-                }
-            }
-        }
+        legible_steps_differ_in_a_drawn_carrier(seed)?;
     }
 }
 
@@ -697,16 +752,47 @@ proptest! {
 
     #[test]
     fn a_core_is_busy_and_an_edge_quiet_for_any_seed(seed in any::<u64>()) {
-        let (core, edge) = core_and_edge(seed);
-        prop_assert!(core >= key("busy_screen_min_citizens") as u64, "seed {seed}: core {core}");
-        prop_assert!(
-            edge * 100 <= core * key("quiet_edge_max_percent_of_core") as u64,
-            "seed {seed}: edge {edge} against core {core}"
-        );
+        core_busy_and_edge_quiet(seed)?;
     }
 }
 
-/// "Far less", pooled over the fixed seed range 0..256: the residential
+/// The per-seed guards, shared with the named pins.
+fn core_busy_and_edge_quiet(seed: u64) -> Result<(), TestCaseError> {
+    let (core, edge) = core_and_edge(seed);
+    prop_assert!(
+        core >= key("busy_screen_min_citizens") as u64,
+        "seed {seed}: core {core}"
+    );
+    prop_assert!(
+        edge * 100 <= core * key("quiet_edge_max_percent_of_core") as u64,
+        "seed {seed}: edge {edge} against core {core}"
+    );
+    Ok(())
+}
+
+/// Pinned by name, as a `cc` line in the regressions file is not a stable
+/// pin. This district's core screen supported 19 crowding units where the
+/// busy guard then read 20: the property was the per-seed busy-core guard,
+/// and the fix was to retune that guard against the measured minimum (19),
+/// with the pooled core-over-city margin as the real bound.
+#[test]
+fn seed_17544817240837296095_has_a_busy_core() {
+    core_busy_and_edge_quiet(17544817240837296095).unwrap();
+}
+
+/// Pinned by name. Two neighbourhoods a legible step apart on affluence
+/// differed by 11% in their shop mix where the floor then read 12%: the
+/// property was the legibility carrier, and the fix was to put the pair-wise
+/// floor at 8% (a worst-pair guard) and hold the strong contrast between
+/// opposite end thirds on its own key, `legibility_pole_shop_mix_percent`.
+#[test]
+fn seed_10659933700671295387_has_legible_steps() {
+    legible_steps_differ_in_a_drawn_carrier(10659933700671295387).unwrap();
+}
+
+/// "Busy" and "far less", pooled over the fixed seed range 0..256: the core
+/// is at least `busy_core_over_city_min_percent` of the city's own mean
+/// screen; the residential
 /// edge supports at most `quiet_edge_pooled_max_percent_of_core` of what the
 /// commercial core does (the per-seed bound above only guards a wild
 /// deviation), and a whole screen averages NFR15a's one citizen per 52.4
@@ -729,6 +815,12 @@ fn pooled_over_seeds_the_edge_is_far_quieter_than_the_core_and_a_screen_matches_
     assert!(
         edge_sum * 100 <= core_sum * key("quiet_edge_pooled_max_percent_of_core") as u64,
         "pooled edge {edge_sum} against core {core_sum}"
+    );
+    // A busy core is well above the city's own mean, not merely at it.
+    assert!(
+        core_sum * 1000 >= city_sum * key("busy_core_over_city_min_percent") as u64,
+        "pooled core {core_sum} (over 256 seeds) is not {}% of the city mean ({city_sum}/10)",
+        key("busy_core_over_city_min_percent")
     );
     let mean_tenths = city_sum / 256;
     let target = key("nfr15a_screen_citizens_tenths") as u64;
@@ -765,4 +857,76 @@ fn banded_types_appear_only_inside_their_affluence_band() {
             );
         }
     }
+}
+
+// --- the dwelling tag marks a home, and only a home ---------------------
+
+/// The land uses a welfare office and a shelter are eligible on.
+const WELFARE_LAND: [LandUse; 3] = [
+    LandUse::Residential,
+    LandUse::Commercial,
+    LandUse::Institutional,
+];
+
+/// Crowding finds dwellings by the one tag `dwelling_tag_id` names, which is
+/// `dwelling`; a welfare office and a shelter are not homes and carry none.
+#[test]
+fn crowding_counts_homes_by_the_dwelling_tag_and_institutions_do_not_carry_it() {
+    let id = key("dwelling_tag_id") as u32;
+    let tag = defs::TAGS
+        .iter()
+        .find(|t| t.id == id)
+        .expect("the id names a tag");
+    assert_eq!(tag.key, "dwelling");
+    for b in defs::BUILDING_TYPES {
+        if b.key == "welfare_office" || b.key == "shelter" {
+            assert!(!b.tags.contains(&id), "{} is not a home", b.key);
+            for land in WELFARE_LAND {
+                assert!(
+                    b.land_uses[land as usize],
+                    "{} is eligible on {land:?} land",
+                    b.key
+                );
+            }
+        }
+    }
+}
+
+/// Welfare offices and shelters are actually placed on each of those over
+/// a fixed seed range, not merely eligible on it.
+#[test]
+fn welfare_offices_and_shelters_are_placed_on_every_land_use() {
+    let (cfg, content) = setup();
+    let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let mut seen: BTreeMap<(&str, usize), u32> = BTreeMap::new();
+    for seed in 0..256u64 {
+        let d = plan(seed, &cfg, &content).unwrap();
+        for (e, a) in d.envelopes.envelopes().zip(d.building_types.assignments()) {
+            let def = by_id[&a.building_type];
+            if def.key != "welfare_office" && def.key != "shelter" {
+                continue;
+            }
+            let (x, y) = sim::generation::site::front_cell(e.footprint, e.front);
+            let land = d.land_use.at_world(x, y).unwrap().use_ as usize;
+            *seen.entry((def.key, land)).or_insert(0) += 1;
+        }
+    }
+    for key in ["welfare_office", "shelter"] {
+        for land in WELFARE_LAND {
+            assert!(
+                seen.get(&(key, land as usize)).copied().unwrap_or(0) > 0,
+                "no {key} was placed on {land:?} land over 256 seeds ({seen:?})"
+            );
+        }
+    }
+}
+
+/// Pinned by name. This district's bottom-band neighbourhood counted as
+/// affordable (32 residential coarse cells against a floor of 30) yet held no
+/// home: the property was the district guarantee of somewhere affordable
+/// that holds dwellings, and the fix was raising `min_home_cells` to 80.
+#[test]
+fn seed_12259442226072579830_has_somewhere_affordable_to_begin() {
+    district_shows_its_guaranteed_character(12259442226072579830).unwrap();
 }

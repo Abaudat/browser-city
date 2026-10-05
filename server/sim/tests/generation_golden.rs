@@ -74,6 +74,7 @@ fn frozen_config() -> GenerationConfig {
             viewport_height_cells: 22,
             min_patch_span_viewports: 2,
             min_home_cells: 30,
+            dwelling_tag_id: 18,
             citizens_per_dwelling: 1,
             citizens_per_post: 4,
         },

@@ -1366,7 +1366,7 @@
 <text x="16" y="1216" font-family="sans-serif" font-size="12" fill="#111">upper side: density 63 | building age 79 | affluence 9</text>
 <text x="32" y="1230" font-family="sans-serif" font-size="12" fill="#111">10 frontage units, 6 shop types, 30% shuttered | 8 citizens per screen</text>
 <text x="16" y="1250" font-family="sans-serif" font-size="12" fill="#111">lower side: density 48 | building age 25 | affluence 88</text>
-<text x="32" y="1264" font-family="sans-serif" font-size="12" fill="#111">48 frontage units, 18 shop types, 0% shuttered | 19 citizens per screen</text>
+<text x="32" y="1264" font-family="sans-serif" font-size="12" fill="#111">48 frontage units, 18 shop types, 0% shuttered | 18 citizens per screen</text>
 <rect x="16" y="1292" width="14" height="14" fill="#7cb342"/>
 <text x="34" y="1304" font-family="sans-serif" font-size="12" fill="#111">housing</text>
 <rect x="196" y="1292" width="14" height="14" fill="#c0392b"/>

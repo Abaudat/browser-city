@@ -219,7 +219,7 @@
 <rect x="22" y="0" width="11" height="16" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="23" y="2" width="9" height="12" fill="#7cb342" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="33" y="0" width="12" height="16" fill="none" stroke="#999" stroke-width="0.5"/>
-<rect x="34" y="0" width="9" height="14" fill="#8e44ad" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<rect x="34" y="0" width="9" height="14" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <polygon points="38,9 39,13 43,14 39,15 38,19" fill="none" stroke="#111" stroke-width="1.5"/>
 <rect x="49" y="0" width="29" height="11" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="49" y="0" width="16" height="11" fill="#7cb342" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
@@ -398,7 +398,7 @@
 <rect x="390" y="56" width="15" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="391" y="58" width="12" height="8" fill="#7cb342" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="417" y="0" width="12" height="20" fill="none" stroke="#999" stroke-width="0.5"/>
-<rect x="419" y="2" width="8" height="16" fill="#8e44ad" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<rect x="419" y="2" width="8" height="16" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <polygon points="419,5 424,10 419,15 414,10" fill="none" stroke="#111" stroke-width="1.5"/>
 <rect x="417" y="20" width="12" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="419" y="22" width="9" height="8" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
@@ -445,7 +445,7 @@
 <rect x="429" y="40" width="10" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="430" y="42" width="8" height="8" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="439" y="40" width="11" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
-<rect x="440" y="42" width="9" height="10" fill="#8e44ad" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<rect x="440" y="42" width="9" height="10" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <polygon points="444,37 445,41 449,42 445,43 444,47" fill="none" stroke="#111" stroke-width="1.5"/>
 <rect x="450" y="40" width="10" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="451" y="42" width="8" height="8" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
@@ -1559,7 +1559,7 @@
 <rect x="417" y="349" width="11" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="419" y="351" width="8" height="8" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="428" y="349" width="11" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
-<rect x="429" y="351" width="9" height="10" fill="#8e44ad" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<rect x="429" y="351" width="9" height="10" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <polygon points="433,346 434,350 438,351 434,352 433,356" fill="none" stroke="#111" stroke-width="1.5"/>
 <rect x="439" y="349" width="10" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="440" y="351" width="8" height="10" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
@@ -1580,7 +1580,7 @@
 <rect x="417" y="372" width="12" height="10" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="419" y="373" width="10" height="8" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="417" y="382" width="12" height="10" fill="none" stroke="#999" stroke-width="0.5"/>
-<rect x="419" y="383" width="10" height="8" fill="#8e44ad" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<rect x="419" y="383" width="10" height="8" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <polygon points="419,382 424,387 419,392 414,387" fill="none" stroke="#111" stroke-width="1.5"/>
 <rect x="417" y="392" width="12" height="17" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="419" y="393" width="10" height="14" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
@@ -1907,10 +1907,10 @@
 <rect x="107" y="474" width="39" height="11" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="129" y="476" width="15" height="8" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="107" y="485" width="39" height="11" fill="none" stroke="#999" stroke-width="0.5"/>
-<rect x="129" y="486" width="15" height="9" fill="#8e44ad" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<rect x="129" y="486" width="15" height="9" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <polygon points="144,485 145,489 149,490 145,491 144,495" fill="none" stroke="#111" stroke-width="1.5"/>
 <rect x="69" y="486" width="38" height="11" fill="none" stroke="#999" stroke-width="0.5"/>
-<rect x="71" y="487" width="15" height="9" fill="#8e44ad" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<rect x="71" y="487" width="15" height="9" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <polygon points="71,486 72,490 76,491 72,492 71,496" fill="none" stroke="#111" stroke-width="1.5"/>
 <rect x="107" y="496" width="39" height="16" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="130" y="497" width="14" height="13" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
@@ -1927,7 +1927,7 @@
 <rect x="268" y="467" width="16" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="269" y="469" width="13" height="10" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="226" y="479" width="29" height="11" fill="none" stroke="#999" stroke-width="0.5"/>
-<rect x="228" y="481" width="16" height="8" fill="#8e44ad" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<rect x="228" y="481" width="16" height="8" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <polygon points="228,480 233,485 228,490 223,485" fill="none" stroke="#111" stroke-width="1.5"/>
 <rect x="255" y="479" width="29" height="11" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="268" y="481" width="14" height="8" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
@@ -1936,7 +1936,7 @@
 <rect x="255" y="490" width="29" height="10" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="268" y="491" width="14" height="8" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <rect x="226" y="500" width="29" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
-<rect x="228" y="501" width="14" height="9" fill="#8e44ad" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
+<rect x="228" y="501" width="14" height="9" fill="#3498db" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
 <polygon points="228,500 229,504 233,505 229,506 228,510" fill="none" stroke="#111" stroke-width="1.5"/>
 <rect x="255" y="500" width="29" height="12" fill="none" stroke="#999" stroke-width="0.5"/>
 <rect x="267" y="501" width="15" height="9" fill="#c8e6c9" fill-opacity="0.9" stroke="#111" stroke-width="0.5"/>
@@ -2018,8 +2018,8 @@
 <line x1="355" y1="575" x2="355" y2="585" stroke="#111" stroke-width="1.5"/>
 <text x="366" y="584" font-family="sans-serif" font-size="10" fill="#111">cafe_present</text>
 <text x="8" y="646" font-family="sans-serif" font-size="11" fill="#111">Catchments (per / owed / placed, * = physical-shortage exemption):</text>
-<text x="8" y="662" font-family="monospace" font-size="9" fill="#333">(0, 0): depot_present: 99/0/0   council_present: 99/0/1   hospital_present: 99/0/1   welfare_office_present: 99/0/0   shelter_present: 99/1/1   cafe_present: 99/1/7</text>
-<text x="8" y="676" font-family="monospace" font-size="9" fill="#333">(0, 1): depot_present: 168/0/0   council_present: 168/0/0   hospital_present: 168/0/0   welfare_office_present: 168/1/1   shelter_present: 168/3/3   cafe_present: 168/3/2</text>
-<text x="8" y="690" font-family="monospace" font-size="9" fill="#333">(1, 0): depot_present: 117/0/1   council_present: 117/0/0   hospital_present: 117/0/0   welfare_office_present: 117/1/1   shelter_present: 117/1/1   cafe_present: 117/2/0</text>
-<text x="8" y="704" font-family="monospace" font-size="9" fill="#333">(1, 1): depot_present: 140/0/0   council_present: 140/0/0   hospital_present: 140/0/0   welfare_office_present: 140/1/1   shelter_present: 140/1/1   cafe_present: 140/2/1</text>
+<text x="8" y="662" font-family="monospace" font-size="9" fill="#333">(0, 0): depot_present: 98/0/0   council_present: 98/0/1   hospital_present: 98/0/1   welfare_office_present: 98/0/0   shelter_present: 98/1/1   cafe_present: 98/1/7</text>
+<text x="8" y="676" font-family="monospace" font-size="9" fill="#333">(0, 1): depot_present: 164/0/0   council_present: 164/0/0   hospital_present: 164/0/0   welfare_office_present: 164/1/1   shelter_present: 164/2/3   cafe_present: 164/3/2</text>
+<text x="8" y="690" font-family="monospace" font-size="9" fill="#333">(1, 0): depot_present: 115/0/1   council_present: 115/0/0   hospital_present: 115/0/0   welfare_office_present: 115/0/1   shelter_present: 115/1/1   cafe_present: 115/2/0</text>
+<text x="8" y="704" font-family="monospace" font-size="9" fill="#333">(1, 1): depot_present: 138/0/0   council_present: 138/0/0   hospital_present: 138/0/0   welfare_office_present: 138/1/1   shelter_present: 138/1/1   cafe_present: 138/2/1</text>
 </svg>

@@ -80,8 +80,9 @@ guarantees below are repaired once, at initial generation. Afterwards the
 dials are sim state the generator never re-derives: growth authors new
 ground only. Per district, the generator guarantees (balance
 keys under `generation.neighbourhood.*`): at least three neighbourhoods a
-legible step apart, a legible step between an adjacent pair on age and on
-affluence, at least three of the four corners (old/new x poor/rich), and a
+legible step apart, a legible step between an adjacent pair on age, an adjacent pair in
+opposite end thirds of affluence (so the one screen across it is the dial's
+whole range), at least three of the four corners (old/new x poor/rich), and a
 bottom-band neighbourhood that holds dwellings -- somewhere affordable to
 begin. A neighbourhood narrower than two viewports is joined to a neighbour
 into one patch sharing both dials, so a place is always bigger than a
@@ -93,6 +94,14 @@ screen (unless that would leave fewer patches than the corners need).
 | Building age | integer, newer to older | `generation.neighbourhood.building_age_min`..`building_age_max` | facade variant *within* `4_Generic_Buildings`, never family choice. Older end: `Condo_9` (exposed pipes, posters and flyers, a stained base course), the `Condo_8` fire-escape/balcony/flyer dressing on a tenement body as assembled in `Condo_Example`, `Condo_4` (red brick, arched entrances, bay fronts, white cornices) and `Condo_6` (grey stone, round-arched windows). Newer end: `Condo_5` (flat teal panel block, ribbon windows, canopy entrance) and `Condo_1`/`Condo_2` (flat rendered facades, plain rectangular windows, no ornament). `Condo_3` and `Condo_7` sit mid-range. No set has an aged variant of itself, so age reads through architectural style and applied dressing alone, never a building visibly ageing in place. `5_Floor_Modular_Buildings` varies by ground-floor shop type, not by age; `9_Shopping_Center_and_Markets` ships one building style and `7_Villas` two (the large timber-fronted houses with a porch, `villa`'s carrier, and the small red-roofed rendered houses, `cottage`'s) -- none carries an age range. Age never gates a building type |
 | Affluence | integer, poorer to richer | `generation.neighbourhood.affluence_min`..`affluence_max` | the commercial frontage: shop-type mix and the share of shuttered units (`[[building_type]]` `affluence_min`/`affluence_max` bands, the density band's own shape and the one eligibility filter), and later plot dressing (`17_Garden`, `1_Terrains_and_Fences`, `6_Garage_Sales`, `3_City_Props`) and the `moderninteriors` theme (e.g. `26_Condominium_Singles` vs the plain `1_Generic`); prop density is a generator output, never a sprite variant. Affluence picks the dwelling type *within* a form class (`villa` rich, `cottage` poor, both `form_low`); the form class itself is Density's |
 | Land-use mix | four shares (residential / commercial / industrial / institutional), integer, summing to a whole | `generation.land_use.share_*_pct`, each within `share_tolerance_pct` | which family appears at all along a street: `4_Generic_Buildings`/`5_Floor_Modular_Buildings`/`7_Villas` (residential), `9_Shopping_Center_and_Markets`/`16_Office` (commercial), `8_Worksite` (industrial -- the only dedicated industrial family the tileset ships; the industrial end of this range is thin by construction, not by design choice), institutional families per FR116 once a later story adds them |
+
+Affluence reads as a swing: shuttered units are plainly present in the
+bottom third (at least `shuttered_bottom_third_min_percent` of its
+commercial frontage) and absent in the top third, and each end third holds
+at least `pole_min_share_percent` of its high street's fill weight on types
+the opposite end cannot hold. The shuttered unit is the only state carrier
+the tileset allows; a retune of `vacant_unit`'s weight must keep that key
+true.
 
 Four carriers, four parameters, never shared: building *family* carries
 Land-use mix; dwelling *form class* and plot packing carry Density; the
@@ -121,25 +130,35 @@ affluence is not an input, or the loop short-circuits. Land use is already
 per plot. Rent, demographics, citizen seeding and per-type dwelling
 occupancy are not in this story.
 
-**Crowding is derived, never a dial or a stored capacity.** The citizens a
-screen supports are dwellings (types eligible on residential land) times
-`citizens_per_dwelling` plus every post times `citizens_per_post`, over the
-buildings whose entrance falls in the window. A screen is
-`viewport_width_cells` x `viewport_height_cells` (1080p at 3x zoom and
-16 px tiles, 40x22); the weights are set so a whole screen averages NFR15a's
-one citizen per 52.4 cells (~17.6). A commercial core at the top of the
-density range supports at least `busy_screen_min_citizens`; a residential
-edge at the bottom at most `quiet_edge_max_percent_of_core` of the same
-district's core. The quiet edge still gets continuous ground and pavement --
-fewer things, never missing things.
+**Crowding is derived, never a dial or a stored capacity.** A screen's
+crowding is a proxy: every dwelling (a type carrying the tag named by
+`dwelling_tag_id`) times `citizens_per_dwelling` plus every post times
+`citizens_per_post`, over the buildings whose entrance falls in the window.
+Both weights are terms of that street-crowding proxy, not an occupancy or a
+headcount (the district houses about 5,000 citizens in about 585
+residential buildings); the citizen-seeding story replaces the proxy with
+real citizens. A screen is `viewport_width_cells` x `viewport_height_cells`
+(1080p at 3x zoom and 16 px tiles, 40x22); the weights are set so a whole
+screen averages NFR15a's one citizen per 52.4 cells (~17.6; measured 19.7
+over seeds 0..256, a core screen 37.8 and an edge screen 7.0). The bounds
+that matter are pooled over seeds 0..256: a core is at least
+`busy_core_over_city_min_percent` of the city's own mean screen, and an edge
+at most `quiet_edge_pooled_max_percent_of_core` of the core. Two per-seed
+keys only guard a wild deviation: a core at the top of the density range at
+least `busy_screen_min_citizens`, an edge at most
+`quiet_edge_max_percent_of_core` of the same district's core. The quiet
+edge still gets continuous ground and pavement -- fewer things, never
+missing things.
 
 **Evidence.** [`docs/generation/neighbourhoods-seed-1.svg`](generation/neighbourhoods-seed-1.svg),
 [`-2`](generation/neighbourhoods-seed-2.svg), [`-3`](generation/neighbourhoods-seed-3.svg):
 four small panels per seed (density, age, affluence, land use) with every
 block filled flat over the street network, age and affluence each a
 single-hue ramp whose lightness carries the value (never a red/green pair);
-then one boundary strip across the district's sharpest adjacent step at
-viewport scale -- plots, envelopes by derived class, a type marker on each
+then one boundary strip across the district's sharpest adjacent step -- the
+window slid along the shared edge to hold the most frontage, both front rows
+drawn whole around a framed one-screen window, the sides named upper/lower
+or left/right -- plots, envelopes by derived class, a type marker on each
 distribution subject, shuttered units hatched, an inner square per building
 carrying its age and a dashed outline on a worn one -- with each side's
 figures (density, age, affluence, frontage units, shop types, shuttered
@@ -597,6 +616,12 @@ tail, not a re-expression of the excess budget at an arbitrary distance.
   density x affluence, so the fill stays total. Building age never gates a
   type: each building records its own age and initial physical state
   instead (`BuildingTypeMap::states`).
+- A welfare office or shelter is not a dwelling: it carries no `dwelling`
+  tag, is eligible on every land use, and where it stands on a house it
+  replaces that dwelling. Replacing a `per` member changes the basis its row
+  is judged on, so the generator re-reads what the row owes from the types as
+  they now stand and tops the catchment up (a few rounds at most), and a
+  catchment's ceiling is at least one above `expected`.
 - Accepted as built, recorded so nobody relitigates it: one residential
   building = one dwelling for `per` purposes (Tim's unit). It
   understates the dense core's own need -- a `condo_block` owes what a
@@ -720,12 +745,21 @@ disagree.
 | generation.neighbourhood.min_patch_span_viewports | committed | Land use | no neighbourhood patch is narrower than this many viewports either way, unless merging further would leave fewer patches than `min_corners` |
 | generation.neighbourhood.viewport_width_cells | committed | Land use | cells across one screen (1080p, 3x zoom, `render.tile_size_px`) |
 | generation.neighbourhood.viewport_height_cells | committed | Land use | cells down one screen |
-| generation.neighbourhood.citizens_per_dwelling | committed | Land use | citizens a dwelling supports; with the post weight, a whole screen averages NFR15a's one per 52.4 cells |
-| generation.neighbourhood.citizens_per_post | committed | Land use | citizens one workplace post supports |
-| generation.neighbourhood.busy_screen_min_citizens | committed | Land use | a commercial core at the top of the density range supports at least this many citizens a screen |
-| generation.neighbourhood.quiet_edge_max_percent_of_core | committed | Land use | a residential edge at the bottom of the density range supports at most this percent of the same district's core |
-| generation.neighbourhood.legibility_min_distance_percent | committed | Land use | two neighbourhoods a legible step apart differ in placed building types, ages, states or shop types by at least this total-variation percent on one of them |
-| generation.neighbourhood.legibility_min_buildings | committed | Land use | neighbourhoods are compared only when each holds at least this many buildings |
+| generation.neighbourhood.dwelling_tag_id | committed | Land use | the id of the tag marking one home, by which crowding finds a dwelling; tag ids are append-only and a test holds that it names `dwelling` |
+| generation.neighbourhood.citizens_per_dwelling | committed | Land use | a term of the street-crowding proxy, not an occupancy: what a dwelling adds to a screen |
+| generation.neighbourhood.citizens_per_post | committed | Land use | a term of the same proxy: what one workplace post adds to a screen |
+| generation.neighbourhood.busy_screen_min_citizens | committed | Land use | per-seed guard: a commercial core at the top of the density range supports at least this many crowding units a screen |
+| generation.neighbourhood.busy_core_over_city_min_percent | committed | Land use | pooled over seeds 0..256, a core screen is at least this percent of the city's own mean screen |
+| generation.neighbourhood.quiet_edge_max_percent_of_core | committed | Land use | per-seed guard against a wild deviation: a residential edge supports at most this percent of the same district's core |
+| generation.neighbourhood.quiet_edge_pooled_max_percent_of_core | committed | Land use | the real bound: pooled over seeds 0..256 a residential edge supports at most this percent of the core |
+| generation.neighbourhood.nfr15a_screen_citizens_tenths | committed | Land use | NFR15a's one citizen per 52.4 cells as a screen figure in tenths (17.6), the target a pooled whole screen is held to |
+| generation.neighbourhood.nfr15a_tolerance_percent | committed | Land use | the percent a pooled whole screen may sit from `nfr15a_screen_citizens_tenths` |
+| generation.neighbourhood.legibility_min_distance_percent | committed | Land use | two neighbourhoods a legible step apart on building age differ in their buildings' ages by at least this total-variation percent (building age is the sim-side carrier of the age dial) |
+| generation.neighbourhood.legibility_min_shops | committed | Land use | a pair is compared on shop mix only when each holds at least this many commercial-frontage buildings |
+| generation.neighbourhood.legibility_min_shop_mix_percent | committed | Land use | floor: two neighbourhoods a legible step apart on affluence differ in their commercial-frontage type mix by at least this total-variation percent |
+| generation.neighbourhood.legibility_pole_shop_mix_percent | committed | Land use | two neighbourhoods in opposite end thirds of affluence differ in their realised frontage mix by at least this total-variation percent |
+| generation.neighbourhood.shuttered_bottom_third_min_percent | committed | Land use | over seeds 0..256, at least this percent of the bottom affluence third's commercial frontage is shuttered (no post), and none of the top third's |
+| generation.neighbourhood.pole_min_share_percent | committed | Land use | at each end third of affluence, at least this percent of the commercial fill weight sits on types the opposite end third cannot hold |
 | generation.neighbourhood.position_independence_max_distance_percent | committed | Land use | identical dials and density hold the same buildings wherever they sit: the west and east halves of the site differ by at most this total-variation percent |
 | generation.streets.arterial_count_ns_min | committed | Street network | the minimum north-south arterial count -- seeded uniformly in `[..._min, ..._max]`, never a fixed count |
 | generation.streets.arterial_count_ns_max | committed | Street network | the maximum north-south arterial count |

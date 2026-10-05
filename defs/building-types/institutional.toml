@@ -65,7 +65,7 @@ professions = ["nurse", "orderly", "receptionist", "surgeon", "paramedic", "doct
 [[building_type]]
 id = 37
 key = "welfare_office"
-tags = ["municipal_service", "welfare_office", "dwelling"]
+tags = ["municipal_service", "welfare_office"]
 land_uses = ["institutional", "commercial", "residential"]
 density_min = 0
 density_max = 100
@@ -78,7 +78,7 @@ professions = ["caseworker", "clerk", "counsellor", "support_worker"]
 [[building_type]]
 id = 38
 key = "shelter"
-tags = ["municipal_service", "shelter", "dwelling"]
+tags = ["municipal_service", "shelter"]
 land_uses = ["institutional", "commercial", "residential"]
 density_min = 0
 density_max = 100

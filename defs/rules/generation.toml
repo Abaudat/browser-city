@@ -69,12 +69,12 @@ min_spacing = 40
 max_distance = 2000
 
 # Welfare offices and shelters sit where land is cheap, at real number, and
-# thin as a catchment's affluence rises. They share the scarce
-# institutional-or-commercial land, so their tolerance is wide enough that a
-# catchment whose land cannot hold what it owes stays short without failing
-# the district. Retune with `cargo run -p bounds --release --bin
-# measure-generation -- rows 1000000`: no failing seed, pooled placed means
-# within 10% of the previous figures (welfare 3.3, shelter 5.2 per district).
+# thin as a catchment's affluence rises. They stand on any land use; on a
+# house they replace that dwelling, and the generator re-reads what the row
+# owes from the types as they then stand. Neither carries `dwelling`. Retune
+# with `cargo run -p bounds --release --bin measure-generation -- rows
+# 1000000`: no failing seed, at least one of each in every district, pooled
+# placed means near welfare 3.5 and shelter 5.3 per district.
 [[distribution]]
 id = 24
 key = "welfare_office_present"

@@ -271,16 +271,22 @@ pub struct Target {
 /// `(expected, lower, upper)` over `basis` `per` cells. `tolerance_percent`
 /// (rounded up) widens the upper bound; the lower bound sheds it only for a
 /// whole-site row -- a catchment owes `expected` itself, undiscounted, so
-/// the floor bites where it is owed.
+/// the floor bites where it is owed. A catchment's ceiling is at least one
+/// above `expected`: a subject that replaces a `per` member shrinks its own
+/// basis by one, and the count it was allocated on the larger basis must
+/// still be within bounds on the remaining one.
 fn bounds(basis: u64, ratio: u32, tolerance_percent: u32, catchment: bool) -> (u64, u64, u64) {
     let expected = basis / (ratio.max(1) as u64);
     let tolerance = (expected * tolerance_percent as u64).div_ceil(100);
-    let lower = if catchment {
-        expected
+    if catchment {
+        (expected, expected, expected + tolerance.max(1))
     } else {
-        expected.saturating_sub(tolerance)
-    };
-    (expected, lower, expected + tolerance)
+        (
+            expected,
+            expected.saturating_sub(tolerance),
+            expected + tolerance,
+        )
+    }
 }
 
 /// A whole-site row's `(expected, lower, upper)` over `basis` -- for the
