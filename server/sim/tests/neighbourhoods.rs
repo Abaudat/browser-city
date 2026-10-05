@@ -935,10 +935,20 @@ fn seed_12259442226072579830_has_somewhere_affordable_to_begin() {
 /// bottom-third neighbourhood cannot hold (or only by types a top-third one
 /// cannot) may be absent from a district whose commercial land lies wholly
 /// at the other end. The set is counted, never open-ended, and no launch
-/// job (FR14: the barista) is in it -- so banding a type that strands
+/// job (FR14, [`LAUNCH_JOBS`]) is in it -- so banding a type that strands
 /// another trade fails here until someone decides it on purpose.
+/// FR14's launch jobs that have a profession today. The night bus driver
+/// has none yet; when it gets one, its key joins this list.
+const LAUNCH_JOBS: [&str; 4] = ["cashier", "security_guard", "sanitation_worker", "barista"];
+
 #[test]
 fn trades_stranded_by_an_end_band_are_few_and_none_is_a_launch_job() {
+    for job in LAUNCH_JOBS {
+        assert!(
+            defs::PROFESSIONS.iter().any(|p| p.key == job),
+            "launch job {job} names no profession -- a rename must not make this check vacuous"
+        );
+    }
     let nc = setup().0.neighbourhood;
     let max = key("max_end_stranded_professions") as usize;
     let holds = |b: &defs::BuildingTypeDef, lo: i32, hi: i32| {
@@ -964,9 +974,11 @@ fn trades_stranded_by_an_end_band_are_few_and_none_is_a_launch_job() {
             "{} professions are hosted only by types the {end} third cannot hold (> {max}): {stranded:?}",
             stranded.len()
         );
-        assert!(
-            !stranded.contains(&"barista"),
-            "a launch job is stranded at the {end} end"
-        );
+        for job in LAUNCH_JOBS {
+            assert!(
+                hosts.contains_key(job) && !stranded.contains(&job),
+                "launch job {job} is stranded (or hosted nowhere) at the {end} end"
+            );
+        }
     }
 }
