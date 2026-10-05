@@ -246,7 +246,9 @@ pub enum RuleKind {
     /// Site`], or per catchment under [`DistributionScope::Catchment`]:
     /// ratio and coverage judged inside each catchment from that
     /// catchment's own cells only (coverage from a neighbouring catchment
-    /// does not count), spacing still pairwise across a catchment line,
+    /// does not count; a catchment holding no subject is judged by the
+    /// ratio's lower bound alone), spacing still pairwise across a
+    /// catchment line,
     /// each violation reported in the later catchment's verdict
     /// (`(cx, cy)` order) so ground added later never moves an earlier
     /// catchment's verdict. Zero `per` cells means
@@ -582,9 +584,9 @@ fn distribution_judge(
 ) -> Vec<Violation> {
     let mut violations = Vec::new();
     let basis = per_cells.len() as u64;
+    let (_, lower, upper) = distribution_target(basis, ratio, tolerance_percent);
     if basis > 0 {
         let actual = subjects.len() as u64;
-        let (_, lower, upper) = distribution_target(basis, ratio, tolerance_percent);
         if actual < lower || actual > upper {
             let anchor = subjects.first().copied().or(per_cells.first().copied());
             if let Some(anchor) = anchor {
@@ -597,12 +599,18 @@ fn distribution_judge(
             }
         }
     }
-    violations.extend(distribution_coverage_violations(
-        rule_id,
-        subjects,
-        per_cells,
-        max_distance,
-    ));
+    // A catchment holding no subject is judged by the ratio's lower bound
+    // alone -- a row that tolerates it (`lower == 0`) does not also have
+    // every dwelling reported uncovered; one that does not is already
+    // reported above. The whole site is never exempt.
+    if catchment.is_none() || !subjects.is_empty() {
+        violations.extend(distribution_coverage_violations(
+            rule_id,
+            subjects,
+            per_cells,
+            max_distance,
+        ));
+    }
     for v in &mut violations {
         v.catchment = catchment;
     }

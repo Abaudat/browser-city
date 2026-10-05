@@ -499,16 +499,17 @@ tail, not a re-expression of the excess budget at an arbitrary distance.
   type for an envelope's own plot (land use, density band, minimum
   interior, every `requires_site` context it demands), then a
   distribution-row override for each named institution (depot, council,
-  hospital, welfare office, shelter, and, since story 15.9, cafe), read
-  generically off the committed rule set
-  (`sim::rules::RuleDef::as_distribution`) in ascending rule id order --
-  never a hand-named placer. Sited, not sprinkled (Derek's
-  direction): an override's own target splits into a per-catchment
-  floor and a site-wide remainder, and within either pool candidates
-  rank by how many of the subject type's own `prefers_site` contexts
-  they match, then `density_affinity`, then a seeded draw key -- never a
-  shuffled list taken greedily. A required institution that cannot be
-  placed is a typed `GenerationError`, never a silently missing one.
+  hospital, welfare office, shelter, cafe), read generically off the
+  committed rule set (`sim::rules::RuleDef::as_distribution`) in
+  ascending rule id order -- never a hand-named placer. A row's target is
+  `sim::rules::distribution_target` over its `per` count, the figure
+  `evaluate` judges it by: the whole site for a `site` row, each
+  catchment on its own land for a `catchment` row. Within a pool,
+  candidates rank by how many of the subject type's own `prefers_site`
+  contexts they match, then `density_affinity`, then a seeded draw key --
+  never a shuffled list taken greedily. A catchment whose land cannot
+  hold what it owes is left short and `check_rules` returns a typed
+  `GenerationError`, never a silently missing institution.
 - **Reads:** density, land-use mix (not affluence yet: no pass has
   authored it on the parameter field -- 3.7 does), plus each envelope's
   own structural site context (a corner, and the street tier its front
@@ -528,8 +529,10 @@ tail, not a re-expression of the excess budget at an arbitrary distance.
   players would read as the game being broken, not a quirk of the site,
   so "at least one cafe" is a real requirement, expressed the way every
   other required kind already is rather than left to the fill's own
-  luck. Shops stay ordinary weighted fill: five shop-tagged types
-  sharing one tag is real variety, which is the fill's own job.
+  luck. Shops stay ordinary weighted fill, a likelihood and not a
+  guarantee: a row over a tag many types share would pick the type by
+  hand and erase the variety the fill exists for, and a shopless
+  neighbourhood is intended friction.
 - **Evidence:** [`docs/generation/building-types-seed-1.svg`](generation/building-types-seed-1.svg),
   [`-2`](generation/building-types-seed-2.svg), [`-3`](generation/building-types-seed-3.svg)
   -- envelopes tinted by a derived, structural class (no per-key branch
@@ -692,7 +695,7 @@ disagree.
 | generation.building_types.profession_count_mean_tolerance_percent | committed | Building type | the pooled band around `target_profession_count`, as a percent -- the profession catalog itself totals exactly `target_profession_count` rows, two of which stay structurally singleton by design, and institutional land is a small, fixed share of the site (an earlier pass's own limit, not this pass's); the measured pooled mean sits under `target_profession_count` for those reasons, with margin |
 | generation.building_types.profession_count_per_city_min | committed | Building type | a weak, any-seed floor on the count of professions held by at least `min_employers_per_profession` distinct placed workplaces in one city -- the per-city half the pooled mean above says nothing about |
 | generation.building_types.min_employers_per_profession | committed | Building type | the GDD's own "5+ employers each" -- the minimum distinct placed workplaces a profession must be held by to count toward the target above; a singleton institution's own post is deliberately excluded |
-| generation.building_types.catchment_extent_cells | committed | Building type | AC3's own catchment: the fixed-extent square (world cells) a `[[distribution]]` row's own site-wide target is allocated over -- 256 at launch, exactly the four quadrants of a 512x512 site |
+| generation.catchment_extent_cells | committed | Building type | the fixed-extent, world-absolute square (world cells) a `scope = "catchment"` `[[distribution]]` row is judged and allocated over -- 256 at launch, the four quadrants of a 512x512 site |
 
 ## placement
 | key | status | pass | scope | reads | intent |
@@ -703,12 +706,12 @@ disagree.
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
 | waste_per_three_seating | committed | Prop placement | site | - | **placeholder** -- seating with no bin anywhere nearby, or every bin clumped in one corner while the rest of the street collects litter; scoped `site` because distribution's own coverage math already is -- "Does not fit"'s distribution gap below is this row's own answer to how it behaves when the site grows |
-| depot_present | committed | Building type | site | - | a depot per roughly `ratio` dwellings, never clustered with another depot -- "the district has a depot" (AC2); `max_distance` set past the site's own diagonal on purpose (no coverage ceiling on a municipal row, Derek's direction) |
+| depot_present | committed | Building type | site | - | a depot per roughly `ratio` dwellings, never clustered with another depot -- "the district has a depot" (AC2); one per district is what a depot is, so a district that grows past the next multiple of `ratio` is owed another, built by the development chain; no coverage ceiling (the walk to one is content) |
 | council_present | committed | Building type | site | - | same shape, the council |
 | hospital_present | committed | Building type | site | - | same shape, the hospital |
-| welfare_office_present | committed | Building type | site | - | welfare offices at a real ratio (never a singleton), spaced apart -- they sit where land is cheap, and the walk to them is content (Derek's direction), never guaranteed near |
-| shelter_present | committed | Building type | site | - | same shape, shelters |
-| cafe_present | committed | Building type | site | - | story 15.9: a cafe per roughly `ratio` dwellings, on ordinary commercial land -- "the district has a cafe" (AC2), guaranteed by construction rather than by the ordinary weighted fill's own luck, since a real launch job (barista, FR14) depends on it |
+| welfare_office_present | committed | Building type | neighbourhood | - | each catchment holds welfare offices at a real ratio of its own dwellings, spaced apart -- they sit where land is cheap, and the walk to them is content, never guaranteed near; a catchment owing under one holds none |
+| shelter_present | committed | Building type | neighbourhood | - | same shape, shelters |
+| cafe_present | committed | Building type | neighbourhood | - | each catchment holds a cafe per roughly `ratio` shops, on ordinary commercial land -- "the district has a cafe" (AC2), a real launch job (barista, FR14) depends on it; a cafe is itself a shop, so placing one never shrinks its own basis |
 
 ## coherence
 | key | status | pass | scope | reads | intent |
@@ -804,7 +807,7 @@ smallest) by `inv_generation_envelope_size_within_its_class_band`.
 
 ## Does not fit
 
-Two gaps the five kinds cannot express today, found by checking the
+One gap the five kinds cannot express today, found by checking the
 design laws above against `server/sim/src/rules/mod.rs` rather than
 assumed:
 
@@ -815,50 +818,6 @@ assumed:
   friction-is-content law above) cannot be written as a rule until this
   exists. Owned by the neighbourhood-character story, unless an earlier
   pass needs it first.
-- **A `[[distribution]]` row itself cannot be scoped below the whole
-  site.** A row's ratio, spacing and coverage are "measured over the
-  whole site... never a per-container one" (`sim::rules::mod.rs`), so
-  every distribution row is whole-site by construction -- itself "the
-  expensive exception" the city-grows law above asks each such row to
-  explain, and a whole-site constant with a coverage ceiling is what
-  the friction-is-content law calls a design defect if service
-  coverage should instead thin toward the periphery. Story 3.4's own
-  five real rows (`depot_present`, `council_present`,
-  `hospital_present`, `welfare_office_present`, `shelter_present`) each
-  set `max_distance` past the site's own diagonal, so the engine's own
-  coverage half never fires at all (Derek's direction: no coverage
-  ceiling on a municipal row); story 15.9 adds a sixth, `cafe_present`,
-  same shape, on ordinary commercial land rather than scarce
-  institutional-or-commercial land. "Evenly spread" is closed on the
-  generator side instead: `sim::generation::building_types::run`
-  splits each row's own whole-site target (the same figure the engine's
-  own ratio check computes) into a floor per catchment -- a fixed-extent
-  square tiling the site (`generation.building_types.catchment_extent_
-  cells`) -- and a site-wide remainder (PR #317 cycle 2: never a
-  proportional remainder, which handed a civic building's own share to
-  whichever catchment held the most dwellings rather than its own
-  preferred site), and `inv_generation_no_quadrant_lacks_its_required_
-  services` checks every catchment clears its own floor, per seed, for
-  real. Story 15.9 fixed a real gap in that split, found by cafe's own
-  much larger per-city target exposing it for the first time: a
-  catchment's own floor could be owed on paper (the site-wide floors
-  summing to the whole target) while that one catchment's own local land
-  could not actually supply it, stranding the shortfall rather than
-  routing it to the site-wide remainder, which real land elsewhere could
-  have satisfied -- `building_types::run` now folds whatever the floor
-  phase could not actually place into the remainder afterward, for every
-  distribution row, not only cafe's own. The same story fixed
-  `place_row`'s bounded search, which pruned against `target` and so
-  returned first-fit's partial, not the largest feasible one, whenever
-  a catchment's floor was unreachable. The gap this leaves is narrower
-  than "distribution is whole-site": a `[[distribution]]` row's own
-  ratio/spacing/coverage fields still cannot themselves be scoped below
-  the whole site -- only the generator's own constructive placement can
-  -- so a rule-row author still cannot express "evenly spread" as data
-  the engine checks on its own. Issue #84 owns closing that (Tim's
-  direction for this story: no per-container scoping in the engine
-  itself, since that is a real engine feature, not something this
-  story's own generator change should carry quietly).
 
 A rule that cannot be expressed as one of the five kinds over tags for
 any other reason is written here too, with why -- a signal that a

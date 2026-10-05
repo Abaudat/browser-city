@@ -5,4 +5,4 @@ legend: W=welfare_office
 grid:
 WW
 violations:
-welfare_office_present at (1, 0, 0)
+welfare_office_present at (1, 0, 0) in catchment (0, 0)

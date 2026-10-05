@@ -12,6 +12,7 @@ mod support;
 use proptest::prelude::*;
 use sim::rules::testing::{Site, SiteBuilder};
 use sim::rules::{Cell, DistributionScope, RuleDef, RuleKind, TagId, Violation, catchment_of};
+use sim::validation::{Check, Defect, Location};
 use support::eval;
 
 const SUBJECT: TagId = 1;
@@ -125,22 +126,40 @@ fn the_same_layout_unscoped_passes_and_unscoped_violations_carry_no_catchment() 
     assert!(violations.iter().all(|v| v.catchment.is_none()));
 }
 
+/// A catchment holding no service is judged by the ratio's lower bound
+/// alone: a row that tolerates it (lower bound 0) is not also reported
+/// for every dwelling being uncovered.
+#[test]
+fn a_tolerated_empty_catchment_is_not_also_reported_uncovered() {
+    // Four dwellings under ratio 5: expected 0, lower 0.
+    let mut b = catchment_cells(SiteBuilder::new(), 0, &[(1, 2), (5, 2), (8, 2)]);
+    for dx in 0..4 {
+        b = b.cell(c(10 + dx, 9), &[PER]);
+    }
+    assert_eq!(eval(&[row(catchment_scope())], &b.build()), vec![]);
+}
+
 /// Coverage from a neighbouring catchment does not count: a service
 /// within `max_distance` of a dwelling still leaves that dwelling's own
 /// catchment uncovered.
 #[test]
 fn coverage_is_judged_from_the_catchments_own_services_only() {
-    let site = two_catchments(&[]);
-    let violations = eval(&[row(catchment_scope())], &site);
-    let uncovered: Vec<Cell> = violations
-        .iter()
-        .filter(|v| v.subject.y == 9)
-        .map(|v| v.subject)
+    // The east catchment's one service is a long way from its far
+    // dwellings; the west catchment's services are not a substitute.
+    let mut tight = row(catchment_scope());
+    if let RuleKind::Distribution { max_distance, .. } = &mut tight.kind {
+        *max_distance = 3;
+    }
+    let site = two_catchments(&[(5, 9)]);
+    let uncovered: Vec<i32> = eval(&[tight], &site)
+        .into_iter()
+        .filter(|v| v.catchment == Some((1, 0)) && v.subject.y == 9)
+        .map(|v| v.subject.x)
         .collect();
     assert_eq!(
-        uncovered.len(),
-        EXTENT as usize,
-        "all ten east dwellings are uncovered though a west service is within 1000 cells"
+        uncovered,
+        vec![10, 11, 19],
+        "east dwellings further than 3 from the east service are uncovered, whatever stands in the west"
     );
 }
 
@@ -175,7 +194,10 @@ fn cells_strategy(max: usize) -> impl Strategy<Value = Vec<(i32, i32)>> {
     proptest::collection::vec((0..EXTENT, 0..EXTENT), 0..max)
 }
 
-fn site_of(contents: &[((i32, i32), Vec<(i32, i32)>, Vec<(i32, i32)>)]) -> Site {
+/// One catchment's content: its `(cx, cy)`, then `per` and subject offsets.
+type CatchmentContent = ((i32, i32), Vec<(i32, i32)>, Vec<(i32, i32)>);
+
+fn site_of(contents: &[CatchmentContent]) -> Site {
     let mut b = SiteBuilder::new();
     for ((cx, cy), per, subjects) in contents {
         for &(dx, dy) in per {
@@ -224,4 +246,24 @@ proptest! {
         prop_assert!(cx * EXTENT <= x && x < (cx + 1) * EXTENT);
         prop_assert!(cy * EXTENT <= y && y < (cy + 1) * EXTENT);
     }
+}
+
+/// A defect found in a catchment renders the rule key and the catchment.
+#[test]
+fn a_defect_in_a_catchment_renders_both_the_rule_key_and_the_catchment() {
+    let defect = Defect {
+        check: Check::Rule {
+            id: RULE_ID,
+            key: RULE_KEY,
+        },
+        location: Location::Cell {
+            cell: c(10, 9),
+            other: None,
+            catchment: Some((1, 0)),
+        },
+    };
+    assert_eq!(
+        defect.to_string(),
+        "service_present at (10, 9, 0) in catchment (1, 0)"
+    );
 }

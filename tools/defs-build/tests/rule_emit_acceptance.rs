@@ -53,7 +53,7 @@ fn emit_rust_for(rule_toml: &str) -> String {
 
 /// [`emit_rust_for`] plus one `defs/balance/` file.
 fn emit_rust_with(rule_toml: &str, balance_toml: &str) -> String {
-    let files = vec![
+    let mut files = vec![
         (
             PathBuf::from("defs/tags/city.toml"),
             "[[tag]]\nid = 1\nkey = \"a\"\n\
@@ -65,11 +65,13 @@ fn emit_rust_with(rule_toml: &str, balance_toml: &str) -> String {
                 .to_string(),
         ),
         (PathBuf::from("defs/rules/city.toml"), rule_toml.to_string()),
-        (
+    ];
+    if !balance_toml.is_empty() {
+        files.push((
             PathBuf::from("defs/balance/generation.toml"),
             balance_toml.to_string(),
-        ),
-    ];
+        ));
+    }
     let raw = defs_build::parse::parse_all(&files).expect("this tree is valid by construction");
     let defs = defs_build::validate::validate(
         &raw,

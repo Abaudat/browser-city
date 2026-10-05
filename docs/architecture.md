@@ -1350,8 +1350,11 @@ matched exhaustively (no `_ =>` arm) -- a sixth kind is a compile error
 until the match is updated on purpose. Every rule kind shares one id/key
 namespace ("rule") in the manifest. Distribution's "evenly spread" is a
 ratio, a minimum spacing and a maximum coverage distance (`max_distance`,
-always positive) together. `evaluate` returns every violation, sorted
-and deduplicated.
+always positive) together. A Distribution row's `scope` is `site` or
+`catchment`; catchments are world-absolute squares of
+`generation.catchment_extent_cells` (`sim::rules::catchment_of`).
+`evaluate` returns every violation, sorted and deduplicated; a
+catchment-scoped one names its catchment.
 
 Adjacency's engine shape is `Adjacency { a, relation, alternatives:
 &'static [&'static [NeighbourTerm]] }`, where `NeighbourTerm { direction,
@@ -1579,20 +1582,15 @@ demands) first, seeded from the envelope's own footprint
 `[[distribution]]` row, read generically through `sim::rules::RuleDef::
 as_distribution` (never by matching the rule engine's own closed kind
 enum) in ascending rule id order, an override onto a named institution
-among the still-eligible envelopes. A row's own whole-site target
-(`per`-tag count / `ratio`, the same figure `sim::rules::evaluate`'s
-own Distribution check computes) splits into a *floor* per catchment --
-a fixed-extent square tiling the site (`GenerationConfig::building_
-type_catchment_extent_cells`) -- and a site-wide *remainder*: each
-catchment owes exactly `floor(per-tag count in that catchment /
-ratio)`, never a share inflated by how much of the `per` tag it happens
-to hold (a proportional remainder drags a civic building toward
-whichever catchment holds the most dwellings, not toward its own
-preferred site); the units the floors do not account for are placed
-site-wide instead. Both the per-catchment floor and the site-wide
-remainder place through the one `place_row`, sharing one running
-`min_spacing` state (`chosen_cells`) so nothing before or after a
-catchment boundary clusters. Within either pool, candidates are ranked
+among the still-eligible envelopes. A row's target is
+`sim::rules::distribution_target` over its `per` count -- the figure
+`sim::rules::evaluate` judges it by, so the generator and `check_rules`
+read one number from the row. A `site` row is placed from the whole
+site; a `catchment` row is placed per catchment, in catchment order,
+from that catchment's own land, sharing one running `min_spacing` state
+(`chosen_cells`) so nothing across a catchment line clusters. A
+catchment whose land cannot hold what it owes is left short, never
+padded from a neighbour: `check_rules` reports it. Within a pool, candidates are ranked
 -- never chosen by a distance search -- first by how many of the
 subject type's own `prefers_site` contexts they match, then by
 `density_affinity`, then by a seeded draw key (total in practice, so a
@@ -1613,22 +1611,6 @@ one (PR #317 cycle 4: an earlier version popped every tentative choice
 back out on failure, silently placing zero where `target - 1` was
 real).
 
-The per-catchment floor is a real, unconditional guarantee, never
-discounted by the row's own site-wide `tolerance_percent` (that
-tolerance belongs only to the site-wide ratio check `sim::rules::
-evaluate`'s own Distribution kind runs, where the unplaced remainder
-lives): a catchment is owed exactly `floor(per-tag count in that
-catchment / ratio)`, bounded down only by what the catchment's own real
-geometry can hold -- the largest `k` for which some subset of its own
-hard-eligible, unclaimed candidates is pairwise-`min_spacing`-clear (of
-each other and of this same row's own subjects already placed in a
-neighbouring catchment, since `min_spacing` is a site-wide constraint,
-never scoped to one catchment). `inv_generation_no_quadrant_lacks_its_
-required_services` (`server/sim/tests/invariants.rs`) asserts `placed
->= k` per seed, per catchment, over arbitrary `u64` seeds, computing
-that same `k` independently -- never skipping the assertion outright,
-even where `k` is `0`.
-
 `DistrictSite` (`generation::site`) is the one `RuleSite` a *finished*
 district presents to `sim::rules::evaluate` -- one subject cell per
 typed building (its front-edge midpoint, floor 0, tagged with its own
@@ -1637,7 +1619,7 @@ bounds)`) -- built once, from the same fields, by `District::
 check_rules`. Pass 5's own constructive placement shares only
 `front_cell`, the same one-subject-cell rule, since `evaluate` needs a
 finished district's full tag/area index, never a partial one; it never
-calls `evaluate` per candidate, and is whole-site. `scripts/ci/
+calls `evaluate` per candidate. `scripts/ci/
 check-generator-no-content-keys.sh` holds the generator to the same
 content-blindness `check-rule-engine-no-content-keys.sh` holds the rule
 engine to: no building-type/tag/profession/rule key as a quoted literal

@@ -35,28 +35,16 @@
 //! pseudo-random hash per envelope), never by a distance search ahead of
 //! ranking.
 //!
-//! AC3 (even spread): a row's own site-wide target (`total per-tag count
-//! / ratio`, the same figure `sim::rules::evaluate`'s own Distribution
-//! check computes) is split into a *floor* per catchment -- a fixed-
-//! extent square tiling the site (`GenerationConfig::building_type_
-//! catchment_extent_cells`) -- and a *remainder* ([`catchment_floors`]):
-//! each catchment owes exactly `floor(per-tag count in that catchment /
-//! ratio)` and nothing else, so a catchment's own share is never
-//! inflated by how many dwellings it happens to hold (Derek's direction,
-//! cycle 2: proportional remainder allocation dragged civic buildings
-//! toward the dwelling periphery, the opposite of "sited toward the
-//! peak"). The remainder -- the units the floors do not account for,
-//! plus, since story 15.9, whatever a catchment's own floor phase could
-//! not actually place against its own local land (`floor_shortfall`,
-//! never left stranded: a catchment can be owed a floor its own real
-//! geometry cannot supply, and the site-wide pool is where that owed
-//! unit still gets its chance) -- is placed site-wide, by the same
-//! ranking. Both the per-catchment floor and the site-wide remainder
-//! call the one [`place_row`], which only ever removes a candidate for a
-//! real `min_spacing` violation -- never a reason to strand a
-//! catchment's own guaranteed floor below what its own real, unused
-//! candidates could still satisfy, but also never a reason to inflate
-//! one catchment's own share at another's expense.
+//! Allocation reads the row, never a copy of it: a row's target is
+//! [`crate::rules::distribution_target`] over its `per` count -- the
+//! whole site for a `site` row, each catchment of
+//! [`crate::rules::catchment_of`] for a `catchment` row, in catchment
+//! order so an earlier catchment's subjects constrain a later one's
+//! spacing, the order the evaluator attributes a breach in. A catchment
+//! is placed from its own land only; one that cannot hold what it owes is
+//! left short and `District::check_rules` reports it, never padded from a
+//! neighbour. [`place_row`] only ever removes a candidate for a real
+//! `min_spacing` violation.
 //!
 //! Infallible, like passes 2-4: AC2/AC3's own presence/spread verdict is
 //! a property of the finished district (`District::check_rules`, via
@@ -146,7 +134,6 @@ struct Context {
     site_context: [bool; 4],
     x: i32,
     y: i32,
-    catchment: (i32, i32),
 }
 
 /// Whether `plot_bounds`' own row-axis edge is a corner: the outer edge
@@ -288,7 +275,6 @@ fn build_context(
                 site_context: site_context_of(corner, street_class),
                 x,
                 y,
-                catchment: crate::rules::catchment_of(x, y, cfg.catchment_extent_cells),
             }
         })
         .collect()
@@ -340,27 +326,6 @@ fn weighted_fill(
         final_type.push(pick.id);
     }
     final_type
-}
-
-/// Floor-only catchment apportionment (Derek's direction, PR #317 cycle
-/// 2): every catchment owes exactly `floor(per-tag count in that
-/// catchment / ratio)`, never a remainder-inflated share. Pure and
-/// unit-tested: the sum of the returned floors, plus the returned
-/// remainder, always equals `site_target`.
-fn catchment_floors(
-    per_by_catchment: &BTreeMap<(i32, i32), u64>,
-    ratio: u64,
-    site_target: u64,
-) -> (BTreeMap<(i32, i32), u64>, u64) {
-    let mut floors: BTreeMap<(i32, i32), u64> = BTreeMap::new();
-    let mut base_sum = 0u64;
-    for (&c, &p) in per_by_catchment {
-        let f = p / ratio;
-        floors.insert(c, f);
-        base_sum += f;
-    }
-    let remainder = site_target.saturating_sub(base_sum);
-    (floors, remainder)
 }
 
 /// The bounded search's own work ceiling, in nodes visited (a candidate
@@ -565,7 +530,6 @@ pub fn placement_search_node_budget_probe(
                 site_context: [false; 4],
                 x: (c as i32) * 1000 + (i as i32 % 2),
                 y: 0,
-                catchment: (0, 0),
             });
         }
     }
@@ -626,20 +590,7 @@ pub fn run(
         // never an assumption about the committed content's own shape.
         let per_counts = recompute_per_counts(&final_type, &by_id);
 
-        let mut per_by_catchment: BTreeMap<(i32, i32), u64> = BTreeMap::new();
-        for (i, &id) in final_type.iter().enumerate() {
-            if by_id[&id].tags.contains(&row.per) {
-                *per_by_catchment.entry(ctx[i].catchment).or_insert(0) += 1;
-            }
-        }
         let total_per = per_counts.get(&row.per).copied().unwrap_or(0);
-        let ratio = row.ratio.max(1) as u64;
-        let site_target = total_per / ratio;
-        if site_target == 0 {
-            continue;
-        }
-
-        let (floors, remainder) = catchment_floors(&per_by_catchment, ratio, site_target);
 
         // The subject type's own siting preferences -- a property of
         // the type, read once per row, never per candidate.
@@ -693,56 +644,59 @@ pub fn run(
         };
 
         let mut chosen_cells: Vec<(i32, i32)> = Vec::new();
-        let mut catchments: Vec<(i32, i32)> = per_by_catchment.keys().copied().collect();
-        catchments.sort();
+        let target_of = |basis: u64| -> u64 {
+            crate::rules::distribution_target(basis, row.ratio, row.tolerance_percent).0
+        };
 
-        // A catchment's own floor is what it is *owed*, never a promise
-        // its own local land can actually deliver: a catchment whose
-        // eligible candidates are scarcer than its own floor (or whose
-        // ranked-and-spaced search falls short of the achievable max)
-        // still leaves real units unplaced. `floor_shortfall` is exactly
-        // that gap -- the floors summed on paper minus what this row
-        // actually placed while working through them -- folded into the
-        // site-wide remainder below so the row's own whole-site target
-        // is still pursued everywhere the floor phase could not reach
-        // it, rather than silently dropped (a catchment that could have
-        // supplied another catchment's shortfall is exactly what "site-
-        // wide remainder" already means; this only widens what counts as
-        // "the floors did not account for it" to include a floor the
-        // floor phase itself could not fill).
-        let mut floor_target_sum = 0u64;
-        let mut floor_placed_sum = 0u64;
-
-        for &c in &catchments {
-            let target = floors.get(&c).copied().unwrap_or(0);
-            if target == 0 {
-                continue;
+        match row.scope {
+            // Each catchment owes what the row owes it, read from the same
+            // `distribution_target` the evaluator judges it against, and is
+            // placed from its own land in catchment order -- earlier
+            // catchments' subjects already constrain the spacing of later
+            // ones, the order the evaluator attributes a spacing breach in.
+            // A catchment whose own land cannot hold what it owes is left
+            // short, never padded from elsewhere: `check_rules` reports it.
+            crate::rules::DistributionScope::Catchment { extent_cells } => {
+                let catchment_of =
+                    |i: usize| crate::rules::catchment_of(ctx[i].x, ctx[i].y, extent_cells);
+                let mut per_by_catchment: BTreeMap<(i32, i32), u64> = BTreeMap::new();
+                for (i, &id) in final_type.iter().enumerate() {
+                    if by_id[&id].tags.contains(&row.per) {
+                        *per_by_catchment.entry(catchment_of(i)).or_insert(0) += 1;
+                    }
+                }
+                for (&c, &per_in) in &per_by_catchment {
+                    let target = target_of(per_in);
+                    if target == 0 {
+                        continue;
+                    }
+                    let mut pool: Vec<usize> = (0..placed.len())
+                        .filter(|&i| {
+                            !overridden[i] && catchment_of(i) == c && eligible_for_subject(i)
+                        })
+                        .collect();
+                    pool.sort_by_key(|&i| rank_key(i));
+                    let chosen = place_row(&pool, target, row.min_spacing, &ctx, &mut chosen_cells);
+                    for &i in &chosen {
+                        final_type[i] = resolve(i);
+                        overridden[i] = true;
+                    }
+                }
             }
-            floor_target_sum += target;
-            let mut pool: Vec<usize> = (0..placed.len())
-                .filter(|&i| !overridden[i] && ctx[i].catchment == c && eligible_for_subject(i))
-                .collect();
-            pool.sort_by_key(|&i| rank_key(i));
-            let chosen = place_row(&pool, target, row.min_spacing, &ctx, &mut chosen_cells);
-            floor_placed_sum += chosen.len() as u64;
-            for &i in &chosen {
-                final_type[i] = resolve(i);
-                overridden[i] = true;
-            }
-        }
-
-        let floor_shortfall = floor_target_sum.saturating_sub(floor_placed_sum);
-        let remainder = remainder + floor_shortfall;
-
-        if remainder > 0 {
-            let mut pool: Vec<usize> = (0..placed.len())
-                .filter(|&i| !overridden[i] && eligible_for_subject(i))
-                .collect();
-            pool.sort_by_key(|&i| rank_key(i));
-            let chosen = place_row(&pool, remainder, row.min_spacing, &ctx, &mut chosen_cells);
-            for &i in &chosen {
-                final_type[i] = resolve(i);
-                overridden[i] = true;
+            crate::rules::DistributionScope::Site => {
+                let target = target_of(total_per);
+                if target == 0 {
+                    continue;
+                }
+                let mut pool: Vec<usize> = (0..placed.len())
+                    .filter(|&i| !overridden[i] && eligible_for_subject(i))
+                    .collect();
+                pool.sort_by_key(|&i| rank_key(i));
+                let chosen = place_row(&pool, target, row.min_spacing, &ctx, &mut chosen_cells);
+                for &i in &chosen {
+                    final_type[i] = resolve(i);
+                    overridden[i] = true;
+                }
             }
         }
     }
@@ -955,46 +909,6 @@ mod tests {
     }
 
     #[test]
-    fn catchment_floors_sum_plus_remainder_always_equals_the_site_target() {
-        let mut per_by_catchment: BTreeMap<(i32, i32), u64> = BTreeMap::new();
-        per_by_catchment.insert((0, 0), 149);
-        per_by_catchment.insert((0, 1), 172);
-        per_by_catchment.insert((1, 0), 133);
-        per_by_catchment.insert((1, 1), 156);
-        let total: u64 = per_by_catchment.values().sum();
-        let ratio = 50u64;
-        let site_target = total / ratio;
-        let (floors, remainder) = catchment_floors(&per_by_catchment, ratio, site_target);
-        let floor_sum: u64 = floors.values().sum();
-        assert_eq!(floor_sum + remainder, site_target);
-        // Every floor really is a floor -- never more than the exact
-        // division.
-        for (&c, &f) in &floors {
-            assert!(f <= per_by_catchment[&c] / ratio);
-        }
-    }
-
-    #[test]
-    fn catchment_floors_never_inflates_a_catchment_by_its_own_dwelling_share() {
-        // The largest-remainder algorithm this replaced would have
-        // handed a lopsided catchment's own entire target to it; the
-        // floor-only version never gives a catchment more than its own
-        // exact-division floor.
-        let mut per_by_catchment: BTreeMap<(i32, i32), u64> = BTreeMap::new();
-        per_by_catchment.insert((0, 0), 10); // floor(10/300) = 0
-        per_by_catchment.insert((0, 1), 290); // floor(290/300) = 0
-        let ratio = 300u64;
-        let site_target = 1u64; // (10+290)/300 = 1
-        let (floors, remainder) = catchment_floors(&per_by_catchment, ratio, site_target);
-        assert_eq!(floors[&(0, 0)], 0);
-        assert_eq!(floors[&(0, 1)], 0);
-        assert_eq!(
-            remainder, 1,
-            "the one unit is the site-wide remainder, never handed to (0,1) for holding more dwellings"
-        );
-    }
-
-    #[test]
     fn place_row_never_places_two_chosen_cells_closer_than_min_spacing() {
         let footprint_at = |x: i32| Rect {
             x0: x,
@@ -1011,7 +925,6 @@ mod tests {
                 site_context: [false; 4],
                 x: footprint_at(i * 8).x0,
                 y: 100,
-                catchment: (0, 0),
             })
             .collect();
         let pool: Vec<usize> = (0..5).collect();
@@ -1047,7 +960,6 @@ mod tests {
             site_context: [false; 4],
             x,
             y: 0,
-            catchment: (0, 0),
         };
         let ctx = vec![cell(0), cell(-14), cell(14)];
         let pool: Vec<usize> = vec![0, 1, 2];
@@ -1078,7 +990,6 @@ mod tests {
             site_context: [false; 4],
             x,
             y: 0,
-            catchment: (0, 0),
         };
         let ctx = vec![cell(0), cell(5), cell(9)];
         let pool: Vec<usize> = vec![0, 1, 2];
@@ -1114,7 +1025,6 @@ mod tests {
             site_context: [false; 4],
             x,
             y: 256,
-            catchment: (1, 1),
         };
         let ctx = vec![cell(270), cell(291), cell(259), cell(280), cell(302)];
         let pool: Vec<usize> = vec![0, 1, 2, 3, 4];
@@ -1150,7 +1060,6 @@ mod tests {
                     site_context: [false; 4],
                     x: c * 1000 + (i % 2),
                     y: 0,
-                    catchment: (0, 0),
                 });
             }
         }
@@ -1204,7 +1113,6 @@ mod tests {
                     site_context: [false; 4],
                     x,
                     y: 0,
-                    catchment: (0, 0),
                 })
                 .collect();
             let pool: Vec<usize> = (0..ctx.len()).collect();

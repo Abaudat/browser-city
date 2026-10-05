@@ -93,9 +93,9 @@ pub fn rect_seed_key(r: SiteBounds) -> u64 {
 
 /// Bumped whenever any implemented pass's algorithm or seeding changes in
 /// a way that could move its output for a fixed seed -- `tests/goldens/
-/// generation_v9.golden` is keyed to this, exactly like `sim::rng::
+/// generation_v10.golden` is keyed to this, exactly like `sim::rng::
 /// RNG_VERSION`/`sim::appearance::APPEARANCE_VERSION`.
-pub const GENERATION_VERSION: u32 = 9;
+pub const GENERATION_VERSION: u32 = 10;
 
 /// Every way generation itself can fail, across every implemented pass --
 /// one type, never a `Result<_, String>` per pass.
@@ -118,7 +118,13 @@ pub enum GenerationError {
     /// violation over the finished district's own [`DistrictSite`] --
     /// `count` is the total, `first` the first (sorted) violation, never
     /// a fallback placement that skips the rules.
-    RuleViolations { count: usize, first: Violation },
+    RuleViolations {
+        count: usize,
+        /// The first violation's rule key, resolved through the rule set
+        /// that produced it.
+        rule_key: String,
+        first: Violation,
+    },
     /// Pass 5 (AC4): the realised workplace count (every placed envelope
     /// whose assigned type has at least one post) sits outside `[min,
     /// max]` -- the same shape as [`GenerationError::
@@ -144,11 +150,21 @@ impl std::fmt::Display for GenerationError {
                 f,
                 "generation::envelopes: building count {got} is outside tolerance [{min}, {max}]"
             ),
-            GenerationError::RuleViolations { count, first } => write!(
-                f,
-                "generation::building_types: {count} rule violation(s), first: rule {} at ({}, {}, {})",
-                first.rule_id, first.subject.x, first.subject.y, first.subject.floor
-            ),
+            GenerationError::RuleViolations {
+                count,
+                rule_key,
+                first,
+            } => {
+                write!(
+                    f,
+                    "generation::building_types: {count} rule violation(s), first: rule {rule_key} at ({}, {}, {})",
+                    first.subject.x, first.subject.y, first.subject.floor
+                )?;
+                if let Some((cx, cy)) = first.catchment {
+                    write!(f, " in catchment ({cx}, {cy})")?;
+                }
+                Ok(())
+            }
             GenerationError::WorkplaceCountOutOfTolerance { got, min, max } => write!(
                 f,
                 "generation::building_types: workplace count {got} is outside tolerance [{min}, {max}]"
@@ -234,6 +250,11 @@ impl District {
         match violations.first().copied() {
             Some(first) => Err(GenerationError::RuleViolations {
                 count: violations.len(),
+                rule_key: content
+                    .rules
+                    .key_of(first.rule_id)
+                    .unwrap_or_default()
+                    .to_string(),
                 first,
             }),
             None => Ok(()),

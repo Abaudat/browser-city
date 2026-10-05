@@ -104,6 +104,7 @@ fn render(rule_set: &RuleSet<'static>, v: Violation) -> String {
         location: Location::Cell {
             cell: v.subject,
             other: v.other,
+            catchment: v.catchment,
         },
     }
     .to_string()

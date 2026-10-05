@@ -16,6 +16,7 @@
 //! `#[test]`, never absorbed by widening a tolerance.
 
 use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 use sim::appearance;
 use sim::cadence;
 use sim::generated::defs::{self, Family, Pool};
@@ -40,6 +41,49 @@ use sim::world::{
 };
 
 mod support;
+
+/// Where a failing property's case is written, relative to the package
+/// root `cargo test` runs integration tests from -- the committed
+/// `invariants.proptest-regressions`, replayed before any fresh case.
+/// Proptest's default (`SourceParallel`) would write somewhere else for an
+/// integration-test target; `the_proptest_persistence_path_is_the_committed_
+/// regressions_file` holds this to the file.
+const REGRESSIONS_PATH: &str = "tests/invariants.proptest-regressions";
+
+/// The config every property in this file runs under: the default (so
+/// `PROPTEST_CASES`/`PROPTEST_RNG_SEED` still apply) with persistence
+/// pinned to [`REGRESSIONS_PATH`].
+fn persisted() -> ProptestConfig {
+    ProptestConfig {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(REGRESSIONS_PATH))),
+        ..ProptestConfig::default()
+    }
+}
+
+/// A failing case is written to, and replayed from, the committed file: the
+/// configured persistence reads exactly the `cc` entries committed there.
+#[test]
+fn the_proptest_persistence_path_is_the_committed_regressions_file() {
+    let committed = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(REGRESSIONS_PATH);
+    let text = std::fs::read_to_string(&committed)
+        .unwrap_or_else(|e| panic!("{} must exist: {e}", committed.display()));
+    let committed_cases = text.lines().filter(|l| l.starts_with("cc ")).count();
+    assert!(
+        committed_cases > 0,
+        "the committed file carries no cases to replay"
+    );
+
+    let config = persisted();
+    let persistence = config
+        .failure_persistence
+        .expect("every property persists its failures");
+    let replayed = persistence.load_persisted_failures2(Some(file!()));
+    assert_eq!(
+        replayed.len(),
+        committed_cases,
+        "the configured persistence must read the committed regressions file"
+    );
+}
 
 pub const INV_NO_MATTER_STARVES: &str = "no matter starves indefinitely";
 pub const INV_INVENTORY_SUPERSET_AFTER_ABSENCE: &str = "inventory is a superset after any absence";
@@ -150,7 +194,6 @@ pub const INV_GENERATION_PROFESSION_DEPTH_MATCHES_THE_SCALE_BASELINE: &str = "po
 pub const INV_GENERATION_PROFESSION_DEPTH_NEVER_COLLAPSES_IN_ONE_CITY: &str = "for any seed, the count of professions held by at least min_employers_per_profession distinct placed workplaces in that one city never falls under the committed per-city floor (story 3.4 AC4)";
 pub const INV_GENERATION_BARISTA_HAS_AT_LEAST_MIN_EMPLOYERS: &str = "for any seed, the barista profession (an FR14 launch job, posted only at cafes) is held by at least min_employers_per_profession distinct placed workplaces in that one city (story 15.9)";
 pub const INV_GENERATION_BUILDING_TYPE_INDEPENDENT_OF_ENVELOPE_ORDER: &str = "shuffling pass 4's own placed-envelope order and re-running pass 5 over the shuffled list never changes any envelope's own assigned type, for any seed (story 3.4, NFR25)";
-pub const INV_GENERATION_NO_QUADRANT_LACKS_ITS_REQUIRED_SERVICES: &str = "for any seed, for every distribution row a building type actually feeds, and every site quadrant holding at least one hard-eligible, unclaimed, min-spacing-feasible candidate for its subject, the subjects actually placed in that quadrant clear its own catchment floor (per-tag count in that quadrant / ratio, never discounted by the row's own site-wide tolerance_percent) (story 3.4 AC3)";
 pub const INV_SCHEDULE_PHASE_PRESERVED: &str = "sim::cadence::next_target's returned target is always congruent to the origin passed in, modulo the period, for any origin/period/now (story 4.2)";
 pub const INV_SCHEDULE_NEVER_TARGETS_PAST: &str = "sim::cadence::next_target's returned target is always strictly after now, for any reasonable-range origin/period/now (story 4.2)";
 pub const INV_SCHEDULE_CATCH_UP_BOUNDED: &str = "sim::cadence::next_target, called with now a simulated week past the origin, returns instantly (no loop) with missed equal to the exact arithmetic gap in periods -- catch-up is bounded to one late fire, every skipped target is never separately dispatched (story 4.2)";
@@ -158,6 +201,7 @@ pub const INV_SCHEDULE_ARITH_TOTAL: &str = "sim::cadence::next_target never pani
 pub const INV_SCHEDULE_NEVER_RETURNS_ITS_OWN_ORIGIN: &str = "sim::cadence::next_target's returned target is always strictly after origin, for any reasonable-range origin/period/now -- an early dispatch (now before origin) must never re-arm the already-due origin itself (story 4.2)";
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
     /// six that has a subsystem to test today (NFR25's pinned RNG). Two
     /// derivations from the same ids, run independently, must produce the
@@ -295,6 +339,7 @@ fn floor_b_bounds() -> Rect {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_collision_only_within_floor`: two floors, each with their own
     /// arbitrary colliders and its own distinct extent, only ever
     /// influence their own floor's collision query -- the other floor's
@@ -635,6 +680,7 @@ fn shuffle<T: Clone>(items: &[T], keys: &[u32]) -> Vec<T> {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_rule_verdicts_deterministic` (story 2.10, FR112): two
     /// independent calls to `evaluate` over the identical facts and
     /// rules -- all five kinds, areas included -- always return the
@@ -938,6 +984,7 @@ enum RoomMutation {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_adjacency_forbidden_pair_is_reported_exactly` (AC2): over a
     /// generated background of cells tagged with an unrelated third tag
     /// (so none of them can ever interact with the rule under test),
@@ -1683,6 +1730,7 @@ fn component_count(grid: &WalkabilityGrid) -> usize {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_doorway_gap_at_least_body_width_is_one_component_under_erosion`
     /// (FR128): for any gap at least the real, generated
     /// `movement.player_body_width_subcells` wide, anywhere within the
@@ -1816,6 +1864,7 @@ fn detour_bounds_hold(seed: u64, cfg: &GenerationConfig) -> Result<(), String> {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
 
     /// `inv_generation_total_never_panics`.
     #[test]
@@ -2292,6 +2341,68 @@ proptest! {
 // Story 3.3: plot subdivision and the building envelope (FR110, FR115).
 // A case is a full 512x512 generation of all four passes.
 
+/// The body of `inv_generation_required_institutions_are_present_when_
+/// their_own_target_is_nonzero` and of every seed pin: for each committed
+/// distribution row a building type feeds, the district places its
+/// subject whenever the row owes one -- a site row when `basis / ratio`
+/// is at least one, a catchment row when some catchment's own basis is --
+/// and `check_rules` holds. Rows and tags come from the committed
+/// content, never from a literal.
+fn assert_required_institutions(seed: u64) -> Result<(), String> {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    let site = d.site(&content);
+    let mut rows: Vec<sim::rules::DistributionRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .filter(|row| {
+            content
+                .building_types
+                .iter()
+                .any(|b| b.tags.contains(&row.per))
+        })
+        .collect();
+    rows.sort_by_key(|d| d.id);
+    for row in &rows {
+        let per = site.subjects_in_area(None, row.per);
+        let owed_somewhere = match row.scope {
+            sim::rules::DistributionScope::Site => {
+                sim::rules::distribution_target(per.len() as u64, row.ratio, row.tolerance_percent)
+                    .0
+                    >= 1
+            }
+            sim::rules::DistributionScope::Catchment { extent_cells } => {
+                let mut by: std::collections::BTreeMap<(i32, i32), u64> = Default::default();
+                for c in per {
+                    *by.entry(sim::rules::catchment_of(c.x, c.y, extent_cells))
+                        .or_insert(0) += 1;
+                }
+                // A scoped row owes at least one subject somewhere, for
+                // every seed: asserted unconditionally.
+                if !by.values().any(|&n| {
+                    sim::rules::distribution_target(n, row.ratio, row.tolerance_percent).0 >= 1
+                }) {
+                    return Err(format!(
+                        "seed {seed}: scoped rule {} owes nothing in any catchment",
+                        row.key
+                    ));
+                }
+                true
+            }
+        };
+        if owed_somewhere && site.subjects_in_area(None, row.subject).is_empty() {
+            return Err(format!(
+                "seed {seed}: rule {} owes a subject but placed none",
+                row.key
+            ));
+        }
+    }
+    d.check_rules(&content)
+        .map_err(|e| format!("seed {seed}: check_rules is no longer Ok: {e:?}"))
+}
+
 /// The per-city mean-size band's own weak multiplier over the tight
 /// pooled tolerance (`inv_generation_envelope_mean_size_matches_the_
 /// committed_band` below): one city's own sample is noisier than the
@@ -2300,103 +2411,8 @@ proptest! {
 /// tunes the mean itself -- an algorithm shape, not tunable content.
 const MEAN_SIZE_WEAK_TOLERANCE_MULTIPLIER: i32 = 4;
 
-/// Whether some `k`-subset of `cells` is pairwise at least `min_spacing`
-/// apart (Chebyshev) *and* at least `min_spacing` from every cell in
-/// `existing` -- an exhaustive search, never a greedy approximation,
-/// since `inv_generation_no_quadrant_lacks_its_required_services`'s own
-/// physical-shortage exemption (PR #317 cycle 3) needs a real existence
-/// answer, not "the generator's own single ranked attempt happened not
-/// to find one". Two real physical shapes this catches, both found by
-/// `proptest`, neither by sequential measurement (the same lesson this
-/// story's own ratio tuning already learned):
-/// - a catchment can hold two real, hard-eligible, unclaimed candidate
-///   envelopes that are themselves closer than the row's own `min_
-///   spacing` (two adjacent plots in the same small institutional
-///   pocket), which no ranking or reordering could ever place both of;
-/// - a *neighbouring* catchment's own already-real subject (`existing`
-///   -- this same row's own placements elsewhere on the site, which
-///   `min_spacing` is a site-wide constraint against, never scoped to
-///   one catchment) can sit within `min_spacing` of every one of this
-///   catchment's own candidates, stranding its floor for a reason that
-///   is still genuinely physical (the row's own even-spread constraint
-///   against a real neighbour), never a bug in this catchment's own
-///   placement.
-///
-/// Both are the same standing as "no eligible land at all". `cells`/`k`
-/// are always small in real content (a handful of candidates, `expected`
-/// rarely above 2-3), so exhaustive backtracking is cheap; this is
-/// test-only code, never called from `sim`'s own published generator.
-fn feasible_independent_set(
-    cells: &[(i32, i32)],
-    existing: &[(i32, i32)],
-    min_spacing: u32,
-    k: usize,
-) -> bool {
-    fn chebyshev(a: (i32, i32), b: (i32, i32)) -> u32 {
-        (a.0 - b.0).unsigned_abs().max((a.1 - b.1).unsigned_abs())
-    }
-    fn backtrack(
-        cells: &[(i32, i32)],
-        existing: &[(i32, i32)],
-        min_spacing: u32,
-        k: usize,
-        start: usize,
-        chosen: &mut Vec<(i32, i32)>,
-    ) -> bool {
-        if chosen.len() == k {
-            return true;
-        }
-        if cells.len().saturating_sub(start) < k - chosen.len() {
-            return false;
-        }
-        for i in start..cells.len() {
-            let c = cells[i];
-            let blocked_by_existing =
-                min_spacing > 0 && existing.iter().any(|&o| chebyshev(c, o) < min_spacing);
-            if blocked_by_existing {
-                continue;
-            }
-            if chosen.iter().all(|&o| chebyshev(c, o) >= min_spacing) {
-                chosen.push(c);
-                if backtrack(cells, existing, min_spacing, k, i + 1, chosen) {
-                    return true;
-                }
-                chosen.pop();
-            }
-        }
-        false
-    }
-    if k == 0 {
-        return true;
-    }
-    let mut chosen = Vec::new();
-    backtrack(cells, existing, min_spacing, k, 0, &mut chosen)
-}
-
-/// The largest `k <= upper_bound` for which [`feasible_independent_set`]
-/// holds -- Quentin's direction, PR #317 cycle 4: "the invariant stops
-/// exempting and starts bounding". A quadrant whose own real geometry
-/// cannot hold `expected` (too little eligible land, or real candidates
-/// that cannot mutually clear `min_spacing`) is not let off entirely
-/// (the old skip-the-assertion exemption); it owes exactly what its own
-/// geometry can hold, `k`, and `k == 0` is still a real, always-true
-/// assertion (`subjects_in_q >= 0`), never a skipped one. `upper_bound`
-/// is always small in real content (`expected`, rarely above 2-3), so a
-/// linear scan down from it, each step one more exhaustive search, is
-/// cheap.
-fn max_feasible_independent_set_size(
-    cells: &[(i32, i32)],
-    existing: &[(i32, i32)],
-    min_spacing: u32,
-    upper_bound: usize,
-) -> usize {
-    (0..=upper_bound)
-        .rev()
-        .find(|&k| feasible_independent_set(cells, existing, min_spacing, k))
-        .unwrap_or(0)
-}
-
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_generation_every_plot_fronts_a_street`.
     #[test]
     fn inv_generation_every_plot_fronts_a_street(seed in any::<u64>()) {
@@ -2937,109 +2953,16 @@ proptest! {
     }
 
     /// `inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero`
-    /// (AC2, story 3.4): for every distribution row this pass's own
-    /// overrides can actually feed (its `per` tag is carried by at least
-    /// one committed building type -- an earlier story's own street-
-    /// furniture rule, say, is a different pass's own concern), read
-    /// generically (never a literal building-type/tag key), whenever the
-    /// `basis / ratio` target is at least 1 the district actually places
-    /// at least one subject -- an institution that cannot be placed is a
-    /// typed error `check_rules` reports, but this invariant names AC2's
-    /// own "the district holds every required kind" claim by itself, for
-    /// any seed. The real multi-instance rows (ratio under the same
-    /// `MULTI_INSTANCE_RATIO_CEILING` `the_quadrant_floor_is_not_
-    /// vacuous_for_every_multi_instance_row_over_seeds_0_to_256` uses --
-    /// `welfare_office_present`, `shelter_present` and, since story 15.9,
-    /// `cafe_present`) also assert `target >= 1` unconditionally, for any
-    /// seed: their own ratio is tuned to keep it that way (the balance
-    /// comment only claims this over the fixed 0..256 range that row's
-    /// own sibling pools over; here it is asserted for real). The three
-    /// high-ratio, near-singleton rows are not: Derek's own direction
-    /// tunes their ratio so `target == 1` *across the measured seed
-    /// range*, never a guarantee for literally every possible seed -- a
-    /// basis just under the ratio (found by `proptest`, not sequential
-    /// measurement) is a real, rare `target == 0` for those three, by
-    /// design, not a bug this invariant should flag.
-    ///
-    /// Story 15.9 (the missing-cafe flake, seed `5671826158575195197`,
-    /// once a real ~1-in-120k failure of the ordinary-fill "shops and
-    /// cafes" branch this doc comment used to describe): cafe moved onto
-    /// the distribution mechanism above (`cafe.weight = 0`,
-    /// `cafe_present` in `defs/rules/generation.toml`) and is now
-    /// covered by the generic loop, not a hand-named branch, so the
-    /// district holds at least one cafe by construction rather than by
-    /// the fill's own luck -- measured (`cargo run -p bounds --release
-    /// --bin measure-generation -- 1000000`), 0 misses in 1,000,000
-    /// genuinely random seeds (`seed_from_ids`, never a sequential
-    /// sweep), for both `cafe_present`'s own basis/target claim and the
-    /// stricter "at least one placed building carries the `cafe` tag" --
-    /// zero by construction (`ratio` under `MULTI_INSTANCE_RATIO_
-    /// CEILING`), not by luck. `seed_5671826158575195197_places_a_cafe`,
-    /// below, pins that exact seed as a plain, non-random regression.
-    /// AC2's remaining "shops" half stays ordinary weighted fill by
-    /// design (Derek's direction: variety across five shop-tagged types
-    /// is the fill's own job there) -- at least one placed type carries
-    /// the `shop` tag, read off `defs::TAGS` by key (a test file, never
-    /// scanned by `check-generator-no-content-keys.sh`); measured over
-    /// the same 1,000,000-seed sweep, 0 misses (shop-tagged types hold
-    /// roughly 85% of the commercial fill weight, so a zero-shop city at
-    /// 100+ commercial envelopes is not a reachable event in practice).
+    /// (AC2): every guaranteed subject -- read off the committed
+    /// `[[distribution]]` rows, never a key list -- is present for any
+    /// seed. [`assert_required_institutions`] is the one body; the named
+    /// seed pins below call the same function, so a pin cannot drift from
+    /// the property. Shops are weighted fill, a likelihood and not a
+    /// guarantee, and are not asserted here (`docs/generation.md`).
     #[test]
     fn inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero(seed in any::<u64>()) {
-        const MULTI_INSTANCE_RATIO_CEILING: u32 = 250;
-        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
-            content.building_types.iter().map(|b| (b.id, b)).collect();
-        let mut tag_counts: std::collections::BTreeMap<TagId, u64> = std::collections::BTreeMap::new();
-        for a in d.building_types.assignments() {
-            for &t in by_id[&a.building_type].tags {
-                *tag_counts.entry(t).or_insert(0) += 1;
-            }
-        }
-        let mut dist_rows: Vec<sim::rules::DistributionRow> = content
-            .rules
-            .iter()
-            .filter_map(|r| r.as_distribution())
-            // Only this pass's own rows -- a row whose `per` tag no
-            // committed building type ever carries (an earlier story's
-            // own street-furniture rule, say) belongs to a different
-            // pass entirely and is out of scope for a building-type
-            // basis/target claim.
-            .filter(|row| content.building_types.iter().any(|b| b.tags.contains(&row.per)))
-            .collect();
-        dist_rows.sort_by_key(|d| d.id);
-        for row in &dist_rows {
-            let basis = tag_counts.get(&row.per).copied().unwrap_or(0);
-            let target = basis / (row.ratio.max(1) as u64);
-            if row.ratio < MULTI_INSTANCE_RATIO_CEILING {
-                prop_assert!(
-                    target >= 1,
-                    "seed {seed}: rule {} has a basis of {basis} over ratio {}, giving target {target} < 1",
-                    row.key, row.ratio
-                );
-            } else if target == 0 {
-                continue;
-            }
-            let actual = tag_counts.get(&row.subject).copied().unwrap_or(0);
-            prop_assert!(
-                actual > 0,
-                "seed {seed}: rule {} has target {target} but placed 0",
-                row.key
-            );
-        }
-
-        let wanted = "shop";
-        let tag_id = defs::TAGS
-            .iter()
-            .find(|t| t.key == wanted)
-            .map(|t| t.id)
-            .unwrap_or_else(|| panic!("committed tags must carry a '{wanted}' entry"));
-        prop_assert!(
-            tag_counts.get(&tag_id).copied().unwrap_or(0) > 0,
-            "seed {seed}: no placed building carries the '{wanted}' tag",
-        );
+        let verdict = assert_required_institutions(seed);
+        prop_assert!(verdict.is_ok(), "{}", verdict.err().unwrap_or_default());
     }
 
     /// `inv_generation_workplace_count_within_tolerance` (AC4, story 3.4):
@@ -3157,500 +3080,6 @@ proptest! {
         prop_assert!(
             baristas >= min_employers,
             "seed {seed}: barista is held by {baristas} workplaces, under min_employers_per_profession {min_employers}"
-        );
-    }
-
-    /// `inv_generation_no_quadrant_lacks_its_required_services` (AC3,
-    /// story 3.4, Quentin's/Derek's/Tim's own cycle-2 direction: a real
-    /// per-seed, per-catchment property, never pooled -- pooling let a
-    /// generator that clusters every subject in one quadrant pass on
-    /// another quadrant's own surplus, exactly the failure AC3 exists to
-    /// catch). For every distribution row this pass's own overrides can
-    /// actually feed (its `per` tag is carried by at least one committed
-    /// building type -- read generically off `RuleSet::iter()`/
-    /// `as_distribution` and `content.building_types`, never a key list
-    /// in this test), and every site quadrant with `expected > 0`
-    /// (`per_in_quadrant / ratio`), the row's own subjects placed there
-    /// clears `required = max_feasible_independent_set_size(...,
-    /// expected)` -- the largest `k <= expected` this quadrant's own
-    /// real geometry (hard-eligible, unclaimed land; `min_spacing`
-    /// packing, within the quadrant and against this same row's own
-    /// subjects already placed in a neighbour) can actually hold
-    /// (Quentin's direction, PR #317 cycle 4: "stops exempting and
-    /// starts bounding" -- a quadrant with no real land or no feasible
-    /// packing is never let off the assertion entirely, `k == 0`
-    /// included; it owes exactly what its own geometry can give,
-    /// bounded separately by `the_no_eligible_land_exemption_fires_
-    /// rarely_over_seeds_0_to_256` below so a `k` shortfall can never
-    /// quietly become the next escape hatch). "Unclaimed": hard-eligible
-    /// in isolation is not the same as available -- an envelope a
-    /// *sibling* distribution row's own subject tag already claimed, at
-    /// its own earlier turn in ascending rule id order, was real,
-    /// structurally-eligible land this row could never have used either
-    /// way, the same real competition `welfare_office_present`/
-    /// `shelter_present` share for institutional-or-commercial land
-    /// (measured, PR #317 cycle 2). `required` is never discounted by
-    /// the row's own site-wide `tolerance_percent` (Quentin's/Derek's
-    /// direction, PR #317 cycle 3: that tolerance belongs to the
-    /// site-wide ratio check `sim::rules::evaluate`'s own Distribution
-    /// kind computes, where the unplaced remainder lives).
-    /// A quadrant's own bucket is [`sim::generation::building_types::
-    /// catchment_of`] over [`sim::generation::site::front_cell`] -- the
-    /// one public, already-independently-tested definition of catchment
-    /// membership (`catchment_of_a_512_site_at_a_256_extent_is_exactly_
-    /// the_four_quadrants`) every part of the system shares, not a
-    /// second one invented for this test: a footprint-centre bucketing
-    /// was tried first and found to disagree with `front_cell`'s own
-    /// bucketing for any envelope whose footprint straddles a catchment
-    /// boundary (common -- an envelope's own depth is often comparable
-    /// to the distance from its centre to a nearby boundary), producing
-    /// false failures that were an artifact of two competing
-    /// definitions of "which catchment", never a real placement gap.
-    #[test]
-    fn inv_generation_no_quadrant_lacks_its_required_services(seed in any::<u64>()) {
-        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
-            content.building_types.iter().map(|b| (b.id, b)).collect();
-        let extent = cfg.catchment_extent_cells;
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-
-        let mut quadrant_of: std::collections::BTreeMap<u32, (i32, i32)> =
-            std::collections::BTreeMap::new();
-        for e in d.envelopes.envelopes() {
-            let (fx, fy) = sim::generation::site::front_cell(e.footprint, e.front);
-            quadrant_of.insert(e.plot, sim::rules::catchment_of(fx, fy, extent));
-        }
-
-        let mut dist_rows: Vec<sim::rules::DistributionRow> = content
-            .rules
-            .iter()
-            .filter_map(|r| r.as_distribution())
-            .filter(|row| {
-                content
-                    .building_types
-                    .iter()
-                    .any(|b| b.tags.contains(&row.per))
-            })
-            .collect();
-        dist_rows.sort_by_key(|d| d.id);
-        // Every committed row's own subject tag -- an envelope whose
-        // real assigned type carries one of these *other than this
-        // row's own* was claimed by a sibling distribution row before
-        // this row's own turn (both rows read overlapping land), never
-        // "eligible" in the sense this row could actually have used it.
-        let all_subject_tags: std::collections::BTreeSet<TagId> =
-            dist_rows.iter().map(|r| r.subject).collect();
-        let assigned_by_plot: std::collections::BTreeMap<u32, u32> = d
-            .building_types
-            .assignments()
-            .iter()
-            .map(|a| (a.plot, a.building_type))
-            .collect();
-
-        for row in &dist_rows {
-            let subject_defs: Vec<&defs::BuildingTypeDef> = content
-                .building_types
-                .iter()
-                .filter(|b| b.tags.contains(&row.subject))
-                .collect();
-            // A quadrant's own hard-eligible, unclaimed candidate cells
-            // for this row's subject -- the physical exemption, computed
-            // the same way `building_types::hard_eligible` is,
-            // independently here. Cells, never a bare count: two real
-            // candidates that are themselves closer than the row's own
-            // `min_spacing` cannot both ever be chosen, whatever the
-            // ranking (`feasible_independent_set` below).
-            let mut eligible_cells_in_q: std::collections::BTreeMap<(i32, i32), Vec<(i32, i32)>> =
-                std::collections::BTreeMap::new();
-            let mut per_by_q: std::collections::BTreeMap<(i32, i32), u64> =
-                std::collections::BTreeMap::new();
-            let mut subj_by_q: std::collections::BTreeMap<(i32, i32), u64> =
-                std::collections::BTreeMap::new();
-            // Every cell this same row actually placed a subject on,
-            // grouped by catchment -- `min_spacing` is a site-wide
-            // constraint (never scoped to one catchment), so a real
-            // neighbouring catchment's own subject legitimately blocks
-            // this catchment's own candidates too
-            // (`feasible_independent_set`'s own `existing` argument).
-            let mut subj_cells_by_q: std::collections::BTreeMap<(i32, i32), Vec<(i32, i32)>> =
-                std::collections::BTreeMap::new();
-            for a in d.building_types.assignments() {
-                let def = by_id[&a.building_type];
-                let q = quadrant_of[&a.plot];
-                if def.tags.contains(&row.per) {
-                    *per_by_q.entry(q).or_insert(0) += 1;
-                }
-                if def.tags.contains(&row.subject) {
-                    *subj_by_q.entry(q).or_insert(0) += 1;
-                    if let Some(e) = d.envelopes.envelopes().find(|e| e.plot == a.plot) {
-                        subj_cells_by_q
-                            .entry(q)
-                            .or_default()
-                            .push(sim::generation::site::front_cell(e.footprint, e.front));
-                    }
-                }
-            }
-            for e in d.envelopes.envelopes() {
-                let plot = &d.plots.plots()[e.plot as usize];
-                let q = quadrant_of[&e.plot];
-                let interior_w = e.along_face_cells() - 2 * cfg.envelope_wall_thickness_cells as i64;
-                let interior_d = e.depth_cells() - 2 * cfg.envelope_wall_thickness_cells as i64;
-                let hard_eligible = subject_defs.iter().any(|b| {
-                    b.land_uses[plot.land_use as usize]
-                        && plot.density >= b.density_min
-                        && plot.density <= b.density_max
-                        && (b.min_interior_width_cells as i64) <= interior_w
-                        && (b.min_interior_depth_cells as i64) <= interior_d
-                });
-                let assigned_def = by_id[&assigned_by_plot[&e.plot]];
-                let consumed_by_a_sibling_row = assigned_def
-                    .tags
-                    .iter()
-                    .any(|t| *t != row.subject && all_subject_tags.contains(t));
-                if hard_eligible && !consumed_by_a_sibling_row {
-                    let (fx, fy) = sim::generation::site::front_cell(e.footprint, e.front);
-                    eligible_cells_in_q.entry(q).or_default().push((fx, fy));
-                }
-            }
-
-            let ratio = row.ratio.max(1) as u64;
-            for (&q, &per_in_q) in &per_by_q {
-                let expected = per_in_q / ratio;
-                if expected == 0 {
-                    continue;
-                }
-                let empty = Vec::new();
-                let cells = eligible_cells_in_q.get(&q).unwrap_or(&empty);
-                let existing_elsewhere: Vec<(i32, i32)> = subj_cells_by_q
-                    .iter()
-                    .filter(|&(&other_q, _)| other_q != q)
-                    .flat_map(|(_, cells)| cells.iter().copied())
-                    .collect();
-                // The largest `k <= expected` this quadrant's own real
-                // geometry can hold (Quentin's direction, PR #317 cycle
-                // 4: "stops exempting and starts bounding") -- always
-                // asserted, `k == 0` included, never skipped.
-                let required = max_feasible_independent_set_size(
-                    cells,
-                    &existing_elsewhere,
-                    row.min_spacing,
-                    expected as usize,
-                ) as u64;
-                let subjects_in_q = subj_by_q.get(&q).copied().unwrap_or(0);
-                prop_assert!(
-                    subjects_in_q >= required,
-                    "seed {seed}: rule {} quadrant {:?} has {per_in_q} of its own per-tag (expected {expected}) but only {subjects_in_q} subjects, below the required {required} ({} hard-eligible candidates were available)",
-                    row.key, q, cells.len()
-                );
-            }
-        }
-    }
-}
-
-/// Companion to `inv_generation_no_quadrant_lacks_its_required_services`:
-/// bounds how often a quadrant's own real geometry forces `required`
-/// below `expected` (`max_feasible_independent_set_size(...) <
-/// expected`) over the fixed seed range 0..256, so that can never
-/// quietly grow into the next escape hatch (Quentin's direction, PR
-/// #317 cycles 2 and 4: cycle 2's own boolean "exempt or not" became
-/// cycle 4's own bound, so this now counts every seed/quadrant/row
-/// where the bound is real and strictly under `expected`, not only a
-/// total failure) -- a committed ceiling, re-derived from real
-/// measurement, not "however often it happens to fire today". The
-/// shortfall itself: not only too few hard-eligible candidates, but too
-/// few that can coexist under the row's own `min_spacing`
-/// (`feasible_independent_set`) -- two real candidates sitting in the
-/// same small pocket are exactly as unplaceable-both as one candidate
-/// that does not exist.
-#[test]
-fn the_no_eligible_land_exemption_fires_rarely_over_seeds_0_to_256() {
-    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    let content = GenerationContent::committed();
-    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
-        content.building_types.iter().map(|b| (b.id, b)).collect();
-    let extent = cfg.catchment_extent_cells;
-
-    let mut dist_rows: Vec<sim::rules::DistributionRow> = content
-        .rules
-        .iter()
-        .filter_map(|r| r.as_distribution())
-        .filter(|row| {
-            content
-                .building_types
-                .iter()
-                .any(|b| b.tags.contains(&row.per))
-        })
-        .collect();
-    dist_rows.sort_by_key(|d| d.id);
-
-    let mut checked = 0u64;
-    let mut exempted = 0u64;
-
-    for seed in 0..256u64 {
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-        let mut quadrant_of: std::collections::BTreeMap<u32, (i32, i32)> =
-            std::collections::BTreeMap::new();
-        for e in d.envelopes.envelopes() {
-            let (fx, fy) = sim::generation::site::front_cell(e.footprint, e.front);
-            quadrant_of.insert(e.plot, sim::rules::catchment_of(fx, fy, extent));
-        }
-        let all_subject_tags: std::collections::BTreeSet<TagId> =
-            dist_rows.iter().map(|r| r.subject).collect();
-        let assigned_by_plot: std::collections::BTreeMap<u32, u32> = d
-            .building_types
-            .assignments()
-            .iter()
-            .map(|a| (a.plot, a.building_type))
-            .collect();
-        for row in &dist_rows {
-            let subject_defs: Vec<&defs::BuildingTypeDef> = content
-                .building_types
-                .iter()
-                .filter(|b| b.tags.contains(&row.subject))
-                .collect();
-            let mut eligible_cells_in_q: std::collections::BTreeMap<(i32, i32), Vec<(i32, i32)>> =
-                std::collections::BTreeMap::new();
-            let mut per_by_q: std::collections::BTreeMap<(i32, i32), u64> =
-                std::collections::BTreeMap::new();
-            let mut subj_cells_by_q: std::collections::BTreeMap<(i32, i32), Vec<(i32, i32)>> =
-                std::collections::BTreeMap::new();
-            for a in d.building_types.assignments() {
-                let def = by_id[&a.building_type];
-                if def.tags.contains(&row.per) {
-                    *per_by_q.entry(quadrant_of[&a.plot]).or_insert(0) += 1;
-                }
-                if def.tags.contains(&row.subject)
-                    && let Some(e) = d.envelopes.envelopes().find(|e| e.plot == a.plot)
-                {
-                    subj_cells_by_q
-                        .entry(quadrant_of[&a.plot])
-                        .or_default()
-                        .push(sim::generation::site::front_cell(e.footprint, e.front));
-                }
-            }
-            for e in d.envelopes.envelopes() {
-                let plot = &d.plots.plots()[e.plot as usize];
-                let q = quadrant_of[&e.plot];
-                let interior_w =
-                    e.along_face_cells() - 2 * cfg.envelope_wall_thickness_cells as i64;
-                let interior_d = e.depth_cells() - 2 * cfg.envelope_wall_thickness_cells as i64;
-                let hard_eligible = subject_defs.iter().any(|b| {
-                    b.land_uses[plot.land_use as usize]
-                        && plot.density >= b.density_min
-                        && plot.density <= b.density_max
-                        && (b.min_interior_width_cells as i64) <= interior_w
-                        && (b.min_interior_depth_cells as i64) <= interior_d
-                });
-                let assigned_def = by_id[&assigned_by_plot[&e.plot]];
-                let consumed_by_a_sibling_row = assigned_def
-                    .tags
-                    .iter()
-                    .any(|t| *t != row.subject && all_subject_tags.contains(t));
-                if hard_eligible && !consumed_by_a_sibling_row {
-                    let (fx, fy) = sim::generation::site::front_cell(e.footprint, e.front);
-                    eligible_cells_in_q.entry(q).or_default().push((fx, fy));
-                }
-            }
-            let ratio = row.ratio.max(1) as u64;
-            for (&q, &per_in_q) in &per_by_q {
-                let expected = per_in_q / ratio;
-                if expected == 0 {
-                    continue;
-                }
-                checked += 1;
-                let empty = Vec::new();
-                let cells = eligible_cells_in_q.get(&q).unwrap_or(&empty);
-                let existing_elsewhere: Vec<(i32, i32)> = subj_cells_by_q
-                    .iter()
-                    .filter(|&(&other_q, _)| other_q != q)
-                    .flat_map(|(_, cells)| cells.iter().copied())
-                    .collect();
-                let required = max_feasible_independent_set_size(
-                    cells,
-                    &existing_elsewhere,
-                    row.min_spacing,
-                    expected as usize,
-                );
-                if required < expected as usize {
-                    exempted += 1;
-                }
-            }
-        }
-    }
-
-    // Measured (PR #317 cycle 4, `cargo test -p sim --release --test
-    // invariants the_no_eligible_land_exemption_fires_rarely -- --nocapture`
-    // after the invariant switched from skipping to bounding): re-derive
-    // this ceiling whenever the balance/content driving it changes.
-    let ceiling_percent = 10u64;
-    let fired_percent = exempted.saturating_mul(100) / checked.max(1);
-    assert!(
-        fired_percent <= ceiling_percent,
-        "the quadrant's own real geometry forced required < expected for {exempted}/{checked} (seed, quadrant, row) triples ({fired_percent}%) over seeds 0..256, past the committed ceiling of {ceiling_percent}%"
-    );
-}
-
-/// Companion to `inv_generation_no_quadrant_lacks_its_required_services`:
-/// proves its own per-quadrant lower bound is a real check, not a `0 >=
-/// 0` no-op, for every row real enough to expect it (Quentin's
-/// direction, PR #317 cycles 2-3) -- read generically off each row's own
-/// `ratio`, never a key list: a row whose own ratio is high enough that
-/// its site-wide target rarely exceeds a handful across the whole site
-/// (`depot_present`/`council_present`/`hospital_present`, each tuned
-/// this cycle to resolve to about one across the measured seed range)
-/// owes zero per quadrant almost everywhere by design, so it is exempt
-/// here -- the two real multi-instance rows (`welfare_office_present`,
-/// `shelter_present`) are not. `required` is computed exactly as the
-/// main invariant now computes it (no tolerance discount,
-/// `max_feasible_independent_set_size` -- PR #317 cycle 4: bounding,
-/// not exempting) -- cycle 2's own version counted `expected >= 1`
-/// instead, which is not what the main invariant actually asserts, and
-/// passed over the exact no-op cycle 3's own review caught. A
-/// *committed, substantial* share of (seed, quadrant) pairs must land
-/// on a real, asserted `required >= 1` -- not "more than zero".
-#[test]
-fn the_quadrant_floor_is_not_vacuous_for_every_multi_instance_row_over_seeds_0_to_256() {
-    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    let content = GenerationContent::committed();
-    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
-        content.building_types.iter().map(|b| (b.id, b)).collect();
-    let extent = cfg.catchment_extent_cells;
-
-    // High-ratio rows resolve to about one instance across the whole
-    // site (`the_three_singleton_ratios_resolve_to_about_one_across_
-    // the_measured_seed_range`, below, pins that directly) -- their own
-    // per-quadrant floor is legitimately almost always zero, by design,
-    // never a bug this test should flag.
-    const MULTI_INSTANCE_RATIO_CEILING: u32 = 250;
-    let mut dist_rows: Vec<sim::rules::DistributionRow> = content
-        .rules
-        .iter()
-        .filter_map(|r| r.as_distribution())
-        .filter(|row| {
-            row.ratio < MULTI_INSTANCE_RATIO_CEILING
-                && content
-                    .building_types
-                    .iter()
-                    .any(|b| b.tags.contains(&row.per))
-        })
-        .collect();
-    dist_rows.sort_by_key(|d| d.id);
-    let all_subject_tags: std::collections::BTreeSet<TagId> =
-        dist_rows.iter().map(|r| r.subject).collect();
-    let mut nonzero_required: std::collections::BTreeMap<u32, u64> =
-        dist_rows.iter().map(|r| (r.id, 0u64)).collect();
-    let mut total_pairs: std::collections::BTreeMap<u32, u64> =
-        dist_rows.iter().map(|r| (r.id, 0u64)).collect();
-
-    for seed in 0..256u64 {
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-        let mut quadrant_of: std::collections::BTreeMap<u32, (i32, i32)> =
-            std::collections::BTreeMap::new();
-        for e in d.envelopes.envelopes() {
-            let (fx, fy) = sim::generation::site::front_cell(e.footprint, e.front);
-            quadrant_of.insert(e.plot, sim::rules::catchment_of(fx, fy, extent));
-        }
-        let assigned_by_plot: std::collections::BTreeMap<u32, u32> = d
-            .building_types
-            .assignments()
-            .iter()
-            .map(|a| (a.plot, a.building_type))
-            .collect();
-        for row in &dist_rows {
-            let subject_defs: Vec<&defs::BuildingTypeDef> = content
-                .building_types
-                .iter()
-                .filter(|b| b.tags.contains(&row.subject))
-                .collect();
-            let mut eligible_cells_in_q: std::collections::BTreeMap<(i32, i32), Vec<(i32, i32)>> =
-                std::collections::BTreeMap::new();
-            let mut per_by_q: std::collections::BTreeMap<(i32, i32), u64> =
-                std::collections::BTreeMap::new();
-            let mut subj_cells_by_q: std::collections::BTreeMap<(i32, i32), Vec<(i32, i32)>> =
-                std::collections::BTreeMap::new();
-            for a in d.building_types.assignments() {
-                let def = by_id[&a.building_type];
-                if def.tags.contains(&row.per) {
-                    *per_by_q.entry(quadrant_of[&a.plot]).or_insert(0) += 1;
-                }
-                if def.tags.contains(&row.subject)
-                    && let Some(e) = d.envelopes.envelopes().find(|e| e.plot == a.plot)
-                {
-                    subj_cells_by_q
-                        .entry(quadrant_of[&a.plot])
-                        .or_default()
-                        .push(sim::generation::site::front_cell(e.footprint, e.front));
-                }
-            }
-            for e in d.envelopes.envelopes() {
-                let plot = &d.plots.plots()[e.plot as usize];
-                let q = quadrant_of[&e.plot];
-                let interior_w =
-                    e.along_face_cells() - 2 * cfg.envelope_wall_thickness_cells as i64;
-                let interior_d = e.depth_cells() - 2 * cfg.envelope_wall_thickness_cells as i64;
-                let hard_eligible = subject_defs.iter().any(|b| {
-                    b.land_uses[plot.land_use as usize]
-                        && plot.density >= b.density_min
-                        && plot.density <= b.density_max
-                        && (b.min_interior_width_cells as i64) <= interior_w
-                        && (b.min_interior_depth_cells as i64) <= interior_d
-                });
-                let assigned_def = by_id[&assigned_by_plot[&e.plot]];
-                let consumed_by_a_sibling_row = assigned_def
-                    .tags
-                    .iter()
-                    .any(|t| *t != row.subject && all_subject_tags.contains(t));
-                if hard_eligible && !consumed_by_a_sibling_row {
-                    let (fx, fy) = sim::generation::site::front_cell(e.footprint, e.front);
-                    eligible_cells_in_q.entry(q).or_default().push((fx, fy));
-                }
-            }
-            let ratio = row.ratio.max(1) as u64;
-            for (&q, &per_in_q) in &per_by_q {
-                *total_pairs.get_mut(&row.id).unwrap() += 1;
-                let expected = per_in_q / ratio;
-                if expected == 0 {
-                    continue;
-                }
-                let empty = Vec::new();
-                let cells = eligible_cells_in_q.get(&q).unwrap_or(&empty);
-                let existing_elsewhere: Vec<(i32, i32)> = subj_cells_by_q
-                    .iter()
-                    .filter(|&(&other_q, _)| other_q != q)
-                    .flat_map(|(_, cells)| cells.iter().copied())
-                    .collect();
-                // `required` here, computed exactly as the main
-                // invariant computes it (PR #317 cycle 4: bounding, not
-                // exempting) -- a real, non-trivial floor is asserted
-                // whenever the quadrant's own real geometry can hold at
-                // least one.
-                let required = max_feasible_independent_set_size(
-                    cells,
-                    &existing_elsewhere,
-                    row.min_spacing,
-                    expected as usize,
-                );
-                if required >= 1 {
-                    *nonzero_required.get_mut(&row.id).unwrap() += 1;
-                }
-            }
-        }
-    }
-
-    // Measured (PR #317 cycle 4, `cargo test -p sim --release --test
-    // invariants the_quadrant_floor_is_not_vacuous -- --nocapture` after
-    // the invariant switched from skipping to bounding): re-derive
-    // whenever the ratios or catchment extent change.
-    let floor_share_percent = 40u64;
-    for row in &dist_rows {
-        let total = total_pairs[&row.id];
-        let nonzero = nonzero_required[&row.id];
-        let share_percent = nonzero.saturating_mul(100) / total.max(1);
-        assert!(
-            share_percent >= floor_share_percent,
-            "rule {}: only {nonzero} of {total} (seed, quadrant) pairs over seeds 0..256 ({share_percent}%) owe a real, asserted, non-exempt per-quadrant floor -- below the committed {floor_share_percent}% floor, the per-quadrant invariant is too vacuous for this multi-instance row",
-            row.key
         );
     }
 }
@@ -4243,22 +3672,12 @@ fn check_rules_reports_a_planted_min_spacing_violation_by_its_own_rule_key() {
     }
 }
 
-/// Companion to the min-spacing test above: every committed distribution
-/// row shares the same `per = "dwelling"` basis, and Distribution's own
-/// coverage half (`max_distance`) flags *every* dwelling as uncovered
-/// the moment a row's own subject count is zero -- so isolating one
-/// missing institution means every *other* row must clear its own
-/// ratio band and have at least one subject placed somewhere, not just
-/// the targeted row's own absence. 400 `villa`s (so `depot_present`/
-/// `council_present`/`hospital_present`, ratio 400, each expect 1 with a
-/// tolerance-25% band of `[0, 2]`, and `welfare_office_present`, ratio
-/// 150, expects 2 with a tolerance-50% band of `[1, 3]`) plus one
-/// `depot`, one `council`, one `hospital` and two `welfare_office`s,
-/// satisfying every one of those four bands -- and zero `shelter`s at
-/// all, where `shelter_present`'s own ratio 100 ⇒ expected 4,
-/// tolerance-55% band `[1, 7]`, so 0 clears neither its own coverage nor
-/// its own ratio lower bound. All `form_low`, one area, so the coherence
-/// row stays silent too.
+/// Companion to the min-spacing test above: 400 `villa`s in one catchment
+/// plus one `depot`, one `council`, one `hospital` and two
+/// `welfare_office`s in the same catchment satisfy every row but one --
+/// and zero `shelter`s, which `shelter_present` owes that catchment (its
+/// ratio lower bound is above zero), so it is the one row violated. All
+/// `form_low`, one area, so the coherence row stays silent too.
 #[test]
 fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_key() {
     use sim::generation::{LandUse, Side};
@@ -4299,8 +3718,8 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
     }
     let mut keys: Vec<&str> = vec!["villa"; footprints.len()];
     // One depot, one council, one hospital, two welfare_offices, placed
-    // past the dwelling grid's own bottom edge, well spaced from each
-    // other (min_spacing never enters this test's own scope).
+    // below the dwelling grid in the same catchment, well spaced from
+    // each other (min_spacing never enters this test's own scope).
     let extra_keys = [
         "depot",
         "council",
@@ -4310,7 +3729,7 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
     ];
     for (i, &key) in extra_keys.iter().enumerate() {
         let x0 = (i as i32) * 60;
-        let y0 = 400;
+        let y0 = 244;
         footprints.push(Rect {
             x0,
             y0,
@@ -4362,6 +3781,11 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
                 first.rule_id, row.id,
                 "the reported violation must name shelter_present's own rule id"
             );
+            assert_eq!(
+                first.catchment,
+                Some((0, 0)),
+                "the reported violation must name the catchment that owes the shelter"
+            );
         }
         other => panic!("expected RuleViolations, got {other:?}"),
     }
@@ -4395,108 +3819,36 @@ fn seed_16021368561388801292_holds_its_commercial_share_and_workplace_band() {
     );
 }
 
-/// Story 15.9: seed `5671826158575195197` -- 174 cafe-eligible envelopes,
-/// zero cafes drawn -- once failed
-/// `inv_generation_required_institutions_are_present_when_their_own_
-/// target_is_nonzero` on `master` (run 36108601641) and on the
-/// `issue-310`/`issue-335` branches, at about 1 in 120,000 uniformly
-/// drawn seeds (a ~3-4% chance per CI run at `PROPTEST_CASES=4096`). A
-/// plain, non-random pin, never folded into `invariants.proptest-
-/// regressions` (a `cc` entry pins the generator's RNG state, not the
-/// world seed, so a strategy change would silently re-map it): cafe moved onto the distribution mechanism (`cafe_present`,
-/// `defs/rules/generation.toml`) that guarantees this by construction,
-/// so this exact seed -- once a real failure -- now places a cafe and
-/// clears `check_rules` both, on every run.
+/// Seed pins for the missing-cafe flake: plain, non-random world seeds,
+/// never `invariants.proptest-regressions` `cc` entries (a `cc` entry pins
+/// the generator's RNG state, not the world seed, so a strategy change
+/// would silently re-map it). Each calls the same body as the property.
+/// `5671826158575195197` (174 cafe-eligible envelopes, no cafe drawn)
+/// failed `master` before story 15.9 moved cafe onto `cafe_present`; the
+/// other four were green on `master` when pinned and stay as guards.
 #[test]
 fn seed_5671826158575195197_places_a_cafe() {
-    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    let content = GenerationContent::committed();
-    let seed = 5671826158575195197u64;
-    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
-        content.building_types.iter().map(|b| (b.id, b)).collect();
-    let cafe_tag = defs::TAGS
-        .iter()
-        .find(|t| t.key == "cafe")
-        .map(|t| t.id)
-        .expect("committed tags must carry a 'cafe' entry");
-    let has_cafe = d
-        .building_types
-        .assignments()
-        .iter()
-        .any(|a| by_id[&a.building_type].tags.contains(&cafe_tag));
-    assert!(
-        has_cafe,
-        "seed {seed}: still places no cafe-tagged building"
-    );
-    assert!(
-        d.check_rules(&content).is_ok(),
-        "seed {seed}: check_rules is no longer Ok: {:?}",
-        d.check_rules(&content).err()
-    );
+    assert_required_institutions(5671826158575195197).unwrap();
 }
 
-/// Story 15.9: seed `18237087621053529407`, found by the very proptest
-/// sweep this story tightened (`cargo test -p sim --release --test
-/// invariants -- inv_generation_committed_rules_hold_for_any_seed`, a
-/// genuinely random case, not sequential) -- a second, distinct bug from
-/// the one this story set out to fix, in the *mechanism* the fix itself
-/// leans on. This city has 190 hard-eligible cafe candidates and a
-/// `cafe_present` site-wide target of 5, so presence was never in
-/// question, yet the old `building_types::run` placed exactly 0: the
-/// per-catchment floor phase demanded its own floors summed to the
-/// *entire* site target (`catchment_floors`'s own `floors_sum ==
-/// site_target`), leaving a computed site-wide `remainder` of 0 -- but
-/// one of those catchments held zero locally-eligible commercial land,
-/// so its own `place_row` call placed 0 against a floor of nonzero, and
-/// nothing downstream ever revisited that shortfall. `sim::rules::
-/// evaluate`'s own zero-subjects branch
-/// (`distribution_coverage_violations`) then reported one violation per
-/// `per`-tagged cell (597 dwellings -- the `RuleViolations { count: 597,
-/// .. }` this seed once produced), not a single one. Fixed in `run`
-/// itself: the per-catchment phase's own real placed count is tracked
-/// alongside its own floor target, and whatever the floor phase could
-/// not actually place is folded into the site-wide remainder afterward
-/// (`floor_shortfall`), so a catchment that cannot supply its own floor
-/// no longer strands it -- the site-wide pool, which this same seed
-/// proves has real eligible land elsewhere, gets the chance the
-/// catchment-only view never gave it. This pin is a plain, non-random
-/// `#[test]`, mirroring the seed above: a `cc` entry in
-/// `invariants.proptest-regressions` pins the generator's RNG state, not
-/// the world seed, so a strategy change would silently re-map it.
 #[test]
-fn seed_18237087621053529407_places_its_full_cafe_target_despite_a_starved_catchment() {
-    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    let content = GenerationContent::committed();
-    let seed = 18237087621053529407u64;
-    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
-        content.building_types.iter().map(|b| (b.id, b)).collect();
-    let mut tag_counts: std::collections::BTreeMap<TagId, u64> = std::collections::BTreeMap::new();
-    for a in d.building_types.assignments() {
-        for &t in by_id[&a.building_type].tags {
-            *tag_counts.entry(t).or_insert(0) += 1;
-        }
-    }
-    let cafe_row = content
-        .rules
-        .iter()
-        .filter_map(|r| r.as_distribution())
-        .find(|r| r.key == "cafe_present")
-        .expect("committed content carries a 'cafe_present' distribution row");
-    let basis = tag_counts.get(&cafe_row.per).copied().unwrap_or(0);
-    let target = basis / (cafe_row.ratio.max(1) as u64);
-    let actual = tag_counts.get(&cafe_row.subject).copied().unwrap_or(0);
-    assert_eq!(
-        actual, target,
-        "seed {seed}: cafe_present placed {actual} against its own target {target} -- the \
-         starved-catchment shortfall must be picked up by the site-wide remainder"
-    );
-    assert!(
-        d.check_rules(&content).is_ok(),
-        "seed {seed}: check_rules is no longer Ok: {:?}",
-        d.check_rules(&content).err()
-    );
+fn seed_18237087621053529407_places_a_cafe() {
+    assert_required_institutions(18237087621053529407).unwrap();
+}
+
+#[test]
+fn seed_10570461036942086058_places_a_cafe() {
+    assert_required_institutions(10570461036942086058).unwrap();
+}
+
+#[test]
+fn seed_5893400460575277432_places_a_cafe() {
+    assert_required_institutions(5893400460575277432).unwrap();
+}
+
+#[test]
+fn seed_6617268145519561593_places_a_cafe() {
+    assert_required_institutions(6617268145519561593).unwrap();
 }
 
 /// Companion to the two tests above: a `condo_block` (`form_high`) and a
@@ -4809,7 +4161,7 @@ fn est_c(a: Point, b: Point, m: TransportMode, c: Correction) -> i64 {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 4096, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: 4096, ..persisted() })]
 
     /// `inv_estimate_is_a_metric`.
     #[test]
@@ -4887,6 +4239,7 @@ pub const INV_CITY_HOUR_DEPENDS_ONLY_ON_REAL_HOUR_PHASE: &str = "in-city time of
 const CLOCK_RANGE: i64 = 1 << 60;
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_city_time_depends_only_on_elapsed`.
     #[test]
     fn inv_city_time_depends_only_on_elapsed(
@@ -4932,20 +4285,10 @@ proptest! {
     }
 }
 
-/// Story 15.9: a catchment can be owed a floor its own local land
-/// cannot supply -- one catchment holds every dwelling and zero
-/// eligible commercial land, a second holds zero dwellings (so the
-/// per-catchment floor phase never even considers it) but plenty of
-/// eligible commercial land. Before the fix, the first catchment's
-/// own floor alone summed to the whole site target, leaving a
-/// computed site-wide remainder of 0 even though the second
-/// catchment's own real, unused candidates could have supplied it --
-/// `run` placed 0 subjects against a target of 2. The fix folds
-/// whatever the floor phase could not actually place into the
-/// site-wide remainder afterward, so the second catchment's own real
-/// candidates get their chance.
-#[test]
-fn a_catchments_own_unmet_floor_is_placed_from_the_site_wide_remainder() {
+/// Fixture: catchment (0, 0) holds four dwellings and no commercial land,
+/// catchment (1, 0) three well-spaced shop candidates and no dwellings;
+/// returns how many shops pass 5 places under a row of the given scope.
+fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize {
     const DWELLING_TAG: TagId = 9301;
     const SHOP_TAG: TagId = 9302;
     let dwelling_type = defs::BuildingTypeDef {
@@ -5013,7 +4356,7 @@ fn a_catchments_own_unmet_floor_is_placed_from_the_site_wide_remainder() {
             tolerance_percent: 20,
             min_spacing: 1,
             max_distance: 2000,
-            scope: sim::rules::DistributionScope::Site,
+            scope,
         },
     }];
     let content = GenerationContent {
@@ -5107,21 +4450,39 @@ fn a_catchments_own_unmet_floor_is_placed_from_the_site_wide_remainder() {
     );
     let c = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let map = sim::generation::building_types::run(1, &em, &pm, &net, &c, &content); // generation-entry-point: allow
-    let placed_shops = map
-        .assignments()
+    map.assignments()
         .iter()
         .filter(|a| a.building_type == shop_type.id)
-        .count();
+        .count()
+}
+
+/// A site row owes the whole district one target, placed wherever eligible
+/// land is: the starved catchment's share comes from the other.
+#[test]
+fn a_site_row_places_its_target_from_whichever_catchment_holds_eligible_land() {
     assert_eq!(
-        placed_shops, 2,
-        "the starved catchment's own unmet floor (2) must be placed from the site-wide \
-         remainder, using the second catchment's own real eligible land"
+        starved_catchment_placed_shops(sim::rules::DistributionScope::Site),
+        2
+    );
+}
+
+/// A catchment row owes each catchment its own share from its own land: a
+/// starved catchment is left short, never padded from a neighbour
+/// (`check_rules` reports it).
+#[test]
+fn a_catchment_row_never_pads_a_starved_catchment_from_a_neighbour() {
+    assert_eq!(
+        starved_catchment_placed_shops(sim::rules::DistributionScope::Catchment {
+            extent_cells: 256
+        }),
+        0
     );
 }
 
 // --- story 4.2: the one scheduled-reducer repeat pattern (sim::cadence) --
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_schedule_phase_preserved`: whatever `origin`/`period_ms`/`now`
     /// are, the returned target is always exactly `origin + k * period_ms`
     /// microseconds for some integer `k` -- congruent to `origin` modulo
@@ -5237,6 +4598,7 @@ fn valid_speeds() -> Vec<u32> {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_jump_preserves_city_time_arithmetic`.
     #[test]
     fn inv_jump_preserves_city_time_arithmetic(
@@ -5390,6 +4752,7 @@ fn stock_holders() -> Vec<sim::stock::HolderRef> {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_stock_is_independent_per_holder`: the oracle is an independent
     /// per-holder map replayed alone, never the ledger checked against
     /// itself; the ledger keeps one row per (holder, item) and none at zero.
@@ -5757,6 +5120,7 @@ fn stock_run(
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_stock_moves_only_by_hand` (FR89): a long interleaving of
     /// authored makes, consumptions and moves under either cause. The
     /// oracle is a map built only by replaying the returned writes onto the
@@ -5943,6 +5307,7 @@ proptest! {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_item_instance_in_exactly_one_state` (FR95): the driver applies
     /// each `plan_move` as the plan says -- one delete and one insert across
     /// forms -- to two separate form maps; the oracle is the last target
@@ -6299,6 +5664,7 @@ fn cash_expected(
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_cash_payment_conserves_every_denomination`: after applying the
     /// returned writes, each denomination's count summed across all holders
     /// is unchanged (counts, not value: value alone lets a note turn into
@@ -6457,6 +5823,7 @@ fn cash_run(case: &CashCase) -> (sim::cash::Payment, sim::cash::Payment) {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_change_is_refused_only_when_the_till_cannot_make_it`: against a
     /// brute-force oracle over every sub-multiset of what the till holds
     /// *and what was just tendered* (tendered cash counts as available for
@@ -6619,6 +5986,7 @@ fn totality_case() -> impl Strategy<Value = TotalityCase> {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_cash_planning_never_panics`: `value_of`, `choose_change` and
     /// `plan_payment` are total over every argument their signatures take.
     #[test]
@@ -6666,6 +6034,7 @@ proptest! {
 // `sim::identity`'s; the model applies them the way the reducers do.
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_identity_reaches_at_most_one_character`
     #[test]
     fn inv_identity_reaches_at_most_one_character(ops in prop::collection::vec(support::identity_model::op(), 0..60)) {
@@ -6742,6 +6111,7 @@ proptest! {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_actor_location_written_only_on_chunk_change` (FR136): the pure
     /// planner is the only thing deciding whether `actor_location` is
     /// rewritten, and it derives the chunk itself -- from the position,
@@ -6788,6 +6158,7 @@ proptest! {
 }
 
 proptest! {
+    #![proptest_config(persisted())]
     /// `inv_player_position_is_one_row_per_player` (FR138): a model of the
     /// table (a map keyed by character) driven only by `plan_position`.
     #[test]

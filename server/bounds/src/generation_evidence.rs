@@ -1014,13 +1014,11 @@ struct CatchmentFigures {
 impl CatchmentFigures {
     fn owed(&self, row_id: u32, c: (i32, i32)) -> u64 {
         let per = self.per.get(&(row_id, c.0, c.1)).copied().unwrap_or(0);
-        let ratio = self
-            .dist_rows
+        self.dist_rows
             .iter()
             .find(|r| r.id == row_id)
-            .map(|r| r.ratio.max(1) as u64)
-            .unwrap_or(1);
-        per / ratio
+            .map(|r| sim::rules::distribution_target(per, r.ratio, r.tolerance_percent).0)
+            .unwrap_or(0)
     }
 
     fn is_exempt(&self, row_id: u32, c: (i32, i32)) -> bool {
