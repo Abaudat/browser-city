@@ -1,0 +1,65 @@
+name: TEMP e2e reverse order (throwaway, reverted before merge)
+on:
+  push:
+    branches: [Abaudat/issue-417]
+permissions:
+  contents: read
+jobs:
+  reverse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: rustup toolchain install
+      # The only saver of the shared `e2e` caches: it builds both module
+      # flavours (production for the smoke rehearsal, time-control for
+      # perf), a superset of what a shard builds.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+          shared-key: e2e
+          save-if: false
+      - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - working-directory: client
+        run: npm ci
+      - name: restore Playwright browsers, keyed to the pinned package version
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('client/package-lock.json') }}
+      - working-directory: client
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - working-directory: client
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: save Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('client/package-lock.json') }}
+      - working-directory: client
+      - name: every spec file once, reverse alphabetical, against ONE harness
+        working-directory: client
+        env:
+          CI: "true"
+          BC_E2E_REUSE_SERVER: "1"
+        run: |
+          node --experimental-strip-types tests/e2e/serve-for-e2e.mjs > serve.log 2>&1 &
+          for i in $(seq 1 240); do curl -sf http://127.0.0.1:5173 >/dev/null && break; sleep 1; done
+          curl -sf http://127.0.0.1:5173 >/dev/null || { cat serve.log; exit 1; }
+          rc=0
+          for f in $(ls tests/e2e/*.spec.ts | grep -vE 'street-perf|boot-budget|deploy-smoke' | sort -r); do
+            echo "=== $f"
+            npx playwright test "$f" --project=chromium || { echo "FAILED $f"; rc=1; }
+          done
+          exit $rc

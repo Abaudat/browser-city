@@ -46,7 +46,7 @@ export default defineConfig({
       : {
           command: "node --experimental-strip-types tests/e2e/serve-for-e2e.mjs",
           url: "http://127.0.0.1:5173",
-          reuseExistingServer: false,
+          reuseExistingServer: !!process.env.BC_E2E_REUSE_SERVER,
           // The module is built here (with the time-control feature), not
           // only published.
           timeout: 240_000,
