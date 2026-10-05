@@ -55,7 +55,6 @@ use std::collections::BTreeMap;
 
 use crate::generated::defs;
 use crate::rng::{Rng, seed_from_ids};
-use crate::rules::TagId;
 use crate::world::Rect;
 
 use super::GenerationConfig;
@@ -261,19 +260,6 @@ fn hard_eligible(b: &defs::BuildingTypeDef, ctx: &Context) -> bool {
         && (b.min_interior_width_cells as i32) <= ctx.interior_width
         && (b.min_interior_depth_cells as i32) <= ctx.interior_depth
         && (0..4).all(|i| !b.requires_site[i] || ctx.site_context[i])
-}
-
-fn recompute_per_counts(
-    final_type: &[u32],
-    by_id: &BTreeMap<u32, &defs::BuildingTypeDef>,
-) -> BTreeMap<TagId, u64> {
-    let mut per_counts: BTreeMap<TagId, u64> = BTreeMap::new();
-    for &id in final_type {
-        for &t in by_id[&id].tags {
-            *per_counts.entry(t).or_insert(0) += 1;
-        }
-    }
-    per_counts
 }
 
 /// Every placed envelope's own [`Context`], computed once -- corner-ness
@@ -623,14 +609,8 @@ pub fn run(
     let mut overridden: Vec<bool> = vec![false; placed.len()];
 
     for row in &dist_rows {
-        // Recomputed fresh, immediately before this row runs: a prior
-        // row's own overrides may have changed which envelopes carry
-        // which tag, so this row's own basis is always the real count,
-        // never an assumption about the committed content's own shape.
-        let per_counts = recompute_per_counts(&final_type, &by_id);
-
-        let total_per = per_counts.get(&row.per).copied().unwrap_or(0);
-
+        // `per` cells are read fresh from `final_type` as this row runs, so a
+        // prior row's own overrides are always reflected.
         // The subject type's own siting preferences -- a property of
         // the type, read once per row, never per candidate.
         let subject_def = content
@@ -683,76 +663,58 @@ pub fn run(
         };
 
         let mut chosen_cells: Vec<(i32, i32)> = Vec::new();
-        let target_of = |basis: u64| -> u64 {
-            crate::rules::distribution_target(basis, row.ratio, row.tolerance_percent).0
-        };
+        // A subject that is itself a `per` member replaces only a `per`
+        // member, so placing it never moves the count its row is judged on.
+        let subject_is_per = subject_def.is_some_and(|b| b.tags.contains(&row.per));
 
-        match row.scope {
-            // Each catchment owes what the row owes it, read from the same
-            // `distribution_target` the evaluator judges it against, and is
-            // placed from its own land in catchment order -- earlier
-            // catchments' subjects already constrain the spacing of later
-            // ones, the order the evaluator attributes a spacing breach in.
-            // A catchment whose own land cannot hold what it owes is left
-            // short, never padded from elsewhere: `check_rules` reports it.
-            crate::rules::DistributionScope::Catchment { extent_cells } => {
-                let catchment_of =
-                    |i: usize| crate::rules::catchment_of(ctx[i].x, ctx[i].y, extent_cells);
-                // Per catchment: the `per` count, and the sum of the parameter
-                // the row reads over those cells (the evaluator's own mean).
-                let mut per_by_catchment: BTreeMap<(i32, i32), (u64, i64)> = BTreeMap::new();
-                for (i, &id) in final_type.iter().enumerate() {
-                    if by_id[&id].tags.contains(&row.per) {
-                        let value = row.reads.map_or(0, |read| match read.parameter {
-                            crate::rules::Parameter::BuildingAge => ctx[i].building_age,
-                            crate::rules::Parameter::Affluence => ctx[i].affluence,
-                        });
-                        let entry = per_by_catchment.entry(catchment_of(i)).or_insert((0, 0));
-                        entry.0 += 1;
-                        entry.1 += value as i64;
-                    }
-                }
-                for (&c, &(per_in, parameter_sum)) in &per_by_catchment {
-                    let ratio_here = row.ratio_for(
-                        row.reads
-                            .map(|_| (parameter_sum / per_in.max(1) as i64) as i32),
-                    );
-                    let target = crate::rules::distribution_target(
-                        per_in,
-                        ratio_here,
-                        row.tolerance_percent,
-                    )
-                    .0;
-                    if target == 0 {
-                        continue;
-                    }
-                    let mut pool: Vec<usize> = (0..placed.len())
-                        .filter(|&i| {
-                            !overridden[i] && catchment_of(i) == c && eligible_for_subject(i)
-                        })
-                        .collect();
-                    pool.sort_by_key(|&i| rank_key(i));
-                    let chosen = place_row(&pool, target, row.min_spacing, &ctx, &mut chosen_cells);
-                    for &i in &chosen {
-                        final_type[i] = resolve(i);
-                        overridden[i] = true;
-                    }
-                }
+        // What the row owes each scope, from the one function the evaluator
+        // judges by: this row's `per` cells with the parameter it reads.
+        let read = match row.ratio {
+            crate::rules::RowRatio::Read(r) => Some(r.parameter),
+            crate::rules::RowRatio::Fixed(_) => None,
+        };
+        let targets = row.targets(
+            final_type
+                .iter()
+                .enumerate()
+                .filter(|(_, id)| by_id[id].tags.contains(&row.per))
+                .map(|(i, _)| {
+                    let value = read.map(|p| match p {
+                        crate::rules::Parameter::BuildingAge => ctx[i].building_age,
+                        crate::rules::Parameter::Affluence => ctx[i].affluence,
+                    });
+                    (crate::rules::Cell::new(ctx[i].x, ctx[i].y, 0), value)
+                }),
+        );
+
+        // A catchment owes what the row owes it and is placed from its own
+        // land in catchment order -- earlier catchments' subjects already
+        // constrain the spacing of later ones. A catchment whose land cannot
+        // hold what it owes is left short, never padded from elsewhere:
+        // `check_rules` reports it. A site row is placed from the whole site.
+        for (scope_key, t) in &targets {
+            if t.expected == 0 {
+                continue;
             }
-            crate::rules::DistributionScope::Site => {
-                let target = target_of(total_per);
-                if target == 0 {
-                    continue;
-                }
-                let mut pool: Vec<usize> = (0..placed.len())
-                    .filter(|&i| !overridden[i] && eligible_for_subject(i))
-                    .collect();
-                pool.sort_by_key(|&i| rank_key(i));
-                let chosen = place_row(&pool, target, row.min_spacing, &ctx, &mut chosen_cells);
-                for &i in &chosen {
-                    final_type[i] = resolve(i);
-                    overridden[i] = true;
-                }
+            let mut pool: Vec<usize> = (0..placed.len())
+                .filter(|&i| {
+                    !overridden[i]
+                        && eligible_for_subject(i)
+                        && (!subject_is_per || by_id[&final_type[i]].tags.contains(&row.per))
+                        && match (row.scope, scope_key) {
+                            (
+                                crate::rules::DistributionScope::Catchment { extent_cells },
+                                Some(c),
+                            ) => crate::rules::catchment_of(ctx[i].x, ctx[i].y, extent_cells) == *c,
+                            _ => true,
+                        }
+                })
+                .collect();
+            pool.sort_by_key(|&i| rank_key(i));
+            let chosen = place_row(&pool, t.expected, row.min_spacing, &ctx, &mut chosen_cells);
+            for &i in &chosen {
+                final_type[i] = resolve(i);
+                overridden[i] = true;
             }
         }
     }
@@ -806,6 +768,7 @@ mod tests {
     use crate::generated::defs;
     use crate::generation::{GenerationConfig, GenerationContent, land_use, plots as plots_mod};
     use crate::generation::{envelopes, streets};
+    use crate::rules::TagId;
     use proptest::prelude::*;
 
     fn cfg() -> GenerationConfig {
@@ -982,11 +945,8 @@ mod tests {
             // The most a row can owe over the whole site: its basis over its
             // smallest ratio (a row that reads a parameter owes by its two
             // ends, so the smaller end bounds every catchment).
-            let smallest = row
-                .reads
-                .map_or(row.ratio, |r| r.ratio_at_min.min(r.ratio_at_max))
-                .max(1);
-            let target = per_counts.get(&row.per).copied().unwrap_or(0) / smallest as u64;
+            let target =
+                per_counts.get(&row.per).copied().unwrap_or(0) / row.ratio.smallest() as u64;
             assert!(
                 actual <= target,
                 "rule {} placed {actual} subjects, its own site-wide ceiling is {target}",

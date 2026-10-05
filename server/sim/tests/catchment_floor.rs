@@ -6,26 +6,30 @@
 
 use sim::generated::defs;
 use sim::generation::{GenerationConfig, GenerationContent, GenerationError, plan};
-use sim::rules::{DistributionScope, RuleDef, RuleKind, RuleSet, RuleSite};
+use sim::rules::{DistributionScope, RowRatio, RuleDef, RuleKind, RuleSet, RuleSite};
 
 const SEED: u64 = 7;
 
-/// The committed rows with every row named `key` given `ratio`.
-fn rules_with_ratio(key: &str, new_ratio: u32) -> Vec<RuleDef> {
+/// The committed rows with every ratio of the row named `key` scaled by
+/// `num / den` (a row that reads a parameter owes by its two ends; moving
+/// the number moves both).
+fn rules_scaled(key: &str, num: u32, den: u32) -> Vec<RuleDef> {
     RuleSet::committed()
         .iter()
         .map(|r| {
             let mut r = *r;
             if r.key == key
-                && let RuleKind::Distribution { ratio, reads, .. } = &mut r.kind
+                && let RuleKind::Distribution { ratio, .. } = &mut r.kind
             {
-                // A row that reads a parameter owes by its two ends; moving
-                // the number moves both.
-                if let Some(read) = reads {
-                    read.ratio_at_min = read.ratio_at_min * new_ratio / (*ratio).max(1);
-                    read.ratio_at_max = read.ratio_at_max * new_ratio / (*ratio).max(1);
-                }
-                *ratio = new_ratio;
+                let scale = |n: u32| (n * num / den).max(1);
+                *ratio = match *ratio {
+                    RowRatio::Fixed(n) => RowRatio::Fixed(scale(n)),
+                    RowRatio::Read(mut read) => {
+                        read.ratio_at_min = scale(read.ratio_at_min);
+                        read.ratio_at_max = scale(read.ratio_at_max);
+                        RowRatio::Read(read)
+                    }
+                };
             }
             r
         })
@@ -54,7 +58,7 @@ fn assert_one_source(key: &str, divisor: u32, seed: u64) {
     assert!(before.check_rules(&committed).is_ok());
     let total_before = subjects_of(&before, &committed, &row);
 
-    let changed_rules = rules_with_ratio(key, (row.ratio / divisor).max(1));
+    let changed_rules = rules_scaled(key, 1, divisor);
     let changed = GenerationContent {
         rules: RuleSet::for_test(&changed_rules),
         building_types: committed.building_types,

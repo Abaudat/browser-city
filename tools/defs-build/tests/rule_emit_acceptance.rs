@@ -97,7 +97,7 @@ fn every_remaining_kind_renders_its_own_exact_rule_kind_literal() {
     );
     assert!(
         distribution.contains(
-            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 3, tolerance_percent: 4, min_spacing: 5, max_distance: 6, scope: crate::rules::DistributionScope::Site, reads: None }"
+            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: crate::rules::RowRatio::Fixed(3), tolerance_percent: 4, min_spacing: 5, max_distance: 6, scope: crate::rules::DistributionScope::Site }"
         ),
         "distribution literal not found:\n{distribution}"
     );
@@ -124,9 +124,8 @@ max = 100000
 ",
     );
     assert!(
-        scoped.contains(
-            "scope: crate::rules::DistributionScope::Catchment { extent_cells: 256 }, reads: None }"
-        ),
+        scoped
+            .contains("scope: crate::rules::DistributionScope::Catchment { extent_cells: 256 } }"),
         "scoped literal not found:
 {scoped}"
     );
@@ -167,7 +166,7 @@ max = 1000
 ",
     );
     assert!(
-        reading.contains("ratio: 30, tolerance_percent: 4, min_spacing: 5, max_distance: 6, scope: crate::rules::DistributionScope::Catchment { extent_cells: 256 }, reads: Some(crate::rules::ParameterRead { parameter: crate::rules::Parameter::Affluence, ratio_at_min: 30, ratio_at_max: 90, min: 0, max: 100 }) }"),
+        reading.contains("ratio: crate::rules::RowRatio::Read(crate::rules::ParameterRead { parameter: crate::rules::Parameter::Affluence, ratio_at_min: 30, ratio_at_max: 90, min: 0, max: 100 }), tolerance_percent: 4, min_spacing: 5, max_distance: 6, scope: crate::rules::DistributionScope::Catchment { extent_cells: 256 } }"),
         "reading literal not found:
 {reading}"
     );

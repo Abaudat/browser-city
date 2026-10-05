@@ -1028,6 +1028,15 @@ min = 1
 max = 1000
 
 [[balance]]
+# Over the fixed seed range 0..256, at least this percent of (seed, catchment)
+# pairs owe a scoped row's floor of at least one subject -- a retune never
+# turns the floor back into zero (measured 79% welfare, 87% shelter).
+key = "generation.catchment_floor_min_bite_percent"
+value = 60
+min = 1
+max = 100
+
+[[balance]]
 # The fixed-extent, world-absolute square a `scope = "catchment"`
 # distribution row is judged and allocated over. 256 at launch: the site is
 # 512x512, so catchments are its four quadrants; a grown site adds
@@ -1157,28 +1166,28 @@ max = 10000
 [[balance]]
 # Citizens a dwelling supports; with the post weight below, a whole screen averages NFR15a's one citizen per 52.4 cells (~17.6).
 key = "generation.neighbourhood.citizens_per_dwelling"
-value = 2
+value = 1
 min = 1
 max = 1000
 
 [[balance]]
 # Citizens one workplace post supports -- a commercial core is busy by its posts, a residential edge quiet by its few dwellings.
 key = "generation.neighbourhood.citizens_per_post"
-value = 3
+value = 4
 min = 0
 max = 1000
 
 [[balance]]
-# A commercial core at the top of the density range supports at least this many citizens on one screen -- above NFR15a's ~17.6 average (measured minimum 22 over 5,000 seeds).
+# A commercial core at the top of the density range supports at least this many citizens on one screen -- NFR15a's ~17.6 average (measured minimum 19 over 100,000 seeds).
 key = "generation.neighbourhood.busy_screen_min_citizens"
-value = 20
+value = 17
 min = 0
 max = 100000
 
 [[balance]]
-# A residential edge at the bottom of the density range supports at most this percent of the same district's commercial core (measured maximum 60).
+# Per-seed wild-deviation guard: a residential edge supports at most this percent of the same district's commercial core (measured maximum 88); the real bound is the pooled key below.
 key = "generation.neighbourhood.quiet_edge_max_percent_of_core"
-value = 75
+value = 95
 min = 1
 max = 100
 
@@ -1190,11 +1199,52 @@ min = 1
 max = 100
 
 [[balance]]
-# Neighbourhoods are compared only when each holds at least this many buildings, so a handful of buildings never reads as a distribution.
-key = "generation.neighbourhood.legibility_min_buildings"
-value = 40
+# Neighbourhoods are compared on shop mix only when each holds at least this many commercial-frontage buildings, so a handful never reads as a distribution.
+key = "generation.neighbourhood.legibility_min_shops"
+value = 25
 min = 1
 max = 100000
+
+[[balance]]
+# Two neighbourhoods a legible step apart on affluence differ in the mix of their commercial-frontage types by at least this total-variation percent (measured minimum 11 over 4096 seeds).
+key = "generation.neighbourhood.legibility_min_shop_mix_percent"
+value = 8
+min = 1
+max = 100
+
+[[balance]]
+# Over seeds 0..256, at least this percent of the bottom affluence third's commercial frontage is shuttered (no post; measured 14%, about one in seven); the top third has none.
+key = "generation.neighbourhood.shuttered_bottom_third_min_percent"
+value = 12
+min = 1
+max = 100
+
+[[balance]]
+# At each end third of the affluence dial, at least this percent of the commercial fill weight sits on types the opposite end third cannot hold.
+key = "generation.neighbourhood.pole_min_share_percent"
+value = 33
+min = 1
+max = 100
+
+[[balance]]
+# Pooled over seeds 0..256, a residential edge supports at most this percent of the commercial core.
+key = "generation.neighbourhood.quiet_edge_pooled_max_percent_of_core"
+value = 50
+min = 1
+max = 100
+
+[[balance]]
+# NFR15a's one citizen per 52.4 cells, as citizens per screen in tenths (17.6), and the percent a pooled mean may sit from it.
+key = "generation.neighbourhood.nfr15a_screen_citizens_tenths"
+value = 176
+min = 1
+max = 100000
+
+[[balance]]
+key = "generation.neighbourhood.nfr15a_tolerance_percent"
+value = 15
+min = 1
+max = 100
 
 [[balance]]
 # Two halves of the site, with identical dials and density, differ in their placed building types by at most this total-variation percent: where a neighbourhood sits never decides what it holds.

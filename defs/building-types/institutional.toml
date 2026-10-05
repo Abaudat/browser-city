@@ -58,11 +58,15 @@ prefers_site = ["arterial"]
 density_affinity = 1
 professions = ["nurse", "orderly", "receptionist", "surgeon", "paramedic", "doctor", "administrator", "cook", "security_guard"]
 
+# A welfare office and a shelter are given over from a house, so each carries
+# `dwelling` and replaces only a `dwelling`: the count their rows are judged
+# on never moves when one is placed.
+
 [[building_type]]
 id = 37
 key = "welfare_office"
-tags = ["municipal_service", "welfare_office"]
-land_uses = ["institutional", "commercial"]
+tags = ["municipal_service", "welfare_office", "dwelling"]
+land_uses = ["institutional", "commercial", "residential"]
 density_min = 0
 density_max = 100
 min_interior_width_cells = 6
@@ -74,8 +78,8 @@ professions = ["caseworker", "clerk", "counsellor", "support_worker"]
 [[building_type]]
 id = 38
 key = "shelter"
-tags = ["municipal_service", "shelter"]
-land_uses = ["institutional", "commercial"]
+tags = ["municipal_service", "shelter", "dwelling"]
+land_uses = ["institutional", "commercial", "residential"]
 density_min = 0
 density_max = 100
 min_interior_width_cells = 7

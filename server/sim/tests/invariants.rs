@@ -16,7 +16,6 @@
 //! `#[test]`, never absorbed by widening a tolerance.
 
 use proptest::prelude::*;
-use proptest::test_runner::FileFailurePersistence;
 use sim::appearance;
 use sim::cadence;
 use sim::generated::defs::{self, Family, Pool};
@@ -50,39 +49,17 @@ mod support;
 /// regressions_file` holds this to the file.
 const REGRESSIONS_PATH: &str = "tests/invariants.proptest-regressions";
 
-/// The config every property in this file runs under: the default (so
-/// `PROPTEST_CASES`/`PROPTEST_RNG_SEED` still apply) with persistence
-/// pinned to [`REGRESSIONS_PATH`].
+/// The config every property in this file runs under: the shared
+/// [`support::persisted`] pinned to [`REGRESSIONS_PATH`].
 fn persisted() -> ProptestConfig {
-    ProptestConfig {
-        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(REGRESSIONS_PATH))),
-        ..ProptestConfig::default()
-    }
+    support::persisted(REGRESSIONS_PATH)
 }
 
 /// A failing case is written to, and replayed from, the committed file: the
 /// configured persistence reads exactly the `cc` entries committed there.
 #[test]
 fn the_proptest_persistence_path_is_the_committed_regressions_file() {
-    let committed = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(REGRESSIONS_PATH);
-    let text = std::fs::read_to_string(&committed)
-        .unwrap_or_else(|e| panic!("{} must exist: {e}", committed.display()));
-    let committed_cases = text.lines().filter(|l| l.starts_with("cc ")).count();
-    assert!(
-        committed_cases > 0,
-        "the committed file carries no cases to replay"
-    );
-
-    let config = persisted();
-    let persistence = config
-        .failure_persistence
-        .expect("every property persists its failures");
-    let replayed = persistence.load_persisted_failures2(Some(file!()));
-    assert_eq!(
-        replayed.len(),
-        committed_cases,
-        "the configured persistence must read the committed regressions file"
-    );
+    support::assert_persistence_reads_committed_file(REGRESSIONS_PATH, file!());
 }
 
 pub const INV_NO_MATTER_STARVES: &str = "no matter starves indefinitely";
@@ -596,12 +573,11 @@ fn five_rules(tags: [TagId; 6]) -> Vec<RuleDef> {
             kind: RuleKind::Distribution {
                 subject: t2,
                 per: t3,
-                ratio: 2,
+                ratio: sim::rules::RowRatio::Fixed(2),
                 tolerance_percent: 50,
                 min_spacing: 3,
                 max_distance: 10,
                 scope: sim::rules::DistributionScope::Site,
-                reads: None,
             },
         },
         RuleDef {
@@ -775,12 +751,11 @@ proptest! {
             kind: RuleKind::Distribution {
                 subject: RULE_SUBJECT,
                 per: RULE_PER_OR_WITHIN,
-                ratio,
+                ratio: sim::rules::RowRatio::Fixed(ratio),
                 tolerance_percent: 0,
                 min_spacing: spacing,
                 max_distance: spacing,
                 scope: sim::rules::DistributionScope::Site,
-                reads: None,
             },
         };
 
@@ -2371,32 +2346,28 @@ fn assert_required_institutions(seed: u64) -> Result<(), String> {
         .collect();
     rows.sort_by_key(|d| d.id);
     for row in &rows {
-        let per = site.subjects_in_area(None, row.per);
-        let (owes_somewhere, demanded) = match row.scope {
-            sim::rules::DistributionScope::Site => (true, !per.is_empty()),
-            sim::rules::DistributionScope::Catchment { extent_cells } => {
-                let mut by: std::collections::BTreeMap<(i32, i32), (u64, i64)> = Default::default();
-                for c in per {
-                    let entry = by
-                        .entry(sim::rules::catchment_of(c.x, c.y, extent_cells))
-                        .or_default();
-                    entry.0 += 1;
-                    entry.1 += row.reads.map_or(0, |r| {
-                        site.parameter_at(*c, r.parameter).unwrap_or(0) as i64
-                    });
-                }
-                let bounds = |&(n, sum): &(u64, i64)| {
-                    let ratio = row.ratio_for(row.reads.map(|_| (sum / n.max(1) as i64) as i32));
-                    sim::rules::distribution_target(n, ratio, row.tolerance_percent)
-                };
-                (
-                    by.values().any(|v| bounds(v).0 >= 1),
-                    by.values().any(|v| bounds(v).1 >= 1),
-                )
+        let read = match row.ratio {
+            sim::rules::RowRatio::Read(r) => Some(r.parameter),
+            sim::rules::RowRatio::Fixed(_) => None,
+        };
+        let targets = row.targets(
+            site.subjects_in_area(None, row.per)
+                .iter()
+                .map(|&c| (c, read.and_then(|p| site.parameter_at(c, p)))),
+        );
+        let owes_somewhere = targets.values().any(|t| t.expected >= 1);
+        // A row demands its subject wherever its own lower bound is above
+        // zero: a site row whenever it has a `per` cell (an empty site
+        // reports every cell uncovered), a catchment row in every catchment
+        // that owes one.
+        let demanded = match row.scope {
+            sim::rules::DistributionScope::Site => !targets.is_empty(),
+            sim::rules::DistributionScope::Catchment { .. } => {
+                targets.values().any(|t| t.lower >= 1)
             }
         };
         // A scoped row owes at least one subject somewhere, for every seed.
-        if !owes_somewhere {
+        if matches!(row.scope, sim::rules::DistributionScope::Catchment { .. }) && !owes_somewhere {
             return Err(format!(
                 "seed {seed}: scoped rule {} owes nothing in any catchment",
                 row.key
@@ -3093,6 +3064,54 @@ proptest! {
     }
 }
 
+/// The catchment floor must bite, and keep biting through any retune: over
+/// the fixed seed range 0..256, the share of (seed, catchment) pairs where a
+/// scoped row's lower bound is at least one clears the committed threshold
+/// (`generation.catchment_floor_min_bite_percent`), for every scoped row --
+/// so no future tolerance can quietly turn the floor back into zero.
+#[test]
+fn the_catchment_floor_bites_for_every_scoped_row_over_seeds_0_to_256() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let threshold =
+        sim::balance::value(defs::BALANCE, "generation.catchment_floor_min_bite_percent") as u64;
+    let rows: Vec<sim::rules::DistributionRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .filter(|r| matches!(r.scope, sim::rules::DistributionScope::Catchment { .. }))
+        .collect();
+    assert!(!rows.is_empty(), "no scoped row is committed");
+    for row in &rows {
+        let (mut biting, mut pairs) = (0u64, 0u64);
+        for seed in 0..256u64 {
+            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+            let site = d.site(&content);
+            let read = match row.ratio {
+                sim::rules::RowRatio::Read(r) => Some(r.parameter),
+                sim::rules::RowRatio::Fixed(_) => None,
+            };
+            for t in row
+                .targets(
+                    site.subjects_in_area(None, row.per)
+                        .iter()
+                        .map(|&c| (c, read.and_then(|p| site.parameter_at(c, p)))),
+                )
+                .values()
+            {
+                pairs += 1;
+                biting += u64::from(t.lower >= 1);
+            }
+        }
+        let share = biting * 100 / pairs.max(1);
+        assert!(
+            share >= threshold,
+            "{}: only {biting} of {pairs} (seed, catchment) pairs ({share}%) owe a floor of at least one -- under the committed {threshold}%",
+            row.key
+        );
+    }
+}
+
 /// Derek's direction (PR #317 cycle 2): "the AC says *a* depot, *a*
 /// council building, *a* hospital" -- each of the three singleton-
 /// shaped rows (high ratio, `per`-tag governed) resolves to exactly one
@@ -3114,7 +3133,7 @@ fn the_three_singleton_ratios_resolve_to_about_one_across_the_measured_seed_rang
         .iter()
         .filter_map(|r| r.as_distribution())
         .filter(|row| {
-            row.ratio >= MULTI_INSTANCE_RATIO_CEILING
+            row.ratio.smallest() >= MULTI_INSTANCE_RATIO_CEILING
                 && content
                     .building_types
                     .iter()
@@ -3128,7 +3147,7 @@ fn the_three_singleton_ratios_resolve_to_about_one_across_the_measured_seed_rang
     );
 
     for row in &dist_rows {
-        let ratio = row.ratio.max(1) as u64;
+        let ratio = row.ratio.smallest() as u64;
         let mut min_actual = u64::MAX;
         let mut max_actual = 0u64;
         for seed in 0..256u64 {
@@ -3873,9 +3892,61 @@ fn seed_5671826158575195197_places_a_cafe() {
     assert_places_a_cafe(5671826158575195197);
 }
 
+/// The exact figure this seed's pin once guarded (a catchment starved of
+/// commercial land stranded part of the cafe target): the committed row's own
+/// target is placed in full, not merely "a cafe exists".
 #[test]
 fn seed_18237087621053529407_places_a_cafe() {
     assert_places_a_cafe(18237087621053529407);
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let cafe = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .find(|r| r.key == "cafe_present")
+        .unwrap();
+    let d = sim::generation::plan(18237087621053529407, &cfg, &content).unwrap();
+    let site = d.site(&content);
+    let target = cafe.targets(
+        site.subjects_in_area(None, cafe.per)
+            .iter()
+            .map(|&c| (c, None)),
+    )[&None]
+        .expected;
+    assert_eq!(
+        site.subjects_in_area(None, cafe.subject).len() as u64,
+        target,
+        "the cafe_present target must be placed in full"
+    );
+}
+
+/// The case the persistence first caught, pinned by world seed (a `cc` entry
+/// pins RNG state, not the world seed). The property was
+/// `inv_generation_required_institutions_are_present_when_their_own_target_
+/// is_nonzero`: this district held no welfare office though a catchment owed
+/// one, because the row's 85% tolerance had made its lower bound 0. The
+/// catchment floor now bites (a catchment owes `expected` itself) and welfare
+/// offices stand on residential land, so the district holds one.
+#[test]
+fn seed_7269466024928266830_places_a_welfare_office() {
+    let seed = 7269466024928266830u64;
+    assert_required_institutions(seed).unwrap();
+    let content = GenerationContent::committed();
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let welfare = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .find(|r| r.key == "welfare_office_present")
+        .unwrap();
+    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    assert!(
+        !d.site(&content)
+            .subjects_in_area(None, welfare.subject)
+            .is_empty(),
+        "seed {seed}: no welfare office"
+    );
 }
 
 #[test]
@@ -4408,12 +4479,11 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         kind: sim::rules::RuleKind::Distribution {
             subject: SHOP_TAG,
             per: DWELLING_TAG,
-            ratio: 2,
+            ratio: sim::rules::RowRatio::Fixed(2),
             tolerance_percent: 20,
             min_spacing: 1,
             max_distance: 2000,
             scope,
-            reads: None,
         },
     }];
     let content = GenerationContent {

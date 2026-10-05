@@ -12,11 +12,19 @@ mod support;
 use proptest::prelude::*;
 use sim::rules::testing::{Site, SiteBuilder};
 use sim::rules::{
-    Cell, DistributionScope, Parameter, ParameterRead, RuleDef, RuleKind, RuleSet, RuleSite, TagId,
-    Violation, catchment_of,
+    Cell, DistributionScope, Parameter, ParameterRead, RowRatio, RuleDef, RuleKind, RuleSet,
+    RuleSite, TagId, Violation, catchment_of,
 };
 use sim::validation::{Check, Defect, Location};
 use support::eval;
+
+/// Where a failing property's case is written and replayed from.
+const REGRESSIONS_PATH: &str = "tests/rule_scoping.proptest-regressions";
+
+#[test]
+fn the_persistence_path_is_the_committed_regressions_file() {
+    support::assert_persistence_reads_committed_file(REGRESSIONS_PATH, file!());
+}
 
 const SUBJECT: TagId = 1;
 const PER: TagId = 2;
@@ -33,12 +41,11 @@ fn row(scope: DistributionScope) -> RuleDef {
             per: PER,
             // Ten `per` cells owe 2, tolerance 10% rounds up to 1: [1, 3]
             // inside a catchment, [3, 5] over two.
-            ratio: 5,
+            ratio: sim::rules::RowRatio::Fixed(5),
             tolerance_percent: 10,
             min_spacing: 3,
             max_distance: 1000,
             scope,
-            reads: None,
         },
     }
 }
@@ -154,7 +161,7 @@ fn coverage_is_judged_from_the_catchments_own_services_only() {
     if let RuleKind::Distribution { max_distance, .. } = &mut tight.kind {
         *max_distance = 3;
     }
-    let site = two_catchments(&[(5, 9)]);
+    let site = two_catchments(&[(5, 9), (0, 2)]);
     let uncovered: Vec<i32> = eval(&[tight], &site)
         .into_iter()
         .filter(|v| v.catchment == Some((1, 0)) && v.subject.y == 9)
@@ -167,24 +174,58 @@ fn coverage_is_judged_from_the_catchments_own_services_only() {
     );
 }
 
-/// Two services closer than `min_spacing` across a catchment line are
-/// still a violation, reported once, in the later catchment's verdict.
+/// Under a catchment scope spacing is judged inside one catchment only: two
+/// services across a catchment line are never a violation of either's
+/// verdict (the generator still keeps clear of the seam).
 #[test]
-fn spacing_across_a_catchment_line_is_a_violation_in_the_later_catchment() {
-    let site = two_catchments(&[(0, 2), (6, 2)]);
-    // (8,2) and (10,2) are two apart, under min_spacing 3.
-    let violations = eval(&[row(catchment_scope())], &site);
-    let spacing = Violation {
-        rule_id: RULE_ID,
-        subject: c(10, 2),
-        other: None,
-        catchment: Some((1, 0)),
-    };
-    assert!(violations.contains(&spacing), "{violations:?}");
+fn spacing_across_a_catchment_line_is_not_judged_but_inside_one_is() {
+    // (8,2) and (10,2) are two apart, across the line at x = 10.
+    let across = two_catchments(&[(0, 2), (6, 2)]);
+    assert_eq!(eval(&[row(catchment_scope())], &across), vec![]);
+    // Two services two apart inside one catchment are a violation, in it.
+    let inside = two_catchments(&[(1, 2), (3, 2)]);
+    let violations = eval(&[row(catchment_scope())], &inside);
     assert!(
-        violations.iter().all(|v| v.catchment == Some((1, 0))),
-        "the earlier catchment's verdict stands: {violations:?}"
+        violations.contains(&Violation {
+            rule_id: RULE_ID,
+            subject: c(13, 2),
+            other: None,
+            catchment: Some((1, 0)),
+        }),
+        "{violations:?}"
     );
+}
+
+/// A catchment owes `expected` itself: tolerance widens the upper bound
+/// only, so a wide tolerance never turns the floor into zero.
+#[test]
+fn a_catchments_floor_is_its_expected_count_whatever_the_tolerance() {
+    let mut wide = row(catchment_scope());
+    if let RuleKind::Distribution {
+        tolerance_percent, ..
+    } = &mut wide.kind
+    {
+        *tolerance_percent = 85;
+    }
+    // Ten dwellings at ratio 5 owe 2; the east catchment holds 1.
+    let site = catchment_cells(
+        catchment_cells(SiteBuilder::new(), 0, &[(1, 2), (6, 2)]),
+        10,
+        &[(1, 2)],
+    )
+    .build();
+    let violations = eval(&[wide], &site);
+    assert!(!violations.is_empty());
+    assert!(violations.iter().all(|v| v.catchment == Some((1, 0))));
+}
+
+/// A row that reads a parameter owes by it or not at all: a site that
+/// reports none is a harness defect, never judged at a stand-in ratio.
+#[test]
+#[should_panic(expected = "service_present")]
+fn a_reading_row_whose_cells_report_no_value_is_a_harness_defect() {
+    let site = two_catchments_at(0, 0).site;
+    let _ = eval(&[reading_row()], &site);
 }
 
 fn verdict_of(site: &Site, catchment: (i32, i32)) -> Vec<Violation> {
@@ -215,17 +256,17 @@ fn site_of(contents: &[CatchmentContent]) -> Site {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(support::persisted(REGRESSIONS_PATH))]
 
-    /// The city grows by whole catchments: appending ground in later
-    /// catchments, with arbitrary content, never moves catchment (0, 0)'s
+    /// The city grows by whole catchments: appending ground in any other
+    /// catchment, on any side, with arbitrary content, never moves catchment (0, 0)'s
     /// verdict -- its violation list included, element for element.
     #[test]
     fn appending_whole_catchments_never_changes_an_existing_catchments_verdict(
         base_per in cells_strategy(14),
         base_subjects in cells_strategy(6),
         added in proptest::collection::vec(
-            ((0i32..4, 0i32..3), cells_strategy(14), cells_strategy(6)),
+            ((-2i32..4, -2i32..3), cells_strategy(14), cells_strategy(6)),
             0..6,
         ),
     ) {
@@ -234,8 +275,8 @@ proptest! {
 
         let mut grown = base.clone();
         for ((cx, cy), per, subjects) in added {
-            // Strictly later than (0, 0) in catchment order.
-            if (cx, cy) > (0, 0) {
+            // Any other catchment, on any side -- negative coordinates too.
+            if (cx, cy) != (0, 0) {
                 grown.push(((cx, cy), per, subjects));
             }
         }
@@ -302,9 +343,8 @@ impl RuleSite for WithParameter {
 
 fn reading_row() -> RuleDef {
     let mut r = row(catchment_scope());
-    if let RuleKind::Distribution { ratio, reads, .. } = &mut r.kind {
-        *ratio = 5;
-        *reads = Some(ParameterRead {
+    if let RuleKind::Distribution { ratio, .. } = &mut r.kind {
+        *ratio = RowRatio::Read(ParameterRead {
             parameter: Parameter::Affluence,
             ratio_at_min: 5,
             ratio_at_max: 20,
@@ -395,14 +435,13 @@ fn welfare_offices_and_shelters_thin_as_affluence_rises() {
     };
     let (poor, rich) = (0, 100);
     for key in ["welfare_office_present", "shelter_present"] {
-        let r = by_key(key);
+        let RowRatio::Read(read) = by_key(key).ratio else {
+            panic!("{key} reads a parameter");
+        };
+        assert_eq!(read.parameter, Parameter::Affluence);
         assert!(
-            r.ratio_for(Some(rich)) > r.ratio_for(Some(poor)),
+            read.ratio_at(rich) > read.ratio_at(poor),
             "{key} thins as affluence rises"
-        );
-        assert_eq!(
-            r.reads.map(|read| read.parameter),
-            Some(Parameter::Affluence)
         );
     }
     // Rows that read nothing keep their one number.
@@ -412,8 +451,6 @@ fn welfare_offices_and_shelters_thin_as_affluence_rises() {
         "hospital_present",
         "cafe_present",
     ] {
-        let r = by_key(key);
-        assert_eq!(r.reads, None);
-        assert_eq!(r.ratio_for(Some(rich)), r.ratio_for(None));
+        assert!(matches!(by_key(key).ratio, RowRatio::Fixed(_)), "{key}");
     }
 }

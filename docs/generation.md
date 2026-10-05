@@ -48,7 +48,7 @@ written.
 A neighbourhood is the ground between arterials (or an arterial and the
 site edge) -- an area, never an identity: no name, no archetype or preset
 ("old town", "docks") in `defs/` or Rust, no per-neighbourhood override
-table (`scripts/ci/check-generator-no-neighbourhood-identity.sh`). It is a
+table. It is a
 point in a four-parameter space and nothing more (FR113): anything that
 differs by place reads one of the four dials below, and no fifth mechanism
 makes a neighbourhood feel different. These are the sim's own quantities --
@@ -71,12 +71,14 @@ per use, realised by pass 1; there is no second authored number.
 **Age and affluence are plateaus with edges.** Each is one value per
 neighbourhood: flat across it, stepping only where an arterial separates
 two, never through a block interior. The two sides of one street may
-differ -- that single screen is the payoff. Each is a pure function of
+differ -- that single screen is the payoff. Each raw draw is a pure function of
 `(city_seed, the neighbourhood's own world-absolute corner, cfg)` from its
-own keyed stream, never normalised against the site's extent, so a grown
-site leaves an existing neighbourhood's value alone; age, affluence and the
-density peak are independent of one another, so a district never has one
-core-to-edge character. Per district, the generator guarantees (balance
+own keyed stream, never normalised against the site's extent, so raw draws
+are growth-stable; age, affluence and the density peak are independent of
+one another, so a district never has one core-to-edge character. The
+guarantees below are repaired once, at initial generation. Afterwards the
+dials are sim state the generator never re-derives: growth authors new
+ground only. Per district, the generator guarantees (balance
 keys under `generation.neighbourhood.*`): at least three neighbourhoods a
 legible step apart, a legible step between an adjacent pair on age and on
 affluence, at least three of the four corners (old/new x poor/rich), and a
@@ -87,15 +89,16 @@ screen (unless that would leave fewer patches than the corners need).
 
 | Parameter | Unit | Range | Visible carrier |
 | --- | --- | --- | --- |
-| Density | plots per unit street length, integer | `generation.land_use.density_min`..`density_max` | plot packing along `2_City_Terrains`/`1_Terrains_and_Fences` ground coverage, and street-prop cadence (bins, benches, lamps, trees) from `3_City_Props` -- more plots and more props per screen at the high end, wide gaps and few props at the low end; it also bands dwelling form (villa / terrace / condo block), and only density does |
-| Building age | integer, newer to older | `generation.neighbourhood.building_age_min`..`building_age_max` | facade variant *within* `4_Generic_Buildings`, never family choice. Older end: `Condo_9` (exposed pipes, posters and flyers, a stained base course), the `Condo_8` fire-escape/balcony/flyer dressing on a tenement body as assembled in `Condo_Example`, `Condo_4` (red brick, arched entrances, bay fronts, white cornices) and `Condo_6` (grey stone, round-arched windows). Newer end: `Condo_5` (flat teal panel block, ribbon windows, canopy entrance) and `Condo_1`/`Condo_2` (flat rendered facades, plain rectangular windows, no ornament). `Condo_3` and `Condo_7` sit mid-range. No set has an aged variant of itself, so age reads through architectural style and applied dressing alone, never a building visibly ageing in place. `5_Floor_Modular_Buildings` varies by ground-floor shop type, not by age; `7_Villas` and `9_Shopping_Center_and_Markets` ship one building style each -- neither carries an age range. Age never gates a building type |
-| Affluence | integer, poorer to richer | `generation.neighbourhood.affluence_min`..`affluence_max` | the commercial frontage: shop-type mix and the share of shuttered units (`[[building_type]]` `affluence_min`/`affluence_max` bands, the density band's own shape and the one eligibility filter), and later plot dressing (`17_Garden`, `1_Terrains_and_Fences`, `6_Garage_Sales`, `3_City_Props`) and the `moderninteriors` theme (e.g. `26_Condominium_Singles` vs the plain `1_Generic`); prop density is a generator output, never a sprite variant. Dwelling form is Density's, not Affluence's |
+| Density | plots per unit street length, integer | `generation.land_use.density_min`..`density_max` | plot packing along `2_City_Terrains`/`1_Terrains_and_Fences` ground coverage, and street-prop cadence (bins, benches, lamps, trees) from `3_City_Props` -- more plots and more props per screen at the high end, wide gaps and few props at the low end; it bands dwelling *form class* (low / mid / high) and only density does |
+| Building age | integer, newer to older | `generation.neighbourhood.building_age_min`..`building_age_max` | facade variant *within* `4_Generic_Buildings`, never family choice. Older end: `Condo_9` (exposed pipes, posters and flyers, a stained base course), the `Condo_8` fire-escape/balcony/flyer dressing on a tenement body as assembled in `Condo_Example`, `Condo_4` (red brick, arched entrances, bay fronts, white cornices) and `Condo_6` (grey stone, round-arched windows). Newer end: `Condo_5` (flat teal panel block, ribbon windows, canopy entrance) and `Condo_1`/`Condo_2` (flat rendered facades, plain rectangular windows, no ornament). `Condo_3` and `Condo_7` sit mid-range. No set has an aged variant of itself, so age reads through architectural style and applied dressing alone, never a building visibly ageing in place. `5_Floor_Modular_Buildings` varies by ground-floor shop type, not by age; `9_Shopping_Center_and_Markets` ships one building style and `7_Villas` two (the large timber-fronted houses with a porch, `villa`'s carrier, and the small red-roofed rendered houses, `cottage`'s) -- none carries an age range. Age never gates a building type |
+| Affluence | integer, poorer to richer | `generation.neighbourhood.affluence_min`..`affluence_max` | the commercial frontage: shop-type mix and the share of shuttered units (`[[building_type]]` `affluence_min`/`affluence_max` bands, the density band's own shape and the one eligibility filter), and later plot dressing (`17_Garden`, `1_Terrains_and_Fences`, `6_Garage_Sales`, `3_City_Props`) and the `moderninteriors` theme (e.g. `26_Condominium_Singles` vs the plain `1_Generic`); prop density is a generator output, never a sprite variant. Affluence picks the dwelling type *within* a form class (`villa` rich, `cottage` poor, both `form_low`); the form class itself is Density's |
 | Land-use mix | four shares (residential / commercial / industrial / institutional), integer, summing to a whole | `generation.land_use.share_*_pct`, each within `share_tolerance_pct` | which family appears at all along a street: `4_Generic_Buildings`/`5_Floor_Modular_Buildings`/`7_Villas` (residential), `9_Shopping_Center_and_Markets`/`16_Office` (commercial), `8_Worksite` (industrial -- the only dedicated industrial family the tileset ships; the industrial end of this range is thin by construction, not by design choice), institutional families per FR116 once a later story adds them |
 
-Three carriers, three parameters, never shared: building *family* carries
-Land-use mix; dwelling *form* and plot packing carry Density; the
-commercial frontage carries Affluence; facade *variant within*
-`4_Generic_Buildings` carries Building age. Nothing here selects a sprite
+Four carriers, four parameters, never shared: building *family* carries
+Land-use mix; dwelling *form class* and plot packing carry Density; the
+commercial frontage (and the dwelling type within a form class) carries
+Affluence; facade *variant within* `4_Generic_Buildings` carries Building
+age. Nothing here selects a sprite
 family or facade variant -- no pass rasterises yet. "Their state" in the
 acceptance criteria means age dressing plus shuttered units: the tileset
 ships no damaged variants, so no tint, no overlay, no decay filter and no
@@ -149,10 +152,15 @@ Two columns on every rule row below read from closed vocabularies.
 
 **`scope`** is the largest extent the engine must see to judge the
 rule: `cell` (the subject and its immediate same-floor neighbours),
-`room`, `building`, `neighbourhood`, `site`. The test for choosing: if
-generating more city next door (Epic 14) could change whether an
-existing placement still passes, the rule is `neighbourhood` or
-`site`; if it could not, the rule is smaller than that. `site` is the
+`room`, `building`, `neighbourhood`, `catchment`, `site`. A `catchment`
+is a fixed-extent, world-absolute square (`generation.catchment_extent_
+cells`) a `[[distribution]]` row is judged in on its own -- not a
+neighbourhood, which is the arterial-bounded area carrying the dials. The
+test for choosing: if generating more city next door (Epic 14) could change
+whether an existing placement still passes, the rule is `neighbourhood`,
+`catchment` or `site`; if it could not, the rule is smaller than that.
+A `[[distribution]]` row's `scope` cell is its own `scope` data
+(`site` or `catchment`). `site` is the
 exception the city-grows design law above is about -- a row scoped
 `site` owes its own row an answer to how it behaves when the site is
 extended, stated in its intent or found in "Does not fit" below.
@@ -794,6 +802,7 @@ disagree.
 | generation.building_types.profession_count_mean_tolerance_percent | committed | Building type | the pooled band around `target_profession_count`, as a percent -- the profession catalog itself totals exactly `target_profession_count` rows, two of which stay structurally singleton by design, and institutional land is a small, fixed share of the site (an earlier pass's own limit, not this pass's); the measured pooled mean sits under `target_profession_count` for those reasons, with margin |
 | generation.building_types.profession_count_per_city_min | committed | Building type | a weak, any-seed floor on the count of professions held by at least `min_employers_per_profession` distinct placed workplaces in one city -- the per-city half the pooled mean above says nothing about |
 | generation.building_types.min_employers_per_profession | committed | Building type | the GDD's own "5+ employers each" -- the minimum distinct placed workplaces a profession must be held by to count toward the target above; a singleton institution's own post is deliberately excluded |
+| generation.catchment_floor_min_bite_percent | committed | Building type | over the fixed seed range 0..256, at least this percent of (seed, catchment) pairs owe a scoped row a floor of at least one subject -- a retune never turns the floor back into zero |
 | generation.catchment_extent_cells | committed | Building type | the fixed-extent, world-absolute square (world cells) a `scope = "catchment"` `[[distribution]]` row is judged and allocated over -- 256 at launch, the four quadrants of a 512x512 site |
 
 ## placement
@@ -808,8 +817,8 @@ disagree.
 | depot_present | committed | Building type | site | - | a depot per roughly `ratio` dwellings, never clustered with another depot -- "the district has a depot" (AC2); one per district is what a depot is, so a district that grows past the next multiple of `ratio` is owed another, built by the development chain; no coverage ceiling (the walk to one is content) |
 | council_present | committed | Building type | site | - | same shape, the council |
 | hospital_present | committed | Building type | site | - | same shape, the hospital |
-| welfare_office_present | committed | Building type | neighbourhood | Affluence | each catchment holds welfare offices at a real ratio of its own dwellings, thinning as the catchment's affluence rises, spaced apart -- they sit where land is cheap, and the walk to them is content, never guaranteed near; a catchment owing under one holds none |
-| shelter_present | committed | Building type | neighbourhood | Affluence | same shape, shelters -- thinning as affluence rises |
+| welfare_office_present | committed | Building type | catchment | Affluence | each catchment holds welfare offices at a real ratio of its own dwellings, thinning as the catchment's affluence rises, spaced apart -- they sit where land is cheap, and the walk to them is content, never guaranteed near; a catchment owing under one holds none |
+| shelter_present | committed | Building type | catchment | Affluence | same shape, shelters -- thinning as affluence rises |
 | cafe_present | committed | Building type | site | - | story 15.9: a cafe per roughly `ratio` dwellings, on ordinary commercial land -- "the district has a cafe" (AC2), guaranteed by construction rather than by the ordinary weighted fill's own luck, since a real launch job (barista, FR14) depends on it; `site` because a cafe needs commercial land, which gathers in a catchment or two, so a catchment row could not demand one where there is none |
 
 ## coherence

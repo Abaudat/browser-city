@@ -503,22 +503,22 @@ fn fmt_rule_kind_rust(kind: &RuleKindDef) -> String {
             scope,
             reads,
         } => format!(
-            "crate::rules::RuleKind::Distribution {{ subject: {subject}, per: {per}, ratio: {ratio}, tolerance_percent: {tolerance_percent}, min_spacing: {min_spacing}, max_distance: {max_distance}, scope: {}, reads: {} }}",
-            match scope {
-                DistributionScopeDef::Site => "crate::rules::DistributionScope::Site".to_string(),
-                DistributionScopeDef::Catchment { extent_cells } => format!(
-                    "crate::rules::DistributionScope::Catchment {{ extent_cells: {extent_cells} }}"
-                ),
-            },
+            "crate::rules::RuleKind::Distribution {{ subject: {subject}, per: {per}, ratio: {}, tolerance_percent: {tolerance_percent}, min_spacing: {min_spacing}, max_distance: {max_distance}, scope: {} }}",
             match reads {
-                None => "None".to_string(),
+                None => format!("crate::rules::RowRatio::Fixed({ratio})"),
                 Some(r) => format!(
-                    "Some(crate::rules::ParameterRead {{ parameter: crate::rules::Parameter::{}, ratio_at_min: {}, ratio_at_max: {}, min: {}, max: {} }})",
+                    "crate::rules::RowRatio::Read(crate::rules::ParameterRead {{ parameter: crate::rules::Parameter::{}, ratio_at_min: {}, ratio_at_max: {}, min: {}, max: {} }})",
                     r.parameter.rust_variant(),
                     r.ratio_at_min,
                     r.ratio_at_max,
                     r.min,
                     r.max
+                ),
+            },
+            match scope {
+                DistributionScopeDef::Site => "crate::rules::DistributionScope::Site".to_string(),
+                DistributionScopeDef::Catchment { extent_cells } => format!(
+                    "crate::rules::DistributionScope::Catchment {{ extent_cells: {extent_cells} }}"
                 ),
             }
         ),
@@ -1718,7 +1718,7 @@ mod tests {
             "kind: crate::rules::RuleKind::Placement { subject: 1, container: Some(2), floor_min: Some(-1), floor_max: Some(2) }"
         ));
         assert!(out.contains(
-            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 4, tolerance_percent: 50, min_spacing: 3, max_distance: 10, scope: crate::rules::DistributionScope::Site, reads: None }"
+            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: crate::rules::RowRatio::Fixed(4), tolerance_percent: 50, min_spacing: 3, max_distance: 10, scope: crate::rules::DistributionScope::Site }"
         ));
         assert!(out.contains(
             "kind: crate::rules::RuleKind::Coherence { subject: 1, within: 2, mode: crate::rules::CoherenceMode::Forbid }"

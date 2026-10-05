@@ -71,7 +71,14 @@ const CLOSED_LOWERCASE_HEADINGS: [&str; 6] = [
 /// A rule row's closed `scope` vocabulary (Derek's direction) -- the
 /// document tabulates no second copy of this one, so the constant is
 /// its own definition (Quentin's cycle-2 direction).
-pub const SCOPES: [&str; 5] = ["cell", "room", "building", "neighbourhood", "site"];
+pub const SCOPES: [&str; 6] = [
+    "cell",
+    "room",
+    "building",
+    "neighbourhood",
+    "catchment",
+    "site",
+];
 
 const KIND_HEADER: &str = "| key | status | pass | scope | reads | intent |";
 const BALANCE_HEADER: &str = "| balance key | status | pass | intent |";

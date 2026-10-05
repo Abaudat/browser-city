@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="560" height="1240" viewBox="0 0 560 1240">
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="1384" viewBox="0 0 560 1384">
 <defs><pattern id="shuttered" width="3" height="3" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="3" height="3" fill="#3a3a3a"/><line x1="0" y1="0" x2="0" y2="3" stroke="#e0e0e0" stroke-width="0.8"/></pattern></defs>
-<rect x="0" y="0" width="560" height="1240" fill="#ffffff"/>
+<rect x="0" y="0" width="560" height="1384" fill="#ffffff"/>
 <text x="16" y="16" font-family="sans-serif" font-size="12" fill="#111">density</text>
 <g transform="translate(16,24) scale(0.5)">
 <rect x="0" y="0" width="51" height="68" fill="hsl(0, 0%, 63%)"/>
@@ -1042,8 +1042,8 @@
 <rect x="406" y="716" width="16" height="16" fill="#ddc2ef"/>
 <text x="426" y="728" font-family="sans-serif" font-size="12" fill="#111">institutional</text>
 <text x="16" y="756" font-family="sans-serif" font-size="12" fill="#111">boundary strip: the sharpest step between two neighbourhoods, one screen across</text>
-<svg x="16" y="764" width="560" height="308" viewBox="60 102 40 22">
-<rect x="60" y="102" width="40" height="22" fill="#ffffff"/>
+<svg x="16" y="764" width="528" height="452" viewBox="2 89 49 42">
+<rect x="2" y="89" width="49" height="42" fill="#ffffff"/>
 <rect x="0" y="0" width="51" height="68" fill="#bfe3bf" fill-opacity="0.35"/>
 <rect x="59" y="0" width="37" height="66" fill="#bfe3bf" fill-opacity="0.35"/>
 <rect x="100" y="0" width="54" height="66" fill="#ddc2ef" fill-opacity="0.35"/>
@@ -1292,46 +1292,55 @@
 <rect x="424" y="447" width="51" height="4" fill="#a6a6a6"/>
 <rect x="475" y="447" width="37" height="4" fill="#a6a6a6"/>
 <rect x="0" y="482" width="98" height="4" fill="#a6a6a6"/>
-<rect x="59" y="90" width="10" height="17" fill="none" stroke="#999" stroke-width="0.15"/>
-<rect x="59" y="93" width="10" height="14" fill="#8e44ad" stroke="#111" stroke-width="0.25"/>
-<rect x="61" y="95" width="6" height="10" fill="hsl(28, 78%, 80%)" stroke="#555" stroke-width="0.1"/>
-<rect x="69" y="90" width="10" height="17" fill="none" stroke="#999" stroke-width="0.15"/>
-<rect x="69" y="93" width="10" height="14" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
-<rect x="71" y="95" width="6" height="10" fill="hsl(28, 78%, 78%)" stroke="#555" stroke-width="0.1"/>
-<rect x="79" y="90" width="15" height="17" fill="none" stroke="#999" stroke-width="0.15"/>
-<rect x="79" y="92" width="15" height="15" fill="#c0392b" stroke="#111" stroke-width="0.25"/>
-<rect x="82" y="95" width="9" height="9" fill="hsl(28, 78%, 73%)" stroke="#555" stroke-width="0.1"/>
-<rect x="57" y="119" width="11" height="12" fill="none" stroke="#999" stroke-width="0.15"/>
-<rect x="57" y="119" width="11" height="10" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
-<rect x="59" y="121" width="7" height="6" fill="hsl(28, 78%, 39%)" stroke="#555" stroke-width="0.1"/>
-<rect x="68" y="119" width="11" height="12" fill="none" stroke="#999" stroke-width="0.15"/>
-<rect x="68" y="119" width="11" height="12" fill="#c0392b" stroke="#111" stroke-width="0.25"/>
-<rect x="70" y="121" width="7" height="8" fill="hsl(28, 78%, 36%)" stroke="#555" stroke-width="0.1"/>
-<rect x="79" y="119" width="15" height="12" fill="none" stroke="#999" stroke-width="0.15"/>
-<rect x="79" y="119" width="15" height="10" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
-<rect x="81" y="121" width="11" height="6" fill="hsl(28, 78%, 37%)" stroke="#555" stroke-width="0.1"/>
+<rect x="0" y="89" width="11" height="18" fill="none" stroke="#999" stroke-width="0.15"/>
+<rect x="2" y="89" width="8" height="16" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
+<rect x="4" y="91" width="4" height="12" fill="hsl(28, 78%, 78%)" stroke="#555" stroke-width="0.1"/>
+<rect x="11" y="89" width="10" height="18" fill="none" stroke="#999" stroke-width="0.15"/>
+<rect x="12" y="89" width="8" height="16" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
+<rect x="14" y="91" width="4" height="12" fill="hsl(28, 78%, 75%)" stroke="#555" stroke-width="0.1"/>
+<rect x="21" y="89" width="10" height="18" fill="none" stroke="#999" stroke-width="0.15"/>
+<rect x="22" y="91" width="8" height="14" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
+<rect x="24" y="93" width="4" height="10" fill="hsl(28, 78%, 81%)" stroke="#555" stroke-width="0.1"/>
+<rect x="31" y="89" width="20" height="18" fill="none" stroke="#999" stroke-width="0.15"/>
+<rect x="32" y="89" width="17" height="16" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
+<rect x="35" y="92" width="11" height="10" fill="hsl(28, 78%, 81%)" stroke="#555" stroke-width="0.1"/>
+<rect x="0" y="119" width="11" height="12" fill="none" stroke="#999" stroke-width="0.15"/>
+<rect x="2" y="121" width="8" height="8" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
+<rect x="4" y="123" width="4" height="4" fill="hsl(28, 78%, 45%)" stroke="#555" stroke-width="0.1"/>
+<rect x="11" y="119" width="10" height="12" fill="none" stroke="#999" stroke-width="0.15"/>
+<rect x="12" y="121" width="8" height="8" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
+<rect x="14" y="123" width="4" height="4" fill="hsl(28, 78%, 37%)" stroke="#555" stroke-width="0.1"/>
+<rect x="21" y="119" width="10" height="12" fill="none" stroke="#999" stroke-width="0.15"/>
+<rect x="22" y="121" width="8" height="8" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
+<rect x="24" y="123" width="4" height="4" fill="hsl(28, 78%, 37%)" stroke="#555" stroke-width="0.1"/>
+<rect x="31" y="119" width="10" height="12" fill="none" stroke="#999" stroke-width="0.15"/>
+<rect x="32" y="121" width="8" height="8" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
+<rect x="34" y="123" width="4" height="4" fill="hsl(28, 78%, 38%)" stroke="#555" stroke-width="0.1"/>
+<rect x="41" y="119" width="12" height="12" fill="none" stroke="#999" stroke-width="0.15"/>
+<rect x="42" y="121" width="9" height="10" fill="#7cb342" stroke="#111" stroke-width="0.25"/>
+<rect x="44" y="123" width="5" height="6" fill="hsl(28, 78%, 43%)" stroke="#555" stroke-width="0.1"/>
+<rect x="4" y="102" width="40" height="22" fill="none" stroke="#d81b60" stroke-width="0.5"/>
 </svg>
-<rect x="16" y="764" width="560" height="308" fill="none" stroke="#d81b60" stroke-width="2"/>
-<text x="16" y="1092" font-family="sans-serif" font-size="12" fill="#111">left or upper side: density 70 | building age 23 | affluence 23</text>
-<text x="32" y="1106" font-family="sans-serif" font-size="12" fill="#111">10 frontage units, 6 shop types, 10% shuttered | 18 citizens per screen</text>
-<text x="16" y="1126" font-family="sans-serif" font-size="12" fill="#111">right or lower side: density 62 | building age 87 | affluence 99</text>
-<text x="32" y="1140" font-family="sans-serif" font-size="12" fill="#111">127 frontage units, 20 shop types, 0% shuttered | 27 citizens per screen</text>
-<rect x="16" y="1168" width="14" height="14" fill="#7cb342"/>
-<text x="34" y="1180" font-family="sans-serif" font-size="12" fill="#111">housing</text>
-<rect x="196" y="1168" width="14" height="14" fill="#c0392b"/>
-<text x="214" y="1180" font-family="sans-serif" font-size="12" fill="#111">housing (high-rise)</text>
-<rect x="376" y="1168" width="14" height="14" fill="#c8e6c9"/>
-<text x="394" y="1180" font-family="sans-serif" font-size="12" fill="#111">housing (low-rise)</text>
-<rect x="16" y="1188" width="14" height="14" fill="#3498db"/>
-<text x="34" y="1200" font-family="sans-serif" font-size="12" fill="#111">workplace</text>
-<rect x="196" y="1188" width="14" height="14" fill="#8e44ad"/>
-<text x="214" y="1200" font-family="sans-serif" font-size="12" fill="#111">mixed use</text>
-<rect x="376" y="1188" width="14" height="14" fill="#95a5a6"/>
-<text x="394" y="1200" font-family="sans-serif" font-size="12" fill="#111">vacant / yard</text>
-<rect x="16" y="1212" width="14" height="14" fill="url(#shuttered)" stroke="#111" stroke-width="0.5"/>
-<text x="34" y="1224" font-family="sans-serif" font-size="12" fill="#111">shuttered unit</text>
-<rect x="196" y="1212" width="14" height="14" fill="#ffffff" stroke="#6d4c41" stroke-width="1.5" stroke-dasharray="3 2"/>
-<text x="214" y="1224" font-family="sans-serif" font-size="12" fill="#111">dashed outline: worn</text>
-<rect x="376" y="1212" width="14" height="14" fill="#7cb342"/><rect x="380" y="1216" width="6" height="6" fill="hsl(28, 78%, 32%)" stroke="#555" stroke-width="0.5"/>
-<text x="394" y="1224" font-family="sans-serif" font-size="12" fill="#111">inner square: age</text>
+<text x="16" y="1236" font-family="sans-serif" font-size="12" fill="#111">upper side: density 70 | building age 23 | affluence 23</text>
+<text x="32" y="1250" font-family="sans-serif" font-size="12" fill="#111">10 frontage units, 5 shop types, 0% shuttered | 21 citizens per screen</text>
+<text x="16" y="1270" font-family="sans-serif" font-size="12" fill="#111">lower side: density 62 | building age 87 | affluence 99</text>
+<text x="32" y="1284" font-family="sans-serif" font-size="12" fill="#111">129 frontage units, 19 shop types, 0% shuttered | 33 citizens per screen</text>
+<rect x="16" y="1312" width="14" height="14" fill="#7cb342"/>
+<text x="34" y="1324" font-family="sans-serif" font-size="12" fill="#111">housing</text>
+<rect x="196" y="1312" width="14" height="14" fill="#c0392b"/>
+<text x="214" y="1324" font-family="sans-serif" font-size="12" fill="#111">housing (high-rise)</text>
+<rect x="376" y="1312" width="14" height="14" fill="#c8e6c9"/>
+<text x="394" y="1324" font-family="sans-serif" font-size="12" fill="#111">housing (low-rise)</text>
+<rect x="16" y="1332" width="14" height="14" fill="#3498db"/>
+<text x="34" y="1344" font-family="sans-serif" font-size="12" fill="#111">workplace</text>
+<rect x="196" y="1332" width="14" height="14" fill="#8e44ad"/>
+<text x="214" y="1344" font-family="sans-serif" font-size="12" fill="#111">mixed use</text>
+<rect x="376" y="1332" width="14" height="14" fill="#95a5a6"/>
+<text x="394" y="1344" font-family="sans-serif" font-size="12" fill="#111">vacant / yard</text>
+<rect x="16" y="1356" width="14" height="14" fill="url(#shuttered)" stroke="#111" stroke-width="0.5"/>
+<text x="34" y="1368" font-family="sans-serif" font-size="12" fill="#111">shuttered unit</text>
+<rect x="196" y="1356" width="14" height="14" fill="#ffffff" stroke="#6d4c41" stroke-width="1.5" stroke-dasharray="3 2"/>
+<text x="214" y="1368" font-family="sans-serif" font-size="12" fill="#111">dashed outline: worn</text>
+<rect x="376" y="1356" width="14" height="14" fill="#7cb342"/><rect x="380" y="1360" width="6" height="6" fill="hsl(28, 78%, 32%)" stroke="#555" stroke-width="0.5"/>
+<text x="394" y="1368" font-family="sans-serif" font-size="12" fill="#111">inner square: age</text>
 </svg>

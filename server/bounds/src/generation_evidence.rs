@@ -1005,9 +1005,9 @@ struct CatchmentFigures {
     dist_rows: Vec<sim::rules::DistributionRow>,
     catchments: std::collections::BTreeSet<(i32, i32)>,
     per: std::collections::BTreeMap<(u32, i32, i32), u64>,
-    /// Sum of the parameter each row reads over its `per` cells, per
-    /// catchment -- the evaluator's own mean's numerator.
-    parameter_sum: std::collections::BTreeMap<(u32, i32, i32), i64>,
+    /// What each catchment owes each row -- `DistributionRow::targets`' own
+    /// figure for a catchment row, a per-catchment share for a site row.
+    owed: std::collections::BTreeMap<(u32, i32, i32), u64>,
     placed: std::collections::BTreeMap<(u32, i32, i32), u64>,
     /// Hard-eligible, unclaimed candidate count per (row, catchment) --
     /// the count-only half of the physical-shortage exemption (never
@@ -1018,20 +1018,7 @@ struct CatchmentFigures {
 
 impl CatchmentFigures {
     fn owed(&self, row_id: u32, c: (i32, i32)) -> u64 {
-        let per = self.per.get(&(row_id, c.0, c.1)).copied().unwrap_or(0);
-        let sum = self
-            .parameter_sum
-            .get(&(row_id, c.0, c.1))
-            .copied()
-            .unwrap_or(0);
-        self.dist_rows
-            .iter()
-            .find(|r| r.id == row_id)
-            .map(|r| {
-                let ratio = r.ratio_for(r.reads.map(|_| (sum / per.max(1) as i64) as i32));
-                sim::rules::distribution_target(per, ratio, r.tolerance_percent).0
-            })
-            .unwrap_or(0)
+        self.owed.get(&(row_id, c.0, c.1)).copied().unwrap_or(0)
     }
 
     fn is_exempt(&self, row_id: u32, c: (i32, i32)) -> bool {
@@ -1071,7 +1058,7 @@ fn catchment_figures(
     let mut catchments: std::collections::BTreeSet<(i32, i32)> = std::collections::BTreeSet::new();
     let mut per: std::collections::BTreeMap<(u32, i32, i32), u64> =
         std::collections::BTreeMap::new();
-    let mut parameter_sum: std::collections::BTreeMap<(u32, i32, i32), i64> =
+    let mut row_cells: std::collections::BTreeMap<u32, Vec<(sim::rules::Cell, Option<i32>)>> =
         std::collections::BTreeMap::new();
     let mut placed: std::collections::BTreeMap<(u32, i32, i32), u64> =
         std::collections::BTreeMap::new();
@@ -1085,14 +1072,18 @@ fn catchment_figures(
         for row in &dist_rows {
             if def.tags.contains(&row.per) {
                 *per.entry((row.id, c.0, c.1)).or_insert(0) += 1;
-                if let Some(read) = row.reads {
-                    let plot = &pm.plots()[a.plot as usize];
-                    *parameter_sum.entry((row.id, c.0, c.1)).or_insert(0) += match read.parameter {
+                let plot = &pm.plots()[a.plot as usize];
+                let value = match row.ratio {
+                    sim::rules::RowRatio::Read(read) => Some(match read.parameter {
                         sim::rules::Parameter::BuildingAge => plot.building_age,
                         sim::rules::Parameter::Affluence => plot.affluence,
-                    }
-                        as i64;
-                }
+                    }),
+                    sim::rules::RowRatio::Fixed(_) => None,
+                };
+                row_cells
+                    .entry(row.id)
+                    .or_default()
+                    .push((sim::rules::Cell::new(x, y, 0), value));
             }
             if def.tags.contains(&row.subject) {
                 *placed.entry((row.id, c.0, c.1)).or_insert(0) += 1;
@@ -1141,11 +1132,32 @@ fn catchment_figures(
         }
     }
 
+    let mut owed: std::collections::BTreeMap<(u32, i32, i32), u64> =
+        std::collections::BTreeMap::new();
+    for row in &dist_rows {
+        match row.scope {
+            sim::rules::DistributionScope::Catchment { .. } => {
+                let cells = row_cells.remove(&row.id).unwrap_or_default();
+                for (key, t) in row.targets(cells) {
+                    if let Some(c) = key {
+                        owed.insert((row.id, c.0, c.1), t.expected);
+                    }
+                }
+            }
+            sim::rules::DistributionScope::Site => {
+                for (&(id, cx, cy), &n) in &per {
+                    if id == row.id {
+                        owed.insert((id, cx, cy), n / row.ratio.smallest() as u64);
+                    }
+                }
+            }
+        }
+    }
     CatchmentFigures {
         dist_rows,
         catchments,
         per,
-        parameter_sum,
+        owed,
         placed,
         eligible,
     }

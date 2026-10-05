@@ -460,42 +460,20 @@ fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
                             let n_placed = site.subjects_in_area(None, row.subject).len() as u64;
                             placed[k].0 += n_placed;
                             placed[k].1 = placed[k].1.min(n_placed);
-                            // Whether the row owes a subject in some catchment
-                            // (the evaluator's own mean and target).
-                            let per = site.subjects_in_area(None, row.per);
-                            let owed = match row.scope {
-                                sim::rules::DistributionScope::Site => {
-                                    sim::rules::distribution_target(
-                                        per.len() as u64,
-                                        row.ratio,
-                                        row.tolerance_percent,
-                                    )
-                                    .0 >= 1
-                                }
-                                sim::rules::DistributionScope::Catchment { extent_cells } => {
-                                    let mut by: BTreeMap<(i32, i32), (u64, i64)> = BTreeMap::new();
-                                    for c in per {
-                                        let e = by
-                                            .entry(sim::rules::catchment_of(c.x, c.y, extent_cells))
-                                            .or_default();
-                                        e.0 += 1;
-                                        e.1 += row.reads.map_or(0, |r| {
-                                            site.parameter_at(*c, r.parameter).unwrap_or(0) as i64
-                                        });
-                                    }
-                                    by.values().any(|&(n, sum)| {
-                                        let ratio = row.ratio_for(
-                                            row.reads.map(|_| (sum / n.max(1) as i64) as i32),
-                                        );
-                                        sim::rules::distribution_target(
-                                            n,
-                                            ratio,
-                                            row.tolerance_percent,
-                                        )
-                                        .0 >= 1
-                                    })
-                                }
+                            // Whether the row owes a subject somewhere (the
+                            // evaluator's own `targets`).
+                            let read = match row.ratio {
+                                sim::rules::RowRatio::Read(r) => Some(r.parameter),
+                                sim::rules::RowRatio::Fixed(_) => None,
                             };
+                            let owed = row
+                                .targets(
+                                    site.subjects_in_area(None, row.per)
+                                        .iter()
+                                        .map(|&c| (c, read.and_then(|p| site.parameter_at(c, p)))),
+                                )
+                                .values()
+                                .any(|t| t.expected >= 1);
                             if owed && n_placed == 0 {
                                 placed[k].2 += 1;
                             }
@@ -840,7 +818,7 @@ fn main() {
         }
         for row in &dist_rows_for_ratio {
             let basis = tag_counts.get(&row.per).copied().unwrap_or(0).max(0) as u64;
-            let expected = basis / (row.ratio.max(1) as u64);
+            let expected = basis / (row.ratio.smallest() as u64);
             if expected == 0 {
                 continue;
             }
@@ -956,7 +934,7 @@ fn main() {
         }
         for row in dist_rows {
             let basis = tag_counts.get(&row.per).copied().unwrap_or(0);
-            let target = basis / (row.ratio.max(1) as u64);
+            let target = basis / (row.ratio.smallest() as u64);
             if target == 0 {
                 continue;
             }

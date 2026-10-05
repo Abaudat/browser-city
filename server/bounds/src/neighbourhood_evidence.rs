@@ -30,7 +30,8 @@ use crate::generation_evidence::{
 const PANEL: i64 = 256;
 const GAP: i64 = 28;
 const MARGIN: i64 = 16;
-const STRIP_SCALE: i64 = 14;
+/// The boundary strip's drawn width: the screen plus whole front rows.
+const STRIP_WIDTH: i64 = 528;
 
 pub fn neighbourhoods_svg_path(seed: u64) -> std::path::PathBuf {
     crate::world_fixture::repo_root_dir()
@@ -139,6 +140,7 @@ fn window_at(d: &District, cfg: &GenerationConfig, (bx, by): (i32, i32)) -> Site
 fn sharpest_boundary(
     d: &District,
     cfg: &GenerationConfig,
+    content: &GenerationContent,
 ) -> Option<(Neighbourhood, Neighbourhood, (i32, i32))> {
     let hoods = d.land_use.neighbourhoods();
     let fronts: Vec<(i32, i32)> = d
@@ -146,7 +148,7 @@ fn sharpest_boundary(
         .envelopes()
         .map(|e| sim::generation::site::front_cell(e.footprint, e.front))
         .collect();
-    type Pick = ((bool, i32), usize, usize, (i32, i32));
+    type Pick = ((bool, i32, bool, usize), usize, usize, (i32, i32));
     let mut best: Option<Pick> = None;
     for (i, a) in hoods.iter().enumerate() {
         for (j, b) in hoods.iter().enumerate().skip(i + 1) {
@@ -169,28 +171,61 @@ fn sharpest_boundary(
             } else {
                 None
             };
-            let Some(point) = point else { continue };
-            let window = window_at(d, cfg, point);
-            let in_window = |h: &Neighbourhood| {
-                fronts
-                    .iter()
-                    .filter(|&&(x, y)| {
-                        x >= window.x0
-                            && x < window.x1
-                            && y >= window.y0
-                            && y < window.y1
-                            && d.land_use.neighbourhood_at(x, y).map(|o| o.patch) == Some(h.patch)
-                    })
-                    .count()
-            };
-            let rich = in_window(a).min(in_window(b)) >= MIN_BUILDINGS_PER_SIDE;
+            let Some(mid) = point else { continue };
+            let vertical = ra.x1 == rb.x0 || rb.x1 == ra.x0;
+            let (lo, hi) = if vertical { (oy.1, oy.0) } else { (ox.1, ox.0) };
             let score = (a.building_age - b.building_age).abs() + (a.affluence - b.affluence).abs();
-            if best.is_none_or(|(s, ..)| (rich, score) > s) {
-                best = Some(((rich, score), i, j, point));
+            // Slide the window along the shared edge: the position that
+            // shows the most frontage on the thinner side, preferring one
+            // with a shuttered unit.
+            let mut candidates = vec![mid];
+            let mut at = lo;
+            while at <= hi {
+                candidates.push(if vertical { (mid.0, at) } else { (at, mid.1) });
+                at += 4;
+            }
+            for point in candidates {
+                let window = window_at(d, cfg, point);
+                let in_window = |h: &Neighbourhood| {
+                    fronts
+                        .iter()
+                        .filter(|&&(x, y)| {
+                            x >= window.x0
+                                && x < window.x1
+                                && y >= window.y0
+                                && y < window.y1
+                                && d.land_use.neighbourhood_at(x, y).map(|o| o.patch)
+                                    == Some(h.patch)
+                        })
+                        .count()
+                };
+                let thin = in_window(a).min(in_window(b));
+                let rich = thin >= MIN_BUILDINGS_PER_SIDE;
+                let key = (rich, score, shuttered_in(d, content, window), thin);
+                if best.is_none_or(|(s, ..)| key > s) {
+                    best = Some((key, i, j, point));
+                }
             }
         }
     }
     best.map(|(_, i, j, p)| (hoods[i], hoods[j], p))
+}
+
+/// Whether any shuttered unit's footprint meets `window`.
+fn shuttered_in(d: &District, content: &GenerationContent, window: SiteBounds) -> bool {
+    let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    d.envelopes
+        .envelopes()
+        .zip(d.building_types.assignments())
+        .any(|(e, a)| {
+            let f = e.footprint;
+            f.x1 > window.x0
+                && f.x0 < window.x1
+                && f.y1 > window.y0
+                && f.y0 < window.y1
+                && is_shuttered(by_id[&a.building_type])
+        })
 }
 
 /// The fewest buildings each side of the boundary strip should show.
@@ -313,21 +348,31 @@ fn strip(
     d: &District,
     cfg: &GenerationConfig,
     content: &GenerationContent,
-) -> String {
+) -> (String, i64) {
     let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
     let tags = class_tags(content);
     let rows = scoped_distribution_rows(content);
     let (w, h) = (window.width(), window.height());
+    // The picture covers every footprint that meets the screen whole, so a
+    // front row is never cut mid-building; the screen itself is the framed
+    // part.
+    let (mut vx0, mut vy0, mut vx1, mut vy1) = (window.x0, window.y0, window.x1, window.y1);
+    for e in d.envelopes.envelopes() {
+        let f = e.footprint;
+        if f.x1 > window.x0 && f.x0 < window.x1 && f.y1 > window.y0 && f.y0 < window.y1 {
+            vx0 = vx0.min(f.x0);
+            vy0 = vy0.min(f.y0);
+            vx1 = vx1.max(f.x1);
+            vy1 = vy1.max(f.y1);
+        }
+    }
+    let (vw, vh) = ((vx1 - vx0) as i64, (vy1 - vy0) as i64);
     let mut body = format!(
-        "<svg x=\"{x}\" y=\"{y}\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {w} {h}\">\n\
-         <rect x=\"{}\" y=\"{}\" width=\"{w}\" height=\"{h}\" fill=\"#ffffff\"/>\n",
-        w * STRIP_SCALE,
-        h * STRIP_SCALE,
-        window.x0,
-        window.y0,
-        window.x0,
-        window.y0
+        "<svg x=\"{x}\" y=\"{y}\" width=\"{}\" height=\"{}\" viewBox=\"{vx0} {vy0} {vw} {vh}\">\n\
+         <rect x=\"{vx0}\" y=\"{vy0}\" width=\"{vw}\" height=\"{vh}\" fill=\"#ffffff\"/>\n",
+        STRIP_WIDTH,
+        vh * STRIP_WIDTH / vw,
     );
     for b in d.streets.blocks() {
         body.push_str(&format!(
@@ -406,13 +451,13 @@ fn strip(
             body.push_str(&marker(mx, my, shape, "#111"));
         }
     }
-    body.push_str("</svg>\n");
+    // The one-screen frame, in the picture's own coordinates.
     body.push_str(&format!(
-        "<rect x=\"{x}\" y=\"{y}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"#d81b60\" stroke-width=\"2\"/>\n",
-        w * STRIP_SCALE,
-        h * STRIP_SCALE
+        "<rect x=\"{}\" y=\"{}\" width=\"{w}\" height=\"{h}\" fill=\"none\" stroke=\"#d81b60\" stroke-width=\"0.5\"/>\n",
+        window.x0, window.y0
     ));
-    body
+    body.push_str("</svg>\n");
+    (body, vh * STRIP_WIDTH / vw)
 }
 
 /// The neighbourhoods evidence document for one district.
@@ -501,8 +546,7 @@ pub fn neighbourhoods_svg(
 
     // The boundary strip.
     let mut defs_block = String::new();
-    if let Some((a, b, point)) = sharpest_boundary(d, cfg) {
-        let vh = n.viewport_height_cells;
+    if let Some((a, b, point)) = sharpest_boundary(d, cfg, content) {
         let window = window_at(d, cfg, point);
         defs_block.push_str(STRIP_DEFS);
         body.push_str(&title(
@@ -511,9 +555,28 @@ pub fn neighbourhoods_svg(
             "boundary strip: the sharpest step between two neighbourhoods, one screen across",
         ));
         y += 8;
-        body.push_str(&strip(MARGIN, y, window, d, cfg, content));
-        y += vh as i64 * STRIP_SCALE + 20;
-        for (name, hood) in [("left or upper side", &a), ("right or lower side", &b)] {
+        let (strip_svg, strip_h) = strip(MARGIN, y, window, d, cfg, content);
+        body.push_str(&strip_svg);
+        y += strip_h + 20;
+        // Name each side by where it lies: the shared edge is vertical
+        // (sides left and right) or horizontal (upper and lower).
+        let vertical = a.bounds.x1 == b.bounds.x0 || b.bounds.x1 == a.bounds.x0;
+        let a_first = if vertical {
+            a.bounds.x1 == b.bounds.x0
+        } else {
+            a.bounds.y1 == b.bounds.y0
+        };
+        let (first, second) = if vertical {
+            ("left side", "right side")
+        } else {
+            ("upper side", "lower side")
+        };
+        let sides = if a_first {
+            [(first, &a), (second, &b)]
+        } else {
+            [(first, &b), (second, &a)]
+        };
+        for (name, hood) in sides {
             body.push_str(&figures_lines(
                 y,
                 name,

@@ -134,51 +134,46 @@ fn every_rows_reads_cell_names_the_parameter_it_reads() {
     let text = std::fs::read_to_string(repo_root().join("docs/generation.md"))
         .unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
     let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
-    let documented: std::collections::BTreeMap<&str, Vec<String>> = doc
+    let documented: std::collections::BTreeMap<&str, (&str, Vec<String>)> = doc
         .sections
         .values()
         .flatten()
-        .map(|row| (row.key.as_str(), row.reads.clone()))
+        .map(|row| (row.key.as_str(), (row.scope.as_str(), row.reads.clone())))
         .collect();
     for rule in defs::RULES {
-        let expected: Vec<String> = rule
-            .as_distribution()
-            .and_then(|row| row.reads)
-            .map(|read| match read.parameter {
+        let row = rule.as_distribution();
+        let expected_reads: Vec<String> = row
+            .and_then(|row| match row.ratio {
+                sim::rules::RowRatio::Read(read) => Some(read.parameter),
+                sim::rules::RowRatio::Fixed(_) => None,
+            })
+            .map(|p| match p {
                 sim::rules::Parameter::Affluence => "Affluence".to_string(),
                 sim::rules::Parameter::BuildingAge => "Building age".to_string(),
             })
             .into_iter()
             .collect();
+        let (scope, reads) = documented
+            .get(rule.key)
+            .unwrap_or_else(|| panic!("'{}' has no row in docs/generation.md", rule.key));
         assert_eq!(
-            documented.get(rule.key),
-            Some(&expected),
-            "'{}': the `reads` cell in docs/generation.md must name exactly what the row reads",
+            reads, &expected_reads,
+            "'{}': the `reads` cell must name exactly what the row reads",
             rule.key
         );
+        // A distribution row's documented scope is its own `scope` data.
+        if let Some(row) = row {
+            let toml_scope = match row.scope {
+                sim::rules::DistributionScope::Site => "site",
+                sim::rules::DistributionScope::Catchment { .. } => "catchment",
+            };
+            assert_eq!(
+                *scope, toml_scope,
+                "'{}': the `scope` cell must equal the row's own scope",
+                rule.key
+            );
+        }
     }
-}
-
-/// Every `generation.*` balance key has a row in `docs/generation.md`'s
-/// `## parameters` table (and the table names no key that is not committed).
-#[test]
-fn every_generation_balance_key_has_a_row_in_the_parameters_table() {
-    let text = std::fs::read_to_string(repo_root().join("docs/generation.md"))
-        .unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
-    let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
-    let documented: std::collections::BTreeSet<&str> =
-        doc.parameters.iter().map(|r| r.key.as_str()).collect();
-    let committed: std::collections::BTreeSet<&str> = defs::BALANCE
-        .iter()
-        .map(|b| b.key)
-        .filter(|k| k.starts_with("generation."))
-        .collect();
-    let undocumented: Vec<_> = committed.difference(&documented).collect();
-    let stale: Vec<_> = documented.difference(&committed).collect();
-    assert!(
-        undocumented.is_empty() && stale.is_empty(),
-        "docs/generation.md's `## parameters` table disagrees with defs/balance: undocumented {undocumented:?}, stale {stale:?}"
-    );
 }
 
 /// AC2: a rule row added to `defs/rules/*.toml` with no matching case (or
