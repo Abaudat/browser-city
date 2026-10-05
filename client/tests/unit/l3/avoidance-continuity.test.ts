@@ -384,4 +384,43 @@ describe("avoidance is continuous in time (FR64)", () => {
     // Order of the one-in-three slope everything else meets.
     expect(worst).toBeLessThanOrEqual(0.5);
   });
+
+  it("a pair whose miss sits on the tie band keeps one side, through the real bodies", () => {
+    // A walks east along a row, B north along a column, both at 100
+    // milliminutes a cell. A reaches the crossing at 1250; B, departing at
+    // 710, reaches it exactly ten milliminutes (0.10 cell) later, so the miss
+    // is exactly the 0.05 tie band. Neighbouring departures sweep it.
+    let worst = 0;
+    for (let depart = 705; depart <= 715; depart++) {
+      worst = Math.max(
+        worst,
+        sweep(
+          new TestGrid(),
+          [
+            {
+              route: [
+                [0, 6],
+                [30, 6],
+              ],
+              start: 0,
+              length: 3000,
+            },
+            {
+              route: [
+                [12, 12],
+                [12, 3],
+              ],
+              start: depart,
+              length: 900,
+            },
+          ],
+          [],
+          2600,
+          1,
+        ),
+      );
+    }
+    // The clean passes beside it slope at 0.2; a strobing side was 80.
+    expect(worst).toBeLessThanOrEqual(1);
+  });
 });

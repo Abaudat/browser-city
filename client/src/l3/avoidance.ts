@@ -63,6 +63,16 @@ const SIDE_SWING = 0.25;
 const ALONGSIDE_CROSS = 0.2;
 /** Of the radius, how far in a standing body is fully an obstacle. */
 const OBSTACLE_FADE_IN = 0.25;
+/** Gaps are compared to the tie band in units of this fraction of a cell. */
+const GAP_GRID = 10000;
+/** Of the speed, how much relative motion across the line puts a pair that
+ * walks the same way in the shallow-merge regime, where lateral steps cannot
+ * separate them and would pull them together: off from `MERGE_ON` to
+ * `MERGE_OFF`, whole outside. About 20 to 35 degrees of convergence. */
+const MERGE_FROM = 0.02;
+const MERGE_TO = 0.06;
+const MERGE_BACK = 0.55;
+const MERGE_BACK_WIDTH = 0.1;
 const CAPPED = 1;
 const BLOCKED = 2;
 
@@ -85,7 +95,9 @@ export function rampOf(vertexDistance: number, rampCells: number): number {
  * never changes mid-pass. */
 function directionFor(gap: number, tie: number, band: number): number {
   const a = gap < 0 ? -gap : gap;
-  if (a <= band) return tie;
+  // Compared on a grid far coarser than float noise, so a gap that sits on the
+  // band lands on one side for the whole pass.
+  if (Math.round(a * GAP_GRID) <= Math.round(band * GAP_GRID)) return tie;
   return gap > 0 ? -1 : 1;
 }
 
@@ -133,6 +145,8 @@ export class AvoidanceField {
   #gap = 0;
   #miss = 0;
   #cross = 0;
+  /** The squared relative speed of the last `#closestApproach`. */
+  #relSq = 0;
   /** Pair distances examined in the last `resolve`. */
   pairChecks = 0;
   /** Bodies whose neighbours were cut at the cap in the last `resolve`. */
@@ -300,8 +314,10 @@ export class AvoidanceField {
       this.#gap = dpx * rx + dpy * ry;
       this.#miss = this.#gap < 0 ? -this.#gap : this.#gap;
       this.#cross = 0;
+      this.#relSq = 0;
       return;
     }
+    this.#relSq = vv;
     const across = dvx * rx + dvy * ry;
     this.#cross = (across < 0 ? -across : across) / Math.sqrt(vv);
     const t = -(dpx * dvx + dpy * dvy) / vv;
@@ -483,10 +499,22 @@ export class AvoidanceField {
         if (same && (this.#ids[i] as string) > (this.#ids[j] as string)) {
           tie = 1 - 2 * (1 - smooth(this.#cross / ALONGSIDE_CROSS));
         }
+        // Walking the same way and converging only shallowly, lateral steps move
+        // two bodies together as much as apart: do nothing there.
+        let merge = 1;
+        if (same) {
+          const speed = this.#speed[i] as number;
+          const lateral = speed > 0 ? (this.#cross * Math.sqrt(this.#relSq)) / speed : 0;
+          merge =
+            1 -
+            smooth((lateral - MERGE_FROM) / (MERGE_TO - MERGE_FROM)) *
+              (1 - smooth((lateral - MERGE_BACK) / MERGE_BACK_WIDTH));
+        }
         asWalker =
           directionFor(this.#gap, tie, dials.tieBandCells) *
           Math.max(0, clearance - this.#miss) *
-          0.5;
+          0.5 *
+          merge;
       }
       let asStander = 0;
       if (settled < 1) {

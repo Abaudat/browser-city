@@ -286,7 +286,8 @@ describe("local avoidance (FR64)", () => {
   });
 
   it("two paths that cross keep their sides through the pass, whoever arrives first, and never jump", () => {
-    for (const late of [-3, -2, -1, -0.5, 0, 0.5, 1, 2, 3]) {
+    // 0.1 puts the miss exactly on the tie band: one side, whatever the float noise.
+    for (const late of [-3, -2, -1, -0.5, -0.1, 0, 0.05, 0.1, 0.5, 1, 2, 3]) {
       let previous: [number, number, number, number] | undefined;
       let worst = 0;
       let closest = Number.POSITIVE_INFINITY;
@@ -325,12 +326,15 @@ describe("local avoidance (FR64)", () => {
   it("crossing paths at any angle and any lag never draw closer than the ledger, and keep their gaps", () => {
     let worstPerpendicular = Number.POSITIVE_INFINITY;
     let worstConverging = Number.POSITIVE_INFINITY;
-    for (const degrees of [45, 90, 135]) {
+    for (const degrees of [27, 45, 90, 135]) {
       const turn = (degrees * Math.PI) / 180;
       // B's heading is A's (east) turned by `degrees`, clockwise on screen.
       const bx = Math.cos(turn);
       const by = Math.sin(turn);
-      for (let lag = -1.5; lag <= 1.5001; lag += 0.25) {
+      // Coarse across the range, fine where a pair arrives nearly together.
+      const lags = [-1.5, -1, -0.5, 0.5, 1, 1.5];
+      for (let k = -10; k <= 10; k++) lags.push(k * 0.05);
+      for (const lag of lags) {
         let closestLedger = Number.POSITIVE_INFINITY;
         let closestDrawn = Number.POSITIVE_INFINITY;
         for (let step = 0; step <= 400; step++) {
@@ -347,8 +351,8 @@ describe("local avoidance (FR64)", () => {
             Math.hypot(a.x + ax - b.x - qx, a.y + ay - b.y - qy),
           );
         }
-        // The sweep samples the ledger gap every 0.04 cell.
-        expect(closestDrawn).toBeGreaterThanOrEqual(closestLedger - 0.04);
+        // The sweep samples the ledger gap every 0.04 cell, and the drawn gap is held to that grain.
+        expect(closestDrawn).toBeGreaterThanOrEqual(closestLedger - 0.005);
         if (degrees === 90) worstPerpendicular = Math.min(worstPerpendicular, closestDrawn);
         if (degrees === 135 && Math.abs(lag) < 0.01) {
           worstConverging = Math.min(worstConverging, closestDrawn);
@@ -357,6 +361,19 @@ describe("local avoidance (FR64)", () => {
     }
     expect(worstPerpendicular).toBeGreaterThanOrEqual(0.4);
     expect(worstConverging).toBeGreaterThanOrEqual(0.3);
+  });
+
+  it("a gap on the tie band lands on one side whatever the float noise", () => {
+    const band = dials.tieBandCells;
+    for (const base of [band, -band]) {
+      const sides = new Set<number>();
+      for (let k = -30; k <= 30; k++) {
+        const w = walker("w", 6, 10.5, 1, 0);
+        const { out } = run([w, stander("s", 9, 10.5 + base + k * 1e-13)]);
+        sides.add(Math.sign((out.get("w") as [number, number])[1]));
+      }
+      expect(sides.size).toBe(1);
+    }
   });
 
   it("a walker passing a standing citizen goes to the side with room, and holds it", () => {

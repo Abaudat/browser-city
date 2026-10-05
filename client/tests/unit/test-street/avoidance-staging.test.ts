@@ -224,9 +224,10 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
       previous = now;
     }
     expect(closestLedger).toBeLessThan(0.5);
-    expect(closestDrawn).toBeGreaterThan(0.5);
-    // At most a few cells of sidestep per cell walked: no snap.
-    expect(worst).toBeLessThan(6);
+    // A body's width apart, and a drift, not a lurch: under half a cell of
+    // sidestep per cell walked.
+    expect(closestDrawn).toBeGreaterThan(0.7);
+    expect(worst).toBeLessThan(0.5);
   });
 
   it("a walker passes a standing citizen with the kerb on its right by taking the open side", () => {
