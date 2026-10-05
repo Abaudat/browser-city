@@ -364,5 +364,5 @@ describe("HighlightApplier", () => {
 });
 
 function drawableOf(stableId: bigint, y: number): Drawable {
-  return { x: 0, y, rank: 0, stableId, floor: 0 };
+  return { x: 0, y, rank: 20, stableId, floor: 0 };
 }

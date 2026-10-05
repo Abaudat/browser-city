@@ -29,6 +29,16 @@ OFFENDERS="$(
     grep -v 'generation-entry-point: allow' || true
 )"
 
+# Every draw under generation/ goes through `Rng::below`, reduced in u64
+# before any narrowing -- a raw `next_u64` there could be narrowed first and
+# diverge between the 64-bit goldens and the 32-bit wasm module.
+RAW_DRAWS="$(git ls-files 'server/sim/src/generation/*.rs' -z | xargs -0 -r grep -n 'next_u64' || true)"
+if [ -n "$RAW_DRAWS" ]; then
+  echo "check-generation-entry-point: FAIL -- generation/ names next_u64; draw with Rng::below instead:" >&2
+  printf '%s\n' "$RAW_DRAWS" >&2
+  exit 1
+fi
+
 if [ -n "$OFFENDERS" ]; then
   echo "check-generation-entry-point: FAIL -- a cross-pass harness hand-chains the generator; call sim::generation::plan or generate instead (or mark the line '// generation-entry-point: allow' if it deliberately perturbs a predecessor):" >&2
   printf '%s\n' "$OFFENDERS" >&2

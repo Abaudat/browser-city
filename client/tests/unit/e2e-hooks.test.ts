@@ -2,13 +2,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exposeAppearanceCompareForE2e,
+  exposeCityTimeForE2e,
+  exposeConnectionForE2e,
+  exposeRegionForE2e,
+  exposeRemotePlayersForE2e,
   recordAppearanceTextureIdsForE2e,
   recordFrameWorkForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerPositionForE2e,
+  recordRegionRowForE2e,
+  recordRemotePlayersForE2e,
+  recordRemoteSampleForE2e,
   recordRenderOrderForE2e,
   recordVisibilityForE2e,
+  recordWorldClockForE2e,
+  sceneRegionFeed,
 } from "../../src/net/e2e-hooks";
 
 afterEach(() => {
@@ -223,6 +232,131 @@ describe("exposeAppearanceCompareForE2e", () => {
 
     exposeAppearanceCompareForE2e(vi.fn());
 
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("in-city clock hooks (story 4.1)", () => {
+  it("counts world_clock inserts and updates separately, keeping the latest epoch", () => {
+    recordWorldClockForE2e(5n, "insert");
+    recordWorldClockForE2e(6n, "update");
+    recordWorldClockForE2e(7n, "update");
+    expect(window.__bc?.worldClock).toEqual({ epochMicros: "7", inserts: 1, updates: 2 });
+  });
+
+  it("exposes the derived city time as a callable", () => {
+    const getter = vi.fn();
+    exposeCityTimeForE2e(getter);
+    expect(window.__bc?.cityTime).toBe(getter);
+  });
+
+  it("do nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+    recordWorldClockForE2e(5n, "insert");
+    exposeCityTimeForE2e(vi.fn());
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("region hooks (story 4.3)", () => {
+  it("counts streamed row callbacks by table and primary key, and keeps them across exposeRegionForE2e", () => {
+    recordRegionRowForE2e("inserts", "placedObject", { objectId: 5n, x: 1 });
+    recordRegionRowForE2e("inserts", "placedObject", { objectId: 5n, x: 1 });
+    recordRegionRowForE2e("deletes", "roomArea", { areaId: 2n });
+    exposeRegionForE2e({
+      held: () => ["0,0,0"],
+      liveHandles: () => 1,
+      applied: () => [],
+      cachedChunkKeys: () => ["7"],
+      moveTo: () => {},
+    });
+    expect(window.__bc?.region?.inserts).toEqual({ "placedObject:5": 2 });
+    expect(window.__bc?.region?.deletes).toEqual({ "roomArea:2": 1 });
+    expect(window.__bc?.region?.held()).toEqual(["0,0,0"]);
+  });
+
+  it("does nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+    recordRegionRowForE2e("inserts", "placedObject", { objectId: 5n });
+    exposeRegionForE2e({
+      held: () => [],
+      liveHandles: () => 0,
+      applied: () => [],
+      cachedChunkKeys: () => [],
+      moveTo: () => {},
+    });
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("sceneRegionFeed (story 4.3)", () => {
+  it("forwards the scene's position until a spec drives the region, then stops", () => {
+    const seen: number[] = [];
+    const moved: number[] = [];
+    const feed = sceneRegionFeed((x) => seen.push(x));
+    feed(1, 0, 0);
+    exposeRegionForE2e({
+      held: () => [],
+      liveHandles: () => 0,
+      applied: () => [],
+      cachedChunkKeys: () => [],
+      moveTo: (x) => moved.push(x),
+    });
+    feed(2, 0, 0);
+    window.__bc?.region?.moveTo(9, 0, 0);
+    feed(3, 0, 0);
+    expect(seen).toEqual([1, 2]);
+    expect(moved).toEqual([9]);
+  });
+});
+
+describe("the remote players' hook", () => {
+  it("keeps the latest poses, and records frames and received samples only while a trace runs", () => {
+    exposeRemotePlayersForE2e();
+    const hook = window.__bc?.remotePlayers;
+    expect(hook).toBeDefined();
+
+    // Nothing is kept for a trace that has not started.
+    recordRemoteSampleForE2e("7", { tMs: 1, x: 0, y: 0 });
+    recordRemotePlayersForE2e({ "7": { x: 1, y: 2, floor: 0 } });
+    expect(hook?.poses()).toEqual({ "7": { x: 1, y: 2, floor: 0 } });
+
+    hook?.startTrace();
+    recordRemoteSampleForE2e("7", { tMs: 2, x: 1, y: 2 });
+    recordRemoteSampleForE2e("7", { tMs: 3, x: 2, y: 2 });
+    recordRemotePlayersForE2e({ "7": { x: 1.5, y: 2, floor: 0 } });
+    recordRemotePlayersForE2e({ "7": { x: 2, y: 2, floor: 0 } });
+    const trace = hook?.stopTrace();
+    expect(trace?.samples["7"]?.map((s) => s.tMs)).toEqual([2, 3]);
+    expect(trace?.frames["7"]?.map((f) => f.x)).toEqual([1.5, 2]);
+
+    // Stopped: later frames and samples are not kept.
+    recordRemoteSampleForE2e("7", { tMs: 4, x: 3, y: 2 });
+    recordRemotePlayersForE2e({ "7": { x: 3, y: 2, floor: 0 } });
+    expect(hook?.stopTrace()).toEqual({ frames: {}, samples: {} });
+  });
+
+  it("is absent from a production build", () => {
+    vi.stubEnv("DEV", false);
+    exposeRemotePlayersForE2e();
+    recordRemotePlayersForE2e({ "1": { x: 0, y: 0, floor: 0 } });
+    recordRemoteSampleForE2e("1", { tMs: 1, x: 0, y: 0 });
+    expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("exposeConnectionForE2e", () => {
+  it("exposes the supervisor's live count and drop under DEV", () => {
+    const drop = vi.fn();
+    exposeConnectionForE2e({ live: () => 1, drop });
+    expect(window.__bc?.connection?.live()).toBe(1);
+    window.__bc?.connection?.drop();
+    expect(drop).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes nothing when DEV is false", () => {
+    vi.stubEnv("DEV", false);
+    exposeConnectionForE2e({ live: () => 1, drop: () => {} });
     expect(window.__bc).toBeUndefined();
   });
 });

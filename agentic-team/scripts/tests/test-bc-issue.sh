@@ -1,22 +1,52 @@
 #!/usr/bin/env bash
-# Fixture-driven coverage for scripts/bc-issue.sh: next's priority ordering
-# and its sprint/Backlog/open gates, current's 0/1/2-active cases, transition
+# Fixture-driven coverage for scripts/bc-issue.sh: adopt-alerts' off-board/
+# already-adopted cases (story 4.19), next's whole-backlog pick
+# (no open blocker, then priority, size, number) and its Backlog/open gates,
+# write-story's and write-blockers' dependencies, active's 0/1/many-active cases, transition
 # (including the epic that closes with its last story),
 # scope's lead-label handling, backlog's unscoped read, create-demo's call
-# sequence, the demo-current/demo-commented/demo-for gates, and the
-# integrate-feedback/write-epic/write-story half of integrating-feedback.
+# sequence, write-demo's checklist lint, the demo-current/demo-commented/
+# demo-for gates, and the integrate-feedback/write-epic/write-story/
+# write-feedback-reply half of integrating-feedback -- including the reply
+# gate: Reviewed is set only once a feedback-reply comment is actually on
+# the thread.
 set -u
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$TEST_DIR/.."
 BC_ISSUE="$SCRIPTS_DIR/bc-issue.sh"
 . "$TEST_DIR/harness.sh"
+# shellcheck source=lib/config.sh
+. "$SCRIPTS_DIR/lib/config.sh"
+bc_init
 
 run() { # <fakedir> <now-or-empty> <args...>
   local fake="$1" now="$2"; shift 2
   BC_FAKE="$fake" BC_NOW="$now" bash "$BC_ISSUE" "$@"
 }
 
+# run_dl <denylist-path-or-empty> <fakedir> <now-or-empty> <args...> -- same
+# as run, plus an optional BC_DEMO_DENYLIST_FILE override for write-demo's
+# lint tests (a missing/empty/CRLF/regex-bearing denylist, injected without
+# ever touching the real prompts/demo-checklist-denylist.txt).
+run_dl() {
+  local dl="$1" fake="$2" now="$3"; shift 3
+  if [ -n "$dl" ]; then
+    BC_DEMO_DENYLIST_FILE="$dl" BC_FAKE="$fake" BC_NOW="$now" bash "$BC_ISSUE" "$@"
+  else
+    BC_FAKE="$fake" BC_NOW="$now" bash "$BC_ISSUE" "$@"
+  fi
+}
+
 log_has() { grep -Eq -- "$2" "$1"; } # <file> <regex>
+
+# field_value <calls.log> <issue> <field> -> the value adopt-alerts (or
+# any project_set_single caller) actually wrote for that issue/field, read
+# back from the log rather than retyped -- so a fixture built from it
+# drifts with the real value instead of independently going stale
+# (Quentin's direction, cycle 1).
+field_value() {
+  grep -E "^project_set_single $2 $3 " "$1" | tail -1 | sed -E "s/^project_set_single $2 $3 //"
+}
 
 write_iterations() { # <dir> -- Sprint 1 active on 2026-09-01..2026-09-04
   cat > "$1/project_iterations.json" <<'JSON'
@@ -27,86 +57,237 @@ write_iterations() { # <dir> -- Sprint 1 active on 2026-09-01..2026-09-04
 JSON
 }
 
-echo "next: the sprint's own Backlog stories, by priority -- epics never enter into it:"
+echo "adopt-alerts: an off-board alert is added to the board, then Backlog, Blocker, XS, in that order; an on-board story is untouched:"
+
+FAKE_AA1="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA1/gh_issue_list_label.json"
+cat > "$FAKE_AA1/project_items.json" <<'JSON'
+[
+  {"number":701,"title":"Some critical work","state":"OPEN","status":"Backlog","priority":"Critical","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+printf 'PVTI_700\n' > "$FAKE_AA1/project_item.json"
+check_out "adopt-alerts: prints the number it adopted" 0 700 run "$FAKE_AA1" "" adopt-alerts
+check_out "adopt-alerts: put the alert in Backlog, then Blocker, then XS, in order" 0 \
+  "project_set_single 700 Status Backlog
+project_set_single 700 Priority Blocker
+project_set_single 700 Size XS" \
+  cat "$FAKE_AA1/calls.log"
+check "adopt-alerts: never touched the on-board story" 1 log_has "$FAKE_AA1/calls.log" '(^| )701( |$)'
+
+echo
+echo "adopt-alerts: already triaged past Backlog (In progress) -- left alone, wrote nothing:"
+
+FAKE_AA2="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA2/gh_issue_list_label.json"
+cat > "$FAKE_AA2/project_items.json" <<'JSON'
+[
+  {"number":700,"title":"deploy failed","state":"OPEN","status":"In progress","priority":"Blocker","size":"XS","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["alert","lead:tim"],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+check_out "adopt-alerts: already triaged -- prints nothing" 0 "" run "$FAKE_AA2" "" adopt-alerts
+check "adopt-alerts: already triaged -- wrote nothing (never dragged back to Backlog)" 1 test -f "$FAKE_AA2/calls.log"
+
+echo
+echo "adopt-alerts: on-board but stranded with no Status at all (a crash right after item-add) -- reasserted, no item-add:"
+
+# No project_item.json fixture here at all -- if adopt-alerts called
+# project_item for an alert that is already on the board, it would fail
+# (bc_fake_read finds no fixture) and the whole command would exit 2; it
+# exiting 0 with the three writes logged is what proves item-add was
+# never called (Quentin's direction, cycle 1: "already a project item" is
+# not "already triaged").
+FAKE_AA_NULL="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA_NULL/gh_issue_list_label.json"
+cat > "$FAKE_AA_NULL/project_items.json" <<'JSON'
+[
+  {"number":700,"title":"deploy failed","state":"OPEN","status":null,"priority":null,"size":null,"sprintId":null,"sprintTitle":null,"labels":["alert","lead:tim"],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+check_out "adopt-alerts: stranded with no Status -- prints the number, no item-add needed" 0 700 \
+  run "$FAKE_AA_NULL" "" adopt-alerts
+check_out "adopt-alerts: reasserted Backlog, Blocker, XS, in order" 0 \
+  "project_set_single 700 Status Backlog
+project_set_single 700 Priority Blocker
+project_set_single 700 Size XS" \
+  cat "$FAKE_AA_NULL/calls.log"
+
+echo
+echo "adopt-alerts: on-board, already Backlog but Priority/Size null (a crash one step later) -- reasserted, no item-add:"
+
+FAKE_AA_HALF="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA_HALF/gh_issue_list_label.json"
+cat > "$FAKE_AA_HALF/project_items.json" <<'JSON'
+[
+  {"number":700,"title":"deploy failed","state":"OPEN","status":"Backlog","priority":null,"size":null,"sprintId":null,"sprintTitle":null,"labels":["alert","lead:tim"],"isParent":false,"parent":null,"blockedBy":[]}
+]
+JSON
+check_out "adopt-alerts: already Backlog, Priority/Size still null -- reasserted" 0 700 \
+  run "$FAKE_AA_HALF" "" adopt-alerts
+check "adopt-alerts: set Priority Blocker" 0 log_has "$FAKE_AA_HALF/calls.log" '^project_set_single 700 Priority Blocker$'
+check "adopt-alerts: set Size XS" 0 log_has "$FAKE_AA_HALF/calls.log" '^project_set_single 700 Size XS$'
+
+echo
+echo "adopt-alerts: item-add itself fails for an off-board alert -- its own message, distinct from a field-set failure, no field ever written:"
+
+FAKE_AA_ITEMFAIL="$(fake_dir)"
+echo '[{"number":700}]' > "$FAKE_AA_ITEMFAIL/gh_issue_list_label.json"
+echo '[]' > "$FAKE_AA_ITEMFAIL/project_items.json"
+# No project_item.json fixture -- bc_fake_read finds nothing, so the
+# (real-world) add-to-project call reads as failed.
+check "adopt-alerts: item-add failure -> exit 2" 2 run "$FAKE_AA_ITEMFAIL" "" adopt-alerts
+check_out "adopt-alerts: item-add failure is named, never a Status message" 0 yes \
+  bash -c "BC_FAKE='$FAKE_AA_ITEMFAIL' bash '$BC_ISSUE' adopt-alerts 2>&1 | grep -qF 'could not add #700 to the board' && echo yes"
+check "adopt-alerts: item-add failure wrote no field at all" 1 \
+  test -f "$FAKE_AA_ITEMFAIL/calls.log"
+
+echo
+echo "adopt-alerts: no open alert issue at all -- no-op, wrote nothing:"
+
+FAKE_AA3="$(fake_dir)"
+echo '[]' > "$FAKE_AA3/gh_issue_list_label.json"
+echo '[]' > "$FAKE_AA3/project_items.json"
+check_out "adopt-alerts: nothing to adopt -- prints nothing" 0 "" run "$FAKE_AA3" "" adopt-alerts
+check "adopt-alerts: nothing to adopt -- wrote nothing" 1 test -f "$FAKE_AA3/calls.log"
+
+echo
+echo "adopt-alerts: could not list open alert issues -- broken, exit 2:"
+
+FAKE_AA4="$(fake_dir)"
+echo '[]' > "$FAKE_AA4/project_items.json"
+check "adopt-alerts: no gh_issue_list_label fixture -> exit 2" 2 run "$FAKE_AA4" "" adopt-alerts
+
+echo
+echo "next: once adopted, the alert beats a free Critical/XS story -- built from adopt-alerts' own calls.log and config.sh's own label variables, never retyped:"
+
+# Quentin's direction, cycle 1: the row FAKE_AA1 (above) actually produced
+# and this test's labels are both DERIVED, not hand-typed -- a rename of
+# BC_LABEL_ALERT/BC_LEAD_LABEL_PREFIX or of adopt-alerts' own Priority/Size
+# choice fails here rather than reading green by coincidence.
+AA1_STATUS="$(field_value "$FAKE_AA1/calls.log" 700 Status)"
+AA1_PRIORITY="$(field_value "$FAKE_AA1/calls.log" 700 Priority)"
+AA1_SIZE="$(field_value "$FAKE_AA1/calls.log" 700 Size)"
+ALERT_LABELS="[\"$BC_LABEL_ALERT\",\"${BC_LEAD_LABEL_PREFIX}tim\"]"
+
+FAKE_AA5="$(fake_dir)"
+"$JQ" -n -c --arg status "$AA1_STATUS" --arg priority "$AA1_PRIORITY" --arg size "$AA1_SIZE" --argjson labels "$ALERT_LABELS" '
+[
+  {number:700,title:"deploy failed",state:"OPEN",status:$status,priority:$priority,size:$size,sprintId:null,sprintTitle:null,labels:$labels,isParent:false,parent:null,blockedBy:[]},
+  {number:701,title:"Some critical work",state:"OPEN",status:"Backlog",priority:"Critical",size:"XS",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[]}
+]' > "$FAKE_AA5/project_items.json"
+printf '%s\n' "$ALERT_LABELS" > "$FAKE_AA5/gh_issue_labels.json"
+check_out "next: the adopted alert wins over a free Critical/XS story, scoped quentin,tim" 0 \
+  '{"number":700,"parent":null,"scope":"quentin,tim"}' \
+  run "$FAKE_AA5" "" next
+
+echo
+echo "next: the whole backlog's startable stories, by priority then size -- sprints and epics never enter into it:"
 
 FAKE_N1="$(fake_dir)"
-write_iterations "$FAKE_N1"
 cat > "$FAKE_N1/project_items.json" <<'JSON'
 [
-  {"number":100,"title":"Epic A, itself on no sprint","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null},
-  {"number":101,"title":"Sub of A, already active","state":"OPEN","status":"In progress","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
-  {"number":102,"title":"Sub of A, done","state":"CLOSED","status":"Done","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
-  {"number":103,"title":"Sub of A, closed by hand but still Backlog","state":"CLOSED","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100},
-  {"number":104,"title":"Sub of A, Backlog but on no sprint","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":100},
-  {"number":300,"title":"Epic C, on the sprint but never startable","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
-  {"number":301,"title":"Sub of C, backlog, on the sprint","state":"OPEN","status":"Backlog","priority":"Low","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":300},
-  {"number":201,"title":"Sub of B, backlog, on the sprint, higher priority","state":"OPEN","status":"Backlog","priority":"Critical","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":200},
-  {"number":999,"title":"Sprint 1 Demo, Backlog on the sprint but not work","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null}
+  {"number":100,"title":"Epic A, never startable","state":"OPEN","status":"Backlog","priority":"Blocker","size":null,"sprintId":null,"sprintTitle":null,"labels":[],"isParent":true,"parent":null,"blockedBy":[]},
+  {"number":101,"title":"Sub of A, already active","state":"OPEN","status":"In progress","priority":"Blocker","size":"S","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100,"blockedBy":[]},
+  {"number":102,"title":"Sub of A, done","state":"CLOSED","status":"Done","priority":"Blocker","size":"S","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":100,"blockedBy":[]},
+  {"number":103,"title":"Sub of A, closed by hand but still Backlog","state":"CLOSED","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":100,"blockedBy":[]},
+  {"number":104,"title":"Sub of A, Blocker but blocked by an open story","state":"OPEN","status":"Backlog","priority":"Blocker","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":100,"blockedBy":[301]},
+  {"number":301,"title":"Sub of C, Low, on no sprint","state":"OPEN","status":"Backlog","priority":"Low","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":300,"blockedBy":[]},
+  {"number":201,"title":"Sub of B, Critical, a LATER epic, on no sprint","state":"OPEN","status":"Backlog","priority":"Critical","size":"L","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":200,"blockedBy":[]},
+  {"number":999,"title":"Sprint 1 Demo, Backlog but not work","state":"OPEN","status":"Backlog","priority":"Blocker","size":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null,"blockedBy":[]}
 ]
 JSON
 echo '["lead:tim"]' > "$FAKE_N1/gh_issue_labels.json"
 
-# 201 beats 301 on priority even though its epic (200) is not on the board at
-# all, and every higher-priority candidate is excluded for a different reason:
-# 100/300 are epics, 101 is not Backlog, 102/103 are closed, 104 is on no
-# sprint, 999 is the Demo issue.
-check_out "next: picks the sprint's highest-priority Backlog story, whatever epic it hangs off" 0   '{"number":201,"parent":200,"scope":"quentin,tim"}'   run "$FAKE_N1" 2026-09-02T08:00:00Z next
+# 201 is on no sprint and hangs off an epic that is not even on the board, and
+# it still wins: every higher-priority candidate is out for its own reason --
+# 100 is an epic, 101 is not Backlog, 102/103 are closed, 999 is the Demo
+# issue, and 104, the Blocker, is blocked by the open 301. No iterations
+# fixture exists here at all: `next` no longer asks what sprint it is.
+check_out "next: the highest-priority unblocked Backlog story, any epic, on no sprint" 0   '{"number":201,"parent":200,"scope":"quentin,tim"}'   run "$FAKE_N1" 2026-09-02T08:00:00Z next
+check "next: reads only -- wrote nothing" 1 test -f "$FAKE_N1/calls.log"
+
+# project_items carries OPEN blockers only, so a story whose blocker has been
+# closed arrives with an empty list and is startable again -- 104 now beats 201.
+FAKE_N1B="$(fake_dir)"
+sed 's/"blockedBy":\[301\]/"blockedBy":[]/' "$FAKE_N1/project_items.json" > "$FAKE_N1B/project_items.json"
+echo '[]' > "$FAKE_N1B/gh_issue_labels.json"
+check_out "next: once its blocker closes, the Blocker story is the pick" 0   '{"number":104,"parent":100,"scope":"quentin"}'   run "$FAKE_N1B" "" next
+
+# BC_ONLY_ISSUE fences the e2e run in: the pick is board-wide, so its
+# throwaway story has to be the only thing `next` can see.
+check_out "next: BC_ONLY_ISSUE narrows the pool to that one story" 0   '{"number":301,"parent":300,"scope":"quentin"}' \
+  env BC_ONLY_ISSUE=301 BC_FAKE="$FAKE_N1B" bash "$BC_ISSUE" next
+check "next: BC_ONLY_ISSUE naming a blocked story starts nothing else" 1 \
+  env BC_ONLY_ISSUE=104 BC_FAKE="$FAKE_N1" bash "$BC_ISSUE" next
 
 FAKE_N2="$(fake_dir)"
-write_iterations "$FAKE_N2"
 cat > "$FAKE_N2/project_items.json" <<'JSON'
 [
-  {"number":400,"title":"Epic D","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
-  {"number":401,"title":"Sub, Standard priority","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":400},
-  {"number":402,"title":"Sub, Blocker priority, lower number","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":400},
-  {"number":403,"title":"Sub, Blocker priority, higher number","state":"OPEN","status":"Backlog","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":400}
+  {"number":401,"title":"Standard, tiny","state":"OPEN","status":"Backlog","priority":"Standard","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
+  {"number":402,"title":"Blocker, L, lowest number","state":"OPEN","status":"Backlog","priority":"Blocker","size":"L","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
+  {"number":403,"title":"Blocker, size unset","state":"OPEN","status":"Backlog","priority":"Blocker","size":null,"sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
+  {"number":404,"title":"Blocker, S, higher number","state":"OPEN","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":500},
+  {"number":405,"title":"Blocker, S, higher number still","state":"OPEN","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":500}
 ]
 JSON
 echo '[]' > "$FAKE_N2/gh_issue_labels.json"
 
-check_out "next: among tied top-priority stories, picks the lowest number" 0   '{"number":402,"parent":400,"scope":"quentin"}'   run "$FAKE_N2" 2026-09-02T08:00:00Z next
+# Priority first (401's XS does not beat a Blocker), then size (404's S beats
+# 402's L and 403's unset, which sorts last), then number (404 before 405).
+# These fixtures carry no blockedBy key at all: absent reads as unblocked.
+check_out "next: within the top priority the smallest story goes first, lowest number on a tie" 0   '{"number":404,"parent":500,"scope":"quentin"}'   run "$FAKE_N2" "" next
 
 # A story that hangs off no epic is ordinary work and starts like any other;
 # its parent comes back as null rather than the pick being skipped.
 FAKE_N3="$(fake_dir)"
-write_iterations "$FAKE_N3"
 cat > "$FAKE_N3/project_items.json" <<'JSON'
 [
-  {"number":500,"title":"Standalone story on the sprint","state":"OPEN","status":"Backlog","priority":"Standard","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null}
+  {"number":500,"title":"Standalone story","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[]}
 ]
 JSON
 echo '[]' > "$FAKE_N3/gh_issue_labels.json"
-check_out "next: an epic-less story is startable, with a null parent" 0   '{"number":500,"parent":null,"scope":"quentin"}'   run "$FAKE_N3" 2026-09-02T08:00:00Z next
+check_out "next: an epic-less story is startable, with a null parent" 0   '{"number":500,"parent":null,"scope":"quentin"}'   run "$FAKE_N3" "" next
 
-# Statuses past Backlog belong to `current`, not `next` -- a sprint whose
-# every story is under way has nothing left to start.
+# Statuses past Backlog belong to `active`, not `next`, and an unset Status
+# is not Backlog either.
 FAKE_N4="$(fake_dir)"
-write_iterations "$FAKE_N4"
 cat > "$FAKE_N4/project_items.json" <<'JSON'
 [
-  {"number":600,"title":"Reviewed, not startable","state":"OPEN","status":"Reviewed","priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null},
-  {"number":601,"title":"Status unset, not startable either","state":"OPEN","status":null,"priority":"Blocker","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null}
+  {"number":600,"title":"Reviewed, not startable","state":"OPEN","status":"Reviewed","priority":"Blocker","size":"S","sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null,"blockedBy":[]},
+  {"number":601,"title":"Status unset, not startable either","state":"OPEN","status":null,"priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[]}
 ]
 JSON
-check "next: nothing in Backlog on the sprint -> exit 1" 1 run "$FAKE_N4" 2026-09-02T08:00:00Z next
+check_out "next: nothing in Backlog -> exit 1, silent" 1 '' run "$FAKE_N4" "" next
+
+# Stories left, none startable: a cycle, or a blocker nobody can pick. That is
+# a stall, not an empty backlog, and `next` says so for the wake reason.
+FAKE_N5="$(fake_dir)"
+cat > "$FAKE_N5/project_items.json" <<'JSON'
+[
+  {"number":700,"title":"Blocked by 701","state":"OPEN","status":"Backlog","priority":"Critical","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[701]},
+  {"number":701,"title":"Blocked by 700","state":"OPEN","status":"Backlog","priority":"Critical","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":null,"blockedBy":[700]}
+]
+JSON
+check_out "next: every Backlog story blocked -> exit 1, and it says so" 1 \
+  '2 Backlog stories, every one blocked by an open issue' run "$FAKE_N5" "" next
 
 FAKE_N0="$(fake_dir)"
-write_iterations "$FAKE_N0"
 echo '[]' > "$FAKE_N0/project_items.json"
-check "next: no current sprint -> exit 1" 1 run "$FAKE_N0" 2026-12-25T08:00:00Z next
-check "next: nothing to start -> exit 1" 1 run "$FAKE_N0" 2026-09-02T08:00:00Z next
+check_out "next: an empty board -> exit 1, silent" 1 '' run "$FAKE_N0" "" next
+check "next: an unreadable board -> exit 2" 2 run "$(fake_dir)" "" next
 
 echo
-echo "current: 0 / 1 / 2 active sub-issues (and the demo issue is never 'current'):"
+echo "active: 0 / 1 / many active sub-issues (and the demo issue is never one of them):"
 
 FAKE_CUR0="$(fake_dir)"
 cat > "$FAKE_CUR0/project_items.json" <<'JSON'
 [
   {"number":1,"title":"A parent, not eligible","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":true,"parent":null},
-  {"number":2,"title":"Backlog sub, not active","state":"OPEN","status":"Backlog","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1}
+  {"number":2,"title":"Backlog sub, not active","state":"OPEN","status":"Backlog","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1},
+  {"number":3,"title":"Done sub, not active","state":"CLOSED","status":"Done","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1}
 ]
 JSON
-check "current: zero active -> exit 1" 1 run "$FAKE_CUR0" "" current
+check_out "active: zero active -> [], exit 0" 0 '[]' run "$FAKE_CUR0" "" active
 
 FAKE_CUR1="$(fake_dir)"
 cat > "$FAKE_CUR1/project_items.json" <<'JSON'
@@ -115,17 +296,25 @@ cat > "$FAKE_CUR1/project_items.json" <<'JSON'
   {"number":6,"title":"Sprint 1 Demo, also In progress but excluded","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null}
 ]
 JSON
-check_out "current: exactly one active (demo excluded) -> its number/status" 0 \
-  '{"number":5,"status":"Leads review"}' run "$FAKE_CUR1" "" current
+check_out "active: exactly one active (demo excluded) -> its number/status" 0   '[{"number":5,"status":"Leads review"}]' run "$FAKE_CUR1" "" active
 
+# Several in flight at once is the normal case, not an error: every active
+# status, any mix, listed in ascending number whatever order the board
+# returns them in.
 FAKE_CUR2="$(fake_dir)"
 cat > "$FAKE_CUR2/project_items.json" <<'JSON'
 [
+  {"number":9,"title":"Active three","state":"OPEN","status":"Leads review","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1},
   {"number":7,"title":"Active one","state":"OPEN","status":"To analyze","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1},
-  {"number":8,"title":"Active two","state":"OPEN","status":"Reviewed","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1}
+  {"number":10,"title":"Active four","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1},
+  {"number":8,"title":"Active two","state":"OPEN","status":"Reviewed","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":1},
+  {"number":11,"title":"Backlog, not active","state":"OPEN","status":"Backlog","priority":null,"sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":1}
 ]
 JSON
-check "current: two active -> exit 2" 2 run "$FAKE_CUR2" "" current
+check_out "active: four active -> all four, by number, exit 0" 0   '[{"number":7,"status":"To analyze"},{"number":8,"status":"Reviewed"},{"number":9,"status":"Leads review"},{"number":10,"status":"In progress"}]'   run "$FAKE_CUR2" "" active
+run_only() { local only="$1"; shift; BC_ONLY_ISSUE="$only" run "$@"; } # <issue> <run args...>
+check_out "active: BC_ONLY_ISSUE fences it to that one story (the e2e run)" 0   '[{"number":9,"status":"Leads review"}]' run_only 9 "$FAKE_CUR2" "" active
+check "active: an unreadable board -> exit 2" 2 run "$(fake_dir)" "" active
 
 echo
 echo "transition: writes Status, Done also closes the issue, invalid status is rejected:"
@@ -200,6 +389,143 @@ echo '["lead:bob","lead:artie"]' > "$FAKE_SC3/gh_issue_labels.9.json"
 check_out "scope: unknown lead:bob ignored, known lead kept" 0 "quentin,artie" run "$FAKE_SC3" "" scope 9
 
 echo
+echo "live: the reader prints one JSON line, undeclared unless a readable comment says otherwise:"
+
+live_fake() { # <comments-json> -> a fake dir whose issue 7 carries those comments
+  local d
+  d="$(fake_dir)"
+  printf '%s' "$1" > "$d/gh_issue_comments.7.json"
+  printf '%s' "$d"
+}
+FAKE_LV="$(live_fake '[{"id":1,"body":"hi"},{"id":2,"body":"### Live\n\nOpen the city and walk to the cafe.\n\n<!-- bc:live visible -->"}]')"
+check_out "live: visible, with its where-line" 0 \
+  '{"live":"visible","where":"Open the city and walk to the cafe."}' run "$FAKE_LV" "" live 7
+check_out "live: none" 0 '{"live":"none"}' \
+  run "$(live_fake '[{"id":2,"body":"x\n<!-- bc:live none -->"}]')" "" live 7
+check_out "live: no comments at all is undeclared" 0 '{"live":"undeclared"}' \
+  run "$(live_fake '[]')" "" live 7
+check_out "live: comments with no live marker are undeclared" 0 '{"live":"undeclared"}' \
+  run "$(live_fake '[{"id":1,"body":"looks good"}]')" "" live 7
+check_out "live: a CRLF body reads the same" 0 \
+  '{"live":"visible","where":"Walk to the cafe."}' \
+  run "$(live_fake '[{"id":2,"body":"### Live\r\n\r\nWalk to the cafe.\r\n\r\n<!-- bc:live visible -->\r\n"}]')" "" live 7
+check_out "live: an unknown marker value is undeclared" 0 '{"live":"undeclared"}' \
+  run "$(live_fake '[{"id":2,"body":"x\n<!-- bc:live maybe -->"}]')" "" live 7
+check_out "live: visible with an empty where-line is undeclared" 0 '{"live":"undeclared"}' \
+  run "$(live_fake '[{"id":2,"body":"### Live\n\n<!-- bc:live visible -->"}]')" "" live 7
+check_out "live: a where-line with a quote is valid JSON" 0 \
+  '{"live":"visible","where":"Press \"E\" at the door."}' \
+  run "$(live_fake '[{"id":2,"body":"Press \"E\" at the door.\n<!-- bc:live visible -->"}]')" "" live 7
+check "live: unreadable comments are exit 2, not undeclared" 2 run "$(fake_dir)" "" live 7
+check "live: no issue is usage, exit 2" 2 run "$(fake_dir)" "" live
+
+echo
+echo "declare-live: one upsert -- the first call creates the comment, every later one edits it:"
+
+FAKE_DLV="$(fake_dir)"
+echo '[]' > "$FAKE_DLV/gh_issue_comments.7.json"
+printf 'Open the city and walk to the cafe door.\n' > "$FAKE_DLV/where.txt"
+check "declare-live visible exits 0" 0 run "$FAKE_DLV" "" declare-live 7 visible "$FAKE_DLV/where.txt"
+check "first call creates exactly one comment" 0 \
+  test "$(grep -c '^gh_comment_create 7 ' "$FAKE_DLV/calls.log")" = 1
+check "first call edits nothing" 1 log_has "$FAKE_DLV/calls.log" '^gh_comment_edit'
+LIVE_BODY="$(sed -n '1p' "$FAKE_DLV/calls.log" | awk '{print $NF}')"
+check_out "the comment parses back to the declaration" 0 \
+  "$(printf 'visible\nOpen the city and walk to the cafe door.')" \
+  bash -c '. "$1/lib/markers.sh"; parse_live "$(cat "$2")"' _ "$SCRIPTS_DIR" "$LIVE_BODY"
+
+# The second call: the comment now exists.
+printf '%s' '[{"id":41,"body":"human"},{"id":42,"body":"### Live\n\nold\n\n<!-- bc:live visible -->"}]' \
+  > "$FAKE_DLV/gh_issue_comments.7.json"
+rm -f "$FAKE_DLV/calls.log"
+check "declare-live none over an existing visible exits 0" 0 run "$FAKE_DLV" "" declare-live 7 none
+check "it edits that comment" 0 log_has "$FAKE_DLV/calls.log" '^gh_comment_edit 42 '
+check "it creates none" 1 log_has "$FAKE_DLV/calls.log" '^gh_comment_create'
+check_out "the edit says none" 0 none \
+  bash -c '. "$1/lib/markers.sh"; parse_live "$(cat "$2")"' _ "$SCRIPTS_DIR" \
+  "$(sed -n '1p' "$FAKE_DLV/calls.log" | awk '{print $NF}')"
+printf '%s' '[{"id":42,"body":"### Live\n\nNot visible in the live game.\n\n<!-- bc:live none -->"}]' \
+  > "$FAKE_DLV/gh_issue_comments.7.json"
+rm -f "$FAKE_DLV/calls.log"
+check "none back to visible exits 0" 0 run "$FAKE_DLV" "" declare-live 7 visible "$FAKE_DLV/where.txt"
+check "it replaces in place" 0 log_has "$FAKE_DLV/calls.log" '^gh_comment_edit 42 '
+check "and creates none" 1 log_has "$FAKE_DLV/calls.log" '^gh_comment_create'
+
+echo
+echo "declare-live: bad input is exit 2 with nothing written:"
+
+dlv_bad() { # <name> <args...>
+  local name="$1"; shift
+  local d
+  d="$(fake_dir)"
+  echo '[]' > "$d/gh_issue_comments.7.json"
+  printf '' > "$d/empty.txt"
+  printf 'one\ntwo\n' > "$d/multi.txt"
+  printf 'go <!-- bc:live none --> now\n' > "$d/marker.txt"
+  printf 'Walk to the cafe.\n' > "$d/ok.txt"
+  local args=() a
+  for a in "$@"; do args+=("${a//@D@/$d}"); done
+  check "$name: exit 2" 2 run "$d" "" declare-live 7 "${args[@]}"
+  check "$name: wrote nothing" 1 test -f "$d/calls.log"
+}
+dlv_bad "an empty where-file" visible @D@/empty.txt
+dlv_bad "a multi-line where-file" visible @D@/multi.txt
+dlv_bad "a where-file carrying a comment opener" visible @D@/marker.txt
+dlv_bad "a missing where-file" visible @D@/nope.txt
+dlv_bad "visible with no where-file" visible
+dlv_bad "an unknown state" maybe @D@/ok.txt
+dlv_bad "no state" 
+FAKE_DLV_UNREAD="$(fake_dir)"
+printf 'Walk to the cafe.\n' > "$FAKE_DLV_UNREAD/ok.txt"
+check "unreadable comments: exit 2" 2 run "$FAKE_DLV_UNREAD" "" declare-live 7 visible "$FAKE_DLV_UNREAD/ok.txt"
+check "unreadable comments: wrote nothing" 1 test -f "$FAKE_DLV_UNREAD/calls.log"
+
+
+
+echo
+echo "live: a comment merely quoting the marker is not the declaration -- never read, never edited:"
+
+QUOTE_INLINE='{"id":10,"body":"### Analysis — tim\n\nToday it says `<!-- bc:live none -->` here.\n\n<!-- bc:lead:tim -->\n<!-- bc:direction READY -->"}'
+QUOTE_OWNLINE='{"id":10,"body":"### Analysis — tim\n\n<!-- bc:live none -->\n\n<!-- bc:lead:tim -->\n<!-- bc:direction READY -->"}'
+QUOTE_BARE='{"id":10,"body":"Quoting it: <!-- bc:live none --> in prose."}'
+REAL_DECL='{"id":11,"body":"### Live\n\nWalk to the cafe.\n\n<!-- bc:live visible -->"}'
+VIS_CAFE='{"live":"visible","where":"Walk to the cafe."}'
+quote_cases() { # <quoting-comment-json> <label-before> <label-after> <label-alone>
+  local Q="$1"
+  check_out "$2" 0 "$VIS_CAFE" run "$(live_fake "[$Q,$REAL_DECL]")" "" live 7
+  check_out "$3" 0 "$VIS_CAFE" run "$(live_fake "[$REAL_DECL,$Q]")" "" live 7
+  check_out "$4" 0 '{"live":"undeclared"}' run "$(live_fake "[$Q]")" "" live 7
+}
+quote_cases "$QUOTE_INLINE" \
+  "live: visible when the inline quoting comment comes before the real one" \
+  "live: visible when the inline quoting comment comes after the real one" \
+  "live: an inline quoting comment alone reads undeclared"
+quote_cases "$QUOTE_OWNLINE" \
+  "live: visible when the own-line-beside-other-markers quoting comment comes before the real one" \
+  "live: visible when the own-line-beside-other-markers quoting comment comes after the real one" \
+  "live: an own-line-beside-other-markers quoting comment alone reads undeclared"
+quote_cases "$QUOTE_BARE" \
+  "live: visible when the bare quoting comment comes before the real one" \
+  "live: visible when the bare quoting comment comes after the real one" \
+  "live: a bare quoting comment alone reads undeclared"
+FAKE_QD="$(live_fake "[$QUOTE_INLINE,$REAL_DECL]")"
+printf 'Walk to the cafe.\n' > "$FAKE_QD/where.txt"
+check "declare-live past a quoting comment exits 0" 0 run "$FAKE_QD" "" declare-live 7 visible "$FAKE_QD/where.txt"
+check "declare-live edits the real declaration, id 11" 0 log_has "$FAKE_QD/calls.log" '^gh_comment_edit 11 '
+check "declare-live never edits the quoting comment, id 10" 1 log_has "$FAKE_QD/calls.log" '^gh_comment_edit 10 '
+FAKE_QO="$(live_fake "[$QUOTE_OWNLINE]")"
+printf 'Walk to the cafe.\n' > "$FAKE_QO/where.txt"
+check "declare-live with only a quoting comment exits 0" 0 run "$FAKE_QO" "" declare-live 7 visible "$FAKE_QO/where.txt"
+check "declare-live with only a quoting comment creates a new comment" 0 log_has "$FAKE_QO/calls.log" '^gh_comment_create 7 '
+check "declare-live with only a quoting comment edits nothing" 1 log_has "$FAKE_QO/calls.log" '^gh_comment_edit'
+echo
+echo "live: a bc:live comment is not feedback for demo-commented:"
+
+FAKE_LVR="$(fake_dir)"
+printf '%s' '[{"id":2,"body":"### Live\n\nWalk to the cafe.\n\n<!-- bc:live visible -->"}]' > "$FAKE_LVR/gh_issue_comments.5.json"
+check_out "demo-commented: the live comment is not feedback" 1 no run "$FAKE_LVR" "" demo-commented 5
+
+echo
 echo "create-demo: the call sequence (Scotty summary -> new issue -> project add/scope):"
 
 FAKE_DM="$(fake_dir)"
@@ -212,11 +538,17 @@ cat > "$FAKE_DM/project_items.json" <<'JSON'
 [
   {"number":501,"title":"Fix inventory bug","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null},
   {"number":502,"title":"Add forest level","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null},
-  {"number":503,"title":"Still in progress, excluded","state":"OPEN","status":"In progress","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null}
+  {"number":503,"title":"Still in progress, excluded","state":"OPEN","status":"In progress","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null},
+  {"number":504,"title":"Rotate the logs","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null}
 ]
 JSON
 printf 'Fixed the crash on load.\nMore details follow.\n' > "$FAKE_DM/gh_issue_body.501.json"
 printf '\n\nAdded the forest level.\n' > "$FAKE_DM/gh_issue_body.502.json"
+printf 'Rotated the logs.\n' > "$FAKE_DM/gh_issue_body.504.json"
+# One story of each declared state: visible, none, undeclared.
+printf '%s' '[{"id":1,"body":"### Live\n\nOpen the inventory and drop an item.\n\n<!-- bc:live visible -->"}]' > "$FAKE_DM/gh_issue_comments.501.json"
+printf '%s' '[{"id":1,"body":"### Live\n\nNot visible in the live game.\n\n<!-- bc:live none -->"}]' > "$FAKE_DM/gh_issue_comments.502.json"
+echo '[]' > "$FAKE_DM/gh_issue_comments.504.json"
 # The overlay stands in for Scotty: present means his own `write-demo` call
 # ran, and the board read back afterwards carries the Demo issue it opened.
 mkdir -p "$FAKE_DM/bc_scotty.judge-demo-summary.md.d"
@@ -236,6 +568,24 @@ check "create-demo never touched the still-in-progress story" 1 \
   log_has "$FAKE_DM/calls.log" '(^| )503( |$)'
 check "create-demo handed Scotty only what was finished" 0 \
   grep -q '#502 Add forest level' "$FAKE_DM/bc_scotty.judge-demo-summary.md.input"
+printf '%s\n' '- #501 Fix inventory bug' '  Fixed the crash on load.' '  Live: visible - Open the inventory and drop an item.' \
+  '- #502 Add forest level' '  Added the forest level.' '  Live: not visible' \
+  '- #504 Rotate the logs' '  Rotated the logs.' '  Live: not declared (treat as not visible)' > "$FAKE_DM/expected-input.txt"
+check "create-demo hands Scotty the whole input, byte for byte: number, title, first line, live line" 0 \
+  cmp "$FAKE_DM/expected-input.txt" "$FAKE_DM/bc_scotty.judge-demo-summary.md.input"
+
+FAKE_DM_UNREAD="$(fake_dir)"
+cp "$FAKE_DM/project_iterations.json" "$FAKE_DM/gh_issue_body.501.json" "$FAKE_DM/gh_issue_body.502.json" "$FAKE_DM_UNREAD/"
+cat > "$FAKE_DM_UNREAD/project_items.json" <<'JSON'
+[
+  {"number":501,"title":"Fix inventory bug","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null},
+  {"number":502,"title":"Add forest level","state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp3id","sprintTitle":"Sprint 3","labels":[],"isParent":false,"parent":null}
+]
+JSON
+cp "$FAKE_DM/gh_issue_comments.501.json" "$FAKE_DM_UNREAD/"
+# 502's comments are unreadable (no fixture).
+check "create-demo with unreadable comments exits 2" 2 run "$FAKE_DM_UNREAD" "" create-demo 3
+check "and no Scotty call was spent" 1 test -f "$FAKE_DM_UNREAD/calls.log"
 
 FAKE_DM_EMPTY="$(fake_dir)"
 cat > "$FAKE_DM_EMPTY/project_iterations.json" <<'JSON'
@@ -259,14 +609,35 @@ check "and wrote nothing" 1 test -f "$FAKE_DM_NOSPRINT/calls.log"
 echo
 echo "write-demo: Scotty's own call -- opens the issue, labels it, scopes it into the sprint:"
 
-FAKE_WD="$(fake_dir)"
-cat > "$FAKE_WD/project_iterations.json" <<'JSON'
+FAKE_LINT_ITER='[{"id":"sp3id","title":"Sprint 3","startDate":"2026-09-12","duration":7}]'
+# demo_world <dir> -- Sprint 3 with Done stories 11 (declared visible), 12
+# (declared none) and 13 (undeclared), a Done story 14 of Sprint 2 (visible)
+# and an unfinished story 15 (visible). Every lint case below cites #11, so
+# each fails or passes on exactly the one rule it is about.
+demo_world() {
+  local d="$1" s i
+  printf '%s' "$FAKE_LINT_ITER" > "$d/project_iterations.json"
+  s='"state":"CLOSED","status":"Done","priority":"Standard","labels":[],"isParent":false,"parent":null'
+  cat > "$d/project_items.json" <<JSON
 [
-  {"id":"sp3id","title":"Sprint 3","startDate":"2026-09-12","duration":7}
+  {"number":11,"title":"Walk","sprintId":"sp3id","sprintTitle":"Sprint 3",$s},
+  {"number":12,"title":"Clock","sprintId":"sp3id","sprintTitle":"Sprint 3",$s},
+  {"number":13,"title":"Blocks","sprintId":"sp3id","sprintTitle":"Sprint 3",$s},
+  {"number":14,"title":"Old","sprintId":"sp2id","sprintTitle":"Sprint 2",$s},
+  {"number":15,"title":"Unfinished","sprintId":"sp3id","sprintTitle":"Sprint 3","state":"OPEN","status":"In progress","priority":"Standard","labels":[],"isParent":false,"parent":null}
 ]
 JSON
+  for i in 11 14 15; do
+    printf '%s' '[{"id":1,"body":"### Live\n\nWalk through the city.\n\n<!-- bc:live visible -->"}]' > "$d/gh_issue_comments.$i.json"
+  done
+  printf '%s' '[{"id":1,"body":"### Live\n\nNot visible in the live game.\n\n<!-- bc:live none -->"}]' > "$d/gh_issue_comments.12.json"
+  echo '[]' > "$d/gh_issue_comments.13.json"
+}
+
+FAKE_WD="$(fake_dir)"
+demo_world "$FAKE_WD"
 WD_BODY="$FAKE_WD/scotty-body.md"
-printf 'The team shipped a crash fix and a new level.\n\n- [ ] Show the crash fix\n- [ ] Show the forest level\n' \
+printf 'The team shipped a crash fix and a new level.\n\n- [ ] Show the crash fix (#11)\n- [ ] Show the forest level (#11)\n' \
   > "$WD_BODY"
 
 check "write-demo exits 0" 0 run "$FAKE_WD" "" write-demo 3 "$WD_BODY"
@@ -292,6 +663,316 @@ check "write-demo with an empty body exits 2" 2 \
 check "and wrote nothing" 1 test -f "$FAKE_WD_EMPTY/calls.log"
 check "write-demo with a missing body file exits 2" 2 \
   run "$FAKE_WD_EMPTY" "" write-demo 3 "$FAKE_WD_EMPTY/nope.md"
+
+echo
+echo "write-demo: checklist lines are linted for player-facing language before anything is created:"
+
+
+# err_has <stderr-text> <substring>
+err_has() { printf '%s' "$1" | grep -qF -- "$2"; }
+
+# lint_body <dir> <checklist-line> -> path to a body file carrying it, plus a
+# harmless summary paragraph -- the lint never touches the summary. The line
+# cites story 11, a visible Done story.
+lint_body() {
+  local dir="$1" line="$2" f
+  f="$dir/lint-body.md"
+  printf 'A short summary for Adrian.\n\n%s (#11)\n' "$line" > "$f"
+  printf '%s' "$f"
+}
+
+lint_bad() { # <name> <checklist-line> <reason-substring> [denylist-override]
+  local name="$1" line="$2" reason="$3" dl="${4:-}" d body err
+  d="$(fake_dir)"
+  demo_world "$d"
+  body="$(lint_body "$d" "$line")"
+  check "$name: rejected, exit 3" 3 run_dl "$dl" "$d" "" write-demo 3 "$body"
+  err="$(run_dl "$dl" "$d" "" write-demo 3 "$body" 2>&1 1>/dev/null)"
+  check "$name: names its own reason" 0 err_has "$err" "$reason"
+  check "$name: created nothing"  1 test -f "$d/calls.log"
+}
+
+lint_good() { # <name> <checklist-line> [denylist-override]
+  local name="$1" line="$2" dl="${3:-}" d body
+  d="$(fake_dir)"
+  demo_world "$d"
+  printf '999\n' > "$d/gh_issue_create.json"
+  body="$(lint_body "$d" "$line")"
+  check "$name: passes, exit 0" 0 run_dl "$dl" "$d" "" write-demo 3 "$body"
+}
+
+# shape_bad <name> <line> -- a list-item shape that is not the canonical
+# "- [ ] " bullet: itself rejected, exit 3, before the jargon rules even run.
+shape_bad() {
+  local name="$1" line="$2" d body err
+  d="$(fake_dir)"
+  demo_world "$d"
+  body="$(lint_body "$d" "$line")"
+  check "$name: rejected, exit 3" 3 run "$d" "" write-demo 3 "$body"
+  err="$(run "$d" "" write-demo 3 "$body" 2>&1 1>/dev/null)"
+  check "$name: names the required form" 0 \
+    bash -c 'printf "%s" "$1" | grep -qF -- "$2"' _ "$err" "checklist lines must start with '- [ ] '"
+  check "$name: created nothing" 1 test -f "$d/calls.log"
+}
+
+# Adrian's own complaint, verbatim -- the acceptance criterion this lint exists for.
+ADRIAN_LINE='- [ ] Walk through a defs/ object definition and its packed atlas entry'
+FAKE_LINT_ADRIAN="$(fake_dir)"
+demo_world "$FAKE_LINT_ADRIAN"
+ADRIAN_BODY="$(lint_body "$FAKE_LINT_ADRIAN" "$ADRIAN_LINE")"
+check "Adrian's literal complaint line is rejected, exit 3" 3 \
+  run "$FAKE_LINT_ADRIAN" "" write-demo 3 "$ADRIAN_BODY"
+LINT_ERR="$(run "$FAKE_LINT_ADRIAN" "" write-demo 3 "$ADRIAN_BODY" 2>&1 1>/dev/null)"
+check "and the offending line is named in stderr" 0 \
+  bash -c 'printf "%s" "$1" | grep -qF -- "$2"' _ "$LINT_ERR" "$ADRIAN_LINE"
+check "and no gh_issue_create appears in the call log" 1 \
+  test -f "$FAKE_LINT_ADRIAN/calls.log"
+
+# Rule: a backtick anywhere in the line.
+lint_bad  "backtick"    "- [ ] Watch the team land a \`parry()\` combo" "contains a backtick"
+lint_good "no backtick" "- [ ] Watch the team land a parry combo"
+
+# Rule: a path-like token -- a slash between word characters, or a token
+# ending in a source/doc extension.
+lint_bad  "path-like token (slash)"     "- [ ] Confirm the client/server handshake on login" "looks like a file path"
+lint_bad  "path-like token (extension)" "- [ ] Check the new config.yml loads correctly" "looks like a file path"
+lint_good "no path"                     "- [ ] Confirm the login screen appears"
+
+# Rule: a snake_case or camelCase token of the kind that only appears in code.
+lint_bad  "snake_case token" "- [ ] Watch the walk_speed increase in the new zone" "snake_case identifier"
+lint_bad  "camelCase token"  "- [ ] Watch the questLog fill up with new markers" "camelCase identifier"
+lint_good "plain English"    "- [ ] Watch the player walk through the new zone"
+
+# Rule: the denylist, seeded from Adrian's actual complaint and its siblings.
+lint_bad  "denylist word (reducer)" "- [ ] Confirm the reducer runs without errors" "uses the engineering term"
+lint_good "denylist word absent"    "- [ ] Confirm building placement works smoothly"
+
+# Ambiguous English words never belong on the denylist -- a lint that rejects
+# "sit at a table" is worse than none.
+lint_good "ambiguous word: table"       "- [ ] Sit at the crafting table and place an item"
+lint_good "ambiguous word: build"       "- [ ] Build a house in the new district"
+lint_good "ambiguous word: test (verb)" "- [ ] Test the new elevator by riding it up"
+
+echo
+echo "write-demo: the denylist catches inflected forms (plural/participle), never via an open-ended prefix that would eat plain English:"
+
+lint_bad  "inflected: schemas"    "- [ ] Show the new database schemas" "uses the engineering term"
+lint_bad  "inflected: reducers"   "- [ ] Walk through the reducers that place buildings" "uses the engineering term"
+lint_bad  "inflected: refactored" "- [ ] Show the refactored street generator" "uses the engineering term"
+lint_bad  "inflected: unit tests" "- [ ] Show the unit tests passing" "uses the engineering term"
+lint_bad  "inflected: endpoints"  "- [ ] Show the new API endpoints" "uses the engineering term"
+
+lint_good "CI never eats 'city'"  "- [ ] Walk around the city"
+lint_good "PR never eats 'press'" "- [ ] Press the button"
+lint_good "PR never eats 'price'" "- [ ] Watch the price change"
+
+echo
+echo "write-demo: a denylist entry with regex metacharacters is matched literally -- never errors, never over-matches:"
+
+REGEX_DENYLIST="$(fake_dir)/denylist-regex.txt"
+printf 'node.js\n' > "$REGEX_DENYLIST"
+lint_bad  "literal entry with a dot matches itself"  "- [ ] Read about node.js on the client" "uses the engineering term" "$REGEX_DENYLIST"
+lint_good "the dot is literal, not 'any character'"  "- [ ] Read about nodexjs on the client" "$REGEX_DENYLIST"
+
+CPP_DENYLIST="$(fake_dir)/denylist-cpp.txt"
+printf 'c++\n' > "$CPP_DENYLIST"
+lint_bad  "literal entry with a plus matches itself"        "- [ ] Show off the c++ prototype" "uses the engineering term" "$CPP_DENYLIST"
+lint_good "a plus-bearing entry never crashes the lint"      "- [ ] Show off the new district"  "$CPP_DENYLIST"
+
+echo
+echo "write-demo: the denylist survives a CRLF checkout -- a Windows autocrlf tree with no .gitattributes protection yet, or one read before this fix:"
+
+CRLF_DENYLIST="$(fake_dir)/denylist-crlf.txt"
+printf 'reducer\r\natlas\r\n' > "$CRLF_DENYLIST"
+lint_bad "a CRLF denylist entry still matches" "- [ ] Confirm the reducer runs without errors" "uses the engineering term" "$CRLF_DENYLIST"
+
+echo
+echo "write-demo: a missing or empty denylist file is an infra failure, not a silent skip -- exit 2, never 3, and nothing is created even for an otherwise-clean checklist:"
+
+FAKE_DL_MISSING="$(fake_dir)"
+demo_world "$FAKE_DL_MISSING"
+MISSING_DL="$FAKE_DL_MISSING/nonexistent-denylist.txt"
+MISSING_BODY="$(lint_body "$FAKE_DL_MISSING" "- [ ] Watch the player walk through the new zone")"
+check "missing denylist file: exit 2, not 3" 2 \
+  run_dl "$MISSING_DL" "$FAKE_DL_MISSING" "" write-demo 3 "$MISSING_BODY"
+MISSING_ERR="$(run_dl "$MISSING_DL" "$FAKE_DL_MISSING" "" write-demo 3 "$MISSING_BODY" 2>&1 1>/dev/null)"
+check "missing denylist file: names it on stderr" 0 \
+  bash -c 'printf "%s" "$1" | grep -qF -- "$2"' _ "$MISSING_ERR" "$MISSING_DL"
+check "missing denylist file: created nothing" 1 test -f "$FAKE_DL_MISSING/calls.log"
+
+FAKE_DL_EMPTY="$(fake_dir)"
+demo_world "$FAKE_DL_EMPTY"
+EMPTY_DL="$FAKE_DL_EMPTY/empty-denylist.txt"
+printf '\n\n   \n' > "$EMPTY_DL"
+EMPTY_DL_BODY="$(lint_body "$FAKE_DL_EMPTY" "- [ ] Watch the player walk through the new zone")"
+check "denylist file with zero entries: exit 2, not 3" 2 \
+  run_dl "$EMPTY_DL" "$FAKE_DL_EMPTY" "" write-demo 3 "$EMPTY_DL_BODY"
+check "denylist file with zero entries: created nothing" 1 test -f "$FAKE_DL_EMPTY/calls.log"
+
+echo
+echo "write-demo: only the canonical '- [ ] ' bullet is linted as a checklist line -- any other list-item shape is itself rejected, exit 3, so drifting to a different bullet never silently disables the gate:"
+
+shape_bad "asterisk bullet"           "* [ ] Show the new zone"
+shape_bad "indented hyphen bullet"    "  - [ ] Show the new zone"
+shape_bad "checked box"               "- [x] Show the new zone"
+shape_bad "extra space after hyphen"  "-  [ ] Show the new zone"
+shape_bad "ordered-list bullet"       "1. [ ] Show the new zone"
+shape_bad "plain bullet, no checkbox" "- Show the new zone"
+
+# One bad line among good ones rejects the whole body.
+FAKE_LINT_MIX="$(fake_dir)"
+demo_world "$FAKE_LINT_MIX"
+MIX_BODY="$FAKE_LINT_MIX/mix.md"
+printf 'A short summary for Adrian.\n\n- [ ] Watch the player walk through the new zone (#11)\n- [ ] Confirm the reducer runs without errors (#11)\n- [ ] Watch the team land a parry combo (#11)\n' \
+  > "$MIX_BODY"
+check "one bad line among good ones rejects the whole body, exit 3" 3 \
+  run "$FAKE_LINT_MIX" "" write-demo 3 "$MIX_BODY"
+MIX_ERR="$(run "$FAKE_LINT_MIX" "" write-demo 3 "$MIX_BODY" 2>&1 1>/dev/null)"
+check "the mixed body names the bad line with its own reason" 0 \
+  err_has "$MIX_ERR" "(uses the engineering term 'reducer'): - [ ] Confirm the reducer runs without errors (#11)"
+check "the mixed body does not name a good line" 1 err_has "$MIX_ERR" "parry combo"
+check "and nothing was created" 1 test -f "$FAKE_LINT_MIX/calls.log"
+
+# The summary paragraph is never linted -- only checkbox lines are.
+FAKE_LINT_SUMMARY="$(fake_dir)"
+demo_world "$FAKE_LINT_SUMMARY"
+printf '999\n' > "$FAKE_LINT_SUMMARY/gh_issue_create.json"
+SUMMARY_BODY="$FAKE_LINT_SUMMARY/summary.md"
+printf 'The team refactored the defs/ pipeline and shipped a new endpoint.\n\n- [ ] Watch the player walk through the new zone (#11)\n' \
+  > "$SUMMARY_BODY"
+check "jargon in the summary paragraph is not linted" 0 \
+  run "$FAKE_LINT_SUMMARY" "" write-demo 3 "$SUMMARY_BODY"
+
+# A checklist is not required at all -- a sprint of pure process work has
+# nothing player-visible to show, and an empty checklist must not be forced.
+FAKE_LINT_EMPTY="$(fake_dir)"
+demo_world "$FAKE_LINT_EMPTY"
+printf '999\n' > "$FAKE_LINT_EMPTY/gh_issue_create.json"
+EMPTY_CL_BODY="$FAKE_LINT_EMPTY/no-checklist.md"
+printf 'The team spent the sprint on internal process work only.\n' > "$EMPTY_CL_BODY"
+check "an empty checklist still passes" 0 \
+  run "$FAKE_LINT_EMPTY" "" write-demo 3 "$EMPTY_CL_BODY"
+
+echo
+echo "write-demo: every checklist line names a Done story of the sprint that is declared visible:"
+
+# live_bad <name> <checklist-line> <reason-substring>
+live_bad() {
+  local name="$1" line="$2" reason="$3" d f err
+  d="$(fake_dir)"
+  demo_world "$d"
+  f="$d/live-body.md"
+  printf 'A short summary for Adrian.\n\n%s\n' "$line" > "$f"
+  check "$name: rejected, exit 3" 3 run "$d" "" write-demo 3 "$f"
+  err="$(run "$d" "" write-demo 3 "$f" 2>&1 1>/dev/null)"
+  check "$name: names the line" 0 err_has "$err" "$line"
+  check "$name: names its own reason" 0 err_has "$err" "$reason"
+  check "$name: created nothing" 1 test -f "$d/calls.log"
+}
+live_bad "a line with no story reference" "- [ ] Walk around the city" "no story reference"
+live_bad "a reference that is not at the end of the line" "- [ ] Walk (#11) around the city" "no story reference"
+live_bad "a line citing two stories" "- [ ] Walk around the city (#11) (#11)" "more than one story reference"
+live_bad "a story that is not a Done item of this sprint (another sprint)" "- [ ] Walk around the city (#14)" "is not a Done item of Sprint 3"
+live_bad "a story that is not Done yet" "- [ ] Walk around the city (#15)" "is not a Done item of Sprint 3"
+live_bad "a story that is not on the board at all" "- [ ] Walk around the city (#99)" "is not a Done item of Sprint 3"
+live_bad "a story declared none" "- [ ] Check the clock (#12)" "declared not visible"
+live_bad "a story with no declaration" "- [ ] Look at the blocks (#13)" "no live declaration"
+
+FAKE_LV_OK="$(fake_dir)"
+demo_world "$FAKE_LV_OK"
+echo 999 > "$FAKE_LV_OK/gh_issue_create.json"
+printf 'A summary.\n\n- [ ] Walk around the city (#11)\n' > "$FAKE_LV_OK/ok.md"
+check "a line citing a visible Done story of the sprint passes" 0 run "$FAKE_LV_OK" "" write-demo 3 "$FAKE_LV_OK/ok.md"
+check "and the demo issue was created" 0 log_has "$FAKE_LV_OK/calls.log" '^gh_issue_create Sprint 3 Demo'
+
+FAKE_LV_MIX="$(fake_dir)"
+demo_world "$FAKE_LV_MIX"
+printf 'A summary.\n\n- [ ] Walk around the city (#11)\n- [ ] Look around\n- [ ] Check the clock (#12)\n- [ ] Look at the blocks (#13)\n- [ ] Show the schemas (#11)\n- [ ] Walk a long way (#14)\n' > "$FAKE_LV_MIX/mix.md"
+check "a mixed body is rejected, exit 3" 3 run "$FAKE_LV_MIX" "" write-demo 3 "$FAKE_LV_MIX/mix.md"
+MIX_ERR="$(run "$FAKE_LV_MIX" "" write-demo 3 "$FAKE_LV_MIX/mix.md" 2>&1 1>/dev/null)"
+check "one run names the line with no reference" 0 err_has "$MIX_ERR" "- [ ] Look around"
+check "one run names the none line" 0 err_has "$MIX_ERR" "- [ ] Check the clock (#12)"
+check "one run names the undeclared line" 0 err_has "$MIX_ERR" "- [ ] Look at the blocks (#13)"
+check "one run names the jargon line" 0 err_has "$MIX_ERR" "- [ ] Show the schemas (#11)"
+check "one run names the line of another sprint" 0 err_has "$MIX_ERR" "- [ ] Walk a long way (#14)"
+check "one run does not name the good line" 1 err_has "$MIX_ERR" "- [ ] Walk around the city (#11)"
+check "the mixed body created nothing" 1 test -f "$FAKE_LV_MIX/calls.log"
+
+FAKE_LV_UNREAD="$(fake_dir)"
+demo_world "$FAKE_LV_UNREAD"
+rm -f "$FAKE_LV_UNREAD/gh_issue_comments.11.json"
+printf 'A summary.\n\n- [ ] Walk around the city (#11)\n' > "$FAKE_LV_UNREAD/u.md"
+check "an unreadable comment read is exit 2, not 3" 2 run "$FAKE_LV_UNREAD" "" write-demo 3 "$FAKE_LV_UNREAD/u.md"
+check "and created nothing" 1 test -f "$FAKE_LV_UNREAD/calls.log"
+
+FAKE_LV_NOBOARD="$(fake_dir)"
+demo_world "$FAKE_LV_NOBOARD"
+rm -f "$FAKE_LV_NOBOARD/project_items.json"
+printf 'A summary.\n\n- [ ] Walk around the city (#11)\n' > "$FAKE_LV_NOBOARD/b.md"
+check "an unreadable board is exit 2, not 3" 2 run "$FAKE_LV_NOBOARD" "" write-demo 3 "$FAKE_LV_NOBOARD/b.md"
+check "an unreadable board created nothing" 1 test -f "$FAKE_LV_NOBOARD/calls.log"
+FAKE_LV_BADBOARD="$(fake_dir)"
+demo_world "$FAKE_LV_BADBOARD"
+printf 'not json' > "$FAKE_LV_BADBOARD/project_items.json"
+cp "$FAKE_LV_NOBOARD/b.md" "$FAKE_LV_BADBOARD/b.md"
+check "an unparseable board is exit 2, not 3" 2 run "$FAKE_LV_BADBOARD" "" write-demo 3 "$FAKE_LV_BADBOARD/b.md"
+BADBOARD_ERR="$(run "$FAKE_LV_BADBOARD" "" write-demo 3 "$FAKE_LV_BADBOARD/b.md" 2>&1 1>/dev/null)"
+check "an unparseable board says it could not read project items" 0 err_has "$BADBOARD_ERR" "could not read project items"
+check "an unparseable board created nothing" 1 test -f "$FAKE_LV_BADBOARD/calls.log"
+
+echo
+echo "write-demo: Sprint 5's own checklist is the acceptance -- the four lines Adrian could not do are each named, the five he could are not, and nothing is created:"
+
+FAKE_S5="$(fake_dir)"
+cat > "$FAKE_S5/project_iterations.json" <<'JSON'
+[{"id":"sp5id","title":"Sprint 5","startDate":"2026-09-26","duration":7}]
+JSON
+S5S='"state":"CLOSED","status":"Done","priority":"Standard","sprintId":"sp5id","sprintTitle":"Sprint 5","labels":[],"isParent":false,"parent":null'
+cat > "$FAKE_S5/project_items.json" <<JSON
+[
+  {"number":721,"title":"Clock",$S5S},
+  {"number":722,"title":"Camera steady on diagonals",$S5S},
+  {"number":723,"title":"Collisions match the art",$S5S},
+  {"number":724,"title":"Flat objects stay underfoot",$S5S},
+  {"number":725,"title":"Subway stairs",$S5S},
+  {"number":726,"title":"Hidden street",$S5S},
+  {"number":727,"title":"District blocks",$S5S},
+  {"number":728,"title":"Cafe",$S5S},
+  {"number":729,"title":"Stock and cash",$S5S}
+]
+JSON
+for i in 722 723 724 725 726; do
+  printf '%s' '[{"id":1,"body":"Walk the street.\n\n<!-- bc:live visible -->"}]' > "$FAKE_S5/gh_issue_comments.$i.json"
+done
+for i in 721 727 728 729; do
+  printf '%s' '[{"id":1,"body":"Not visible.\n\n<!-- bc:live none -->"}]' > "$FAKE_S5/gh_issue_comments.$i.json"
+done
+# The nine lines of the Sprint 5 Demo issue (#387), verbatim, each with its story.
+# The demo issue's own checkbox state is not part of the sentence.
+GOOD5='- [ ] Walk diagonally across the street and check that the camera stays steady with no shake (#722)
+- [ ] Walk into walls, bollards and shopfronts and check that you stop exactly where the art says you should (#723)
+- [ ] Step over a manhole, rug or other flat object and check that it stays under your character (#724)
+- [ ] Go down into the subway and climb back up, checking that the stairs read as going up and you never walk through a railing or post (#725)
+- [ ] From the platform, check that the street above stays hidden until you climb back up (#726)'
+BAD5='- [ ] Watch the in-game clock advance, then reload the page and see that the city kept time while you were away (#721)
+- [ ] Walk from the centre of the district to its edge and notice that the blocks get visibly bigger (#727)
+- [ ] Find a cafe in the district (#728)
+- [ ] Pick up stock or cash and carry it, and see that it only moves when someone carries it (#729)'
+printf 'The team shipped the clock and the first pieces of the economy.\n\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+  "$(sed -n 1p <<< "$BAD5")" "$(sed -n 1p <<< "$GOOD5")" "$(sed -n 2p <<< "$GOOD5")" "$(sed -n 3p <<< "$GOOD5")" \
+  "$(sed -n 4p <<< "$GOOD5")" "$(sed -n 5p <<< "$GOOD5")" "$(sed -n 2p <<< "$BAD5")" "$(sed -n 3p <<< "$BAD5")" "$(sed -n 4p <<< "$BAD5")" > "$FAKE_S5/all.md"
+printf 'The team shipped the clock and the first pieces of the economy.\n\n%s\n' "$GOOD5" > "$FAKE_S5/good.md"
+check "Sprint 5's nine lines are rejected, exit 3" 3 run "$FAKE_S5" "" write-demo 5 "$FAKE_S5/all.md"
+S5_ERR="$(run "$FAKE_S5" "" write-demo 5 "$FAKE_S5/all.md" 2>&1 1>/dev/null)"
+while IFS= read -r l; do
+  check "Sprint 5: names '$l'" 0 err_has "$S5_ERR" "$l"
+done <<< "$BAD5"
+while IFS= read -r l; do
+  check "Sprint 5: does not name '$l'" 1 err_has "$S5_ERR" "$l"
+done <<< "$GOOD5"
+check "Sprint 5: created nothing" 1 test -f "$FAKE_S5/calls.log"
+echo 999 > "$FAKE_S5/gh_issue_create.json"
+check "Sprint 5 without the four lines Adrian could not do passes" 0 run "$FAKE_S5" "" write-demo 5 "$FAKE_S5/good.md"
 
 echo
 echo "demo-current: marker in the body wins over sprintTitle, and the 'none open' case:"
@@ -340,6 +1021,17 @@ cat > "$FAKE_CM_NO/gh_issue_comments.43.json" <<'JSON'
 JSON
 check_out "demo-commented: only stub comments -> no" 1 no run "$FAKE_CM_NO" "" demo-commented 43
 
+# Scotty's own reply must never read as Adrian having commented again -- the
+# retry protection `write-feedback-reply`'s marker exists for, pinned at the
+# call site that actually matters, not just in the marker's own round trip.
+FAKE_CM_REPLY_ONLY="$(fake_dir)"
+cat > "$FAKE_CM_REPLY_ONLY/gh_issue_comments.44.json" <<'JSON'
+[
+  {"id":1,"body":"### Scotty's reply\n\nOpened #122 to tighten it.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
+check_out "demo-commented: only Scotty's own reply present -> no" 1 no run "$FAKE_CM_REPLY_ONLY" "" demo-commented 44
+
 echo
 echo "demo-for: a demo issue exists for the sprint, or it does not:"
 
@@ -354,13 +1046,13 @@ check "demo-for: no demo issue for that sprint -> exit 1" 1 run "$FAKE_DF" "" de
 
 
 echo
-echo "backlog: open work on the board, on no sprint:"
+echo "backlog: open work on the board, on no sprint, with its open blockers:"
 
 FAKE_BL="$(fake_dir)"
 cat > "$FAKE_BL/project_items.json" <<'JSON'
 [
   {"number":120,"title":"Epic 3 — Combat","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},
-  {"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120},
+  {"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120,"blockedBy":[119]},
   {"number":130,"title":"Already on a sprint","state":"OPEN","status":"In progress","priority":"Blocker","size":"S","sprintId":"sp2","sprintTitle":"Sprint 2","labels":["story"],"isParent":false,"parent":120},
   {"number":140,"title":"Shipped last sprint","state":"CLOSED","status":"Done","priority":"Low","size":"XS","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120},
   {"number":150,"title":"Sprint 2 Demo","state":"OPEN","status":"In progress","priority":null,"size":null,"sprintId":null,"sprintTitle":null,"labels":["demo"],"isParent":false,"parent":null}
@@ -368,7 +1060,7 @@ cat > "$FAKE_BL/project_items.json" <<'JSON'
 JSON
 
 check_out "backlog: the unscoped open work, epic link and all" 0 \
-  '[{"number":120,"title":"Epic 3 — Combat","status":"Backlog","priority":"Critical","size":null,"epic":null,"isEpic":true},{"number":121,"title":"Parry","status":"Backlog","priority":"Standard","size":"M","epic":120,"isEpic":false}]' \
+  '[{"number":120,"title":"Epic 3 — Combat","status":"Backlog","priority":"Critical","size":null,"epic":null,"isEpic":true,"blockedBy":[]},{"number":121,"title":"Parry","status":"Backlog","priority":"Standard","size":"M","epic":120,"isEpic":false,"blockedBy":[119]}]' \
   run "$FAKE_BL" "" backlog
 check "backlog: reads only -- wrote nothing" 1 test -f "$FAKE_BL/calls.log"
 
@@ -387,7 +1079,10 @@ printf '400\n' > "$FAKE_WE/gh_issue_create.json"
 check_out "write-epic prints the new issue number" 0 400 \
   run "$FAKE_WE" "" write-epic 3 "Epic 3 — Combat" "$WE_BODY" Critical
 check "write-epic created the issue with the epic label" 0 \
-  log_has "$FAKE_WE/calls.log" '^gh_issue_create Epic 3 .* epic$'
+  log_has "$FAKE_WE/calls.log" '^gh_issue_create .* epic$'
+# The caller already wrote "Epic 3 —": the script keeps one prefix, its own.
+check "write-epic titled it 'Epic <n>: <title>', never doubling the prefix" 0 \
+  log_has "$FAKE_WE/calls.log" '^gh_issue_create Epic 3: Combat '
 # project_item is a fake_read (it "returns" an id even though it's a
 # side-effecting add-if-missing in real life), so it never appears in
 # calls.log -- only the project_set_* writes below are observable here.
@@ -408,45 +1103,180 @@ check "write-epic with a missing argument exits 2" 2 \
   run "$FAKE_WE2" "" write-epic 3 "Epic 3" "$FAKE_WE2/body.md"
 check "and none of those created anything" 1 test -f "$FAKE_WE2/calls.log"
 
+FAKE_WE3="$(fake_dir)"
+printf 'A preamble.\n' > "$FAKE_WE3/body.md"
+printf '402\n' > "$FAKE_WE3/gh_issue_create.json"
+check_out "write-epic with a bare title" 0 402 \
+  run "$FAKE_WE3" "" write-epic 16 "Weather" "$FAKE_WE3/body.md" Low
+check "gets the 'Epic <n>: ' prefix written for it" 0 \
+  log_has "$FAKE_WE3/calls.log" '^gh_issue_create Epic 16: Weather '
+FAKE_WE4="$(fake_dir)"
+printf 'A preamble.\n' > "$FAKE_WE4/body.md"
+check "write-epic whose title is only its prefix exits 2" 2 \
+  run "$FAKE_WE4" "" write-epic 16 "Epic 16:" "$FAKE_WE4/body.md" Low
+check "and created nothing" 1 test -f "$FAKE_WE4/calls.log"
+
 echo
-echo "write-story: opens it, labels its leads, links it under its epic:"
+echo "write-story: opens it, labels its leads, links it under its epic, marks its blockers:"
 
 FAKE_WT="$(fake_dir)"
 WT_BODY="$FAKE_WT/scotty-story.md"
 printf 'As a player, I can parry.\n\n- Timing window is 200ms\n' > "$WT_BODY"
 printf '401\n' > "$FAKE_WT/gh_issue_create.json"
 printf 'I_kwDO401\n' > "$FAKE_WT/gh_issue_id.401.json"
+printf 'I_kwDO97\n'  > "$FAKE_WT/gh_issue_id.97.json"
+printf 'I_kwDO132\n' > "$FAKE_WT/gh_issue_id.132.json"
 
 check_out "write-story prints the new issue number" 0 401 \
-  run "$FAKE_WT" "" write-story 400 3.1 "Parry" "$WT_BODY" M Standard derek,tim
+  run "$FAKE_WT" "" write-story 400 3.1 "Parry" "$WT_BODY" M Standard derek,tim 97,#132
 check "write-story labelled it story + one label per lead" 0 \
-  log_has "$FAKE_WT/calls.log" '^gh_issue_create Parry .* story,lead:derek,lead:tim$'
+  log_has "$FAKE_WT/calls.log" '^gh_issue_create .* story,lead:derek,lead:tim$'
+check "write-story titled it 'Story <id>: <title>'" 0 \
+  log_has "$FAKE_WT/calls.log" '^gh_issue_create Story 3\.1: Parry '
 check "write-story linked it under its epic by DATABASE id" 0 \
   log_has "$FAKE_WT/calls.log" '^gh_issue_add_subissue 400 I_kwDO401$'
+check "write-story marked it blocked by the first, by DATABASE id" 0 \
+  log_has "$FAKE_WT/calls.log" '^gh_issue_add_blocker 401 I_kwDO97$'
+check "write-story marked it blocked by the second, '#' and all" 0 \
+  log_has "$FAKE_WT/calls.log" '^gh_issue_add_blocker 401 I_kwDO132$'
 check "write-story put it in Backlog"  0 log_has "$FAKE_WT/calls.log" '^project_set_single 401 Status Backlog$'
 check "write-story set its Size"       0 log_has "$FAKE_WT/calls.log" '^project_set_single 401 Size M$'
 check "write-story set its Priority"   0 log_has "$FAKE_WT/calls.log" '^project_set_single 401 Priority Standard$'
 check "write-story scoped it into NO sprint" 1 log_has "$FAKE_WT/calls.log" '^project_set_iteration'
+# A story is startable the moment it is in Backlog with nothing blocking it.
+check_out "write-story wrote the blockers BEFORE the story reached Backlog" 0 blocker \
+  sh -c 'grep -E "^(gh_issue_add_blocker|project_set_single 401 Status)" "$1" | head -1 | sed "s/^gh_issue_add_blocker.*/blocker/"' _ "$FAKE_WT/calls.log"
 
 FAKE_WT_NL="$(fake_dir)"
 printf 'A story.\n' > "$FAKE_WT_NL/body.md"
 printf '402\n' > "$FAKE_WT_NL/gh_issue_create.json"
-check_out "write-story with '-' leads takes the story label alone" 0 402 \
-  run "$FAKE_WT_NL" "" write-story 400 3.2 "Riposte" "$FAKE_WT_NL/body.md" S Low -
+check_out "write-story with '-' leads and '-' blockers takes the story label alone" 0 402 \
+  run "$FAKE_WT_NL" "" write-story 400 3.2 "Riposte" "$FAKE_WT_NL/body.md" S Low - -
 check "and quentin was NOT written as a label (scope adds him on read)" 0 \
-  log_has "$FAKE_WT_NL/calls.log" '^gh_issue_create Riposte .* story$'
+  log_has "$FAKE_WT_NL/calls.log" '^gh_issue_create Story 3\.2: Riposte .* story$'
+
+FAKE_WT_PF="$(fake_dir)"
+printf 'A story.\n' > "$FAKE_WT_PF/body.md"
+printf '404\n' > "$FAKE_WT_PF/gh_issue_create.json"
+check_out "write-story whose title already carries its own prefix" 0 404 \
+  run "$FAKE_WT_PF" "" write-story 400 3.1 "Story 3.1: Parry" "$FAKE_WT_PF/body.md" S Low - -
+check "keeps one prefix, not two" 0 \
+  log_has "$FAKE_WT_PF/calls.log" '^gh_issue_create Story 3\.1: Parry '
+FAKE_WT_PF2="$(fake_dir)"
+printf 'A story.\n' > "$FAKE_WT_PF2/body.md"
+printf '405\n' > "$FAKE_WT_PF2/gh_issue_create.json"
+check_out "write-story 3.1 titled after story 3.12" 0 405 \
+  run "$FAKE_WT_PF2" "" write-story 400 3.1 "Story 3.12 follow-up" "$FAKE_WT_PF2/body.md" S Low - -
+check "is not mistaken for its own prefix" 0 \
+  log_has "$FAKE_WT_PF2/calls.log" '^gh_issue_create Story 3\.1: Story 3\.12 follow-up '
+check "and '-' wrote no blocker" 1 log_has "$FAKE_WT_NL/calls.log" '^gh_issue_add_blocker'
+
+# No gh_issue_id fixture for 98: the blocker does not resolve to an issue.
+FAKE_WT3="$(fake_dir)"
+printf 'A story.\n' > "$FAKE_WT3/body.md"
+printf '403\n' > "$FAKE_WT3/gh_issue_create.json"
+check "write-story with a blocker that does not exist exits 2" 2 \
+  run "$FAKE_WT3" "" write-story 400 3.3 "Feint" "$FAKE_WT3/body.md" S Low - 98
+check "and the story it could not block never reached Backlog" 1 \
+  log_has "$FAKE_WT3/calls.log" '^project_set_single 403 Status Backlog$'
 
 FAKE_WT2="$(fake_dir)"
 printf 'A story.\n' > "$FAKE_WT2/body.md"
 check "write-story with an unknown size exits 2" 2 \
-  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" Huge Standard derek
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" Huge Standard derek -
 check "write-story with an unknown priority exits 2" 2 \
-  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Urgent derek
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Urgent derek -
 check "write-story with an unknown lead exits 2" 2 \
-  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard bob
-check "write-story with a missing argument exits 2" 2 \
-  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard bob -
+check "write-story with a blocker that is not a number exits 2" 2 \
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard derek 97,story-3.2
+check "write-story with no blockers argument exits 2 -- '-' has to be said" 2 \
+  run "$FAKE_WT2" "" write-story 400 3.1 "Parry" "$FAKE_WT2/body.md" M Standard derek
 check "and none of those created anything" 1 test -f "$FAKE_WT2/calls.log"
+
+echo
+echo "write-blockers: an existing story, blocked by others:"
+
+FAKE_WB="$(fake_dir)"
+printf 'I_kwDO97\n'  > "$FAKE_WB/gh_issue_id.97.json"
+printf 'I_kwDO132\n' > "$FAKE_WB/gh_issue_id.132.json"
+check_out "write-blockers prints the blocked issue" 0 150 run "$FAKE_WB" "" write-blockers 150 97 132
+check "write-blockers wrote the first dependency"  0 log_has "$FAKE_WB/calls.log" '^gh_issue_add_blocker 150 I_kwDO97$'
+check "write-blockers wrote the second dependency" 0 log_has "$FAKE_WB/calls.log" '^gh_issue_add_blocker 150 I_kwDO132$'
+check "write-blockers touched nothing on the board" 1 log_has "$FAKE_WB/calls.log" '^project_'
+
+FAKE_WB2="$(fake_dir)"
+printf 'I_kwDO97\n' > "$FAKE_WB2/gh_issue_id.97.json"
+check "write-blockers with no blocker exits 2"           2 run "$FAKE_WB2" "" write-blockers 150
+check "write-blockers on itself exits 2"                 2 run "$FAKE_WB2" "" write-blockers 97 97
+check "write-blockers with a non-numeric issue exits 2"  2 run "$FAKE_WB2" "" write-blockers story 97
+check "write-blockers with an unknown blocker exits 2"   2 run "$FAKE_WB2" "" write-blockers 150 4242
+check "and none of those wrote anything" 1 test -f "$FAKE_WB2/calls.log"
+
+echo
+echo "write-feedback-reply: Scotty's report back to Adrian -- idempotent upsert, marked so a retry never reads it back as feedback:"
+
+FAKE_FR="$(fake_dir)"
+FR_BODY="$FAKE_FR/scotty-reply.md"
+printf 'I opened #122 to tighten the parry window; everything else you raised is already on the backlog.\n' > "$FR_BODY"
+echo '[]' > "$FAKE_FR/gh_issue_comments.900.json"
+printf '55\n' > "$FAKE_FR/gh_comment_create.json"
+
+check_out "write-feedback-reply creates a new comment, prints its id" 0 55 \
+  run "$FAKE_FR" "" write-feedback-reply 900 "$FR_BODY"
+check "write-feedback-reply posted on the demo issue" 0 \
+  log_has "$FAKE_FR/calls.log" '^gh_comment_create 900 '
+check "write-feedback-reply never edited (nothing to find yet)" 1 \
+  log_has "$FAKE_FR/calls.log" '^gh_comment_edit'
+# The marker itself is render_feedback_reply's contract, covered by
+# test-markers.sh's own round trip -- this suite only needs the call shape.
+
+# Idempotent upsert: a retry (integrating-feedback dies before Reviewed and
+# runs again) must edit the same comment, never post a second one.
+FAKE_FR2="$(fake_dir)"
+FR2_BODY1="$FAKE_FR2/reply1.md"
+printf 'First ruling.\n' > "$FR2_BODY1"
+echo '[]' > "$FAKE_FR2/gh_issue_comments.900.json"
+printf '55\n' > "$FAKE_FR2/gh_comment_create.json"
+run "$FAKE_FR2" "" write-feedback-reply 900 "$FR2_BODY1" >/dev/null
+cat > "$FAKE_FR2/gh_issue_comments.900.json" <<'JSON'
+[{"id":55,"body":"### Scotty's reply\n\nFirst ruling.\n\n<!-- bc:feedback-reply -->"}]
+JSON
+FR2_BODY2="$FAKE_FR2/reply2.md"
+printf 'Second ruling, after a retry.\n' > "$FR2_BODY2"
+check_out "write-feedback-reply on a retry edits the existing comment" 0 55 \
+  run "$FAKE_FR2" "" write-feedback-reply 900 "$FR2_BODY2"
+check "and it is an edit, not a second create" 0 \
+  log_has "$FAKE_FR2/calls.log" '^gh_comment_edit 55 '
+CREATE_COUNT="$(grep -c '^gh_comment_create' "$FAKE_FR2/calls.log")"
+check_out "exactly one create across both calls" 0 1 printf '%s' "$CREATE_COUNT"
+
+FAKE_FR_ERR="$(fake_dir)"
+printf 'A reply.\n' > "$FAKE_FR_ERR/body.md"
+printf '   \n' > "$FAKE_FR_ERR/empty.md"
+MARKED_BODY="$FAKE_FR_ERR/marked.md"
+printf 'A reply with a marker already in it.\n\n<!-- bc:demo 3 -->\n' > "$MARKED_BODY"
+
+check "write-feedback-reply with a missing issue argument exits 2" 2 \
+  run "$FAKE_FR_ERR" "" write-feedback-reply
+check "write-feedback-reply with a missing body file exits 2" 2 \
+  run "$FAKE_FR_ERR" "" write-feedback-reply 900 "$FAKE_FR_ERR/nope.md"
+check "write-feedback-reply with an empty body exits 2" 2 \
+  run "$FAKE_FR_ERR" "" write-feedback-reply 900 "$FAKE_FR_ERR/empty.md"
+check "write-feedback-reply with a body carrying a bc: marker exits 2" 2 \
+  run "$FAKE_FR_ERR" "" write-feedback-reply 900 "$MARKED_BODY"
+check "none of those posted anything" 1 test -f "$FAKE_FR_ERR/calls.log"
+
+# A failed read of the thread is an infra failure, never "no reply exists
+# yet" -- the fallback that read as [] used to create a second reply on
+# exactly the flaky-network retry the upsert exists to protect against.
+FAKE_FR_READFAIL="$(fake_dir)"
+READFAIL_BODY="$FAKE_FR_READFAIL/reply.md"
+printf 'A reply.\n' > "$READFAIL_BODY"
+# No gh_issue_comments.<n>.json fixture at all -- the read itself fails.
+check "write-feedback-reply with a failed thread read exits 2" 2 \
+  run "$FAKE_FR_READFAIL" "" write-feedback-reply 900 "$READFAIL_BODY"
+check "and nothing was posted" 1 test -f "$FAKE_FR_READFAIL/calls.log"
 
 echo
 echo "integrate-feedback: hands the thread to Scotty, then reports what the board gained:"
@@ -465,6 +1295,17 @@ cat > "$FAKE_FB/project_items.seq" <<'JSON'
 [{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},{"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120}]
 [{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null},{"number":121,"title":"Parry","state":"OPEN","status":"Backlog","priority":"Standard","size":"M","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120},{"number":122,"title":"Tighten the parry window","state":"OPEN","status":"Backlog","priority":"Standard","size":"S","sprintId":null,"sprintTitle":null,"labels":["story"],"isParent":false,"parent":120}]
 JSON
+# Scotty's own write-feedback-reply call, standing in via the overlay trick
+# create-demo's test above already uses: the board read back AFTER his
+# session carries his reply comment, alongside the human one.
+mkdir -p "$FAKE_FB/bc_scotty.judge-feedback.md.d"
+cat > "$FAKE_FB/bc_scotty.judge-feedback.md.d/gh_issue_comments.900.json" <<'JSON'
+[
+  {"id":1,"body":"Parrying feels floaty — can we tighten it?"},
+  {"id":2,"body":"### Sprint 3 Demo\n\nSummary.\n\n<!-- bc:demo 3 -->"},
+  {"id":3,"body":"### Scotty's reply\n\nOpened #122 to tighten it.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
 
 check_out "integrate-feedback reports the demo and what the board gained" 0 \
   '{"demo":900,"created":1}' run "$FAKE_FB" "" integrate-feedback 900
@@ -475,13 +1316,49 @@ check "integrate-feedback opened nothing itself" 1 \
 check "integrate-feedback marked the demo Reviewed" 0 \
   log_has "$FAKE_FB/calls.log" '^project_set_single 900 Status Reviewed$'
 
+# A retry: the thread already carries Scotty's earlier reply alongside
+# Adrian's comment (the tick died between the reply and Reviewed, so this
+# ran again). The input handed to judge-feedback.md must still carry
+# Adrian's own text -- and must NOT carry the reply's, or Scotty would be
+# fed his own ruling back to himself as though it were more feedback.
+FAKE_FB_RETRY="$(fake_dir)"
+printf 'The team shipped a crash fix.\n' > "$FAKE_FB_RETRY/gh_issue_body.901.json"
+cat > "$FAKE_FB_RETRY/gh_issue_comments.901.json" <<'JSON'
+[
+  {"id":1,"body":"Parrying feels floaty — can we tighten it?"},
+  {"id":2,"body":"### Scotty's reply\n\nOpened #122 to tighten it.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
+echo '[{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null}]' \
+  > "$FAKE_FB_RETRY/project_items.json"
+mkdir -p "$FAKE_FB_RETRY/bc_scotty.judge-feedback.md.d"
+cat > "$FAKE_FB_RETRY/bc_scotty.judge-feedback.md.d/gh_issue_comments.901.json" <<'JSON'
+[
+  {"id":1,"body":"Parrying feels floaty — can we tighten it?"},
+  {"id":2,"body":"### Scotty's reply\n\nOpened #122 to tighten it.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
+run "$FAKE_FB_RETRY" "" integrate-feedback 901 >/dev/null
+check "integrate-feedback's input carries Adrian's comment" 0 \
+  log_has "$FAKE_FB_RETRY/bc_scotty.judge-feedback.md.input" 'Parrying feels floaty'
+check "integrate-feedback's input does NOT carry Scotty's own reply back to him" 1 \
+  log_has "$FAKE_FB_RETRY/bc_scotty.judge-feedback.md.input" "Opened #122 to tighten it"
+
 FAKE_FB0="$(fake_dir)"
 printf 'Demo body.\n' > "$FAKE_FB0/gh_issue_body.900.json"
 echo '[{"id":1,"body":"Looks good."}]' > "$FAKE_FB0/gh_issue_comments.900.json"
 # One fixture, so the count before equals the count after: feedback that asked
-# for nothing new still advances the demo, reporting a gain of zero.
+# for nothing new still advances the demo, reporting a gain of zero. Feedback
+# that opened nothing still owes Adrian a reply saying so.
 echo '[{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null}]' \
   > "$FAKE_FB0/project_items.json"
+mkdir -p "$FAKE_FB0/bc_scotty.judge-feedback.md.d"
+cat > "$FAKE_FB0/bc_scotty.judge-feedback.md.d/gh_issue_comments.900.json" <<'JSON'
+[
+  {"id":1,"body":"Looks good."},
+  {"id":2,"body":"### Scotty's reply\n\nNothing to open -- already covered.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
 
 check_out "integrate-feedback reports a gain of zero when the backlog did not grow" 0 \
   '{"demo":900,"created":0}' run "$FAKE_FB0" "" integrate-feedback 900
@@ -489,6 +1366,20 @@ check "and the demo still moved to Reviewed" 0 \
   log_has "$FAKE_FB0/calls.log" '^project_set_single 900 Status Reviewed$'
 
 check "integrate-feedback with no issue argument exits 2" 2 run "$FAKE_FB0" "" integrate-feedback
+
+# Reviewed is a gate, not a hope: if Scotty's session comes back with no
+# feedback-reply comment on the thread, integrate-feedback fails loudly
+# rather than trusting that he wrote one.
+FAKE_FB_NOREPLY="$(fake_dir)"
+printf 'Demo body.\n' > "$FAKE_FB_NOREPLY/gh_issue_body.900.json"
+echo '[{"id":1,"body":"Looks good."}]' > "$FAKE_FB_NOREPLY/gh_issue_comments.900.json"
+echo '[{"number":120,"title":"Epic 3","state":"OPEN","status":"Backlog","priority":"Critical","size":null,"sprintId":null,"sprintTitle":null,"labels":["epic"],"isParent":true,"parent":null}]' \
+  > "$FAKE_FB_NOREPLY/project_items.json"
+# No bc_scotty overlay at all: he left no reply behind.
+check "integrate-feedback with no reply on the thread exits 2" 2 \
+  run "$FAKE_FB_NOREPLY" "" integrate-feedback 900
+check "and the demo was NOT marked Reviewed" 1 \
+  log_has "$FAKE_FB_NOREPLY/calls.log" '^project_set_single 900 Status Reviewed$'
 
 
 echo

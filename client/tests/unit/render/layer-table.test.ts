@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   DEPRECATED_LAYER_CODES,
+  FIRST_POOL_RANK,
   LAYER_TABLE,
   layerCodeByName,
+  passOfLayer,
 } from "../../../src/render/layer-table";
 
 describe("LAYER_TABLE", () => {
@@ -15,6 +17,7 @@ describe("LAYER_TABLE", () => {
       "walls",
       "wall_decals",
       "characters",
+      "ground_objects",
     ]);
   });
 
@@ -36,5 +39,43 @@ describe("layerCodeByName", () => {
 
   it("throws for an unknown name", () => {
     expect(() => layerCodeByName("not-a-real-layer")).toThrow();
+  });
+});
+
+describe("passOfLayer", () => {
+  it("routes ground, ground_objects and every pool layer to their pass", () => {
+    expect(passOfLayer(layerCodeByName("ground"))).toBe("ground");
+    expect(passOfLayer(layerCodeByName("ground_objects"))).toBe("groundObjects");
+    for (const name of ["furniture", "objects", "walls", "wall_decals", "characters"]) {
+      expect(passOfLayer(layerCodeByName(name))).toBe("pool");
+    }
+  });
+
+  it("throws for a deprecated or unknown code", () => {
+    expect(() => passOfLayer(1)).toThrow();
+    expect(() => passOfLayer(999)).toThrow();
+  });
+});
+
+describe("passOfLayer is rank-driven", () => {
+  it("every live row resolves by its rank: 0 ground, below FIRST_POOL_RANK ground objects, else pool", () => {
+    for (const row of LAYER_TABLE.filter((r) => !r.deprecated)) {
+      const expected =
+        row.rank >= FIRST_POOL_RANK ? "pool" : row.rank === 0 ? "ground" : "groundObjects";
+      expect(passOfLayer(row.code), row.name).toBe(expected);
+    }
+  });
+});
+
+describe("the flat layers", () => {
+  it("are exactly ground and ground_objects", () => {
+    // A new flat layer (e.g. a decal layer at rank 2-4) must first get its
+    // own FloorStack container and its own RenderPass in `passOfLayer`
+    // before this list may grow -- otherwise it would silently draw in the
+    // ground-objects container.
+    const flat = LAYER_TABLE.filter((r) => !r.deprecated && r.rank < FIRST_POOL_RANK).map(
+      (r) => r.name,
+    );
+    expect(flat).toEqual(["ground", "ground_objects"]);
   });
 });

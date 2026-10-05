@@ -24,7 +24,7 @@
 //! already tests (`cargo test`, the `bounds` crate's own `ModuleSchema`/
 //! `TableDef` types), not a `jq`-version compatibility question.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bounds::schema::{ModuleSchema, TableDef};
 use serde::Deserialize;
@@ -100,6 +100,157 @@ pub fn normalize_name(name: &str) -> String {
         .filter(|c| *c != '_')
         .flat_map(|c| c.to_lowercase())
         .collect()
+}
+
+/// Story 4.18: which committed `server/schema.snapshot.json` is the one
+/// *actually live*, when the checkout's own working-tree copy already
+/// describes a schema one or more additive migrations ahead of it
+/// (`export-world.sh`'s pre-publish backup runs from the commit *about to
+/// publish* an additive change, never from the commit that already went
+/// live). A schema's whole shape -- every table's accessor mapped to its
+/// own sorted, normalised column names, `restore_state` never included
+/// (the restore mechanism's own gate, never a table export-world.sh
+/// matches against) -- is what a candidate snapshot and the live database
+/// are compared by: a table's `scheduled_reducer`/`public`/
+/// `wide_table_waiver` flags never appear in an exported row, so they are
+/// not part of this comparison.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Shape(pub BTreeMap<String, Vec<String>>);
+
+impl Shape {
+    pub fn from_snapshot(snapshot: &ModuleSchema) -> Shape {
+        let mut map = BTreeMap::new();
+        for t in &snapshot.tables {
+            if t.accessor == "restore_state" {
+                continue;
+            }
+            let mut cols: Vec<String> = t.columns.iter().map(|c| normalize_name(&c.name)).collect();
+            cols.sort();
+            map.insert(t.accessor.clone(), cols);
+        }
+        Shape(map)
+    }
+
+    /// One `table<TAB>col1,col2,...` line per table, sorted by table name
+    /// (a `BTreeMap`'s own iteration order) -- what `snapshot-shape`
+    /// prints for a candidate snapshot, and what `export-world.sh` hand-
+    /// builds the same way for the live database (`spacetime describe`'s
+    /// table list plus each table's own `columns-normalized`), so a
+    /// candidate is one process call, not one per table (Tim's
+    /// direction).
+    pub fn to_text(&self) -> String {
+        self.0
+            .iter()
+            .map(|(table, cols)| format!("{table}\t{}", cols.join(",")))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    pub fn parse(text: &str) -> Result<Shape> {
+        let mut map = BTreeMap::new();
+        for line in text.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let (table, cols) = line
+                .split_once('\t')
+                .ok_or_else(|| err(format!("not a valid shape line (no tab): {line}")))?;
+            let cols: Vec<String> = if cols.is_empty() {
+                Vec::new()
+            } else {
+                cols.split(',').map(str::to_string).collect()
+            };
+            map.insert(table.to_string(), cols);
+        }
+        Ok(Shape(map))
+    }
+}
+
+/// Why no candidate's `Shape` equals the live database's -- named exactly
+/// the way `export-world.sh`'s refusal always has: missing/extra tables
+/// against `candidates[0]` (the newest candidate -- the incoming commit's
+/// own working-tree snapshot), plus, for any table present in both but
+/// whose columns differ, the exact diff -- but only when that table's live
+/// columns match *no* candidate at all (Quentin's direction: a column
+/// difference some older candidate would still accept is not itself why
+/// the whole match failed, so it is not reported as though it were).
+#[derive(Debug, PartialEq, Eq)]
+pub struct SchemaMismatch {
+    pub missing: Vec<String>,
+    pub extra: Vec<String>,
+    pub column_diffs: Vec<(String, Vec<String>, Vec<String>)>,
+}
+
+impl std::fmt::Display for SchemaMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "does not match -- missing: [{}] extra: [{}]",
+            self.missing.join(", "),
+            self.extra.join(", ")
+        )?;
+        for (table, live, incoming) in &self.column_diffs {
+            write!(
+                f,
+                "; '{table}' columns differ (live: [{}] snapshot: [{}])",
+                live.join(","),
+                incoming.join(",")
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for SchemaMismatch {}
+
+/// The first candidate (newest to oldest) whose whole [`Shape`] equals
+/// `live`'s -- the live database's real schema is, by construction, one of
+/// these (Tim's direction): `check-schema-additive.sh`'s append-only rule
+/// means table names plus column names identify exactly one point on the
+/// deploying commit's own first-parent history. `candidates` must be
+/// newest first; a tie (two candidates with an identical `Shape`, e.g. a
+/// story that touched no table) resolves to the newest, never the oldest.
+/// Returns that candidate's index into `candidates`, or the
+/// [`SchemaMismatch`] naming why none matched.
+pub fn select_schema(
+    live: &Shape,
+    candidates: &[Shape],
+) -> std::result::Result<usize, SchemaMismatch> {
+    for (i, candidate) in candidates.iter().enumerate() {
+        if candidate == live {
+            return Ok(i);
+        }
+    }
+    let newest = candidates.first().cloned().unwrap_or_default();
+    let live_tables: BTreeSet<&String> = live.0.keys().collect();
+    let newest_tables: BTreeSet<&String> = newest.0.keys().collect();
+    let missing: Vec<String> = newest_tables
+        .difference(&live_tables)
+        .map(|s| s.to_string())
+        .collect();
+    let extra: Vec<String> = live_tables
+        .difference(&newest_tables)
+        .map(|s| s.to_string())
+        .collect();
+    let mut column_diffs = Vec::new();
+    for table in live_tables.intersection(&newest_tables) {
+        let live_cols = &live.0[*table];
+        let newest_cols = &newest.0[*table];
+        if live_cols == newest_cols {
+            continue;
+        }
+        let matched_elsewhere = candidates
+            .iter()
+            .any(|c| c.0.get(*table).is_some_and(|cols| cols == live_cols));
+        if !matched_elsewhere {
+            column_diffs.push(((*table).clone(), live_cols.clone(), newest_cols.clone()));
+        }
+    }
+    Err(SchemaMismatch {
+        missing,
+        extra,
+        column_diffs,
+    })
 }
 
 /// A short tag for the column types this crate knows how to render as a
@@ -562,6 +713,274 @@ pub fn batch_by_bytes<'a>(lines: impl Iterator<Item = &'a str>, max_bytes: usize
     batches
 }
 
+// --- cadence_liveness: the one non-scheduled table a live scheduled
+// reducer writes to on its own, independent of anything an export/verify
+// script does (story 4.2) -- an ordinary byte-for-byte line compare is
+// the wrong oracle for it, so this gives verify-world.sh a purpose-built
+// one instead of a bash line-diff over structured JSON. ------------------
+
+/// One `cadence_liveness` row's own fields, extracted positionally from
+/// its exported line -- `[cadence, last_target_at, last_fired_at, fires,
+/// missed]`, the same field order the table's own struct declares
+/// (`server/src/tables/schedules.rs`).
+struct CadenceLivenessRow {
+    cadence: u64,
+    last_target_at_micros: i64,
+    last_fired_at_micros: i64,
+    fires: u64,
+    missed: u64,
+}
+
+fn parse_cadence_liveness_line(line: &str) -> Result<CadenceLivenessRow> {
+    let v: Value =
+        serde_json::from_str(line).map_err(|e| err(format!("not valid JSON: {e}: {line}")))?;
+    let arr = v
+        .as_array()
+        .ok_or_else(|| err(format!("not a JSON array: {line}")))?;
+    if arr.len() != 5 {
+        return Err(err(format!(
+            "expected 5 fields (cadence, last_target_at, last_fired_at, fires, missed), got {}: {line}",
+            arr.len()
+        )));
+    }
+    let as_u64 = |i: usize| -> Result<u64> {
+        arr[i]
+            .as_u64()
+            .ok_or_else(|| err(format!("field {i} is not a u64: {line}")))
+    };
+    let as_timestamp_micros = |i: usize| -> Result<i64> {
+        arr[i]
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| err(format!("field {i} is not a [micros] Timestamp: {line}")))
+    };
+    Ok(CadenceLivenessRow {
+        cadence: as_u64(0)?,
+        last_target_at_micros: as_timestamp_micros(1)?,
+        last_fired_at_micros: as_timestamp_micros(2)?,
+        fires: as_u64(3)?,
+        missed: as_u64(4)?,
+    })
+}
+
+/// The column position of `column` in `accessor`'s canonical rows, read
+/// from the snapshot, never assumed.
+fn column_position(snapshot: &ModuleSchema, accessor: &str, column: &str) -> Result<usize> {
+    table_def(snapshot, accessor)?
+        .columns
+        .iter()
+        .position(|c| c.name == column)
+        .ok_or_else(|| err(format!("table `{accessor}` has no `{column}` column")))
+}
+
+/// Where a sampler table's `sampled_at` and primary key sit in its rows.
+#[derive(Debug, Clone, Copy)]
+pub struct SampleColumns {
+    pub sampled_at: usize,
+    pub primary_key: usize,
+}
+
+/// [`SampleColumns`] for `accessor`, from the snapshot.
+pub fn sample_columns(snapshot: &ModuleSchema, accessor: &str) -> Result<SampleColumns> {
+    let table = table_def(snapshot, accessor)?;
+    let pk = table
+        .columns
+        .iter()
+        .find(|c| c.primary_key)
+        .ok_or_else(|| err(format!("table `{accessor}` has no primary key")))?;
+    Ok(SampleColumns {
+        sampled_at: column_position(snapshot, accessor, "sampled_at")?,
+        primary_key: column_position(snapshot, accessor, &pk.name)?,
+    })
+}
+
+/// `a` is the earlier export, `b` the later one (of the same, restored
+/// database), of a table only the metrics sampler writes
+/// (`table_sample`, `storage_sample`, `reducer_class_sample`). A fire
+/// between the two exports inserts through `auto_inc` and a restore leaves
+/// the sequence past every restored id, so a row a fire wrote has a primary
+/// key greater than every key in `a`; it also prunes the oldest rows first
+/// (retention, then the row bound). So:
+/// - a row of `b` that `a` lacks is a legitimate gain only if its primary
+///   key is greater than every key in `a`; any other is a mismatch (a row
+///   changed in place keeps its id);
+/// - a fire happened only if there is at least one legitimate gain; only
+///   then may a row of `a` be missing from `b`, and only if its
+///   `sampled_at` is no newer than every row of `a` that survived (with no
+///   survivor, only if every row of `b` is a legitimate gain).
+///
+/// One description per mismatch, empty if none. O(n log n).
+pub fn sample_forward_diff(
+    cols: SampleColumns,
+    a_lines: &[String],
+    b_lines: &[String],
+) -> Result<Vec<String>> {
+    fn cell(line: &str, col: usize) -> Result<Value> {
+        let v: Value =
+            serde_json::from_str(line).map_err(|e| err(format!("not valid JSON: {e}: {line}")))?;
+        v.as_array()
+            .and_then(|r| r.get(col))
+            .cloned()
+            .ok_or_else(|| err(format!("row has no column {col}: {line}")))
+    }
+    fn sampled_at(line: &str, col: usize) -> Result<i64> {
+        let cell = cell(line, col)?;
+        // A Timestamp reads `[micros]`.
+        cell.as_array()
+            .and_then(|c| c.first())
+            .unwrap_or(&cell)
+            .as_i64()
+            .ok_or_else(|| err(format!("sampled_at is not an integer: {line}")))
+    }
+    fn key(line: &str, col: usize) -> Result<u64> {
+        cell(line, col)?
+            .as_u64()
+            .ok_or_else(|| err(format!("primary key is not an unsigned integer: {line}")))
+    }
+    let a_set: BTreeSet<&str> = a_lines.iter().map(String::as_str).collect();
+    let b_set: BTreeSet<&str> = b_lines.iter().map(String::as_str).collect();
+    let mut max_a_key: Option<u64> = None;
+    for line in a_lines {
+        let k = key(line, cols.primary_key)?;
+        max_a_key = Some(max_a_key.map_or(k, |m| m.max(k)));
+    }
+    let mut mismatches = Vec::new();
+    let mut legitimate_gain = false;
+    for line in b_lines.iter().filter(|l| !a_set.contains(l.as_str())) {
+        let k = key(line, cols.primary_key)?;
+        if max_a_key.is_none_or(|m| k > m) {
+            legitimate_gain = true;
+        } else {
+            mismatches.push(format!(
+                "row changed in place or fabricated (its key is not past every earlier key): {line}"
+            ));
+        }
+    }
+    let mut oldest_survivor: Option<i64> = None;
+    for line in a_lines.iter().filter(|l| b_set.contains(l.as_str())) {
+        let at = sampled_at(line, cols.sampled_at)?;
+        oldest_survivor = Some(oldest_survivor.map_or(at, |o| o.min(at)));
+    }
+    for line in a_lines.iter().filter(|l| !b_set.contains(l.as_str())) {
+        let ok = legitimate_gain
+            && match oldest_survivor {
+                Some(oldest) => sampled_at(line, cols.sampled_at)? <= oldest,
+                None => true,
+            };
+        if !ok {
+            mismatches.push(format!("row lost without a legitimate prune: {line}"));
+        }
+    }
+    Ok(mismatches)
+}
+
+/// `a` is the earlier export, `b` the later one (of the same, restored
+/// database). Every row `a` has must have a counterpart in `b` with the
+/// same `cadence`, either byte-identical or related the only way a real
+/// fire landing between the two exports can relate them: `fires` strictly
+/// greater, `missed` never smaller, `last_fired_at` strictly later --
+/// never fewer fires, never a smaller `missed`, never an earlier or equal
+/// `last_fired_at` (Quentin's direction). `b` may hold a `cadence` `a`
+/// lacks entirely (a fire on a cadence with no prior row) with no
+/// restriction; a `cadence` `a` has that `b` lacks is always a mismatch
+/// -- that is data the restore lost. Returns one description per
+/// mismatch found, empty if none.
+pub fn cadence_liveness_forward_diff(
+    a_lines: &[String],
+    b_lines: &[String],
+) -> Result<Vec<String>> {
+    let mut b_by_cadence: BTreeMap<u64, CadenceLivenessRow> = BTreeMap::new();
+    for line in b_lines {
+        let row = parse_cadence_liveness_line(line)?;
+        b_by_cadence.insert(row.cadence, row);
+    }
+    let mut mismatches = Vec::new();
+    for line in a_lines {
+        let a = parse_cadence_liveness_line(line)?;
+        match b_by_cadence.get(&a.cadence) {
+            None => mismatches.push(format!(
+                "cadence {}: present in the earlier export, missing from the later one",
+                a.cadence
+            )),
+            Some(b) => {
+                let identical = a.last_target_at_micros == b.last_target_at_micros
+                    && a.last_fired_at_micros == b.last_fired_at_micros
+                    && a.fires == b.fires
+                    && a.missed == b.missed;
+                let forward = b.fires > a.fires
+                    && b.missed >= a.missed
+                    && b.last_fired_at_micros > a.last_fired_at_micros;
+                if !identical && !forward {
+                    mismatches.push(format!(
+                        "cadence {}: neither identical nor a legitimate later fire (fires {} -> {}, missed {} -> {}, last_fired_at {} -> {})",
+                        a.cadence,
+                        a.fires,
+                        b.fires,
+                        a.missed,
+                        b.missed,
+                        a.last_fired_at_micros,
+                        b.last_fired_at_micros
+                    ));
+                }
+            }
+        }
+    }
+    Ok(mismatches)
+}
+
+/// `a` is the earlier export, `b` the later one (of the same, restored
+/// database): `reducer_class_counter` rows are `[class, calls,
+/// sampled_calls]` and only ever grow -- every restore call after the
+/// counter is restored, and every live call, counts. Every class `a` has
+/// must be in `b` with neither figure smaller. Returns one description per
+/// mismatch, empty if none.
+pub fn reducer_class_counter_forward_diff(
+    a_lines: &[String],
+    b_lines: &[String],
+) -> Result<Vec<String>> {
+    fn parse(line: &str) -> Result<(String, u64, u64)> {
+        let v: Value =
+            serde_json::from_str(line).map_err(|e| err(format!("not valid JSON: {e}: {line}")))?;
+        let arr = v
+            .as_array()
+            .filter(|a| a.len() == 3)
+            .ok_or_else(|| err(format!("expected [class, calls, sampled_calls]: {line}")))?;
+        let class = arr[0]
+            .as_str()
+            .ok_or_else(|| err(format!("class is not a string: {line}")))?
+            .to_string();
+        let n = |i: usize| -> Result<u64> {
+            arr[i]
+                .as_u64()
+                .ok_or_else(|| err(format!("field {i} is not a u64: {line}")))
+        };
+        Ok((class, n(1)?, n(2)?))
+    }
+    let mut b_by_class: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+    for line in b_lines {
+        let (class, calls, sampled) = parse(line)?;
+        b_by_class.insert(class, (calls, sampled));
+    }
+    let mut mismatches = Vec::new();
+    for line in a_lines {
+        let (class, calls, sampled) = parse(line)?;
+        match b_by_class.get(&class) {
+            None => mismatches.push(format!(
+                "class {class}: present in the earlier export, missing from the later one"
+            )),
+            Some(&(b_calls, b_sampled)) => {
+                if b_calls < calls || b_sampled < sampled {
+                    mismatches.push(format!(
+                        "class {class}: counters went backwards (calls {calls} -> {b_calls}, sampled_calls {sampled} -> {b_sampled})"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(mismatches)
+}
+
 // --- schema-driven edge-value seeding (mirrors export/restore's own
 // value shapes exactly -- an Identity is `["0x...64 hex digits..."]`, a
 // Timestamp is `[micros]`, everything else a plain JSON scalar) ---------
@@ -668,6 +1087,9 @@ pub fn seed_rows(
                 // offset, which would both overflow `u8` and break the
                 // `id == 0` invariant `require_owner` depends on.
                 Value::Number(0u8.into())
+            } else if (col.primary_key || col.unique) && col.ty == "String" {
+                // A string key (`reducer_class_counter.class`): unique per row.
+                Value::String(format!("edge-{}", base_offset + i))
             } else if col.primary_key || col.unique {
                 // Bounded by the column's own type width -- `base_offset`
                 // is chosen for `u32`/`u64` headroom and would overflow a
@@ -982,6 +1404,21 @@ mod tests {
     }
 
     #[test]
+    fn seed_rows_gives_a_string_pk_a_distinct_string_per_row() {
+        let snapshot = snap(
+            r#"{"tables":[
+                {"accessor":"tally","struct_name":"Tally","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"class","ty":"String","primary_key":true,"auto_inc":false,"unique":false,"has_default":false,"indexed":false},
+                    {"name":"calls","ty":"u64","primary_key":false,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
+                ]}
+            ]}"#,
+        );
+        let rows = seed_rows(&snapshot, "tally", 3, 900).unwrap();
+        let keys: Vec<&str> = rows.iter().map(|r| r[0].as_str().unwrap()).collect();
+        assert_eq!(keys, vec!["edge-900", "edge-901", "edge-902"]);
+    }
+
+    #[test]
     fn seed_rows_gives_auto_inc_pk_sequential_gap_free_ids() {
         let snapshot = snap(
             r#"{"tables":[{"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
@@ -1008,6 +1445,359 @@ mod tests {
     fn normalize_name_strips_underscores_and_lowercases() {
         assert_eq!(normalize_name("x_0"), "x0");
         assert_eq!(normalize_name("x0"), "x0");
+    }
+
+    fn shape_of(tables: &[(&str, &[&str])]) -> Shape {
+        let mut map = BTreeMap::new();
+        for (table, cols) in tables {
+            let mut cols: Vec<String> = cols.iter().map(|c| c.to_string()).collect();
+            cols.sort();
+            map.insert(table.to_string(), cols);
+        }
+        Shape(map)
+    }
+
+    #[test]
+    fn shape_from_snapshot_excludes_restore_state_and_normalizes_columns() {
+        let snapshot = snap(
+            r#"{"tables":[
+                {"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"x_0","ty":"i32","primary_key":false,"auto_inc":false,"unique":false,"has_default":false,"indexed":false},
+                    {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}
+                ]},
+                {"accessor":"restore_state","struct_name":"RestoreState","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"id","ty":"u8","primary_key":true,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
+                ]}
+            ]}"#,
+        );
+        let shape = Shape::from_snapshot(&snapshot);
+        assert_eq!(shape, shape_of(&[("widget", &["x0", "id"])]));
+    }
+
+    #[test]
+    fn shape_text_round_trips_through_parse() {
+        let shape = shape_of(&[("widget", &["id", "n"]), ("gadget", &["id"])]);
+        let parsed = Shape::parse(&shape.to_text()).unwrap();
+        assert_eq!(parsed, shape);
+    }
+
+    #[test]
+    fn parse_empty_shape_text_is_the_empty_shape() {
+        assert_eq!(Shape::parse("").unwrap(), Shape::default());
+    }
+
+    #[test]
+    fn select_schema_picks_the_exact_match() {
+        let live = shape_of(&[("widget", &["id"])]);
+        let older = shape_of(&[("widget", &["id"])]);
+        let newer = shape_of(&[("widget", &["id"]), ("gadget", &["id"])]);
+        // newest first: `newer` (the incoming, additive commit) does not
+        // match live; `older` does.
+        let candidates = vec![newer, older.clone()];
+        assert_eq!(select_schema(&live, &candidates).unwrap(), 1);
+    }
+
+    #[test]
+    fn select_schema_prefers_the_newest_candidate_on_a_tie() {
+        let live = shape_of(&[("widget", &["id"])]);
+        let a = shape_of(&[("widget", &["id"])]);
+        let b = shape_of(&[("widget", &["id"])]);
+        let candidates = vec![a, b];
+        assert_eq!(select_schema(&live, &candidates).unwrap(), 0);
+    }
+
+    #[test]
+    fn select_schema_a_column_only_difference_disqualifies_a_candidate_but_not_an_older_exact_match()
+     {
+        let live = shape_of(&[("widget", &["id"])]);
+        // The newest candidate added a column to `widget` -- its table set
+        // matches live's, but its columns do not, so it must not be
+        // selected even though no table is missing or extra.
+        let newest_with_extra_column = shape_of(&[("widget", &["id", "n"])]);
+        let older_exact = shape_of(&[("widget", &["id"])]);
+        let candidates = vec![newest_with_extra_column, older_exact];
+        assert_eq!(select_schema(&live, &candidates).unwrap(), 1);
+    }
+
+    #[test]
+    fn select_schema_an_extra_live_table_disqualifies_every_candidate() {
+        let live = shape_of(&[("widget", &["id"]), ("ghost", &["id"])]);
+        let candidates = vec![shape_of(&[("widget", &["id"])])];
+        let err = select_schema(&live, &candidates).unwrap_err();
+        assert_eq!(err.missing, Vec::<String>::new());
+        assert_eq!(err.extra, vec!["ghost".to_string()]);
+        assert!(err.column_diffs.is_empty());
+    }
+
+    #[test]
+    fn select_schema_a_missing_live_table_is_named() {
+        let live = shape_of(&[]);
+        let candidates = vec![shape_of(&[("widget", &["id"])])];
+        let err = select_schema(&live, &candidates).unwrap_err();
+        assert_eq!(err.missing, vec!["widget".to_string()]);
+        assert!(err.extra.is_empty());
+    }
+
+    #[test]
+    fn select_schema_names_a_column_diff_only_when_no_candidate_at_all_matches_it() {
+        let live = shape_of(&[("widget", &["id", "weird"])]);
+        // Same table set as live in the newest candidate, but its columns
+        // for 'widget' differ, and no other candidate's 'widget' columns
+        // match live's either -- reported.
+        let newest = shape_of(&[("widget", &["id"])]);
+        let candidates = vec![newest];
+        let err = select_schema(&live, &candidates).unwrap_err();
+        assert_eq!(err.missing, Vec::<String>::new());
+        assert_eq!(err.extra, Vec::<String>::new());
+        assert_eq!(err.column_diffs.len(), 1);
+        assert_eq!(err.column_diffs[0].0, "widget");
+    }
+
+    #[test]
+    fn select_schema_omits_a_column_diff_when_an_older_candidate_matches_that_tables_columns() {
+        let live = shape_of(&[("widget", &["id", "weird"]), ("gadget", &["id"])]);
+        // The newest candidate is missing 'gadget' entirely (so no overall
+        // match, and 'gadget' itself is reported as extra -- live has it,
+        // the newest candidate does not), and its own 'widget' columns
+        // differ from live's -- but an older candidate's 'widget' columns
+        // match live's exactly, so 'widget' must not be reported as a
+        // column diff (some candidate does accept it).
+        let newest = shape_of(&[("widget", &["id"])]);
+        let older = shape_of(&[("widget", &["id", "weird"])]);
+        let candidates = vec![newest, older];
+        let err = select_schema(&live, &candidates).unwrap_err();
+        assert_eq!(err.missing, Vec::<String>::new());
+        assert_eq!(err.extra, vec!["gadget".to_string()]);
+        assert!(err.column_diffs.is_empty());
+    }
+
+    fn cl_line(cadence: u64, target: i64, fired: i64, fires: u64, missed: u64) -> String {
+        format!("[{cadence},[{target}],[{fired}],{fires},{missed}]")
+    }
+
+    fn sample_line(id: u64, sampled_at: i64) -> String {
+        format!("[{id},[{sampled_at}],\"t\"]")
+    }
+
+    fn sfd(a: &[String], b: &[String]) -> Vec<String> {
+        let cols = SampleColumns {
+            sampled_at: 1,
+            primary_key: 0,
+        };
+        sample_forward_diff(cols, a, b).unwrap()
+    }
+
+    #[test]
+    fn sample_forward_diff_accepts_identical_and_grown_tables() {
+        let a = vec![sample_line(1, 10), sample_line(2, 20)];
+        let mut b = a.clone();
+        b.push(sample_line(3, 30));
+        assert!(sfd(&a, &a).is_empty());
+        assert!(sfd(&a, &b).is_empty());
+        assert!(sfd(&[], &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_accepts_the_oldest_rows_pruned_by_a_fire() {
+        // The seeded shape: 0, a 2023 timestamp, i64::MAX -- a fire prunes
+        // the two old ones and appends its own.
+        let a = vec![
+            sample_line(1, 0),
+            sample_line(2, 1_700_000_000_123_456),
+            sample_line(3, i64::MAX),
+        ];
+        let b = vec![sample_line(3, i64::MAX), sample_line(4, i64::MAX)];
+        assert!(sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_a_lost_row_with_nothing_gained() {
+        let a = vec![sample_line(1, 10), sample_line(2, 20)];
+        assert_eq!(sfd(&a, &[sample_line(2, 20)]).len(), 1);
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_a_lost_row_that_is_not_among_the_oldest() {
+        let a = vec![sample_line(1, 10), sample_line(2, 20), sample_line(3, 30)];
+        let b = vec![sample_line(1, 10), sample_line(3, 30), sample_line(4, 40)];
+        assert_eq!(sfd(&a, &b).len(), 1);
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_a_changed_row() {
+        let a = vec![sample_line(1, 10), sample_line(2, 20)];
+        let b = vec![sample_line(1, 10), sample_line(2, 25)];
+        assert!(!sfd(&a, &b).is_empty());
+        let grown_and_changed = vec![sample_line(1, 10), sample_line(2, 25), sample_line(3, 30)];
+        assert!(!sfd(&a, &grown_and_changed).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_every_row_changed_in_place() {
+        let a = vec![
+            sample_line(1, 0),
+            sample_line(2, 1_700_000_000_123_456),
+            sample_line(3, i64::MAX),
+        ];
+        let b = vec![sample_line(1, 5), sample_line(2, 6), sample_line(3, 7)];
+        assert!(!sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_the_table_replaced_by_one_old_id_row() {
+        let a = vec![
+            sample_line(1, 0),
+            sample_line(2, 1_700_000_000_123_456),
+            sample_line(3, i64::MAX),
+        ];
+        assert!(!sfd(&a, &[sample_line(2, 99)]).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_the_oldest_row_changed_with_nothing_appended() {
+        let a = vec![
+            sample_line(1, 0),
+            sample_line(2, 1_700_000_000_123_456),
+            sample_line(3, i64::MAX),
+        ];
+        let b = vec![sample_line(1, 1), a[1].clone(), a[2].clone()];
+        assert!(!sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_rows_dropped_and_an_old_id_reused() {
+        let a = vec![
+            sample_line(1, 0),
+            sample_line(2, 1_700_000_000_123_456),
+            sample_line(3, i64::MAX),
+        ];
+        let b = vec![sample_line(3, i64::MAX), sample_line(1, 42)];
+        assert!(!sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_accepts_every_row_pruned_when_b_holds_only_new_ids() {
+        let a = vec![sample_line(1, 0), sample_line(2, 10)];
+        let b = vec![sample_line(3, 100), sample_line(4, 110)];
+        assert!(sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_rejects_a_one_row_table_altered_in_place() {
+        // The row carries the maximum key of A: `>` (not `>=`) is what stops
+        // it being taken for a fire's gain.
+        let a = vec![sample_line(1, 10)];
+        let b = vec![sample_line(1, 99)];
+        assert!(!sfd(&a, &b).is_empty());
+    }
+
+    #[test]
+    fn sample_forward_diff_accepts_a_pruned_row_tying_the_oldest_survivor() {
+        // A fire writes many rows with one `sampled_at`; the row-bound prune
+        // can take part of a group: `<=` (not `<`) against the survivors.
+        let a = vec![sample_line(1, 10), sample_line(2, 10), sample_line(3, 20)];
+        let b = vec![sample_line(2, 10), sample_line(3, 20), sample_line(4, 30)];
+        assert!(sfd(&a, &b).is_empty());
+    }
+
+    fn rcc_line(class: &str, calls: u64, sampled: u64) -> String {
+        format!("[\"{class}\",{calls},{sampled}]")
+    }
+
+    #[test]
+    fn counter_forward_diff_accepts_identical_and_grown_rows() {
+        let a = vec![rcc_line("scheduled", 5, 4), rcc_line("player", 1, 0)];
+        let b = vec![rcc_line("scheduled", 9, 4), rcc_line("player", 1, 0)];
+        assert!(
+            reducer_class_counter_forward_diff(&a, &b)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            reducer_class_counter_forward_diff(&a, &a)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn counter_forward_diff_rejects_a_smaller_figure_or_a_missing_class() {
+        let a = vec![rcc_line("scheduled", 5, 4), rcc_line("player", 1, 0)];
+        let b = vec![rcc_line("scheduled", 4, 4)];
+        let diff = reducer_class_counter_forward_diff(&a, &b).unwrap();
+        assert_eq!(diff.len(), 2);
+        assert!(diff[0].contains("went backwards"));
+        assert!(diff[1].contains("missing from the later one"));
+    }
+
+    #[test]
+    fn counter_forward_diff_rejects_a_malformed_row() {
+        let a = vec!["[1,2]".to_string()];
+        assert!(reducer_class_counter_forward_diff(&a, &a).is_err());
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_accepts_byte_identical_rows() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        let b = a.clone();
+        assert_eq!(
+            cadence_liveness_forward_diff(&a, &b).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_accepts_a_legitimate_later_fire() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        let b = vec![cl_line(1, 2600, 2650, 4, 0)];
+        assert_eq!(
+            cadence_liveness_forward_diff(&a, &b).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_accepts_b_holding_an_extra_cadence() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        let b = vec![cl_line(1, 100, 200, 3, 0), cl_line(2, 50, 60, 1, 0)];
+        assert_eq!(
+            cadence_liveness_forward_diff(&a, &b).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_rejects_a_cadence_missing_from_b() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        let b: Vec<String> = vec![];
+        let diff = cadence_liveness_forward_diff(&a, &b).unwrap();
+        assert_eq!(diff.len(), 1);
+        assert!(diff[0].contains("missing from the later one"));
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_rejects_fires_not_strictly_greater() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        // same fires, later timestamp -- not a legitimate fire, and not identical either.
+        let b = vec![cl_line(1, 2600, 2650, 3, 0)];
+        let diff = cadence_liveness_forward_diff(&a, &b).unwrap();
+        assert_eq!(diff.len(), 1);
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_rejects_a_smaller_missed() {
+        let a = vec![cl_line(1, 100, 200, 3, 2)];
+        let b = vec![cl_line(1, 2600, 2650, 4, 1)];
+        let diff = cadence_liveness_forward_diff(&a, &b).unwrap();
+        assert_eq!(diff.len(), 1);
+    }
+
+    #[test]
+    fn cadence_liveness_forward_diff_rejects_an_earlier_or_equal_last_fired_at() {
+        let a = vec![cl_line(1, 100, 200, 3, 0)];
+        let b = vec![cl_line(1, 2600, 200, 4, 0)];
+        let diff = cadence_liveness_forward_diff(&a, &b).unwrap();
+        assert_eq!(diff.len(), 1);
     }
 }
 

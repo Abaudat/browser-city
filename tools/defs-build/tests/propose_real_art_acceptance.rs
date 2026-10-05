@@ -66,10 +66,10 @@ fn cases() -> Vec<Case> {
                     x0: 2,
                     y0: 0,
                     x1: 13,
-                    y1: 16,
+                    y1: 15,
                 }),
             }),
-            reason: "footprint size (1x1) matches the real trash_bin's own authored width/height. Miss: the proposed collider (2,0)-(13,16) spans the tile's full height because the bin's lid/handle silhouette reaches near both the top and bottom of the cell; the real authored collider (4,4)-(12,12), a smaller centred box, deliberately leaves a walkable margin around the thin lid/handle art for gameplay feel -- exactly the kind of correction AC3's classification step is for.",
+            reason: "footprint size (1x1) matches the real trash_bin's own authored width/height. Miss: the proposed collider (2,0)-(13,16) spans the tile's full height because the bin's lid/handle silhouette reaches near both the top and bottom of the cell; the real authored collider (2,7)-(14,15) is only the lower body where it meets the ground, so a player can walk beside the thin lid/handle art -- exactly the kind of correction AC3's classification step is for.",
         },
         Case {
             name: "park_bench",
@@ -81,10 +81,10 @@ fn cases() -> Vec<Case> {
                     x0: 0,
                     y0: 5,
                     x1: 32,
-                    y1: 16,
+                    y1: 15,
                 }),
             }),
-            reason: "footprint size (2x1) matches the real park_bench's own authored width/height -- a bench is exactly two tiles wide. Miss: the proposed collider starts at y0=5 because the backrest's own alpha silhouette does not reach the top ~5 sub-cells of the tile; the real authored collider (0,0)-(32,12) blocks that whole region anyway, so a player cannot reach over the back of the bench -- a deliberate gameplay choice raw alpha coverage cannot know.",
+            reason: "footprint size (2x1) matches the real park_bench's own authored width/height -- a bench is exactly two tiles wide. Miss: the proposed collider starts at y0=5 because the backrest's own alpha silhouette does not reach the top ~5 sub-cells of the tile; the real authored collider (0,5)-(32,12) starts at the same row and leaves the drop shadow and the front lip free to approach from -- a deliberate gameplay choice raw alpha coverage cannot know.",
         },
         Case {
             name: "shop_counter",
@@ -95,11 +95,11 @@ fn cases() -> Vec<Case> {
                 collider: Some(ColliderRect {
                     x0: 1,
                     y0: 0,
-                    x1: 47,
-                    y1: 48,
+                    x1: 46,
+                    y1: 47,
                 }),
             }),
-            reason: "Miss, by design: the counter's own art draws a tall shelf/backdrop rising three cells above its real one-cell floor footprint, so alpha coverage over-proposes depth 3 where the real object is 1 (classified via the full_cell_blocker archetype). This is exactly AC1's own worked case for why the proposal is a starting point, never authority -- a wide-canopy or tall-backdrop prop is expected to over-propose depth, and a reviewer corrects it by archetype, not by tuning the algorithm.",
+            reason: "Miss, by design: the counter's own art draws a tall shelf/backdrop rising three cells above its real one-cell floor footprint, so alpha coverage over-proposes depth 3 where the real object is 1 (authored as a one-cell collider (1,0)-(46,15), the bamboo body without its shadow). This is exactly AC1's own worked case for why the proposal is a starting point, never authority -- a wide-canopy or tall-backdrop prop is expected to over-propose depth, and a reviewer corrects it by archetype, not by tuning the algorithm.",
         },
         Case {
             name: "lamppost",
@@ -110,11 +110,11 @@ fn cases() -> Vec<Case> {
                 collider: Some(ColliderRect {
                     x0: 2,
                     y0: 0,
-                    x1: 15,
+                    x1: 14,
                     y1: 16,
                 }),
             }),
-            reason: "footprint size (1x1) matches the real lamppost's own authored width/height, and AC2 holds: the sprite's own 64px screen height (4 cells) never inflates the footprint depth past 1. Miss: the proposed collider spans nearly the whole cell because it is the bounding box of the *entire visible pole and lamp head*, while the real, classified `pole` archetype collider (6,10)-(10,14) is only the physical post's own base, so a player can walk under the overhanging lamp arm -- exactly the correction archetype classification exists for.",
+            reason: "footprint size (1x1) matches the real lamppost's own authored width/height, and AC2 holds: the sprite's own 64px screen height (4 cells) never inflates the footprint depth past 1. Miss: the proposed collider spans nearly the whole cell because it is the bounding box of the *entire visible pole and lamp head*, while the real, classified `pole` archetype collider (2,7)-(14,16) is only the drawn plinth, so a player can walk under the overhanging lamp arm -- exactly the correction archetype classification exists for.",
         },
         Case {
             name: "shop_window",
@@ -185,7 +185,7 @@ fn cases() -> Vec<Case> {
                 collider: Some(ColliderRect {
                     x0: 1,
                     y0: 2,
-                    x1: 112,
+                    x1: 111,
                     y1: 64,
                 }),
             }),

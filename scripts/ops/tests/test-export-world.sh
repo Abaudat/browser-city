@@ -19,6 +19,9 @@ EXPORT="$REPO_ROOT/scripts/ops/export-world.sh"
 ( cd "$REPO_ROOT/server" && cargo build -p world_backup --release >/dev/null ) \
   || { echo "could not build world_backup" >&2; exit 1; }
 
+WB_BIN="$REPO_ROOT/server/target/release/world_backup"
+[ -x "$WB_BIN" ] || WB_BIN="$WB_BIN.exe"
+
 stub_bin() { # <mode>
   local mode="$1" d
   d="$(fake_dir)"

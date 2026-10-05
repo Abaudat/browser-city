@@ -13,12 +13,14 @@ use std::path::PathBuf;
 
 use defs_build::{atlas, fsio, object_sprite_sheet_paths, parse};
 
+mod support;
+
 const SHEET_DIR: &str = "ModernTileset/x/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16";
 const CAMPING_DIR: &str = "ModernTileset/x/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16";
 const SCHOOL_DIR: &str = "ModernTileset/x/ME_Theme_Sorter_16x16/13_School_Singles_16x16";
 
 fn good_png() -> Vec<u8> {
-    atlas::image::encode_rgba8(16, 16, &vec![7u8; 16 * 16 * 4]).unwrap()
+    atlas::image::encode_rgba8(16, 16, &support::agreeing_art_rgba(16, 16)).unwrap()
 }
 
 fn object_toml(id: u32, key: &str, sheet_dir: &str, sheet_file: &str) -> String {
@@ -32,8 +34,8 @@ fn roles_toml() -> &'static str {
     "[[tag]]\nid = 1\nkey = \"fixture\"\nrole = { layers = [\"furniture\"] }\n"
 }
 
-fn layer_codes() -> BTreeMap<String, u32> {
-    [("furniture".to_string(), 2u32)].into_iter().collect()
+fn code_tables() -> defs_build::codes::CodeTables {
+    defs_build::codes::CodeTables::from_entries(&[("layer", "furniture", 2), ("unit", "piece", 0)])
 }
 
 /// FR126's sprite/footprint check needs a `render.tile_size_px` balance
@@ -49,7 +51,7 @@ fn tile_size_balance() -> &'static str {
 /// theme maps to `ATLAS_SHARED_GROUP`) without changing which page group
 /// any of these fixtures' real themes land in.
 fn page_groups_toml() -> &'static str {
-    "[[page_group]]\ntheme = \"city_props\"\ngroup = \"city_props\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"camping\"\n\n[[page_group]]\ntheme = \"school\"\ngroup = \"school\"\n\n[[page_group]]\ntheme = \"atlas_required\"\ngroup = \"street\"\n"
+    "[[page_group]]\ntheme = \"city_props\"\ngroup = \"city_props\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"camping\"\n\n[[page_group]]\ntheme = \"school\"\ngroup = \"school\"\n\n[[page_group]]\ntheme = \"atlas_required\"\ngroup = \"shared\"\n"
 }
 
 #[test]
@@ -110,7 +112,7 @@ fn only_the_used_subset_is_read_a_corrupt_unreferenced_sheet_never_breaks_the_bu
         &sheet_dims,
         &object_sheet_bytes,
         &BTreeMap::new(),
-        &layer_codes(),
+        &code_tables(),
         "",
         "v1",
     )
@@ -206,7 +208,7 @@ fn packing_three_groups_is_byte_identical_under_a_real_shuffle_of_file_order() {
             &sheet_dims,
             &object_sheet_bytes,
             &BTreeMap::new(),
-            &layer_codes(),
+            &code_tables(),
             "",
             "v1",
         )

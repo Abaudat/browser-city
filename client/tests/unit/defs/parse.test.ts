@@ -7,13 +7,24 @@ import type { Defs } from "../../../src/defs/types";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
+/** The item fields every `[[item]]` row carries besides `id`/`key`. */
+const ITEM_FIELDS = { unit: 0, shelf_life_minutes: 0, width: 1, height: 1 };
+
 function validPayload(): Record<string, unknown> {
   return {
     generated_by: "tools/defs-build -- do not edit by hand",
     defs_version: "abc123",
     collider_subcells_per_cell: 16,
+    position_units_per_cell: 256,
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
+    min_floor: -1,
+    max_floor: 7,
+    max_shelf_life_minutes: 525_600,
+    max_face_value: 1_000,
+    max_denominations: 16,
+    denomination_unit: 0,
+    real_ms_per_city_minute: 2500,
     atlas_max_pages_per_group: 2,
     character_composite_pages: 2,
     atlas_pages: [{ file: "furniture-abc123.png", group: "furniture", width: 2048, height: 16 }],
@@ -33,9 +44,10 @@ function validPayload(): Record<string, unknown> {
       },
     ],
     items: [
-      { id: 1, key: "bottle" },
-      { id: 2, key: "recycled_glass" },
+      { ...ITEM_FIELDS, id: 1, key: "bottle" },
+      { ...ITEM_FIELDS, id: 2, key: "recycled_glass" },
     ],
+    denominations: [],
     recipes: [{ id: 1, key: "bottle_recycling", inputs: ["bottle"], outputs: ["recycled_glass"] }],
     professions: [{ id: 1, key: "sanitation_worker" }],
     chains: [{ id: 1, key: "plastic_bottle", links: ["sanitation_worker"] }],
@@ -89,37 +101,169 @@ describe("parseDefs", () => {
 
   it("rejects an unknown field on one entry", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { id: 1, key: "bottle", bogus: 2 };
+    (payload.items as Record<string, unknown>[])[0] = {
+      ...ITEM_FIELDS,
+      id: 1,
+      key: "bottle",
+      bogus: 2,
+    };
     expect(() => parseDefs(payload)).toThrow(/unknown field 'bogus'/);
+  });
+
+  it("rejects a missing, zero or negative real_ms_per_city_minute (FR1)", () => {
+    const missing = validPayload();
+    delete missing.real_ms_per_city_minute;
+    expect(() => parseDefs(missing)).toThrow(/real_ms_per_city_minute: expected a number/);
+    expect(() => parseDefs({ ...validPayload(), real_ms_per_city_minute: 0 })).toThrow(
+      /real_ms_per_city_minute: must be in \[1, 65535\]/,
+    );
+    expect(() => parseDefs({ ...validPayload(), real_ms_per_city_minute: 65_536 })).toThrow(
+      /real_ms_per_city_minute: must be in \[1, 65535\]/,
+    );
+    expect(() => parseDefs({ ...validPayload(), real_ms_per_city_minute: -2500 })).toThrow(
+      /real_ms_per_city_minute: expected an integer/,
+    );
   });
 
   it("rejects a missing required field", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { key: "bottle" };
+    (payload.items as Record<string, unknown>[])[0] = { ...ITEM_FIELDS, key: "bottle" };
     expect(() => parseDefs(payload)).toThrow(/expected a number/);
+  });
+
+  it("rejects an item missing unit, shelf_life_minutes or bulk", () => {
+    for (const field of ["unit", "shelf_life_minutes", "width", "height"]) {
+      const payload = validPayload();
+      const row: Record<string, unknown> = { ...ITEM_FIELDS, id: 1, key: "bottle" };
+      delete row[field];
+      (payload.items as Record<string, unknown>[])[0] = row;
+      expect(() => parseDefs(payload)).toThrow(/expected a number/);
+    }
+  });
+
+  it("rejects an item with a zero, over-cap or over-shelf-life field", () => {
+    const bad = (extra: Record<string, unknown>) => {
+      const payload = validPayload();
+      (payload.items as Record<string, unknown>[])[0] = {
+        ...ITEM_FIELDS,
+        id: 1,
+        key: "bottle",
+        ...extra,
+      };
+      return payload;
+    };
+    expect(() => parseDefs(bad({ height: 0 }))).toThrow(/bulk width or height of 0/);
+    expect(() => parseDefs(bad({ width: 9 }))).toThrow(
+      /bulk width 9 exceeds MAX_FOOTPRINT_CELLS \(8\)/,
+    );
+    expect(() => parseDefs(bad({ shelf_life_minutes: 525_601 }))).toThrow(
+      /exceeds MAX_SHELF_LIFE_MINUTES \(525600\)/,
+    );
+    expect(() => parseDefs(bad({ shelf_life_minutes: 525_600 }))).not.toThrow();
+  });
+
+  describe("denominations (FR92)", () => {
+    const withDenominations = (rows: Record<string, unknown>[]) => {
+      const payload = validPayload();
+      payload.items = [
+        ...(payload.items as Record<string, unknown>[]),
+        { ...ITEM_FIELDS, id: 3, key: "coin" },
+        { ...ITEM_FIELDS, id: 4, key: "grain", unit: 1 },
+        { ...ITEM_FIELDS, id: 5, key: "stale", shelf_life_minutes: 60 },
+        { ...ITEM_FIELDS, id: 6, key: "note" },
+      ];
+      payload.denominations = rows;
+      return payload;
+    };
+    const den = (item_id: number, face_value: unknown) => ({ item_id, face_value });
+
+    it("accepts money at the cap and carries it through", () => {
+      const defs = parseDefs(withDenominations([den(3, 1_000), den(6, 5)]));
+      expect(defs.denominations).toEqual([
+        { itemId: 3, faceValue: 1_000 },
+        { itemId: 6, faceValue: 5 },
+      ]);
+      expect([defs.maxFaceValue, defs.maxDenominations, defs.denominationUnit]).toEqual([
+        1_000, 16, 0,
+      ]);
+    });
+
+    it("refuses a face value of 0 or over the cap", () => {
+      expect(() => parseDefs(withDenominations([den(3, 0)]))).toThrow(/face_value of 0/);
+      expect(() => parseDefs(withDenominations([den(3, 1_001)]))).toThrow(
+        /face_value 1001 exceeds MAX_FACE_VALUE \(1000\)/,
+      );
+    });
+
+    it("refuses a denomination naming no item, or one item twice", () => {
+      expect(() => parseDefs(withDenominations([den(99, 5)]))).toThrow(/unknown item 99/);
+      expect(() => parseDefs(withDenominations([den(3, 5), den(3, 6)]))).toThrow(
+        /item 'coin' is already a denomination/,
+      );
+    });
+
+    it("refuses a denomination that is not in pieces or that spoils", () => {
+      expect(() => parseDefs(withDenominations([den(4, 5)]))).toThrow(
+        /must be counted in the denomination unit/,
+      );
+      expect(() => parseDefs(withDenominations([den(5, 5)]))).toThrow(/must never spoil/);
+    });
+
+    it("refuses two denominations with one face value", () => {
+      expect(() => parseDefs(withDenominations([den(3, 5), den(6, 5)]))).toThrow(
+        /face_value 5 is already item 'coin'/,
+      );
+    });
+
+    it("refuses more denominations than MAX_DENOMINATIONS", () => {
+      const payload = validPayload();
+      payload.items = Array.from({ length: 17 }, (_, i) => ({
+        ...ITEM_FIELDS,
+        id: 10 + i,
+        key: `tok_${i}`,
+      }));
+      payload.recipes = [];
+      const rows = payload.items as { id: number }[];
+      payload.denominations = rows.map((it, i) => den(it.id, i + 1));
+      expect(() => parseDefs(payload)).toThrow(/over MAX_DENOMINATIONS \(16\)/);
+      payload.denominations = (payload.denominations as unknown[]).slice(0, 16);
+      expect(() => parseDefs(payload)).not.toThrow();
+    });
+
+    it("refuses a missing table, a wrong-typed face value and an unknown key", () => {
+      const missing = validPayload();
+      delete missing.denominations;
+      expect(() => parseDefs(missing)).toThrow(/expected an array/);
+      expect(() => parseDefs(withDenominations([den(3, "five")]))).toThrow(/expected a number/);
+      expect(() => parseDefs(withDenominations([{ ...den(3, 5), extra: 1 }]))).toThrow();
+    });
   });
 
   it("rejects a wrong value type", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { id: "nope", key: "bottle" };
+    (payload.items as Record<string, unknown>[])[0] = { ...ITEM_FIELDS, id: "nope", key: "bottle" };
     expect(() => parseDefs(payload)).toThrow(/expected a number/);
   });
 
   it("rejects a non-integer id, never accepting what the module could not have produced", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { id: 1.5, key: "bottle" };
+    (payload.items as Record<string, unknown>[])[0] = { ...ITEM_FIELDS, id: 1.5, key: "bottle" };
     expect(() => parseDefs(payload)).toThrow(/expected an integer in \[0, 2\^32\)/);
   });
 
   it("rejects a negative id", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { id: -1, key: "bottle" };
+    (payload.items as Record<string, unknown>[])[0] = { ...ITEM_FIELDS, id: -1, key: "bottle" };
     expect(() => parseDefs(payload)).toThrow(/expected an integer in \[0, 2\^32\)/);
   });
 
   it("rejects an id at or above 2^32", () => {
     const payload = validPayload();
-    (payload.items as Record<string, unknown>[])[0] = { id: 2 ** 32, key: "bottle" };
+    (payload.items as Record<string, unknown>[])[0] = {
+      ...ITEM_FIELDS,
+      id: 2 ** 32,
+      key: "bottle",
+    };
     expect(() => parseDefs(payload)).toThrow(/expected an integer in \[0, 2\^32\)/);
   });
 
@@ -132,8 +276,8 @@ describe("parseDefs", () => {
   it("rejects a duplicate id within one kind", () => {
     const payload = validPayload();
     payload.items = [
-      { id: 1, key: "bottle" },
-      { id: 1, key: "recycled_glass" },
+      { ...ITEM_FIELDS, id: 1, key: "bottle" },
+      { ...ITEM_FIELDS, id: 1, key: "recycled_glass" },
     ];
     expect(() => parseDefs(payload)).toThrow(/duplicate item id 1/);
   });
@@ -141,8 +285,8 @@ describe("parseDefs", () => {
   it("rejects a duplicate key within one kind", () => {
     const payload = validPayload();
     payload.items = [
-      { id: 1, key: "bottle" },
-      { id: 2, key: "bottle" },
+      { ...ITEM_FIELDS, id: 1, key: "bottle" },
+      { ...ITEM_FIELDS, id: 2, key: "bottle" },
     ];
     expect(() => parseDefs(payload)).toThrow(/duplicate item key 'bottle'/);
   });
@@ -341,6 +485,32 @@ describe("parseDefs", () => {
       },
     ];
     expect(parseDefs(payload).objects[0]?.interactAt).toBeUndefined();
+  });
+
+  it("parses a present flight table and leaves an absent or null one undefined (FR182)", () => {
+    const payload = validPayload();
+    const base = (payload.objects as Record<string, unknown>[])[0] as Record<string, unknown>;
+    payload.objects = [{ ...base, flight: { drop_px: 8, from_px: 5, to_px: 34 } }];
+    expect(parseDefs(payload).objects[0]?.flight).toEqual({ dropPx: 8, fromPx: 5, toPx: 34 });
+    payload.objects = [{ ...base, flight: null }];
+    expect(parseDefs(payload).objects[0]?.flight).toBeUndefined();
+    payload.objects = [base];
+    expect(parseDefs(payload).objects[0]?.flight).toBeUndefined();
+  });
+
+  it("refuses a partial, inverted, negative or unknown-field flight table (FR182)", () => {
+    const payload = validPayload();
+    const base = (payload.objects as Record<string, unknown>[])[0] as Record<string, unknown>;
+    for (const flight of [
+      { drop_px: 8, from_px: 5 },
+      { drop_px: 8, from_px: 34, to_px: 5 },
+      { drop_px: 8, from_px: 5, to_px: 5 },
+      { drop_px: -1, from_px: 5, to_px: 34 },
+      { drop_px: 8, from_px: 5, to_px: 34, extra: 1 },
+    ]) {
+      payload.objects = [{ ...base, flight }];
+      expect(() => parseDefs(payload)).toThrow(DefsParseError);
+    }
   });
 
   it("rejects a zero-area interact_at (FR148)", () => {
@@ -963,8 +1133,8 @@ describe("canonicalDump", () => {
         "balance citizen.bar_decay.rest value=10 min=0 max=100",
         "balance render.tile_size_px value=16 min=1 max=64",
         "chain plastic_bottle id=1 links=[sanitation_worker]",
-        "item bottle id=1",
-        "item recycled_glass id=2",
+        "item bottle id=1 unit=0 shelf_life_minutes=0 width=1 height=1",
+        "item recycled_glass id=2 unit=0 shelf_life_minutes=0 width=1 height=1",
         "object trash_bin id=1 name=Trash Bin layer=2 sprite=x.png:0,0,16,16 height=1 width=1 collider=4,4,12,12 interact_at=none window=false tags=[1]",
         "profession sanitation_worker id=1",
         "recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]",

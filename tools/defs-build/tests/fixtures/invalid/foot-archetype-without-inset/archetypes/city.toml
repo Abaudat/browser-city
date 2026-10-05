@@ -1,0 +1,4 @@
+[[archetype]]
+key = "railing_foot"
+height = 1
+foot = true

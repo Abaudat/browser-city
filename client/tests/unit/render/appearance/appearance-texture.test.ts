@@ -224,8 +224,17 @@ function defsWith(overrides: Partial<Defs> = {}): Defs {
   return {
     defsVersion: "test",
     colliderSubcellsPerCell: 16,
+    positionUnitsPerCell: 256,
     interactAtMaxReachCells: 2,
     maxFootprintCells: 8,
+    minFloor: -1,
+    maxFloor: 7,
+    maxShelfLifeMinutes: 525_600,
+    maxFaceValue: 1_000,
+    maxDenominations: 16,
+    denominationUnit: 0,
+    denominations: [],
+    realMsPerCityMinute: 2500,
     atlasMaxPagesPerGroup: 2,
     characterCompositePages: 2,
     atlasPages: [

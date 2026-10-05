@@ -1,6 +1,6 @@
 ---
 name: bc-sdlc
-description: 'The Browser City SDLC scripts — how Crew, the leads (tim, derek, quentin, artie) and Scotty write their work onto a task issue, a PR or the board. Use when you are Crew opening a PR or addressing review comments, a lead writing an analysis direction or a review verdict or asking for a task to be created, or Scotty opening the Sprint Demo issue, posting a breaker note, ruling on a lead''s task request, scoping the next sprint, or opening epics and stories from demo feedback.'
+description: 'The Browser City SDLC scripts — how Crew, the leads (tim, derek, quentin, artie) and Scotty write their work onto a task issue, a PR or the board. Use when you are Crew opening a PR, declaring whether a story is visible in the live game, or addressing review comments, a lead writing an analysis direction or a review verdict or asking for a task to be created, or Scotty opening the Sprint Demo issue, posting a breaker note, ruling on a lead''s task request, or opening epics and stories (with their blockers) from demo feedback.'
 ---
 
 # bc-sdlc — the scripted SDLC surface
@@ -27,6 +27,7 @@ Reading is plain `gh`: `gh issue view <issue> --comments`,
 | Command | What it does |
 |---|---|
 | `bash <scripts>/bc-pr.sh open <issue> "<title>" <bodyfile>` | Pushes the current branch and opens the PR, labelled `story`, with `Closes #<issue>` appended to `<bodyfile>`'s prose. Prints the PR number. Idempotent — if a PR already closes that issue it prints its number and creates nothing. The script picks the base branch; never retarget the PR or open one another way. |
+| `bash <scripts>/bc-issue.sh declare-live <issue> visible <wherefile>` / `declare-live <issue> none` | Records whether the story is visible in the live game — a player on the deployed client, with no debug overlay, console or dev tool, can see or do it. `visible` takes a file holding exactly one line: where to go and what to do. Idempotent upsert of the story's one live comment. **`open` refuses a story with no declaration.** `none` is for work no such player can reach; it keeps the story off the demo checklist. |
 | `bash <scripts>/bc-pr.sh attach <image>...` | Uploads each png/jpg/gif/webp to the `pr-assets` branch under `<branch>/<HEAD sha7>/<name>` and prints one `![name](url)` line per image, for you to paste into a `<bodyfile>`. File names are letters, digits, `.`, `_` and `-` only. Re-attaching the same name at the same commit replaces it. Prefer still images; use a GIF only when motion is what is under review. |
 | `bash <scripts>/bc-comment.sh mark-addressed <pr> [bodyfile]` | Rewrites your `### Crew` comment on the PR and stamps it at the PR's **current head**. `[bodyfile]` is optional prose on what you changed; omitted, it writes "Addressed." Push your fixes *first* — the stamp is taken from the head at the moment you run it. |
 
@@ -44,6 +45,7 @@ cycle is addressed, then `mark-addressed`.
 | `bash <scripts>/bc-comment.sh approve <pr> <role> [bodyfile]` | Stamps `APPROVED` on your review comment at the PR's current head. |
 | `bash <scripts>/bc-comment.sh reject <pr> <role> [bodyfile]` | Stamps `CHANGES` on your review comment at the PR's current head. |
 | `bash <scripts>/bc-comment.sh request-task <pr> <role> <bodyfile>` | Asks Scotty for work this PR cannot carry. Opens (or re-opens, keeping his earlier rulings above it) your own `### Task request — <role>` comment on the PR and wakes him. `<bodyfile>` is **required**: what the work is, why the PR cannot carry it, which requirement it serves. Exits 1 and writes nothing if your previous request is still awaiting a ruling. |
+| `bash <scripts>/bc-issue.sh live <issue>` | Prints the story's live declaration as one JSON line: `{"live":"visible","where":"…"}`, `{"live":"none"}` or `{"live":"undeclared"}`. Reject a declaration that is false of the PR. |
 
 `<role>` is your own name and nothing else.
 
@@ -77,25 +79,35 @@ carries it in one call, so the two are never out of step.
 
 | Command | What it does |
 |---|---|
-| `bash <scripts>/bc-issue.sh write-demo <sprint> <bodyfile>` | Opens the `Sprint <n> Demo` issue with `<bodyfile>` as its body, labels it `demo`, adds it to the board and scopes it into Sprint `<n>`. Prints the new issue number. |
+| `bash <scripts>/bc-issue.sh write-demo <sprint> <bodyfile>` | Opens the `Sprint <n> Demo` issue with `<bodyfile>` as its body, labels it `demo`, adds it to the board and scopes it into Sprint `<n>`. Prints the new issue number. Every `- [ ] ` checklist line is linted for player-facing language and must end in exactly one `(#<n>)`, a Done story of this sprint declared visible; a rejected line exits 3 and creates nothing, naming each on stderr — fix jargon by rewriting, fix a story rejection by removing the line and saying "not yet visible" in the summary. |
 | `bash <scripts>/bc-comment.sh write-breaker <pr> <bodyfile>` | Posts the breaker comment on the PR with `<bodyfile>` as the note, adds the `breaker` label and assigns Adrian. Prints the new comment id. Exits 1 and writes nothing if a breaker comment already exists. |
-| `bash <scripts>/bc-sprint.sh write-scope <sprint> <story>...` | Moves each story onto Sprint `<n>`, defaulting to `Backlog` any the board has no Status for. Only open, unfinished stories on no sprint count — an epic, the Demo issue or an unknown number is dropped — and so is any story whose epic comes after an epic that still has stories you did not pick. Names what it dropped, and why, on stderr. Prints `{"scoped":[...],"sprint":"Sprint n"}`. Make **one** call with every pick in it. |
-| `bash <scripts>/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>` | Opens epic `<n>` with `<bodyfile>` as its preamble, labels it `epic`, puts it on the board in `Backlog` on no sprint, and sets Priority. Prints the new issue number. |
-| `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv>` | Opens a story, labels it `story` plus one `lead:<role>` per lead in `<leads-csv>` (`-` for none — quentin is always in scope), links it as a sub-issue of `<epic-issue>`, puts it on the board in `Backlog` on no sprint, and sets Size and Priority. Prints the new issue number. |
-| `bash <scripts>/bc-issue.sh epic-context <issue>` | Reads the story's epic and every sibling story with status, size and priority, as JSON. A read, not a write — this is what a task-request ruling is made against. Exits 1 if the story is in no epic. |
+| `bash <scripts>/bc-issue.sh write-feedback-reply <demo-issue> <bodyfile>` | Posts (or edits, if you already replied) your reply to Adrian's demo feedback on Sprint Demo issue `<demo-issue>`, marked so it is never read back as feedback itself on a retry. Required even when you opened nothing. Prints the comment id. |
+| `bash <scripts>/bc-issue.sh write-epic <n> "<title>" <bodyfile> <priority>` | Opens epic `<n>`, titled `Epic <n>: <title>`, with `<bodyfile>` as its preamble, labels it `epic`, puts it on the board in `Backlog` on no sprint, and sets Priority. Prints the new issue number. |
+| `bash <scripts>/bc-issue.sh write-story <epic-issue> <id> "<title>" <bodyfile> <size> <priority> <leads-csv> <blocked-by-csv>` | Opens a story titled `Story <id>: <title>`, labels it `story` plus one `lead:<role>` per lead in `<leads-csv>` (`-` for none — quentin is always in scope), links it as a sub-issue of `<epic-issue>`, marks it blocked by each issue in `<blocked-by-csv>` (GitHub's native issue dependencies; `-` for none), puts it on the board in `Backlog` on no sprint, and sets Size and Priority. Prints the new issue number. |
+| `bash <scripts>/bc-issue.sh write-blockers <issue> <blocker>...` | Marks an existing story blocked by each `<blocker>` — for a story you have just opened that must land *before* one already on the backlog. Adds only; a blocker stops blocking when it is closed. Prints the issue number. |
+| `bash <scripts>/bc-issue.sh epic-context <issue>` | Reads the story's epic and every sibling story with status, size, priority and open blockers, as JSON. A read, not a write — this is what a task-request ruling is made against. Exits 1 if the story is in no epic. |
 | `bash <scripts>/bc-issue.sh amend-story <issue> <bodyfile> [<size>] [<priority>]` | Appends `<bodyfile>`'s prose to an existing story under an `## Amendment` heading, leaving its original prose and its `<!-- bc:story -->` marker intact, and sets Size / Priority if given. Prints the issue number. |
 | `bash <scripts>/bc-comment.sh resolve-task-request <pr> <role> <outcome> <bodyfile>` | Stamps your ruling on the lead's own task-request comment. `<outcome>` is `DENIED`, `AMENDED` or `CREATED`; `<bodyfile>` is **required** and holds two or three sentences naming what you amended or opened. Exits 1 if that request was already ruled on. |
 
-`<epic-issue>` is the epic's **issue** number, not its epic number. `<size>` is
+`<title>` is the name alone — the script writes the `Epic <n>: ` / `Story <id>: `
+prefix. `<epic-issue>` is the epic's **issue** number, not its epic number. `<size>` is
 one of `XS S M L XL`, `<priority>` one of `Blocker Critical Standard Low`; a
 value outside those lists is exit 2, never a silently unset field.
+`<blocked-by-csv>` and `<blocker>` are **issue** numbers too, and one that does
+not exist is exit 2.
+
+Nobody plans a sprint. The orchestrator starts, from the whole backlog and in
+no epic order, the story with the highest Priority, then the smallest Size,
+that **no open issue blocks**, and puts it on the sprint as it starts it. So a
+story's blockers, priority and size are what decide when it is worked — get
+them right at creation, because a story with no blockers may be started next.
 
 `<bodyfile>` holds your prose only. The scripts write the `### Sprint N Demo`
-/ `### Breaker` / `### Task request` / `## Amendment` heading, the
-`@`-mention of Adrian and the `<!-- bc:demo -->` / `<!-- bc:breaker -->` /
-`<!-- bc:epic -->` / `<!-- bc:story -->` / `<!-- bc:taskreq:<role> -->`
-marker — do not write any of them yourself, and do not create the issue or
-comment any other way.
+/ `### Breaker` / `### Scotty's reply` / `### Task request` / `## Amendment`
+heading, the `@`-mention of Adrian and the `<!-- bc:demo -->` /
+`<!-- bc:breaker -->` / `<!-- bc:feedback-reply -->` / `<!-- bc:epic -->` /
+`<!-- bc:story -->` / `<!-- bc:taskreq:<role> -->` marker — do not write any
+of them yourself, and do not create the issue or comment any other way.
 
 Ruling on a task request, `amend-story` or `write-story` comes **first** and
 `resolve-task-request` after, so a ruling that says a story exists is one
@@ -103,23 +115,27 @@ whose story exists. `amend-story` is the only command here that touches an
 issue somebody else's work already rests on: it appends, never rewrites, so
 the prose the leads pre-registered against stays where it was.
 
-Nothing sets Status, Priority, Size or a sprint but these calls: every one of
-them puts what it creates where it belongs, so never follow one with a board
-edit of your own. `write-epic` and `write-story` deliberately leave their
-issue on **no** sprint — `write-scope` is what scopes work in, later. That
-holds for a story you open on a task-request ruling too: what ties it to the
-work in play is its epic — `write-story` links it there as a sub-issue — not a
+Nothing sets Status, Priority, Size, a blocker or a sprint but these calls:
+every one of them puts what it creates where it belongs, so never follow one
+with a board edit of your own. `write-epic` and `write-story` deliberately
+leave their issue on **no** sprint, and nothing of yours ever puts one there —
+the orchestrator does, when the story is started. That holds for a story you
+open on a task-request ruling too: what ties it to the work in play is its
+epic — `write-story` links it there as a sub-issue — and its blockers, not a
 sprint. Nothing else on the board is yours either: never edit a lead's
 comment, Crew's comment, or the status comment.
 
 ## Exit codes
 
 `0` did it · `1` nothing to do — a breaker comment already exists
-(`write-breaker`), none of the issues you passed was still a candidate
-(`write-scope`), your previous task request is still awaiting a ruling
+(`write-breaker`), your previous task request is still awaiting a ruling
 (`request-task`), or that request was already ruled on
 (`resolve-task-request`) · `2` bad arguments, an unknown
 size/priority/lead/outcome, `crew` calling `request-task`, an empty
-body file, or the comment this command must edit does not exist (the
-orchestrator creates every stub — if yours is missing, stop and say so rather
-than creating one).
+body file, a body file carrying a `<!-- bc: -->` marker of its own
+(`write-feedback-reply`), or the comment this command must edit does not
+exist (the orchestrator creates every stub — if yours is missing, stop and
+say so rather than creating one) · `3` (`write-demo` only) one or more
+checklist lines were rejected (engineering jargon, or a missing or not-visible story reference) rather than something Adrian can
+see or do — named on stderr; nothing was created, fix those lines and
+call again.

@@ -6,7 +6,10 @@
 //! something else. `tests/goldens/codes_v1.golden` pins the whole mapping;
 //! a diff there is exactly the moment a human must look.
 
-use sim::codes::{Code, layer, matter_kind, node_kind, provision, reason_code};
+use sim::codes::{
+    Code, actor_kind, container_kind, holder_kind, layer, matter_kind, node_kind, provision,
+    reason_code, unit,
+};
 use std::collections::BTreeSet;
 
 const GOLDEN: &str = include_str!("goldens/codes_v1.golden");
@@ -115,6 +118,15 @@ fn node_kind_matches_golden_and_is_unique() {
     assert_unique("node_kind", node_kind::CODES);
 }
 
+/// Story 6.1: an item's `unit` is an extensible set (AC3) -- a `u32` code
+/// plus a name, never an enum, so a new unit is a row insert.
+#[test]
+fn unit_matches_golden_and_is_unique() {
+    let golden = parse_golden(GOLDEN);
+    assert_matches_golden("unit", unit::CODES, &golden);
+    assert_unique("unit", unit::CODES);
+}
+
 /// `layer` carries its FR123 `rank` inline (`sim::codes::layer::LayerCode`,
 /// not the shared `Code`), so it gets its own check rather than
 /// `assert_matches_golden`/`assert_unique` -- code, name and rank must all
@@ -170,7 +182,8 @@ fn layer_matches_golden_and_is_unique() {
 
 /// FR123's tens ladder: every live rank is unique (a collision would make
 /// depth order between two layers coin-flip on row order), and every rank
-/// minted for a pool layer (i.e. every rank but `ground`'s 0) is a
+/// minted for a pool layer (every rank at or above 10; below 10 is a
+/// flat-pass layer) is a
 /// multiple of ten, leaving every in-between number free for a future
 /// layer to slot into without renumbering anything already seeded.
 #[test]
@@ -184,10 +197,10 @@ fn layer_ranks_are_unique_and_pool_ranks_are_multiples_of_ten() {
             entry.name,
             entry.rank
         );
-        // `ground` is the flat-pass rank (never a pool member) and
         // `overhead` is deprecated legacy (its rank is frozen, never
-        // moved into the tens ladder) -- neither is a pool layer.
-        if layer::is_deprecated(entry.code) || entry.name == "ground" {
+        // moved into the tens ladder). Every other rank below 10 is a
+        // flat-pass layer; every rank at or above 10 is a pool layer.
+        if layer::is_deprecated(entry.code) || entry.rank < layer::FIRST_POOL_RANK {
             continue;
         }
         assert_eq!(
@@ -232,4 +245,68 @@ fn deprecated_layer_codes_stay_seeded_but_refuse_live_rank() {
         Ok(10),
         "live_rank must return the real rank for a live, known code"
     );
+}
+
+/// Story 6.2 (FR87): a holder is one of exactly five kinds -- an
+/// extensible set, so a sixth is a row insert.
+#[test]
+fn holder_kind_matches_golden_and_is_unique() {
+    let golden = parse_golden(GOLDEN);
+    assert_matches_golden("holder_kind", holder_kind::CODES, &golden);
+    assert_unique("holder_kind", holder_kind::CODES);
+    let names: BTreeSet<&str> = holder_kind::CODES.iter().map(|c| c.name).collect();
+    let expected: BTreeSet<&str> = [
+        "business",
+        "citizen",
+        "vehicle",
+        "building",
+        "municipal_facility",
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(names, expected, "FR87 names exactly these five holders");
+}
+
+/// FR87's second half: stock is not the room's and not the brand's.
+#[test]
+fn neither_a_room_nor_a_brand_is_a_holder_kind() {
+    for c in holder_kind::CODES {
+        assert!(
+            c.name != "room" && c.name != "brand",
+            "FR87: stock is held by neither a room nor a brand, so `{}` is not a holder kind",
+            c.name
+        );
+    }
+}
+
+/// Story 6.11 (FR95): a container is a thing with a grid -- a code set of
+/// its own, never the stock holders'.
+#[test]
+fn container_kind_matches_golden_and_is_unique() {
+    let golden = parse_golden(GOLDEN);
+    assert_matches_golden("container_kind", container_kind::CODES, &golden);
+    assert_unique("container_kind", container_kind::CODES);
+}
+
+#[test]
+fn a_container_kind_is_never_a_holder_kind() {
+    for c in container_kind::CODES {
+        assert!(
+            holder_kind::CODES.iter().all(|h| h.name != c.name),
+            "FR95: `{}` is a container kind, so it is not also a stock holder",
+            c.name
+        );
+    }
+}
+
+/// Story 4.3 (FR136): an actor is a character or a citizen -- an
+/// extensible set, so a third kind is a row insert.
+#[test]
+fn actor_kind_matches_golden_and_is_unique() {
+    let golden = parse_golden(GOLDEN);
+    assert_matches_golden("actor_kind", actor_kind::CODES, &golden);
+    assert_unique("actor_kind", actor_kind::CODES);
+    let names: BTreeSet<&str> = actor_kind::CODES.iter().map(|c| c.name).collect();
+    let expected: BTreeSet<&str> = ["character", "citizen"].into_iter().collect();
+    assert_eq!(names, expected, "FR136 names a player and a citizen actor");
 }

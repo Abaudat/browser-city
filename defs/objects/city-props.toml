@@ -3,17 +3,20 @@ id = 1
 key = "trash_bin"
 name = "Trash Bin"
 layer = "furniture"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Pier_Bin_1.png", x = 0, y = 0, w = 16, h = 16 }
+# Story 2.13: the street's own bin (a pier bin belongs on a pier, not a
+# shopping street -- Artie's direction) -- 16x32px, the extra 16px
+# upward overhang like every other tall prop.
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Small_Closed_Trash_Can.png", x = 0, y = 0, w = 16, h = 32 }
 width = 1
 height = 1
-# A sub-tile collider (FR128): the bin's own body, not its whole cell --
-# half a cell wide and tall, centred in the cell. Sub-cells relative to
+# A sub-tile collider (FR128): the bin's lower body where it meets the
+# ground, one sub-cell inside the art on each side. Sub-cells relative to
 # the footprint's own north-west sub-cell origin (its top-left, matching
 # the sprite's own pixel space -- not the same corner as the placed
 # anchor cell, which is the footprint's south-west corner; the two
 # coincide here because this object is one cell tall),
 # COLLIDER_SUBCELLS_PER_CELL (16) per cell.
-collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }
+collider = { x0 = 2, y0 = 7, x1 = 14, y1 = 15 }
 # FR148: where a player must stand to interact with the bin -- the whole
 # cell plus a quarter-cell skirt on every side, so you can use it from any
 # direction without standing exactly on its own collider.
@@ -31,9 +34,10 @@ layer = "furniture"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png", x = 0, y = 0, w = 32, h = 16 }
 width = 2
 height = 1
-# Story 2.4 (FR128): a bench blocks -- the whole two-cell seat/back
-# depth, leaving the front lip free to approach from.
-collider = { x0 = 0, y0 = 0, x1 = 32, y1 = 12 }
+# Story 2.4 (FR128): a bench blocks -- the seat and back where they are
+# drawn (the art starts five rows down), leaving the front lip free to
+# approach from.
+collider = { x0 = 0, y0 = 5, x1 = 32, y1 = 12 }
 tags = ["seating", "fixture"]
 
 [[object]]
@@ -43,11 +47,11 @@ name = "Shop Counter"
 layer = "furniture"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png", x = 0, y = 0, w = 48, h = 64 }
 width = 3
-# Story 2.3 (AC3): the counter's whole footprint blocks, whatever its own
-# width -- `full_cell_blocker`'s own worked case. FR148's reach is the
-# customer side of it: the full-width row immediately south, outside the
-# footprint entirely.
-archetype = "full_cell_blocker"
+# The bamboo body: column 0 is empty, the last two columns and the last
+# row are drop shadow. FR148's reach is the customer side of it: the
+# full-width row immediately south, outside the footprint entirely.
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 46, y1 = 15 }
 interact_at = { x0 = 0, y0 = 16, x1 = 48, y1 = 32 }
 tags = ["counter", "fixture"]
 
@@ -56,6 +60,10 @@ id = 4
 key = "lamppost"
 name = "Street Lamp"
 layer = "objects"
+# Story 2.13: this sprite already named the real street lamp -- the test
+# street itself was the one drawing the wrong art (a picnic table borrowed
+# over this def's own pole collider). The street now draws this rect
+# instead of borrowing another prop's asset (Artie's direction).
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png", x = 0, y = 0, w = 16, h = 64 }
 width = 1
 # Story 2.3 (AC3): the story 1.8 worked example, now the `pole`
@@ -69,8 +77,12 @@ id = 5
 key = "shop_window"
 name = "Shop Window"
 layer = "walls"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Balcony_Window_Left_1.png", x = 0, y = 0, w = 16, h = 16 }
-width = 1
+# Story 2.13: the shopfront window is one three-cell glazing unit, not a
+# one-cell balcony window -- both shops on the test street place it
+# three wide already (Artie's direction). 48x32px, exactly three tiles
+# wide.
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Window_1_Middle_Modular.png", x = 0, y = 0, w = 48, h = 32 }
+width = 3
 # Story 1.7 (FR121): a window wall tile -- solid like any other wall cell
 # (the whole cell), but drawn semi-transparently (`render.window_alpha`)
 # and retracted like any other front wall.
@@ -86,7 +98,11 @@ id = 6
 key = "wall_segment"
 name = "Wall Segment"
 layer = "walls"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Grass_Wall_1_1.png", x = 0, y = 0, w = 16, h = 16 }
+# Story 2.13: a generic city wall cell, not a garden grass wall (Artie's
+# direction) -- the same flush swatch (`WALL_TILE_V_FRAME`) the bridge's
+# own four parapet cells already drew from the interior Room Builder
+# sheet at the harness level.
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png", x = 0, y = 528, w = 16, h = 16 }
 width = 1
 # One plain, solid wall cell -- the generic segment a wall run (a
 # building facade, a bridge railing) is laid from, one cell at a time.
@@ -103,20 +119,21 @@ tags = ["wall", "wall_run"]
 id = 7
 key = "bridge_deck"
 name = "Bridge Deck"
-layer = "objects"
-# Placeholder art (Artie's own curation is a later story): dimensions
-# only need to satisfy the footprint match today, since story 2.6's
-# packer -- the first thing that actually draws from this rect -- does
-# not exist yet.
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Car_Left_1.png", x = 0, y = 0, w = 64, h = 48 }
-width = 4
-# The walkable span of a footbridge: four cells of deck, no collider at
-# all (FR128, story 2.3's `underfoot_flat` archetype), so an entity on
-# the deck's own floor walks the whole span and an entity on the floor
-# below passes under it unobstructed -- the deck occupies the same (x,
-# y) as the street beneath it and never contributes collision to it
-# (FR117). Story 2.4 (FR128): explicitly walkable, not merely absent a
-# collider -- `underfoot`.
+layer = "ground_objects"
+# Story 2.13 (Tim's direction): no `repeat` axis on `sprite` -- a surface
+# wider than its art is a one-cell object placed once per cell, the same
+# way `wall_segment`'s own parapet run already is. The deck is one real
+# 16x16 pavement tile (the same city sidewalk tile the street below it is
+# paved with); the test street places `BRIDGE_DECK_WIDTH` (4) of these,
+# one per deck column, rather than this def declaring a 4-wide footprint.
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+# The walkable span of a footbridge: no collider at all (FR128, story
+# 2.3's `underfoot_flat` archetype), so an entity on the deck's own floor
+# walks the whole span and an entity on the floor below passes under it
+# unobstructed -- the deck occupies the same (x, y) as the street beneath
+# it and never contributes collision to it (FR117). Story 2.4 (FR128):
+# explicitly walkable, not merely absent a collider -- `underfoot`.
 archetype = "underfoot_flat"
 tags = ["bridge", "underfoot", "fixture"]
 
@@ -125,7 +142,11 @@ id = 8
 key = "foot_stairs"
 name = "Foot Stairs"
 layer = "objects"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Small_Stairs.png", x = 0, y = 0, w = 16, h = 32 }
+# Story 2.13: concrete station steps, not garden steps -- a concrete
+# footbridge does not land on a garden stair (Artie's direction).
+# 16x48px, one cell wide. Placed nowhere since story 15.19 (the footbridge's
+# flights are `bridge_stairs_*`); the id is permanent (NFR31).
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small_2.png", x = 0, y = 0, w = 16, h = 48 }
 width = 1
 # A flight of steps between two floors: a physical, walkable prop, never
 # a teleport tile. Which floors it joins is a `floor_transition` row
@@ -134,3 +155,184 @@ width = 1
 # archetype).
 archetype = "underfoot_flat"
 tags = ["stairs", "underfoot", "fixture"]
+
+# One staircase seen as several objects, so the player walks between the
+# railings: behind the near one, in front of the far one. Both railings
+# overhang their own row by 16 px (the ball finial and the handrail's top).
+# An upright prop owns every pixel it draws, so the near railing is cut from
+# the railing-only sheet (the same stairwell with the treads removed): its
+# overhang row would otherwise fall into the flat-pass treads sprite and be
+# drawn under the player.
+# An `upright` seen face-on: it collides at its foot (the base rail) only.
+[[object]]
+id = 12
+key = "stairwell_top_railing"
+name = "Stairwell Top Railing"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 0, w = 48, h = 32 }
+width = 3
+archetype = "railing_foot"
+tags = ["stairs", "fixture", "upright"]
+
+[[object]]
+id = 13
+key = "stairwell_treads"
+name = "Stairwell Treads"
+layer = "ground_objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 32, w = 48, h = 16 }
+width = 3
+# Flat on the ground, so it is drawn on the flat pass and the player stands
+# visibly on it. Which floors the treads join is a `floor_transition` row
+# anchored on a tread cell, never a field here.
+archetype = "underfoot_flat"
+# Five treads, nosings 2 native px lower each, the first at 5 and the last at
+# 34 px from the open (east) edge (story 15.15): an actor on the flight is
+# drawn along that ramp.
+flight = { drop_px = 8, from_px = 5, to_px = 34 }
+tags = ["stairs", "underfoot", "fixture"]
+
+# Not `upright`: seen from the side, its foot is already its cell's south
+# edge. Its north side is the treads (#389, #391).
+[[object]]
+id = 14
+key = "stairwell_bottom_railing"
+name = "Stairwell Bottom Railing"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Railing_1.png", x = 0, y = 32, w = 48, h = 32 }
+width = 3
+archetype = "full_cell_blocker"
+tags = ["stairs", "fixture"]
+
+# The tall interior wall face of a north or south run, one cell wide. A
+# run N cells long is N placed rows. West and east runs and the retraction
+# stub are `wall_segment`'s flush swatch.
+[[object]]
+id = 15
+key = "wall_face"
+name = "Wall Face"
+layer = "walls"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png", x = 0, y = 528, w = 16, h = 48 }
+width = 1
+archetype = "full_cell_blocker"
+tags = ["wall", "wall_run"]
+
+# The platform's way up (story 15.11, 15.14): the flight the street stairwell
+# is seen from below. `Stairs_3` rises east natively; sheet rows 13-44 keep
+# all four tread nosings and are two cells deep, running under the south
+# railing to its foot. Rows 45-47 repeat the tread dither and are dropped so
+# the flat sprite is a whole number of cells. Flat, so it is drawn on the
+# flat pass and never over a player standing on it.
+[[object]]
+id = 16
+key = "platform_stair_flight"
+name = "Platform Stair Flight"
+layer = "ground_objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_3.png", x = 0, y = 13, w = 32, h = 32 }
+width = 2
+height = 2
+# Four nosings, 1 native px apart, the first at 5 and the last at 29 px from
+# the open (west) edge (story 15.15); the top rows of the art step 3 -> 0.
+flight = { drop_px = 3, from_px = 5, to_px = 29 }
+tags = ["stairs", "underfoot", "fixture"]
+
+# The flight's south handrail: upright, so its own `objects` row with a
+# collider that matches the art (the last pixel column is shadow). Not
+# `upright`: its north side is treads (#389, #391).
+[[object]]
+id = 17
+key = "platform_stair_railing"
+name = "Platform Stair Railing"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Railing.png", x = 0, y = 0, w = 48, h = 16 }
+width = 3
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 47, y1 = 16 }
+tags = ["stairs", "fixture"]
+
+[[object]]
+id = 18
+key = "registry_post"
+name = "Registry Post"
+layer = "objects"
+# Story 4.5 (FR143): the carrier of the offer to link an account -- a
+# council mailbox where papers are filed. Same footprint, collider and reach
+# as the street's bin: a 16x32 single, a small base collider, and the whole
+# cell plus a quarter-cell skirt to use it from.
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/22_Post_Office_Singles_16x16/22_Post_Office_16x16_Black_Mailbox_1_Front.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 4, y0 = 7, x1 = 14, y1 = 15 }
+interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
+tags = ["registry_post", "fixture"]
+
+# The well under the street stairwell's near railing: the east post's foot and
+# the dark floor seen between the balusters. Flat, anchored on the railing's
+# row; the railing stands on it. With the treads, the two railings and this,
+# the stairwell's rows add up to the whole `Stairs_Complete_2` sheet.
+[[object]]
+id = 19
+key = "stairwell_well"
+name = "Stairwell Well"
+layer = "ground_objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png", x = 0, y = 48, w = 48, h = 16 }
+width = 3
+archetype = "underfoot_flat"
+tags = ["stairs", "underfoot", "fixture"]
+
+# The footbridge's stairs (story 15.19): one front-on staircase on the deck's
+# east end, drawn once, on the street floor, as placed rows of the two crops
+# below (`bridge_stairs_tread` where it is walked, `bridge_stairs_abutment`
+# over the street cells nobody stands on); a riser line falls every 8 px. The
+# two flights are the walk data on top: undrawn, one per floor, sharing their
+# cells, and each shows the whole storey. The street flight rises to the
+# deck, the deck flight is the way back down. Which floors they join is a
+# `floor_transition` row per column, never a field here.
+[[object]]
+id = 20
+key = "bridge_stairs_street"
+name = "Bridge Stairs (street flight)"
+layer = "ground_objects"
+width = 2
+height = 2
+# Walked north from the foot row: the feet's screen rise over the 16 px ramp is
+# the 16 px run and the 24 px drop, five treads of 8 px.
+flight = { drop_px = 24, from_px = 0, to_px = 16 }
+tags = ["stairs", "bridge", "underfoot", "fixture"]
+
+[[object]]
+id = 21
+key = "bridge_stairs_deck"
+name = "Bridge Stairs (deck flight)"
+layer = "ground_objects"
+width = 2
+height = 2
+# Walked south from the deck: the same ramp, the other way.
+flight = { drop_px = 24, from_px = 0, to_px = 16 }
+tags = ["stairs", "bridge", "underfoot", "fixture"]
+
+# The treads where the stairs are walked: two nosings, the first tread's
+# surface down (the landing lip above it is not drawn: the deck tile is the
+# landing).
+[[object]]
+id = 23
+key = "bridge_stairs_tread"
+name = "Bridge Stairs Tread"
+layer = "ground_objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png", x = 0, y = 21, w = 32, h = 16 }
+width = 2
+height = 1
+tags = ["stairs", "bridge", "underfoot", "fixture"]
+
+# The treads over the street cells the stairs' art covers on screen above the
+# flights: drawn and closed, one row each, so a walker never stands in front
+# of treads it is not climbing.
+[[object]]
+id = 22
+key = "bridge_stairs_abutment"
+name = "Bridge Stairs Abutment"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png", x = 0, y = 29, w = 32, h = 16 }
+width = 2
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 32, y1 = 16 }
+tags = ["stairs", "bridge", "fixture"]

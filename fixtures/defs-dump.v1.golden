@@ -102,7 +102,7 @@ balance generation.building_types.profession_count_mean_tolerance_percent value=
 balance generation.building_types.profession_count_per_city_min value=40 min=1 max=1000
 balance generation.building_types.target_profession_count value=69 min=1 max=1000
 balance generation.building_types.target_workplaces_per_million_cells value=1312 min=1 max=1000000
-balance generation.building_types.workplace_count_tolerance_percent value=50 min=1 max=100
+balance generation.building_types.workplace_count_tolerance_percent value=40 min=1 max=100
 balance generation.building_types.workplace_mean_count_tolerance_percent value=3 min=0 max=100
 balance generation.envelopes.commercial_min_interior_depth_cells value=6 min=1 max=64
 balance generation.envelopes.commercial_min_interior_width_cells value=6 min=1 max=64
@@ -144,12 +144,13 @@ balance generation.land_use.density_peak_offset_min_pct value=15 min=0 max=50
 balance generation.land_use.institutional_max_pocket_share_percent value=6 min=1 max=100
 balance generation.land_use.institutional_min_pockets value=3 min=1 max=16
 balance generation.land_use.max_leaf_cells value=6 min=2 max=128
-balance generation.land_use.max_recursion_depth value=8 min=1 max=20
+balance generation.land_use.max_recursion_depth value=20 min=1 max=20
 balance generation.land_use.min_leaf_cells value=3 min=1 max=64
 balance generation.land_use.share_commercial_pct value=18 min=0 max=100
 balance generation.land_use.share_industrial_pct value=14 min=0 max=100
-balance generation.land_use.share_institutional_pct value=10 min=0 max=100
-balance generation.land_use.share_residential_pct value=58 min=0 max=100
+balance generation.land_use.share_institutional_pct value=7 min=0 max=100
+balance generation.land_use.share_residential_pct value=61 min=0 max=100
+balance generation.land_use.share_tolerance_pct value=6 min=0 max=100
 balance generation.land_use.split_jitter_pct value=30 min=0 max=45
 balance generation.plots.commercial_row_depth_cells value=12 min=4 max=64
 balance generation.plots.commercial_width_max_cells value=11 min=2 max=64
@@ -164,7 +165,7 @@ balance generation.plots.institutional_width_max_cells value=14 min=2 max=64
 balance generation.plots.institutional_width_min_cells value=12 min=2 max=64
 balance generation.plots.max_core_depth_cells value=8 min=2 max=64
 balance generation.plots.max_core_depth_periphery_cells value=64 min=2 max=128
-balance generation.plots.max_open_percent_by_area value=40 min=0 max=100
+balance generation.plots.max_open_percent_by_area value=46 min=0 max=100
 balance generation.plots.max_open_percent_by_count value=5 min=0 max=100
 balance generation.plots.max_unplotted_percent value=2 min=0 max=100
 balance generation.plots.open_min_side_cells value=8 min=1 max=64
@@ -179,32 +180,47 @@ balance generation.streets.arterial_count_ns_max value=3 min=0 max=4
 balance generation.streets.arterial_count_ns_min value=2 min=0 max=4
 balance generation.streets.arterial_jitter_pct value=60 min=0 max=90
 balance generation.streets.arterial_width_cells value=12 min=2 max=64
-balance generation.streets.block_size_max_cells value=128 min=4 max=512
+balance generation.streets.block_size_max_cells value=120 min=4 max=512
 balance generation.streets.block_size_min_cells value=40 min=4 max=512
-balance generation.streets.detour_long_pair_cells value=256 min=1 max=2048
 balance generation.streets.junction_min_separation_cells value=28 min=1 max=256
 balance generation.streets.lane_width_cells value=4 min=2 max=64
-balance generation.streets.max_block_depth_max_cells value=120 min=2 max=1024
+balance generation.streets.max_block_depth_max_cells value=104 min=2 max=1024
 balance generation.streets.max_block_depth_min_cells value=40 min=2 max=1024
-balance generation.streets.max_detour_excess_cells value=320 min=1 max=2048
-balance generation.streets.max_detour_percent value=200 min=100 max=500
+balance generation.streets.max_detour_excess_cells value=400 min=1 max=2048
+balance generation.streets.max_detour_percent value=200 min=101 max=500
 balance generation.streets.max_lane_splits value=4 min=0 max=16
 balance generation.streets.max_recursion_depth value=12 min=1 max=64
 balance generation.streets.max_street_splits_per_superblock value=1 min=0 max=16
 balance generation.streets.min_block_depth_cells value=16 min=2 max=256
 balance generation.streets.min_distinct_block_sizes value=3 min=1 max=16
 balance generation.streets.p99_detour_percent value=200 min=100 max=500
-balance generation.streets.peripheral_low_band_floor_percent value=70 min=1 max=100
+balance generation.streets.peripheral_low_band_floor_percent value=60 min=1 max=100
 balance generation.streets.peripheral_pooled_min_ratio_percent value=150 min=100 max=1000
 balance generation.streets.split_jitter_pct value=25 min=0 max=45
 balance generation.streets.street_width_cells value=8 min=2 max=64
+balance generation.streets.thin_strip_long_side_percent value=150 min=100 max=400
+balance identity.link_prompt_cooloff_days value=7 min=1 max=365
+balance identity.link_prompt_min_character_age_days value=1 min=0 max=365
+balance l3.early_arrival_bound_milliminutes value=0 min=0 max=1000
+balance l3.path_box_margin_cells value=6 min=1 max=64
+balance l3.path_max_cells value=65536 min=64 max=16777216
+balance l3.path_node_budget value=4096 min=64 max=1000000
+balance l3.stall_bound_ms value=250 min=1 max=5000
+balance l3.walk_pace_band_percent value=15 min=1 max=50
+balance movement.gait_stride_millicells_per_cycle value=1300 min=200 max=8000
 balance movement.player_body_height_subcells value=4 min=1 max=16
 balance movement.player_body_width_subcells value=8 min=1 max=16
 balance movement.walk_speed_millicells_per_s value=2200 min=100 max=20000
+balance net.player_interpolation_delay_ms value=250 min=100 max=1000
+balance net.player_position_hz value=10 min=1 max=20
 balance render.highlight_alpha value=50 min=1 max=100
 balance render.storey_height_px value=48 min=1 max=256
 balance render.tile_size_px value=16 min=1 max=64
 balance render.window_alpha value=50 min=1 max=99
+balance routing.floor_change_penalty_milliminutes value=1000 min=0 max=600000
+balance routing.speed_percent.bike value=200 min=100 max=1000
+balance routing.speed_percent.transit value=300 min=100 max=1000
+balance routing.speed_percent.walk value=100 min=100 max=100
 body body_01 id=1 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_01.png
 body body_02 id=2 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_02.png
 body body_03 id=3 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies/16x16/Body_03.png
@@ -219,6 +235,12 @@ body kid_body_2_kid id=11 family=kid pool=civilian sheet=ModernTileset/modernint
 body kid_body_3_kid id=12 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_3_kid.png
 body kid_body_4_kid id=13 family=kid pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Bodies_kids/16x16/Body_4_kid.png
 chain plastic_bottle id=1 links=[sanitation_worker]
+denomination coin_1 face_value=1
+denomination coin_2 face_value=2
+denomination coin_5 face_value=5
+denomination note_10 face_value=10
+denomination note_20 face_value=20
+denomination note_50 face_value=50
 eyes eyes_01 id=1 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_01.png
 eyes eyes_02 id=2 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_02.png
 eyes eyes_03 id=3 family=adult pool=civilian sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Eyes/16x16/Eyes_03.png
@@ -462,19 +484,39 @@ hairstyle kid_hairstyle_kid_6_2 id=227 family=kid sheet=ModernTileset/moderninte
 hairstyle kid_hairstyle_kid_6_3 id=228 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_3.png style=6 color=3 rare=false
 hairstyle kid_hairstyle_kid_6_4 id=229 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_4.png style=6 color=4 rare=false
 hairstyle kid_hairstyle_kid_6_5 id=230 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_5.png style=6 color=5 rare=true
-item bottle id=1
-item recycled_glass id=2
-object bridge_deck id=7 name=Bridge Deck layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/10_Vehicles_Singles_16x16/ME_Singles_Vehicles_16x16_Car_Left_1.png:0,0,64,48 height=1 width=4 collider=none interact_at=none window=false tags=[7,9,15]
-object foot_stairs id=8 name=Foot Stairs layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Small_Stairs.png:0,0,16,32 height=1 width=1 collider=none interact_at=none window=false tags=[8,9,15]
+item bottle id=1 unit=0 shelf_life_minutes=0 width=1 height=1
+item coin_1 id=3 unit=0 shelf_life_minutes=0 width=1 height=1
+item coin_2 id=4 unit=0 shelf_life_minutes=0 width=1 height=1
+item coin_5 id=5 unit=0 shelf_life_minutes=0 width=1 height=1
+item note_10 id=6 unit=0 shelf_life_minutes=0 width=1 height=1
+item note_20 id=7 unit=0 shelf_life_minutes=0 width=1 height=1
+item note_50 id=8 unit=0 shelf_life_minutes=0 width=1 height=1
+item recycled_glass id=2 unit=0 shelf_life_minutes=0 width=1 height=1
+object bridge_deck id=7 name=Bridge Deck layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[7,9,15]
+object bridge_stairs_abutment id=22 name=Bridge Stairs Abutment layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png:0,29,32,16 height=1 width=2 collider=0,0,32,16 interact_at=none window=false tags=[7,8,15]
+object bridge_stairs_deck id=21 name=Bridge Stairs (deck flight) layer=7 sprite=none height=2 width=2 collider=none interact_at=none window=false tags=[7,8,9,15]
+object bridge_stairs_street id=20 name=Bridge Stairs (street flight) layer=7 sprite=none height=2 width=2 collider=none interact_at=none window=false tags=[7,8,9,15]
+object bridge_stairs_tread id=23 name=Bridge Stairs Tread layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png:0,21,32,16 height=1 width=2 collider=none interact_at=none window=false tags=[7,8,9,15]
+object floor_pale_stone id=24 name=Pale Stone Floor layer=0 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png:208,560,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,13]
+object foot_stairs id=8 name=Foot Stairs layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small_2.png:0,0,16,48 height=1 width=1 collider=none interact_at=none window=false tags=[8,9,15]
 object grass_ground id=9 name=Grass layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/1_Terrains_and_Fences_Singles_16x16/ME_Singles_Terrains_and_Fences_16x16_Grass_1_22.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,10]
-object lamppost id=4 name=Street Lamp layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png:0,0,16,64 height=1 width=1 collider=6,10,10,14 interact_at=none window=false tags=[4,15]
-object park_bench id=2 name=Park Bench layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png:0,0,32,16 height=1 width=2 collider=0,0,32,12 interact_at=none window=false tags=[2,15]
+object lamppost id=4 name=Street Lamp layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png:0,0,16,64 height=1 width=1 collider=2,7,14,16 interact_at=none window=false tags=[4,15]
+object park_bench id=2 name=Park Bench layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png:0,0,32,16 height=1 width=2 collider=0,5,32,12 interact_at=none window=false tags=[2,15]
+object platform_stair_flight id=16 name=Platform Stair Flight layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_3.png:0,13,32,32 height=2 width=2 collider=none interact_at=none window=false tags=[8,9,15]
+object platform_stair_railing id=17 name=Platform Stair Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Railing.png:0,0,48,16 height=1 width=3 collider=0,0,47,16 interact_at=none window=false tags=[8,15]
+object registry_post id=18 name=Registry Post layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/22_Post_Office_Singles_16x16/22_Post_Office_16x16_Black_Mailbox_1_Front.png:0,0,16,32 height=1 width=1 collider=4,7,14,15 interact_at=-4,-4,20,20 window=false tags=[15,35]
 object road_asphalt id=11 name=Road layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_26.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,12]
-object shop_counter id=3 name=Shop Counter layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png:0,0,48,64 height=1 width=3 collider=0,0,48,16 interact_at=0,16,48,32 window=false tags=[3,15]
-object shop_window id=5 name=Shop Window layer=4 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Balcony_Window_Left_1.png:0,0,16,16 height=1 width=1 collider=0,0,16,16 interact_at=none window=true tags=[5,6,16]
+object shop_counter id=3 name=Shop Counter layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png:0,0,48,64 height=1 width=3 collider=1,0,46,15 interact_at=0,16,48,32 window=false tags=[3,15]
+object shop_window id=5 name=Shop Window layer=4 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Window_1_Middle_Modular.png:0,0,48,32 height=1 width=3 collider=0,0,48,16 interact_at=none window=true tags=[5,6,16]
 object sidewalk_pavement id=10 name=Sidewalk layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_26.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,11]
-object trash_bin id=1 name=Trash Bin layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Pier_Bin_1.png:0,0,16,16 height=1 width=1 collider=4,4,12,12 interact_at=-4,-4,20,20 window=false tags=[1,15]
-object wall_segment id=6 name=Wall Segment layer=4 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Grass_Wall_1_1.png:0,0,16,16 height=1 width=1 collider=0,0,16,16 interact_at=none window=false tags=[6,16]
+object stairwell_bottom_railing id=14 name=Stairwell Bottom Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Railing_1.png:0,32,48,32 height=1 width=3 collider=0,0,48,16 interact_at=none window=false tags=[8,15]
+object stairwell_top_railing id=12 name=Stairwell Top Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,0,48,32 height=1 width=3 collider=0,11,48,16 interact_at=none window=false tags=[8,15,34]
+object stairwell_treads id=13 name=Stairwell Treads layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,32,48,16 height=1 width=3 collider=none interact_at=none window=false tags=[8,9,15]
+object stairwell_well id=19 name=Stairwell Well layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,48,48,16 height=1 width=3 collider=none interact_at=none window=false tags=[8,9,15]
+object threshold_arch_slate id=25 name=Slate Threshold layer=4 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Arched_Entryways_16x16.png:104,352,16,32 height=1 width=1 collider=none interact_at=none window=false tags=[9,14,16]
+object trash_bin id=1 name=Trash Bin layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Small_Closed_Trash_Can.png:0,0,16,32 height=1 width=1 collider=2,7,14,15 interact_at=-4,-4,20,20 window=false tags=[1,15]
+object wall_face id=15 name=Wall Face layer=4 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png:0,528,16,48 height=1 width=1 collider=0,0,16,16 interact_at=none window=false tags=[6,16]
+object wall_segment id=6 name=Wall Segment layer=4 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png:0,528,16,16 height=1 width=1 collider=0,0,16,16 interact_at=none window=false tags=[6,16]
 outfit addon_outfit_firefighter id=133 family=adult sheet=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Firefighter_16x16.png pool=role_only hides_hairstyle=false
 outfit addon_outfit_military_general id=134 family=adult sheet=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Military_General_16x16.png pool=costume hides_hairstyle=false
 outfit addon_outfit_postman id=135 family=adult sheet=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Postman_16x16.png pool=role_only hides_hairstyle=false
@@ -692,20 +734,20 @@ profession usher id=30
 profession warehouse_worker id=40
 profession yard_worker id=48
 recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]
-tag basin id=49 role=none
-tag bed id=47 role=none
+tag basin id=51 role=none
+tag bed id=49 role=none
 tag bridge id=7 role=none
 tag cafe id=26 role=none
-tag cooker id=48 role=none
-tag cooking id=39 role=none
+tag cooker id=50 role=none
+tag cooking id=41 role=none
 tag council id=21 role=none
 tag counter id=3 role=none
 tag depot id=20 role=none
-tag desk id=51 role=none
-tag dining id=41 role=none
+tag desk id=53 role=none
+tag dining id=43 role=none
 tag dwelling id=18 role=none
 tag entrance id=17 role=none
-tag fixture id=15 role=[2,3]
+tag fixture id=15 role=[2,3,7]
 tag floor id=13 role=[0]
 tag form_high id=33 role=none
 tag form_low id=31 role=none
@@ -713,35 +755,37 @@ tag form_mid id=32 role=none
 tag ground id=10 role=[0]
 tag hospital id=22 role=none
 tag lighting id=4 role=none
-tag making id=45 role=none
+tag making id=47 role=none
 tag market id=30 role=none
 tag municipal_service id=19 role=none
 tag office id=27 role=none
 tag pavement id=11 role=[0]
-tag private id=36 role=none
-tag public id=34 role=none
+tag private id=38 role=none
+tag public id=36 role=none
+tag registry_post id=35 role=none
 tag road id=12 role=[0]
-tag room id=37 role=none
-tag seated_service id=43 role=none
+tag room id=39 role=none
+tag seated_service id=45 role=none
 tag seating id=2 role=none
 tag shelter id=24 role=none
 tag shop id=25 role=none
 tag shopfront id=5 role=none
-tag sleeping id=38 role=none
-tag staff id=35 role=none
+tag sleeping id=40 role=none
+tag staff id=37 role=none
 tag stairs id=8 role=none
-tag stock id=46 role=none
-tag table_set id=50 role=none
+tag stock id=48 role=none
+tag table_set id=52 role=none
 tag threshold id=14 role=[4]
-tag trading id=42 role=none
+tag trading id=44 role=none
 tag underfoot id=9 role=none
+tag upright id=34 role=none
 tag wall id=6 role=[4]
 tag wall_run id=16 role=none
 tag warehouse id=29 role=none
-tag washing id=40 role=none
+tag washing id=42 role=none
 tag waste id=1 role=none
 tag welfare_office id=23 role=none
-tag workbench id=52 role=none
-tag working id=44 role=none
+tag workbench id=54 role=none
+tag working id=46 role=none
 tag workshop id=28 role=none
 uniform sanitation_worker_uniform id=1 profession=sanitation_worker outfit=none accessory=addon_accessory_21_worker_jacket

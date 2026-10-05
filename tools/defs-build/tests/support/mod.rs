@@ -66,7 +66,7 @@ pub fn merged_tree(category: &str) -> Vec<(PathBuf, String)> {
 pub fn object_sheet_dims() -> BTreeMap<String, (u32, u32)> {
     [(
         "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/trash-bin-test.png",
-        (16, 16),
+        (16, 32),
     )]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -82,19 +82,33 @@ pub fn sheet_dims() -> BTreeMap<String, (u32, u32)> {
     all
 }
 
+/// RGBA for a `w`x`h` fixture sheet whose only solid pixels are one 8x8
+/// block at columns 4..12, rows 4..12 -- the art every valid fixture
+/// collider `(4, 4)-(12, 12)` agrees with, and deliberately not full
+/// width, so a check that ignores pixels cannot pass. Built in code, so
+/// the art is hand-checkable here; no committed binary.
+#[allow(dead_code)]
+pub fn agreeing_art_rgba(w: u32, h: u32) -> Vec<u8> {
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    for y in 4..12.min(h) {
+        for x in 4..12.min(w) {
+            let i = ((y * w + x) * 4) as usize;
+            rgba[i..i + 4].copy_from_slice(&[200, 200, 200, 255]);
+        }
+    }
+    rgba
+}
+
 /// Real PNG bytes for every path [`object_sheet_dims`] declares -- story
-/// 2.6's atlas packer decodes real pixels, so `build()` needs more than a
-/// declared `(width, height)` for an object's own sheet (appearance
-/// sheets are never packed by this story; only `object_sheet_dims`'s
-/// paths need bytes). A solid colour is enough: these tests exercise
-/// `parse`/`validate`/the packer's own grouping and pass-through, never
-/// pixel content.
+/// 2.6's atlas packer decodes real pixels, and the build's silhouette
+/// check reads them: the sheet holds [`agreeing_art_rgba`]'s block in its
+/// top 16 rows and nothing below, so a sprite rect pointed at the lower
+/// half has a fully transparent band.
 pub fn object_sheet_bytes() -> BTreeMap<String, Vec<u8>> {
     object_sheet_dims()
         .into_iter()
         .map(|(path, (w, h))| {
-            let rgba = vec![200u8; (w * h * 4) as usize];
-            let bytes = defs_build::atlas::image::encode_rgba8(w, h, &rgba)
+            let bytes = defs_build::atlas::image::encode_rgba8(w, h, &agreeing_art_rgba(w, h))
                 .expect("fixture PNG encode must succeed");
             (path, bytes)
         })
@@ -131,15 +145,26 @@ pub fn appearance_sheet_dims() -> BTreeMap<String, (u32, u32)> {
     .collect()
 }
 
-/// The `name -> code` layer ladder the valid tree's own objects resolve
+/// The code sets (layer ladder, item units) the valid tree resolves
 /// against -- a small, fixed subset of the real codes golden (Quentin's
 /// direction: these integration tests exercise `validate`/`build`'s own
 /// logic through real fixture trees, never `fsio`'s filesystem reads).
-pub fn layer_codes() -> BTreeMap<String, u32> {
-    [("furniture", 2u32), ("objects", 3u32), ("walls", 4u32)]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect()
+pub fn code_tables() -> defs_build::codes::CodeTables {
+    defs_build::codes::CodeTables::from_entries(&[
+        ("layer", "furniture", 2),
+        ("layer", "objects", 3),
+        ("layer", "walls", 4),
+        ("layer", "ground_objects", 7),
+        ("unit", "piece", 0),
+        ("unit", "gram", 1),
+        ("unit", "millilitre", 2),
+    ])
+    .with_layer_ranks(&[
+        ("furniture", 10),
+        ("objects", 20),
+        ("walls", 30),
+        ("ground_objects", 5),
+    ])
 }
 
 /// `""` (never `defs_build::model::SPRITE_SHEET_ALLOWED_ROOT`): every
@@ -160,7 +185,7 @@ pub fn build_err(category: &str) -> defs_build::DefsError {
         &sheet_dims(),
         &object_sheet_bytes(),
         &appearance_sheet_bytes(),
-        &layer_codes(),
+        &code_tables(),
         "",
         "test-version",
     )
@@ -186,7 +211,7 @@ pub fn build_err_enforcing_sheet_root(category: &str) -> defs_build::DefsError {
         &sheet_dims(),
         &object_sheet_bytes(),
         &appearance_sheet_bytes(),
-        &layer_codes(),
+        &code_tables(),
         defs_build::model::SPRITE_SHEET_ALLOWED_ROOT,
         "test-version",
     )

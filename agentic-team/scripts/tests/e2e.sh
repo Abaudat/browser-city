@@ -10,7 +10,7 @@
 # checkout's HEAD) and points BC_BASE_BRANCH at it via the env file every
 # bc-* process sources, creates
 # a throwaway parent+sub issue on the board, ticks `orchestrator.sh` in a
-# loop (printing exit/reason/current every tick, recording every Status
+# loop (printing exit/reason/active every tick, recording every Status
 # transition with a timestamp) until the sub-issue reaches Done or 60
 # minutes pass, drills a simulated Orca restart once along the way (closes
 # every role terminal, then verifies the next tick brings each uuid back as
@@ -258,8 +258,11 @@ CUR_SPRINT="$(project_iteration_for_date)"
 CUR_SPRINT_ID="$(printf '%s' "$CUR_SPRINT" | "$JQ" -r '.id')"
 [ -n "$CUR_SPRINT_ID" ] && [ "$CUR_SPRINT_ID" != "null" ] \
   || { echo "=== e2e: FATAL: no current sprint iteration for today ==="; exit 2; }
-project_set_iteration "$PARENT_NUM" "$CUR_SPRINT_ID"
-project_set_iteration "$SUB_NUM" "$CUR_SPRINT_ID"
+# Neither issue is put on the sprint: the orchestrator scopes the story in
+# itself when it picks it, and that is part of what this run exercises. What
+# fences the run in is BC_ONLY_ISSUE -- the pick is board-wide, so without it
+# the first tick would start whatever real story outranks a Standard one.
+printf 'BC_ONLY_ISSUE=%s\n' "$SUB_NUM" >> "$ENV_FILE"
 project_set_single "$PARENT_NUM" Status Backlog
 project_set_single "$SUB_NUM" Status Backlog
 project_set_single "$PARENT_NUM" Priority Standard
@@ -295,8 +298,8 @@ while :; do
   tick=$((tick + 1))
   reason="$(bash "$ORCHESTRATOR" 2>>"$TMP/e2e-orchestrator-stderr.log")"
   ec=$?
-  cur_out="$(bci current 2>/dev/null || true)"
-  echo "tick $tick: exit=$ec reason=$reason current=$cur_out"
+  cur_out="$(bci active 2>/dev/null || true)"
+  echo "tick $tick: exit=$ec reason=$reason active=$cur_out"
 
   # If the drill's stop-all ran last iteration, this tick is the "reboot"
   # tick -- verify (b) uuids are back, (c) exactly one terminal each, (d)
@@ -322,7 +325,7 @@ while :; do
   fi
 
   # figure out the sub-issue's actual status (works even once it's closed,
-  # unlike `bci current` which only sees active statuses).
+  # unlike `bci active` which only sees active statuses).
   sub_status="$(project_field_get "$SUB_NUM" Status 2>/dev/null || true)"
   sub_state="$("$GH" api "repos/$BC_REPO/issues/$SUB_NUM" --jq .state 2>/dev/null || true)"
 

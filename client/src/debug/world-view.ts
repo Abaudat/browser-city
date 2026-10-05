@@ -15,15 +15,30 @@
 // that is not there.
 
 import type { Drawable } from "../render/sort-key";
-import type { CollisionGridQuery } from "../world/collision-grid";
+import type { ColliderRectSubcells, CollisionGridQuery } from "../world/collision-grid";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 
-export type { CellBounds, PlacedObjectView };
+export type { CellBounds, ColliderRectSubcells, PlacedObjectView };
+
+/** One live L3 body as the L3 overlay reads it (story 5.1). */
+export interface L3BodyView {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  readonly floor: number;
+  /** Segments walked straight for want of a path. */
+  readonly fallbacks: number;
+  /** Some segment is walked outside the walking-pace band. */
+  readonly paceOutOfBand: boolean;
+}
 
 export interface DebugWorldView extends CollisionGridQuery {
   /** `render.tile_size_px`, resolved from `defs/` by the caller -- never
    * a literal anywhere under `debug/`. */
   readonly tileSizePx: number;
+  /** The scene's world zoom -- the snap granularity of a drawable's
+   * screen position (`worldPointPx`). */
+  readonly zoom: number;
   /** `render.storey_height_px`, same rule (FR124's floor offset). */
   readonly storeyHeightPx: number;
   /** `defs/`'s own generated `COLLIDER_SUBCELLS_PER_CELL`. */
@@ -39,6 +54,13 @@ export interface DebugWorldView extends CollisionGridQuery {
    * the ones the collision grid has nothing to say about
    * (`world/world-index.ts`'s own `objects`). */
   objects(bounds: CellBounds): Iterable<PlacedObjectView>;
+  /** The player's own collision body right now, in absolute sub-cells --
+   * `world/movement.ts`'s own `bodyRect`, read from the scene, never a
+   * second computation from a `MovementConfig` here (story 15.4,
+   * Tim/Quentin's direction). What the FR165 collision overlay draws as
+   * the fourth, distinct-stroke entry alongside the three collider
+   * states. */
+  viewerBody(): ColliderRectSubcells;
   /** The y-sorted pool's own members, as the comparator sees them -- the
    * `Drawable`s themselves, nothing richer, so an overlay can read a sort
    * key but never a sprite. */
@@ -49,4 +71,6 @@ export interface DebugWorldView extends CollisionGridQuery {
    * overlay that re-sorts to decide what to print could never show a
    * wrong order. */
   orderOf(stableId: bigint): number | undefined;
+  /** Every live L3 body: what each says about itself, never recomputed here. */
+  l3Bodies(): readonly L3BodyView[];
 }

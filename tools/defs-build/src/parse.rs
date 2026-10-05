@@ -47,6 +47,7 @@ fn check_filename(path: &Path) -> Result<(), DefsError> {
 enum Kind {
     Objects,
     Items,
+    Denominations,
     Recipes,
     Professions,
     Chains,
@@ -76,6 +77,7 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
     match kind_str {
         "objects" => Ok(Kind::Objects),
         "items" => Ok(Kind::Items),
+        "denominations" => Ok(Kind::Denominations),
         "recipes" => Ok(Kind::Recipes),
         "professions" => Ok(Kind::Professions),
         "chains" => Ok(Kind::Chains),
@@ -92,7 +94,7 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
             1,
             1,
             format!(
-                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/recipes/professions/chains/building-types/room-types/balance/atlas/appearance/tags/rules/archetypes"
+                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/denominations/recipes/professions/chains/building-types/room-types/balance/atlas/appearance/tags/rules/archetypes"
             ),
         )),
     }
@@ -130,13 +132,14 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         key: located(text, &o.key),
                         name: located(text, &o.name),
                         layer: located(text, &o.layer),
-                        sprite: located(text, &o.sprite),
+                        sprite: o.sprite.as_ref().map(|s| located(text, s)),
                         width: o.width,
                         height: o.height,
                         collider: o.collider.as_ref().map(|c| located(text, c)),
                         interact_at: o.interact_at.as_ref().map(|c| located(text, c)),
                         window: o.window,
                         tags: o.tags,
+                        flight: o.flight.as_ref().map(|f| located(text, f)),
                         archetype: o.archetype.as_ref().map(|a| located(text, a)),
                     });
                 }
@@ -148,6 +151,20 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         path: path.clone(),
                         id: located(text, &i.id),
                         key: located(text, &i.key),
+                        unit: located(text, &i.unit),
+                        shelf_life_minutes: located(text, &i.shelf_life_minutes),
+                        bulk_width: located(text, &i.bulk.width),
+                        bulk_height: located(text, &i.bulk.height),
+                    });
+                }
+            }
+            Kind::Denominations => {
+                let file: DenominationFile = parse_toml(path, text)?;
+                for d in file.denomination {
+                    raw.denominations.push(DenominationEntry {
+                        path: path.clone(),
+                        item: located(text, &d.item),
+                        face_value: located(text, &d.face_value),
                     });
                 }
             }
@@ -423,6 +440,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         key: located(text, &a.key),
                         height: a.height.as_ref().map(|h| located(text, h)),
                         collider_inset: a.collider_inset.as_ref().map(|c| located(text, c)),
+                        foot: a.foot,
                     });
                 }
             }
@@ -459,7 +477,7 @@ mod tests {
         assert_eq!(raw.objects[0].name.value, "Trash Bin");
         assert_eq!(raw.objects[0].layer.value, "furniture");
         assert_eq!(
-            raw.objects[0].sprite.value.sheet,
+            raw.objects[0].sprite.as_ref().unwrap().value.sheet,
             "fixtures/objects/test.png"
         );
         assert_eq!(raw.objects[1].width, 2);

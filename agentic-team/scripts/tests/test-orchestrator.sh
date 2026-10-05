@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/orchestrator.sh: one scenario per edge
-# of agentic-team/high-level-agentic-flow.mmd (demo-active/demo-has-feedback/closing-sprint/starting-next-sprint, sprint-over/creating-demo-issue, starting-dev-cycle,
+# of agentic-team/high-level-agentic-flow.mmd (demo-active/demo-has-feedback/closing-sprint, sprint-over/creating-demo-issue, starting-dev-cycle,
 # leads-analysed/dispatching-implementation, pr-opened/opening-leads-review, breaker-tripped-tripping-breaker, task-requested/judging-task-request, ci-status/dispatching-ci-fix, crew-addressed/reopening-leads-review), plus the two crash-idempotency repairs and
-# the two hard-failure propagations (bc-issue current's exit 2, an empty
-# backlog). Runs orchestrator.sh as a real subprocess -- BC_FAKE drives the
+# an empty backlog, the parallel lanes (every active sub-issue advanced in
+# one tick, a new one started beside them under BC_MAX_ACTIVE, a broken lane
+# isolated from the rest) and the merge conflicts they make possible, and story 4.19's adopt-alerts call at starting-dev-cycle (runs
+# before next's own pick reaches the board, and its own failure is broken,
+# not swallowed). Runs orchestrator.sh as a real subprocess -- BC_FAKE drives the
 # level-1 primitives, the level-2 scripts run for real underneath it, and
 # BC_WAKE_REASON is pointed at a per-scenario file so the written reason
 # line can be checked alongside stdout and the exit code.
@@ -32,7 +35,12 @@ run() {
   [ -f "$fake/rate_monitor.json" ] || printf '%s' \
     '{"overallStatus":"allowed","session":{"utilization":0.10,"reset":"1788123600"},"weekly":{"utilization":0.20,"reset":"1788512400"}}' \
     > "$fake/rate_monitor.json"
-  BC_FAKE="$fake" BC_NOW="$now" BC_WAKE_REASON="$fake/reason.txt" bash "$ORCH"
+  # Most scenarios below are about one lane's branch of the flowchart, and
+  # assert that lane's line alone -- so unless a scenario says otherwise the
+  # cap is one, and an active lane leaves no room for a dev cycle to start
+  # beside it. The parallel scenarios at the end set their own (RUN_CAP --
+  # not BC_MAX_ACTIVE, which config.sh above has already defaulted).
+  BC_FAKE="$fake" BC_NOW="$now" BC_WAKE_REASON="$fake/reason.txt" BC_MAX_ACTIVE="${RUN_CAP:-1}" bash "$ORCH"
 }
 
 log_has()   { grep -Eq -- "$2" "$1"; }                # <file> <ere>
@@ -85,6 +93,7 @@ echo "budget-available: the gate is the first branch, and nothing runs behind it
 budget_board() { # <dir> -- a board with work the tick would otherwise do
   write_iterations "$1"
   echo '[]' > "$1/project_items.json"
+  echo '[]' > "$1/gh_issue_list_label.json"
 }
 
 F_BUDGET_SPENT="$(fake_dir)"
@@ -133,6 +142,7 @@ echo "sanity: the reason file carries exactly what stdout printed"
 F0="$(fake_dir)"
 write_iterations "$F0"
 echo '[]' > "$F0/project_items.json"
+echo '[]' > "$F0/gh_issue_list_label.json"
 OUT="$(run "$F0" "$NOW_MIDSPRINT")"
 check_out "sanity: backlog empty -> starting-dev-cycle sleep, exit 1" 1 "starting-dev-cycle sleep backlog empty" run "$F0" "$NOW_MIDSPRINT"
 check_out "sanity: BC_WAKE_REASON file matches stdout" 0 "$OUT" cat "$F0/reason.txt"
@@ -167,6 +177,17 @@ DEMO_ONLY='[{number:41,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",p
   "$JQ" -n -c '[{number:41,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null},{number:43,title:"Tighten the parry window",state:"OPEN",status:"Backlog",priority:"Standard",size:"S",sprintId:null,sprintTitle:null,labels:["story"],isParent:false,parent:null}]'
 } > "$F_INTEGRATING/project_items.seq"
 echo '[{"id":1,"body":"Parrying feels floaty — can we tighten it?"}]' > "$F_INTEGRATING/gh_issue_comments.41.json"
+# Scotty's own write-feedback-reply call, standing in via the overlay trick
+# creating-demo-issue's own fixture uses below: the thread read back AFTER
+# his session carries his reply comment, marked so it is not fed back as
+# feedback on a retry.
+mkdir -p "$F_INTEGRATING/bc_scotty.judge-feedback.md.d"
+cat > "$F_INTEGRATING/bc_scotty.judge-feedback.md.d/gh_issue_comments.41.json" <<'JSON'
+[
+  {"id":1,"body":"Parrying feels floaty — can we tighten it?"},
+  {"id":2,"body":"### Scotty's reply\n\nOpened #43 to tighten it.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
 
 check_out "integrating-feedback: integrated, exit 0" 0 \
   "integrating-feedback integrated 1 new backlog items from demo #41" \
@@ -181,27 +202,58 @@ check "integrating-feedback: did NOT close the sprint in the same tick" 1 \
 # Feedback that asks for nothing new -- praise, a question, a note about work
 # already on the backlog -- leaves the count unchanged and still advances the
 # demo: the sprint must not stall on a comment there was nothing to open for.
+# Adrian still gets a reply saying so.
 F_INTEGRATE_NOOP="$(fake_dir)"
 write_iterations "$F_INTEGRATE_NOOP"
 "$JQ" -n -c '[{number:44,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]' \
   > "$F_INTEGRATE_NOOP/project_items.json"
 echo '[{"id":1,"body":"Looks great, ship it!"}]' > "$F_INTEGRATE_NOOP/gh_issue_comments.44.json"
+mkdir -p "$F_INTEGRATE_NOOP/bc_scotty.judge-feedback.md.d"
+cat > "$F_INTEGRATE_NOOP/bc_scotty.judge-feedback.md.d/gh_issue_comments.44.json" <<'JSON'
+[
+  {"id":1,"body":"Looks great, ship it!"},
+  {"id":2,"body":"### Scotty's reply\n\nNothing to open -- already on the backlog.\n\n<!-- bc:feedback-reply -->"}
+]
+JSON
 check_out "integrating-feedback: feedback that opened nothing still integrates, exit 0" 0 \
   "integrating-feedback integrated 0 new backlog items from demo #44" \
   run "$F_INTEGRATE_NOOP" "$NOW_MIDSPRINT"
 check "integrating-feedback: and the demo moved to Reviewed" 0 \
   log_has "$F_INTEGRATE_NOOP/calls.log" '^project_set_single 44 Status Reviewed$'
 
+# No reply on the thread when Scotty's session comes back -- integrate-
+# feedback re-derives the gate from GitHub rather than trusting his word, so
+# the tick reports broken instead of silently marking Reviewed.
+F_INTEGRATE_NOREPLY="$(fake_dir)"
+write_iterations "$F_INTEGRATE_NOREPLY"
+"$JQ" -n -c '[{number:45,title:"Sprint 1 Demo",state:"OPEN",status:"In progress",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]' \
+  > "$F_INTEGRATE_NOREPLY/project_items.json"
+echo '[{"id":1,"body":"Parrying feels floaty — can we tighten it?"}]' > "$F_INTEGRATE_NOREPLY/gh_issue_comments.45.json"
+# No bc_scotty overlay at all: his session finished but left no reply behind.
+check_out "integrating-feedback: no reply -> broken, exit 2" 2 \
+  "integrating-feedback broken feedback integration failed for demo #45" \
+  run "$F_INTEGRATE_NOREPLY" "$NOW_MIDSPRINT"
+check "integrating-feedback: and the demo was NOT marked Reviewed" 1 \
+  log_has "$F_INTEGRATE_NOREPLY/calls.log" '^project_set_single 45 Status Reviewed$'
+check "integrating-feedback: and the sprint was NOT closed" 1 \
+  log_has "$F_INTEGRATE_NOREPLY/calls.log" '^gh_issue_close'
+
 # =============================================================================
 echo
-echo "closing-sprint -> starting-next-sprint: Sprint Demo Reviewed -> close the sprint, start the next"
+echo "closing-sprint: Sprint Demo Reviewed -> close the sprint, and scope NOTHING into the next"
 # =============================================================================
 F_SPRINT_ROLLOVER="$(fake_dir)"
 write_iterations "$F_SPRINT_ROLLOVER"
-"$JQ" -n -c '[{number:42,title:"Sprint 1 Demo",state:"OPEN",status:"Reviewed",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]' \
-  > "$F_SPRINT_ROLLOVER/project_items.json"
-check_out "closing-sprint/starting-next-sprint: closed and started, exit 0" 0 "starting-next-sprint closed the sprint and started the next after demo #42" \
+# 50 is ready, unblocked backlog work. Closing must leave it exactly where it
+# is: it reaches a sprint when starting-dev-cycle picks it, on a later tick.
+"$JQ" -n -c '[
+  {number:42,title:"Sprint 1 Demo",state:"OPEN",status:"Reviewed",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null},
+  {number:50,title:"Ready backlog story",state:"OPEN",status:"Backlog",priority:"Blocker",size:"S",sprintId:null,sprintTitle:null,labels:["story"],isParent:false,parent:null,blockedBy:[]}
+]' > "$F_SPRINT_ROLLOVER/project_items.json"
+check_out "closing-sprint: closed, exit 0" 0 "closing-sprint closed the sprint after demo #42" \
   run "$F_SPRINT_ROLLOVER" "$NOW_MIDSPRINT"
+check "closing-sprint: scoped nothing into any sprint" 1 log_has "$F_SPRINT_ROLLOVER/calls.log" '^project_set_iteration'
+check "closing-sprint: never called Scotty" 1 log_has "$F_SPRINT_ROLLOVER/calls.log" '^bc_scotty'
 check "closing-sprint: closed the demo issue (Status Done)" 0 log_has "$F_SPRINT_ROLLOVER/calls.log" '^project_set_single 42 Status Done$'
 check "closing-sprint: closed the demo issue on GitHub" 0 log_has "$F_SPRINT_ROLLOVER/calls.log" '^gh_issue_close 42$'
 
@@ -234,20 +286,23 @@ F_SPRINT_OVER_GUARDED="$(fake_dir)"
 write_iterations "$F_SPRINT_OVER_GUARDED"
 "$JQ" -n -c '[{number:43,title:"Sprint 1 Demo",state:"CLOSED",status:"Done",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null}]' \
   > "$F_SPRINT_OVER_GUARDED/project_items.json"
+echo '[]' > "$F_SPRINT_OVER_GUARDED/gh_issue_list_label.json"
 check_out "sprint-over guarded: falls through to starting-dev-cycle sleep (no active sub-issue, empty backlog)" 1 \
   "starting-dev-cycle sleep backlog empty" run "$F_SPRINT_OVER_GUARDED" "2026-09-04T10:01:00Z"
 check "sprint-over guarded: wrote nothing at all (falls through to an empty-backlog sleep)" 1 test -f "$F_SPRINT_OVER_GUARDED/calls.log"
 
 # =============================================================================
 echo
-echo "starting-dev-cycle: no active sub-issue -- picks, transitions, spawns, stubs, dispatches"
+echo "starting-dev-cycle: no active sub-issue -- picks from the whole backlog, scopes in, transitions, spawns, stubs, dispatches"
 # =============================================================================
 F_DEV_CYCLE="$(fake_dir)"
 write_iterations "$F_DEV_CYCLE"
 "$JQ" -n -c '[
-  {number:900,title:"Parent",state:"OPEN",status:"Backlog",priority:"Standard",sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:[],isParent:true,parent:null},
-  {number:901,title:"Sub",state:"OPEN",status:"Backlog",priority:"Standard",sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["lead:tim"],isParent:false,parent:900}
+  {number:900,title:"Parent",state:"OPEN",status:"Backlog",priority:"Standard",sprintId:null,sprintTitle:null,labels:[],isParent:true,parent:null},
+  {number:899,title:"Blocker, but blocked by the open 901",state:"OPEN",status:"Backlog",priority:"Blocker",size:"XS",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:900,blockedBy:[901]},
+  {number:901,title:"Sub, on no sprint",state:"OPEN",status:"Backlog",priority:"Standard",size:"M",sprintId:null,sprintTitle:null,labels:["lead:tim"],isParent:false,parent:900,blockedBy:[]}
 ]' > "$F_DEV_CYCLE/project_items.json"
+echo '[]' > "$F_DEV_CYCLE/gh_issue_list_label.json"
 echo '["lead:tim"]' > "$F_DEV_CYCLE/gh_issue_labels.901.json"
 printf 'WT901' > "$F_DEV_CYCLE/orca_worktree_path.issue:901.json"
 echo '{"result":{"wait":{"satisfied":true}}}' > "$F_DEV_CYCLE/orca_terminal_wait_idle.json"
@@ -262,6 +317,11 @@ echo '{"result":{"wait":{"satisfied":true}}}' > "$F_DEV_CYCLE/orca_terminal_wait
 OUT_DEV_CYCLE="$(run "$F_DEV_CYCLE" "$NOW_MIDSPRINT")"; RC_DEV_CYCLE=$?
 check_out "starting-dev-cycle: exit 0, dispatched both leads" 0 "starting-dev-cycle started dev cycle, dispatched quentin,tim on #901" \
   bash -c 'printf %s "$1"' _ "$OUT_DEV_CYCLE"
+check "starting-dev-cycle: scoped the pick onto the sprint in play" 0 \
+  log_has "$F_DEV_CYCLE/calls.log" '^project_set_iteration 901 cd18e696$'
+check "starting-dev-cycle: never touched the blocked story" 1 log_has "$F_DEV_CYCLE/calls.log" '(^| )899( |$)'
+check_out "starting-dev-cycle: scoped in BEFORE the transition" 0 project_set_iteration \
+  sh -c 'grep -E "^project_set_(iteration|single) 901" "$1" | head -1 | cut -d" " -f1' _ "$F_DEV_CYCLE/calls.log"
 check "starting-dev-cycle: transition to To analyze logged before any terminal create" 0 \
   line_before "$F_DEV_CYCLE/calls.log" '^project_set_single 901 Status To analyze$' '^orca_terminal_create'
 check "starting-dev-cycle: spawned quentin" 0 \
@@ -277,6 +337,61 @@ check "starting-dev-cycle: sent to quentin's terminal" 0 log_has "$F_DEV_CYCLE/c
 check "starting-dev-cycle: sent to tim's terminal"     0 log_has "$F_DEV_CYCLE/calls.log" '^orca_terminal_send ht '
 check "starting-dev-cycle: never sent to crew (crew is not nudged at To analyze)" 1 \
   log_has "$F_DEV_CYCLE/calls.log" '^orca_terminal_send h[^qt]'
+
+# =============================================================================
+echo
+echo "starting-dev-cycle: adopt-alerts runs before next's own pick, which then starts the alert, not the other story (AC1 end-to-end, story 4.19)"
+# =============================================================================
+F_ADOPT_BEFORE_NEXT="$(fake_dir)"
+write_iterations "$F_ADOPT_BEFORE_NEXT"
+# Two reads of the board, one per line, in the order the tick makes them:
+# `current` (no active sub-issue -- #950 isn't on it at all yet), then
+# adopt-alerts' own read, which -- as far as the tick can observe -- already
+# carries #950 the way adopt-alerts itself leaves it (Backlog/Blocker/XS);
+# the last line repeats, so `next`'s own read sees the same board and picks
+# #950 over #901, proving the pick end-to-end, not just the write ordering
+# (Quentin's direction, cycle 1).
+{
+  "$JQ" -n -c '[
+    {number:901,title:"Sub, on no sprint",state:"OPEN",status:"Backlog",priority:"Standard",size:"M",sprintId:null,sprintTitle:null,labels:["lead:tim"],isParent:false,parent:900,blockedBy:[]}
+  ]'
+  "$JQ" -n -c '[
+    {number:901,title:"Sub, on no sprint",state:"OPEN",status:"Backlog",priority:"Standard",size:"M",sprintId:null,sprintTitle:null,labels:["lead:tim"],isParent:false,parent:900,blockedBy:[]},
+    {number:950,title:"deploy failed",state:"OPEN",status:"Backlog",priority:"Blocker",size:"XS",sprintId:null,sprintTitle:null,labels:["alert","lead:tim"],isParent:false,parent:null,blockedBy:[]}
+  ]'
+} > "$F_ADOPT_BEFORE_NEXT/project_items.seq"
+echo '[{"number":950}]' > "$F_ADOPT_BEFORE_NEXT/gh_issue_list_label.json"
+echo '["alert","lead:tim"]' > "$F_ADOPT_BEFORE_NEXT/gh_issue_labels.950.json"
+printf 'WT950' > "$F_ADOPT_BEFORE_NEXT/orca_worktree_path.issue:950.json"
+echo '{"result":{"wait":{"satisfied":true}}}' > "$F_ADOPT_BEFORE_NEXT/orca_terminal_wait_idle.json"
+"$JQ" -n -c --arg u1 "$(role8 quentin 950)" --arg u2 "$(role8 tim 950)" '
+  [
+    {handle:"hq",title:("✳ bc-quentin #950 (" + $u1 + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0},
+    {handle:"ht",title:("✳ bc-tim #950 (" + $u2 + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0}
+  ]' > "$F_ADOPT_BEFORE_NEXT/orca_terminals.WT950.json"
+check_out "adopt-alerts+next: exit 0, dispatched both leads to the alert, not #901" 0 \
+  "starting-dev-cycle started dev cycle, dispatched quentin,tim on #950" \
+  run "$F_ADOPT_BEFORE_NEXT" "$NOW_MIDSPRINT"
+check "adopt-alerts: reasserted the alert (Backlog, Priority, Size)" 0 \
+  log_has "$F_ADOPT_BEFORE_NEXT/calls.log" '^project_set_single 950 Status Backlog$'
+check "next: never touched #901 -- the alert outranked it" 1 \
+  log_has "$F_ADOPT_BEFORE_NEXT/calls.log" '(^| )901( |$)'
+check "adopt-alerts: ran, and finished, before next's own pick reached the board" 0 \
+  line_before "$F_ADOPT_BEFORE_NEXT/calls.log" '^project_set_single 950 Size XS$' '^project_set_iteration 950 cd18e696$'
+
+# =============================================================================
+echo
+echo "starting-dev-cycle: adopt-alerts failing is broken, not swallowed (story 4.19)"
+# =============================================================================
+F_ADOPT_BROKEN="$(fake_dir)"
+write_iterations "$F_ADOPT_BROKEN"
+echo '[]' > "$F_ADOPT_BROKEN/project_items.json"
+echo '[{"number":960}]' > "$F_ADOPT_BROKEN/gh_issue_list_label.json"
+printf 'PVTI_960\n' > "$F_ADOPT_BROKEN/project_item.json"
+echo 2 > "$F_ADOPT_BROKEN/project_set_single.exit"
+check_out "adopt-alerts failing -> broken, exit 2, before next ever runs" 2 \
+  "starting-dev-cycle broken could not adopt alerts onto the board" \
+  run "$F_ADOPT_BROKEN" "$NOW_MIDSPRINT"
 
 # =============================================================================
 echo
@@ -793,23 +908,364 @@ check "repair: never re-transitioned Status (already To analyze)" 1 \
 
 # =============================================================================
 echo
-echo "hard failures: bc-issue current finding two active sub-issues propagates as broken"
+echo "parallel lanes: every active sub-issue is advanced, each by its own branch, in one tick"
 # =============================================================================
-F_TWO_ACTIVE="$(fake_dir)"
-write_iterations "$F_TWO_ACTIVE"
-"$JQ" -n -c '[
-  {number:320,title:"one",state:"OPEN",status:"To analyze",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:[],isParent:false,parent:900},
-  {number:321,title:"two",state:"OPEN",status:"Reviewed",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:[],isParent:false,parent:900}
-]' > "$F_TWO_ACTIVE/project_items.json"
-check_out "subissue-active: two active sub-issues -> broken, exit 2" 2 "subissue-active broken more than one active sub-issue" \
-  run "$F_TWO_ACTIVE" "$NOW_MIDSPRINT"
+# Lane fixtures. Every lane is its own issue with its own worktree (WT<n>),
+# its own terminals and its own PR, so the helpers below can lay any number
+# of them side by side in one fake dir without one reading another's state.
+
+# run_cap <cap> <fakedir> <now> -- one tick under BC_MAX_ACTIVE=<cap>.
+run_cap() { local cap="$1"; shift; RUN_CAP="$cap" run "$@"; }
+
+# lanes_items <dir> <n>:<status>... [-- <extra item json>...] -- the board:
+# one active sub-issue per pair, plus any extra raw items (backlog stories).
+lanes_items() {
+  local dir="$1"; shift
+  local pairs=() extras=() a
+  while [ "$#" -gt 0 ]; do
+    [ "$1" = "--" ] && { shift; extras=("$@"); break; }
+    pairs+=("$1"); shift
+  done
+  {
+    for a in "${pairs[@]}"; do
+      "$JQ" -n -c --argjson n "${a%%:*}" --arg s "${a#*:}" \
+        '{number:$n,title:"story",state:"OPEN",status:$s,priority:"Standard",sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:[],isParent:false,parent:900}'
+    done
+    for a in "${extras[@]}"; do printf '%s\n' "$a"; done
+  } | "$JQ" -sc '.' > "$dir/project_items.json"
+}
+
+# crew_pane <dir> <n> <glyph> [worktree] -- Crew's terminal on lane #n, idle
+# (✳) or working (◑), in WT<n> unless another worktree is named.
+crew_pane() {
+  local dir="$1" n="$2" glyph="$3" wt="${4:-WT$2}"
+  "$JQ" -n -c --arg u "$(role8 crew "$n")" --arg n "$n" --arg g "$glyph" \
+    '[{handle:("hc" + $n),title:($g + " bc-crew #" + $n + " (" + $u + ")"),agentIdentity:"claude",connected:true,orphaned:false,lastOutputAt:0}]' \
+    > "$dir/orca_terminals.$wt.json"
+}
+
+# lane_in_progress <dir> <n> <glyph> -- In progress, no PR yet: Crew's
+# session idle (✳ -> pr-opened nudges it) or working (◑ -> pr-opened sleeps).
+lane_in_progress() {
+  local dir="$1" n="$2" glyph="$3"
+  { render_analysis_stub quentin | _comment 1; } | "$JQ" -sc '.' > "$dir/gh_issue_comments.$n.json"
+  printf 'WT%s' "$n" > "$dir/orca_worktree_path.issue:$n.json"
+  crew_pane "$dir" "$n" "$glyph"
+}
+
+# lane_mergeable <dir> <n> <pr> -- Leads review, green, every lead approved
+# at the head: merging-pr.
+lane_mergeable() {
+  local dir="$1" n="$2" pr="$3"
+  printf '{"number":%s,"headRefOid":"sha%s"}' "$pr" "$pr" > "$dir/gh_pr_for_issue.$n.json"
+  echo "sha$pr" > "$dir/gh_pr_head.$pr.json"
+  echo '[{"name":"ci","status":"completed","conclusion":"success"}]' > "$dir/gh_pr_check_runs.sha$pr.json"
+  {
+    render_status "$n" "quentin" 1 | _comment 1
+    printf '### Review — quentin\n\nfine\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed sha%s -->\n<!-- bc:verdict APPROVED -->\n' "$pr" | _comment 2
+  } | "$JQ" -sc '.' > "$dir/gh_issue_comments.$pr.json"
+  printf 'WT%s' "$n" > "$dir/orca_worktree_path.issue:$n.json"
+  echo '[]' > "$dir/orca_terminals.WT$n.json"
+}
+
+# backlog_story <n> -- one ready, unblocked Backlog story, as a raw item.
+backlog_story() {
+  "$JQ" -n -c --argjson n "$1" \
+    '{number:$n,title:"Ready",state:"OPEN",status:"Backlog",priority:"Standard",size:"S",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[]}'
+}
+
+# startable <dir> <n> -- everything starting-dev-cycle needs to start #n with
+# quentin alone in scope, his pane listed but disconnected (so it is started).
+startable() {
+  local dir="$1" n="$2"
+  echo '[]' > "$dir/gh_issue_list_label.json"
+  echo '[]' > "$dir/gh_issue_labels.$n.json"
+  printf 'WT%s' "$n" > "$dir/orca_worktree_path.issue:$n.json"
+  echo '{"result":{"wait":{"satisfied":true}}}' > "$dir/orca_terminal_wait_idle.json"
+  "$JQ" -n -c --arg u "$(role8 quentin "$n")" --arg n "$n" \
+    '[{handle:("hq" + $n),title:("✳ bc-quentin #" + $n + " (" + $u + ")"),agentIdentity:"claude",connected:false,orphaned:false,lastOutputAt:0}]' \
+    > "$dir/orca_terminals.WT$n.json"
+}
+
+# Three lanes, three different branches: one dispatches, one sleeps on a busy
+# Crew, one merges. All three report, in issue order, and the tick acted.
+F_PAR_MIX="$(fake_dir)"
+write_iterations "$F_PAR_MIX"
+lanes_items "$F_PAR_MIX" 402:"In progress" 401:"In progress" 403:"Leads review"
+lane_in_progress "$F_PAR_MIX" 401 "✳"
+lane_in_progress "$F_PAR_MIX" 402 "◑"
+lane_mergeable "$F_PAR_MIX" 403 83
+OUT_PAR_MIX="$(run_cap 3 "$F_PAR_MIX" "$NOW_MIDSPRINT")"; RC_PAR_MIX=$?
+check_out "parallel: three lanes, one report each, in issue order" 0 \
+  "pr-opened nudged crew on #401 | pr-opened sleep crew already busy on #402 | merging-pr merged PR #83 for #403" \
+  printf '%s' "$OUT_PAR_MIX"
+check "parallel: any lane acting makes the tick exit 0" 0 test "$RC_PAR_MIX" = 0
+check_out "parallel: the reason file carries the whole joined line" 0 "$OUT_PAR_MIX" cat "$F_PAR_MIX/reason.txt"
+check "parallel: #401's Crew was dispatched, in its own terminal" 0 log_has "$F_PAR_MIX/calls.log" '^orca_terminal_send hc401 '
+check "parallel: #402's busy Crew was left alone" 1 log_has "$F_PAR_MIX/calls.log" '^orca_terminal_send hc402 '
+check "parallel: #403 merged and went Done" 0 log_has "$F_PAR_MIX/calls.log" '^project_set_single 403 Status Done$'
+check_out "parallel: tearing #403 down removed one worktree" 0 1 log_count "$F_PAR_MIX/calls.log" '^orca_worktree_rm'
+check "parallel: ...and it was #403's" 0 log_has "$F_PAR_MIX/calls.log" '^orca_worktree_rm issue:403$'
+check "parallel: three lanes open at a cap of three -> no dev cycle started" 1 \
+  log_has "$F_PAR_MIX/calls.log" '^project_set_iteration'
+
+# The same role on two lanes is two sessions: Crew on #411 and Crew on #412
+# have different derived uuids in different worktrees, each sent its prompt.
+F_PAR_SAME_ROLE="$(fake_dir)"
+write_iterations "$F_PAR_SAME_ROLE"
+lanes_items "$F_PAR_SAME_ROLE" 411:"In progress" 412:"In progress"
+lane_in_progress "$F_PAR_SAME_ROLE" 411 "✳"
+lane_in_progress "$F_PAR_SAME_ROLE" 412 "✳"
+check_out "parallel: one role on two lanes -> two dispatches, exit 0" 0 \
+  "pr-opened nudged crew on #411 | pr-opened nudged crew on #412" \
+  run_cap 2 "$F_PAR_SAME_ROLE" "$NOW_MIDSPRINT"
+check "parallel: sent to #411's Crew" 0 log_has "$F_PAR_SAME_ROLE/calls.log" '^orca_terminal_send hc411 '
+check "parallel: sent to #412's Crew" 0 log_has "$F_PAR_SAME_ROLE/calls.log" '^orca_terminal_send hc412 '
+check "parallel: the two Crew sessions have different derived ids" 1 \
+  test "$(role8 crew 411)" = "$(role8 crew 412)"
+
+# Every lane asleep -> the tick sleeps.
+F_PAR_ALL_SLEEP="$(fake_dir)"
+write_iterations "$F_PAR_ALL_SLEEP"
+lanes_items "$F_PAR_ALL_SLEEP" 421:"In progress" 422:"In progress"
+lane_in_progress "$F_PAR_ALL_SLEEP" 421 "◑"
+lane_in_progress "$F_PAR_ALL_SLEEP" 422 "◑"
+check_out "parallel: every lane asleep -> sleep, exit 1" 1 \
+  "pr-opened sleep crew already busy on #421 | pr-opened sleep crew already busy on #422" \
+  run_cap 2 "$F_PAR_ALL_SLEEP" "$NOW_MIDSPRINT"
+check "parallel: and wrote nothing" 1 test -f "$F_PAR_ALL_SLEEP/calls.log"
+
+# One lane broken does not hold the others up: #432 has no PR at Leads
+# review, and #431 and #433 are still advanced -- but the tick reports 2, so
+# the breakage is never hidden behind the lanes that worked.
+F_PAR_BROKEN="$(fake_dir)"
+write_iterations "$F_PAR_BROKEN"
+lanes_items "$F_PAR_BROKEN" 431:"In progress" 432:"Leads review" 433:"In progress"
+lane_in_progress "$F_PAR_BROKEN" 431 "✳"
+lane_in_progress "$F_PAR_BROKEN" 433 "✳"
+OUT_PAR_BROKEN="$(run_cap 3 "$F_PAR_BROKEN" "$NOW_MIDSPRINT")"; RC_PAR_BROKEN=$?
+check_out "parallel: a broken lane is reported between the others" 0 \
+  "pr-opened nudged crew on #431 | breaker-tripped broken no PR found for #432 at Leads review | pr-opened nudged crew on #433" \
+  printf '%s' "$OUT_PAR_BROKEN"
+check "parallel: any lane broken makes the tick exit 2, even though others acted" 0 test "$RC_PAR_BROKEN" = 2
+check "parallel: the lane before the broken one still acted" 0 log_has "$F_PAR_BROKEN/calls.log" '^orca_terminal_send hc431 '
+check "parallel: the lane after the broken one still acted" 0 log_has "$F_PAR_BROKEN/calls.log" '^orca_terminal_send hc433 '
+
+# =============================================================================
+echo
+echo "parallel lanes: a new dev cycle starts beside the open lanes while there is room"
+# =============================================================================
+F_PAR_START="$(fake_dir)"
+write_iterations "$F_PAR_START"
+lanes_items "$F_PAR_START" 441:"In progress" -- "$(backlog_story 450)"
+lane_in_progress "$F_PAR_START" 441 "✳"
+startable "$F_PAR_START" 450
+check_out "parallel: one lane open under a cap of two -> it advances AND #450 starts" 0 \
+  "pr-opened nudged crew on #441 | starting-dev-cycle started dev cycle, dispatched quentin on #450" \
+  run_cap 2 "$F_PAR_START" "$NOW_MIDSPRINT"
+check "parallel: #450 scoped onto the sprint" 0 log_has "$F_PAR_START/calls.log" '^project_set_iteration 450 cd18e696$'
+check "parallel: #450 marked To analyze" 0 log_has "$F_PAR_START/calls.log" '^project_set_single 450 Status To analyze$'
+check "parallel: #450's lead started in #450's own worktree" 0 log_has "$F_PAR_START/calls.log" '^orca_terminal_create WT450 bc-quentin #450 '
+check "parallel: the open lane was advanced before the new one started" 0 \
+  line_before "$F_PAR_START/calls.log" '^orca_terminal_send hc441 ' '^project_set_iteration 450 '
+check "parallel: the open lane was never re-transitioned" 1 log_has "$F_PAR_START/calls.log" '^project_set_single 441 '
+
+# Room for a lane but nothing startable: the lane's line and the reason
+# nothing started, together.
+F_PAR_EMPTY="$(fake_dir)"
+write_iterations "$F_PAR_EMPTY"
+lanes_items "$F_PAR_EMPTY" 451:"In progress"
+lane_in_progress "$F_PAR_EMPTY" 451 "◑"
+echo '[]' > "$F_PAR_EMPTY/gh_issue_list_label.json"
+check_out "parallel: room but an empty backlog -> both sleeps, exit 1" 1 \
+  "pr-opened sleep crew already busy on #451 | starting-dev-cycle sleep backlog empty" \
+  run_cap 2 "$F_PAR_EMPTY" "$NOW_MIDSPRINT"
+
+# At the cap nothing starts -- not even the alert adoption that precedes the
+# pick, since there is no pick to make.
+F_PAR_FULL="$(fake_dir)"
+write_iterations "$F_PAR_FULL"
+lanes_items "$F_PAR_FULL" 461:"In progress" 462:"In progress" -- "$(backlog_story 470)"
+lane_in_progress "$F_PAR_FULL" 461 "◑"
+lane_in_progress "$F_PAR_FULL" 462 "◑"
+startable "$F_PAR_FULL" 470
+echo '[{"number":479}]' > "$F_PAR_FULL/gh_issue_list_label.json"
+check_out "parallel: at the cap -> only the lanes report, exit 1" 1 \
+  "pr-opened sleep crew already busy on #461 | pr-opened sleep crew already busy on #462" \
+  run_cap 2 "$F_PAR_FULL" "$NOW_MIDSPRINT"
+check "parallel: at the cap -> nothing adopted, scoped or started" 1 test -f "$F_PAR_FULL/calls.log"
+
+# No cap (0): a start whatever is open -- but still one per tick, even with
+# two stories ready.
+F_PAR_NOCAP="$(fake_dir)"
+write_iterations "$F_PAR_NOCAP"
+lanes_items "$F_PAR_NOCAP" 481:"In progress" 482:"In progress" 483:"In progress" -- "$(backlog_story 490)" "$(backlog_story 491)"
+lane_in_progress "$F_PAR_NOCAP" 481 "◑"
+lane_in_progress "$F_PAR_NOCAP" 482 "◑"
+lane_in_progress "$F_PAR_NOCAP" 483 "◑"
+startable "$F_PAR_NOCAP" 490
+startable "$F_PAR_NOCAP" 491
+check_out "parallel: BC_MAX_ACTIVE=0 -> three open lanes and a fourth starts" 0 \
+  "pr-opened sleep crew already busy on #481 | pr-opened sleep crew already busy on #482 | pr-opened sleep crew already busy on #483 | starting-dev-cycle started dev cycle, dispatched quentin on #490" \
+  run_cap 0 "$F_PAR_NOCAP" "$NOW_MIDSPRINT"
+check "parallel: one start per tick -- #491 waits for the next" 1 log_has "$F_PAR_NOCAP/calls.log" '(^| )491( |$)'
+
+# The shared main checkout cannot hold two lanes, whatever the cap says.
+run_main() { BC_SESSION_MODE=main BC_MAIN_CHECKOUT=MAINWT run_cap "$@"; }
+F_PAR_MAIN="$(fake_dir)"
+write_iterations "$F_PAR_MAIN"
+lanes_items "$F_PAR_MAIN" 492:"In progress" -- "$(backlog_story 495)"
+{ render_analysis_stub quentin | _comment 1; } | "$JQ" -sc '.' > "$F_PAR_MAIN/gh_issue_comments.492.json"
+crew_pane "$F_PAR_MAIN" 492 "◑" MAINWT
+startable "$F_PAR_MAIN" 495
+check_out "parallel: BC_SESSION_MODE=main caps the lanes at one -> no start" 1 \
+  "pr-opened sleep crew already busy on #492" \
+  run_main 3 "$F_PAR_MAIN" "$NOW_MIDSPRINT"
+check "parallel: main mode -> #495 never started" 1 test -f "$F_PAR_MAIN/calls.log"
+
+# A cap that is not a count stops the tick before any lane runs.
+F_PAR_BADCAP="$(fake_dir)"
+write_iterations "$F_PAR_BADCAP"
+lanes_items "$F_PAR_BADCAP" 497:"In progress"
+lane_in_progress "$F_PAR_BADCAP" 497 "✳"
+check_out "parallel: BC_MAX_ACTIVE=lots -> broken, exit 2" 2 \
+  "subissue-active broken BC_MAX_ACTIVE is 'lots', not a count" \
+  run_cap lots "$F_PAR_BADCAP" "$NOW_MIDSPRINT"
+check "parallel: a bad cap touched no lane" 1 test -f "$F_PAR_BADCAP/calls.log"
+
+# The Sprint Demo still outranks every lane: while Adrian has the demo, the
+# lanes wait.
+F_PAR_DEMO="$(fake_dir)"
+write_iterations "$F_PAR_DEMO"
+lanes_items "$F_PAR_DEMO" 498:"In progress" 499:"In progress" -- \
+  '{"number":40,"title":"Sprint 1 Demo","state":"OPEN","status":"In progress","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null}'
+lane_in_progress "$F_PAR_DEMO" 498 "✳"
+lane_in_progress "$F_PAR_DEMO" 499 "✳"
+echo '[]' > "$F_PAR_DEMO/gh_issue_comments.40.json"
+check_out "parallel: a demo awaiting feedback holds every lane" 1 "demo-active sleep demo #40 awaiting feedback" \
+  run_cap 3 "$F_PAR_DEMO" "$NOW_MIDSPRINT"
+check "parallel: ...and none of them was touched" 1 test -f "$F_PAR_DEMO/calls.log"
+
+# =============================================================================
+echo
+echo "pr-conflicting: another lane's merge left this PR unmergeable -> Crew merges the base in"
+# =============================================================================
+# conflict_lane <dir> <n> <pr> <glyph> [conflicts] -- Leads review, approved
+# and green, but GitHub says CONFLICTING; Crew idle (✳) or working (◑); the
+# status comment carrying a conflicts count when one is given.
+conflict_lane() {
+  local dir="$1" n="$2" pr="$3" glyph="$4" count="${5:-}"
+  lane_mergeable "$dir" "$n" "$pr"
+  echo "CONFLICTING" > "$dir/gh_pr_mergeable.$pr.json"
+  if [ -n "$count" ]; then
+    {
+      printf '%s\n<!-- bc:conflicts %s -->\n' "$(render_status "$n" "quentin" 1)" "$count" | _comment 1
+      printf '### Review — quentin\n\nfine\n\n<!-- bc:lead:quentin -->\n<!-- bc:reviewed sha%s -->\n<!-- bc:verdict APPROVED -->\n' "$pr" | _comment 2
+    } | "$JQ" -sc '.' > "$dir/gh_issue_comments.$pr.json"
+  fi
+  { render_analysis_stub quentin | _comment 1; } | "$JQ" -sc '.' > "$dir/gh_issue_comments.$n.json"
+  crew_pane "$dir" "$n" "$glyph"
+}
+
+F_CONFLICT="$(fake_dir)"
+write_iterations "$F_CONFLICT"
+one_active "$F_CONFLICT" 510 "Leads review"
+conflict_lane "$F_CONFLICT" 510 91 "✳"
+check_out "pr-conflicting: dispatched Crew to merge the base in, exit 0" 0 \
+  "dispatching-conflict-fix dispatched crew to merge $BC_BASE_BRANCH into PR #91" run "$F_CONFLICT" "$NOW_MIDSPRINT"
+check "pr-conflicting: sent to Crew" 0 log_has "$F_CONFLICT/calls.log" '^orca_terminal_send hc510 '
+check "pr-conflicting: the prompt names the base to merge" 0 log_has "$F_CONFLICT/calls.log" "origin/$BC_BASE_BRANCH"
+check "pr-conflicting: counted the dispatch on the status comment" 0 log_has "$F_CONFLICT/calls.log" '^gh_comment_edit 1 '
+check "pr-conflicting: never merged the approved PR" 1 log_has "$F_CONFLICT/calls.log" '^gh_pr_merge'
+
+F_CONFLICT_BUSY="$(fake_dir)"
+write_iterations "$F_CONFLICT_BUSY"
+one_active "$F_CONFLICT_BUSY" 511 "Leads review"
+conflict_lane "$F_CONFLICT_BUSY" 511 92 "◑"
+check_out "pr-conflicting: Crew busy -> sleep, exit 1" 1 \
+  "dispatching-conflict-fix sleep crew already busy on PR #92" run "$F_CONFLICT_BUSY" "$NOW_MIDSPRINT"
+check "pr-conflicting: a busy Crew is not a failed attempt -- nothing counted" 1 test -f "$F_CONFLICT_BUSY/calls.log"
+
+F_CONFLICT_BREAKER="$(fake_dir)"
+write_iterations "$F_CONFLICT_BREAKER"
+one_active "$F_CONFLICT_BREAKER" 512 "Leads review"
+conflict_lane "$F_CONFLICT_BREAKER" 512 93 "✳" 9
+mkdir -p "$F_CONFLICT_BREAKER/bc_scotty.judge-breaker.md.d"
+{
+  "$JQ" -c '.[]' "$F_CONFLICT_BREAKER/gh_issue_comments.93.json"
+  render_breaker "Nine merges of the base and it still conflicts." | _comment 88
+} | "$JQ" -sc '.' > "$F_CONFLICT_BREAKER/bc_scotty.judge-breaker.md.d/gh_issue_comments.93.json"
+check_out "pr-conflicting: dispatches exhausted -> breaker, exit 0" 0 \
+  "tripping-conflict-breaker triggered breaker on PR #93 for #512" run "$F_CONFLICT_BREAKER" "$NOW_MIDSPRINT"
+check "pr-conflicting: handed the deadlock to Scotty" 0 log_has "$F_CONFLICT_BREAKER/calls.log" '^bc_scotty judge-breaker\.md$'
+check "pr-conflicting: never dispatched Crew again" 1 log_has "$F_CONFLICT_BREAKER/calls.log" '^orca_terminal_send'
+
+# Resolved: the count from earlier dispatches is cleared, and the flow
+# carries on to merge.
+F_CONFLICT_CLEARED="$(fake_dir)"
+write_iterations "$F_CONFLICT_CLEARED"
+one_active "$F_CONFLICT_CLEARED" 513 "Leads review"
+conflict_lane "$F_CONFLICT_CLEARED" 513 94 "✳" 2
+echo "MERGEABLE" > "$F_CONFLICT_CLEARED/gh_pr_mergeable.94.json"
+check_out "pr-conflicting: resolved -> carries on and merges" 0 \
+  "merging-pr merged PR #94 for #513" run "$F_CONFLICT_CLEARED" "$NOW_MIDSPRINT"
+check "pr-conflicting: cleared the conflict count" 0 log_has "$F_CONFLICT_CLEARED/calls.log" '^gh_comment_edit 1 '
+
+# The race: a lane earlier in the tick merged, and this PR's merge is
+# refused because it now conflicts. GitHub said MERGEABLE when it was read,
+# CONFLICTING after -- a sleep, and next tick's pr-conflicting takes it.
+F_MERGE_RACE="$(fake_dir)"
+write_iterations "$F_MERGE_RACE"
+one_active "$F_MERGE_RACE" 514 "Leads review"
+lane_mergeable "$F_MERGE_RACE" 514 95
+printf 'MERGEABLE\nCONFLICTING\n' > "$F_MERGE_RACE/gh_pr_mergeable.95.seq"
+echo 1 > "$F_MERGE_RACE/gh_pr_merge.exit"
+check_out "merging-pr: refused because it now conflicts -> sleep, not broken" 1 \
+  "merging-pr sleep PR #95 now conflicts with $BC_BASE_BRANCH" run "$F_MERGE_RACE" "$NOW_MIDSPRINT"
+check "merging-pr: a refused merge never marks the story Done" 0 \
+  log_lacks "$F_MERGE_RACE/calls.log" '^project_set_single 514 Status Done$'
+
+F_MERGE_FAIL="$(fake_dir)"
+write_iterations "$F_MERGE_FAIL"
+one_active "$F_MERGE_FAIL" 515 "Leads review"
+lane_mergeable "$F_MERGE_FAIL" 515 96
+echo 1 > "$F_MERGE_FAIL/gh_pr_merge.exit"
+check_out "merging-pr: refused for any other reason -> still broken" 2 \
+  "merging-pr broken merge failed for PR #96" run "$F_MERGE_FAIL" "$NOW_MIDSPRINT"
 
 echo
 echo "backlog empty: no active sub-issue, nothing in Backlog -> sleep (already exercised above, re-asserted here for the record)"
 F_EMPTY="$(fake_dir)"
 write_iterations "$F_EMPTY"
 echo '[]' > "$F_EMPTY/project_items.json"
+echo '[]' > "$F_EMPTY/gh_issue_list_label.json"
 check_out "starting-dev-cycle: empty backlog -> sleep, exit 1" 1 "starting-dev-cycle sleep backlog empty" run "$F_EMPTY" "$NOW_MIDSPRINT"
 check "starting-dev-cycle: empty backlog wrote nothing" 1 test -f "$F_EMPTY/calls.log"
+
+echo
+echo "starting-dev-cycle: stories left but every one blocked -> sleep, and the wake reason says so"
+F_ALL_BLOCKED="$(fake_dir)"
+write_iterations "$F_ALL_BLOCKED"
+"$JQ" -n -c '[
+  {number:910,title:"Waits on 911",state:"OPEN",status:"Backlog",priority:"Critical",size:"S",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[911]},
+  {number:911,title:"Waits on 910",state:"OPEN",status:"Backlog",priority:"Critical",size:"S",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[910]}
+]' > "$F_ALL_BLOCKED/project_items.json"
+echo '[]' > "$F_ALL_BLOCKED/gh_issue_list_label.json"
+check_out "starting-dev-cycle: all blocked -> sleep, exit 1, named" 1 \
+  "starting-dev-cycle sleep 2 Backlog stories, every one blocked by an open issue" run "$F_ALL_BLOCKED" "$NOW_MIDSPRINT"
+check "starting-dev-cycle: all blocked wrote nothing" 1 test -f "$F_ALL_BLOCKED/calls.log"
+
+echo
+echo "starting-dev-cycle: a pick but no sprint iteration to put it on -> broken, nothing started"
+F_NO_SPRINT="$(fake_dir)"
+write_iterations "$F_NO_SPRINT"
+"$JQ" -n -c '[{number:920,title:"Ready",state:"OPEN",status:"Backlog",priority:"Standard",size:"S",sprintId:null,sprintTitle:null,labels:[],isParent:false,parent:null,blockedBy:[]}]' \
+  > "$F_NO_SPRINT/project_items.json"
+echo '[]' > "$F_NO_SPRINT/gh_issue_list_label.json"
+echo '[]' > "$F_NO_SPRINT/gh_issue_labels.920.json"
+check_out "starting-dev-cycle: no iteration -> broken, exit 2" 2 \
+  "starting-dev-cycle broken could not scope #920 into a sprint" run "$F_NO_SPRINT" "2026-12-25T08:00:00Z"
+check "starting-dev-cycle: no iteration -> nothing written, the story never transitioned" 1 \
+  test -f "$F_NO_SPRINT/calls.log"
 
 summary

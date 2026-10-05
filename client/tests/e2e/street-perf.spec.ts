@@ -35,16 +35,19 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
-import { screenPositionPx } from "../../src/render/screen-position";
+import { ZOOM } from "../../src/render/camera";
+import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
 import {
+  isDefStreetProp,
   STREET_PROPS,
   type StreetWalkSegment,
-  type StreetWalkUntil,
   streetBridgeLapRoute,
   streetWalkRoute,
   TRASH_BIN_DEF_ID,
 } from "../../src/test-street/fixture";
-import { committedDefs, streetWalkInputs } from "../unit/test-street/street-world";
+import { binReachRoute, committedDefs, streetWalkInputs } from "../unit/test-street/street-world";
+import { canvasOffsetForWorldPx } from "./camera-test-support";
+import { walkSyntheticSegment } from "./walk-support";
 
 /** The frame budget the scene's own work must fit inside. A 60 FPS frame
  * is 16.7 ms end to end; the app's own work getting half of that leaves
@@ -117,7 +120,7 @@ const MARKED_PHASE_MS = 5_000;
  * `refresh` -- see that phase's own comment for why it is measured on its
  * own window rather than folded into the lap). */
 async function hoverAnInteractableProp(page: Page): Promise<void> {
-  const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
+  const bin = STREET_PROPS.find((p) => isDefStreetProp(p) && p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
   const tileSizePx = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
   const storeyHeightPx = committedDefs().balance.find(
@@ -126,94 +129,25 @@ async function hoverAnInteractableProp(page: Page): Promise<void> {
   if (tileSizePx === undefined || storeyHeightPx === undefined) {
     throw new Error("missing render balance keys");
   }
-  const anchor = screenPositionPx(bin.x, bin.y, bin.floor, tileSizePx, storeyHeightPx);
+  const binCentre = cellBottomCentre(bin.x, bin.y);
+  const anchor = worldPointPx(
+    binCentre.x,
+    binCentre.y,
+    bin.floor,
+    tileSizePx,
+    storeyHeightPx,
+    ZOOM,
+    0,
+  );
   const worldPx = { x: anchor.x, y: anchor.y - tileSizePx / 2 };
-  const view = await page.evaluate(() => window.__bc?.viewTransform);
-  if (!view) throw new Error("the street scene never recorded its view transform");
+  const canvasOffset = await canvasOffsetForWorldPx(page, worldPx);
   const box = await page.locator("#test-street canvas").boundingBox();
   if (!box) throw new Error("no street canvas to hover");
-  await page.mouse.move(
-    box.x + worldPx.x * view.zoom + view.offsetX,
-    box.y + worldPx.y * view.zoom + view.offsetY,
-  );
-}
-
-/** Holds `segment.key` down, waits for its own release condition, and
- * releases it again -- entirely inside the page, in one `page.evaluate`
- * call, unlike `test-street.spec.ts`'s own `page.keyboard.down`/
- * `waitForFunction`/`page.keyboard.up` sequence. That sequence is real,
- * OS-level input, the more faithful choice for a functional spec, but
- * each of its three steps is its own Node<->page round trip, and this
- * spec's own crowd keeps animating (unlike `test-street.spec.ts`'s
- * frozen one) -- a cold, busy CI runner has shown enough round-trip
- * latency between "the release condition became true" and "the key
- * actually lifts" for the walker to keep travelling for several tenths
- * of a cell past it, occasionally far enough to land somewhere this
- * route never checked (observed: released from a floor transition,
- * carried into the underpass checkpoint's own support pillar, stuck for
- * good on the very next segment). Dispatching a synthetic `KeyboardEvent`
- * (`input/keyboard.ts` binds `.code`, the same field either kind of event
- * carries, and does not check `isTrusted`) and polling with the page's
- * own `requestAnimationFrame` keeps the whole hold-and-release inside a
- * single frame's own callback, with no round trip in between. */
-async function walkSegment(page: Page, segment: StreetWalkSegment): Promise<void> {
-  const result = await page.evaluate(
-    ({ code, until, timeoutMs }) => {
-      return new Promise<{ met: boolean; position: unknown; floor: unknown }>((resolve) => {
-        const met = (u: StreetWalkUntil): boolean => {
-          const position = window.__bc?.playerPosition;
-          const floor = window.__bc?.playerFloor;
-          if (!position || floor === undefined) return false;
-          switch (u.kind) {
-            case "x-at-least":
-              return position.x >= u.value;
-            case "x-at-most":
-              return position.x <= u.value;
-            case "y-at-least":
-              return position.y >= u.value;
-            case "y-at-most":
-              return position.y <= u.value;
-            case "floor":
-              return floor === u.value;
-          }
-        };
-        const release = (ok: boolean) => {
-          window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
-          resolve({
-            met: ok,
-            position: window.__bc?.playerPosition,
-            floor: window.__bc?.playerFloor,
-          });
-        };
-        const deadline = performance.now() + timeoutMs;
-        const tick = () => {
-          if (met(until)) {
-            release(true);
-            return;
-          }
-          if (performance.now() >= deadline) {
-            release(false);
-            return;
-          }
-          requestAnimationFrame(tick);
-        };
-        window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
-        requestAnimationFrame(tick);
-      });
-    },
-    { code: segment.key, until: segment.until, timeoutMs: SEGMENT_TIMEOUT_MS },
-  );
-  if (!result.met) {
-    throw new Error(
-      `walkSegment: '${segment.label}' never met its release condition ` +
-        `(${JSON.stringify(segment.until)}) within ${SEGMENT_TIMEOUT_MS}ms; ` +
-        `stuck at ${JSON.stringify(result.position)}, floor ${JSON.stringify(result.floor)}`,
-    );
-  }
+  await page.mouse.move(box.x + canvasOffset.x, box.y + canvasOffset.y);
 }
 
 async function walkRoute(page: Page, route: readonly StreetWalkSegment[]): Promise<void> {
-  for (const segment of route) await walkSegment(page, segment);
+  for (const segment of route) await walkSyntheticSegment(page, segment, SEGMENT_TIMEOUT_MS);
 }
 
 test("the frame path stays inside its work budget for a whole walked session (NFR2, partial)", async ({
@@ -225,7 +159,9 @@ test("the frame path stays inside its work budget for a whole walked session (NF
   // `viewport`, so this stays true even run from a config someone else
   // changed.
   await page.setViewportSize({ width: 1920, height: 1080 });
-  await page.goto("/");
+  // Opts in to remote players: the gate must hold the subscription and the
+  // layer every production client runs (its own instance, so no leftovers).
+  await page.goto("/?remotePlayers=1");
   await page.waitForFunction(() => window.__bc?.playerAppearance !== undefined, undefined, {
     timeout: 60_000,
   });
@@ -364,21 +300,14 @@ test("the frame path stays inside its work budget for a whole walked session (NF
     timeout: 60_000,
   });
 
-  const bin = STREET_PROPS.find((p) => p.defId === TRASH_BIN_DEF_ID);
+  const bin = STREET_PROPS.find((p) => isDefStreetProp(p) && p.defId === TRASH_BIN_DEF_ID);
   if (!bin) throw new Error("the fixture no longer places a trash bin");
-  for (const segment of streetWalkRoute(streetWalkInputs()).slice(0, 4)) {
-    await walkSegment(page, segment);
-  }
-  await walkSegment(page, {
-    label: "under-the-bin",
-    key: "ArrowRight",
-    until: { kind: "x-at-least", value: bin.x },
-  });
-  await walkSegment(page, {
-    label: "up-into-the-bins-reach",
-    key: "ArrowUp",
-    until: { kind: "y-at-most", value: bin.y + 1 },
-  });
+  // Story 2.13: the bin sits between the door and the lamppost's own new
+  // column (`LAMPPOST_CELL`'s own doc comment says why it moved), so only
+  // the door-exit segment is needed before turning toward it -- the rest
+  // of the route's own lamppost/underpass detour is no longer on the way.
+  for (const segment of binReachRoute())
+    await walkSyntheticSegment(page, segment, SEGMENT_TIMEOUT_MS);
 
   await hoverAnInteractableProp(page);
   await expect

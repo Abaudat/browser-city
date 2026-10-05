@@ -41,7 +41,12 @@ fn real_object_keys() -> Vec<String> {
     let mut text_files = fsio::read_text(&root, &fsio::list_defs_sources(&root).unwrap()).unwrap();
     text_files.sort_by(|a, b| a.0.cmp(&b.0));
     let raw = parse::parse_all(&text_files).unwrap();
-    raw.objects.iter().map(|o| o.key.value.clone()).collect()
+    // An undrawn flight has no card: it is walk data, with nothing to show.
+    raw.objects
+        .iter()
+        .filter(|o| o.sprite.is_some())
+        .map(|o| o.key.value.clone())
+        .collect()
 }
 
 #[test]
@@ -66,7 +71,7 @@ fn every_real_objects_key_appears_in_the_sheet_exactly_once() {
 /// background-size: WpxHpx; }` rule, parsed straight out of the emitted
 /// `<style>` block -- never re-derived from `atlas.rs`'s own numbers, so
 /// an emission bug here is caught even if the packer itself is correct.
-/// `class` is the part after `.page-` (e.g. `street-0`), keyed by group
+/// `class` is the part after `.page-` (e.g. `shared-0`), keyed by group
 /// plus in-group ordinal rather than the global `atlas_pages` index
 /// (Tim's direction, cycle 2): an unrelated group gaining or losing a
 /// page must never renumber another group's own classes.

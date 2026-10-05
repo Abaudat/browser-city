@@ -3,11 +3,26 @@
 // CI rather than only failing when somebody walks it. Each case here is
 // one refusal the Rust oracle also makes -- see
 // `server/sim/src/world/collision.rs`'s `WorldSpec::build`.
+
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parseDefs } from "../../../src/defs/parse";
 import { CHUNK_SIZE, chunkKey } from "../../../src/world/chunk";
 import type { OwnershipArea } from "../../../src/world/ownership";
 import type { TransitionSpec } from "../../../src/world/transitions";
 import { checkWorldSpec, rectIsWithinOneChunk } from "../../../src/world/world-spec";
+
+const defs = parseDefs(
+  JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL("../../../public/defs/defs.json", import.meta.url)),
+      "utf-8",
+    ),
+  ),
+);
+/** The declared floor range, from the generated defs -- never a literal. */
+const FLOOR_RANGE = { minFloor: defs.minFloor, maxFloor: defs.maxFloor };
 
 const area = (
   ownerId: bigint,
@@ -45,6 +60,54 @@ describe("rectIsWithinOneChunk", () => {
 });
 
 describe("checkWorldSpec", () => {
+  it("refuses an area or a transition on a floor one below or one above the declared range", () => {
+    const { minFloor, maxFloor } = FLOOR_RANGE;
+    const base = { isStandable: everywhereStandable, floorRange: FLOOR_RANGE };
+    for (const floor of [minFloor - 1, maxFloor + 1]) {
+      const building = checkWorldSpec({
+        ...base,
+        buildingAreas: [area(1n, floor, 1, 1, 4, 4)],
+        roomAreas: [],
+        transitions: [],
+      });
+      expect(building.join("\n")).toContain(`building_area floor ${floor} is outside`);
+      const room = checkWorldSpec({
+        ...base,
+        buildingAreas: [],
+        roomAreas: [area(1n, floor, 1, 1, 4, 4)],
+        transitions: [],
+      });
+      expect(room.join("\n")).toContain(`room_area floor ${floor} is outside`);
+      const anchor = checkWorldSpec({
+        ...base,
+        buildingAreas: [],
+        roomAreas: [],
+        transitions: [transition(5, 5, floor, 5, 5, 0)],
+      });
+      expect(anchor.join("\n")).toContain(`transition anchor floor ${floor} is outside`);
+      const target = checkWorldSpec({
+        ...base,
+        buildingAreas: [],
+        roomAreas: [],
+        transitions: [transition(5, 5, 0, 5, 5, floor)],
+      });
+      expect(target.join("\n")).toContain(`transition target floor ${floor} is outside`);
+    }
+  });
+
+  it("accepts the two edge floors of the declared range", () => {
+    const { minFloor, maxFloor } = FLOOR_RANGE;
+    expect(
+      checkWorldSpec({
+        buildingAreas: [area(1n, minFloor, 1, 1, 4, 4), area(2n, maxFloor, 1, 1, 4, 4)],
+        roomAreas: [],
+        transitions: [transition(5, 5, minFloor, 5, 5, maxFloor)],
+        isStandable: everywhereStandable,
+        floorRange: FLOOR_RANGE,
+      }),
+    ).toEqual([]);
+  });
+
   it("accepts a world whose areas, transitions and rects are all legal", () => {
     expect(
       checkWorldSpec({
@@ -52,6 +115,7 @@ describe("checkWorldSpec", () => {
         roomAreas: [area(3n, 0, 2, 2, 3, 3)],
         transitions: [transition(5, 5, 0, 5, 5, -1)],
         isStandable: everywhereStandable,
+        floorRange: FLOOR_RANGE,
       }),
     ).toEqual([]);
   });
@@ -62,6 +126,7 @@ describe("checkWorldSpec", () => {
       roomAreas: [],
       transitions: [],
       isStandable: everywhereStandable,
+      floorRange: FLOOR_RANGE,
     });
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("overlaps");
@@ -74,6 +139,7 @@ describe("checkWorldSpec", () => {
         roomAreas: [],
         transitions: [],
         isStandable: everywhereStandable,
+        floorRange: FLOOR_RANGE,
       }),
     ).toEqual([]);
   });
@@ -85,6 +151,7 @@ describe("checkWorldSpec", () => {
         roomAreas: [area(2n, 0, 1, 1, 4, 4)],
         transitions: [],
         isStandable: everywhereStandable,
+        floorRange: FLOOR_RANGE,
       }),
     ).toEqual([]);
   });
@@ -95,6 +162,7 @@ describe("checkWorldSpec", () => {
       roomAreas: [],
       transitions: [],
       isStandable: everywhereStandable,
+      floorRange: FLOOR_RANGE,
     });
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("chunk");
@@ -108,6 +176,7 @@ describe("checkWorldSpec", () => {
       roomAreas: [],
       transitions: [],
       isStandable: everywhereStandable,
+      floorRange: FLOOR_RANGE,
       chunkKeyOf: (a) => chunkKey(a.rect.x0, a.rect.y0, a.floor),
     });
     expect(problems).toEqual([]);
@@ -124,6 +193,7 @@ describe("checkWorldSpec", () => {
       roomAreas: [],
       transitions: [],
       isStandable: everywhereStandable,
+      floorRange: FLOOR_RANGE,
       chunkKeyOf: () => chunkKey(CHUNK_SIZE, CHUNK_SIZE, 0),
     });
     expect(problems).toHaveLength(1);
@@ -136,6 +206,7 @@ describe("checkWorldSpec", () => {
       roomAreas: [],
       transitions: [],
       isStandable: everywhereStandable,
+      floorRange: FLOOR_RANGE,
     });
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("invalid");
@@ -147,6 +218,7 @@ describe("checkWorldSpec", () => {
       roomAreas: [],
       transitions: [transition(5, 5, 0, 9, 9, 1)],
       isStandable: (x, y) => !(x === 5 && y === 5),
+      floorRange: FLOOR_RANGE,
     });
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("anchor");
@@ -158,6 +230,7 @@ describe("checkWorldSpec", () => {
       roomAreas: [],
       transitions: [transition(5, 5, 0, 9, 9, 1)],
       isStandable: (x, y, floor) => !(x === 9 && y === 9 && floor === 1),
+      floorRange: FLOOR_RANGE,
     });
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("target");
@@ -169,6 +242,7 @@ describe("checkWorldSpec", () => {
       roomAreas: [],
       transitions: [transition(5, 5, 0, 9, 9, 1)],
       isStandable: () => false,
+      floorRange: FLOOR_RANGE,
     });
     expect(problems.length).toBeGreaterThanOrEqual(3);
   });

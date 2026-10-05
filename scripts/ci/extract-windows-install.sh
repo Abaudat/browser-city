@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Extracts the PowerShell fenced block between <!-- bc:windows-install:start
 # --> and <!-- bc:windows-install:end --> in server/README.md and prints it
-# to stdout, one command per line, so windows-install-check.yml can execute
-# the README's own documented method verbatim rather than a copy of it that
-# can drift. Fails closed: no markers, no fenced block inside them, or an
-# empty block are all errors, not an empty success.
+# to stdout, one command per line -- the README's own documented method,
+# never a copy of it that can drift. scripts/ci/extract-windows-install-pin.sh
+# wraps this to get everything after the block's own first line, the two
+# pinned-version commands windows-install-check.yml's "version pin" step
+# runs verbatim; the first line itself is what that workflow's "installer"
+# step substitutes a headless install for (story 4.20). Fails closed: no
+# markers, no fenced block inside them, or an empty block are all errors,
+# not an empty success.
 set -euo pipefail
 
 README="${1:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)/server/README.md}"

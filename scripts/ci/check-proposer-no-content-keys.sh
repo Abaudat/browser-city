@@ -8,7 +8,7 @@
 # (every `sprite.sheet`/`sheet` basename `defs/` itself names) appears as
 # a quoted string literal anywhere under the proposer's own source
 # (`tools/defs-build/src/propose.rs`, `tools/defs-build/src/bin/
-# defs-propose.rs`).
+# defs-propose.rs`), and under `alpha.rs`/`silhouette.rs` (story 15.3).
 #
 # Matches a literal only when quoted (`"cafe"` or `'cafe'`), never a bare
 # identifier or ordinary prose -- the same narrower-than-substring
@@ -33,12 +33,16 @@ DEFS_DIR="${3:-"$REPO_ROOT/defs"}"
   exit 1
 }
 
-# The proposer's own source: `propose.rs` and `bin/defs-propose.rs` only
-# -- never the whole crate (every other module legitimately quotes all
-# sorts of literals).
+# The proposer's own source and the pixel code it shares with the build's
+# silhouette check: `propose.rs`, `bin/defs-propose.rs`, `alpha.rs` and
+# `silhouette.rs` only -- never the whole crate (every other module
+# legitimately quotes all sorts of literals). The check has no object key,
+# no sheet filename, no skip list, no tolerance knob.
 PROPOSER_FILES=()
 [ -f "$PROPOSER_DIR/propose.rs" ] && PROPOSER_FILES+=("$PROPOSER_DIR/propose.rs")
 [ -f "$PROPOSER_DIR/bin/defs-propose.rs" ] && PROPOSER_FILES+=("$PROPOSER_DIR/bin/defs-propose.rs")
+[ -f "$PROPOSER_DIR/alpha.rs" ] && PROPOSER_FILES+=("$PROPOSER_DIR/alpha.rs")
+[ -f "$PROPOSER_DIR/silhouette.rs" ] && PROPOSER_FILES+=("$PROPOSER_DIR/silhouette.rs")
 
 if [ "${#PROPOSER_FILES[@]}" -eq 0 ]; then
   echo "check-proposer-no-content-keys: FAIL -- neither propose.rs nor bin/defs-propose.rs found under $PROPOSER_DIR" >&2
@@ -86,5 +90,5 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-proposer-no-content-keys: no committed object key or sheet filename appears as a literal under the proposer's own source" >&2
+echo "check-proposer-no-content-keys: no committed object key or sheet filename appears as a literal under the proposer's or the pixel check's own source" >&2
 exit 0

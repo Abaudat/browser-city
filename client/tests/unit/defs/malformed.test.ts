@@ -7,6 +7,8 @@
 // `tools/defs-build/tests/fixtures/invalid/`, checked against this same
 // list by `tools/defs-build/tests/shared_malformed_cases.rs`).
 //
+// `item-unknown-unit` is absent too: it needs the codes golden's unit names,
+// which this client never reads (an item carries a `u32` code only).
 // `sprite-sheet-missing` and `sprite-outside-sheet-bounds` are
 // deliberately absent from the shared list: both need a real sheet's own
 // `IHDR` dimensions, which this client never reads -- the artefact it

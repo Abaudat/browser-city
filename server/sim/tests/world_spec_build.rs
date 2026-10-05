@@ -332,3 +332,51 @@ fn accepts_overlapping_areas_of_different_kinds() {
     assert_eq!(ownership.building_id, 1);
     assert_eq!(ownership.room_id, 1);
 }
+
+#[test]
+fn refuses_a_floor_outside_the_declared_range() {
+    use sim::generated::defs::{MAX_FLOOR, MIN_FLOOR};
+    for floor in [MIN_FLOOR - 1, MAX_FLOOR + 1] {
+        let spec = WorldSpec {
+            floors: vec![FloorSpec {
+                floor: floor as i8,
+                bounds: bounds(),
+                colliders: Vec::new(),
+            }],
+            ..WorldSpec::default()
+        };
+        assert!(spec.build().is_err(), "floor {floor} is outside the world");
+    }
+    for floor in [MIN_FLOOR, MAX_FLOOR] {
+        let spec = WorldSpec {
+            floors: vec![FloorSpec {
+                floor: floor as i8,
+                bounds: bounds(),
+                colliders: Vec::new(),
+            }],
+            ..WorldSpec::default()
+        };
+        assert!(spec.build().is_ok(), "floor {floor} is inside the world");
+    }
+}
+
+#[test]
+fn refuses_an_area_on_a_floor_outside_the_declared_range() {
+    let rect = Rect {
+        x0: 0,
+        y0: 0,
+        x1: 2,
+        y1: 2,
+    };
+    let floor = (sim::generated::defs::MAX_FLOOR + 1) as i8;
+    let spec = WorldSpec {
+        building_areas: vec![AreaSpec {
+            owner_id: 1,
+            floor,
+            rect,
+            chunk_key: chunk_key(0, 0, floor),
+        }],
+        ..WorldSpec::default()
+    };
+    assert!(spec.build().is_err());
+}

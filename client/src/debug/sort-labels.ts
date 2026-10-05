@@ -13,7 +13,7 @@
 // (`inv_sort_overlay_labels_are_the_sort_key`), which is what makes "the
 // label is the key" a checked claim rather than a comment.
 
-import { screenPositionPx } from "../render/screen-position";
+import { worldPointPx } from "../render/screen-position";
 import type { Drawable } from "../render/sort-key";
 import { fromSortUnits } from "../render/sort-units";
 import { isEmptyCellBounds } from "../world/world-index";
@@ -84,9 +84,11 @@ export function parseSortLabel(label: string): Drawable | undefined {
 
 /**
  * A readout for every pool member on the viewer's own floor that is
- * currently on screen -- placed at each one's own anchor, the same
- * `screen-position.ts` projection the renderer positions its sprite with,
- * so a label sitting somewhere other than on its sprite is itself a
+ * currently on screen -- placed at each one's own anchor. `d.x`/`d.y`
+ * are already the drawn bottom-centre point in sort units (story 15.4),
+ * so the same plain `worldPointPx` projection the renderer positions its
+ * sprite with draws the label at it too, with no anchor arithmetic of its
+ * own -- a label sitting somewhere other than on its sprite is itself a
  * finding.
  */
 export function buildSortLabels(view: DebugWorldView): SortLabel[] {
@@ -105,7 +107,15 @@ export function buildSortLabels(view: DebugWorldView): SortLabel[] {
     if (worldX < bounds.cellX0 || worldX > bounds.cellX1 + 1) continue;
     if (worldY < bounds.cellY0 || worldY > bounds.cellY1 + 1) continue;
     const order = view.orderOf(d.stableId);
-    const anchor = screenPositionPx(worldX, worldY, floor, view.tileSizePx, view.storeyHeightPx);
+    const anchor = worldPointPx(
+      worldX,
+      worldY,
+      floor,
+      view.tileSizePx,
+      view.storeyHeightPx,
+      view.zoom,
+      0,
+    );
     // Two adjacent props never share a baseline: without this, a row of
     // one-tile props prints every key over its neighbours'. Keyed on the
     // tile column (`worldX`, already computed above), never on `d.x` in

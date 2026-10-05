@@ -36,6 +36,18 @@ describe("sortAcrossFloors", () => {
     expect(sortAcrossFloors([near, far], (d) => d)).toEqual([far, near]);
   });
 
+  it("draws a flat-layer drawable before every pool drawable on its floor, whatever its y or rank order", () => {
+    const flatSouth = drawable(1n, 900, 0, 5);
+    const flatNorth = drawable(2n, 100, 0, 5);
+    const poolNorth = drawable(3n, 10, 0, 20);
+    const poolSouth = drawable(4n, 50, 0, 50);
+    const upper = drawable(5n, 0, 1, 5);
+    // Flat ones keep insertion order (never y-sorted), then the sorted pool.
+    expect(sortAcrossFloors([poolSouth, flatSouth, poolNorth, flatNorth, upper], (d) => d)).toEqual(
+      [flatSouth, flatNorth, poolNorth, poolSouth, upper],
+    );
+  });
+
   it("drops and duplicates nothing, and leaves its input alone", () => {
     const input = [drawable(1n, 5, 1), drawable(2n, 5, 0), drawable(3n, 1, 1)];
     const snapshot = [...input];
@@ -106,5 +118,46 @@ describe("FloorStacks", () => {
     walk(world);
 
     expect(drawn.indexOf(streetSprite)).toBeLessThan(drawn.indexOf(deckSprite));
+  });
+});
+
+describe("FloorStacks.assertManaged (story 15.8, Tim's direction cycle 1)", () => {
+  it("passes when every extra container under a stack root is a registered visibility member", () => {
+    const world = new Container();
+    const stacks = new FloorStacks(world);
+    const stack = stacks.stackFor(0);
+    const crowd = new Container();
+    stack.root.addChild(crowd);
+
+    expect(() => stacks.assertManaged(new Set([crowd]))).not.toThrow();
+  });
+
+  it("passes with nothing registered at all when no stack owns anything beyond its own four passes", () => {
+    const world = new Container();
+    const stacks = new FloorStacks(world);
+    stacks.stackFor(0);
+    stacks.stackFor(-1);
+
+    expect(() => stacks.assertManaged(new Set())).not.toThrow();
+  });
+
+  it("throws when a container is attached under a stack root but never registered -- the crowd defect this story fixed", () => {
+    const world = new Container();
+    const stacks = new FloorStacks(world);
+    const stack = stacks.stackFor(0);
+    const orphan = new Container();
+    stack.root.addChild(orphan);
+
+    expect(() => stacks.assertManaged(new Set())).toThrow(/floor 0/);
+  });
+
+  it("throws when a container is attached straight to the parent, bypassing every stack", () => {
+    const world = new Container();
+    const stacks = new FloorStacks(world);
+    stacks.stackFor(0);
+    const orphan = new Container();
+    world.addChild(orphan);
+
+    expect(() => stacks.assertManaged(new Set([orphan]))).toThrow(/stack root/);
   });
 });

@@ -1,7 +1,7 @@
 //! The determinism harness for stories 3.2-3.5 (FR110 passes 1-6): same
 //! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
 //! all six passes for a fixed seed set and compares a readable summary
-//! plus a digest against the committed `tests/goldens/generation_v7.
+//! plus a digest against the committed `tests/goldens/generation_v10.
 //! golden`, so a diff names what moved rather than just "hash differs".
 //! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
 //! bump.sh` fails a PR that touches the golden without bumping that
@@ -41,7 +41,7 @@ use sim::rules::{CoherenceMode, RuleDef, RuleKind, RuleSet};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v7.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v10.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -65,6 +65,7 @@ fn frozen_config() -> GenerationConfig {
         share_commercial_pct: 18,
         share_industrial_pct: 14,
         share_institutional_pct: 10,
+        share_tolerance_pct: 100,
         arterial_count_ns_min: 2,
         arterial_count_ns_max: 3,
         arterial_count_ew_min: 1,
@@ -83,13 +84,13 @@ fn frozen_config() -> GenerationConfig {
         max_lane_splits: 4,
         max_street_splits_per_superblock: 1,
         junction_min_separation_cells: 28,
-        detour_long_pair_cells: 128,
         max_detour_percent: 200,
         max_detour_excess_cells: 80,
         p99_detour_percent: 160,
         min_distinct_block_sizes: 3,
         peripheral_low_band_floor_percent: 70,
         peripheral_pooled_min_ratio_percent: 150,
+        thin_strip_long_side_percent: 150,
         institutional_min_pockets: 3,
         institutional_max_pocket_share_percent: 6,
         plot_frontage_min_cells: 3,
@@ -603,7 +604,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v7.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v10.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );

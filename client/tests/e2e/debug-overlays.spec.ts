@@ -13,6 +13,15 @@
 import { expect, type Page, test } from "@playwright/test";
 import { DEBUG_OVERLAYS } from "../../src/debug/overlays";
 import type {} from "../../src/net/e2e-hooks";
+import { STAIRWELL_X0 } from "../../src/test-street/fixture";
+import {
+  railingFootRoute,
+  streetMovementConfig,
+  topRailingFoot,
+} from "../unit/test-street/street-world";
+import { canvasOf } from "./camera-test-support";
+import { SCREENSHOT_OPTIONS } from "./screenshot-support";
+import { walkRealSegment } from "./walk-support";
 
 const OVERLAY_IDS = DEBUG_OVERLAYS.map((o) => o.id);
 
@@ -24,12 +33,7 @@ const OVERLAY_IDS = DEBUG_OVERLAYS.map((o) => o.id);
 // budget absorbs is rendering noise alone.
 test.use({ viewport: { width: 1920, height: 1080 } });
 
-const SCREENSHOT_OPTIONS = {
-  animations: "disabled",
-  threshold: 0.2,
-  maxDiffPixels: 150,
-  timeout: 30_000,
-} as const;
+const OVERLAY_SCREENSHOT_OPTIONS = { ...SCREENSHOT_OPTIONS, maxDiffPixels: 150 } as const;
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
@@ -100,6 +104,60 @@ test("the collision overlay draws every collider state over the real street (AC2
           .pointerEvents,
     ),
   ).toBe("none");
+});
+
+// Story 15.4 (AC3): the player's own collision box sits exactly on their
+// drawn silhouette, not merely somewhere in the same collider list.
+// `data-bc-collider="player"` is the overlay's fourth entry (Quentin/
+// Tim's direction); its own drawn rect, mapped through the scene's real
+// `viewTransform` into canvas pixels, must have its bottom-centre within
+// 1px of `playerScreenBounds()` -- Pixi's own real, drawn sprite bounds.
+// Red before this story's fix by `(tile/2, tile)` at the scene's own
+// zoom, the same offset every other AC1/AC4 case in this PR names.
+test("the collision overlay's player body sits on the player's real drawn sprite (AC3)", async ({
+  page,
+}) => {
+  await page.goto("/?debug=collision&freezeCrowd");
+  await waitForSceneReady(page);
+
+  const player = page.locator('[data-bc-collider="player"]');
+  await expect(player).toHaveCount(1);
+
+  const overlayRect = await player.evaluate((el) => ({
+    x: Number(el.getAttribute("x")),
+    y: Number(el.getAttribute("y")),
+    width: Number(el.getAttribute("width")),
+    height: Number(el.getAttribute("height")),
+  }));
+  const viewTransform = await page.evaluate(() => window.__bc?.viewTransform);
+  const bounds = await page.evaluate(() => window.__bc?.playerScreenBounds?.());
+  if (!viewTransform || !bounds) throw new Error("no viewTransform/playerScreenBounds hook");
+
+  // The overlay rect is in the same pre-zoom world-pixel space
+  // `screen-position.ts` produces (`overlays.ts`'s own `viewGroup`
+  // transform); `playerScreenBounds()` is Pixi's own real, drawn bounds,
+  // already in canvas pixels. Both bottom-centres must agree.
+  const overlayCanvasX = overlayRect.x * viewTransform.zoom + viewTransform.offsetX;
+  const overlayCanvasY = overlayRect.y * viewTransform.zoom + viewTransform.offsetY;
+  const overlayWidthCanvas = overlayRect.width * viewTransform.zoom;
+  const overlayHeightCanvas = overlayRect.height * viewTransform.zoom;
+  const overlayBottomCentre = {
+    x: overlayCanvasX + overlayWidthCanvas / 2,
+    y: overlayCanvasY + overlayHeightCanvas,
+  };
+  const spriteBottomCentre = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height };
+
+  expect(Math.abs(overlayBottomCentre.x - spriteBottomCentre.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(overlayBottomCentre.y - spriteBottomCentre.y)).toBeLessThanOrEqual(1);
+
+  // Distinct from every object collider colour, so the two read apart at
+  // a glance (Artie's direction).
+  const stroke = await player.evaluate((el) => el.getAttribute("stroke"));
+  const objectStroke = await page
+    .locator('[data-bc-collider="collider"]')
+    .first()
+    .evaluate((el) => el.getAttribute("stroke"));
+  expect(stroke).not.toBe(objectStroke);
 });
 
 test("the sort overlay prints the key the renderer actually ordered by (AC3)", async ({ page }) => {
@@ -187,6 +245,81 @@ test("the overlay is deliberately non-diegetic", async ({ page }) => {
   // deterministic, exactly as test-street.spec.ts's own snapshots are.
   await expect(page.locator("#test-street")).toHaveScreenshot(
     "collision-overlay.png",
-    SCREENSHOT_OPTIONS,
+    OVERLAY_SCREENSHOT_OPTIONS,
   );
+});
+
+// Story 15.12 (Artie, Quentin): the top railing collides at its foot, so a
+// player walking south from the finial row rests with their feet on the
+// base rail. The DOM facts are the proof -- the player's body sits exactly
+// on the railing's collider rect -- and the picture is the supplement.
+test("the player walking south rests on the top railing's foot (story 15.12)", async ({ page }) => {
+  await page.goto("/?debug=collision&freezeCrowd");
+  await waitForSceneReady(page);
+
+  const foot = topRailingFoot();
+  for (const segment of railingFootRoute()) await walkRealSegment(page, segment);
+  // Slide west along the foot to the strip's end, where the body rests
+  // against the ring: a position fixed by geometry, never by key timing,
+  // so the picture is the same on every run.
+  const config = streetMovementConfig();
+  const westRestX = STAIRWELL_X0 + config.bodyWidthSubcells / 2 / config.subcellsPerCell;
+  await page.keyboard.down("ArrowLeft");
+  await page.waitForFunction(
+    (x) => Math.abs((window.__bc?.playerPosition?.x ?? 0) - x) < 1e-6,
+    westRestX,
+    { timeout: 30_000 },
+  );
+  await page.keyboard.up("ArrowLeft");
+
+  const position = await page.evaluate(() => window.__bc?.playerPosition);
+  expect(position?.y).toBeCloseTo(foot.rect.y0, 4);
+
+  // The overlay redraws a frame after the body stops: poll the condition.
+  await expect
+    .poll(
+      () =>
+        page.evaluate((objectId) => {
+          const player = document.querySelector('[data-bc-collider="player"]');
+          const rail = document.querySelector(
+            `[data-bc-collider="collider"][data-bc-object="${objectId}"]`,
+          );
+          if (!player || !rail) return Number.NaN;
+          return (
+            Number(player.getAttribute("y")) +
+            Number(player.getAttribute("height")) -
+            Number(rail.getAttribute("y"))
+          );
+        }, foot.prop.id.toString()),
+      { message: "the player's bottom edge sits on the railing collider's top edge" },
+    )
+    .toBeCloseTo(0, 4);
+
+  // The stairwell plus one cell each side, from the real view transform.
+  const clip = await page.evaluate(
+    ({ x0, y0, x1, y1 }) => {
+      const view = window.__bc?.viewTransform;
+      const canvas = document.querySelector("#test-street canvas");
+      if (!view || !canvas) throw new Error("no view transform or canvas");
+      const box = canvas.getBoundingClientRect();
+      const px = (cell: number, offset: number) => cell * 16 * view.zoom + offset;
+      return {
+        x: box.x + px(x0, view.offsetX),
+        y: box.y + px(y0, view.offsetY),
+        width: px(x1, view.offsetX) - px(x0, view.offsetX),
+        height: px(y1, view.offsetY) - px(y0, view.offsetY),
+      };
+    },
+    {
+      x0: STAIRWELL_X0 - 1,
+      y0: foot.prop.y - 2,
+      x1: STAIRWELL_X0 + 4,
+      y1: foot.prop.y + 3,
+    },
+  );
+  await expect(canvasOf(page)).toBeVisible();
+  await expect(page).toHaveScreenshot("top-railing-foot.png", {
+    ...OVERLAY_SCREENSHOT_OPTIONS,
+    clip,
+  });
 });

@@ -41,14 +41,8 @@ FAILED=0
 
 # --- extract a named job's block: from its "  <name>:" line up to (but
 # not including) the next top-level "  <other>:" line, or EOF. -----------
-job_block() {
-  local name="$1"
-  awk -v name="$name" '
-    $0 ~ "^  " name ":$" { inblock = 1; print; next }
-    inblock && /^  [A-Za-z0-9_-]+:$/ { inblock = 0 }
-    inblock { print }
-  ' "$WORKFLOW"
-}
+. "$REPO_ROOT/scripts/ci/lib/workflow-job.sh"
+job_block() { workflow_job_block "$WORKFLOW" "$1"; }
 
 # --- the `ci` job's own `needs:` list, as a flow sequence on one line ----
 CI_BLOCK="$(job_block ci)"
@@ -83,6 +77,47 @@ while IFS= read -r job; do
   [ "$job" = "ci" ] && continue
   if ! printf '%s\n' "$WORKFLOW_JOBS" | grep -qxF "$job"; then
     echo "check-ci-gate: FAIL -- job '$job' exists in $WORKFLOW but is not in the 'ci:' job's needs: -- it is invisible to the gate" >&2
+    FAILED=1
+  fi
+done <<< "$ALL_JOB_NAMES"
+
+# --- NFR50: the property gate's inputs are pinned and logged. The workflow
+# carries a workflow-level `PROPTEST_CASES` and a fixed numeric
+# `PROPTEST_RNG_SEED`, and a step echoes both to the log so a failure can be
+# reproduced from the log alone. -----------------------------------------
+if ! grep -qE '^  PROPTEST_CASES: [0-9]+$' "$WORKFLOW"; then
+  echo "check-ci-gate: FAIL -- $WORKFLOW has no workflow-level 'PROPTEST_CASES: <n>'" >&2
+  FAILED=1
+fi
+if ! grep -qE '^  PROPTEST_RNG_SEED: [0-9]+$' "$WORKFLOW"; then
+  echo "check-ci-gate: FAIL -- $WORKFLOW has no workflow-level fixed 'PROPTEST_RNG_SEED: <u64>' (NFR50)" >&2
+  FAILED=1
+fi
+# Every job that runs `cargo test` echoes both to its own log.
+while IFS= read -r job; do
+  [ -n "$job" ] || continue
+  BLOCK="$(job_block "$job")"
+  if printf '%s
+' "$BLOCK" | grep -vE '^[[:space:]]*#' | grep -qE 'cargo test' \
+    && ! printf '%s\n' "$BLOCK" | grep -qE 'echo .*PROPTEST_CASES.*PROPTEST_RNG_SEED|echo .*PROPTEST_RNG_SEED.*PROPTEST_CASES'; then
+    echo "check-ci-gate: FAIL -- job '$job' runs cargo test but never echoes PROPTEST_CASES and PROPTEST_RNG_SEED to its log (NFR50)" >&2
+    FAILED=1
+  fi
+done <<< "$ALL_JOB_NAMES"
+
+# --- NFR50, client half: a workflow-level literal `FAST_CHECK_SEED: <digits>`
+# (an expression such as github.run_id would put a fresh seed on the gate),
+# and every job that runs the client unit tests echoes it to its log. ------
+if ! grep -qE '^  FAST_CHECK_SEED: [0-9]+$' "$WORKFLOW"; then
+  echo "check-ci-gate: FAIL -- $WORKFLOW has no workflow-level literal 'FAST_CHECK_SEED: <digits>' (NFR50)" >&2
+  FAILED=1
+fi
+while IFS= read -r job; do
+  [ -n "$job" ] || continue
+  BLOCK="$(job_block "$job")"
+  if printf '%s\n' "$BLOCK" | grep -vE '^[[:space:]]*#' | grep -qE 'npm run test:unit' \
+    && ! printf '%s\n' "$BLOCK" | grep -qE 'echo .*FAST_CHECK_SEED'; then
+    echo "check-ci-gate: FAIL -- job '$job' runs the client unit tests but never echoes FAST_CHECK_SEED to its log (NFR50)" >&2
     FAILED=1
   fi
 done <<< "$ALL_JOB_NAMES"

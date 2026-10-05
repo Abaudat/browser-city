@@ -41,9 +41,10 @@ structure = "threshold"
 role = { layers = ["walls"] }
 
 # A fixture is a discrete object placed atop a surface (furniture or a
-# street/room prop) -- never a surface tile itself.
+# street/room prop) -- never a surface tile itself. `ground_objects` is the
+# flat pass for a fixture lying on the ground (a flight of treads).
 [[tag]]
 id = 15
 key = "fixture"
 structure = "fixture"
-role = { layers = ["furniture", "objects"] }
+role = { layers = ["furniture", "objects", "ground_objects"] }

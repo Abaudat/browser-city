@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # `check-layer-table-current.sh` protects two hand-kept mirrors of
 # `sim::codes::layer` (`client/src/render/layer-table.ts` and
-# `tools/defs-build/src/layer_codes.rs`'s `DEPRECATED_LAYER_NAMES`), but
+# `tools/defs-build/src/codes.rs`'s `DEPRECATED_LAYER_NAMES`), but
 # the guard itself is only as good as the CI filter that decides whether
 # it runs. `client-check`'s own filter never covers `tools/defs-build/**`
 # (Quentin's direction, cycle 2: adding it there would re-run the whole
 # client suite on every defs-build change instead), so the `defs` job --
 # whose own filter does cover `tools/defs-build/**` -- is what has to run
-# this guard for a `layer_codes.rs`-only PR to ever see it. This script
+# this guard for a `codes.rs`-only PR to ever see it. This script
 # is the mechanical proof that step exists, so a future edit to
 # `.github/workflows/ci.yml` cannot silently drop it the way the filter
 # gap itself went unnoticed for one whole review cycle.
@@ -38,7 +38,7 @@ if [ -z "$DEFS_BLOCK" ]; then
 fi
 
 if ! printf '%s\n' "$DEFS_BLOCK" | grep -qF 'check-layer-table-current.sh'; then
-  echo "check-layer-table-guard-wired: FAIL -- the 'defs:' job in $WORKFLOW never runs check-layer-table-current.sh -- a PR that only edits tools/defs-build/src/layer_codes.rs would skip client-check (its filter excludes tools/defs-build/**) and this drift guard would never run at all" >&2
+  echo "check-layer-table-guard-wired: FAIL -- the 'defs:' job in $WORKFLOW never runs check-layer-table-current.sh -- a PR that only edits tools/defs-build/src/codes.rs would skip client-check (its filter excludes tools/defs-build/**) and this drift guard would never run at all" >&2
   exit 1
 fi
 

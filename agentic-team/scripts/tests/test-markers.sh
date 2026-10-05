@@ -87,6 +87,15 @@ check_out "demo body: sprint number"      0 3 marker_get "$S" "demo"
 check     "demo body: is not a human comment" 1 is_human_comment "$S"
 
 echo
+echo "the feedback-reply marker: Scotty's report back to Adrian:"
+
+S="$(render_feedback_reply "We opened #122 to tighten the parry window.")"
+check     "feedback reply: bc:feedback-reply present"     0 has_marker "$S" "feedback-reply"
+check     "feedback reply: is not a human comment"        1 is_human_comment "$S"
+check     "feedback reply: the ruling is carried through"  0 \
+  bash -c "printf '%s' \"\$1\" | grep -q 'tighten the parry window'" _ "$S"
+
+echo
 echo "the epic import's provenance markers:"
 
 S="$(render_epic_body 0 "The epic outcome, in one paragraph.")"
@@ -132,5 +141,37 @@ check     "resolved request: the ruling is attributed to Scotty" 0 \
 # accident.
 check "there is no crew task-request renderer" 1 \
   bash -c 'declare -f render_crew_task_request >/dev/null'
+
+echo
+echo "the live declaration: one marker, three states, round-trips through render and parse:"
+
+LV="$(render_live visible "Open the city and walk to the cafe door.")"
+check_out "live visible: the marker's value is the state" 0 visible marker_get "$LV" "live"
+check_out "live visible: parses back to state and where" 0 \
+  "$(printf 'visible\nOpen the city and walk to the cafe door.')" parse_live "$LV"
+check     "live visible: is not a human comment" 1 is_human_comment "$LV"
+LN="$(render_live none)"
+check_out "live none: the marker's value is the state" 0 none marker_get "$LN" "live"
+check_out "live none: parses back to the state alone" 0 none parse_live "$LN"
+check     "live none: is not a human comment" 1 is_human_comment "$LN"
+check_out "live: a CRLF body parses the same" 0 \
+  "$(printf 'visible\nOpen the city and walk to the cafe door.')" \
+  parse_live "$(printf '%s' "$LV" | sed 's/$/\r/')"
+check_out "live: an unknown marker value is undeclared" 0 undeclared \
+  parse_live "$(printf 'x\n\n<!-- bc:live maybe -->')"
+check_out "live: visible with an empty where-line is undeclared" 0 undeclared \
+  parse_live "$(printf '### Live\n\n<!-- bc:live visible -->')"
+check_out "live: no marker at all is undeclared" 0 undeclared parse_live "just a human comment"
+
+echo
+echo "is_live_declaration: only the shape render_live writes is a declaration:"
+
+check "a visible declaration is one" 0 is_live_declaration "$LV"
+check "a none declaration is one" 0 is_live_declaration "$LN"
+check "a CRLF copy of a declaration is one" 0 is_live_declaration "$(printf '%s' "$LV" | sed 's/$/\r/')"
+check "a body with no marker is not one" 1 is_live_declaration "just a human comment"
+check "the marker quoted inline in prose is not one" 1 is_live_declaration "Today it says \`<!-- bc:live none -->\` here."
+check "the marker on its own line beside another bc: marker is not one" 1 \
+  is_live_declaration "$(printf '### Analysis\n\n<!-- bc:live none -->\n<!-- bc:lead:tim -->\n')"
 
 summary

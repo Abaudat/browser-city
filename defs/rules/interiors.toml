@@ -11,7 +11,7 @@
 # Every room has a light: a wall or ceiling light in the room itself,
 # never a flag.
 [[requirement]]
-id = 26
+id = 27
 key = "room_has_a_light"
 container = "room"
 requires = "lighting"
@@ -22,7 +22,7 @@ min = 1
 # of a business -- a stock room, an office, a workroom -- and holds a
 # stock fixture: an empty container, no item and no quantity.
 [[requirement]]
-id = 27
+id = 28
 key = "business_has_stock_space"
 container = "staff"
 requires = "stock"
@@ -32,28 +32,28 @@ min = 1
 # (Artie's direction): a citizen acts at each to meet a need or hold a
 # post.
 [[requirement]]
-id = 28
+id = 29
 key = "bedroom_has_a_bed"
 container = "sleeping"
 requires = "bed"
 min = 1
 
 [[requirement]]
-id = 29
+id = 30
 key = "kitchen_has_a_cooker"
 container = "cooking"
 requires = "cooker"
 min = 1
 
 [[requirement]]
-id = 30
+id = 31
 key = "bathroom_has_a_basin"
 container = "washing"
 requires = "basin"
 min = 1
 
 [[requirement]]
-id = 31
+id = 32
 key = "living_room_has_a_table_set"
 container = "dining"
 requires = "table_set"
@@ -61,7 +61,7 @@ min = 1
 
 # A room open to the public that trades has its till or service counter.
 [[requirement]]
-id = 32
+id = 33
 key = "shop_floor_has_a_counter"
 container = "trading"
 requires = "counter"
@@ -70,21 +70,21 @@ min = 1
 # A cafe floor seats customers: at least two table sets beside its
 # counter.
 [[requirement]]
-id = 33
+id = 34
 key = "cafe_has_two_table_sets"
 container = "seated_service"
 requires = "table_set"
 min = 2
 
 [[requirement]]
-id = 34
+id = 35
 key = "office_has_a_desk"
 container = "working"
 requires = "desk"
 min = 1
 
 [[requirement]]
-id = 35
+id = 36
 key = "workroom_has_a_workbench"
 container = "making"
 requires = "workbench"
@@ -95,7 +95,7 @@ min = 1
 # refused too: the cell then no longer reads as a doorway --
 # `doorway_formed_between_walls`.)
 [[adjacency]]
-id = 36
+id = 37
 key = "door_never_blocked_by_a_fixture"
 a = "threshold"
 b = "fixture"
@@ -109,7 +109,7 @@ relation = "forbid"
 # a type whose own minimum interior cannot hold its program, and this
 # row holds the laid-out rooms to the same floor.
 [[requirement]]
-id = 37
+id = 38
 key = "footprint_sized_for_interior_usability"
 container = "room"
 requires = "floor"

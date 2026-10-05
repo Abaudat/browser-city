@@ -23,26 +23,62 @@
 //! position), so adding or moving one block or plot never reshuffles
 //! another's draws.
 //!
-//! [`plan`] chains every implemented pass in order with no verdict;
-//! [`generate`] is `plan` plus [`District::check_building_count`], what
-//! production calls. Every cross-pass harness calls one of the two rather
-//! than hand-chaining the four `run` functions; each pass's own `run`
-//! stays public for its own unit tests and for the two properties that
-//! deliberately feed one pass a perturbed predecessor.
+//! `entry.rs`'s `plan` chains every implemented pass in order with no
+//! verdict; `generate` is `plan` plus the three district verdicts
+//! ([`District::check_building_count`] and its siblings). Both are harness
+//! entry points, re-exported only under `test-fixtures`; production calls
+//! [`create`], which wraps `generate`. Every cross-pass harness calls one
+//! of the two rather than hand-chaining the passes; the pass modules are
+//! public only under `test-fixtures` too, for their own unit tests and for
+//! the two properties that deliberately feed one pass a perturbed
+//! predecessor.
 
+#[cfg(feature = "test-fixtures")]
 pub mod building_types;
+#[cfg(not(feature = "test-fixtures"))]
+mod building_types;
+mod entry;
+#[cfg(feature = "test-fixtures")]
 pub mod envelopes;
+#[cfg(not(feature = "test-fixtures"))]
+mod envelopes;
+#[cfg(feature = "test-fixtures")]
 pub mod interiors;
+#[cfg(not(feature = "test-fixtures"))]
+mod interiors;
+#[cfg(feature = "test-fixtures")]
 pub mod land_use;
+// Their harness-only helpers are public API under `test-fixtures`.
+#[cfg(not(feature = "test-fixtures"))]
+#[allow(dead_code)]
+mod land_use;
+#[cfg(feature = "test-fixtures")]
 pub mod plots;
+#[cfg(not(feature = "test-fixtures"))]
+mod plots;
+pub mod record;
 pub mod site;
+#[cfg(feature = "test-fixtures")]
 pub mod streets;
+// Their harness-only helpers are public API under `test-fixtures`.
+#[cfg(not(feature = "test-fixtures"))]
+#[allow(dead_code)]
+mod streets;
 
 pub use building_types::{BuildingTypeMap, TypeAssignment};
 pub use envelopes::{Envelope, EnvelopeMap, EnvelopeOutcome, RejectReason};
 pub use interiors::{Interior, InteriorMap, InteriorOutcome};
 pub use land_use::{LandUse, LandUseCell, LandUseMap, Region};
 pub use plots::{Plot, PlotMap};
+pub use record::{DistrictRecord, RuleSetVersion, create};
+
+// `plan` and `generate` are reachable outside this crate only with
+// `test-fixtures`: production (`browser_city`) never enables it, so a reducer
+// naming either is a compile error and `create` is its only way in.
+#[cfg(not(feature = "test-fixtures"))]
+pub(crate) use entry::generate;
+#[cfg(feature = "test-fixtures")]
+pub use entry::{generate, plan, plan_skeleton};
 pub use site::DistrictSite;
 pub use streets::{Block, Side, Sides, StreetClass, StreetEdge, StreetNetwork, block_sides};
 
@@ -62,9 +98,9 @@ pub fn rect_seed_key(r: SiteBounds) -> u64 {
 
 /// Bumped whenever any implemented pass's algorithm or seeding changes in
 /// a way that could move its output for a fixed seed -- `tests/goldens/
-/// generation_v7.golden` is keyed to this, exactly like `sim::rng::
+/// generation_v10.golden` is keyed to this, exactly like `sim::rng::
 /// RNG_VERSION`/`sim::appearance::APPEARANCE_VERSION`.
-pub const GENERATION_VERSION: u32 = 7;
+pub const GENERATION_VERSION: u32 = 10;
 
 /// Every way generation itself can fail, across every implemented pass --
 /// one type, never a `Result<_, String>` per pass.
@@ -101,6 +137,9 @@ pub enum GenerationError {
     /// institution nobody can walk into is a missing institution, the
     /// same standing as pass 5's own unplaceable one.
     InstitutionNotEnterable { plot: u32, building_type: u32 },
+    /// [`create`]: `site` overlaps a district already recorded -- a
+    /// generated site is never generated again, under any rules.
+    SiteAlreadyGenerated { site: SiteBounds },
 }
 
 impl std::fmt::Display for GenerationError {
@@ -138,13 +177,17 @@ impl std::fmt::Display for GenerationError {
                 f,
                 "generation::interiors: the building on plot {plot} (type id {building_type}) is a distributed institution but has no enterable interior"
             ),
+            GenerationError::SiteAlreadyGenerated { site } => write!(
+                f,
+                "generation::create: site {site:?} overlaps an already generated district"
+            ),
         }
     }
 }
 
 impl std::error::Error for GenerationError {}
 
-/// Every content table [`plan`]/[`generate`] read, loaded once and
+/// Every content table `plan`/`generate` read, loaded once and
 /// passed down as a struct -- Tim's direction: content is an input, one
 /// signature, no `plan_with` twin, and the golden (which freezes a small,
 /// deliberately-unrelated content table alongside its frozen config)
@@ -297,71 +340,6 @@ impl District {
     }
 }
 
-/// Chains every implemented pass, in FR110's own order, with no verdict
-/// on the result -- only pass 1's own site check can fail. What a
-/// harness that must inspect every pass of an outlier city calls.
-pub fn plan(
-    city_seed: u64,
-    cfg: &GenerationConfig,
-    content: &GenerationContent,
-) -> Result<District, GenerationError> {
-    let skeleton = plan_skeleton(city_seed, cfg, content)?;
-    let interiors = interiors::run(
-        city_seed,
-        &skeleton.envelopes,
-        &skeleton.building_types,
-        &skeleton.plots,
-        cfg,
-        content,
-    );
-    Ok(District {
-        skeleton,
-        interiors,
-    })
-}
-
-/// Passes 1-5 only: what a harness that reads nothing of the interiors
-/// calls, so it never pays for pass 6 (see [`Skeleton`]). The first five
-/// passes run exactly as [`plan`] runs them -- the same seeds, the same
-/// outputs.
-pub fn plan_skeleton(
-    city_seed: u64,
-    cfg: &GenerationConfig,
-    content: &GenerationContent,
-) -> Result<Skeleton, GenerationError> {
-    let land_use = land_use::run(city_seed, cfg.site(), cfg)?;
-    let streets = streets::run(city_seed, &land_use, cfg);
-    let plots = plots::run(city_seed, &land_use, &streets, cfg);
-    let envelopes = envelopes::run(city_seed, &plots, cfg);
-    let building_types = building_types::run(city_seed, &envelopes, &plots, &streets, cfg, content);
-    Ok(Skeleton {
-        land_use,
-        streets,
-        plots,
-        envelopes,
-        building_types,
-    })
-}
-
-/// The one entry point production calls: [`plan`], then
-/// [`District::check_building_count`], [`District::check_rules`],
-/// [`District::check_workplace_count`], [`District::check_enterable_count`]
-/// and [`District::check_institutions_enterable`] -- a seed whose district
-/// fails any of them is a world that fails to create.
-pub fn generate(
-    city_seed: u64,
-    cfg: &GenerationConfig,
-    content: &GenerationContent,
-) -> Result<District, GenerationError> {
-    let district = plan(city_seed, cfg, content)?;
-    district.check_building_count(cfg)?;
-    district.check_rules(content)?;
-    district.check_workplace_count(cfg, content)?;
-    district.check_enterable_count(cfg)?;
-    district.check_institutions_enterable(content)?;
-    Ok(district)
-}
-
 /// FR110's seven passes, coarse to fine -- append-only, never renumbered.
 /// A pass not yet implemented still reserves its own id here.
 pub const PASS_LAND_USE: u64 = 1;
@@ -400,15 +378,17 @@ pub struct GenerationConfig {
     /// 256)").
     pub density_peak_offset_min_pct: i32,
     pub density_peak_offset_max_pct: i32,
-    /// District-count shares (not area shares -- `docs/generation.md`
-    /// says so): the target number of districts (recursive-subdivision
-    /// leaves) each use gets is `round(total_leaves * share_pct / 100)`,
-    /// residential taking the remainder. Realised counts are asserted
-    /// against these targets exactly (`land_use::tests`).
+    /// Area shares of the site's coarse cells: each use's target is
+    /// `round(total_cells * share_pct / 100)` cells, grown leaf by leaf
+    /// (`land_use::takes_leaf`), residential taking the remainder.
     pub share_residential_pct: i32,
     pub share_commercial_pct: i32,
     pub share_industrial_pct: i32,
     pub share_institutional_pct: i32,
+    /// Absolute percentage points a non-residential use's realised area
+    /// share may sit from its own `share_*_pct` key
+    /// (`LandUseMap::share_band_violation`).
+    pub share_tolerance_pct: i32,
 
     /// A city's own north-south (respectively east-west) arterial count
     /// is seeded uniformly in `[..._min, ..._max]` -- Artie's direction,
@@ -444,14 +424,22 @@ pub struct GenerationConfig {
     /// 4-way) or sit at least this many world cells apart -- never a
     /// near-miss crossroad a cell or two off (Tim's direction).
     pub junction_min_separation_cells: i32,
-    /// The ratio ceiling `max_detour_percent` applies to (BFS network
-    /// distance vs Manhattan distance) only over pairs at least this far
-    /// apart (Manhattan) -- a single jitter-driven jog dominates the
-    /// ratio at short range even in a real city. Short-range pairs are
-    /// instead bounded by [`Self::max_detour_excess_cells`] (Quentin's
-    /// direction, cycle 2: an additive bound is what the estimator
-    /// actually pays for at short range, a ratio is not).
-    pub detour_long_pair_cells: i32,
+    /// The site-scale-free long-range detour claim (Derek's direction,
+    /// story 15.10): `network <= max(manhattan + max_detour_excess_cells,
+    /// manhattan * max_detour_percent / 100)`, for every sampled pair,
+    /// no distance threshold of its own -- a short hop pays at most a
+    /// fixed cell budget (a single jitter-driven jog), a long crossing
+    /// pays at most a ratio, and the range where the ratio actually
+    /// binds is derived, never a third committed key
+    /// ([`Self::detour_ratio_takeover_distance_cells`]). Story 3.18's
+    /// `detour_long_pair_cells` is gone: no value of a separate distance
+    /// threshold could make an AND-with-threshold contract both non-
+    /// redundant (short of the takeover distance, the ratio was implied
+    /// by the excess bound) and coherent (a pair three cells past the
+    /// threshold was suddenly allowed *less* excess than a pair three
+    /// cells short of it, story 15.10's own flake) -- one function of
+    /// distance that never permits less at a longer range than at a
+    /// shorter one replaces both halves.
     pub max_detour_percent: i32,
     /// The absolute ceiling on `network - manhattan` (world cells),
     /// applied to every sampled pair regardless of distance -- the
@@ -481,8 +469,12 @@ pub struct GenerationConfig {
     /// over a fixed seed range (`0..256`), summed low-band mean area over
     /// summed high-band mean area must be at least this percent -- a
     /// density-blind network pools to ~100 (parity), this generator to
-    /// ~241 (Quentin's direction, cycle 4).
+    /// ~289 at `GENERATION_VERSION` 9 (Quentin's direction, cycle 4).
     pub peripheral_pooled_min_ratio_percent: i32,
+    /// A thin strip (short side under half the local target) may run to
+    /// this percent of the target along its long side before it is cut
+    /// (`split_tier_needed`); at least 100.
+    pub thin_strip_long_side_percent: i32,
     /// The hard floor on institutional pocket count `land_use::assign_
     /// institutional`'s own relaxed fallback pass guarantees whenever any
     /// eligible leaf remains (Artie's direction, cycle 3; moved off a
@@ -722,6 +714,7 @@ impl GenerationConfig {
             share_industrial_pct: get(balance, "generation.land_use.share_industrial_pct") as i32,
             share_institutional_pct: get(balance, "generation.land_use.share_institutional_pct")
                 as i32,
+            share_tolerance_pct: get(balance, "generation.land_use.share_tolerance_pct") as i32,
 
             arterial_count_ns_min: get(balance, "generation.streets.arterial_count_ns_min") as u32,
             arterial_count_ns_max: get(balance, "generation.streets.arterial_count_ns_max") as u32,
@@ -749,8 +742,6 @@ impl GenerationConfig {
                 balance,
                 "generation.streets.junction_min_separation_cells",
             ) as i32,
-            detour_long_pair_cells: get(balance, "generation.streets.detour_long_pair_cells")
-                as i32,
             max_detour_percent: get(balance, "generation.streets.max_detour_percent") as i32,
             max_detour_excess_cells: get(balance, "generation.streets.max_detour_excess_cells")
                 as i32,
@@ -763,6 +754,10 @@ impl GenerationConfig {
             peripheral_pooled_min_ratio_percent: get(
                 balance,
                 "generation.streets.peripheral_pooled_min_ratio_percent",
+            ) as i32,
+            thin_strip_long_side_percent: get(
+                balance,
+                "generation.streets.thin_strip_long_side_percent",
             ) as i32,
             institutional_min_pockets: get(
                 balance,
@@ -951,20 +946,13 @@ impl GenerationConfig {
                 cfg.max_block_depth_min_cells, cfg.max_block_depth_max_cells
             )));
         }
-        // 3 (not 2) * block_size_max_cells: a T-terminated dead-end spur
-        // (Artie's direction: "at most one arterial line per city stops
-        // short of the far site edge") is reachable by exactly one path,
-        // so the worst real route pays for both going around one
-        // largest block *and* walking out to and back from such a spur
-        // -- found by a genuinely random CI seed (never sequential
-        // measurement, which had missed it), not a bug: `(70, 18)` to a
-        // T-terminated boundary node paid 292 cells of excess against
-        // the old 2x formula's own 280-cell ceiling.
-        let detour_excess_ceiling =
-            3 * cfg.block_size_max_cells as i64 + 2 * cfg.arterial_width_cells as i64;
-        if cfg.max_detour_excess_cells as i64 > detour_excess_ceiling {
+        // `detour_excess_loosening_guard` is a config-consistency guard,
+        // never a worst-case claim -- see `docs/generation.md`'s street-
+        // network pass for why no tight structural bound exists.
+        let detour_excess_loosening_guard = cfg.detour_excess_loosening_guard();
+        if cfg.max_detour_excess_cells as i64 > detour_excess_loosening_guard {
             return Err(GenerationError::InvalidConfig(format!(
-                "GenerationConfig: max_detour_excess_cells ({}) is greater than the structural ceiling 3*block_size_max_cells + 2*arterial_width_cells ({detour_excess_ceiling}) -- the worst a rectilinear network should cost a route is going around one largest block plus walking out to and back from a T-terminated dead-end spur",
+                "GenerationConfig: max_detour_excess_cells ({}) is greater than the loosening guard ({detour_excess_loosening_guard}) -- not a worst-case claim, just the loosest additive ceiling this codebase accepts (see docs/generation.md's street-network pass)",
                 cfg.max_detour_excess_cells
             )));
         }
@@ -974,12 +962,31 @@ impl GenerationConfig {
                 cfg.p99_detour_percent, cfg.max_detour_percent
             )));
         }
+        // Tim's/Quentin's direction, story 15.10 cycle 2:
+        // detour_ratio_takeover_distance_cells divides by (max_detour_
+        // percent - 100), and at 100 the ratio term (manhattan * 100 /
+        // 100) is never looser than the excess term either -- the ratio
+        // half of the contract would be permanently vacuous, not merely
+        // undefined. Refused here, never left for the divide to panic in
+        // whichever caller reaches it first.
+        if cfg.max_detour_percent <= 100 {
+            return Err(GenerationError::InvalidConfig(format!(
+                "GenerationConfig: max_detour_percent ({}) is not greater than 100 -- at or under 100 the max()-contract's ratio term is never looser than its excess term, so the ratio half is vacuous, and detour_ratio_takeover_distance_cells's own division is undefined",
+                cfg.max_detour_percent
+            )));
+        }
         if cfg.peripheral_low_band_floor_percent as i64
             > cfg.peripheral_pooled_min_ratio_percent as i64
         {
             return Err(GenerationError::InvalidConfig(format!(
                 "GenerationConfig: peripheral_low_band_floor_percent ({}) is greater than peripheral_pooled_min_ratio_percent ({}) -- the per-city anti-inversion floor cannot ask for more than the pooled, density-blind-failing guard does",
                 cfg.peripheral_low_band_floor_percent, cfg.peripheral_pooled_min_ratio_percent
+            )));
+        }
+        if cfg.thin_strip_long_side_percent < 100 {
+            return Err(GenerationError::InvalidConfig(format!(
+                "GenerationConfig: thin_strip_long_side_percent ({}) is under 100 -- a thin strip cannot be held to less than the plain target",
+                cfg.thin_strip_long_side_percent
             )));
         }
         if cfg.arterial_count_ns_min > cfg.arterial_count_ns_max {
@@ -1223,7 +1230,54 @@ impl GenerationConfig {
             y1: self.site_extent_cells,
         }
     }
+
+    /// The loosest additive `max_detour_excess_cells` this codebase
+    /// accepts, in largest-block units -- a config-consistency guard,
+    /// never a worst-case claim (this generator has no tight structural
+    /// bound to derive one from; see `docs/generation.md`'s street-
+    /// network pass for the argument). `from_balance`'s own refusal and
+    /// every test that checks the guard (`mod.rs`'s own coefficient
+    /// test, `invariants.rs`'s own margin-rule test) all call this one
+    /// method, so the formula exists in exactly one place.
+    pub fn detour_excess_loosening_guard(&self) -> i64 {
+        DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT * self.block_size_max_cells as i64
+            + 2 * self.arterial_width_cells as i64
+    }
+
+    /// The Manhattan distance past which [`Self::max_detour_percent`]'s
+    /// ratio, not [`Self::max_detour_excess_cells`]'s flat cell budget,
+    /// is the binding half of the [`Self::max_detour_percent`] contract
+    /// (Derek's direction, story 15.10): `network <= max(manhattan +
+    /// max_detour_excess_cells, manhattan * max_detour_percent / 100)`,
+    /// so the ratio term overtakes the excess term exactly where
+    /// `manhattan * max_detour_percent / 100 > manhattan +
+    /// max_detour_excess_cells`, i.e. `manhattan >
+    /// max_detour_excess_cells * 100 / (max_detour_percent - 100)` --
+    /// derived from the two committed keys, never a third one of its
+    /// own (story 3.18's `detour_long_pair_cells` no longer exists). A
+    /// descriptive figure only: nothing refuses a config over or under
+    /// it, since the max() contract needs no threshold to be correct at
+    /// every distance. Integer arithmetic throughout (NFR28), floor
+    /// division: the true takeover point (`max_detour_percent` other
+    /// than a multiple that divides evenly) sits at or just past this
+    /// figure, never before it, which is the direction that matters for
+    /// "the range where the ratio actually binds". The division is
+    /// total, never a panic: `from_balance` refuses `max_detour_percent
+    /// <= 100` (Tim's/Quentin's direction, story 15.10 cycle 2), so
+    /// `max_detour_percent - 100` is always a positive divisor for any
+    /// config this method is ever called on.
+    pub fn detour_ratio_takeover_distance_cells(&self) -> i64 {
+        self.max_detour_excess_cells as i64 * 100 / (self.max_detour_percent as i64 - 100)
+    }
 }
+
+/// [`GenerationConfig::detour_excess_loosening_guard`]'s own coefficient
+/// on `block_size_max_cells` -- the smallest integer that still admits
+/// the committed `max_detour_excess_cells`, checked mechanically by
+/// `detour_excess_loosening_guard_coefficient_is_the_smallest_that_
+/// admits_the_committed_value` rather than re-derived by hand and left
+/// unverified (Tim's direction, story 3.18 cycle 1).
+const DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT: i64 = 4;
 
 /// A block's own land use, decided once by majority coarse-cell *area*
 /// rather than tinted per cell -- Artie's direction, cycle 2: boundary-
@@ -1301,6 +1355,7 @@ mod tests {
             seed("generation.land_use.share_commercial_pct", 18, 0, 100),
             seed("generation.land_use.share_industrial_pct", 14, 0, 100),
             seed("generation.land_use.share_institutional_pct", 10, 0, 100),
+            seed("generation.land_use.share_tolerance_pct", 10, 0, 100),
             seed("generation.streets.arterial_count_ns_min", 2, 0, 4),
             seed("generation.streets.arterial_count_ns_max", 3, 0, 4),
             seed("generation.streets.arterial_count_ew_min", 1, 0, 4),
@@ -1329,8 +1384,7 @@ mod tests {
                 1,
                 256,
             ),
-            seed("generation.streets.detour_long_pair_cells", 128, 1, 2048),
-            seed("generation.streets.max_detour_percent", 200, 100, 500),
+            seed("generation.streets.max_detour_percent", 200, 101, 500),
             seed("generation.streets.max_detour_excess_cells", 80, 1, 2048),
             seed("generation.streets.p99_detour_percent", 160, 100, 500),
             seed("generation.streets.min_distinct_block_sizes", 3, 1, 16),
@@ -1345,6 +1399,12 @@ mod tests {
                 150,
                 100,
                 1000,
+            ),
+            seed(
+                "generation.streets.thin_strip_long_side_percent",
+                150,
+                1,
+                400,
             ),
             seed("generation.land_use.institutional_min_pockets", 3, 1, 16),
             seed(
@@ -1520,6 +1580,17 @@ mod tests {
         balance
     }
 
+    /// [`with_override`]'s own multi-key sibling -- a handful of tests
+    /// (story 15.10 cycle 2's `detour_ratio_takeover_distance_cells`
+    /// fixtures among them) need more than one key perturbed at once.
+    fn with_overrides(pairs: &[(&str, i64)]) -> Vec<defs::BalanceSeed> {
+        let mut balance = valid_balance();
+        for &(key, value) in pairs {
+            balance.iter_mut().find(|b| b.key == key).unwrap().value = value;
+        }
+        balance
+    }
+
     #[test]
     fn from_balance_reads_the_real_live_defs() {
         GenerationConfig::from_balance(defs::BALANCE).expect("live defs/ must be a valid config");
@@ -1642,13 +1713,138 @@ mod tests {
         assert!(err.to_string().contains("p99_detour_percent"));
     }
 
+    /// Tim's/Quentin's direction, story 15.10 cycle 2:
+    /// `detour_ratio_takeover_distance_cells` divides by
+    /// `max_detour_percent - 100`, so 100 itself (and anything under it)
+    /// must be refused, never left to panic the first caller that
+    /// reaches it.
     #[test]
-    fn from_balance_rejects_max_detour_excess_cells_over_the_structural_ceiling() {
+    fn from_balance_rejects_max_detour_percent_at_100() {
+        // p99_detour_percent lowered alongside it so this fixture fails
+        // only the refusal under test, never the unrelated p99 <=
+        // max_detour_percent one (p99's own default, 160, would trip
+        // that one first and mask this test's own target).
+        let balance = with_overrides(&[
+            ("generation.streets.max_detour_percent", 100),
+            ("generation.streets.p99_detour_percent", 100),
+        ]);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.to_string().contains("max_detour_percent"));
+        assert!(err.to_string().contains("ratio term"));
+    }
+
+    #[test]
+    fn from_balance_accepts_max_detour_percent_at_101() {
+        // The boundary itself: 101 is admitted, only 100 or under is
+        // refused (AC4's mechanical both-sides-of-the-boundary check).
+        // p99_detour_percent lowered alongside it so this fixture does
+        // not also trip the unrelated p99 <= max_detour_percent refusal.
+        let balance = with_overrides(&[
+            ("generation.streets.max_detour_percent", 101),
+            ("generation.streets.p99_detour_percent", 100),
+        ]);
+        GenerationConfig::from_balance(&balance)
+            .expect("101 must be accepted, not just values further above 100");
+    }
+
+    #[test]
+    fn from_balance_rejects_max_detour_excess_cells_over_the_loosening_guard() {
         // fixture: block_size_max_cells=96, arterial_width_cells=12 ->
-        // ceiling = 3*96 + 2*12 = 312.
-        let balance = with_override("generation.streets.max_detour_excess_cells", 313);
+        // guard = 4*96 + 2*12 = 408.
+        let balance = with_override("generation.streets.max_detour_excess_cells", 409);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
         assert!(err.to_string().contains("max_detour_excess_cells"));
+        assert!(err.to_string().contains("loosening guard"));
+    }
+
+    #[test]
+    fn from_balance_accepts_max_detour_excess_cells_at_the_loosening_guard() {
+        // Same fixture as above, right on the boundary: the guard itself
+        // (408) is admitted, only a value strictly over it is refused
+        // (AC4's mechanical both-sides-of-the-boundary check).
+        let balance = with_override("generation.streets.max_detour_excess_cells", 408);
+        GenerationConfig::from_balance(&balance)
+            .expect("the loosening guard itself must be accepted, not just values under it");
+    }
+
+    #[test]
+    fn from_balance_rejects_a_thin_strip_limit_under_the_plain_target() {
+        let balance = with_override("generation.streets.thin_strip_long_side_percent", 99);
+        let err = GenerationConfig::from_balance(&balance).unwrap_err();
+        assert!(err.to_string().contains("thin_strip_long_side_percent"));
+    }
+
+    /// Quentin's direction, story 15.10 cycle 2: pinned against the live
+    /// committed config, never a fixture -- `max_detour_excess_cells * 100
+    /// / (max_detour_percent - 100)` = `400 * 100 / 100` = 400.
+    #[test]
+    fn detour_ratio_takeover_distance_cells_matches_the_committed_values() {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 400);
+    }
+
+    /// Quentin's direction, story 15.10 cycle 2: an even division, at a
+    /// fixture distinct from the committed one, so this is a test of the
+    /// formula and not just a restatement of the committed figure.
+    /// `block_size_max_cells` is raised to 100 alongside the excess key
+    /// so the loosening guard (`4 * 100 + 2 * 12` = 424) still admits
+    /// 416.
+    #[test]
+    fn detour_ratio_takeover_distance_cells_at_150_percent() {
+        let balance = with_overrides(&[
+            ("generation.streets.block_size_max_cells", 100),
+            ("generation.streets.max_detour_excess_cells", 416),
+            ("generation.streets.max_detour_percent", 150),
+            ("generation.streets.p99_detour_percent", 100),
+        ]);
+        let cfg = GenerationConfig::from_balance(&balance).unwrap();
+        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 832);
+    }
+
+    /// Quentin's direction, story 15.10 cycle 2: an uneven division --
+    /// `300 * 100 / 90` is `333.33...`, and the documented floor-
+    /// rounding direction (NFR28: integer division, never a float) means
+    /// this must be exactly 333, never rounded up to 334.
+    #[test]
+    fn detour_ratio_takeover_distance_cells_floors_an_uneven_division() {
+        let balance = with_overrides(&[
+            ("generation.streets.max_detour_excess_cells", 300),
+            ("generation.streets.max_detour_percent", 190),
+        ]);
+        let cfg = GenerationConfig::from_balance(&balance).unwrap();
+        assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 333);
+    }
+
+    /// Tim's direction, story 3.18 cycle 1: "coefficient the smallest
+    /// integer that still admits the committed value" was a claim with
+    /// no test. Checked against the *live* committed `defs::BALANCE`
+    /// (never the fixture above, which exists only to pin the formula's
+    /// shape): the committed `max_detour_excess_cells` must clear one
+    /// coefficient lower (or `DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT`
+    /// is no longer minimal) and must not clear the guard itself (or
+    /// `from_balance` would already have refused it).
+    #[test]
+    fn detour_excess_loosening_guard_coefficient_is_the_smallest_that_admits_the_committed_value() {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let guard = cfg.detour_excess_loosening_guard();
+        let one_coefficient_lower = (DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT - 1)
+            * cfg.block_size_max_cells as i64
+            + 2 * cfg.arterial_width_cells as i64;
+        assert!(
+            cfg.max_detour_excess_cells as i64 > one_coefficient_lower,
+            "max_detour_excess_cells ({}) already clears coefficient {} ({one_coefficient_lower}) \
+             -- DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT ({}) is no longer the smallest integer \
+             that admits the committed value, lower it",
+            cfg.max_detour_excess_cells,
+            DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT - 1,
+            DETOUR_EXCESS_LOOSENING_GUARD_COEFFICIENT
+        );
+        assert!(
+            cfg.max_detour_excess_cells as i64 <= guard,
+            "max_detour_excess_cells ({}) exceeds its own loosening guard ({guard}) -- \
+             from_balance should already have refused this",
+            cfg.max_detour_excess_cells
+        );
     }
 
     #[test]

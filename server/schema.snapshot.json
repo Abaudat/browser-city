@@ -1,6 +1,87 @@
 {
   "tables": [
     {
+      "accessor": "actor_kind",
+      "struct_name": "ActorKind",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "code",
+          "ty": "u32",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "name",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "actor_location",
+      "struct_name": "ActorLocation",
+      "public": true,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "location_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "actor_kind",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "actor_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "chunk_key",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "floor",
+          "ty": "i8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "budget_review_schedule",
       "struct_name": "BudgetReviewSchedule",
       "public": false,
@@ -57,7 +138,7 @@
     {
       "accessor": "building_area",
       "struct_name": "BuildingArea",
-      "public": false,
+      "public": true,
       "scheduled_reducer": null,
       "wide_table_waiver": null,
       "columns": [
@@ -136,6 +217,87 @@
       ]
     },
     {
+      "accessor": "business",
+      "struct_name": "Business",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "business_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "created_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "cadence_liveness",
+      "struct_name": "CadenceLiveness",
+      "public": true,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "cadence",
+          "ty": "u32",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "last_target_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "last_fired_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "fires",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "missed",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "character",
       "struct_name": "Character",
       "public": false,
@@ -195,6 +357,15 @@
           "unique": false,
           "has_default": false,
           "indexed": true
+        },
+        {
+          "name": "issuer_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
         }
       ]
     },
@@ -325,6 +496,33 @@
       ]
     },
     {
+      "accessor": "container_kind",
+      "struct_name": "ContainerKind",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "code",
+          "ty": "u32",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "name",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "demo_ping",
       "struct_name": "DemoPing",
       "public": true,
@@ -351,6 +549,105 @@
         },
         {
           "name": "written_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "district",
+      "struct_name": "District",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": "one permanent record row -- site rect plus the three version fields",
+      "columns": [
+        {
+          "name": "district_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "seed",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "x0",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "y0",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "x1",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "y1",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "generation_version",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "rng_version",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "defs_version",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "generated_at",
           "ty": "Timestamp",
           "primary_key": false,
           "auto_inc": false,
@@ -390,7 +687,7 @@
     {
       "accessor": "floor_transition",
       "struct_name": "FloorTransition",
-      "public": false,
+      "public": true,
       "scheduled_reducer": null,
       "wide_table_waiver": null,
       "columns": [
@@ -496,6 +793,222 @@
       ]
     },
     {
+      "accessor": "holder_kind",
+      "struct_name": "HolderKind",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "code",
+          "ty": "u32",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "name",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "item_held",
+      "struct_name": "ItemHeld",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "instance_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "container_kind",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "container_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "slot_x",
+          "ty": "u8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "slot_y",
+          "ty": "u8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "orientation",
+          "ty": "u8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ],
+      "indexes": [
+        {
+          "accessor": "by_container",
+          "columns": [
+            "container_kind",
+            "container_id"
+          ]
+        }
+      ]
+    },
+    {
+      "accessor": "item_instance",
+      "struct_name": "ItemInstance",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "instance_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "def_id",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "created_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "item_placed",
+      "struct_name": "ItemPlaced",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "instance_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "x",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "y",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "floor",
+          "ty": "i8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "offset_x",
+          "ty": "u8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "offset_y",
+          "ty": "u8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "orientation",
+          "ty": "u8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "chunk_key",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        }
+      ]
+    },
+    {
       "accessor": "layer_code",
       "struct_name": "LayerCode",
       "public": false,
@@ -528,6 +1041,60 @@
           "unique": false,
           "has_default": false,
           "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "link_request",
+      "struct_name": "LinkRequest",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "request_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "identity",
+          "ty": "Identity",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "issuer_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "code",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "expires_at",
+          "ty": "i64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
         }
       ]
     },
@@ -667,9 +1234,45 @@
       ]
     },
     {
+      "accessor": "oidc_issuer",
+      "struct_name": "OidcIssuer",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "issuer_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "issuer",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "client_id",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "placed_object",
       "struct_name": "PlacedObject",
-      "public": false,
+      "public": true,
       "scheduled_reducer": null,
       "wide_table_waiver": null,
       "columns": [
@@ -748,6 +1351,87 @@
       ]
     },
     {
+      "accessor": "player_position",
+      "struct_name": "PlayerPosition",
+      "public": true,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "character_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "chunk_key",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "x",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "y",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "floor",
+          "ty": "i8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "frac_x",
+          "ty": "u8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "frac_y",
+          "ty": "u8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "updated_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "provision",
       "struct_name": "Provision",
       "public": false,
@@ -793,6 +1477,96 @@
         {
           "name": "name",
           "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "reducer_class_counter",
+      "struct_name": "ReducerClassCounter",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "class",
+          "ty": "String",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "calls",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "sampled_calls",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "reducer_class_sample",
+      "struct_name": "ReducerClassSample",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "sample_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "sampled_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "class",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "calls_total",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "calls_delta",
+          "ty": "u64",
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
@@ -867,7 +1641,7 @@
     {
       "accessor": "room_area",
       "struct_name": "RoomArea",
-      "public": false,
+      "public": true,
       "scheduled_reducer": null,
       "wide_table_waiver": null,
       "columns": [
@@ -942,6 +1716,286 @@
           "unique": false,
           "has_default": false,
           "indexed": true
+        }
+      ]
+    },
+    {
+      "accessor": "stock",
+      "struct_name": "Stock",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "stock_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "holder_kind",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "holder_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "item_id",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "quantity",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ],
+      "indexes": [
+        {
+          "accessor": "by_holder_item",
+          "columns": [
+            "holder_kind",
+            "holder_id",
+            "item_id"
+          ]
+        }
+      ]
+    },
+    {
+      "accessor": "storage_sample",
+      "struct_name": "StorageSample",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "sample_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "sampled_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "total_bytes_est",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "over_review",
+          "ty": "bool",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "over_wall",
+          "ty": "bool",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "review_bytes",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "wall_bytes",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "table_sample",
+      "struct_name": "TableSample",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "sample_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "sampled_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "table_accessor",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "rows",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "bytes_est",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "alert_rows",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "max_rows",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "over_alert",
+          "ty": "bool",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "unit",
+      "struct_name": "Unit",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "code",
+          "ty": "u32",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "name",
+          "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "world_clock",
+      "struct_name": "WorldClock",
+      "public": true,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "id",
+          "ty": "u8",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "epoch_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "speed",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
         }
       ]
     },

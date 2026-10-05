@@ -18,24 +18,79 @@ export function floorOffsetPx(floor: number, storeyHeightPx: number): number {
   return -floor * storeyHeightPx + 0;
 }
 
-/** A drawable's screen position from its world position (in tiles, not
- * sort units -- `sort-units.ts`'s `fromSortUnits` is the caller's job)
- * and its floor. Bottom-centre anchored on its own cell (Artie's
- * direction): `worldY`/`floor` place the *bottom* of the cell the
- * drawable's anchor sits in. Every input is rounded to an integer
- * world pixel before the caller applies the zoom scale (Artie's pixel
- * discipline) -- this function never returns a fractional pixel. */
-export function screenPositionPx(
+/** A world-pixel coordinate snapped to a whole *screen* pixel at an
+ * integer `zoom` (`Math.round(v * zoom) / zoom`, Artie's pixel
+ * discipline) -- the one rounding every drawable's position goes
+ * through. Throws on a non-integer or non-positive zoom: `(k / zoom) *
+ * zoom === k` only holds for an integer one. */
+export function snapToScreenPx(v: number, zoom: number): number {
+  if (!Number.isInteger(zoom) || zoom <= 0) {
+    throw new Error(`snapToScreenPx: zoom must be a positive integer, got ${zoom}`);
+  }
+  // `+ 0` normalises a `-0` (`Math.round(-0.3)`) to `+0`, so a snapped
+  // coordinate never carries a sign on zero.
+  return Math.round(v * zoom) / zoom + 0;
+}
+
+/**
+ * A continuous world point (in tiles, not sort units -- `sort-units.ts`'s
+ * `fromSortUnits` is the caller's job) to its screen position, for a
+ * viewer on `floor`. This is the *only* world-to-screen projection (story
+ * 15.4, Tim's direction): a plain scale-and-floor-offset, the exact
+ * inverse of [`worldPointFromScreenPx`], snapped through
+ * [`snapToScreenPx`]. It carries no anchor terms of its own -- a
+ * bottom-centre-anchored sprite's own anchor point is a fact about
+ * *where the point is*, decided before this function ever runs, by
+ * [`cellBottomCentre`] for a cell or by a character's own continuous feet
+ * position for an actor. Passing a cell index straight into this function
+ * draws it half a cell and a whole cell away from where its collider
+ * actually is -- the exact defect this story fixes (Adrian's Sprint 4
+ * demo, #333): every actor and every debug overlay reads a world point
+ * through this one function, never a second copy of the arithmetic.
+ *
+ * `flightOffsetPx` is `render/flight-offset.ts`'s value for an actor on a
+ * flight (FR182); every static drawable, the crowd and every label pass `0`.
+ */
+export function worldPointPx(
   worldX: number,
   worldY: number,
   floor: number,
   tileSizePx: number,
   storeyHeightPx: number,
+  zoom: number,
+  flightOffsetPx: number,
 ): { readonly x: number; readonly y: number } {
   return {
-    x: Math.round((worldX + 0.5) * tileSizePx),
-    y: Math.round((worldY + 1) * tileSizePx + floorOffsetPx(floor, storeyHeightPx)),
+    x: snapToScreenPx(worldX * tileSizePx, zoom),
+    // The flight offset (FR182) is summed with the floor offset *before*
+    // the one snap -- never snapped separately and added after.
+    y: snapToScreenPx(
+      worldY * tileSizePx + floorOffsetPx(floor, storeyHeightPx) + flightOffsetPx,
+      zoom,
+    ),
   };
+}
+
+/**
+ * A cell's own bottom-centre point, in world tiles (story 15.4, Tim's
+ * direction): `+0.5` in x, `+1` in y -- Artie's bottom-centre sprite
+ * anchor, as a one-line pure function rather than folded into the
+ * projection itself. Integer inputs only: a cell index is always a whole
+ * number, and accepting a continuous one here would silently re-open the
+ * exact confusion this story exists to close (a continuous feet point is
+ * never passed through this function -- it already *is* the point
+ * [`worldPointPx`] projects, with no anchor arithmetic of its own).
+ * Throws on a non-integer the way [`snapToScreenPx`] throws on a
+ * non-integer zoom.
+ */
+export function cellBottomCentre(
+  cellX: number,
+  cellY: number,
+): { readonly x: number; readonly y: number } {
+  if (!Number.isInteger(cellX) || !Number.isInteger(cellY)) {
+    throw new Error(`cellBottomCentre: cellX/cellY must be integers, got (${cellX}, ${cellY})`);
+  }
+  return { x: cellX + 0.5, y: cellY + 1 };
 }
 
 /**
@@ -117,12 +172,13 @@ export function visibleCellBounds(
  * (`inv_overlay_projection_matches_renderer`).
  *
  * This is the plain world-to-screen projection -- scale by the tile size,
- * shift by [`floorOffsetPx`] -- the same one [`worldPointFromScreenPx`]
- * inverts, never [`screenPositionPx`]'s bottom-centre anchor placement:
- * those `+0.5`/`+1` terms say where a *sprite* sits within its cell, not
- * where the cell is.
+ * shift by [`floorOffsetPx`] -- the exact same one [`worldPointPx`] is,
+ * and the one [`worldPointFromScreenPx`] inverts. A drawable's own
+ * bottom-centre anchor (`+0.5`/`+1`, [`cellBottomCentre`]) is never part
+ * of this: that says where a *sprite's own point* sits within its cell,
+ * not where the cell is.
  *
- * Deliberately unrounded, unlike [`screenPositionPx`]: this measures
+ * Deliberately unrounded, unlike [`worldPointPx`]: this measures
  * rather than draws art, and rounding a sub-cell face to a whole pixel
  * would put the drawn rect up to half a pixel away from where collision
  * actually resolves. A zero-area rect stays zero-area for the same
@@ -146,22 +202,22 @@ export function subcellRectPx(
 }
 
 /**
- * [`screenPositionPx`]'s inverse for picking (story 1.9, FR148): the
- * continuous world point a screen pixel falls on, for a viewer on
- * `floor`. The same two projection constants, read the same way -- the
- * floor offset goes through [`floorOffsetPx`] itself, never a second copy
- * of that rule.
+ * [`worldPointPx`]'s exact algebraic inverse for picking (story 1.9,
+ * FR148; story 15.4): the continuous world point a screen pixel falls on,
+ * for a viewer on `floor`. The same two projection constants, read the
+ * same way -- the floor offset goes through [`floorOffsetPx`] itself,
+ * never a second copy of that rule.
  *
- * Deliberately *not* the algebraic inverse of [`screenPositionPx`]'s
- * `+0.5`/`+1` terms: those place a *bottom-centre-anchored sprite* within
- * the cell it sits on, they are not part of the world-to-screen
- * projection itself. A cell `(cx, cy)` whose anchor
- * [`screenPositionPx`] puts at `(ax, ay)` is drawn over
- * `[ax - tile/2, ax + tile/2) x [ay - tile, ay)` -- so the pixel-to-cell
- * map that agrees with what the renderer actually drew is this plain
- * scale-and-offset one (`inv_pick_inverts_screen_position`). Inverting
- * the anchor terms instead would pick a cell half a tile west and one
- * row north of the one under the cursor.
+ * A cell's own bottom-centre anchor ([`cellBottomCentre`]'s `+0.5`/`+1`)
+ * is not part of this either direction: it places a *sprite* within the
+ * cell it sits on, it is not part of the world-to-screen projection
+ * itself. A cell `(cx, cy)` whose bottom-centre [`worldPointPx`] draws at
+ * `(ax, ay)` covers `[ax - tile/2, ax + tile/2) x [ay - tile, ay)` on
+ * screen -- so the pixel-to-cell map that agrees with what the renderer
+ * actually drew is this plain scale-and-offset one
+ * (`inv_pick_inverts_screen_position`). Undoing the anchor terms as well
+ * would pick a cell half a tile west and one row north of the one under
+ * the cursor.
  */
 export function worldPointFromScreenPx(
   screenX: number,

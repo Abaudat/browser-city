@@ -7,17 +7,19 @@
 //! direction: nothing about defs validity belongs anywhere but this
 //! crate's own tests).
 
+pub mod alpha;
 pub mod atlas;
+pub mod codes;
 pub mod contact_sheet;
 pub mod emit;
 pub mod error;
 pub mod fsio;
-pub mod layer_codes;
 pub mod model;
 pub mod naming;
 pub mod parse;
 pub mod propose;
 pub mod sha256;
+pub mod silhouette;
 pub mod spans;
 pub mod validate;
 pub mod version;
@@ -43,8 +45,8 @@ pub struct BuildOutput {
 /// Runs every stage over an already-collected `(path, text)` file list, the
 /// `(width, height)` already read from every appearance part's and every
 /// object's own sheet file (story 1.10/2.2; empty for a tree with no such
-/// entries), the `name -> code` layer ladder already read from the codes
-/// golden ([`layer_codes::parse_layer_codes`]), the root every `sheet`/
+/// entries), the codes-golden sets (layer, unit) already read from the codes
+/// golden ([`codes::CodeTables::parse`]), the root every `sheet`/
 /// `sprite.sheet` must live under (`sprite_sheet_allowed_root` -- the real
 /// binary always passes [`model::SPRITE_SHEET_ALLOWED_ROOT`]; an empty
 /// string disables the check, which is this crate's own fixture trees'
@@ -57,13 +59,48 @@ pub fn build(
     sheet_dims: &std::collections::BTreeMap<String, (u32, u32)>,
     object_sheet_bytes: &std::collections::BTreeMap<String, Vec<u8>>,
     appearance_sheet_bytes: &std::collections::BTreeMap<String, Vec<u8>>,
-    layer_codes: &std::collections::BTreeMap<String, u32>,
+    code_tables: &codes::CodeTables,
     sprite_sheet_allowed_root: &str,
     defs_version: &str,
 ) -> Result<BuildOutput, DefsError> {
     let raw = parse::parse_all(files)?;
-    let defs = validate::validate(&raw, sheet_dims, layer_codes, sprite_sheet_allowed_root)?;
+    let defs = validate::validate(&raw, sheet_dims, code_tables, sprite_sheet_allowed_root)?;
     let page_groups = validate::validate_page_groups(&raw)?;
+    // Every object sheet is decoded exactly once; the check and the
+    // packer share the result.
+    let mut object_sheets: std::collections::BTreeMap<String, atlas::image::DecodedSheet> =
+        std::collections::BTreeMap::new();
+    for (o, sprite) in defs
+        .objects
+        .iter()
+        .filter_map(|o| o.sprite.as_ref().map(|s| (o, s)))
+    {
+        let _ = o;
+        if object_sheets.contains_key(&sprite.sheet) {
+            continue;
+        }
+        let bytes = object_sheet_bytes.get(&sprite.sheet).ok_or_else(|| {
+            DefsError::new(
+                "tools/defs-build/atlas",
+                0,
+                0,
+                format!(
+                    "sheet '{}' was referenced by an object but never read -- fsio must read every referenced sheet before build runs",
+                    sprite.sheet
+                ),
+            )
+        })?;
+        let decoded = atlas::image::decode_rgba8(bytes).map_err(|e| {
+            DefsError::new(
+                "tools/defs-build/atlas",
+                0,
+                0,
+                format!("sheet '{}': {e}", sprite.sheet),
+            )
+        })?;
+        object_sheets.insert(sprite.sheet.clone(), decoded);
+    }
+    silhouette::check(&raw, &defs, &object_sheets)?;
     let character_parts = atlas::character::collect_character_parts(
         &defs.bodies,
         &defs.eyes,
@@ -73,7 +110,7 @@ pub fn build(
     );
     let atlas = atlas::build::build_atlas(
         &defs.objects,
-        object_sheet_bytes,
+        &object_sheets,
         &page_groups,
         &character_parts,
         appearance_sheet_bytes,
@@ -151,8 +188,8 @@ pub fn appearance_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
 /// already built.
 pub fn object_sprite_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
     let mut paths: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for o in &raw.objects {
-        paths.insert(o.sprite.value.sheet.clone());
+    for sprite in raw.objects.iter().filter_map(|o| o.sprite.as_ref()) {
+        paths.insert(sprite.value.sheet.clone());
     }
     paths.into_iter().collect()
 }
@@ -176,12 +213,22 @@ pub fn build_from_repo_root(
 ) -> Result<BuildOutput, Box<dyn std::error::Error>> {
     let mut text_files = fsio::read_text(root, &fsio::list_defs_sources(root)?)?;
     text_files.sort_by(|a, b| a.0.cmp(&b.0));
+    build_from_text_files(root, &text_files, defs_version)
+}
 
+/// [`build_from_repo_root`] over an already-read `defs/` text list: reads
+/// every sheet the tree names from `root` and runs [`build`]. Lets a test
+/// build the real tree with one line of TOML altered.
+pub fn build_from_text_files(
+    root: &std::path::Path,
+    text_files: &[(std::path::PathBuf, String)],
+    defs_version: &str,
+) -> Result<BuildOutput, Box<dyn std::error::Error>> {
     // Story 1.10/2.2: which sheets does the tree reference, so their real
     // `IHDR` dimensions can be read before `validate` checks the layout/
     // sprite invariants against them -- the one impure step `build` itself
     // never performs (Quentin's direction: parse/validate/emit stay pure).
-    let raw = parse::parse_all(&text_files)?;
+    let raw = parse::parse_all(text_files)?;
     let mut sheet_paths = appearance_sheet_paths(&raw);
     sheet_paths.extend(object_sprite_sheet_paths(&raw));
     sheet_paths.sort();
@@ -225,14 +272,14 @@ pub fn build_from_repo_root(
     // `sim::codes::layer`'s single append-only ladder -- never a second,
     // hand-maintained list in this crate.
     let codes_golden = fsio::read_codes_golden(root)?;
-    let layer_codes = layer_codes::parse_layer_codes(&codes_golden);
+    let code_tables = codes::CodeTables::parse(&codes_golden);
 
     let output = build(
-        &text_files,
+        text_files,
         &sheet_dims,
         &object_sheet_bytes,
         &appearance_sheet_bytes,
-        &layer_codes,
+        &code_tables,
         model::SPRITE_SHEET_ALLOWED_ROOT,
         defs_version,
     )?;

@@ -1,4 +1,5 @@
 import { Application } from "pixi.js";
+import { DEFAULT_HANDSHAKE_TIMEOUT_MS } from "./boot/boot-gate";
 import { BOOT_MARK, markBoot } from "./boot/boot-marks";
 import { runBootSequence } from "./boot/boot-sequence";
 import type { VerifiedDefs } from "./boot/handshake";
@@ -8,39 +9,79 @@ import { readReloadedFor, writeReloadedFor } from "./boot/reloaded-for-storage";
 import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
+import { guardedCreateCharacter } from "./identity/create-guard";
+import { carrierDefId, offerDue, readOfferRules } from "./identity/link-offer";
+import { decideOffer } from "./identity/link-offer-gate";
+import { loadLastShownDay, saveLastShownDay } from "./identity/link-prompt";
+import { offerLink, resumeLinkIfPending } from "./identity/link-session";
+import { type BodyControl, connectionReason, createBodyControl } from "./input/body-control";
+import type { Intent } from "./input/intent";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
-import { connect } from "./net/connection";
+import { OIDC_CONFIG } from "./net/config";
+import type { CharacterReport, IdentityReport } from "./net/connection";
 import {
   exposeAppearanceCompareForE2e,
+  exposeCityTimeForE2e,
+  exposeCommuterDrawnForE2e,
+  exposeConnectionForE2e,
+  exposeIdentityActionsForE2e,
+  exposePlayerScreenBoundsForE2e,
+  exposeRegionForE2e,
+  exposeRemotePlayersForE2e,
+  exposeWorldTransformForE2e,
   recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
+  recordCharacterForE2e,
   recordDistinctBoundAtlasPagesForE2e,
+  recordDoorwaysForE2e,
   recordFrameWorkForE2e,
   recordHighlightForE2e,
+  recordIdentityForE2e,
   recordIgnoredIntentForE2e,
   recordIntentForE2e,
+  recordLinkOfferForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerAppearanceForE2e,
   recordPlayerPositionForE2e,
+  recordRegionRowForE2e,
+  recordRemotePlayersForE2e,
+  recordRemoteSampleForE2e,
   recordRenderOrderForE2e,
   recordViewTransformForE2e,
   recordVisibilityForE2e,
+  recordWorldClockForE2e,
+  sceneRegionFeed,
 } from "./net/e2e-hooks";
+import { beginLink, completeLinkWithIdToken, newLinkCode } from "./net/link";
 import type { PingObservation } from "./net/observe-ping";
+import { startPositionSender } from "./net/position-sender";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
+import { cachedChunkKeys, RegionController } from "./net/region-subscription";
+import { createSenderLifecycle } from "./net/sender-lifecycle";
+import { superviseConnect } from "./net/supervised-connect";
+import { ZOOM } from "./render/camera";
 import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
 import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
+import { PLAYER_START } from "./test-street/fixture";
+import { placeLinkCarrier } from "./test-street/link-carrier";
+import type { RemotePlayersWiring } from "./test-street/remote-players-layer";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
+import { CityClock } from "./time/city-clock";
+import { ServerClock } from "./time/server-clock";
 import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
-import { objectDefsById, windowDefIds } from "./world/object-defs";
+import { objectDefsById, thresholdDefIds, windowDefIds } from "./world/object-defs";
+import { dequantise } from "./world/position-codec";
+import { loadPositionConfig, type PositionConfig } from "./world/position-config";
+import { handleId } from "./world/region";
+import { REMOTE_MAX_SAMPLES, REMOTE_SNAP_CELLS, RemoteMotion } from "./world/remote-motion";
 
 /** Story 1.12: the camera a debug overlay sees before the scene has
  * reported its own. It describes no rectangle, so
@@ -48,6 +89,22 @@ import { objectDefsById, windowDefIds } from "./world/object-defs";
  * overlay drawn against a made-up camera would be drawn in the wrong
  * place, which is worse than not yet drawn. */
 const NO_CAMERA_YET = { zoom: 0, offsetX: 0, offsetY: 0 } as const;
+
+/** Story 4.5: the link offer's two touch points with the street scene. */
+interface OfferWiring {
+  readonly beforeMount: (defs: VerifiedDefs, handshakeSettled: boolean) => Promise<void>;
+  readonly onIntent: (intent: Intent) => void;
+}
+
+/** Story 4.4: the street scene's touch points with the other players and
+ * the position sender. */
+interface PlayersWiring {
+  /** Once the defs are verified: what the scene draws remote players from,
+   * or none when this page draws no remote players. */
+  readonly setUp: (defs: Defs) => RemotePlayersWiring | undefined;
+  readonly onPlayerMove: (x: number, y: number, floor: number) => void;
+  readonly onMounted: () => void;
+}
 
 async function main(): Promise<void> {
   // Story 1.14 (NFR1): the bundle term's own end -- module top-level
@@ -88,17 +145,211 @@ async function main(): Promise<void> {
   // up to and including the first settlement.
   let postMountGuard: PostMountGuard | undefined;
   const latch = createHandshakeLatch();
-  connect(
-    onPing,
-    (status) => {
-      notice.setStatus(status);
-      if (status === "disconnected") latch.resolveUnreachable();
+  // Story 4.1: in-city time is derived on demand from the epoch row and a
+  // server-reconciled clock (never `Date.now()`); the rate joins once the
+  // defs are verified.
+  const serverClock = new ServerClock(() => performance.now());
+  const cityClock = new CityClock(serverClock);
+  // Story 4.5 (FR143): what the link offer is decided from, kept as the
+  // connection reports it.
+  let latestIdentity: IdentityReport | null = null;
+  let latestCharacter: CharacterReport | null = null;
+  let latestClock: { epochMicros: bigint; speed: number } | null = null;
+  const identityStorage = resolveSessionStorage(() => window.localStorage);
+  exposeCityTimeForE2e(() => cityClock.now());
+  // Story 4.3: the interest region. It holds nothing until the defs give
+  // it a floor range and the scene gives it a position.
+  const region = new RegionController();
+  // Story 4.4 (FR138): the other players. A DEV build draws none unless the
+  // page asks (`?remotePlayers`), so a spec's pixels never depend on whoever
+  // else is in the shared instance; a production build always does.
+  const remotePlayersOn =
+    !import.meta.env.DEV || new URLSearchParams(window.location.search).has("remotePlayers");
+  let positionConfig: PositionConfig | undefined;
+  let motion: RemoteMotion | undefined;
+  let playerPosition: { x: number; y: number; floor: number } | undefined;
+  let sceneMounted = false;
+  // The sender runs while the connection is `connected` and the caller has a
+  // character and the scene a position; it restarts on every `connected`
+  // (a call on a dead connection is queued by the SDK, unbounded). Its first
+  // send is the scene's own position, which overwrites the durable row: the
+  // scene must adopt the stored row before this sender starts (story 4.7)
+  // the day anything reads that row.
+  const senderLifecycle = createSenderLifecycle(() => {
+    const p = positionConfig as PositionConfig;
+    return startPositionSender({
+      conn: () => conn.current(),
+      position: () => playerPosition,
+      periodMs: p.periodMs,
+      unitsPerCell: p.unitsPerCell,
+    });
+  });
+  const syncSender = (): void =>
+    senderLifecycle.setReady(
+      sceneMounted && latestCharacter !== null && positionConfig !== undefined,
+    );
+  // Story 4.8: the one gate on whether the body answers the player; the
+  // connection being down after having been up closes it.
+  const bodyControl = createBodyControl();
+  const feedConnection = connectionReason(bodyControl);
+  const moveRegion = (x: number, y: number, floor: number): void => region.moveTo(x, y, floor);
+  // A reconnect is a new `connect()`: every caller reads the connection
+  // through `conn.current()` at the moment of use, never holds one.
+  const conn = superviseConnect(
+    {
+      onPing,
+      onStatus: (status) => {
+        notice.setStatus(status);
+        feedConnection(status);
+        senderLifecycle.setConnected(status === "connected");
+        if (status === "disconnected") latch.resolveUnreachable();
+      },
+      onHandshake: (version) => {
+        latch.resolveHandshake(version);
+        postMountGuard?.onHandshake(version);
+      },
+      clock: {
+        serverClock,
+        visibility: document,
+        onClock: ({ epochMicros, speed }, kind) => {
+          cityClock.setClock(epochMicros, speed);
+          latestClock = { epochMicros, speed };
+          if (performance.getEntriesByName(BOOT_MARK.CITY_CLOCK_KNOWN).length === 0) {
+            markBoot(BOOT_MARK.CITY_CLOCK_KNOWN);
+          }
+          recordWorldClockForE2e(epochMicros, kind);
+        },
+      },
+      storage: identityStorage,
+      onIdentity: (identity) => {
+        latestIdentity = identity;
+        recordIdentityForE2e(identity);
+      },
+      onCharacter: (character) => {
+        latestCharacter = character;
+        recordCharacterForE2e(character);
+        syncSender();
+      },
+      region: {
+        controller: region,
+        rows: {
+          onInsert: (table, row) => recordRegionRowForE2e("inserts", table, row),
+          onUpdate: (table, _old, row) => recordRegionRowForE2e("updates", table, row),
+          onDelete: (table, row) => recordRegionRowForE2e("deletes", table, row),
+        },
+        remotePlayers: remotePlayersOn,
+        players: {
+          onUpsert: (row) => {
+            const p = positionConfig;
+            if (!motion || !p) return;
+            const at = dequantise(row, p.unitsPerCell);
+            motion.upsert(row.characterId, { tMs: row.tMs, ...at });
+            recordRemoteSampleForE2e(row.characterId, { tMs: row.tMs, x: at.x, y: at.y });
+          },
+          onRemove: (id) => motion?.remove(id),
+        },
+      },
     },
-    (version) => {
-      latch.resolveHandshake(version);
-      postMountGuard?.onHandshake(version);
-    },
+    { window, document },
   );
+  exposeConnectionForE2e({
+    live: () => conn.liveCount(),
+    drop: () => conn.current().disconnect(),
+  });
+  exposeRegionForE2e({
+    held: () => region.subscriptions()?.heldKeys().map(handleId) ?? [],
+    liveHandles: () => region.subscriptions()?.liveHandleCount() ?? 0,
+    applied: () => region.subscriptions()?.appliedKeys().map(handleId) ?? [],
+    cachedChunkKeys: (table) => cachedChunkKeys(conn.current(), table),
+    moveTo: moveRegion,
+  });
+
+  // Story 4.5 (FR143): linking. The OIDC library is a dynamic import,
+  // reached only when a link starts or the page boots back from the
+  // provider; a boot with nothing pending loads none of it.
+  const redirectUri = `${window.location.origin}${window.location.pathname}`;
+  const loadLinkFlow = () => import("./identity/link-flow");
+  void resumeLinkIfPending({
+    config: OIDC_CONFIG,
+    search: window.location.search,
+    href: window.location.href,
+    redirectUri,
+    loadFlow: loadLinkFlow,
+    completeLink: completeLinkWithIdToken,
+    replaceUrl: (url) => window.history.replaceState(null, "", url),
+  });
+  exposeIdentityActionsForE2e({
+    // The guard sits on the create path itself: nothing creates a character
+    // for an identity whose token could not be kept.
+    createCharacter: guardedCreateCharacter(
+      () => latestIdentity?.persisted === true,
+      () => conn.current().reducers.createCharacter({}),
+    ),
+    startLink: () =>
+      offerLink({
+        config: OIDC_CONFIG,
+        redirectUri,
+        loadFlow: loadLinkFlow,
+        newCode: newLinkCode,
+        beginLink: (code) => beginLink(conn.current(), code),
+      }),
+  });
+
+  const startOffer = () =>
+    offerLink({
+      config: OIDC_CONFIG,
+      redirectUri,
+      loadFlow: loadLinkFlow,
+      newCode: newLinkCode,
+      beginLink: (code) => beginLink(conn.current(), code),
+    });
+  let carrierDef: number | undefined;
+  // Evaluated once per session, as the scene is about to mount, never
+  // mid-session. Showing the offer records the city day, so declining is
+  // simply not taking it.
+  const offer: OfferWiring = {
+    beforeMount: async (defs, handshakeSettled) => {
+      const carrier = carrierDefId(defs);
+      if (carrier === undefined || OIDC_CONFIG === null) {
+        recordLinkOfferForE2e(false);
+        return;
+      }
+      let shownOn: number | undefined;
+      const due = await decideOffer({
+        hasCarrier: true,
+        configured: true,
+        handshakeSettled,
+        today: () => cityClock.now()?.day,
+        firstClockSample: serverClock.whenSampled(),
+        timeout: () => new Promise((resolve) => setTimeout(resolve, DEFAULT_HANDSHAKE_TIMEOUT_MS)),
+        due: (today) => {
+          shownOn = today;
+          return offerDue({
+            character: latestCharacter,
+            identity: latestIdentity,
+            configured: true,
+            clock: latestClock,
+            realMsPerCityMinute: defs.realMsPerCityMinute,
+            today,
+            lastShownDay: loadLastShownDay(identityStorage),
+            rules: readOfferRules(defs),
+          });
+        },
+      });
+      if (due && shownOn !== undefined) {
+        placeLinkCarrier(carrier);
+        carrierDef = carrier;
+        saveLastShownDay(identityStorage, shownOn);
+      }
+      recordLinkOfferForE2e(due);
+    },
+    onIntent: (intent) => {
+      if (carrierDef === undefined || intent.defId !== carrierDef) return;
+      startOffer().catch((error: unknown) => {
+        console.error("[identity] the link offer could not start", error);
+      });
+    },
+  };
 
   try {
     await startStreetScene(
@@ -106,6 +357,41 @@ async function main(): Promise<void> {
       () => notice.setStatus("updating"),
       (guard) => {
         postMountGuard = guard;
+      },
+      (rate) => cityClock.setRate(rate),
+      () => cityClock.nowMilliminutes(),
+      offer,
+      region,
+      sceneRegionFeed(moveRegion),
+      bodyControl,
+      {
+        setUp: (defs) => {
+          positionConfig = loadPositionConfig(defs);
+          syncSender();
+          motion = new RemoteMotion({
+            periodMs: positionConfig.periodMs,
+            delayMs: positionConfig.delayMs,
+            snapCells: REMOTE_SNAP_CELLS,
+            maxSamples: REMOTE_MAX_SAMPLES,
+          });
+          if (!remotePlayersOn) return undefined;
+          return {
+            motion,
+            serverNowMs: () => {
+              const micros = serverClock.nowMicros();
+              return micros === undefined ? undefined : Number(micros / 1000n);
+            },
+            skip: () => latestCharacter?.characterId.toString(),
+            onFrame: import.meta.env.DEV ? recordRemotePlayersForE2e : undefined,
+          };
+        },
+        onPlayerMove: (x, y, floor) => {
+          playerPosition = { x, y, floor };
+        },
+        onMounted: () => {
+          sceneMounted = true;
+          syncSender();
+        },
       },
     );
   } catch (error: unknown) {
@@ -156,6 +442,13 @@ async function startStreetScene(
   latch: HandshakeLatch,
   onDegrade: () => void,
   setPostMountGuard: (guard: PostMountGuard) => void,
+  setCityRate: (realMsPerCityMinute: number) => void,
+  cityMilliminutes: () => number | undefined,
+  offer: OfferWiring,
+  region: RegionController,
+  followScene: (x: number, y: number, floor: number) => void,
+  bodyControl: BodyControl,
+  players: PlayersWiring,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {
@@ -164,7 +457,20 @@ async function startStreetScene(
   }
 
   const app = new Application();
-  const appInitPromise = app.init({ preference: "webgpu", background: "#284028" });
+  // The camera/viewport story (Quentin's direction): the renderer's own
+  // size is the window's, always -- Pixi's own `ResizePlugin` is what
+  // owns this (`resizeTo: window`), applied once, synchronously, right
+  // here, and again only from its own `window` `resize` listener (a
+  // `requestAnimationFrame`-debounced call to `renderer.resize`, never
+  // the ticker). `resolution`/`autoDensity` stay at their defaults (1,
+  // `false`): the canvas's own CSS box is exactly `renderer.width x
+  // renderer.height`, so a `deviceScaleFactor` above 1 changes nothing
+  // about how big the canvas reads in the page.
+  const appInitPromise = app.init({
+    preference: "webgpu",
+    background: "#284028",
+    resizeTo: window,
+  });
 
   const sessionStorage = resolveSessionStorage(() => window.sessionStorage);
   const sequenceResult = await runBootSequence({
@@ -202,6 +508,17 @@ async function startStreetScene(
     return;
   }
   const defs: VerifiedDefs = sequenceResult.defs;
+  setCityRate(defs.realMsPerCityMinute);
+  // Story 4.5 (FR143): decided once, as the scene is about to mount.
+  // The gate's own outcome: a handshake arrived, or the server was unreachable
+  // and the fetched defs are mounted as they are.
+  await offer.beforeMount(defs, latch.latest() !== undefined);
+  // Story 4.3: the floor range is the defs', and the scene's spawn is where
+  // the initial region is requested around; from here on the scene's own
+  // position drives it (`onPlayerMove`), edge-triggered.
+  const remotePlayers = players.setUp(defs);
+  region.configure({ minFloor: defs.minFloor, maxFloor: defs.maxFloor });
+  followScene(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
 
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
@@ -320,15 +637,20 @@ async function startStreetScene(
     movementConfig,
     objectDefs: objectDefsById(defs),
     windowDefIds: windowDefIds(defs),
+    thresholdDefIds: thresholdDefIds(defs),
     startWithCrowdFrozen: freezeCrowdForE2e,
+    cityMilliminutes,
     crowdIdenticalTuples: identicalCrowdForE2e,
     highlightStrength: display.highlightStrength,
     onOrderChange: (order) => {
       recordRenderOrderForE2e(order);
       debugOverlays?.redraw();
     },
+    remotePlayers,
     onPlayerMove: (x, y, floor) => {
       recordPlayerPositionForE2e(x, y, floor);
+      players.onPlayerMove(x, y, floor);
+      followScene(x, y, floor);
       // Story 1.12: `onPlayerMove` is the one callback here that really
       // does fire every frame, so the overlays are redrawn on the *cell*
       // or floor actually changing -- what moves the viewport or the
@@ -345,20 +667,32 @@ async function startStreetScene(
     onVisibilityChange: recordVisibilityForE2e,
     onMasksChecked: recordMasksCheckedForE2e,
     keyboard,
+    bodyControl,
     // FR148: the intent sink. Nothing consumes an intent yet -- the
     // procedure interaction model is Epic 8's, deliberately unresolved --
     // so the only consumer today is the e2e observation hook. Swapping
     // this function is the whole of what Epic 8 has to do here.
-    onIntent: recordIntentForE2e,
+    onIntent: (intent) => {
+      recordIntentForE2e(intent);
+      offer.onIntent(intent);
+    },
     onIgnored: recordIgnoredIntentForE2e,
     onViewTransform: (zoom, offsetX, offsetY) => {
       recordViewTransformForE2e(zoom, offsetX, offsetY);
       lastViewTransform = { zoom, offsetX, offsetY };
       debugOverlays?.setViewTransform(zoom, offsetX, offsetY);
     },
+    // Cycle 2 (Quentin's direction, finding 2): exposed the instant
+    // `world` exists inside `mountStreetScene`, not once its own promise
+    // resolves -- `window.__bc.worldTransform` must be observable for
+    // every frame of the load, the same way `onViewTransform` above is
+    // meant to be, not only after every asset has already loaded.
+    onWorldReady: (worldTransform) => exposeWorldTransformForE2e(worldTransform),
     onHighlightChange: recordHighlightForE2e,
   });
   sceneHandle = handle;
+  players.onMounted();
+  exposeRemotePlayersForE2e();
 
   // Story 1.10: the street crowd's own e2e observation surface, wired
   // here rather than threaded through `MountStreetSceneOptions` as another
@@ -371,7 +705,10 @@ async function startStreetScene(
   exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
   recordPlayerAppearanceForE2e(handle.playerAppearance);
   recordDistinctBoundAtlasPagesForE2e(handle.distinctBoundAtlasPages);
+  recordDoorwaysForE2e(handle.doorways);
   recordAllBoundTextureSourcesForE2e(handle.allBoundTextureSources);
+  exposePlayerScreenBoundsForE2e(handle.playerScreenBounds);
+  exposeCommuterDrawnForE2e(handle.commuterDrawn);
 
   // Story 1.12 (FR165/FR168): the whole of the debug tooling's gate, and
   // the only import of `client/src/debug/` that exists (enforced by
@@ -388,6 +725,7 @@ async function startStreetScene(
     const { mountDebugOverlays } = await import("./debug/overlays");
     const view: DebugWorldView = {
       tileSizePx,
+      zoom: ZOOM,
       storeyHeightPx,
       colliderSubcellsPerCell: movementConfig.subcellsPerCell,
       viewerFloor: () => handle.currentFloor(),
@@ -407,6 +745,8 @@ async function startStreetScene(
       objects: (bounds) => handle.worldObjects(bounds),
       pool: () => handle.poolDrawables(),
       orderOf: (stableId) => handle.orderIndexOf(stableId),
+      viewerBody: () => handle.playerBody(),
+      l3Bodies: () => handle.l3Bodies(),
     };
     debugOverlays = mountDebugOverlays({
       mount,

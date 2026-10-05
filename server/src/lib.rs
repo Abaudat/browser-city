@@ -1,4 +1,5 @@
-use spacetimedb::{ReducerContext, Table, Timestamp};
+use sim::reducer_classes::ReducerClass;
+use spacetimedb::{ProcedureContext, ReducerContext, Table, Timestamp};
 
 mod generated;
 mod tables;
@@ -31,6 +32,7 @@ pub struct DemoPing {
 /// this reducer only reads the clock and writes the table.
 #[spacetimedb::reducer]
 pub fn send_ping(ctx: &ReducerContext, message: String) -> Result<(), String> {
+    tables::metrics::count_call(ctx, ReducerClass::Player);
     sim::demo_ping::validate_ping_message(&message)?;
     ctx.db.demo_ping().insert(DemoPing {
         id: 0,
@@ -40,42 +42,49 @@ pub fn send_ping(ctx: &ReducerContext, message: String) -> Result<(), String> {
     Ok(())
 }
 
-#[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    // Called when the module is initially published. Nothing is scheduled
-    // from here (story 1.2): an empty scheduled table costs nothing, and
-    // the first row is a later story's problem.
-    tables::ops::record_owner_from_init(ctx);
-    tables::codes::seed_all_codes(ctx);
+/// The stamped round trip a client uses to estimate the server's clock: it
+/// returns `ctx.timestamp`. Its one write is the class call counter (NFR17).
+/// Open to any caller.
+#[spacetimedb::procedure]
+pub fn sync_clock(ctx: &mut ProcedureContext) -> Timestamp {
+    ctx.with_tx(|tx| tables::metrics::count_call(tx, ReducerClass::Player));
+    ctx.timestamp
 }
 
-/// Re-runs the extensible-set seed (NFR38): `init` only ever runs on the
-/// module's first publish, so a code added in month six needs an explicit,
-/// re-callable path to land, not a write on the hottest lifecycle reducer
-/// we have (`client_connected` fires on the city with zero clients
-/// connected too, per NFR3 -- there is no "someone happens to log in" to
-/// lean on). Idempotent: safe to call after every publish that adds a
-/// code, and a no-op otherwise. `server/README.md` names the deploy step
-/// that calls it.
-///
-/// Operator-only (this module's first one): any connected client could
-/// otherwise call it, at any rate, forever -- a caller check other
-/// operator reducers this project adds later will copy, so it is built
-/// once, correctly, here rather than left open because today's blast
-/// radius happens to be small.
+#[spacetimedb::reducer(init)]
+pub fn init(ctx: &ReducerContext) -> Result<(), String> {
+    // Called when the module is initially published. The owner is the one
+    // write that cannot be re-established later, so it stays init-only;
+    // everything else is `finish_publish`'s body.
+    tables::ops::record_owner_from_init(ctx);
+    tables::publish::establish_world(ctx)
+}
+
+/// The one post-publish path (owner-only, idempotent, one transaction):
+/// establishes every one-row table, seeds every extensible set and re-arms
+/// every cadence. Its callers are `init` (same body, via
+/// `establish_world`) and `deploy.yml`'s `publish-module` job. A table is
+/// never populated by `init` alone: a world published before the table
+/// existed never ran `init` for it. A restore re-arms through
+/// `finish_restore` (`tables::restore`), not through this reducer.
 #[spacetimedb::reducer]
-pub fn reseed_codes(ctx: &ReducerContext) -> Result<(), String> {
+pub fn finish_publish(ctx: &ReducerContext) -> Result<(), String> {
+    tables::metrics::count_call(ctx, ReducerClass::Operator);
     tables::ops::require_owner(ctx)?;
-    tables::codes::seed_all_codes(ctx);
-    Ok(())
+    tables::publish::establish_world(ctx)
 }
 
 #[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(_ctx: &ReducerContext) {
-    // Called everytime a new client connects
+pub fn identity_connected(ctx: &ReducerContext) -> Result<(), String> {
+    // Called everytime a new client connects. Writes no character and no
+    // mapping: a character is an explicit act (`create_character`). A token
+    // from a registered issuer minted for another application is refused.
+    tables::metrics::count_call(ctx, ReducerClass::Lifecycle);
+    tables::identity::check_connecting(ctx)
 }
 
 #[spacetimedb::reducer(client_disconnected)]
-pub fn identity_disconnected(_ctx: &ReducerContext) {
+pub fn identity_disconnected(ctx: &ReducerContext) {
     // Called everytime a client disconnects
+    tables::metrics::count_call(ctx, ReducerClass::Lifecycle);
 }

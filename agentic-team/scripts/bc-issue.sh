@@ -26,6 +26,42 @@
 # -- is a legitimate outcome, so the Demo issue moves to Reviewed either way
 # and the sprint rolls on the next tick rather than the node retrying forever.
 #
+# `write-feedback-reply` closes the loop the other way: it is Scotty's own
+# call, an idempotent upsert keyed on the `<!-- bc:feedback-reply -->` marker
+# so a retry edits his one reply rather than piling up a second, and the
+# marker keeps `is_human_comment` from ever reading his own reply back as
+# more feedback. It is a gate, not a courtesy -- integrate-feedback re-reads
+# the thread after handing Scotty the job and refuses to mark the Demo issue
+# Reviewed unless the reply is actually there, the same "re-derive from
+# GitHub, never trust the session's word" principle the created-count already
+# follows.
+#
+# `next` is the whole of scoping. There is no sprint planning step: the
+# backlog is one pool, and whenever the team is free the orchestrator starts
+# the story `next` names -- no open blocker, then highest Priority, then
+# smallest Size, then lowest number -- from whichever epic it hangs off. What
+# orders the work is the board's Priority and Size plus GitHub's native issue
+# dependencies, which is why `write-story` takes a story's blockers as a
+# required argument and `write-blockers` exists for a story already open: a
+# story opened without them is one the picker may start before its
+# foundations exist.
+#
+# `adopt-alerts` runs immediately before `next` at starting-dev-cycle
+# (story 4.19: Failure Reports Are Worked First). `scripts/ci/
+# report-scheduled-failure.sh` files a tracking issue on a scheduled/deploy
+# workflow's failure, labelled `alert`, and stops there -- CI's own token has
+# no `project` scope and none should ever be handed to it, so it can never
+# score or scope the issue itself. adopt-alerts is the other half: every
+# open `alert` issue is asserted Backlog/Blocker/XS, in that order, so `next`
+# -- unchanged -- picks it ahead of every Critical story the moment it
+# lands. The key is Status, never "already a project item": a tick that
+# crashes between adding the item and its first field write leaves an
+# alert on the board with no Status at all, and one crash later leaves it
+# Backlog with no Priority -- both invisible to `next` or ranked last, so
+# both are re-asserted (the writes are idempotent). Only an alert triaged
+# PAST Backlog (In progress, or moved off Backlog by hand) is left alone,
+# which is what makes a re-run, or a tick that crashes mid-loop, safe.
+#
 # `epic-context` and `amend-story` serve judging-task-request, where a lead
 # has asked mid-review for work its PR cannot carry. epic-context is the read
 # that makes the ruling possible -- the epic and every sibling story, so
@@ -50,21 +86,29 @@ bc_init
 usage() {
   cat >&2 <<'EOF'
 usage: bc-issue.sh <command> [args]
-  next                        -- highest-priority Backlog issue on this sprint
-  current                     -- the single sub-issue in an active status
+  adopt-alerts                -- put every open, off-board `alert` issue on the board (Backlog/Blocker/XS)
+  next                        -- the startable story: no open blocker, by priority, then size
+  active                      -- every sub-issue in an active status, [{number,status}] by number
   transition <issue> <status> -- set Status (and close on Done)
   scope <issue>                -- comma-joined leads in scope, quentin always
   backlog                      -- open work on the board, on no sprint yet
+  live <issue>                 -- the story's live declaration, one JSON line: visible (with where), none or undeclared
+  declare-live <issue> visible <wherefile> | declare-live <issue> none
+                                 -- Crew: record whether the story is visible in the live game (idempotent upsert)
   create-demo <n>              -- open the Sprint n Demo issue (hands it to Scotty)
   write-demo <n> <bodyfile>     -- Scotty, creating-demo-issue: open it + scope it
   demo-current                 -- the open Sprint Demo issue, if any
   demo-commented <issue>        -- has a human commented on it
   demo-for <n>                  -- does a Sprint n Demo issue exist
   integrate-feedback <issue>     -- turn the demo's feedback into backlog work
+  write-feedback-reply <issue> <bodyfile>
+                                 -- Scotty, integrating-feedback: reply to Adrian (idempotent upsert)
   write-epic <n> <title> <bodyfile> <priority>
-                                 -- Scotty, integrating-feedback: open an epic
-  write-story <epic> <id> <title> <bodyfile> <size> <priority> <leads-csv>
-                                 -- Scotty, integrating-feedback: open a story
+                                 -- Scotty, integrating-feedback: open an epic, titled "Epic <n>: <title>"
+  write-story <epic> <id> <title> <bodyfile> <size> <priority> <leads-csv> <blocked-by-csv>
+                                 -- Scotty, integrating-feedback: open a story, titled "Story <id>: <title>"
+  write-blockers <issue> <blocker>...
+                                 -- Scotty: mark an existing story blocked by others
   epic-context <issue>           -- judging-task-request: the story's epic and every sibling
   amend-story <issue> <bodyfile> [<size>] [<priority>]
                                  -- Scotty, judging-task-request: fold work into an existing story
@@ -101,6 +145,221 @@ _bc_issue_body() {
   printf '%s' "$text"
 }
 
+# _bc_issue_title <Epic|Story> <id> <title> -> "<Kind> <id>: <title>".
+# The id in the title is the backlog's naming convention, and the commits and
+# PRs quote it, so the script writes it rather than trusting the caller to.
+# A title that already opens with this same "<Kind> <id>" (and any `:`, `-`
+# or `—` after it) has that prefix dropped first, so it is never doubled.
+_bc_issue_title() {
+  local kind="$1" id="$2" title="$3" prefix
+  prefix="$kind $id"
+  if [ "${title:0:${#prefix}}" = "$prefix" ]; then
+    local rest="${title:${#prefix}}"
+    # Only a real separator ends the prefix: "Story 3.1" must not eat "Story 3.12".
+    if [ -z "$rest" ] || [[ "$rest" =~ ^([[:space:]]|:|—|-) ]]; then
+      title="$(printf '%s' "$rest" | sed -E 's/^([[:space:]]|:|—|-)+//')"
+    fi
+  fi
+  if [ -z "$title" ]; then
+    echo "bc-issue: the title is empty once its '$prefix' prefix is dropped" >&2
+    return 2
+  fi
+  printf '%s: %s' "$prefix" "$title"
+}
+
+# write-demo's checklist lint (Story 4.17): mechanical rules only, never a
+# judgement call an LLM prompt rule could not be asserted against. One data
+# file next to the prompts, not code, so the next piece of demo feedback of
+# this kind is a one-line change with a one-line test. BC_DEMO_DENYLIST_FILE
+# overrides the path -- only the test suite sets it, to exercise a missing,
+# empty, CRLF or regex-metacharacter-bearing denylist without ever touching
+# the real one.
+_BC_DEMO_DENYLIST_FILE="${BC_DEMO_DENYLIST_FILE:-$_BC_ISSUE_DIR/prompts/demo-checklist-denylist.txt}"
+
+# _bc_demo_escape_word <word> -> the word with every ERE metacharacter
+# backslash-escaped, so a denylist entry like "node.js" or "C++" is matched
+# literally -- never errors (an unescaped "++"  is invalid ERE) and never
+# over-matches ("." meaning "any character").
+_bc_demo_escape_word() {
+  printf '%s' "$1" | sed -e 's/[][\.^$*+?(){}|]/\\&/g'
+}
+
+# _bc_demo_denylist_words -> one entry per line on stdout, blank lines and a
+# trailing CR (a CRLF checkout, or a tree read before this fix) stripped ;
+# exit 1 if the file is missing or reads as zero entries. A gate whose data
+# file is broken must fail loud -- silently skipping the rule would let
+# every word in it through unnoticed.
+_bc_demo_denylist_words() {
+  local words
+  [ -f "$_BC_DEMO_DENYLIST_FILE" ] || return 1
+  words="$(sed -e 's/\r$//' "$_BC_DEMO_DENYLIST_FILE" | grep -v '^[[:space:]]*$' || true)"
+  [ -n "$words" ] || return 1
+  printf '%s\n' "$words"
+}
+
+# _bc_demo_lint_line <checklist-line> <denylist-words, one per line> -> the
+# reason it is rejected on stdout, exit 1 ; nothing on stdout, exit 0, if it
+# is clean. Every rule is mechanical -- no reading for tone, only for the
+# shape engineering jargon actually takes -- so an ambiguous English word
+# (table, build, test-as-verb) is never caught by accident.
+_bc_demo_lint_line() {
+  local line="$1" words="$2" word ew
+  case "$line" in
+    *'`'*)
+      printf 'contains a backtick'
+      return 1
+      ;;
+  esac
+  # A path-like token: a slash with a word character on each side (client/
+  # server), or a token ending in a source/doc extension (config.yml).
+  if printf '%s' "$line" | grep -Eq '[[:alnum:]_]/[[:alnum:]_]'; then
+    printf 'looks like a file path'
+    return 1
+  fi
+  if printf '%s' "$line" | grep -Eiq '[[:alnum:]_]\.(md|rs|ts|json|sh|yml)([[:space:].,;:!?]|$)'; then
+    printf 'looks like a file path'
+    return 1
+  fi
+  # snake_case (walk_speed) or camelCase (questLog) -- a run of lowercase
+  # letters immediately broken by an underscore or an uppercase letter is the
+  # shape an identifier takes and plain English does not.
+  if printf '%s' "$line" | grep -Eq '[a-zA-Z0-9]_[a-zA-Z0-9]'; then
+    printf 'contains a snake_case identifier'
+    return 1
+  fi
+  if printf '%s' "$line" | grep -Eq '[a-z]+[A-Z][a-zA-Z]*'; then
+    printf 'contains a camelCase identifier'
+    return 1
+  fi
+  # Each entry matches as a word, plus the common inflections (plural,
+  # past participle, gerund) -- not an open-ended prefix, or "CI" would eat
+  # "city" and "PR" would eat "press"/"price". Escaped, so a metacharacter
+  # in the entry is matched literally rather than as a wildcard.
+  while IFS= read -r word; do
+    [ -n "$word" ] || continue
+    ew="$(_bc_demo_escape_word "$word")"
+    if printf '%s' "$line" | grep -Eiq -- "(^|[^a-zA-Z])${ew}(s|es|ed|ing)?([^a-zA-Z]|\$)"; then
+      printf "uses the engineering term '%s'" "$word"
+      return 1
+    fi
+  done <<< "$words"
+  return 0
+}
+
+# _bc_demo_lint <bodyfile> -- 0 every checklist line is clean ; 1 at least
+# one is rejected as jargon or as the wrong shape, each named on stderr with
+# its reason ; 2 the denylist itself is broken (an infra failure, distinct
+# from both). Every markdown list item is in scope -- any bullet
+# (`-`/`*`/`+`/`N.`, any indent, any checkbox state) that is not the
+# canonical `- [ ] ` form is itself rejected, so Scotty drifting to a
+# different bullet never silently disables the gate for that sprint. The
+# summary paragraph -- anything that is not a list item at all -- is never
+# linted, and a checklist with no lines at all (a sprint of pure process
+# work) is not forced to invent one.
+_bc_demo_lint() {
+  local f="$1" line reason bad=0 words
+  words="$(_bc_demo_denylist_words)" || {
+    echo "bc-issue write-demo: the checklist denylist is missing or empty: $_BC_DEMO_DENYLIST_FILE" >&2
+    return 2
+  }
+  while IFS= read -r line || [ -n "$line" ]; do
+    printf '%s' "$line" | grep -Eq '^[[:space:]]*([-*+]|[0-9]+\.)[[:space:]]' || continue
+    case "$line" in
+      '- [ ] '*)
+        reason="$(_bc_demo_lint_line "$line" "$words")"
+        if [ -n "$reason" ]; then
+          echo "bc-issue write-demo: rejected checklist line ($reason): $line" >&2
+          bad=1
+        fi
+        ;;
+      *)
+        echo "bc-issue write-demo: rejected checklist line (checklist lines must start with '- [ ] '): $line" >&2
+        bad=1
+        ;;
+    esac
+  done < "$f"
+  [ "$bad" -eq 0 ] || return 1
+  return 0
+}
+
+# _bc_issue_live_find <issue> -> on stdout, the id of the issue's live declaration
+# (see is_live_declaration), a newline, then parse_live's output (its state, and
+# for visible a newline and the where-line); nothing if there is none. Exit 2 if
+# the comments cannot be read -- never confused with "no declaration".
+_bc_issue_live_find() {
+  local issue="$1" comments count i body id
+  comments="$(gh_issue_comments "$issue" 2>/dev/null)" || return 2
+  count="$(printf '%s' "$comments" | "$JQ" 'length' 2>/dev/null)" || return 2
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    body="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].body // ""' | tr -d '\r')"
+    if is_live_declaration "$body"; then
+      id="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].id')"
+      printf '%s\n' "$id"
+      parse_live "$body"
+      return 0
+    fi
+    i=$((i + 1))
+  done
+  return 0
+}
+
+# _bc_issue_live <issue> -> the one JSON line `live` prints; exit 2 if unreadable.
+_bc_issue_live() {
+  local found state where
+  found="$(_bc_issue_live_find "$1")" || return 2
+  state="$(printf '%s\n' "$found" | sed -n '2p')"
+  where="$(printf '%s\n' "$found" | sed -n '3p')"
+  case "$state" in
+    visible) "$JQ" -cn --arg w "$where" '{live:"visible",where:$w}' ;;
+    none) printf '{"live":"none"}\n' ;;
+    *) printf '{"live":"undeclared"}\n' ;;
+  esac
+}
+
+# _bc_demo_lint_live <bodyfile> <sprint-number> <sprint-id> -- the second
+# mechanical rule on the checklist (Story 4.24): every `- [ ] ` line ends in
+# exactly one `(#<n>)`, and <n> is a Done item of this sprint declared
+# `visible`. All rejections go to stderr, each naming its line and its own
+# reason. 0 clean ; 1 at least one rejected ; 2 a read failed.
+_bc_demo_lint_live() {
+  local f="$1" n="$2" sprintid="$3" line items done_nums refs ref state bad=0 reason
+  items="$(project_items 2>/dev/null)" || {
+    echo "bc-issue write-demo: could not read project items" >&2; return 2; }
+  done_nums="$(printf '%s' "$items" | "$JQ" -r --arg s "$sprintid" \
+    '.[] | select(.sprintId==$s and .status=="Done") | .number' 2>/dev/null)" || {
+    echo "bc-issue write-demo: could not read project items" >&2; return 2; }
+  done_nums="$(printf '%s' "$done_nums" | tr -d '\r')"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '- [ ] '*) ;; *) continue ;; esac
+    reason=""
+    refs="$(printf '%s' "$line" | grep -Eo '\(#[0-9]+\)' || true)"
+    if [ -z "$refs" ] || ! printf '%s' "$line" | grep -Eq '\(#[0-9]+\)[[:space:]]*$'; then
+      reason="no story reference (end the line with (#<story number>))"
+    elif [ "$(printf '%s\n' "$refs" | wc -l)" -gt 1 ]; then
+      reason="more than one story reference (cite exactly one story)"
+    else
+      ref="$(printf '%s' "$refs" | tr -dc '0-9')"
+      if ! printf '%s\n' "$done_nums" | grep -qx "$ref"; then
+        reason="story #$ref is not a Done item of Sprint $n"
+      else
+        state="$(_bc_issue_live "$ref")" || {
+          echo "bc-issue write-demo: could not read the comments of #$ref" >&2; return 2; }
+        case "$(printf '%s' "$state" | "$JQ" -r '.live')" in
+          visible) ;;
+          none) reason="story #$ref is declared not visible in the live game" ;;
+          *) reason="story #$ref has no live declaration (not visible)" ;;
+        esac
+      fi
+    fi
+    if [ -n "$reason" ]; then
+      echo "bc-issue write-demo: rejected checklist line ($reason): $line" >&2
+      bad=1
+    fi
+  done < "$f"
+  return "$bad"
+}
+
 # An epic exists only to group its stories, so it is never transitioned on its
 # own: it finishes exactly when its last story does. `transition <n> Done`
 # calls this after closing <n>, and it closes the parent only if every OTHER
@@ -120,6 +379,40 @@ _bc_issue_close_epic_if_last() { # <issue> -> parent number on stdout if closed
   project_set_single "$parent" Status Done || return 1
   gh_issue_close "$parent" || return 1
   printf '%s' "$parent"
+}
+
+# _bc_issue_blockers <csv-or-dash> <command> -> the blocker numbers, space
+# separated ("-" is none), or exit 2 on anything that is not an issue number.
+_bc_issue_blockers() {
+  local csv="$1" who="$2" b out=()
+  [ "$csv" != "-" ] || return 0
+  local IFS=','
+  for b in $csv; do
+    [ -n "$b" ] || continue
+    b="${b#\#}"
+    case "$b" in
+      ''|*[!0-9]*) echo "bc-issue $who: not an issue number: $b" >&2; return 2 ;;
+    esac
+    out+=("$b")
+  done
+  IFS=' '
+  printf '%s' "${out[*]}"
+}
+
+# _bc_issue_block <issue> <space-separated blockers> <command> -- marks <issue>
+# blocked by each. A blocker that does not resolve to an issue is exit 2, loud:
+# a dependency silently not written is a story the picker starts too early.
+_bc_issue_block() {
+  local issue="$1" who="$3" b id
+  for b in $2; do
+    id="$(gh_issue_id "$b" 2>/dev/null)"
+    if [ -z "$id" ]; then
+      echo "bc-issue $who: no such issue to be blocked by: #$b" >&2
+      return 2
+    fi
+    gh_issue_add_blocker "$issue" "$id" || {
+      echo "bc-issue $who: could not mark #$issue blocked by #$b" >&2; return 2; }
+  done
 }
 
 # scope logic shared by `next` (embeds it) and `scope` (prints it).
@@ -147,31 +440,89 @@ shift || true
 
 case "$cmd" in
 
-next)
-  cur="$(project_iteration_for_date)"
-  [ -n "$cur" ] || exit 1
-  curid="$(printf '%s' "$cur" | "$JQ" -r '.id')"
+adopt-alerts)
+  alerts="$(gh_issue_list_label "$BC_LABEL_ALERT")" \
+    || { echo "bc-issue adopt-alerts: could not list open $BC_LABEL_ALERT issues" >&2; exit 2; }
+  items="$(project_items)" || { echo "bc-issue adopt-alerts: could not read project items" >&2; exit 2; }
+  numbers="$(printf '%s' "$alerts" | "$JQ" -c '[.[].number] | sort')" \
+    || { echo "bc-issue adopt-alerts: malformed alert list" >&2; exit 2; }
 
+  count="$(printf '%s' "$numbers" | "$JQ" 'length')"
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    n="$(printf '%s' "$numbers" | "$JQ" -r --argjson i "$i" '.[$i]')"
+    i=$((i + 1))
+    # Quentin's direction, cycle 1: "already a project item" is not
+    # "already triaged" -- a tick that crashes between project_item and the
+    # Status write leaves an alert on the board with no Status (or, one
+    # crash later, Backlog with no Priority) -- invisible to `next`
+    # (pool is status=="Backlog") or ranked last (a null Priority). Only an
+    # alert triaged PAST Backlog (In progress, Leads review, Reviewed,
+    # Done, or anything else) is left alone; off-board, or on-board with
+    # Status null/Backlog, is (re-)asserted -- the three writes are
+    # idempotent, so redoing them on an already-Backlog alert is cheap.
+    onboard="$(printf '%s' "$items" | "$JQ" -e --argjson n "$n" 'any(.[]; .number == $n)' 2>/dev/null)" || onboard=false
+    status="$(printf '%s' "$items" | "$JQ" -r --argjson n "$n" '(map(select(.number==$n)) | .[0].status) // "null"')"
+    if [ "$onboard" = "true" ] && [ "$status" != "null" ] && [ "$status" != "Backlog" ]; then
+      continue
+    fi
+    if [ "$onboard" != "true" ]; then
+      # Its own check and its own message: a failed item-add must never
+      # surface as a misleading "failed to set Status" (Quentin's direction).
+      project_item "$n" >/dev/null \
+        || { echo "bc-issue adopt-alerts: could not add #$n to the board" >&2; exit 2; }
+    fi
+    project_set_single "$n" Status Backlog \
+      || { echo "bc-issue adopt-alerts: failed to set Status for #$n" >&2; exit 2; }
+    project_set_single "$n" Priority Blocker \
+      || { echo "bc-issue adopt-alerts: failed to set Priority for #$n" >&2; exit 2; }
+    project_set_single "$n" Size XS \
+      || { echo "bc-issue adopt-alerts: failed to set Size for #$n" >&2; exit 2; }
+    echo "bc-issue adopt-alerts: adopted #$n" >&2
+    printf '%s\n' "$n"
+  done
+  exit 0
+  ;;
+
+next)
   items="$(project_items)" || { echo "bc-issue next: could not read project items" >&2; exit 2; }
 
-  # An epic is a grouping and nothing more: it is never started, and its own
-  # Sprint field says nothing about whether its stories are in scope -- a
-  # sprint routinely holds stories from several epics. So the sprint is read
-  # off the story itself, and the epic only ever comes back as context.
-  # Backlog is the only startable Status (an issue closed by hand keeps
-  # whatever Status it had, hence the OPEN gate), and the Demo issue is the
-  # sprint's own summary, never work to pick up.
-  pick="$(printf '%s' "$items" | "$JQ" -c --arg cur "$curid" '
+  # The pool is the whole board, not a sprint: every open story in Backlog,
+  # from any epic. An epic is a grouping and is never started -- it only ever
+  # comes back as context; the Demo issue is a sprint's summary, never work;
+  # an issue closed by hand keeps whatever Status it had, hence the OPEN gate.
+  # Of those, the startable ones are the ones no open issue blocks
+  # (project_items drops closed blockers), and the order among them is
+  # Priority, then Size -- the small story first, so something ships sooner
+  # and unblocks more -- then issue number.
+  #
+  # BC_ONLY_ISSUE narrows the pool to one story. It exists for the e2e run:
+  # with no sprint to fence its throwaway story in, a run would otherwise
+  # start whatever real work outranks it.
+  pool="$(printf '%s' "$items" | "$JQ" -c --arg only "${BC_ONLY_ISSUE:-}" '
+    [ .[] | select(.isParent!=true and .state=="OPEN" and .status=="Backlog"
+        and ((.labels|index("demo"))|not)
+        and ($only == "" or (.number|tostring) == $only)) ]
+  ')"
+  pick="$(printf '%s' "$pool" | "$JQ" -c '
     def prank: if . == "Blocker" then 0 elif . == "Critical" then 1
                 elif . == "Standard" then 2 elif . == "Low" then 3 else 4 end;
-    [ .[] | select(.isParent!=true and .state=="OPEN"
-        and .sprintId==$cur and .status=="Backlog"
-        and ((.labels|index("demo"))|not)) ]
-    | sort_by([(.priority|prank), .number])
+    def srank: if . == "XS" then 0 elif . == "S" then 1 elif . == "M" then 2
+                elif . == "L" then 3 elif . == "XL" then 4 else 5 end;
+    [ .[] | select((.blockedBy // []) | length == 0) ]
+    | sort_by([(.priority|prank), (.size|srank), .number])
     | .[0] // empty
     | {number, parent}
   ')"
-  [ -n "$pick" ] || exit 1
+  if [ -z "$pick" ]; then
+    # A backlog with stories in it and none startable is not an empty backlog:
+    # it is a dependency on something nobody will ever pick -- a cycle, or a
+    # blocker that is off the board or not in Backlog. Said on stdout, where
+    # the orchestrator's sleep reason picks it up.
+    blocked="$(printf '%s' "$pool" | "$JQ" 'length')"
+    [ "$blocked" -eq 0 ] || printf '%s Backlog stories, every one blocked by an open issue\n' "$blocked"
+    exit 1
+  fi
 
   n="$(printf '%s' "$pick" | "$JQ" -r '.number')"
   p="$(printf '%s' "$pick" | "$JQ" -r '.parent')"
@@ -179,22 +530,27 @@ next)
   printf '{"number":%s,"parent":%s,"scope":"%s"}\n' "$n" "$p" "$scope"
   ;;
 
-current)
-  items="$(project_items)" || { echo "bc-issue current: could not read project items" >&2; exit 2; }
-  matches="$(printf '%s' "$items" | "$JQ" -c '
+active)
+  # Every sub-issue in an active status -- the lanes the orchestrator
+  # advances, one step each, every tick. Any number may be in flight at once:
+  # each has its own worktree, its own derived session ids and its own PR, so
+  # nothing about one lane reads or writes another's. Ascending by number,
+  # so the order the lanes run in (and so the order of the reason line's
+  # parts) is the same from one tick to the next. None active is `[]`, exit
+  # 0 -- an empty list is an answer, not a failure.
+  #
+  # BC_ONLY_ISSUE fences this in as it does `next`: the e2e run's ticks drive
+  # the real board, and with lanes they would otherwise advance every real
+  # story in flight beside its throwaway one.
+  items="$(project_items)" || { echo "bc-issue active: could not read project items" >&2; exit 2; }
+  printf '%s' "$items" | "$JQ" -c --arg only "${BC_ONLY_ISSUE:-}" '
     [.[] | select(.isParent!=true
         and (.status=="To analyze" or .status=="In progress" or .status=="Leads review" or .status=="Reviewed")
-        and ((.labels|index("demo"))|not))]
-  ')"
-  count="$(printf '%s' "$matches" | "$JQ" 'length')"
-  if [ "$count" -eq 0 ]; then
-    exit 1
-  fi
-  if [ "$count" -gt 1 ]; then
-    echo "bc-issue current: more than one active sub-issue: $(printf '%s' "$matches" | "$JQ" -r '[.[].number] | join(", ")')" >&2
-    exit 2
-  fi
-  printf '%s' "$matches" | "$JQ" -c '.[0] | {number, status}'
+        and ((.labels|index("demo"))|not)
+        and ($only == "" or (.number|tostring) == $only))
+      | {number, status}]
+    | sort_by(.number)
+  '
   ;;
 
 transition)
@@ -224,10 +580,11 @@ backlog)
   # The backlog is what is on the board but on no sprint: open, sprintId null,
   # and not a Demo issue (one belongs to the sprint it summarises and is never
   # groomed). Sub-issues are included -- Scotty grooms stories, and a story's
-  # epic is exactly what he needs to see next to its priority and size.
+  # epic and open blockers are exactly what he needs to see next to its
+  # priority and size.
   out="$(printf '%s' "$items" | "$JQ" -c '
     [ .[] | select(.state=="OPEN" and .sprintId==null and ((.labels|index("demo"))|not))
-      | {number, title, status, priority, size, epic: .parent, isEpic: .isParent} ]
+      | {number, title, status, priority, size, epic: .parent, isEpic: .isParent, blockedBy: (.blockedBy // [])} ]
     | sort_by(.number)
   ')"
   printf '%s\n' "$out"
@@ -257,7 +614,19 @@ create-demo)
     title="$(printf '%s' "$done_items" | "$JQ" -r --argjson i "$i" '.[$i].title')"
     body="$(gh_issue_body "$num" 2>/dev/null || true)"
     firstline="$(printf '%s\n' "$body" | grep -m1 -v '^[[:space:]]*$' || true)"
-    printf -- '- #%s %s\n  %s\n' "$num" "$title" "$firstline" >> "$input"
+    # A failed comment read stops here, before the Scotty call is spent --
+    # never a silent downgrade to "not declared".
+    live="$(_bc_issue_live "$num")" || {
+      echo "bc-issue create-demo: could not read the comments of #$num" >&2
+      rm -f "$input"
+      exit 2
+    }
+    case "$(printf '%s' "$live" | "$JQ" -r '.live')" in
+      visible) liveline="Live: visible - $(printf '%s' "$live" | "$JQ" -r '.where')" ;;
+      none) liveline="Live: not visible" ;;
+      *) liveline="Live: not declared (treat as not visible)" ;;
+    esac
+    printf -- '- #%s %s\n  %s\n  %s\n' "$num" "$title" "$firstline" "$liveline" >> "$input"
     i=$((i + 1))
   done
 
@@ -296,12 +665,24 @@ write-demo)
     echo "bc-issue write-demo: the body file is empty" >&2
     exit 2
   fi
+  # Player-facing checklist, Story 4.17: a rejected line is a distinct exit
+  # code (3), never confused with the exit-2 usage/infra failures here --
+  # judge-demo-summary.md rewrites the named lines and calls back rather
+  # than treating this as broken. A broken denylist is exit 2, an infra
+  # failure like the ones around it, not a lint verdict.
+  # The live rule (Story 4.24) runs in the same pass, so Scotty fixes every
+  # rejected line in one retry; an infra failure of either is exit 2.
   sprint="$(project_iterations | "$JQ" -c --arg t "Sprint $n" 'map(select(.title==$t)) | .[0] // empty')"
   if [ -z "$sprint" ]; then
     echo "bc-issue write-demo: no iteration titled 'Sprint $n'" >&2
     exit 2
   fi
   sprintid="$(printf '%s' "$sprint" | "$JQ" -r '.id')"
+  _bc_demo_lint "$bodyfile"; lint_rc=$?
+  [ "$lint_rc" -le 1 ] || exit 2
+  _bc_demo_lint_live "$bodyfile" "$n" "$sprintid"; live_rc=$?
+  [ "$live_rc" -le 1 ] || exit 2
+  [ "$lint_rc" -eq 0 ] && [ "$live_rc" -eq 0 ] || exit 3
 
   out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-demo-out.XXXXXX")"
   render_demo_body "$n" "$summary" > "$out"
@@ -323,6 +704,47 @@ write-demo)
   project_set_single "$new" Status "In progress"
 
   printf '%s\n' "$new"
+  exit 0
+  ;;
+
+live)
+  issue="${1:-}"
+  [ -n "$issue" ] || { usage; exit 2; }
+  _bc_issue_live "$issue" || { echo "bc-issue live: could not read the comments of #$issue" >&2; exit 2; }
+  exit 0
+  ;;
+
+declare-live)
+  issue="${1:-}" state="${2:-}" wherefile="${3:-}"
+  [ -n "$issue" ] && [ -n "$state" ] || { usage; exit 2; }
+  where=""
+  case "$state" in
+    none) ;;
+    visible)
+      [ -f "$wherefile" ] || { echo "bc-issue declare-live: visible needs a where-file naming where to go and what to do" >&2; exit 2; }
+      where="$(tr -d '\r' < "$wherefile" | sed -e 's/[[:space:]]*$//')"
+      if [ -z "$(printf '%s' "$where" | tr -d '[:space:]')" ]; then
+        echo "bc-issue declare-live: the where-file is empty" >&2; exit 2
+      fi
+      if [ "$(printf '%s\n' "$where" | grep -c .)" -ne 1 ] || [[ "$where" == *$'\n'* ]]; then
+        echo "bc-issue declare-live: the where-file must be exactly one line" >&2; exit 2
+      fi
+      if [[ "$where" == *'<!--'* ]]; then
+        echo "bc-issue declare-live: the where-line must not contain '<!--'" >&2; exit 2
+      fi
+      ;;
+    *) echo "bc-issue declare-live: unknown state '$state' (want visible or none)" >&2; exit 2 ;;
+  esac
+  found="$(_bc_issue_live_find "$issue")" || { echo "bc-issue declare-live: could not read the comments of #$issue" >&2; exit 2; }
+  out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-live.XXXXXX")"
+  render_live "$state" "$where" > "$out"
+  id="$(printf '%s\n' "$found" | sed -n '1p')"
+  # One comment per story: edit the one that exists, create only the first.
+  if [ -n "$id" ]; then
+    gh_comment_edit "$id" "$out" || { echo "bc-issue declare-live: could not edit the live comment" >&2; exit 2; }
+  else
+    gh_comment_create "$issue" "$out" >/dev/null || { echo "bc-issue declare-live: could not create the live comment" >&2; exit 2; }
+  fi
   exit 0
   ;;
 
@@ -412,6 +834,7 @@ integrate-feedback)
     printf '%s' "$items" | "$JQ" -r '
       .[] | select(.state=="OPEN" and .sprintId==null and ((.labels|index("demo"))|not))
       | "- #\(.number) \(.title) — \(if .isParent then "epic" else "story of #\(.parent // "nothing")" end), priority: \(.priority // "unset"), size: \(.size // "unset")"
+        + (if ((.blockedBy // []) | length) > 0 then ", blocked by: \(.blockedBy | map("#\(.)") | join(" "))" else "" end)
     ' | tr -d '\r'
   } > "$input"
 
@@ -432,10 +855,93 @@ integrate-feedback)
   # demo In progress for that would stall every sprint behind it. A tick that
   # dies BEFORE this line still leaves the demo In progress and simply runs
   # again -- that is what makes the node safe to retry, not the count.
+  #
+  # But Reviewed is gated on Adrian actually having a reply: re-read the
+  # thread rather than trust Scotty's session came back clean, the same
+  # principle the created-count already follows. A tick that dies before this
+  # gate leaves the demo In progress and simply runs again.
+  # A failed re-read is a GitHub read error, not Scotty's fault -- give it
+  # its own message rather than folding it into "left no feedback-reply",
+  # which would blame his session for a network hiccup on our end.
+  after_comments="$(gh_issue_comments "$issue" 2>/dev/null)" || {
+    echo "bc-issue integrate-feedback: could not re-read #$issue's comments to confirm the reply" >&2
+    exit 2
+  }
+  acount="$(printf '%s' "$after_comments" | "$JQ" 'length' 2>/dev/null || printf 0)"
+  replied=1
+  i=0
+  while [ "$i" -lt "$acount" ]; do
+    cbody="$(printf '%s' "$after_comments" | "$JQ" -r --argjson i "$i" '.[$i].body' | tr -d '\r')"
+    if has_marker "$cbody" "feedback-reply"; then
+      replied=0
+      break
+    fi
+    i=$((i + 1))
+  done
+  if [ "$replied" -ne 0 ]; then
+    echo "bc-issue integrate-feedback: judge-feedback.md left no feedback-reply on demo #$issue" >&2
+    exit 2
+  fi
+
   project_set_single "$issue" Status Reviewed || {
     echo "bc-issue integrate-feedback: failed to mark demo #$issue Reviewed" >&2; exit 2; }
 
   printf '{"demo":%s,"created":%s}\n' "$issue" "$((after - before))"
+  exit 0
+  ;;
+
+write-feedback-reply)
+  # Scotty's own call, the report Adrian was never getting before Story 4.17:
+  # an idempotent upsert keyed on the `<!-- bc:feedback-reply -->` marker, so
+  # a retry after a tick died mid-integration edits the same reply rather
+  # than posting a second one, and the marker keeps the reply itself from
+  # ever being read back as more feedback.
+  issue="${1:-}" bodyfile="${2:-}"
+  [ -n "$issue" ] && [ -n "$bodyfile" ] || { usage; exit 2; }
+  reply="$(_bc_issue_body "$bodyfile" write-feedback-reply)" || exit 2
+  if printf '%s' "$reply" | grep -Fq -- '<!-- bc:'; then
+    echo "bc-issue write-feedback-reply: the body file must not contain a bc: marker" >&2
+    exit 2
+  fi
+
+  # A failed read is an infra failure, never "no reply exists yet" -- reading
+  # it as [] would create a second reply on exactly the flaky-network retry
+  # the upsert exists to protect against.
+  comments="$(gh_issue_comments "$issue" 2>/dev/null)" || {
+    echo "bc-issue write-feedback-reply: could not read #$issue's comments" >&2
+    exit 2
+  }
+  count="$(printf '%s' "$comments" | "$JQ" 'length' 2>/dev/null || printf 0)"
+  existing=""
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    cbody="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].body' | tr -d '\r')"
+    if has_marker "$cbody" "feedback-reply"; then
+      existing="$(printf '%s' "$comments" | "$JQ" -r --argjson i "$i" '.[$i].id')"
+      break
+    fi
+    i=$((i + 1))
+  done
+
+  out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-feedback-reply-out.XXXXXX")"
+  render_feedback_reply "$reply" > "$out"
+  if [ -n "$existing" ]; then
+    gh_comment_edit "$existing" "$out" || {
+      echo "bc-issue write-feedback-reply: gh_comment_edit failed" >&2; rm -f "$out"; exit 2; }
+    rm -f "$out"
+    printf '%s\n' "$existing"
+    exit 0
+  fi
+
+  newid="$(gh_comment_create "$issue" "$out")"
+  rc=$?
+  rm -f "$out"
+  if [ "$rc" -ne 0 ]; then
+    echo "bc-issue write-feedback-reply: gh_comment_create failed" >&2
+    exit 2
+  fi
+  [ -n "$newid" ] || newid=ok
+  printf '%s\n' "$newid"
   exit 0
   ;;
 
@@ -444,6 +950,7 @@ write-epic)
   [ -n "$n" ] && [ -n "$title" ] && [ -n "$bodyfile" ] && [ -n "$prio" ] || { usage; exit 2; }
   _bc_issue_check_option "$prio" "$_BC_PRIORITIES" priority write-epic || exit 2
   preamble="$(_bc_issue_body "$bodyfile" write-epic)" || exit 2
+  title="$(_bc_issue_title Epic "$n" "$title")" || exit 2
 
   out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-epic-out.XXXXXX")"
   render_epic_body "$n" "$preamble" > "$out"
@@ -457,8 +964,8 @@ write-epic)
     exit 2
   fi
 
-  # Backlog, and on no sprint: new work is groomed into a sprint later, by
-  # starting-next-sprint, never here.
+  # Backlog, and on no sprint: an epic is a grouping and is never scoped, and
+  # its stories go onto a sprint one at a time, as starting-dev-cycle picks them.
   project_item "$new" >/dev/null
   project_set_single "$new" Status Backlog
   project_set_single "$new" Priority "$prio"
@@ -469,11 +976,16 @@ write-epic)
 
 write-story)
   parent="${1:-}" sid="${2:-}" title="${3:-}" bodyfile="${4:-}"
-  size="${5:-}" prio="${6:-}" leads="${7:-}"
+  size="${5:-}" prio="${6:-}" leads="${7:-}" blockers="${8:-}"
   [ -n "$parent" ] && [ -n "$sid" ] && [ -n "$title" ] && [ -n "$bodyfile" ] \
-    && [ -n "$size" ] && [ -n "$prio" ] && [ -n "$leads" ] || { usage; exit 2; }
+    && [ -n "$size" ] && [ -n "$prio" ] && [ -n "$leads" ] && [ -n "$blockers" ] || { usage; exit 2; }
   _bc_issue_check_option "$size" "$_BC_SIZES" size write-story || exit 2
   _bc_issue_check_option "$prio" "$_BC_PRIORITIES" priority write-story || exit 2
+  # Required, "-" for none, for the same reason <leads-csv> is: the picker
+  # starts any story nothing blocks, so "what must land first" has to be an
+  # answer Scotty gave rather than a question he was never asked. Parsed
+  # before the issue exists -- a typo must not leave a story open and unblocked.
+  blocker_list="$(_bc_issue_blockers "$blockers" write-story)" || exit 2
 
   # Lead scope is a label, never a line in the body -- `bc-issue scope` reads
   # it back off the labels and quentin is added there whether or not he was
@@ -492,6 +1004,7 @@ write-story)
   fi
 
   story="$(_bc_issue_body "$bodyfile" write-story)" || exit 2
+  title="$(_bc_issue_title Story "$sid" "$title")" || exit 2
 
   out="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-issue-story-out.XXXXXX")"
   render_story_body "$sid" "$story" > "$out"
@@ -511,12 +1024,38 @@ write-story)
     gh_issue_add_subissue "$parent" "$child"
   fi
 
+  # Blockers before the board: a story is startable the moment it is in
+  # Backlog with nothing blocking it, so the dependencies land first.
+  _bc_issue_block "$new" "$blocker_list" write-story || exit 2
+
   project_item "$new" >/dev/null
   project_set_single "$new" Status Backlog
   project_set_single "$new" Size "$size"
   project_set_single "$new" Priority "$prio"
 
   printf '%s\n' "$new"
+  exit 0
+  ;;
+
+write-blockers)
+  # For a story that is already open: work Scotty has just created that must
+  # land BEFORE it (a fix an existing story turns out to rest on), or a
+  # dependency grooming missed. Adds, never removes -- a blocker stops
+  # blocking by being closed, which is the only way one should.
+  issue="${1:-}"
+  [ -n "$issue" ] || { usage; exit 2; }
+  shift
+  [ "$#" -gt 0 ] || { usage; exit 2; }
+  case "$issue" in *[!0-9]*) echo "bc-issue write-blockers: not an issue number: $issue" >&2; exit 2 ;; esac
+  blocker_list="$(_bc_issue_blockers "$(IFS=','; printf '%s' "$*")" write-blockers)" || exit 2
+  for b in $blocker_list; do
+    if [ "$b" = "$issue" ]; then
+      echo "bc-issue write-blockers: #$issue cannot block itself" >&2
+      exit 2
+    fi
+  done
+  _bc_issue_block "$issue" "$blocker_list" write-blockers || exit 2
+  printf '%s\n' "$issue"
   exit 0
   ;;
 
@@ -552,7 +1091,7 @@ epic-context)
       epicTitle: (map(select(.number==$epic)) | .[0].title // null),
       epicBody: $body,
       stories: [ .[] | select(.parent==$epic)
-                 | {number, title, state, status, size, priority} ]
+                 | {number, title, state, status, size, priority, blockedBy: (.blockedBy // [])} ]
                  | sort_by(.number)
     }'
   exit 0

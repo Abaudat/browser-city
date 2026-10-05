@@ -66,6 +66,13 @@ impl Rng {
 
         result
     }
+
+    /// A draw in `[0, bound)`, reduced in `u64` before any narrowing so a
+    /// 32-bit `usize` target draws the same value as a 64-bit one. `bound`
+    /// must be non-zero.
+    pub fn below(&mut self, bound: u64) -> u64 {
+        self.next_u64() % bound
+    }
 }
 
 #[cfg(test)]
@@ -84,6 +91,15 @@ mod known_answer_tests {
         assert_eq!(splitmix64(&mut state), 0xE220A8397B1DCDAF);
         assert_eq!(splitmix64(&mut state), 0x6E789E6AA1B965F4);
         assert_eq!(splitmix64(&mut state), 0x06C45D188009454F);
+    }
+
+    #[test]
+    fn below_is_next_u64_reduced_in_u64() {
+        let mut a = Rng::new(5);
+        let mut b = Rng::new(5);
+        for bound in [1u64, 2, 3, 1000, u64::MAX] {
+            assert_eq!(a.below(bound), b.next_u64() % bound);
+        }
     }
 
     /// xoshiro256++ from raw state `[1, 2, 3, 4]` -- the exact fixture the

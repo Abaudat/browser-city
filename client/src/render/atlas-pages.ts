@@ -12,7 +12,7 @@
 
 import { Assets, type Container, Rectangle, Sprite, Texture, type TextureSource } from "pixi.js";
 import type { AtlasPageDef, Defs, ObjectDef } from "../defs/types";
-import { atlasFrameRect } from "./atlas-frame";
+import { atlasFrameRect, defCellFrameRect } from "./atlas-frame";
 import { atlasPageUrl } from "./atlas-url";
 
 /**
@@ -36,6 +36,15 @@ export class AtlasPageLoader {
   private readonly baseUrl: string;
   private readonly pages = new Map<string, Promise<Texture>>();
   private readonly objectTextures = new Map<number, Promise<Texture>>();
+  /** Story 2.13 (Tim's direction, cycle 2): one shared cropped `Texture`
+   * per `(object id, column)`, next to [`objectTextures`] above -- a
+   * `defId`-placed prop's own per-cell texture is built at most once no
+   * matter how many placements of the same def (four `bridge_deck`
+   * placements share one; a generated city sharing one def across many
+   * placed cells shares one per column that def ever needs), never a
+   * fresh `Texture` allocated on every call the way `defCellTexture` used
+   * to. */
+  private readonly objectCellTextures = new Map<string, Promise<Texture>>();
   /** Every page `TextureSource` this loader has actually resolved --
    * populated only once a page's own load settles, never while pending
    * (Quentin's direction: the mounted-scene page count must read what
@@ -106,18 +115,22 @@ export class AtlasPageLoader {
   objectTexture(defs: Defs, object: ObjectDef): Promise<Texture> {
     let promise = this.objectTextures.get(object.id);
     if (promise) return promise;
+    const atlas = object.atlas;
+    if (!atlas) {
+      return Promise.reject(new Error(`atlas-pages: object '${object.key}' is undrawn`));
+    }
 
-    const page = defs.atlasPages[object.atlas.page];
+    const page = defs.atlasPages[atlas.page];
     if (!page) {
       return Promise.reject(
         new Error(
-          `atlas-pages: object '${object.key}' names atlas page ${object.atlas.page}, but defs only has ${defs.atlasPages.length} page(s)`,
+          `atlas-pages: object '${object.key}' names atlas page ${atlas.page}, but defs only has ${defs.atlasPages.length} page(s)`,
         ),
       );
     }
     promise = this.pageTexture(page)
       .then((pageTexture) => {
-        const cell = atlasFrameRect(object.atlas);
+        const cell = atlasFrameRect(atlas);
         const frame = new Rectangle(cell.x, cell.y, cell.width, cell.height);
         return new Texture({ source: pageTexture.source, frame, dynamic: false });
       })
@@ -126,6 +139,69 @@ export class AtlasPageLoader {
         throw err;
       });
     this.objectTextures.set(object.id, promise);
+    return promise;
+  }
+
+  /**
+   * One def-placed prop's own per-cell texture (story 2.13, Tim's
+   * direction cycle 2): the def's whole atlas-cropped sprite
+   * ([`objectTexture`], already cached above), further cropped to the
+   * exact `tileSizePx`-wide column `sourceCol` names
+   * ([`defCellFrameRect`]'s own pure math, `atlas-frame.ts`) -- cached
+   * per `(object id, column)`, shared and never destroyed by an
+   * individual caller, the same shape [`objectTexture`]'s own cache
+   * already has. A rejected load is evicted the same way
+   * [`objectTexture`]'s own cache is (Artie's direction): one dropped
+   * page request must not permanently hide this cell for the rest of the
+   * session.
+   *
+   * A def several rows tall is cut one row per call (`sourceRow`, north
+   * row first), cached per `(object id, column, row)`; its sprite must be
+   * exactly `height * tileSizePx` tall, else this rejects naming the object
+   * (never a silent crop of an overhanging several-row sprite).
+   */
+  objectCellTexture(
+    defs: Defs,
+    object: ObjectDef,
+    sourceCol: number,
+    tileSizePx: number,
+    sourceRow: number,
+  ): Promise<Texture> {
+    if (!object.atlas) {
+      return Promise.reject(new Error(`atlas-pages: object '${object.key}' is undrawn`));
+    }
+    if (object.height > 1 && object.atlas.h !== object.height * tileSizePx) {
+      return Promise.reject(
+        new Error(
+          `atlas-pages: object '${object.key}' is ${object.height} cells tall but its sprite is ${object.atlas.h}px, not ${object.height * tileSizePx}px -- only art exactly its footprint tall is cut row by row`,
+        ),
+      );
+    }
+    if (sourceRow < 0 || sourceRow >= object.height) {
+      return Promise.reject(
+        new Error(
+          `atlas-pages: object '${object.key}' is ${object.height} cell(s) tall, no row ${sourceRow}`,
+        ),
+      );
+    }
+    const key = `${object.id}:${sourceCol}:${sourceRow}`;
+    let promise = this.objectCellTextures.get(key);
+    if (promise) return promise;
+
+    promise = this.objectTexture(defs, object)
+      .then((base) => {
+        const frame = defCellFrameRect(base.frame, sourceCol, tileSizePx, sourceRow, object.height);
+        return new Texture({
+          source: base.source,
+          frame: new Rectangle(frame.x, frame.y, frame.width, frame.height),
+          dynamic: false,
+        });
+      })
+      .catch((err: unknown) => {
+        this.objectCellTextures.delete(key);
+        throw err;
+      });
+    this.objectCellTextures.set(key, promise);
     return promise;
   }
 }

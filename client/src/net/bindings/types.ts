@@ -10,6 +10,21 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const ActorKind = __t.object("ActorKind", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type ActorKind = __Infer<typeof ActorKind>;
+
+export const ActorLocation = __t.object("ActorLocation", {
+  locationId: __t.u64(),
+  actorKind: __t.u32(),
+  actorId: __t.u64(),
+  chunkKey: __t.u64(),
+  floor: __t.i8(),
+});
+export type ActorLocation = __Infer<typeof ActorLocation>;
+
 export const BudgetReviewSchedule = __t.object("BudgetReviewSchedule", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),
@@ -34,6 +49,21 @@ export const BuildingArea = __t.object("BuildingArea", {
 });
 export type BuildingArea = __Infer<typeof BuildingArea>;
 
+export const Business = __t.object("Business", {
+  businessId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type Business = __Infer<typeof Business>;
+
+export const CadenceLiveness = __t.object("CadenceLiveness", {
+  cadence: __t.u32(),
+  lastTargetAt: __t.timestamp(),
+  lastFiredAt: __t.timestamp(),
+  fires: __t.u64(),
+  missed: __t.u64(),
+});
+export type CadenceLiveness = __Infer<typeof CadenceLiveness>;
+
 export const Character = __t.object("Character", {
   characterId: __t.u64(),
   createdAt: __t.timestamp(),
@@ -44,6 +74,7 @@ export const CharacterIdentity = __t.object("CharacterIdentity", {
   mappingId: __t.u64(),
   identity: __t.identity(),
   characterId: __t.u64(),
+  issuerId: __t.u64(),
 });
 export type CharacterIdentity = __Infer<typeof CharacterIdentity>;
 
@@ -70,12 +101,32 @@ export const CitizenTransitionSchedule = __t.object("CitizenTransitionSchedule",
 });
 export type CitizenTransitionSchedule = __Infer<typeof CitizenTransitionSchedule>;
 
+export const ContainerKind = __t.object("ContainerKind", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type ContainerKind = __Infer<typeof ContainerKind>;
+
 export const DemoPing = __t.object("DemoPing", {
   id: __t.u64(),
   message: __t.string(),
   writtenAt: __t.timestamp(),
 });
 export type DemoPing = __Infer<typeof DemoPing>;
+
+export const District = __t.object("District", {
+  districtId: __t.u64(),
+  seed: __t.u64(),
+  x0: __t.i32(),
+  y0: __t.i32(),
+  x1: __t.i32(),
+  y1: __t.i32(),
+  generationVersion: __t.u32(),
+  rngVersion: __t.u32(),
+  defsVersion: __t.string(),
+  generatedAt: __t.timestamp(),
+});
+export type District = __Infer<typeof District>;
 
 export const EconomySchedule = __t.object("EconomySchedule", {
   scheduledId: __t.u64(),
@@ -101,12 +152,56 @@ export const GrowthSchedule = __t.object("GrowthSchedule", {
 });
 export type GrowthSchedule = __Infer<typeof GrowthSchedule>;
 
+export const HolderKind = __t.object("HolderKind", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type HolderKind = __Infer<typeof HolderKind>;
+
+export const ItemHeld = __t.object("ItemHeld", {
+  instanceId: __t.u64(),
+  containerKind: __t.u32(),
+  containerId: __t.u64(),
+  slotX: __t.u8(),
+  slotY: __t.u8(),
+  orientation: __t.u8(),
+});
+export type ItemHeld = __Infer<typeof ItemHeld>;
+
+export const ItemInstance = __t.object("ItemInstance", {
+  instanceId: __t.u64(),
+  defId: __t.u32(),
+  createdAt: __t.timestamp(),
+});
+export type ItemInstance = __Infer<typeof ItemInstance>;
+
+export const ItemPlaced = __t.object("ItemPlaced", {
+  instanceId: __t.u64(),
+  x: __t.i32(),
+  y: __t.i32(),
+  floor: __t.i8(),
+  offsetX: __t.u8(),
+  offsetY: __t.u8(),
+  orientation: __t.u8(),
+  chunkKey: __t.u64(),
+});
+export type ItemPlaced = __Infer<typeof ItemPlaced>;
+
 export const LayerCode = __t.object("LayerCode", {
   code: __t.u32(),
   name: __t.string(),
   rank: __t.u32(),
 });
 export type LayerCode = __Infer<typeof LayerCode>;
+
+export const LinkRequest = __t.object("LinkRequest", {
+  requestId: __t.u64(),
+  identity: __t.identity(),
+  issuerId: __t.u64(),
+  code: __t.string(),
+  expiresAt: __t.i64(),
+});
+export type LinkRequest = __Infer<typeof LinkRequest>;
 
 export const MaintenanceSchedule = __t.object("MaintenanceSchedule", {
   scheduledId: __t.u64(),
@@ -138,11 +233,25 @@ export const ModuleVersion = __t.object("ModuleVersion", {
 });
 export type ModuleVersion = __Infer<typeof ModuleVersion>;
 
+export const MyCharacter = __t.object("MyCharacter", {
+  characterId: __t.u64(),
+  createdAt: __t.timestamp(),
+  linked: __t.bool(),
+});
+export type MyCharacter = __Infer<typeof MyCharacter>;
+
 export const NodeKind = __t.object("NodeKind", {
   code: __t.u32(),
   name: __t.string(),
 });
 export type NodeKind = __Infer<typeof NodeKind>;
+
+export const OidcIssuer = __t.object("OidcIssuer", {
+  issuerId: __t.u64(),
+  issuer: __t.string(),
+  clientId: __t.string(),
+});
+export type OidcIssuer = __Infer<typeof OidcIssuer>;
 
 export const PlacedObject = __t.object("PlacedObject", {
   objectId: __t.u64(),
@@ -156,6 +265,18 @@ export const PlacedObject = __t.object("PlacedObject", {
 });
 export type PlacedObject = __Infer<typeof PlacedObject>;
 
+export const PlayerPosition = __t.object("PlayerPosition", {
+  characterId: __t.u64(),
+  chunkKey: __t.u64(),
+  x: __t.i32(),
+  y: __t.i32(),
+  floor: __t.i8(),
+  fracX: __t.u8(),
+  fracY: __t.u8(),
+  updatedAt: __t.timestamp(),
+});
+export type PlayerPosition = __Infer<typeof PlayerPosition>;
+
 export const Provision = __t.object("Provision", {
   code: __t.u32(),
   name: __t.string(),
@@ -167,6 +288,22 @@ export const ReasonCode = __t.object("ReasonCode", {
   name: __t.string(),
 });
 export type ReasonCode = __Infer<typeof ReasonCode>;
+
+export const ReducerClassCounter = __t.object("ReducerClassCounter", {
+  class: __t.string(),
+  calls: __t.u64(),
+  sampledCalls: __t.u64(),
+});
+export type ReducerClassCounter = __Infer<typeof ReducerClassCounter>;
+
+export const ReducerClassSample = __t.object("ReducerClassSample", {
+  sampleId: __t.u64(),
+  sampledAt: __t.timestamp(),
+  class: __t.string(),
+  callsTotal: __t.u64(),
+  callsDelta: __t.u64(),
+});
+export type ReducerClassSample = __Infer<typeof ReducerClassSample>;
 
 export const RestoreState = __t.object("RestoreState", {
   id: __t.u8(),
@@ -192,6 +329,51 @@ export const RoomArea = __t.object("RoomArea", {
   chunkKey: __t.u64(),
 });
 export type RoomArea = __Infer<typeof RoomArea>;
+
+export const Stock = __t.object("Stock", {
+  stockId: __t.u64(),
+  holderKind: __t.u32(),
+  holderId: __t.u64(),
+  itemId: __t.u32(),
+  quantity: __t.u64(),
+});
+export type Stock = __Infer<typeof Stock>;
+
+export const StorageSample = __t.object("StorageSample", {
+  sampleId: __t.u64(),
+  sampledAt: __t.timestamp(),
+  totalBytesEst: __t.u64(),
+  overReview: __t.bool(),
+  overWall: __t.bool(),
+  reviewBytes: __t.u64(),
+  wallBytes: __t.u64(),
+});
+export type StorageSample = __Infer<typeof StorageSample>;
+
+export const TableSample = __t.object("TableSample", {
+  sampleId: __t.u64(),
+  sampledAt: __t.timestamp(),
+  tableAccessor: __t.string(),
+  rows: __t.u64(),
+  bytesEst: __t.u64(),
+  alertRows: __t.u64(),
+  maxRows: __t.u64(),
+  overAlert: __t.bool(),
+});
+export type TableSample = __Infer<typeof TableSample>;
+
+export const Unit = __t.object("Unit", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type Unit = __Infer<typeof Unit>;
+
+export const WorldClock = __t.object("WorldClock", {
+  id: __t.u8(),
+  epochAt: __t.timestamp(),
+  speed: __t.u32(),
+});
+export type WorldClock = __Infer<typeof WorldClock>;
 
 export const WorldClockSchedule = __t.object("WorldClockSchedule", {
   scheduledId: __t.u64(),

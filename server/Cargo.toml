@@ -14,6 +14,12 @@ edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+# The dev-only clock control (FR163/FR168): `jump_clock`/`set_clock_speed`
+# exist only when built with this. Never a default, never on the deploy
+# build; `scripts/dev/publish-dev.sh` is its one publisher.
+time-control = []
+
 [lib]
 # SpacetimeDB's reducer/table macros reference host FFI symbols the wasm
 # runtime supplies, so this crate cannot be linked natively -- "cdylib" is
@@ -26,9 +32,7 @@ crate-type = ["cdylib"]
 spacetimedb = { version = "2.9.*" }
 log = "0.4"
 sim = { path = "sim" }
-# bounds is deliberately NOT a dependency here: nothing in this crate uses
-# its registry yet (there are no tables), and an edge that exists only to
-# be unused is worse than adding it back the day the first reducer needs it.
+# bounds is deliberately NOT a dependency: it turns on a sim fixture feature that feature unification would pull into the published module.
 
 [profile.release]
 # This is not a test-only setting: `build` (the wasm target `spacetime

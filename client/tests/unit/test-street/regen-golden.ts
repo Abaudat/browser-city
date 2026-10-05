@@ -13,10 +13,12 @@ import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sortAcrossFloors } from "../../../src/render/floor-stacks";
 import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-ranks";
-import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
+import { FIRST_POOL_RANK, LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import { computeVisibility, type VisibilityViewer } from "../../../src/render/visibility";
-import { buildPlayerDrawable, buildPropDrawables } from "../../../src/test-street/drawables";
+import { CROWD_FLOOR } from "../../../src/test-street/citizens";
+import { buildCharacterDrawable, buildPropDrawables } from "../../../src/test-street/drawables";
 import {
+  LAMPPOST_CELL,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
   PLAYER_START,
@@ -24,7 +26,14 @@ import {
   SUBWAY_FLOOR,
 } from "../../../src/test-street/fixture";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
-import { lamppostRestY, streetOwnershipIndex, streetWindowDefIds } from "./street-world";
+import { reachableGrid } from "./reachable";
+import {
+  lamppostRestY,
+  streetObjectSources,
+  streetOwnershipIndex,
+  streetThresholdDefIds,
+  streetWindowDefIds,
+} from "./street-world";
 
 const CODE_BY_NAME: Record<string, number> = Object.fromEntries(
   LAYER_TABLE.map((row) => [row.name, row.code]),
@@ -38,11 +47,22 @@ function rankOf(layer: string): number {
 }
 
 const ownership = streetOwnershipIndex();
-const props = () => buildPropDrawables({ rankOf, ownership, windowDefIds: streetWindowDefIds() });
+const props = () =>
+  buildPropDrawables({
+    rankOf,
+    ownership,
+    windowDefIds: streetWindowDefIds(),
+    thresholdDefIds: streetThresholdDefIds(),
+    objectDefs: streetObjectSources(),
+  });
 
 function orderAt(x: number, y: number, floor: number): string[] {
-  const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
-  return sortAcrossFloors([...props(), player], (d) => d).map((d) => d.stableId.toString());
+  const player = buildCharacterDrawable(rankOf("characters"), x, y, floor);
+  // Flat-pass drawables are never pool members: `window.__bc.renderOrder`
+  // (and so this golden) lists the pool only.
+  return sortAcrossFloors([...props(), player], (d) => d)
+    .filter((d) => d.rank >= FIRST_POOL_RANK)
+    .map((d) => d.stableId.toString());
 }
 
 const GROUND_FLOORS = [...new Set(STREET_GROUND_TILES.map((tiles) => tiles.floor))].sort(
@@ -50,25 +70,47 @@ const GROUND_FLOORS = [...new Set(STREET_GROUND_TILES.map((tiles) => tiles.floor
 );
 
 function visibilityAt(x: number, y: number, floor: number): Record<string, string> {
-  const player = buildPlayerDrawable(rankOf("characters"), x, y, floor);
+  const player = buildCharacterDrawable(rankOf("characters"), x, y, floor);
   const viewer: VisibilityViewer = {
     floor,
     buildingId: ownership.ownershipAt(cellOf(x), cellOf(y), floor).buildingId,
   };
   const result: Record<string, string> = {};
+  const flatFloors = new Set<number>();
   for (const drawable of [...props(), player]) {
+    if (drawable.rank < FIRST_POOL_RANK) {
+      flatFloors.add(drawable.floor);
+      continue;
+    }
     result[drawable.stableId.toString()] = computeVisibility(viewer, drawable);
   }
-  for (const groundFloor of GROUND_FLOORS) {
-    result[`ground:${groundFloor}`] = computeVisibility(viewer, {
-      floor: groundFloor,
-      layerCode: layerCodeByName("objects"),
+  const group = (floor: number, layer: string) =>
+    computeVisibility(viewer, {
+      floor,
+      layerCode: layerCodeByName(layer),
       ownerBuildingId: NO_OWNER,
       isWindow: false,
       isNearSide: false,
       isStub: false,
     });
+  for (const groundFloor of GROUND_FLOORS) {
+    result[`ground:${groundFloor}`] = group(groundFloor, "ground");
+    // Story 15.8 (Quentin's cycle-1 finding): the ground-decals pass sits
+    // under every stack root exactly like the ground pass does, and must
+    // be culled the same way -- `defs/` has no dedicated layer code for
+    // it yet, so it carries the `ground` layer's own code, exactly like
+    // `scene.ts`'s `GROUND_DECALS_LAYER_CODE`.
+    result[`ground_decals:${groundFloor}`] = group(groundFloor, "ground");
   }
+  for (const floor of flatFloors) {
+    result[`ground_objects:${floor}`] = group(floor, "ground_objects");
+  }
+  // Story 15.8: the street crowd's own container is a flat, floor-0
+  // visibility member exactly like the ground/ground-objects passes above
+  // -- `CROWD_FLOOR` (`citizens.ts`) and `layerCodeByName("characters")`
+  // are the same facts `scene.ts` registers it with, never a literal `0`
+  // restated here.
+  result[`crowd:${CROWD_FLOOR}`] = group(CROWD_FLOOR, "characters");
   return result;
 }
 
@@ -105,7 +147,9 @@ const header = `// The street scene's committed depth order and visibility state
 // pool per floor drawn in ascending floor order. Ids at \`500000\` and above
 // are the FR120 wall-stub companions (\`test-street/drawables.ts\`'s
 // \`STUB_ID_OFFSET\`); \`ground:<floor>\` keys are the flat ground passes
-// (FR122 culls those as completely as it culls pool sprites).
+// (FR122 culls those as completely as it culls pool sprites);
+// \`ground_objects:<floor>\` keys are the flat ground-object passes, whose
+// members are not in the order at all.
 `;
 
 const out = [
@@ -113,7 +157,12 @@ const out = [
   orderLiteral("STREET_GOLDEN_ORDER", orderAt(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor)),
   orderLiteral(
     "STREET_GOLDEN_ORDER_AFTER_WALKING_SOUTH",
-    orderAt(PLAYER_START.x, lamppostRestY(), PLAYER_START.floor),
+    // Story 2.13: `LAMPPOST_CELL.x`, not `PLAYER_START.x` -- the lamppost
+    // no longer shares the door's own column (`LAMPPOST_CELL`'s own doc
+    // comment says why), so the rest position this golden pins is the
+    // lamppost's own cell centre, matching where the scripted walk's own
+    // "part-way-through-the-lamppost" checkpoint actually lands.
+    orderAt(LAMPPOST_CELL.x + 0.5, lamppostRestY(), PLAYER_START.floor),
   ),
   mapLiteral(
     "STREET_VISIBILITY_AT_REST_IN_SHOP_A",
@@ -121,7 +170,7 @@ const out = [
   ),
   mapLiteral(
     "STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE",
-    visibilityAt(PLAYER_START.x, lamppostRestY(), PLAYER_START.floor),
+    visibilityAt(LAMPPOST_CELL.x + 0.5, lamppostRestY(), PLAYER_START.floor),
   ),
   mapLiteral(
     "STREET_VISIBILITY_ON_SUBWAY_LANDING",
@@ -132,3 +181,20 @@ const out = [
 const target = fileURLToPath(new URL("./golden.ts", import.meta.url));
 writeFileSync(target, out, "utf-8");
 console.log(`regen-golden: wrote ${target}`);
+
+// The reachable cells per floor, from the start, crossing transitions: a
+// picture, so a layout change that moves reachability is a visible diff.
+const reachableTarget = fileURLToPath(new URL("./reachable-golden.ts", import.meta.url));
+const grid = reachableGrid();
+writeFileSync(
+  reachableTarget,
+  [
+    "// GENERATED by `regen-golden.ts` -- never hand-edited. The cells a walker can reach",
+    "// on foot from the player's start, crossing transitions, one picture per floor",
+    "// (`#` reachable, `.` not; a row per cell row, a column per cell column).",
+    `export const REACHABLE_GRID: Readonly<Record<string, readonly string[]>> = ${JSON.stringify(grid, null, 2)};`,
+    "",
+  ].join("\n"),
+  "utf-8",
+);
+console.log(`regen-golden: wrote ${reachableTarget}`);

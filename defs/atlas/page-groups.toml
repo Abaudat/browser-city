@@ -4,54 +4,65 @@
 # is a build error naming it -- there is no silent per-theme-folder
 # default.
 #
-# Every theme a real street kit's single props borrow art from, plus the
-# always-present terrain/building themes, share one "street" group so a
-# street scene binds a small, fixed page set regardless of how many
-# themes its individual props happen to come from -- one page set per
-# theme folder would otherwise put every new prop on yet another bound
-# page (NFR12). A themed district (a hospital, a school interior) keeps
-# its own group instead, added here the day its own objects land.
+# Every theme drawn in any scene -- the street kit's terrain, buildings
+# and borrowed props, and the interior shell (`room_builder`: floors,
+# walls, thresholds every scene draws) -- shares one "shared" group, so a
+# scene binds a small, fixed page set (NFR12). A themed district (a
+# hospital, a school interior) keeps its own group instead, added here
+# the day its own objects land.
 
 [[page_group]]
 theme = "terrains_and_fences"
-group = "street"
+group = "shared"
 
 [[page_group]]
 theme = "city_terrains"
-group = "street"
+group = "shared"
 
 [[page_group]]
 theme = "city_props"
-group = "street"
+group = "shared"
 
 [[page_group]]
 theme = "generic_building"
-group = "street"
+group = "shared"
 
 [[page_group]]
 theme = "floor_modular_building"
-group = "street"
+group = "shared"
 
 [[page_group]]
 theme = "camping"
-group = "street"
+group = "shared"
 
 [[page_group]]
 theme = "school"
-group = "street"
+group = "shared"
 
 [[page_group]]
 theme = "beach"
-group = "street"
+group = "shared"
 
 [[page_group]]
 theme = "office"
-group = "street"
+group = "shared"
 
 [[page_group]]
 theme = "garden"
-group = "street"
+group = "shared"
 
 [[page_group]]
 theme = "vehicles"
-group = "street"
+group = "shared"
+
+[[page_group]]
+theme = "subway_and_train_station"
+group = "shared"
+
+[[page_group]]
+theme = "room_builder"
+group = "shared"
+
+[[page_group]]
+theme = "post_office"
+group = "shared"

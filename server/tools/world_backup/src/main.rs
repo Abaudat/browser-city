@@ -106,6 +106,31 @@ fn run(args: &[String]) -> Result<()> {
                 rows.iter().map(row_to_line).collect::<Vec<_>>().join(",")
             );
         }
+        "snapshot-shape" => {
+            let snapshot = read_snapshot(&args[2])?;
+            let text = Shape::from_snapshot(&snapshot).to_text();
+            if !text.is_empty() {
+                println!("{text}");
+            }
+        }
+        "select-schema" => {
+            // select-schema <live-shape-file> <candidate-shape-file>... --
+            // <candidate-shape-file>s ordered newest to oldest. Prints the
+            // winning candidate's 0-based index (its position among the
+            // candidate arguments) on success; on failure, the exact same
+            // message a caller would have died with today, just now
+            // checked against every candidate rather than only the
+            // incoming one (story 4.18).
+            let live = Shape::parse(&read_file(&args[2])?)?;
+            let mut candidates = Vec::new();
+            for path in &args[3..] {
+                candidates.push(Shape::parse(&read_file(path)?)?);
+            }
+            match select_schema(&live, &candidates) {
+                Ok(index) => println!("{index}"),
+                Err(mismatch) => return Err(WorldBackupError(mismatch.to_string())),
+            }
+        }
         "snapshot-columns" => {
             let snapshot = read_snapshot(&args[2])?;
             let accessor = &args[3];
@@ -224,6 +249,60 @@ fn run(args: &[String]) -> Result<()> {
                 .expect("a manifest built from strings always serializes");
             fs::write(out, format!("{text}\n"))
                 .map_err(|e| WorldBackupError(format!("could not write {out}: {e}")))?;
+        }
+        "cadence-liveness-forward-diff" => {
+            // cadence-liveness-forward-diff <export-a.jsonl> <export-b.jsonl>
+            // -- prints one mismatch description per line to stdout, empty
+            // output means every row in A is either byte-identical in B or
+            // related to it by exactly one legitimate later fire.
+            let a_text = read_file(&args[2])?;
+            let b_text = read_file(&args[3])?;
+            let a_lines: Vec<String> = a_text
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect();
+            let b_lines: Vec<String> = b_text
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect();
+            for mismatch in cadence_liveness_forward_diff(&a_lines, &b_lines)? {
+                println!("{mismatch}");
+            }
+        }
+        "counter-forward-diff" => {
+            // counter-forward-diff <export-a.jsonl> <export-b.jsonl> -- the
+            // reducer_class_counter analogue of cadence-liveness-forward-diff.
+            let lines = |path: &str| -> Result<Vec<String>> {
+                Ok(read_file(path)?
+                    .lines()
+                    .filter(|l| !l.is_empty())
+                    .map(String::from)
+                    .collect())
+            };
+            let a_lines = lines(&args[2])?;
+            let b_lines = lines(&args[3])?;
+            for mismatch in reducer_class_counter_forward_diff(&a_lines, &b_lines)? {
+                println!("{mismatch}");
+            }
+        }
+        "sample-forward-diff" => {
+            // sample-forward-diff <snapshot.json> <table> <export-a.jsonl>
+            // <export-b.jsonl> -- one description per mismatch, empty if B
+            // is A or A plus a sampler fire (rows appended, oldest pruned).
+            let snapshot = read_snapshot(&args[2])?;
+            let cols = sample_columns(&snapshot, &args[3])?;
+            let lines = |path: &str| -> Result<Vec<String>> {
+                Ok(read_file(path)?
+                    .lines()
+                    .filter(|l| !l.is_empty())
+                    .map(String::from)
+                    .collect())
+            };
+            for mismatch in sample_forward_diff(cols, &lines(&args[4])?, &lines(&args[5])?)? {
+                println!("{mismatch}");
+            }
         }
         "stdin-to-line" => {
             // Reads a JSON value from stdin and prints it as one

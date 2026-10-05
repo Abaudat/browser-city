@@ -61,10 +61,14 @@ min = 0
 max = 45
 
 [[balance]]
-# A safety cap on recursive subdivision depth -- generation is total, so
-# a pathological config still terminates rather than looping.
+# A termination cap on recursive subdivision depth -- generation is
+# total, so a pathological config still terminates rather than looping.
+# It must never be what sizes a leaf: at the committed 32x32 coarse grid
+# a 32-cell axis needs about four levels per axis, and a cap of 8 bound
+# and left leaves over `max_leaf_cells` (`subdivide_never_produces_a_leaf_
+# over_the_maximum_on_either_axis` guards it).
 key = "generation.land_use.max_recursion_depth"
-value = 8
+value = 20
 min = 1
 max = 20
 
@@ -101,8 +105,11 @@ min = 0
 max = 50
 
 [[balance]]
+# The four `share_*_pct` keys are shares of the site's coarse-cell *area*
+# (`land_use::target_cells`), not of the district count. Retuned with the
+# move to area shares -- see `share_institutional_pct`.
 key = "generation.land_use.share_residential_pct"
-value = 58
+value = 61
 min = 0
 max = 100
 
@@ -120,9 +127,36 @@ max = 100
 
 [[balance]]
 # The four `share_*_pct` keys sum to 100 -- checked by
-# `GenerationConfig::from_balance`, not trusted from authoring.
+# `GenerationConfig::from_balance`, not trusted from authoring. Story
+# 4.21 retuned residential/institutional 58/10 -> 61/7 with the move to
+# area shares: institutional grows from the smallest leaves, so its
+# realised area is below its key (mean -0.12 points at 7), and at 10 the
+# extra fully-workplace land put the pooled workplace mean at 365 against
+# the 344 target; at 61/7 the 1,000,000-seed mean is 350.3 (+2.1%).
 key = "generation.land_use.share_institutional_pct"
-value = 10
+value = 7
+min = 0
+max = 100
+
+[[balance]]
+# Absolute percentage points a non-residential use's realised area share
+# may sit from its own `share_*_pct` key -- the pass-1 wild-deviation
+# guard. The overshoot side is bounded by construction (`land_use::
+# takes_leaf` overshoots by at most half a leaf: half of `max_leaf_cells`
+# squared over the coarse total, 1.8 points at the committed values --
+# `share_tolerance_covers_the_half_leaf_overshoot_bound` fails if a
+# retune outgrows the key), and measured commercial and industrial land
+# exactly inside it (+-1.7 points). The binding side is institutional's
+# shortfall (it grows from the smallest non-adjacent leaves and can run
+# out of them; no structural bound): over 1,000,000 seeds (`cargo run -p
+# bounds --release --bin measure-generation -- bands 1000000`,
+# 2026-09-29, `max_recursion_depth` 20) its extreme is -4.4 points,
+# stddev 0.65 points (5.5 sigma = 3.6). 6 covers the measured extreme
+# with margin (6 / 4.4 = 1.36) and the half-leaf bound. The seed that
+# motivated it (16021368561388801292) had commercial at 33.3% against
+# 18, 15 points out.
+key = "generation.land_use.share_tolerance_pct"
+value = 6
 min = 0
 max = 100
 
@@ -234,9 +268,14 @@ max = 512
 
 [[balance]]
 # Target block side length at the field's own minimum density (the
-# periphery).
+# periphery). Tuned with max_block_depth_max_cells onto the Scale
+# Baseline building count at `GENERATION_VERSION` 9 (story 4.22): with
+# the enclosure rule, 128/120 gave a pooled mean count of 843 against the
+# 893 target. The count target won and the periphery target moved --
+# 120/104 gives 889 over seeds 0..256 and a peripheral-to-central mean
+# block area of 2.2-2.7x on the evidence seeds (Artie's bar is 2x).
 key = "generation.streets.block_size_max_cells"
-value = 128
+value = 120
 min = 4
 max = 512
 
@@ -268,9 +307,10 @@ max = 1024
 
 [[balance]]
 # The loosest, periphery end (density_min) of the same interpolation --
-# see max_block_depth_min_cells.
+# see max_block_depth_min_cells; tuned together with block_size_max_cells
+# (see there).
 key = "generation.streets.max_block_depth_max_cells"
-value = 120
+value = 104
 min = 2
 max = 1024
 
@@ -291,7 +331,9 @@ min = 1
 max = 64
 
 [[balance]]
-# A safety cap on the extra lane-tier splits one over-deep block may take.
+# A safety cap on the extra lane-tier splits one over-deep block may take
+# (bypassed while the block still encloses a region, or swallows one's
+# land use -- `streets::encloses_a_region`).
 key = "generation.streets.max_lane_splits"
 value = 4
 min = 0
@@ -322,59 +364,79 @@ min = 1
 max = 256
 
 [[balance]]
-# Pairs at least this far apart (world cells, Manhattan) are where
-# `max_detour_percent`'s ratio applies -- closer pairs are bounded by
-# `max_detour_excess_cells` instead. 256 (half the site) so the pairs a
-# ratio actually says something about are site-crossing ones, not
-# adjacent-block hops a ratio exaggerates (Quentin's direction, cycle 3:
-# at the old 128, the ratio bound was redundant with the excess bound --
-# 320 cells / 128 alone already permits 350%). Re-measure by running
-# `server/sim/tests/invariants.rs`'s `inv_generation_detour_ratio_
-# bounded`/`inv_generation_p99_detour_ratio_bounded` at a high
-# PROPTEST_CASES whenever the street algorithm changes.
-key = "generation.streets.detour_long_pair_cells"
-value = 256
-min = 1
-max = 2048
-
-[[balance]]
-# The Manhattan-fitness ratio ceiling 3.11's pathfinding estimator relies
-# on, for pairs at least `detour_long_pair_cells` apart. Measured worst
-# case, this generator's other committed values, over 10,000 seeds:
-# 173%. 200 is that plus real margin -- re-measure the same way (see
-# detour_long_pair_cells's own comment) whenever the street algorithm
-# changes.
+# The site-scale-free long-range detour claim 3.11's pathfinding
+# estimator relies on (story 15.10, Derek's direction): `network <=
+# max(manhattan + max_detour_excess_cells, manhattan * max_detour_
+# percent / 100)`, for every sampled pair -- a short hop pays at most a
+# fixed cell budget (a single jitter-driven jog), a long crossing pays
+# at most a ratio, and there is no third, separately committed distance
+# threshold deciding which applies (`GenerationConfig::detour_ratio_
+# takeover_distance_cells` derives where the ratio term actually
+# overtakes the excess one: `max_detour_excess_cells * 100 /
+# (max_detour_percent - 100)`, 416 cells today). Story 3.18's own
+# `detour_long_pair_cells` is gone: no value of a separate threshold key
+# could make an AND-with-threshold contract both non-redundant (short of
+# the takeover distance, the ratio was already implied by the excess
+# bound) and coherent (a pair a few cells past the threshold was
+# suddenly allowed *less* excess than a pair a few cells short of it --
+# the seam seed `8872365549107643721` walked into, CI run 36388555866,
+# PR #349). Re-measured with real margin at the real (unmeasured, since
+# 3.11) long range: over the harness's own 50,000-seed exhaustive loop,
+# the worst ratio among pairs at or beyond the takeover distance was
+# 176% at `GENERATION_VERSION` 9 (seed `4595557621078204092`); 200 is
+# that plus real margin --
+# re-measure by running `cargo run -p bounds --release --bin measure-
+# generation`'s own detour-bounds sweep whenever the street algorithm
+# changes, never "re-run the invariants at a high PROPTEST_CASES" (a
+# proptest run only ever samples the cheap 14-node width). Zero misses
+# against the max()-contract over
+# 1,000,000 seeds follows from `max_detour_excess_cells`'s own sweep
+# (below): exceeding the max() of two terms means exceeding both, so a
+# contract violation is always also an excess-alone violation, and that
+# ceiling's own miss count is already 0 (`inv_generation_detour_ratio_
+# bounded`'s own doc comment carries the proof; `docs/generation.md`'s
+# street-network pass carries the full sweep output). `min` is 101, not
+# 100 (Tim's/Quentin's direction, story 15.10 cycle 2): at or under 100
+# the ratio term (`manhattan * max_detour_percent / 100`) is never
+# looser than the excess term, so `detour_ratio_takeover_distance_cells`'s
+# own division (`max_detour_excess_cells * 100 / (max_detour_percent -
+# 100)`) is either undefined (100) or negative (under 100) --
+# `from_balance` refuses it independently too, so this `min` and that
+# refusal must always agree.
 key = "generation.streets.max_detour_percent"
 value = 200
-min = 100
+min = 101
 max = 500
 
 [[balance]]
-# The additive Manhattan-fitness ceiling, in world cells, applied to
-# every sampled pair regardless of distance -- what a short hop actually
-# pays for, where a ratio is dominated by a single jitter-driven jog.
-# Structurally bounded as well as measured (Quentin's direction, cycles
-# 3 and 5, PR #294 and #317): the worst a rectilinear network should
-# cost a route is going around one largest block *and* walking out to
-# and back from a T-terminated dead-end spur (Artie's direction: "at
-# most one arterial line per city stops short of the far site edge"),
-# reachable by exactly one path -- `from_balance` refuses a value over
-# `3 * block_size_max_cells + 2 * arterial_width_cells` (408 at this
-# generator's other committed values), a separate, higher refusal
-# ceiling than the value below, the same shape `max_detour_percent`
-# holds. The spur case was found too narrow by a genuinely random CI
-# seed (`10778299729582344780`, pinned as `invariants.rs`'s own
-# `detour_excess_holds_at_a_pinned_t_terminated_spur_seed`, `PINNED_
-# DETOUR_SEEDS`): 292 cells against the old (2x-formula, spur-blind)
-# 280-cell value. Re-measured, `cargo run -p bounds --release --bin
-# measure-generation`'s own `detour_excess_cells` statistic: worst 276
-# over 50,000 *sequential* seeds -- a genuinely random `proptest` sweep
-# (never sequential, the same lesson this story's own content tuning
-# learned) found 296 over ~230,000 seeds. 320 is that plus the same
-# ~8% order of margin the original 258-to-280 value held, real margin
-# under the 408 structural ceiling.
+# The additive Manhattan-fitness ceiling, in world cells: `inv_
+# generation_detour_ratio_bounded` checks every one of its own sampled
+# pairs against this, regardless of distance -- what a short hop
+# actually pays for, where a ratio is dominated by a single jitter-
+# driven jog. The *value itself* is a measurement, not derived from that
+# same cheap sample (this generator has no tight structural bound to
+# derive one from -- see `docs/generation.md`'s street-network pass for
+# why): re-derived by `cargo run -p bounds --release --bin measure-
+# generation`. Margin rule: the exhaustive-pair max (every non-both-
+# boundary node pair, not the cheap `DETOUR_SAMPLE_MAX_NODES` sample
+# the required property above checks) over the harness's own 50,000
+# mixed seeds, times 1.25, rounded up to a multiple of 8. Measured at
+# `GENERATION_VERSION` 9 (story 4.22): exhaustive max 320, at seed
+# `610140160610395379` -- 320 * 1.25 = 400 (already a multiple of 8).
+# `from_balance` separately refuses a value
+# over `4 * block_size_max_cells + 2 * arterial_width_cells` (504 at
+# this generator's other committed values) -- a loosening guard, never
+# a worst-case claim (`GenerationConfig::from_balance`'s own comment).
+# `610140160610395379`, `4595557621078204092` and
+# `6482608135473407511` are pinned, each against its own exhaustive
+# excess, in `streets::PINNED_DETOUR_SEEDS` (`invariants.rs`'s own
+# `detour_excess_holds_at_pinned_boundary_exit_seeds`). Miss rate
+# measured directly (story 15.10, `measure-generation`'s own detour-
+# bounds sweep, 1,000,000 seeds, passes 1-2 only): 0 misses against
+# this ceiling at the cheap 14-node sample -- see `max_detour_percent`'s
+# own comment for the rule-of-three bound that figure implies.
 key = "generation.streets.max_detour_excess_cells"
-value = 320
+value = 400
 min = 1
 max = 2048
 
@@ -386,7 +448,12 @@ max = 2048
 # pairs is just the maximum under another name (Tim's direction, cycle
 # 3). Measured worst case, same scan, 10,000 seeds: 175%; 200 is that
 # plus margin. Never above max_detour_percent (`from_balance` refuses
-# that).
+# that). Re-measured directly (story 15.10, `measure-generation`'s own
+# detour-bounds sweep, 1,000,000 seeds, passes 1-2 only, at the real
+# 64-node p99 sample): 0 misses against this ceiling -- see
+# `max_detour_percent`'s own comment for the rule-of-three bound that
+# implies. No re-derivation owed: a nonzero miss count would have
+# forced one (Tim's direction), zero did not.
 key = "generation.streets.p99_detour_percent"
 value = 200
 min = 100
@@ -405,17 +472,18 @@ max = 16
 [[balance]]
 # Per-city anti-inversion floor: `StreetNetwork::mean_area_by_density_
 # band`'s own low-density (periphery) mean block area must be at least
-# this percent of the high-density (core) mean. Deliberately weak --
-# measured over 5,000 arbitrary seeds, 4,997 have the periphery mean
-# strictly larger outright; the 3 exceptions land within single-digit
-# percent of parity (worst observed ratio 72%), real split-jitter noise
-# rather than an inversion. This key alone cannot tell a healthy city
-# from a density-blind one (a uniform grid pools to 100%, comfortably
-# above 70%) -- `peripheral_pooled_min_ratio_percent` below is the guard
-# that can. Moved off a bare literal (Quentin's direction, cycle 4: a
-# threshold literal in a test is a reject).
+# this percent of the high-density (core) mean -- a noise margin, not the
+# density guard. Measured at `GENERATION_VERSION` 9 over 1,000,000
+# uniformly drawn seeds (passes 1-2, `seed_from_ids(0x5ca9, i)`): none
+# below 60%; the worst is 80.4% (seed 5955473505560313928), per-city
+# p1 167%, p5 195%, median 276%. The three lowest are pinned by
+# `peripheral_floor_clears_the_lowest_known_ratio_seeds`. This key alone
+# cannot tell a healthy city from a density-blind one (a uniform grid
+# pools to 100%) -- `peripheral_pooled_min_ratio_percent` below is the
+# guard that can. Moved off a bare literal (Quentin's direction, cycle 4:
+# a threshold literal in a test is a reject).
 key = "generation.streets.peripheral_low_band_floor_percent"
-value = 70
+value = 60
 min = 1
 max = 100
 
@@ -423,15 +491,30 @@ max = 100
 # The guard that actually fails when block size stops reading density:
 # pooled over a fixed seed range (`0..256`), summed low-density
 # (periphery) mean block area over summed high-density (core) mean must
-# be at least this percent. Measured, same scan: pooled ratio 241%
-# (per-city p5 159%, median 235%); a density-blind generator pools to
-# ~100%. 150 has real margin under the measured 241% while comfortably
+# be at least this percent. Measured at `GENERATION_VERSION` 9: pooled
+# ratio 289% (per-city p5 195%, median 276%); a density-blind generator
+# pools to ~100%. 150 has real margin under the measured 289% while comfortably
 # failing a generator that stopped reading density at all (Quentin's
 # direction, cycle 4).
 key = "generation.streets.peripheral_pooled_min_ratio_percent"
 value = 150
 min = 100
 max = 1000
+
+[[balance]]
+# How far a thin strip -- a rect whose short side is under half its local
+# target block size -- may run along its long side before it is cut, as a
+# percent of that target: a strip splits into halves near the target,
+# never into pieces shorter than it (a 260x30 boundary strip at target 128
+# becomes two 130s, not four 65s). 100 would be the plain target (no
+# special case). Tried at 200 (and with "thin" widened to a short side
+# under the target): the exhaustive detour worst case rose from 330 to
+# 412 cells and the evidence-seed ratios fell under 2x; 150 gives 320
+# cells and 2.2-2.7x (`GENERATION_VERSION` 9, story 4.22).
+key = "generation.streets.thin_strip_long_side_percent"
+value = 150
+min = 100
+max = 400
 
 # --- plot subdivision (pass 3) -----------------------------------------
 
@@ -581,7 +664,7 @@ max = 64
 # count -- an unbounded escape hatch otherwise (a generator could mark
 # every awkward plot open and still pass every other AC1 property).
 # Measured over 50,000 seeds at this generator's other committed values
-# (`cargo run -p bounds --release --bin measure-generation`): max 3%,
+# (`cargo run -p bounds --release --bin measure-generation`): max 4%,
 # p99 2%, p50 1% -- an open plot is only ever a block's own leftover core
 # past the density-interpolated `max_core_depth_*` ceiling. 5 is that
 # plus margin.
@@ -592,12 +675,13 @@ max = 100
 
 [[balance]]
 # The same ceiling's own area half (the cores of the genuinely oversized
-# periphery blocks). Same scan: mean 13.9%, standard deviation 4.7, p99
-# 25%, max 32%. Set by the same rule as `envelopes.count_tolerance_
-# percent`: at least 5.5 standard deviations from the harness's own mean
-# (13.9 + 5.5 * 4.7 = 39.8), so 40 -- never "measured max plus margin".
+# periphery blocks). Same scan at `GENERATION_VERSION` 9: mean 17.4%,
+# standard deviation 4.9, p99 29%, max 38%. Set by the same rule as
+# `envelopes.count_tolerance_percent`: at least 5.5 standard deviations
+# from the harness's own mean (17.4 + 5.5 * 4.9 = 44.4), so 46 -- never
+# "measured max plus margin".
 key = "generation.plots.max_open_percent_by_area"
-value = 40
+value = 46
 min = 0
 max = 100
 
@@ -716,7 +800,7 @@ max = 16
 # `inv_generation_envelope_mean_size_matches_the_committed_band`), and
 # every single city's own mean within a weak band four times as wide.
 # Measured over 50,000 seeds (`cargo run -p bounds --release --bin
-# measure-generation`): per-city mean width 11.3, min 10.6, max 12.3.
+# measure-generation`): per-city mean width 11.3, min 10.5, max 12.2.
 key = "generation.envelopes.mean_width_cells"
 value = 12
 min = 4
@@ -730,7 +814,7 @@ max = 32
 
 [[balance]]
 # AC3's own "around 12x11", depth half. Same 50,000-seed scan: per-city
-# mean depth 11.0, min 9.9, max 12.3.
+# mean depth 11.0, min 10.0, max 12.2.
 key = "generation.envelopes.mean_depth_cells"
 value = 11
 min = 4
@@ -772,10 +856,11 @@ max = 1000000
 # arbitrary-seed failure is a roughly four-in-a-hundred-million event
 # (two-sided) rather than a number tuned to the observed sample's own
 # min/max. Measured over 50,000 seeds (`cargo run -p bounds --release
-# --bin measure-generation`): mean 910, standard deviation 29.9, min 777,
-# max 1,048. 5.5 * 29.9 / 894 = 18.4%; 21 clears it with real margin, and
-# covers the measured min (894-777=117, 13.1%) and max (1048-894=154,
-# 17.2%). Re-derived from the harness's own sigma after every retune.
+# --bin measure-generation`, at `GENERATION_VERSION` 9, story 4.22):
+# mean 889.1, standard deviation 25.5, min 768, max 1,002. 5.5 * 25.5 /
+# 893 = 15.7%; 21 clears it, and covers the measured min (893-768=125,
+# 14.0%) and max (1002-893=109, 12.2%). Re-derived from the harness's
+# own sigma after every retune.
 key = "generation.envelopes.count_tolerance_percent"
 value = 21
 min = 1
@@ -825,18 +910,16 @@ max = 1000000
 # `generation.envelopes.count_tolerance_percent`. Wider than the
 # building-count guard's own 21%: workplace count is a *derived*
 # quantity (every placed type whose own `professions` list is non-empty),
-# not a placement pass 4 tunes directly. Measured over 5,000 seeds
-# (`cargo run -p bounds --release --bin measure-generation`, after
-# adding `vacant_unit`/`storage_yard` -- no-post filler types, PR #317
-# cycle 2, Derek's direction: "a shuttered shopfront is content, not a
-# gap" -- to tune the pooled mean onto the target instead of widening the
-# band around it): mean 345.4, stddev 30.0, min 230, max 473. 5.5 * 30.0
-# / 344 = 48.0%; 50% covers the measured min (344-230=114, 33.1%) and max
-# (473-344=129, 37.5%) with real margin, the same sigma rule
+# not a placement pass 4 tunes directly. Measured over 50,000 seeds
+# (`cargo run -p bounds --release --bin measure-generation`, at
+# `GENERATION_VERSION` 9, story 4.22): mean 344.5, stddev 24.2, min 230,
+# max 446. 5.5 * 24.2 / 343 = 38.9%; 40% covers the measured min
+# (343-230=113, 32.9%) and max (446-343=103, 30.0%), the same sigma rule
 # `generation.envelopes.count_tolerance_percent` states. Re-derive after
-# every retune.
+# every retune; an outlier is diagnosed to its pass and pinned, never
+# absorbed by re-measuring this value.
 key = "generation.building_types.workplace_count_tolerance_percent"
-value = 50
+value = 40
 min = 1
 max = 100
 
@@ -904,7 +987,9 @@ max = 1000
 # post office (already at warehouse/builders yard/food plant);
 # `mechanic` at transit office (already at vehicle repair garage).
 # Measured, `cargo run -p bounds --release --bin measure-generation`:
-# mean 61.2, stddev 3.3 over 50,000 seeds -- 11% short of 69, a real,
+# mean 61.2, stddev 3.4 over 5,000 seeds (re-measured story 15.9, after
+# cafes moved onto `cafe_present` and the two `building_types` placement
+# fixes) -- 11% short of 69, a real,
 # disclosed content-depth gap (institutional land is a small, fixed
 # share of the site, and several trades genuinely belong to only one or
 # two building types) that closes as job stories add building types,
@@ -931,11 +1016,12 @@ max = 1000
 # count_mean_tolerance_percent` above lacks entirely -- the pooled mean
 # alone lets a single unlucky city sit far below it and nothing notices.
 # A weak any-seed floor, the same sigma-margin rule `generation.
-# envelopes.count_tolerance_percent` states. Re-measured after reverting
-# the dishonest trade-sharing (PR #317 cycle 4): mean 61.2, stddev 3.3
-# over 50,000 seeds; mean - 5.5*stddev = 43.05, and the real measured
-# min over that same run is 44 -- comfortably above it this time. 40
-# leaves real margin under both. Re-derive after every retune.
+# envelopes.count_tolerance_percent` states. Re-measured after
+# the cafe move and placement fixes (story 15.9, `measure-generation`,
+# 5,000 genuinely random seeds): mean 61.2, stddev 3.4; mean -
+# 5.5*stddev = 42.5, and the real measured min over that same run is
+# 44 -- above it. 40 leaves real margin under both. Re-derive after
+# every retune.
 key = "generation.building_types.profession_count_per_city_min"
 value = 40
 min = 1

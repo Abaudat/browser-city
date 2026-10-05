@@ -62,9 +62,13 @@ jobs:
     # and dispatch a workflow from it could read.
     environment: maincloud
     steps:
+      # fetch-depth: 0 (story 4.18), never 1: export-world.sh walks
+      # server/schema.snapshot.json's own git history to find which
+      # committed snapshot is actually live -- a shallow clone hides that
+      # history from it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 1
+          fetch-depth: 0
       - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
       # scripts/ops/*.sh build server/tools/world_backup (server/rust-
       # toolchain.toml's pinned toolchain, the same as every other job
@@ -115,6 +119,17 @@ jobs:
           name: world-export-${{ github.run_id }}
           path: ${{ runner.temp }}/export.tar.gz.gpg
           retention-days: 90
+
+      # Exits 1 when the metrics sampler's newest samples carry a breach
+      # flag (an over-alert table, or the estimated total past the review
+      # trigger or the wall), or the sampler has gone stale. Last, and
+      # `always()`: an alarm never stands between the export and its
+      # artifact (check-deploy-workflow.sh pins the order).
+      - name: report storage (the sampler's newest breach flags)
+        if: always()
+        env:
+          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
+        run: bash scripts/ops/storage-report.sh "$BACKUP_DATABASE" --server maincloud
 
   rehearsal:
     name: rehearsal

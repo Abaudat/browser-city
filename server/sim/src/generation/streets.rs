@@ -229,6 +229,12 @@ fn build_adjacency(nodes: &[(i32, i32)], edges: &[StreetEdge]) -> BTreeMap<(i32,
     adjacency
 }
 
+/// [`StreetNetwork::dijkstra`]'s own distance/predecessor return types,
+/// named so the pair is never spelled out twice (clippy's own type-
+/// complexity floor).
+type DijkstraDist = BTreeMap<(i32, i32), i64>;
+type DijkstraPrev = BTreeMap<(i32, i32), (i32, i32)>;
+
 impl StreetNetwork {
     /// A test-only escape hatch (the same precedent `sim::rules::RuleSet`
     /// itself sets for a raw-parts constructor): builds a `StreetNetwork`
@@ -351,54 +357,6 @@ impl StreetNetwork {
         self.edges.iter().map(|e| e.class).collect()
     }
 
-    /// NFR8's block-size falloff: mean block area nearer than, and
-    /// farther than, the field's own median Chebyshev distance (in world
-    /// cells) from `land_use`'s own density peak -- a median split
-    /// always has blocks on both sides by construction, whatever the
-    /// peak's own position, unlike a fixed quarter-ring boundary (see
-    /// the test this was lifted from, cycle 1). `None` if there are
-    /// fewer than two blocks, or if the split leaves one side empty.
-    pub fn mean_area_split_by_peak_distance(&self, land_use: &LandUseMap) -> Option<(i64, i64)> {
-        if self.blocks.len() < 2 {
-            return None;
-        }
-        let (peak_cx, peak_cy) = land_use.density_peak();
-        let cell = land_use.cell_size();
-        let site = land_use.site();
-        let peak_world = (
-            site.x0 + peak_cx * cell + cell / 2,
-            site.y0 + peak_cy * cell + cell / 2,
-        );
-        let dist_of = |b: &Block| -> i64 {
-            let (cx, cy) = (
-                (b.bounds.x0 + b.bounds.x1) / 2,
-                (b.bounds.y0 + b.bounds.y1) / 2,
-            );
-            (cx - peak_world.0)
-                .unsigned_abs()
-                .max((cy - peak_world.1).unsigned_abs()) as i64
-        };
-        let mut dists: Vec<i64> = self.blocks.iter().map(dist_of).collect();
-        dists.sort_unstable();
-        let median = dists[dists.len() / 2];
-
-        let (mut near_sum, mut near_count, mut far_sum, mut far_count) = (0i64, 0i64, 0i64, 0i64);
-        for b in &self.blocks {
-            let area = b.bounds.width() * b.bounds.height();
-            if dist_of(b) <= median {
-                near_sum += area;
-                near_count += 1;
-            } else {
-                far_sum += area;
-                far_count += 1;
-            }
-        }
-        if near_count == 0 || far_count == 0 {
-            return None;
-        }
-        Some((near_sum / near_count, far_sum / far_count))
-    }
-
     /// NFR8's block-size falloff, measured by what `target_block_size`
     /// actually reads -- density, not distance from the peak (Tim's
     /// direction, cycle 3: the median-distance-split above is noisy
@@ -441,6 +399,77 @@ impl StreetNetwork {
             return None;
         }
         Some((low_sum / low_count, high_sum / high_count))
+    }
+
+    /// What actually binds peripheral block size: over the blocks sampled
+    /// in the bottom third of `density_min..density_max` (the same band
+    /// [`Self::mean_area_by_density_band`] calls the periphery), how many
+    /// have an area at or under a quarter of their own local
+    /// [`target_block_size`] squared (`chopped`), and how many the band
+    /// holds (`total`). Area, not a side: a 65x35 block is as chopped as a
+    /// 45x45 one. A ratio test cannot tell "periphery is small" from
+    /// "periphery is chopped"; this can.
+    pub fn low_band_chopped_blocks(
+        &self,
+        land_use: &LandUseMap,
+        cfg: &GenerationConfig,
+    ) -> (usize, usize) {
+        let span = (cfg.density_max - cfg.density_min).max(1) as i64;
+        let low_max = cfg.density_min as i64 + span / 3;
+        let site = land_use.site();
+        let (mut chopped, mut total) = (0usize, 0usize);
+        for b in &self.blocks {
+            let cx = ((b.bounds.x0 + b.bounds.x1) / 2).clamp(site.x0, site.x1 - 1);
+            let cy = ((b.bounds.y0 + b.bounds.y1) / 2).clamp(site.y0, site.y1 - 1);
+            let density = land_use
+                .at_world(cx, cy)
+                .expect("every in-site point has a land-use cell")
+                .density;
+            if density as i64 > low_max {
+                continue;
+            }
+            total += 1;
+            let target = target_block_size(density, cfg) as i64;
+            if b.bounds.width() * b.bounds.height() * 4 <= target * target {
+                chopped += 1;
+            }
+        }
+        (chopped, total)
+    }
+
+    /// Every region whose own land use no block carries: no block overlaps
+    /// one of the region's own coarse cells (by the label grid, never the
+    /// region's bounding box) while taking that use by
+    /// [`super::block_land_use`]. What [`SWALLOW_MIN_REGION_SHARE_DENOM`]
+    /// exists to keep small -- a lost institutional region is a civic
+    /// building the city can never place.
+    pub fn regions_carried_by_no_block(&self, land_use: &LandUseMap) -> Vec<Region> {
+        let (regions, labels) = land_use.labeled_regions();
+        let cell = land_use.cell_size().max(1);
+        let site = land_use.site();
+        let mut carried = vec![false; regions.len()];
+        for b in &self.blocks {
+            let bb = b.bounds;
+            let use_ = super::block_land_use(land_use, bb);
+            let cx0 = ((bb.x0 - site.x0).div_euclid(cell)).max(0);
+            let cx1 = (((bb.x1 - site.x0 - 1).div_euclid(cell)) + 1).min(land_use.cols());
+            let cy0 = ((bb.y0 - site.y0).div_euclid(cell)).max(0);
+            let cy1 = (((bb.y1 - site.y0 - 1).div_euclid(cell)) + 1).min(land_use.rows());
+            for cy in cy0..cy1 {
+                for cx in cx0..cx1 {
+                    let label = labels[(cy * land_use.cols() + cx) as usize];
+                    if label >= 0 && regions[label as usize].use_ == use_ {
+                        carried[label as usize] = true;
+                    }
+                }
+            }
+        }
+        regions
+            .into_iter()
+            .zip(carried)
+            .filter(|&(_, c)| !c)
+            .map(|(r, _)| r)
+            .collect()
     }
 
     /// Every pair of same-street crossings whose *net* gap (the distance
@@ -586,12 +615,13 @@ impl StreetNetwork {
     /// estimator's own contract is about getting across the city, not
     /// about hugging its outer edge between two unrelated exits. There is
     /// no short-pair exclusion any more (Quentin's direction, cycle 2):
-    /// the ratio ceiling ([`GenerationConfig::max_detour_percent`]) now
-    /// applies only to pairs past `generation.streets.
-    /// detour_long_pair_cells`, and every pair, short or long, is bounded
-    /// by the additive [`GenerationConfig::max_detour_excess_cells`]
-    /// instead -- a fixed cell budget is what a short hop actually pays
-    /// for, a ratio is not. [`Self::all_pair_samples`] is the unfiltered
+    /// every pair, short or long, is checked against
+    /// [`DetourSample::detour_allowed`] (story 15.10, Derek's
+    /// direction), `manhattan + max_detour_excess_cells` or `manhattan *
+    /// max_detour_percent / 100`, whichever is looser -- a fixed cell
+    /// budget is what a short hop actually pays for, a ratio is not, and
+    /// there is no third, separately committed distance threshold
+    /// deciding which applies. [`Self::all_pair_samples`] is the unfiltered
     /// version, so the boundary exclusion's own effect is itself
     /// measured, not assumed (Quentin's direction, cycle 1).
     pub fn detour_samples(&self, max_nodes: usize) -> Vec<DetourSample> {
@@ -632,8 +662,24 @@ impl StreetNetwork {
         out
     }
 
-    fn dijkstra_from(&self, start: (i32, i32)) -> BTreeMap<(i32, i32), i64> {
+    /// Dijkstra from `start`, returning both the distance map and each
+    /// visited node's own predecessor on its shortest route -- the one
+    /// graph search [`Self::dijkstra_from`] (needs only distance) and
+    /// [`Self::shortest_path`] (needs the route too) are both thin
+    /// callers of (Tim's direction, story 3.18 cycle 1: two Dijkstras
+    /// copied line for line was a real defect surface, `StreetNetwork`
+    /// gets one implementation). `target`, if given, stops the search
+    /// the instant it is popped off the heap rather than exhausting
+    /// every reachable node -- `shortest_path`'s own early exit,
+    /// preserved verbatim; `dijkstra_from` passes `None` and always
+    /// explores everything reachable, its own original behaviour.
+    fn dijkstra(
+        &self,
+        start: (i32, i32),
+        target: Option<(i32, i32)>,
+    ) -> (DijkstraDist, DijkstraPrev) {
         let mut dist: BTreeMap<(i32, i32), i64> = BTreeMap::new();
+        let mut prev: BTreeMap<(i32, i32), (i32, i32)> = BTreeMap::new();
         let mut heap: BinaryHeap<std::cmp::Reverse<(i64, (i32, i32))>> = BinaryHeap::new();
         dist.insert(start, 0);
         heap.push(std::cmp::Reverse((0, start)));
@@ -641,17 +687,54 @@ impl StreetNetwork {
             if dist.get(&n).is_some_and(|&best| d > best) {
                 continue;
             }
+            if target == Some(n) {
+                break;
+            }
             for &ei in self.adjacency.get(&n).map(Vec::as_slice).unwrap_or(&[]) {
                 let e = &self.edges[ei];
                 let other = if e.start() == n { e.end() } else { e.start() };
                 let nd = d + e.length();
                 if dist.get(&other).is_none_or(|&best| nd < best) {
                     dist.insert(other, nd);
+                    prev.insert(other, n);
                     heap.push(std::cmp::Reverse((nd, other)));
                 }
             }
         }
-        dist
+        (dist, prev)
+    }
+
+    fn dijkstra_from(&self, start: (i32, i32)) -> BTreeMap<(i32, i32), i64> {
+        self.dijkstra(start, None).0
+    }
+
+    /// The node sequence of one shortest route from `a` to `b` (inclusive
+    /// of both endpoints), by network distance -- [`Self::dijkstra`]'s
+    /// own predecessor map, walked back from `b` to `a`, so the route
+    /// itself, not only its length, can be drawn (`bounds::generation_
+    /// evidence`'s own worst-case-seed overlay, story 3.18). Empty if `b`
+    /// is unreachable from `a`, `[a]` if `a == b`. Test-only: the
+    /// published wasm module has no consumer for a route today
+    /// (`invariants.rs` and `bounds` both build against `test-fixtures`,
+    /// the same gate `test_fixture` above uses); ungate the day a real
+    /// one lands.
+    #[cfg(any(test, feature = "test-fixtures"))]
+    pub fn shortest_path(&self, a: (i32, i32), b: (i32, i32)) -> Vec<(i32, i32)> {
+        if a == b {
+            return vec![a];
+        }
+        let (dist, prev) = self.dijkstra(a, Some(b));
+        if !dist.contains_key(&b) {
+            return Vec::new();
+        }
+        let mut path = vec![b];
+        let mut cur = b;
+        while cur != a {
+            cur = prev[&cur];
+            path.push(cur);
+        }
+        path.reverse();
+        path
     }
 }
 
@@ -669,6 +752,34 @@ pub const DETOUR_SAMPLE_MAX_NODES: usize = 14;
 /// ~2,000 pairs, cheap (Dijkstra through the adjacency index is
 /// microseconds per source), enough for a real percentile to exist.
 pub const DETOUR_P99_SAMPLE_MAX_NODES: usize = 64;
+
+/// The worst detour-excess seeds found so far, `(seed, exhaustive_excess)`
+/// -- one source of truth for both `invariants.rs`'s own pinned-seed
+/// regression test and `bounds`'s worst-case evidence SVGs, a failure
+/// found by luck becoming a deterministic case, the same `PINNED_
+/// BUILDING_COUNT_SEEDS` precedent, never re-derived twice. The second
+/// element is `detour_samples(usize::MAX)`'s own worst-pair excess for
+/// that seed -- the exhaustive population `max_detour_excess_cells` is
+/// actually keyed against, never the cheap `DETOUR_SAMPLE_MAX_NODES`
+/// sample -- asserted by equality, not just an upper bound, so a moved
+/// figure (pass 2 or a streets key changed) is a red test, not a stale
+/// comment (Quentin's direction, story 3.18 cycle 1). Re-taken at
+/// `GENERATION_VERSION` 9 (story 4.22: the enclosure rule moved every
+/// pass-2 network, so the earlier three seeds -- `11_179_447_352_395_363_
+/// 997`, `1_060_828_608_797_003_656`, `11_859_616_019_877_610_932` --
+/// stopped being worst cases): the ten largest per-seed exhaustive worsts
+/// of `measure-generation`'s 50,000 mixed seeds, the top three taken, the
+/// mixed-seed harness's own deterministic search, not luck. Every one of
+/// these still ends its own worst pair on a boundary exit (degree 1, on
+/// the site boundary) -- see `detour_excess_holds_at_pinned_boundary_
+/// exit_seeds`. Test-only, the same gate `test_fixture` above uses:
+/// nothing outside `invariants.rs`/`bounds` reads this today.
+#[cfg(any(test, feature = "test-fixtures"))]
+pub const PINNED_DETOUR_SEEDS: [(u64, i64); 3] = [
+    (610_140_160_610_395_379, 320),
+    (4_595_557_621_078_204_092, 316),
+    (6_482_608_135_473_407_511, 310),
+];
 
 /// One [`StreetNetwork::detour_samples`] entry.
 #[derive(Debug, Clone, Copy)]
@@ -692,6 +803,43 @@ impl DetourSample {
     pub fn excess_cells(&self) -> i64 {
         self.network - self.manhattan
     }
+
+    /// This pair's own allowed network distance under the committed
+    /// detour contract (Derek's direction, story 15.10): `manhattan +
+    /// max_detour_excess_cells`, or `manhattan * max_detour_percent /
+    /// 100`, whichever is looser -- a short hop pays at most a fixed
+    /// cell budget (a single jitter-driven jog), a long crossing pays at
+    /// most a ratio, and there is no third, separately committed
+    /// distance threshold deciding which applies (see
+    /// `GenerationConfig::detour_ratio_takeover_distance_cells` for
+    /// where the ratio term actually overtakes the excess one).
+    pub fn detour_allowed(&self, cfg: &GenerationConfig) -> i64 {
+        (self.manhattan + cfg.max_detour_excess_cells as i64)
+            .max(self.manhattan * cfg.max_detour_percent as i64 / 100)
+    }
+
+    /// Whether this pair's own BFS network distance clears
+    /// [`Self::detour_allowed`].
+    pub fn detour_bound_holds(&self, cfg: &GenerationConfig) -> bool {
+        self.network <= self.detour_allowed(cfg)
+    }
+}
+
+/// The first `samples` entry (in order) whose own network distance
+/// exceeds [`DetourSample::detour_allowed`], if any -- the one place the
+/// committed detour contract's own comparison lives. `inv_generation_
+/// detour_ratio_bounded`'s own predicate (`detour_bounds_hold` in
+/// `invariants.rs`, shared with the pinned regression test) and
+/// `measure_generation.rs`'s own detour-bounds sweep (miss counting and
+/// worst-sample reporting) both call through this, never a second,
+/// hand-written copy of the comparison (Quentin's direction, story
+/// 15.10) -- a change to the contract, or to what counts as a miss,
+/// moves every caller together.
+pub fn detour_bound_violation(
+    samples: &[DetourSample],
+    cfg: &GenerationConfig,
+) -> Option<DetourSample> {
+    samples.iter().copied().find(|s| !s.detour_bound_holds(cfg))
 }
 
 /// The 99th-percentile [`DetourSample::ratio_pct`] over `samples`,
@@ -892,7 +1040,7 @@ fn band_positions(
         let nominal = site_from + band * i;
         let jitter_span = (band * jitter_pct / 100).max(0);
         let jitter = if jitter_span > 0 {
-            (rng.next_u64() % (2 * jitter_span as u64 + 1)) as i32 - jitter_span
+            rng.below(2 * jitter_span as u64 + 1) as i32 - jitter_span
         } else {
             0
         };
@@ -1026,7 +1174,7 @@ fn try_split(
     let mid = from + len / 2;
     let jitter_span = (len as i64 * cfg.split_jitter_pct as i64 / 100) as i32;
     let jitter = if jitter_span > 0 {
-        (rng.next_u64() % (2 * jitter_span as u64 + 1)) as i32 - jitter_span
+        rng.below(2 * jitter_span as u64 + 1) as i32 - jitter_span
     } else {
         0
     };
@@ -1130,76 +1278,158 @@ fn try_split(
 
 /// Whether `phys` must still be split, and at which tier. `Street` while
 /// either axis exceeds the local, density-derived target size, or while
-/// `phys` still spans more than one land-use region (AC2: a region
-/// wholly inside one large, low-density block's own interior, touching
-/// no street at all, is a real stranded region -- decoupling land use
-/// from streets, cycle 2, traded the old "boundary cuts through a
-/// block" defect for this one; `spans_multiple_regions` is the
-/// generator-side guarantee that a block's own edge, not its interior,
-/// is always where a region boundary falls) -- always street tier
-/// inside a commercial block (Artie's direction, cycle 2: commercial's
-/// own frontage roads are streets, never lanes, so the prop pass has a
-/// real pavement to work with); elsewhere only while this superblock has
-/// not yet used up its own `max_street_splits_per_superblock` budget,
-/// after which an over-target block still gets a `Lane` split instead of
-/// stopping early. `Lane` once the target is already satisfied and the
-/// region span is already resolved, but the *shorter* of the two axes
-/// still exceeds `max_depth` -- itself density-derived the same way
-/// `target` is (Tim's direction, cycle 2: a flat ceiling everywhere
-/// chopped periphery blocks down to the same short side as the core,
-/// cancelling the periphery's own visible size difference) -- the short
-/// axis, not either axis, so a long, shallow block (a real city block)
-/// is never forced to split just for being long. `None` once neither
-/// condition holds.
+/// `phys` still encloses a land-use region (AC2: a region wholly inside
+/// one block's interior, touching no street, is stranded --
+/// [`encloses_a_region`]); always street tier inside a commercial block
+/// (Artie's direction, cycle 2: commercial's own frontage roads are
+/// streets, never lanes, so the prop pass has a real pavement to work
+/// with); elsewhere only while this superblock has not yet used up its
+/// own `max_street_splits_per_superblock` budget, after which an
+/// over-target block still gets a `Lane` split instead of stopping
+/// early. `Lane` once the target is satisfied and no region is enclosed,
+/// but the *shorter* axis still exceeds `max_depth` -- itself density-
+/// derived the same way `target` is -- the short axis, not either axis,
+/// so a long, shallow block is never forced to split just for being
+/// long. `None` once neither condition holds.
 fn split_tier_needed(
     phys: Rect,
     target: i64,
     max_depth: i64,
     street_depth: u32,
     is_commercial: bool,
-    spans_multiple_regions: bool,
+    encloses_a_region: bool,
     cfg: &GenerationConfig,
 ) -> Option<StreetClass> {
-    let over_target = phys.width() > target || phys.height() > target || spans_multiple_regions;
+    let (long_side, short_side) = (
+        phys.width().max(phys.height()),
+        phys.width().min(phys.height()),
+    );
+    // A thin strip (short side under half the target) may run to
+    // `thin_strip_long_side_percent` of the target before it is cut: it
+    // splits into halves near the target, never into pieces shorter than
+    // it (a 260x30 boundary strip at target 128 becomes two 130s, not four
+    // 65s).
+    let long_limit = if short_side * 2 < target {
+        target * cfg.thin_strip_long_side_percent as i64 / 100
+    } else {
+        target
+    };
+    let over_target = short_side > target || long_side > long_limit || encloses_a_region;
     if over_target {
         if is_commercial || street_depth < cfg.max_street_splits_per_superblock {
             return Some(StreetClass::Street);
         }
         return Some(StreetClass::Lane);
     }
-    let short_side = phys.width().min(phys.height());
     if short_side > max_depth {
         return Some(StreetClass::Lane);
     }
     None
 }
 
-/// Whether the coarse cells under `phys` (world-cell rect) belong to
-/// more than one labeled region -- `labels` is [`LandUseMap::
-/// labeled_regions`]'s own second return, computed once per [`run`]
-/// call and threaded down through the recursion rather than
-/// recomputed per split (the flood fill itself is `O(cells)`; paying it
-/// once per generation, not once per call site, is what keeps this
-/// affordable, `generation_perf.rs`'s own concern).
-fn spans_multiple_regions(land_use: &LandUseMap, labels: &[i32], phys: Rect) -> bool {
+/// [`LandUseMap::labeled_regions`]'s own output, reshaped once per [`run`]
+/// call for the per-rect region checks: each cell's region label, and each
+/// region's cell count and land use.
+struct Regions {
+    labels: Vec<i32>,
+    sizes: Vec<usize>,
+    uses: Vec<super::LandUse>,
+}
+
+impl Regions {
+    fn of(land_use: &LandUseMap) -> Self {
+        let (regions, labels) = land_use.labeled_regions();
+        Regions {
+            labels,
+            sizes: regions.iter().map(|r| r.cell_count as usize).collect(),
+            uses: regions.iter().map(|r| r.use_).collect(),
+        }
+    }
+}
+
+/// A rect swallows a region once it holds at least `1 / this` of the
+/// region's coarse cells while taking another land use. Half left small
+/// regions fragmented across several blocks with none holding their use
+/// (0.004% of cities lost every institutional region, and with it the
+/// council); a quarter confines the extra splits to blocks over small
+/// regions. Without the rule 0.57% of 3,000,000 seeds lose every
+/// institutional region; `institutional_regions_survive_on_seeds_that_lose_them_without_the_swallow_rule`
+/// pins three of them.
+const SWALLOW_MIN_REGION_SHARE_DENOM: usize = 4;
+
+/// Whether `phys` (world-cell rect) must be split for a region's sake
+/// (AC2, "no region stranded", and a region's own land use surviving the
+/// majority-area rule of [`super::block_land_use`]). Two cases, both about
+/// a region that would otherwise vanish into its block:
+///
+/// - *Enclosed*: some region has coarse cells under `phys` and none of
+///   them reaches a side of `phys` that abuts a street ([`block_sides`] --
+///   a side on the site boundary has no perimeter street), so it would
+///   touch no street.
+/// - *Swallowed*: at least a quarter ([`SWALLOW_MIN_REGION_SHARE_DENOM`])
+///   of some region's coarse cells lie under `phys` and its land use is
+///   not the one `phys` would take by majority area, so the region would
+///   be carried by no block.
+///
+/// A land-use boundary through a block's interior is neither: every
+/// region under it either reaches a street-abutting side or continues
+/// into a neighbouring block.
+fn encloses_a_region(land_use: &LandUseMap, regions: &Regions, phys: Rect) -> bool {
     let cell = land_use.cell_size().max(1);
     let site = land_use.site();
+    let sides = block_sides(phys, site);
     let cx0 = ((phys.x0 - site.x0).div_euclid(cell)).max(0);
     let cx1 = (((phys.x1 - site.x0 - 1).div_euclid(cell)) + 1).min(land_use.cols());
     let cy0 = ((phys.y0 - site.y0).div_euclid(cell)).max(0);
     let cy1 = (((phys.y1 - site.y0 - 1).div_euclid(cell)) + 1).min(land_use.rows());
-    let mut first: Option<i32> = None;
+    // (label, reaches a street-abutting side, cells seen); a handful of
+    // labels at most.
+    let mut seen: Vec<(i32, bool, usize)> = Vec::new();
+    // Overlap area per land use, tallied the way `block_land_use` does, so
+    // the majority decided here is the one the block will end up with.
+    let mut area: std::collections::BTreeMap<super::LandUse, i64> =
+        std::collections::BTreeMap::new();
     for cy in cy0..cy1 {
         for cx in cx0..cx1 {
-            let label = labels[(cy * land_use.cols() + cx) as usize];
-            match first {
-                None => first = Some(label),
-                Some(f) if f != label => return true,
-                _ => {}
+            let label = regions.labels[(cy * land_use.cols() + cx) as usize];
+            if label < 0 {
+                continue;
+            }
+            let (wx0, wy0) = (site.x0 + cx * cell, site.y0 + cy * cell);
+            let (wx1, wy1) = (wx0 + cell, wy0 + cell);
+            let ox = (wx1.min(phys.x1) - wx0.max(phys.x0)).max(0) as i64;
+            let oy = (wy1.min(phys.y1) - wy0.max(phys.y0)).max(0) as i64;
+            *area.entry(regions.uses[label as usize]).or_insert(0) += ox * oy;
+            let reaches = (sides.west && wx0 <= phys.x0)
+                || (sides.east && wx1 >= phys.x1)
+                || (sides.north && wy0 <= phys.y0)
+                || (sides.south && wy1 >= phys.y1);
+            match seen.iter_mut().find(|(l, _, _)| *l == label) {
+                Some(entry) => {
+                    entry.1 |= reaches;
+                    entry.2 += 1;
+                }
+                None => seen.push((label, reaches, 1)),
             }
         }
     }
-    false
+    if seen.iter().any(|&(_, reaches, _)| !reaches) {
+        return true;
+    }
+    if seen.len() < 2 {
+        return false;
+    }
+    let mut winner: Option<(super::LandUse, i64)> = None;
+    for (u, a) in area {
+        if winner.is_none_or(|(_, best)| a > best) {
+            winner = Some((u, a));
+        }
+    }
+    let winner = winner.map(|(u, _)| u);
+    seen.iter().any(|&(label, _, count)| {
+        count * SWALLOW_MIN_REGION_SHARE_DENOM >= regions.sizes[label as usize]
+            && Some(regions.uses[label as usize]) != winner
+    })
 }
 
 /// Recursively subdivides one superblock's own rect into blocks, purely
@@ -1210,15 +1440,15 @@ fn spans_multiple_regions(land_use: &LandUseMap, labels: &[i32], phys: Rect) -> 
 /// superblocks' streets line up into full-site lattice lines). A block's
 /// own land use is decided once, after the fact, by majority area over
 /// the coarse cells it covers ([`super::block_land_use`]) -- never a
-/// per-cell tint that a street can cut through mid-run. `region_labels`
-/// (see [`spans_multiple_regions`]) is what still guarantees every
-/// region touches a street (AC2) without that snapping.
+/// per-cell tint that a street can cut through mid-run. `regions`
+/// (see [`encloses_a_region`]) is what still guarantees every region
+/// touches a street (AC2) without that snapping.
 #[allow(clippy::too_many_arguments)]
 fn subdivide(
     phys: Rect,
     topo: Rect,
     land_use: &LandUseMap,
-    region_labels: &[i32],
+    regions: &Regions,
     cfg: &GenerationConfig,
     rng: &mut Rng,
     depth: u32,
@@ -1241,7 +1471,7 @@ fn subdivide(
     let target = target_block_size(sample.density, cfg) as i64;
     let max_depth = target_block_depth(sample.density, cfg) as i64;
     let is_commercial = sample.use_ == super::LandUse::Commercial;
-    let multi_region = spans_multiple_regions(land_use, region_labels, phys);
+    let enclosing = encloses_a_region(land_use, regions, phys);
 
     if depth >= cfg.max_recursion_depth {
         blocks.push(Block { bounds: phys });
@@ -1253,16 +1483,16 @@ fn subdivide(
         max_depth,
         street_depth,
         is_commercial,
-        multi_region,
+        enclosing,
         cfg,
     ) else {
         blocks.push(Block { bounds: phys });
         return;
     };
-    // A region-spanning block must keep splitting even past `max_lane_
+    // A region-enclosing block must keep splitting even past `max_lane_
     // splits` -- AC2's "never stranded" is a hard correctness bound,
     // never traded for a soft styling cap.
-    if class == StreetClass::Lane && lane_depth >= cfg.max_lane_splits && !multi_region {
+    if class == StreetClass::Lane && lane_depth >= cfg.max_lane_splits && !enclosing {
         blocks.push(Block { bounds: phys });
         return;
     }
@@ -1304,7 +1534,7 @@ fn subdivide(
             p1,
             t1,
             land_use,
-            region_labels,
+            regions,
             cfg,
             rng,
             depth + 1,
@@ -1318,7 +1548,7 @@ fn subdivide(
             p2,
             t2,
             land_use,
-            region_labels,
+            regions,
             cfg,
             rng,
             depth + 1,
@@ -1449,7 +1679,7 @@ fn arterial_count(rng: &mut Rng, min: u32, max: u32) -> u32 {
     if max <= min {
         return min;
     }
-    min + (rng.next_u64() % (max - min + 1) as u64) as u32
+    min + rng.below((max - min + 1) as u64) as u32
 }
 
 /// Truncates at most one arterial per axis pair to a T against a
@@ -1466,15 +1696,15 @@ fn truncate_one_arterial(rng: &mut Rng, xs_len: usize, ys_len: usize) -> Truncat
     if xs_len == 0 || ys_len == 0 {
         return Truncation::None;
     }
-    if rng.next_u64().is_multiple_of(2) {
+    if rng.below(2) == 0 {
         Truncation::Vertical {
-            index: (rng.next_u64() % xs_len as u64) as usize,
-            t_index: (rng.next_u64() % ys_len as u64) as usize,
+            index: rng.below(xs_len as u64) as usize,
+            t_index: rng.below(ys_len as u64) as usize,
         }
     } else {
         Truncation::Horizontal {
-            index: (rng.next_u64() % ys_len as u64) as usize,
-            t_index: (rng.next_u64() % xs_len as u64) as usize,
+            index: rng.below(ys_len as u64) as usize,
+            t_index: rng.below(xs_len as u64) as usize,
         }
     }
 }
@@ -1628,7 +1858,7 @@ pub fn run(city_seed: u64, land_use: &LandUseMap, cfg: &GenerationConfig) -> Str
     let pass_seed = seed_from_ids(city_seed, PASS_ID);
     let mut rng = Rng::new(pass_seed);
     let site = land_use.site();
-    let (_, region_labels) = land_use.labeled_regions();
+    let regions = Regions::of(land_use);
 
     let mut junctions: BTreeMap<(Axis, i32), Vec<i32>> = BTreeMap::new();
 
@@ -1747,7 +1977,7 @@ pub fn run(city_seed: u64, land_use: &LandUseMap, cfg: &GenerationConfig) -> Str
             superblock,
             topo,
             land_use,
-            &region_labels,
+            &regions,
             cfg,
             &mut superblock_rng,
             0,
@@ -1789,43 +2019,291 @@ mod tests {
         (lu, net)
     }
 
+    /// Artie's bar (story 4.22): peripheral mean block area over central,
+    /// in the density-band split, on every evidence seed. Not a balance
+    /// key -- a threshold only a test reads is not a tuning parameter.
+    const ARTIE_PERIPHERAL_MIN_RATIO: i64 = 2;
+
     /// The three seeds `bounds::generation_evidence::EVIDENCE_SEEDS`
-    /// commits SVGs for (kept as a literal here, never a shared
-    /// constant: `sim` cannot depend on `bounds`, and a hand-picked
-    /// evidence seed set is not something either crate derives from the
-    /// other -- if `bounds`'s own list ever changes, this one is
-    /// updated by hand to match). Artie's direction, cycle 2: judged
-    /// specifically on the images he reviews, not asserted as a
-    /// universal claim over arbitrary seeds (`inv_generation_
-    /// peripheral_blocks_are_not_degenerate` in `server/sim/tests/
-    /// invariants.rs` is that weaker, always-true claim).
-    ///
-    /// Disclosed, not silently missed: two of the three (seeds 1 and 3)
-    /// clear Artie's own full 2x bar (2.6x each, measured); seed 2 does
-    /// not (1.67x, measured) -- raising `block_size_max_cells`/`max_
-    /// block_depth_max_cells` far enough to move seed 2 past 2x barely
-    /// moved it at all (1.80x at block_size_max_cells=176, double this
-    /// generator's own committed 128) while visibly hurting core/
-    /// periphery street-cover differentiation for every other seed, so
-    /// that trade was not taken. The median-Chebyshev-distance split
-    /// itself is peak-position-sensitive: seed 2's own density peak
-    /// happens to sit where the split does not cleanly separate a
-    /// "core" half from a "periphery" half the way seeds 1 and 3's own
-    /// peaks do. 1.6 is the real measured floor across the three (seed
-    /// 2's own 1.67x), not a number chosen to make this pass.
+    /// commits SVGs for (kept as a literal here: `sim` cannot depend on
+    /// `bounds`; if `bounds`'s own list changes, this one is updated by
+    /// hand). Judged on the images Artie reviews, not asserted over
+    /// arbitrary seeds. Measured at `GENERATION_VERSION` 9 (density-band
+    /// split, `mean_area_by_density_band`): 2.65x, 2.24x and 2.56x, at least
+    /// 0.24x over the 2x bar.
     #[test]
-    fn peripheral_blocks_are_at_least_1_6x_central_ones_on_the_evidence_seeds() {
+    fn peripheral_blocks_are_at_least_2x_central_ones_on_the_evidence_seeds() {
         let c = cfg();
         for seed in [1u64, 2, 3] {
             let (lu, net) = network(seed, &c);
-            let (near_mean, far_mean) = net
-                .mean_area_split_by_peak_distance(&lu)
-                .expect("the evidence seeds always produce at least two blocks");
+            let (low_mean, high_mean) = net
+                .mean_area_by_density_band(&lu, &c)
+                .expect("the evidence seeds always populate both density bands");
             assert!(
-                far_mean * 10 >= near_mean * 16,
-                "seed {seed}: peripheral mean block area {far_mean} is not at least 1.6x central {near_mean}"
+                low_mean >= high_mean * ARTIE_PERIPHERAL_MIN_RATIO,
+                "seed {seed}: peripheral mean block area {low_mean} is not at least {ARTIE_PERIPHERAL_MIN_RATIO}x central {high_mean}"
             );
         }
+    }
+
+    fn fixture_map(
+        cols: i32,
+        rows: i32,
+        uses: &[land_use::LandUse],
+    ) -> (SiteBounds, land_use::LandUseMap) {
+        let mut small_cfg = cfg();
+        small_cfg.site_extent_cells = 50 * cols.max(rows);
+        small_cfg.coarse_cell_size_cells = 50;
+        let site = small_cfg.site();
+        let cells = uses
+            .iter()
+            .map(|&use_| land_use::LandUseCell { use_, density: 50 })
+            .collect();
+        (
+            site,
+            land_use::LandUseMap::test_fixture(site, 50, cols, rows, 0, 0, cells),
+        )
+    }
+
+    fn rect(x0: i32, y0: i32, x1: i32, y1: i32) -> Rect {
+        Rect { x0, y0, x1, y1 }
+    }
+
+    /// A region touching no street-abutting side is enclosed; so is a
+    /// region with a quarter of its cells under the rect whose use loses
+    /// the majority (it would never be any block's land use). A rect spanning two regions that
+    /// each reach a street side or continue past the rect is neither.
+    #[test]
+    fn encloses_a_region_only_for_enclosed_or_swallowed_regions() {
+        use land_use::LandUse::{Industrial as I, Residential as R};
+        // 3x3: a residential ring around one industrial centre cell.
+        let (site, lu) = fixture_map(3, 3, &[R, R, R, R, I, R, R, R, R]);
+        let regs = Regions::of(&lu);
+        let (x0, y0) = (site.x0, site.y0);
+        // Whole site: no side abuts a street, the centre cell is enclosed.
+        assert!(encloses_a_region(
+            &lu,
+            &regs,
+            rect(x0, y0, x0 + 150, y0 + 150)
+        ));
+        // Middle row, inset on both x sides: the centre reaches the street
+        // sides, but it lies wholly under the rect and residential wins
+        // the majority -- swallowed.
+        assert!(encloses_a_region(
+            &lu,
+            &regs,
+            rect(x0 + 10, y0 + 50, x0 + 140, y0 + 100)
+        ));
+        // Two large regions, each continuing well past the rect: a
+        // boundary through the interior of one block is fine.
+        let row: Vec<_> = (0..16).map(|i| if i % 8 < 4 { R } else { I }).collect();
+        let (site, lu) = fixture_map(8, 2, &row);
+        let regs = Regions::of(&lu);
+        assert!(!encloses_a_region(
+            &lu,
+            &regs,
+            rect(site.x0 + 160, site.y0 + 10, site.x0 + 240, site.y0 + 40)
+        ));
+    }
+
+    /// The probe's counting contract, on a hand-built fixture: low-band
+    /// blocks at or under a quarter of the target's area are counted, in
+    /// any shape; a slightly larger one is not; a high-density one is
+    /// outside the band.
+    #[test]
+    fn low_band_chopped_blocks_counts_only_low_band_blocks_at_or_under_a_quarter_target_area() {
+        let (small_cfg, lu) = two_band_land_use(20, 90);
+        let site = small_cfg.site();
+        let half = target_block_size(20, &small_cfg) / 2;
+        assert!(half < 90, "fixture centres must stay in the low row");
+        let block = |x1: i32, y1: i32, y0: i32| Block {
+            bounds: Rect { x0: 0, y0, x1, y1 },
+        };
+        let blocks = vec![
+            // A square of half the target's side: exactly a quarter of the
+            // target's area, chopped.
+            block(half, half, 0),
+            // One cell wider: not chopped.
+            block(half + 1, half, 0),
+            // A long thin block of the same area as the first: chopped.
+            block(half * 2, half / 2, 0),
+            // High-density row: outside the band, however small.
+            block(4, 64, 60),
+        ];
+        let net = StreetNetwork::test_fixture(site, Vec::new(), blocks);
+        assert_eq!(net.low_band_chopped_blocks(&lu, &small_cfg), (2, 3));
+    }
+
+    /// Seeds that lose every institutional region under the bare enclosure
+    /// rule (`SWALLOW_MIN_REGION_SHARE_DENOM` 0: 0.57% of 3,000,000 seeds
+    /// drawn through `seed_from_ids(0x5ca9, i)`, and with them the council
+    /// and hospital). With the swallow rule at least one institutional
+    /// region is carried by a block on each; removing the rule turns this
+    /// red.
+    #[test]
+    fn institutional_regions_survive_on_seeds_that_lose_them_without_the_swallow_rule() {
+        let c = cfg();
+        for seed in [
+            7_485_815_739_059_907_248u64,
+            8_426_428_422_144_854_001,
+            11_748_920_383_663_730_585,
+        ] {
+            let (lu, net) = network(seed, &c);
+            let institutional = lu
+                .regions()
+                .iter()
+                .filter(|r| r.use_ == land_use::LandUse::Institutional)
+                .count();
+            let lost = net
+                .regions_carried_by_no_block(&lu)
+                .iter()
+                .filter(|r| r.use_ == land_use::LandUse::Institutional)
+                .count();
+            assert!(
+                institutional > 0 && lost < institutional,
+                "seed {seed}: {lost} of {institutional} institutional regions are carried by no block"
+            );
+        }
+    }
+
+    /// The checker must be seen to fire: a 3x3 map, residential ring
+    /// around one institutional centre cell. One block over the whole site
+    /// is residential by majority, so the centre region comes back; a
+    /// second block laid on the centre cell alone carries it.
+    #[test]
+    fn regions_carried_by_no_block_reports_a_swallowed_region_and_not_a_carried_one() {
+        use land_use::LandUse::{Institutional as I, Residential as R};
+        let (site, lu) = fixture_map(3, 3, &[R, R, R, R, I, R, R, R, R]);
+        let x0 = site.x0;
+        let y0 = site.y0;
+        let whole = Block {
+            bounds: rect(x0, y0, x0 + 150, y0 + 150),
+        };
+        let net = StreetNetwork::test_fixture(site, Vec::new(), vec![whole]);
+        let lost = net.regions_carried_by_no_block(&lu);
+        assert_eq!(lost.len(), 1, "the swallowed centre region is reported");
+        assert_eq!(lost[0].use_, I);
+
+        let centre = Block {
+            bounds: rect(x0 + 50, y0 + 50, x0 + 100, y0 + 100),
+        };
+        let ring = Block {
+            bounds: rect(x0, y0, x0 + 150, y0 + 50),
+        };
+        let net = StreetNetwork::test_fixture(site, Vec::new(), vec![ring, centre]);
+        assert!(
+            net.regions_carried_by_no_block(&lu).is_empty(),
+            "a block laid on the centre cell carries it"
+        );
+    }
+
+    /// A same-use block that overlaps a region's bounding box but none of
+    /// its own cells does not carry it: an L-shaped institutional region
+    /// (cells 0, 1, 3 of a 2x2 map) with a block on the remaining
+    /// residential cell only.
+    #[test]
+    fn regions_carried_by_no_block_uses_the_regions_cells_not_its_bounding_box() {
+        use land_use::LandUse::{Institutional as I, Residential as R};
+        let (site, lu) = fixture_map(2, 2, &[I, I, I, R]);
+        // Every block is residential-majority and sits on the one
+        // residential cell (1,1), inside the L's bounding box.
+        let block = Block {
+            bounds: rect(site.x0 + 50, site.y0 + 50, site.x0 + 100, site.y0 + 100),
+        };
+        let net = StreetNetwork::test_fixture(site, Vec::new(), vec![block]);
+        let lost = net.regions_carried_by_no_block(&lu);
+        assert_eq!(lost.len(), 1);
+        assert_eq!(lost[0].use_, I, "the L-shaped region is not carried");
+    }
+
+    fn tier(w: i64, h: i64, target: i64, street_depth: u32, enclosed: bool) -> Option<StreetClass> {
+        let c = cfg();
+        let phys = Rect {
+            x0: 0,
+            y0: 0,
+            x1: w as i32,
+            y1: h as i32,
+        };
+        // A generous max_depth so only the target rules decide.
+        split_tier_needed(phys, target, 10_000, street_depth, false, enclosed, &c)
+    }
+
+    /// `split_tier_needed`'s thresholds at their boundaries, at target 128
+    /// and `thin_strip_long_side_percent` 150 (limit 192).
+    #[test]
+    fn split_tier_needed_holds_its_thin_strip_and_target_boundaries() {
+        assert_eq!(cfg().thin_strip_long_side_percent, 150);
+        let street = Some(StreetClass::Street);
+        // A 260x30 strip (short 30 < 64) is over 192: splits.
+        assert_eq!(tier(260, 30, 128, 0, false), street);
+        // A 190x30 strip is under 192: left alone.
+        assert_eq!(tier(190, 30, 128, 0, false), None);
+        // Exactly the limit is not over it.
+        assert_eq!(tier(192, 30, 128, 0, false), None);
+        assert_eq!(tier(193, 30, 128, 0, false), street);
+        // 130x70: short side 70 is at least half the target, so the plain
+        // target applies and 130 is over it.
+        assert_eq!(tier(130, 70, 128, 0, false), street);
+        // Short side exactly half the target is not thin either.
+        assert_eq!(tier(130, 64, 128, 0, false), street);
+        assert_eq!(tier(128, 64, 128, 0, false), None);
+        // A short side over the target splits whatever the long side.
+        assert_eq!(tier(129, 129, 128, 0, false), street);
+        // An enclosed region forces a split on a rect under every limit.
+        assert_eq!(tier(60, 30, 128, 0, true), street);
+        assert_eq!(tier(60, 30, 128, 0, false), None);
+    }
+
+    /// The tier: street while the superblock's street budget lasts, lane
+    /// past it; commercial is always street.
+    #[test]
+    fn split_tier_needed_returns_street_under_the_budget_and_lane_past_it() {
+        let c = cfg();
+        let budget = c.max_street_splits_per_superblock;
+        assert_eq!(
+            tier(260, 30, 128, budget - 1, false),
+            Some(StreetClass::Street)
+        );
+        assert_eq!(tier(260, 30, 128, budget, false), Some(StreetClass::Lane));
+        let phys = Rect {
+            x0: 0,
+            y0: 0,
+            x1: 260,
+            y1: 30,
+        };
+        assert_eq!(
+            split_tier_needed(phys, 128, 10_000, budget + 5, true, false, &c),
+            Some(StreetClass::Street)
+        );
+    }
+
+    fn sample(manhattan: i64, network: i64) -> DetourSample {
+        DetourSample {
+            a: (0, 0),
+            b: (manhattan as i32, 0),
+            network,
+            manhattan,
+        }
+    }
+
+    /// The max()-contract's seam (story 15.10), held at the function: a
+    /// pair whose ratio exceeds `max_detour_percent` but whose network
+    /// distance clears `manhattan + max_detour_excess_cells` is fine below
+    /// the takeover distance, and one cell past it, where the ratio term
+    /// is the looser half, the bound is exactly `manhattan * percent / 100`.
+    #[test]
+    fn detour_bound_violation_has_no_seam_at_the_takeover_distance() {
+        let c = cfg();
+        let takeover = c.detour_ratio_takeover_distance_cells();
+        let excess = c.max_detour_excess_cells as i64;
+        let pct = c.max_detour_percent as i64;
+        let short = sample(259, 259 + excess - 16);
+        assert!(short.ratio_pct() > pct);
+        assert!(detour_bound_violation(&[short], &c).is_none());
+        let m = takeover + 1;
+        let allowed = (m + excess).max(m * pct / 100);
+        assert!(detour_bound_violation(&[sample(m, allowed)], &c).is_none());
+        assert!(detour_bound_violation(&[sample(m, allowed + 1)], &c).is_some());
     }
 
     #[test]
@@ -1970,15 +2448,18 @@ mod tests {
         // direction, cycle 2): if the shipped keys would let this maze
         // through, this test must go red, not pass on a number picked
         // to make it pass. Sized with real margin over `max_detour_
-        // excess_cells` (280, this cycle's own structurally-derived
-        // value) rather than the tightest maze that would still fail
-        // today -- a smaller maze keeps needing to grow every time that
-        // ceiling is re-measured upward. Must assert against every
-        // committed detour bound, not just the excess one (Quentin's
-        // direction, cycle 4): the 300-cell Manhattan distance is over
-        // `detour_long_pair_cells` (256), so the 300% ratio is also
-        // checked against both `max_detour_percent` and `p99_detour_
-        // percent`.
+        // excess_cells` (a measured value, never a structural one -- see
+        // `docs/generation.md`'s street-network pass) rather than the
+        // tightest maze that would still fail today -- a smaller maze
+        // keeps needing to grow every time that ceiling is re-measured
+        // upward. Must assert against every committed detour bound, not
+        // just the excess one (Quentin's direction, cycle 4): checked
+        // through `detour_bound_violation`'s own max()-contract check
+        // (story 15.10, Derek's direction; the one function `inv_
+        // generation_detour_ratio_bounded` and the sweep both call
+        // through -- the finding function itself proven to fire here,
+        // as every other checker in this file is) and separately
+        // against `p99_detour_percent`.
         let c = cfg();
         let site = SiteBounds {
             x0: 0,
@@ -2001,27 +2482,16 @@ mod tests {
         );
 
         let samples = net.detour_samples(DETOUR_SAMPLE_MAX_NODES);
-        let worst_excess = samples
-            .iter()
-            .map(DetourSample::excess_cells)
-            .max()
-            .expect("the U corridor's own pair must be sampled");
-        assert!(
-            worst_excess > c.max_detour_excess_cells as i64,
-            "expected the maze's own overshoot ({worst_excess} cells) to exceed the committed max_detour_excess_cells ({})",
-            c.max_detour_excess_cells
+        let violation = detour_bound_violation(&samples, &c).expect(
+            "expected the U corridor's own worst pair to violate the committed max() detour bound",
         );
-
-        let worst_long_ratio = samples
-            .iter()
-            .filter(|s| s.manhattan >= c.detour_long_pair_cells as i64)
-            .map(DetourSample::ratio_pct)
-            .max()
-            .expect("the U corridor's own pair is a long pair");
         assert!(
-            worst_long_ratio > c.max_detour_percent as i64,
-            "expected the maze's own long-pair ratio ({worst_long_ratio}%) to exceed the committed max_detour_percent ({}%)",
-            c.max_detour_percent
+            violation.network > violation.detour_allowed(&c),
+            "the reported violation ({:?}-{:?}, network {}) does not actually exceed its own allowed bound ({})",
+            violation.a,
+            violation.b,
+            violation.network,
+            violation.detour_allowed(&c)
         );
 
         let p99_samples = net.detour_samples(DETOUR_P99_SAMPLE_MAX_NODES);
@@ -2031,6 +2501,145 @@ mod tests {
             "expected the maze's own p99 ratio ({p99}%) to exceed the committed p99_detour_percent ({}%)",
             c.p99_detour_percent
         );
+    }
+
+    /// `detour_bound_violation`'s own quiet case (Quentin's direction,
+    /// story 15.10): a straight street has exactly one pair, whose
+    /// network distance equals its Manhattan distance (a perfect
+    /// route), well inside the committed bound either way -- the
+    /// finding function proven to stay silent, not just to fire, the
+    /// same "seen to both fire and stay quiet" standard every other
+    /// checker in this file is held to.
+    #[test]
+    fn detour_bound_violation_is_none_for_a_perfect_straight_route() {
+        let c = cfg();
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 100,
+            y1: 100,
+        };
+        // One endpoint (50,0) on the site boundary, the other (50,60)
+        // interior -- `detour_samples` only excludes a pair where *both*
+        // ends are on the boundary, so this single street still samples
+        // its own one pair.
+        let net = StreetNetwork::test_fixture(site, vec![vertical(50, 0, 60)], Vec::new());
+        let samples = net.detour_samples(DETOUR_SAMPLE_MAX_NODES);
+        assert!(
+            !samples.is_empty(),
+            "a single straight street must still sample at least one pair"
+        );
+        assert!(
+            samples.iter().all(|s| s.network == s.manhattan),
+            "a straight street's own pairs must be perfect Manhattan routes: {samples:?}"
+        );
+        assert!(detour_bound_violation(&samples, &c).is_none());
+    }
+
+    #[test]
+    fn shortest_path_of_a_node_to_itself_is_that_one_node() {
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 100,
+            y1: 100,
+        };
+        let net = StreetNetwork::test_fixture(site, vec![horizontal(50, 0, 100)], Vec::new());
+        assert_eq!(net.shortest_path((0, 50), (0, 50)), vec![(0, 50)]);
+    }
+
+    #[test]
+    fn shortest_path_follows_the_u_shaped_corridor_around_the_maze() {
+        // The same U-shaped maze `a_maze_fails_dead_ends_and_detour` uses
+        // -- the route from (100,100) to (400,100) cannot cross the gap
+        // directly, it must go the long way round via (100,400) and
+        // (400,400) (the overlay `bounds::generation_evidence` draws for
+        // story 3.18's own worst-case-seed evidence, proven here against
+        // a hand-built shape whose correct route is known by
+        // construction, not read off the algorithm under test).
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 500,
+            y1: 500,
+        };
+        let edges = vec![
+            vertical(100, 100, 400),
+            horizontal(400, 100, 400),
+            vertical(400, 100, 400),
+            horizontal(250, 100, 175),
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        let path = net.shortest_path((100, 100), (400, 100));
+        assert_eq!(
+            path,
+            vec![(100, 100), (100, 250), (100, 400), (400, 400), (400, 100)],
+            "the shortest path must go round the U, not straight across the gap: {path:?}"
+        );
+    }
+
+    #[test]
+    fn shortest_path_picks_the_shorter_distance_route_not_the_fewer_hop_one() {
+        // Two vertex-disjoint (except at the shared endpoints) routes
+        // between (0,0) and (300,0): a 3-edge, 900-cell "L" the long way
+        // round, and a 5-edge, 500-cell zigzag through an intermediate
+        // box. An implementation that returns *any* path, or picks by
+        // hop count rather than summed edge length, passes every other
+        // `shortest_path_*` fixture here (each has exactly one route or
+        // none) but fails this one by returning the 3-hop, 900-cell "L"
+        // instead of the 5-hop, 500-cell zigzag (Quentin's direction,
+        // story 3.18 cycle 1).
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 300,
+            y1: 300,
+        };
+        let edges = vec![
+            // The long "L", 3 edges, 900 cells total.
+            vertical(0, 0, 300),
+            horizontal(300, 0, 300),
+            vertical(300, 0, 300),
+            // The short zigzag, 5 edges, 500 cells total.
+            horizontal(0, 0, 100),
+            vertical(100, 0, 100),
+            horizontal(100, 100, 200),
+            vertical(200, 0, 100),
+            horizontal(0, 200, 300),
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        let (a, b) = ((0, 0), (300, 0));
+        let path = net.shortest_path(a, b);
+        assert_eq!(
+            path,
+            vec![(0, 0), (100, 0), (100, 100), (200, 100), (200, 0), (300, 0)],
+            "expected the shorter-distance zigzag (500 cells, 5 hops), not the fewer-hop L \
+             (900 cells, 3 hops): {path:?}"
+        );
+        // The returned path's own summed edge length must equal
+        // `dijkstra_from`'s own distance for the same pair -- the two
+        // are now one shared implementation (`Self::dijkstra`), but this
+        // is the cross-check that they never silently disagree again.
+        let path_length: i64 = path
+            .windows(2)
+            .map(|w| ((w[1].0 - w[0].0).abs() + (w[1].1 - w[0].1).abs()) as i64)
+            .sum();
+        let dijkstra_distance = net.dijkstra_from(a)[&b];
+        assert_eq!(path_length, dijkstra_distance);
+        assert_eq!(path_length, 500);
+    }
+
+    #[test]
+    fn shortest_path_is_empty_between_two_disjoint_components() {
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 200,
+            y1: 200,
+        };
+        let edges = vec![horizontal(10, 0, 50), horizontal(150, 100, 200)];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        assert!(net.shortest_path((0, 10), (200, 150)).is_empty());
     }
 
     #[test]
@@ -2524,6 +3133,59 @@ mod tests {
         assert!(!sides.any());
         for side in Side::ALL {
             assert!(!sides.get(side));
+        }
+    }
+
+    /// The search's heap holds full `(distance, node)` keys, so the order
+    /// candidates are inserted in (edge and adjacency order) never decides
+    /// a route: the same graph from reversed edges gives identical
+    /// distances and identical shortest paths for every pair -- on a grid
+    /// built to be full of equal-length ties, and on a generated city.
+    #[test]
+    fn search_result_is_independent_of_candidate_insertion_order() {
+        let mut grid = Vec::new();
+        for k in 0..4 {
+            grid.push(StreetEdge {
+                axis: Axis::Horizontal,
+                coord: k * 10,
+                from: 0,
+                to: 30,
+                class: StreetClass::Street,
+                width_cells: 1,
+            });
+            grid.push(StreetEdge {
+                axis: Axis::Vertical,
+                coord: k * 10,
+                from: 0,
+                to: 30,
+                class: StreetClass::Street,
+                width_cells: 1,
+            });
+        }
+        let c = cfg();
+        let (_, city) = network(3, &c);
+        for edges in [grid, city.edges().to_vec()] {
+            let site = SiteBounds {
+                x0: 0,
+                y0: 0,
+                x1: 64,
+                y1: 64,
+            };
+            let forward = StreetNetwork::test_fixture(site, edges.clone(), Vec::new());
+            let mut reversed_edges = edges;
+            reversed_edges.reverse();
+            let reversed = StreetNetwork::test_fixture(site, reversed_edges, Vec::new());
+            let nodes: Vec<(i32, i32)> = forward.nodes().iter().copied().step_by(3).collect();
+            for &a in &nodes {
+                assert_eq!(forward.dijkstra_from(a), reversed.dijkstra_from(a));
+                for &b in &nodes {
+                    assert_eq!(
+                        forward.shortest_path(a, b),
+                        reversed.shortest_path(a, b),
+                        "route {a:?} -> {b:?}"
+                    );
+                }
+            }
         }
     }
 }

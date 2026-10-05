@@ -62,7 +62,30 @@ while IFS= read -r table; do
   fi
   SEEDED+=("$table")
   OFFSET=$((OFFSET + ROWS + 1))
-done <<< "$(bc_table_names non-scheduled)"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
+
+# Real-shaped stock beside the adversarial rows: two businesses holding item 1
+# at different quantities, and a citizen holding item 2. Ids
+# continue the seeded sequence (the generic rows above took 1..ROWS).
+A=$((ROWS + 1)); B=$((ROWS + 2)); C=$((ROWS + 3))
+bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_stock "[[$A,0,1,1,500],[$B,0,2,1,20],[$C,1,1,2,3]]" 0
+
+# Item instances, one in each form (chunk_key 77 is deliberately not
+# `chunk_key(12, -7, 0)`: nothing checks it against the cell yet): instance A is placed at a cell
+# with a sub-cell offset, B is held in object 1's grid at a slot. Instance ids
+# continue the seeded sequence; `item_placed`/`item_held` are keyed by them.
+# item_instance: [id, def_id, created_at]; item_placed: [id, x, y, floor,
+# offset_x, offset_y, orientation, chunk_key]; item_held: [id, container_kind,
+# container_id, slot_x, slot_y, orientation].
+bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_item_instance "[[$A,1,[1700000000000000]],[$B,2,[1700000000000001]]]" 0
+bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_item_placed "[[$A,12,-7,0,3,15,0,77]]"
+bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_item_held "[[$B,0,1,5,2,0]]"
+
+# A real-shaped player position beside the generic rows: character 9 at a
+# negative cell on floor -1 with non-zero fractions. [character_id, chunk_key,
+# x, y, floor, frac_x, frac_y, updated_at]; chunk_key 77 is not checked
+# against the cell by the restore.
+bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" restore_player_position "[[9,77,-5,-7,-1,13,200,[1700000000000002]]]"
 
 bc_call "$SCRIPT" "$DB" "${SERVER_ARGS[@]}" finish_restore '[]'
 

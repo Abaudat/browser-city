@@ -87,15 +87,56 @@ max_expected_id() {
   fi
 }
 
+# Story 4.2: tables a live scheduled reducer writes to independently of
+# any action this script takes -- `cadence_liveness` today, the one
+# non-scheduled table `maintenance_schedule`'s own real, wall-clock-driven
+# fire updates on its own, on each database separately, for the whole
+# duration this script and everything before it in check-backup-restore.sh
+# runs. Every other non-scheduled table only ever changes because this
+# script (or a step before it) explicitly wrote it, which is exactly the
+# closed-world assumption the COUNT(*) oracle below depends on -- a table
+# that violates it can legitimately hold a different row count on '$SRC'
+# and '$DST' with nothing wrong at all (confirmed: CI observed exactly
+# this, `cadence_liveness` 3 vs 4, both readings correct for their own
+# database's own real fire history since publish). The restore mechanism
+# itself is still proven correct for this table: verify-world.sh (called
+# before this script) proves every row the export it restored from had is
+# still present, unchanged or advanced only by a legitimate later fire
+# (`world_backup cadence-liveness-forward-diff` -- it is not a byte
+# compare for this table, a live one has no fixed content to be byte
+# identical to); COUNT(*) against two independently-still-running clocks
+# is not the right oracle on top of that.
+# Story 4.13: `reducer_class_counter` is the same kind of table -- every
+# reducer call on either database counts, and `count_call` creates a
+# missing class row -- so its COUNT(*) drifts between two live databases
+# too; verify-world.sh proves it forward-only (`counter-forward-diff`).
+# The metrics sampler's own tables (`table_sample`, `storage_sample`,
+# `reducer_class_sample`) are live too: a sampler fire, on the cadence grid
+# from `world_clock.epoch_at`, landing on either database after the export
+# appends rows to it alone and prunes its oldest. verify-world.sh proves them
+# forward-only (`sample-forward-diff`).
+LIVE_TABLES="cadence_liveness reducer_class_counter table_sample storage_sample reducer_class_sample"
+is_live_table() { # <table>
+  local t
+  for t in $LIVE_TABLES; do
+    [ "$1" = "$t" ] && return 0
+  done
+  return 1
+}
+
 # --- COUNT(*) directly on both live databases, independent of any
 # export file ---------------------------------------------------------
 while IFS= read -r table; do
   [ -n "$table" ] || continue
+  if is_live_table "$table"; then
+    echo "$SCRIPT: skip -- '$table' is a live table (see this script's own comment above); COUNT(*) legitimately drifts between two independently-running databases" >&2
+    continue
+  fi
   a="$(row_count_live "$SRC" "$table")"
   b="$(row_count_live "$DST" "$table")"
   [ "$a" = "$b" ] || bc_ops_die "$SCRIPT" "'$table': COUNT(*) differs between '$SRC' ($a) and '$DST' ($b), queried directly, not via any export file"
-done <<< "$(bc_table_names non-scheduled)"
-echo "$SCRIPT: ok -- COUNT(*) matches directly against both live databases for every non-scheduled table" >&2
+done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
+echo "$SCRIPT: ok -- COUNT(*) matches directly against both live databases for every non-scheduled, non-live table" >&2
 
 # --- the auto_inc sequence must strictly exceed both the restored
 # maximum id *and* the manifest's own recorded sequence floor (never the

@@ -136,6 +136,29 @@ document's own opening paragraph forbids.
   same field, adjacent to the one already there.
 - **Reads:** nothing -- it is the first pass, and the pass that
   authors the field every later pass reads.
+- **Accepted as built (story 4.21):** the `share_*_pct` keys are shares of
+  the site's coarse-cell *area*. They were applied to the BSP leaf count,
+  and leaves are 9 to 36 cells, so a seed whose leaves near the density
+  peak were all large got nearly twice its commercial land: seed
+  `16021368561388801292` had commercial at 33.3% of the site against
+  `share_commercial_pct = 18`, with pass 5's per-use workplace ratios
+  unchanged, and 539 workplaces against a 171-514 band (about 6.5 sigma).
+  Pass 1 now targets `round(coarse_cells * share / 100)` cells per use
+  and takes a leaf only if it brings the claimed area closer to the target
+  than stopping would (overshoot at most half a leaf); every growth
+  constraint is unchanged. `land_use.max_recursion_depth` had been binding
+  at 8 (leaves up to 8x11 cells) and is now a termination cap of 20, so
+  leaves are 3 to 6 cells per axis as `max_leaf_cells` says. Widening the workplace band to cover the seed
+  was refused: it would accept a city with double the designed commercial
+  land, against the Scale Baseline and the share keys both. Area shares
+  moved the pooled means, so residential/institutional are 61/7 (were
+  58/10), and the guard now lives at the pass that owns it
+  (`land_use.share_tolerance_pct`, 6 points). `workplace_count_tolerance_
+  percent` is re-derived 50 -> 40 from the post-fix sigma (29.9 -> 21.3)
+  by the same 5.5-sigma rule; `count_tolerance_percent` stays 21. An
+  outlier CI finds is diagnosed to the pass that owns it and pinned as a
+  plain `#[test]`, never absorbed by re-measuring a tolerance to cover the
+  sample's new max.
 - **Evidence:** [`docs/generation/land-use-seed-1.svg`](generation/land-use-seed-1.svg),
   [`-seed-2`](generation/land-use-seed-2.svg), [`-seed-3`](generation/land-use-seed-3.svg)
   -- flat colour per coarse cell (land use), density carried as opacity,
@@ -158,7 +181,252 @@ document's own opening paragraph forbids.
   combined legend, and two 40x22-cell viewport outlines (one at the
   density peak, one at the farthest periphery) so the per-screen reading
   is judgeable directly from the image; same regen-and-diff guard as the
-  row above.
+  row above. Plus one worst-case-seed picture per entry in `streets::
+  PINNED_DETOUR_SEEDS` -- [`docs/generation/detour-worst-seed-
+  610140160610395379.svg`](generation/detour-worst-seed-610140160610395379.svg),
+  [`-4595557621078204092`](generation/detour-worst-seed-4595557621078204092.svg),
+  [`-6482608135473407511`](generation/detour-worst-seed-6482608135473407511.svg)
+  -- the same street-network render (same tints, same tier styling, same
+  legend, same two viewport outlines) with an overlay: that seed's own
+  worst *exhaustive* pair (`detour_samples(usize::MAX)`'s own argmax,
+  the population `max_detour_excess_cells` is keyed against, never the
+  cheap `DETOUR_SAMPLE_MAX_NODES` sample) as two markers, the shortest
+  street route between them as one solid stroke, the Manhattan L between
+  them as one dashed stroke, both in a colour no tint or tier already
+  uses, and the excess in cells on its own legend row, so the actual
+  route is checkable by looking, not just asserted. An 8-cell margin
+  around the site (overlay files only) keeps a boundary-sitting marker
+  or dashed stroke from ever being clipped by the canvas -- every pinned
+  seed's own worst pair ends on a boundary exit, so this is the common
+  case, not the exception. Same regen-and-diff guard, a separate file
+  set from the twelve above (never a byte of those twelve moves when
+  only these three are added or a pinned seed changes).
+
+### What binds block size (story 4.22)
+
+A block's size is bound by `target_block_size`/`target_block_depth`
+(density) and by one region rule: `subdivide` splits a rect for a
+region's sake only when the rect *encloses* one (some region under it has
+no coarse cell reaching a street-abutting side, `generation::block_sides`
+-- a side on the site boundary has no street) or *swallows* one (at least
+a quarter of a region's cells lie under the rect and its land use is not the
+rect's majority land use, so the block holding most of the region would
+not carry it). A land-use boundary through a block's interior is neither,
+and the rect is left to density. A thin strip (short side under half the
+target) may run to `thin_strip_long_side_percent` of the target (150) before it is cut, so a boundary strip
+splits into halves near the target, never into pieces shorter than it.
+The earlier rule split on any rect
+covering two regions; pass-1 leaves are 3-6 coarse cells, so peripheral
+blocks were chopped to region size whatever the density said.
+`StreetNetwork::low_band_chopped_blocks` counts low-band blocks at or
+under a quarter of their local target's area (76% pooled over seeds
+0..256 at `GENERATION_VERSION` 8, 33% at 9) and
+`peripheral_blocks_pooled_chopped_share_stays_bounded` bounds it, so a
+ratio that looks fine cannot hide a chopped periphery.
+`block_size_max_cells`/`max_block_depth_max_cells` are tuned with it to
+the Scale Baseline building count.
+
+The 2x bar -- peripheral mean block area at least twice the central --
+is Artie's, judged by `mean_area_by_density_band` on the three committed
+evidence seeds (1, 2, 3), which do not change to fit a measurement. It
+is 2x because a 1.5x area is a 1.22x side, invisible on a 40x22-cell
+viewport, while 2x is a 1.41x side: the floor at which a player walking
+outward sees one fewer street crossing per screen, so leaving the core
+reads by looking, not by a HUD. Measured at `GENERATION_VERSION` 9: 2.65x,
+2.24x, 2.56x.
+
+### The detour-excess bound (story 3.18)
+
+`generation.streets.max_detour_excess_cells` has no tight structural
+bound to derive: a guillotine partition can lay running bond (full-width
+cuts, independently jittered cross cuts), so a straight crossing is
+blocked at every course and excess grows with distance travelled, not
+with block size, and leaf size is not capped at `block_size_max_cells`
+either (`try_split` refusal, `max_lane_splits` and `max_recursion_depth`
+can all leave an over-target leaf). Two earlier formulas here (a 2x, then
+a 3x multiple of `block_size_max_cells`) were each a story fitted to the
+last failing seed, not a derivation -- including "T-terminated dead-end
+spur", which named the wrong mechanism: the degree-1 node a worst pair
+ends on is the *ordinary* boundary exit every street has -- there is no
+perimeter street (`generation::block_sides`, `docs/architecture.md`'s
+Generation section: a block side abuts a street iff it does not
+coincide with the site's own boundary), so every street simply ends at
+the boundary, reached one way, never a special spur case.
+
+The three pinned seeds' own worst-case pictures (linked above) each end
+on a boundary exit (`detour_excess_holds_at_pinned_boundary_exit_seeds`
+pins that). The mechanism analysis -- one large peripheral block with a
+couple of minor jogs, or running bond, a staircase of many short jogs --
+was made on the pre-story-4.21 seeds and not repeated for these. A
+picture that instead showed a block with no way through, reading as a
+wall, would be a pass-2 finding, not evidence for this key.
+
+`max_detour_excess_cells` is a *measured* value, re-derived by `cargo
+run -p bounds --release --bin measure-generation`: the exhaustive-pair
+max (every non-both-boundary node pair, not the cheap 14-node sample
+`inv_generation_detour_ratio_bounded` checks on arbitrary seeds) over the
+harness's own 50,000 mixed seeds, times 1.25, rounded up to a multiple of
+8 -- see the key's own comment in `defs/balance/generation.toml` for the
+current run's numbers. `GenerationConfig::from_balance` separately
+refuses a value over `4 * block_size_max_cells + 2 * arterial_width_cells`
+-- a loosening guard that scales with the block keys, never a worst-case
+claim.
+
+**What actually protects master.** `inv_generation_detour_ratio_bounded`
+runs on arbitrary seeds, in every CI run, but only ever samples the
+cheap 14-node width -- its own worst reading at `GENERATION_VERSION` 9
+was 312 (seed `4595557621078204092`), 8 cells under the 320-cell
+exhaustive figure the key is set from. That gap is not the margin; the
+margin is the stated 1.25 factor, nothing else, over a tail that is
+still growing: this run's own ten largest per-seed worsts, ascending,
+were 294, 296, 298, 300, 300, 302, 306, 310, 316, 320. A future
+50,000-seed run finding a new worst above 400 remains possible -- that
+is what re-measuring on a retune, and pinning what a random sweep finds,
+both exist for.
+
+For scale: the worst pinned seed today (`610140160610395379`, 320
+cells exhaustive) is about eight viewport-widths of extra walking for the
+worst pair of the worst city found in 50,000 genuinely random draws --
+accepted as a rare tail. That figure still has one foot on the site
+boundary, though, where the city stops and almost nobody stands; the
+same run's own worst pair with *both* endpoints off the boundary --
+the player-felt figure -- was 312 cells (seed `4595557621078204092`,
+pair `(108, 40)`-`(418, 38)`), 8 under 320. The maze fixture
+`a_maze_fails_dead_ends_and_detour` (a U-shaped corridor, no real route
+through) overshoots by 600 cells, real margin over the 400-cell
+committed value and a stated distance from "our worst real city" to "a
+maze", not just a pass/fail. If a future re-measurement moves the
+exhaustive max itself past roughly 360, that PR owes the new worst
+seed's own picture and Artie's own judgement again on whether the
+result still reads as a city.
+
+### The detour bound is one function of distance, not two with a seam (story 15.10)
+
+Seed `8872365549107643721` failed `inv_generation_detour_ratio_bounded` on
+CI run 36388555866 (PR #349, which touches none of passes 1-2, so it
+fails the same way on master): the pair `(152,0)`-`(393,18)`, Manhattan
+259, had a 204% ratio against the old `max_detour_percent` (200%), while
+its own network distance (529 cells) sat comfortably under `manhattan +
+max_detour_excess_cells` (675). Derek's finding: under the old AND-with-
+threshold contract, the allowed additive excess dropped from 416 cells
+at Manhattan 255 (just short of the old `detour_long_pair_cells`, 256)
+to 259 cells at Manhattan 259 (just past it) -- a non-monotonic budget
+that permitted *less* excess to a longer pair than to a shorter one. No
+value of `detour_long_pair_cells`, `max_detour_percent` and
+`max_detour_excess_cells` together could make that AND both non-
+redundant (short of the threshold, the ratio was already implied by the
+excess bound -- Quentin's cycle-3 finding at the old threshold of 128)
+and coherent (the seam above, at any threshold): the threshold itself
+was the defect, not either number either side of it.
+
+**The choice.** No `streets.rs` change: a pass-2 change that makes such
+a pair impossible would constrain the same two mechanisms (one large
+peripheral block, running bond) `max_detour_excess_cells` already
+accepts at 416 cells, moving every golden and every evidence SVG to
+serve a test inconsistency, not a generator defect. Instead, the two
+ceilings become one function of distance that never permits less at a
+longer range than at a shorter one: `network <= max(manhattan +
+max_detour_excess_cells, manhattan * max_detour_percent / 100)`, for
+every sampled pair, no distance threshold of its own
+(`streets::detour_bound_violation`, the one place the comparison lives,
+called by `inv_generation_detour_ratio_bounded`, its pinned regression
+and the sweep below). `detour_long_pair_cells` is gone entirely --
+deleted from `defs/balance/generation.toml`, `GenerationConfig`, this
+document's own balance table and the trace matrix. The range where the
+ratio term actually binds is now derived, never a third committed key:
+`GenerationConfig::detour_ratio_takeover_distance_cells` is
+`max_detour_excess_cells * 100 / (max_detour_percent - 100)`, 400 cells
+today -- coincidentally the same figure as `max_detour_excess_cells`
+itself, since `max_detour_percent` (200) makes the ratio term exactly
+`manhattan * 2`. `max_detour_percent` returns to its pre-story value,
+200, and is once again the site-scale-free long-range claim 3.11's
+estimator relies on: real margin (below) over the real, previously
+unmeasured, long-range tail, not a number re-expressing the excess
+budget at an arbitrary distance. The ratio assertion can still never go
+red on any seed unless the excess assertion already did -- exceeding the
+max() of two terms means exceeding both -- but that is a property of the
+max() contract for every pair, at every distance, not a floor derived
+from one committed key and refused by another.
+
+Seed `8872365549107643721` is pinned as a deterministic regression
+(`seed_8872365549107643721_holds_the_detour_ceilings`): it must clear the
+committed max()-contract. Its original `(152,0)`-`(393,18)` pair no longer
+exists -- story 4.21's area-share land use moved every pass-2 network --
+so the pin no longer asserts that pair's figures; the seam itself is held
+by the max() contract's own definition.
+
+`server/bounds/src/bin/measure_generation.rs`'s own detour-bounds sweep
+(its own CLI-configurable seed count) measures the max()-contract's own
+miss rate directly, together with `p99_detour_percent`'s (unrelated to
+this story's mechanism, and unchanged by it), and prints the worst
+sampled ratio among pairs at or beyond the takeover distance -- the only
+range where the ratio term is the binding half, so the only figure
+`max_detour_percent` owes margin over. Run at 1,000,000 seeds (the
+excess-only sweep this deduction rests on, story 15.10's first cycle;
+wall-clock 4854.4s, 4.854ms/seed, passes 1-2 only):
+
+```text
+detour-bounds sweep: 1000000 seeds, passes 1-2 only
+  max_detour_excess_cells (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+  p99_detour_percent (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+```
+
+The max()-contract's own miss count over that same million seeds is not
+separately re-run: exceeding the max() of two terms means exceeding
+both, so a max()-contract violation is always also an excess-alone
+violation, and the excess ceiling's own miss count above (0 of
+1,000,000, unconditional, every pair) already proves the max()-
+contract's own miss count is 0 too (Derek's direction, cycle 2). A
+second, smaller run over the *current* code (the max()-contract and the
+takeover-distance stat did not exist at the million-seed run's own
+commit) confirms it at 5,000 seeds. This block is a smoke confirmation
+only, not the story's own result -- the derivation above, resting on the
+million-seed excess-only run, is:
+
+```text
+detour-bounds sweep: 5000 seeds, passes 1-2 only
+  detour max()-contract (14-node sample): 0 of 5000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 5000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.060000% (implied 4096-case CI failure probability <= 91.4423%)
+  p99_detour_percent (64-node sample): 0 of 5000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 5000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.060000% (implied 4096-case CI failure probability <= 91.4423%)
+detour_ratio_pct_sampled_at_or_beyond_takeover (416 cells) max: 161% at seed 3218297219535693363
+detour_ratio_pct_sampled_at_or_beyond_takeover top 10 per-seed worsts (ascending):
+  138% at seed 13484935046058371417
+  139% at seed 10851253929785274785
+  139% at seed 13953932552307513190
+  142% at seed 4317090597060016208
+  142% at seed 11584629443515575442
+  142% at seed 12779145144319015470
+  144% at seed 17004798694150435907
+  145% at seed 12948431575908203078
+  147% at seed 7693797974521656301
+  161% at seed 3218297219535693363
+detour-bounds sweep wall-clock: 24.8s (4.956ms/seed)
+```
+
+And the existing 50,000-seed exhaustive loop, re-run with the new
+takeover-distance filter in place of the old `detour_long_pair_cells`
+one:
+
+```text
+detour_ratio_pct_exhaustive_at_or_beyond_takeover (416 cells) max: 166% at seed 4798925340619191980 ((484, 69)-(512, 457))
+detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascending):
+  160% at seed 4154807055081904333 ((489, 32)-(512, 426))
+  161% at seed 293547434567801483 ((494, 478)-(512, 67))
+  161% at seed 8784580503613071542 ((46, 493)-(444, 512))
+  161% at seed 15335357752681438835 ((494, 487)-(512, 76))
+  161% at seed 11179447352395363997 ((90, 0)-(482, 36))
+  161% at seed 12181295007339816141 ((62, 512)-(463, 483))
+  162% at seed 4948530257853819072 ((32, 512)-(446, 487))
+  163% at seed 8438006389594291483 ((27, 24)-(432, 0))
+  165% at seed 9637747922394485167 ((48, 0)-(450, 21))
+  166% at seed 4798925340619191980 ((484, 69)-(512, 457))
+```
+
+166% exhaustive, 200 committed: real margin over the real long-range
+tail, not a re-expression of the excess budget at an arbitrary distance.
 
 ### Plot subdivision
 
@@ -212,8 +480,10 @@ document's own opening paragraph forbids.
   -- every plot's own yard (a lighter tint, `open` ones hatched, rejected
   ones hatched distinctly) and every placed envelope (a darker, opaque
   fill, a door tick on its own front edge), plus two residential insets
-  at viewport scale (the block nearest the density peak and the farthest
-  one, so plot packing alone is what differs) since a 12x11 envelope is
+  at viewport scale (the residential block nearest the density peak and the
+  farthest one, each panel anchored on the block's street-facing side so
+  it shows the street with the block's front row and yard behind it, so
+  plot packing alone is what differs) since a 12x11 envelope is
   unreadable at 512-cell scale; same regen-and-diff guard.
 
 ### Building type
@@ -229,9 +499,10 @@ document's own opening paragraph forbids.
   type for an envelope's own plot (land use, density band, minimum
   interior, every `requires_site` context it demands), then a
   distribution-row override for each named institution (depot, council,
-  hospital, welfare office, shelter), read generically off the committed
-  rule set (`sim::rules::RuleDef::as_distribution`) in ascending rule id
-  order -- never a hand-named placer. Sited, not sprinkled (Derek's
+  hospital, welfare office, shelter, and, since story 15.9, cafe), read
+  generically off the committed rule set
+  (`sim::rules::RuleDef::as_distribution`) in ascending rule id order --
+  never a hand-named placer. Sited, not sprinkled (Derek's
   direction): an override's own target splits into a per-catchment
   floor and a site-wide remainder, and within either pool candidates
   rank by how many of the subject type's own `prefers_site` contexts
@@ -249,6 +520,16 @@ document's own opening paragraph forbids.
   understates the dense core's own need -- a `condo_block` owes what a
   `villa` owes -- and a dwellings-per-type count becomes unavoidable
   once citizens are seeded onto housing.
+- Accepted as built, story 15.9: cafe is a distributed type
+  (`cafe.weight = 0`, `cafe_present` in `defs/rules/generation.toml`),
+  not ordinary weighted fill. FR14 makes the barista a launch job, and
+  FR116 lists cafes among the placed institutions -- a city with zero
+  cafes was a real, if rare (~1 in 120,000 seeds), content defect
+  players would read as the game being broken, not a quirk of the site,
+  so "at least one cafe" is a real requirement, expressed the way every
+  other required kind already is rather than left to the fill's own
+  luck. Shops stay ordinary weighted fill: five shop-tagged types
+  sharing one tag is real variety, which is the fill's own job.
 - **Evidence:** [`docs/generation/building-types-seed-1.svg`](generation/building-types-seed-1.svg),
   [`-2`](generation/building-types-seed-2.svg), [`-3`](generation/building-types-seed-3.svg)
   -- envelopes tinted by a derived, structural class (no per-key branch
@@ -416,10 +697,11 @@ disagree.
 | generation.land_use.density_max | committed | Land use | density at the field's own peak |
 | generation.land_use.density_peak_offset_min_pct | committed | Land use | the density peak's own minimum offset from the site's geometric centre, as a percent of half the site extent (NFR8: never a perfectly concentric field) |
 | generation.land_use.density_peak_offset_max_pct | committed | Land use | the density peak's own maximum offset from the site's geometric centre, same unit |
-| generation.land_use.share_residential_pct | committed | Land use | the residential share of the land-use mix |
-| generation.land_use.share_commercial_pct | committed | Land use | the commercial share of the land-use mix |
-| generation.land_use.share_industrial_pct | committed | Land use | the industrial share of the land-use mix |
-| generation.land_use.share_institutional_pct | committed | Land use | the institutional share of the land-use mix; the four shares sum to a whole |
+| generation.land_use.share_residential_pct | committed | Land use | the residential share of the land-use mix, by area |
+| generation.land_use.share_commercial_pct | committed | Land use | the commercial share of the land-use mix, by area |
+| generation.land_use.share_industrial_pct | committed | Land use | the industrial share of the land-use mix, by area |
+| generation.land_use.share_institutional_pct | committed | Land use | the institutional share of the land-use mix, by area; the four shares sum to a whole |
+| generation.land_use.share_tolerance_pct | committed | Land use | the percentage points a non-residential use's realised area share may sit from its own `share_*_pct` key, for any seed |
 | generation.land_use.institutional_min_pockets | committed | Land use | the minimum number of mutually non-adjacent institutional components a site must show -- "a school, a clinic and a town hall do not share a campus" |
 | generation.land_use.institutional_max_pocket_share_percent | committed | Land use | no single institutional component may exceed this percent of the site's own coarse-cell count |
 | generation.streets.arterial_count_ns_min | committed | Street network | the minimum north-south arterial count -- seeded uniformly in `[..._min, ..._max]`, never a fixed count |
@@ -439,14 +721,14 @@ disagree.
 | generation.streets.junction_min_separation_cells | committed | Street network | the minimum net gap, carriageway edge to carriageway edge, between two junctions on the same street line -- a split that cannot land clean against this is refused outright, never merely snapped clear |
 | generation.streets.split_jitter_pct | committed | Street network | how far a block split position may jitter from the rect's own midpoint |
 | generation.streets.max_recursion_depth | committed | Street network | a safety cap on recursive block-subdivision depth |
-| generation.streets.max_lane_splits | committed | Street network | a safety cap on the extra lane-tier splits one over-deep block may take (bypassed when the block still spans more than one land-use region -- AC2's "never stranded" is a hard bound) |
+| generation.streets.max_lane_splits | committed | Street network | a safety cap on the extra lane-tier splits one over-deep block may take (bypassed while the block still encloses a region or swallows one's land use -- AC2's "never stranded" is a hard bound) |
 | generation.streets.min_distinct_block_sizes | committed | Street network | the minimum number of distinct block widths, and separately heights, a city must show ("not a perfect grid") |
-| generation.streets.detour_long_pair_cells | committed | Street network | `max_detour_percent`'s own ratio applies only to pairs at least this far apart (Manhattan); closer pairs are bounded by `max_detour_excess_cells` instead |
-| generation.streets.max_detour_percent | committed | Street network | the Manhattan-fitness ratio ceiling 3.11's pathfinding estimator relies on, for long pairs |
+| generation.streets.max_detour_percent | committed | Street network | the site-scale-free long-range detour claim 3.11's pathfinding estimator relies on: `network <= max(manhattan + max_detour_excess_cells, manhattan * max_detour_percent / 100)`, for every sampled pair, no distance threshold of its own |
 | generation.streets.max_detour_excess_cells | committed | Street network | the additive Manhattan-fitness ceiling (world cells), applied to every sampled pair regardless of distance |
 | generation.streets.p99_detour_percent | committed | Street network | the 99th-percentile detour ratio, over one city's own sampled pairs, must not exceed this -- `max_detour_percent` alone only bounds the single worst pair |
 | generation.streets.peripheral_low_band_floor_percent | committed | Street network | per-city anti-inversion floor: the low-density (periphery) mean block area must be at least this percent of the high-density (core) mean |
 | generation.streets.peripheral_pooled_min_ratio_percent | committed | Street network | pooled over a fixed seed range, summed low-band mean area over summed high-band mean area must be at least this percent -- the guard that actually fails a density-blind generator |
+| generation.streets.thin_strip_long_side_percent | committed | Street network | how far a thin strip (short side under half the local target block size) may run along its long side before it is cut, as a percent of that target -- a boundary strip splits into halves near the target, never into pieces shorter than it |
 | generation.plots.frontage_min_cells | committed | Plot subdivision | AC1: a plot fronts a street iff it shares at least this many world cells of edge length with a street-abutting side of its own block; corner-point contact is landlocked |
 | generation.plots.high_density_threshold | committed | Plot subdivision | the density at or above which a block's own build line sits flush on the pavement (setback 0, party walls); shared with the building-envelope pass's own side-gap step |
 | generation.plots.setback_periphery_cells | committed | Plot subdivision | the one shared build-line setback every plot on a below-threshold block sits behind |
@@ -523,6 +805,7 @@ disagree.
 | hospital_present | committed | Building type | site | - | same shape, the hospital |
 | welfare_office_present | committed | Building type | site | - | welfare offices at a real ratio (never a singleton), spaced apart -- they sit where land is cheap, and the walk to them is content (Derek's direction), never guaranteed near |
 | shelter_present | committed | Building type | site | - | same shape, shelters |
+| cafe_present | committed | Building type | site | - | story 15.9: a cafe per roughly `ratio` dwellings, on ordinary commercial land -- "the district has a cafe" (AC2), guaranteed by construction rather than by the ordinary weighted fill's own luck, since a real launch job (barista, FR14) depends on it |
 
 ## coherence
 | key | status | pass | scope | reads | intent |
@@ -600,6 +883,9 @@ names; `unclaimed` otherwise -- checked mechanically, not by eye.
 | Land inside a block that belongs to no plot | requirement | | unclaimed |
 | A building whose entrance faces the block interior or a side passage | adjacency | | unclaimed |
 | A vacant gap in an otherwise continuous high-density street wall | coherence | | unclaimed |
+| A stair entered over its own drawn post, railing or end wall | adjacency | | unclaimed |
+| A stair climbed against the direction its art rises, or walked at a different width on the two floors it joins | coherence | | unclaimed |
+| A stair whose treads stop short of the foot of its own railing, with floor showing between them | coherence | | unclaimed |
 
 The five `defs/rules/city.toml` rows and the `defs/rules/grammar.toml`
 rows above are placeholders and grammar primitives, not a claim on this
@@ -649,7 +935,9 @@ assumed:
   `hospital_present`, `welfare_office_present`, `shelter_present`) each
   set `max_distance` past the site's own diagonal, so the engine's own
   coverage half never fires at all (Derek's direction: no coverage
-  ceiling on a municipal row). "Evenly spread" is closed on the
+  ceiling on a municipal row); story 15.9 adds a sixth, `cafe_present`,
+  same shape, on ordinary commercial land rather than scarce
+  institutional-or-commercial land. "Evenly spread" is closed on the
   generator side instead: `sim::generation::building_types::run`
   splits each row's own whole-site target (the same figure the engine's
   own ratio check computes) into a floor per catchment -- a fixed-extent
@@ -659,7 +947,18 @@ assumed:
   whichever catchment held the most dwellings rather than its own
   preferred site), and `inv_generation_no_quadrant_lacks_its_required_
   services` checks every catchment clears its own floor, per seed, for
-  real. The gap this leaves is narrower
+  real. Story 15.9 fixed a real gap in that split, found by cafe's own
+  much larger per-city target exposing it for the first time: a
+  catchment's own floor could be owed on paper (the site-wide floors
+  summing to the whole target) while that one catchment's own local land
+  could not actually supply it, stranding the shortfall rather than
+  routing it to the site-wide remainder, which real land elsewhere could
+  have satisfied -- `building_types::run` now folds whatever the floor
+  phase could not actually place into the remainder afterward, for every
+  distribution row, not only cafe's own. The same story fixed
+  `place_row`'s bounded search, which pruned against `target` and so
+  returned first-fit's partial, not the largest feasible one, whenever
+  a catchment's floor was unreachable. The gap this leaves is narrower
   than "distribution is whole-site": a `[[distribution]]` row's own
   ratio/spacing/coverage fields still cannot themselves be scoped below
   the whole site -- only the generator's own constructive placement can

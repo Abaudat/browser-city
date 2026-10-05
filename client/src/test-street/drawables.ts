@@ -6,31 +6,58 @@
 
 import { decomposeFootprint } from "../render/decompose";
 import { layerCodeByName } from "../render/layer-table";
+import { cellBottomCentre } from "../render/screen-position";
 import { type Drawable, setDrawableFloor, setDrawablePosition } from "../render/sort-key";
 import { toSortUnits } from "../render/sort-units";
 import { isNearSideWall, type VisibilityDrawable } from "../render/visibility";
 import { NO_OWNER, type OwnershipIndex } from "../world/ownership";
-import { PLAYER_STABLE_ID, STREET_PROPS, type StreetLayer } from "./fixture";
+import {
+  isDefStreetProp,
+  PLAYER_STABLE_ID,
+  STREET_PROPS,
+  type StreetFootprint,
+  type StreetLayer,
+  type StreetPropByDef,
+  WALL_SEGMENT_DEF_ID,
+} from "./fixture";
 
-/** A `Drawable` plus what `scene.ts` needs to pick and slice a texture
- * for it, plus what `render/visibility.ts` needs to decide its
+/** Every field a `Drawable` carries regardless of where its art comes
+ * from, plus what `render/visibility.ts` needs to decide its
  * FR120/FR121/FR122 state -- never consulted by either comparator
  * directly. */
-export interface PropDrawable extends Drawable, VisibilityDrawable {
-  readonly assetKey: string;
+interface PropDrawableBase extends Drawable, VisibilityDrawable {
   readonly sourceCol: number;
   readonly sourceRow: number;
   readonly footprintWidth: number;
   readonly footprintHeight: number;
-  /** Which run a `wallTile`/`wallStub` drawable belongs to (Artie's
-   * cycle-2 direction) -- `scene.ts`'s own swatch picker reads this, never
-   * a decomposed cell's own footprint aspect ratio (which cannot tell a
-   * one-cell-wide front wall pier from a one-cell side wall). Copied
-   * straight from `StreetProp.wallOrientation`, defaulting to `"horizontal"`
-   * for every prop that does not declare one -- meaningless for anything
-   * that is not a wall, but always present so no caller needs an
-   * `undefined` branch. */
-  readonly wallOrientation: "horizontal" | "vertical";
+}
+
+/** A drawable for a prop placed by a real `defs/objects` id (story 2.13):
+ * its texture comes only from `render/atlas-pages.ts`'s
+ * `AtlasPageLoader.objectCellTexture` -- never carries `assetKey`. */
+export interface PropDrawableByDef extends PropDrawableBase {
+  readonly defId: number;
+  /** Source pixels the sprite is drawn above its sort anchor (the wall-top
+   * band over a doorway: its threshold's own sprite height); sorting and
+   * visibility are unchanged. */
+  readonly liftSourcePx?: number;
+}
+
+/** A drawable for a prop placed by a hand-picked asset key into `scene.ts`'s
+ * own raw texture table -- never carries `defId`. */
+export interface PropDrawableByAsset extends PropDrawableBase {
+  readonly assetKey: string;
+}
+
+/** A `Drawable` plus what `scene.ts` needs to pick and slice a texture for
+ * it -- a discriminated union (Tim's/Quentin's direction, story 2.13): a
+ * `defId` drawable has no `assetKey` field at all, and an `assetKey`
+ * drawable has no `defId`. */
+export type PropDrawable = PropDrawableByDef | PropDrawableByAsset;
+
+/** Narrows a [`PropDrawable`] to its `defId` variant. */
+export function isDefPropDrawable(drawable: PropDrawable): drawable is PropDrawableByDef {
+  return "defId" in drawable;
 }
 
 /** The FR120 wall-stub companion's own stable-id offset: large enough that
@@ -47,6 +74,12 @@ export interface PropDrawable extends Drawable, VisibilityDrawable {
  * real wall is drawn -- Artie's cycle-2 finding). */
 const STUB_ID_OFFSET = 500_000n;
 
+/** The wall-top band companion's stable-id offset. A threshold is shorter
+ * than the `wall_face` run beside it; the band is the flush `wall_segment`
+ * swatch drawn above the threshold's own sprite height, sorted and
+ * retracted with the threshold itself (never a colliding wall cell). */
+const BAND_ID_OFFSET = 600_000n;
+
 /** The def ids `defs/` marks as windows (FR121) -- resolved once by the
  * caller (`world/object-defs.ts`'s `windowDefIds`), never looked up while
  * drawing. */
@@ -54,6 +87,40 @@ export interface BuildPropDrawablesOptions {
   readonly rankOf: (layer: StreetLayer) => number;
   readonly ownership: OwnershipIndex;
   readonly windowDefIds: ReadonlySet<number>;
+  /** The def ids carrying the `threshold` role (`world/object-defs.ts`'s
+   * `thresholdDefIds`). */
+  readonly thresholdDefIds: ReadonlySet<number>;
+  /** Real `defs/objects` footprints (story 2.13, Tim's direction, cycle
+   * 2): a `defId` row's own extent is read from here, from the resolved
+   * def's own `width`/`height`, never a hand-restated `footprint` field
+   * on the row itself -- `scene.ts`'s own `objectDefs` (`world/object-defs.
+   * ts`'s `objectDefsById`), so this can never fall out of step with the
+   * def's own real art the way a restated number could. */
+  readonly objectDefs: ReadonlyMap<
+    number,
+    {
+      readonly width: number;
+      readonly height: number;
+      readonly spriteHeightPx?: number;
+      readonly undrawn?: true;
+    }
+  >;
+}
+
+/** A `defId` row's own extent, read from the resolved def -- throws
+ * naming the def when `objectDefs` has no entry for it, rather than
+ * silently falling back to a 1x1 footprint for a row this street placed
+ * by a real id (Tim's direction: never a hand-restated number, and never
+ * a silent wrong one either). */
+function defFootprint(
+  prop: StreetPropByDef,
+  objectDefs: BuildPropDrawablesOptions["objectDefs"],
+): StreetFootprint {
+  const source = objectDefs.get(prop.defId);
+  if (!source) {
+    throw new Error(`buildPropDrawables: objectDefs has no entry for defId ${prop.defId}`);
+  }
+  return { width: source.width, height: source.height };
 }
 
 const WALLS_LAYER_CODE = layerCodeByName("walls");
@@ -71,13 +138,18 @@ const STUB_LAYER_CODE = layerCodeByName("furniture");
  * (Tim's direction: a generated building must retract correctly with no
  * fixture-only tag to remember). */
 export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDrawable[] {
-  const { rankOf, ownership, windowDefIds } = options;
+  const { rankOf, ownership, windowDefIds, thresholdDefIds, objectDefs } = options;
   const drawables: PropDrawable[] = [];
   for (const prop of STREET_PROPS) {
+    // An undrawn flight (story 15.19) is walk data: nothing to draw.
+    if (isDefStreetProp(prop) && objectDefs.get(prop.defId)?.undrawn) continue;
     const rank = rankOf(prop.layer);
     const layerCode = layerCodeByName(prop.layer);
-    const footprint = prop.footprint ?? { width: 1, height: 1 };
-    const isWindow = prop.defId !== undefined && windowDefIds.has(prop.defId);
+    const footprint = isDefStreetProp(prop)
+      ? defFootprint(prop, objectDefs)
+      : (prop.footprint ?? { width: 1, height: 1 });
+    const isDef = isDefStreetProp(prop);
+    const isWindow = isDef && windowDefIds.has(prop.defId);
     const cells = decomposeFootprint({
       x: prop.x,
       y: prop.y,
@@ -89,13 +161,20 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
       const isNearSide =
         layerCode === WALLS_LAYER_CODE &&
         isNearSideWall(ownership, cell.x, cell.y, prop.floor, ownerBuildingId);
-      drawables.push({
-        x: toSortUnits(cell.x),
-        y: toSortUnits(cell.y),
+      // `Drawable.x`/`y` are the drawn bottom-centre point, in sort units
+      // (story 15.4, Tim's direction) -- never the bare cell index. A
+      // prop's own sprite is drawn at `cellBottomCentre(cell.x, cell.y)`
+      // (`scene.ts`'s `positionSprite`, through the plain `worldPointPx`
+      // projection); the sort key has to agree, or the player's own
+      // feet-anchored key (already the drawn point) compares against a
+      // point that is not where anything was drawn.
+      const anchor = cellBottomCentre(cell.x, cell.y);
+      const common = {
+        x: toSortUnits(anchor.x),
+        y: toSortUnits(anchor.y),
         rank,
         stableId: prop.id,
         floor: prop.floor,
-        assetKey: prop.assetKey,
         sourceCol: cell.sourceCol,
         sourceRow: cell.sourceRow,
         footprintWidth: footprint.width,
@@ -104,9 +183,11 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
         ownerBuildingId,
         isWindow,
         isNearSide,
-        isStub: false,
-        wallOrientation: prop.wallOrientation ?? "horizontal",
-      });
+        isStub: false as const,
+      };
+      drawables.push(
+        isDef ? { ...common, defId: prop.defId } : { ...common, assetKey: prop.assetKey },
+      );
 
       // The FR120 wall-stub companion (Artie's direction): only for a
       // near-side wall cell, always a separate, permanent pool member at
@@ -115,14 +196,36 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
       // to invert that into "hidden while the parent shows, normal while
       // it's retracted" rather than applying the ordinary retraction rule
       // a real wall follows.
-      if (isNearSide) {
+      const isThreshold = isDef && thresholdDefIds.has(prop.defId);
+      if (isThreshold) {
         drawables.push({
-          x: toSortUnits(cell.x),
-          y: toSortUnits(cell.y),
+          x: toSortUnits(anchor.x),
+          y: toSortUnits(anchor.y),
+          rank,
+          stableId: prop.id + BAND_ID_OFFSET,
+          floor: prop.floor,
+          defId: WALL_SEGMENT_DEF_ID,
+          sourceCol: 0,
+          sourceRow: 0,
+          footprintWidth: 1,
+          footprintHeight: 1,
+          layerCode,
+          ownerBuildingId,
+          isWindow: false,
+          isNearSide,
+          isStub: false,
+          liftSourcePx: objectDefs.get(prop.defId)?.spriteHeightPx ?? 0,
+        });
+      }
+      // A doorway has no wall stub: an opening stays an opening.
+      if (isNearSide && !isThreshold) {
+        drawables.push({
+          x: toSortUnits(anchor.x),
+          y: toSortUnits(anchor.y),
           rank: rankOf("furniture"),
           stableId: prop.id + STUB_ID_OFFSET,
           floor: prop.floor,
-          assetKey: "wallStub",
+          defId: WALL_SEGMENT_DEF_ID,
           sourceCol: 0,
           sourceRow: 0,
           footprintWidth: 1,
@@ -132,7 +235,6 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
           isWindow: false,
           isNearSide: true,
           isStub: true,
-          wallOrientation: prop.wallOrientation ?? "horizontal",
         });
       }
     }
@@ -140,28 +242,35 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
   return drawables;
 }
 
-/** The player's own drawable, from its continuous feet position -- never
- * snapped to a cell (Artie's direction). The player is never itself
- * retracted or window-translucent, and its own `ownerBuildingId` is never
+/** A character's own drawable (the player by default), from its continuous feet position -- never
+ * snapped to a cell (Artie's direction). `feetX`/`feetY` already *are*
+ * the drawn bottom-centre point (`world/movement.ts`'s `step` anchors the
+ * body's bottom edge on them, and `scene.ts` draws the sprite there
+ * through the plain `worldPointPx` projection, story 15.4) -- unlike a
+ * prop's cell, there is no anchor arithmetic left to apply here.
+ *
+ * The player is never itself retracted or window-translucent, and its own `ownerBuildingId` is never
  * read by anything (the viewer's building identity is a separate concept,
  * `render/visibility.ts`'s `VisibilityViewer.buildingId`, tracked by
  * `scene.ts`) -- `NO_OWNER` here is a fixed, inert value, not something
  * that needs recomputing as the player moves. `floor` changes only on a
  * floor transition (`scene.ts` rebuilds this drawable then, a rare event,
  * never every frame). */
-export function buildPlayerDrawable(
+export function buildCharacterDrawable(
   rank: number,
   feetX: number,
   feetY: number,
   floor: number,
+  stableId: bigint = PLAYER_STABLE_ID,
+  assetKey = "player",
 ): PropDrawable {
   return {
     x: toSortUnits(feetX),
     y: toSortUnits(feetY),
     rank,
-    stableId: PLAYER_STABLE_ID,
+    stableId,
     floor,
-    assetKey: "player",
+    assetKey,
     sourceCol: 0,
     sourceRow: 0,
     footprintWidth: 1,
@@ -171,7 +280,6 @@ export function buildPlayerDrawable(
     isWindow: false,
     isNearSide: false,
     isStub: false,
-    wallOrientation: "horizontal",
   };
 }
 
@@ -184,7 +292,7 @@ export function buildPlayerDrawable(
  * (FR122) from its own new position the instant it lands -- the player
  * itself would be invisible in its own new enclosure. `rank`, `stableId`
  * and the asset fields never change for the player. */
-export function updatePlayerDrawable(
+export function updateCharacterDrawable(
   player: PropDrawable,
   feetX: number,
   feetY: number,

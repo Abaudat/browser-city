@@ -40,7 +40,7 @@ impl Rect {
         self.y1 as i64 - self.y0 as i64
     }
 
-    fn overlaps(&self, other: &Rect) -> bool {
+    pub fn overlaps(&self, other: &Rect) -> bool {
         self.x0 < other.x1 && other.x0 < self.x1 && self.y0 < other.y1 && other.y0 < self.y1
     }
 }
@@ -349,6 +349,20 @@ pub struct WorldSpec {
     pub room_areas: Vec<AreaSpec>,
 }
 
+/// Refuses a floor outside the world's declared range
+/// (`generated::defs::MIN_FLOOR..=MAX_FLOOR`): a region subscription is
+/// bounded only because floors are.
+fn check_floor_in_range(floor: i8, what: &str) -> Result<(), String> {
+    use crate::generated::defs::{MAX_FLOOR, MIN_FLOOR};
+    if (MIN_FLOOR..=MAX_FLOOR).contains(&i32::from(floor)) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{what} {floor} is outside the declared range {MIN_FLOOR}..={MAX_FLOOR}"
+        ))
+    }
+}
+
 impl WorldSpec {
     /// Builds the [`World`], refusing (`Err`, never a panic):
     ///
@@ -372,6 +386,7 @@ impl WorldSpec {
     pub fn build(&self) -> Result<World, String> {
         let mut floors = BTreeMap::new();
         for spec in &self.floors {
+            check_floor_in_range(spec.floor, "a floor")?;
             let fc = FloorCollision::build(spec.bounds, &spec.colliders)?;
             floors.insert(spec.floor, fc);
         }
@@ -388,6 +403,8 @@ impl WorldSpec {
 
         let mut transitions = BTreeMap::new();
         for t in &self.transitions {
+            check_floor_in_range(t.floor, "a transition anchor floor")?;
+            check_floor_in_range(t.target_floor, "a transition target floor")?;
             standable_or_err(t.x, t.y, t.floor, "a transition anchor")?;
             standable_or_err(
                 t.target_x,
@@ -419,6 +436,7 @@ impl WorldSpec {
     fn build_area_index(specs: &[AreaSpec], kind: &str) -> Result<AreaIndex, String> {
         let mut index: AreaIndex = BTreeMap::new();
         for spec in specs {
+            check_floor_in_range(spec.floor, kind)?;
             if !spec.rect.is_valid() {
                 return Err(format!("{kind} {:?} is invalid", spec.rect));
             }

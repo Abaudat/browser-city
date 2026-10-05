@@ -68,26 +68,55 @@
 //! own target ids, which the gap-fill loop above would then read as an
 //! overshoot and abort on.
 //!
-//! `restore_module_owner` and the five code-table restore reducers
+//! `restore_module_owner` and the seven code-table restore reducers
 //! delete their existing (`init`-seeded) rows first, then insert the
 //! exported ones -- restore *replaces* what `init` seeded, the same rule
 //! `scripts/ops/restore-world.sh` documented before this story moved the
-//! write path into the module.
+//! write path into the module. `restore_cadence_liveness` (story 4.2)
+//! does the same, for the same reason under a different cause: `init`
+//! never seeds it directly, but the cadence it arms can fire and write it
+//! before `begin_restore` ever runs.
+//!
+//! `begin_restore` also disarms every scheduled table
+//! (`tables::schedules::disarm_all_scheduled_tables`) before its own
+//! emptiness checks, and `finish_restore` re-arms every cadence
+//! (`tables::schedules::arm_every_cadence`) after closing the restore --
+//! both inside this file, so no cadence can ever fire between the two
+//! using an epoch that does not belong to the world being restored
+//! (story 4.2). `scripts/ops/restore-world.sh` calls neither directly.
 
 use spacetimedb::{Identity, ReducerContext, Table, Timestamp};
 
 use crate::{DemoPing, demo_ping};
 
+use super::actor::{ActorKind, ActorLocation, actor_kind, actor_location};
 use super::citizen::{Citizen, CitizenState, citizen, citizen_state};
+use super::clock::{WorldClock, world_clock};
 use super::codes::{
-    MatterKind, NodeKind, Provision, ReasonCode, matter_kind, node_kind, provision, reason_code,
+    ContainerKind, HolderKind, MatterKind, NodeKind, Provision, ReasonCode, Unit, container_kind,
+    holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
-use super::identity::{Character, CharacterIdentity, character, character_identity};
+use super::district::{District, district};
+use super::identity::{
+    Character, CharacterIdentity, LinkRequest, OidcIssuer, character, character_identity,
+    link_request, oidc_issuer,
+};
+use super::item_instance::{
+    ItemHeld, ItemInstance, ItemPlaced, item_held, item_instance, item_placed,
+};
+use super::metrics::{
+    ReducerClassCounter, ReducerClassSample, StorageSample, TableSample, count_call,
+    reducer_class_counter, reducer_class_sample, storage_sample, table_sample,
+};
 use super::ops::{ModuleOwner, module_owner, require_owner};
+use super::player_position::{PlayerPosition, player_position};
+use super::schedules::{CadenceLiveness, cadence_liveness};
+use super::stock::{Business, Stock, business, stock};
 use super::world::{
     Building, BuildingArea, FloorTransition, LayerCode, PlacedObject, Room, RoomArea, building,
     building_area, floor_transition, layer_code, placed_object, room, room_area,
 };
+use sim::reducer_classes::ReducerClass;
 
 /// Whether a restore is currently open -- a private, one-row gate no
 /// reducer other than the three in this file ever reads or writes.
@@ -105,26 +134,43 @@ fn require_restore_open(ctx: &ReducerContext) -> Result<(), String> {
     }
 }
 
-/// `init` seeds these (`module_owner`, the five code tables) -- restore
-/// *replaces* their content rather than requiring them empty. The single
-/// source of truth for which tables that is: `bounds/tests/
-/// restore_coverage.rs`'s text scan reads this constant's own source
-/// (never a second, hand-copied list) and fails CI if a non-scheduled
-/// table is in neither this list nor [`NON_INIT_SEEDED_TABLES`].
+/// A table restore *replaces* rather than requires empty: `init` seeds
+/// `module_owner` and the six code tables directly; `cadence_liveness`
+/// is different in cause but the same in consequence -- a freshly
+/// published target's own `init` arms its cadence immediately
+/// (`tables::schedules::arm_every_cadence_from`), and that cadence can
+/// fire for real, writing this table, at any point before `begin_restore`
+/// ever runs, so requiring it empty would refuse an otherwise-valid
+/// restore purely on timing. The single source of truth for which tables
+/// this is: `bounds/tests/restore_coverage.rs`'s text scan reads this
+/// constant's own source (never a second, hand-copied list) and fails CI
+/// if a non-scheduled table is in neither this list nor
+/// [`NON_INIT_SEEDED_TABLES`].
 #[allow(dead_code)] // read by `restore_coverage.rs` as source text, not Rust code
 const INIT_SEEDED_TABLES: &[&str] = &[
     "module_owner",
+    "world_clock",
     "matter_kind",
     "provision",
     "reason_code",
     "node_kind",
+    "unit",
+    "holder_kind",
+    "actor_kind",
+    "container_kind",
     "layer_code",
+    "cadence_liveness",
+    "storage_sample",
+    "table_sample",
+    "reducer_class_counter",
+    "reducer_class_sample",
 ];
 
-/// Every non-scheduled table `init` does *not* seed -- `begin_restore`
-/// refuses unless every one of these is empty. The single source of
-/// truth: `bounds/tests/restore_coverage.rs`'s text scan reads this
-/// constant's own source and fails CI if a table here has no matching
+/// Every non-scheduled table that is never pre-populated before
+/// `begin_restore` -- `begin_restore` refuses unless every one of these
+/// is empty. The single source of truth: `bounds/tests/
+/// restore_coverage.rs`'s text scan reads this constant's own source and
+/// fails CI if a table here has no matching
 /// `ctx.db.<accessor>().iter().next().is_some()` check in
 /// `begin_restore`'s body below, or if a non-scheduled table is in
 /// neither this list nor [`INIT_SEEDED_TABLES`] -- so a table added next
@@ -132,11 +178,21 @@ const INIT_SEEDED_TABLES: &[&str] = &[
 /// "never restore over a live world".
 #[allow(dead_code)] // read by `restore_coverage.rs` as source text, not Rust code
 const NON_INIT_SEEDED_TABLES: &[&str] = &[
+    "item_instance",
+    "item_placed",
+    "item_held",
+    "business",
+    "stock",
+    "actor_location",
+    "player_position",
     "demo_ping",
     "building",
     "building_area",
+    "district",
     "character",
     "character_identity",
+    "oidc_issuer",
+    "link_request",
     "citizen",
     "citizen_state",
     "floor_transition",
@@ -145,23 +201,84 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "room_area",
 ];
 
-/// Opens a restore. Refuses unless every table in
-/// [`NON_INIT_SEEDED_TABLES`] is empty -- the guard against restoring
-/// over a live world. Idempotent-refusing: calling it again while a
-/// restore is already open is an error, not a silent no-op, so a
-/// half-finished restore is never quietly resumed with a different
-/// export.
+/// Opens a restore. Disarms every scheduled table first
+/// (`tables::schedules::disarm_all_scheduled_tables`) -- a freshly
+/// published target's own `init` arms its cadence immediately, so without
+/// this a scheduled reducer could fire on the target at any point during
+/// the restore, using an epoch that belongs to the target's own
+/// pre-restore world, not the one being restored (story 4.2). Then
+/// refuses unless every table in [`NON_INIT_SEEDED_TABLES`] is empty --
+/// the guard against restoring over a live world. Idempotent-refusing:
+/// calling it again while a restore is already open is an error, not a
+/// silent no-op, so a half-finished restore is never quietly resumed
+/// with a different export.
 #[spacetimedb::reducer]
 pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     if let Some(row) = ctx.db.restore_state().id().find(0)
         && row.open
     {
         return Err("a restore is already open -- call finish_restore first".to_string());
     }
+    super::schedules::disarm_all_scheduled_tables(ctx);
+    // The metrics samples are ops data measured from the target's own
+    // pre-restore state, worthless by definition, and the sampler may have
+    // fired on a target published more than an hour ago: cleared here
+    // (after the disarm, so no fire lands in between) rather than required
+    // empty, the same stance `restore_cadence_liveness` takes. The
+    // `restore_*` reducers then restore into the empty tables.
+    for id in ctx
+        .db
+        .table_sample()
+        .iter()
+        .map(|r| r.sample_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.table_sample().sample_id().delete(id);
+    }
+    for id in ctx
+        .db
+        .storage_sample()
+        .iter()
+        .map(|r| r.sample_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.storage_sample().sample_id().delete(id);
+    }
+    for id in ctx
+        .db
+        .reducer_class_sample()
+        .iter()
+        .map(|r| r.sample_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.reducer_class_sample().sample_id().delete(id);
+    }
     let mut nonempty: Vec<&str> = Vec::new();
     if ctx.db.demo_ping().iter().next().is_some() {
         nonempty.push("demo_ping");
+    }
+    if ctx.db.business().iter().next().is_some() {
+        nonempty.push("business");
+    }
+    if ctx.db.item_instance().iter().next().is_some() {
+        nonempty.push("item_instance");
+    }
+    if ctx.db.item_placed().iter().next().is_some() {
+        nonempty.push("item_placed");
+    }
+    if ctx.db.item_held().iter().next().is_some() {
+        nonempty.push("item_held");
+    }
+    if ctx.db.stock().iter().next().is_some() {
+        nonempty.push("stock");
+    }
+    if ctx.db.actor_location().iter().next().is_some() {
+        nonempty.push("actor_location");
+    }
+    if ctx.db.player_position().iter().next().is_some() {
+        nonempty.push("player_position");
     }
     if ctx.db.building().iter().next().is_some() {
         nonempty.push("building");
@@ -169,11 +286,20 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     if ctx.db.building_area().iter().next().is_some() {
         nonempty.push("building_area");
     }
+    if ctx.db.district().iter().next().is_some() {
+        nonempty.push("district");
+    }
     if ctx.db.character().iter().next().is_some() {
         nonempty.push("character");
     }
     if ctx.db.character_identity().iter().next().is_some() {
         nonempty.push("character_identity");
+    }
+    if ctx.db.oidc_issuer().iter().next().is_some() {
+        nonempty.push("oidc_issuer");
+    }
+    if ctx.db.link_request().iter().next().is_some() {
+        nonempty.push("link_request");
     }
     if ctx.db.citizen().iter().next().is_some() {
         nonempty.push("citizen");
@@ -218,16 +344,22 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
 
 /// Closes a restore permanently. Never reopened by calling this again --
 /// a second `begin_restore` after `finish_restore` opens a *new* restore
-/// (and re-checks every precondition), it does not resume this one.
+/// (and re-checks every precondition), it does not resume this one. Then
+/// re-arms every cadence from the epoch `restore_world_clock` just
+/// restored (`tables::schedules::arm_every_cadence`) -- inside this same
+/// transaction chain, so a restored world resumes its loop with no window
+/// in which any cadence is armed from anything but the epoch actually
+/// being restored (story 4.2).
 #[spacetimedb::reducer]
 pub fn finish_restore(ctx: &ReducerContext) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     ctx.db
         .restore_state()
         .id()
         .update(RestoreState { id: 0, open: false });
-    Ok(())
+    super::schedules::arm_every_cadence(ctx)
 }
 
 /// An auto_inc table's row, reduced to what [`restore_autoinc_rows`]
@@ -389,6 +521,22 @@ impl_autoinc_row!(
     }
 );
 impl_autoinc_row!(
+    District,
+    district_id,
+    District {
+        district_id: 0,
+        seed: 0,
+        x0: 0,
+        y0: 0,
+        x1: 0,
+        y1: 0,
+        generation_version: 0,
+        rng_version: 0,
+        defs_version: String::new(),
+        generated_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
     Character,
     character_id,
     Character {
@@ -403,6 +551,27 @@ impl_autoinc_row!(
         mapping_id: 0,
         identity: Identity::default(),
         character_id: 0,
+        issuer_id: 0,
+    }
+);
+impl_autoinc_row!(
+    OidcIssuer,
+    issuer_id,
+    OidcIssuer {
+        issuer_id: 0,
+        issuer: String::new(),
+        client_id: String::new(),
+    }
+);
+impl_autoinc_row!(
+    LinkRequest,
+    request_id,
+    LinkRequest {
+        request_id: 0,
+        identity: Identity::default(),
+        issuer_id: 0,
+        code: String::new(),
+        expires_at: 0,
     }
 );
 impl_autoinc_row!(
@@ -416,6 +585,83 @@ impl_autoinc_row!(
         appearance_outfit: 0,
         appearance_hairstyle: 0,
         appearance_accessory: 0,
+    }
+);
+impl_autoinc_row!(
+    Business,
+    business_id,
+    Business {
+        business_id: 0,
+        created_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
+    ItemInstance,
+    instance_id,
+    ItemInstance {
+        instance_id: 0,
+        def_id: 0,
+        created_at: Timestamp::UNIX_EPOCH,
+    }
+);
+impl_autoinc_row!(
+    ActorLocation,
+    location_id,
+    ActorLocation {
+        location_id: 0,
+        actor_kind: 0,
+        actor_id: 0,
+        chunk_key: 0,
+        floor: 0,
+    }
+);
+impl_autoinc_row!(
+    Stock,
+    stock_id,
+    Stock {
+        stock_id: 0,
+        holder_kind: 0,
+        holder_id: 0,
+        item_id: 0,
+        quantity: 0,
+    }
+);
+impl_autoinc_row!(
+    TableSample,
+    sample_id,
+    TableSample {
+        sample_id: 0,
+        sampled_at: Timestamp::UNIX_EPOCH,
+        table_accessor: String::new(),
+        rows: 0,
+        bytes_est: 0,
+        alert_rows: 0,
+        max_rows: 0,
+        over_alert: false,
+    }
+);
+impl_autoinc_row!(
+    StorageSample,
+    sample_id,
+    StorageSample {
+        sample_id: 0,
+        sampled_at: Timestamp::UNIX_EPOCH,
+        total_bytes_est: 0,
+        over_review: false,
+        over_wall: false,
+        review_bytes: 0,
+        wall_bytes: 0,
+    }
+);
+impl_autoinc_row!(
+    ReducerClassSample,
+    sample_id,
+    ReducerClassSample {
+        sample_id: 0,
+        sampled_at: Timestamp::UNIX_EPOCH,
+        class: String::new(),
+        calls_total: 0,
+        calls_delta: 0,
     }
 );
 impl_autoinc_row!(
@@ -476,6 +722,7 @@ pub fn restore_demo_ping(
     rows: Vec<DemoPing>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -495,6 +742,7 @@ pub fn restore_building(
     rows: Vec<Building>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -514,6 +762,7 @@ pub fn restore_building_area(
     rows: Vec<BuildingArea>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -528,11 +777,32 @@ pub fn restore_building_area(
 }
 
 #[spacetimedb::reducer]
+pub fn restore_district(
+    ctx: &ReducerContext,
+    rows: Vec<District>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.district().insert(r),
+        |id| {
+            ctx.db.district().district_id().delete(id);
+        },
+        "district",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
 pub fn restore_character(
     ctx: &ReducerContext,
     rows: Vec<Character>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -552,6 +822,7 @@ pub fn restore_character_identity(
     rows: Vec<CharacterIdentity>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -566,11 +837,52 @@ pub fn restore_character_identity(
 }
 
 #[spacetimedb::reducer]
+pub fn restore_oidc_issuer(
+    ctx: &ReducerContext,
+    rows: Vec<OidcIssuer>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.oidc_issuer().insert(r),
+        |id| {
+            ctx.db.oidc_issuer().issuer_id().delete(id);
+        },
+        "oidc_issuer",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_link_request(
+    ctx: &ReducerContext,
+    rows: Vec<LinkRequest>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.link_request().insert(r),
+        |id| {
+            ctx.db.link_request().request_id().delete(id);
+        },
+        "link_request",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
 pub fn restore_citizen(
     ctx: &ReducerContext,
     rows: Vec<Citizen>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -585,11 +897,231 @@ pub fn restore_citizen(
 }
 
 #[spacetimedb::reducer]
+pub fn restore_business(
+    ctx: &ReducerContext,
+    rows: Vec<Business>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.business().insert(r),
+        |id| {
+            ctx.db.business().business_id().delete(id);
+        },
+        "business",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_item_instance(
+    ctx: &ReducerContext,
+    rows: Vec<ItemInstance>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.item_instance().insert(r),
+        |id| {
+            ctx.db.item_instance().instance_id().delete(id);
+        },
+        "item_instance",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_item_placed(ctx: &ReducerContext, rows: Vec<ItemPlaced>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    for row in rows {
+        ctx.db.item_placed().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_item_held(ctx: &ReducerContext, rows: Vec<ItemHeld>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    for row in rows {
+        ctx.db.item_held().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_container_kind(
+    ctx: &ReducerContext,
+    rows: Vec<ContainerKind>,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<u32> = ctx.db.container_kind().iter().map(|r| r.code).collect();
+    for code in existing {
+        ctx.db.container_kind().code().delete(code);
+    }
+    for row in rows {
+        ctx.db.container_kind().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_actor_location(
+    ctx: &ReducerContext,
+    rows: Vec<ActorLocation>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.actor_location().insert(r),
+        |id| {
+            ctx.db.actor_location().location_id().delete(id);
+        },
+        "actor_location",
+        sequence_floor,
+    )
+}
+
+// --- direct insert, by value with the explicit `character_id` (a permanent
+// key, never re-minted) ---------------------------------------------------
+#[spacetimedb::reducer]
+pub fn restore_player_position(
+    ctx: &ReducerContext,
+    rows: Vec<PlayerPosition>,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    for row in rows {
+        ctx.db.player_position().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_stock(
+    ctx: &ReducerContext,
+    rows: Vec<Stock>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.stock().insert(r),
+        |id| {
+            ctx.db.stock().stock_id().delete(id);
+        },
+        "stock",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_table_sample(
+    ctx: &ReducerContext,
+    rows: Vec<TableSample>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.table_sample().insert(r),
+        |id| {
+            ctx.db.table_sample().sample_id().delete(id);
+        },
+        "table_sample",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_storage_sample(
+    ctx: &ReducerContext,
+    rows: Vec<StorageSample>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.storage_sample().insert(r),
+        |id| {
+            ctx.db.storage_sample().sample_id().delete(id);
+        },
+        "storage_sample",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_reducer_class_sample(
+    ctx: &ReducerContext,
+    rows: Vec<ReducerClassSample>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.reducer_class_sample().insert(r),
+        |id| {
+            ctx.db.reducer_class_sample().sample_id().delete(id);
+        },
+        "reducer_class_sample",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_reducer_class_counter(
+    ctx: &ReducerContext,
+    rows: Vec<ReducerClassCounter>,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<String> = ctx
+        .db
+        .reducer_class_counter()
+        .iter()
+        .map(|r| r.class)
+        .collect();
+    for class in existing {
+        ctx.db.reducer_class_counter().class().delete(class);
+    }
+    for row in rows {
+        ctx.db.reducer_class_counter().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
 pub fn restore_floor_transition(
     ctx: &ReducerContext,
     rows: Vec<FloorTransition>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -609,6 +1141,7 @@ pub fn restore_placed_object(
     rows: Vec<PlacedObject>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -628,6 +1161,7 @@ pub fn restore_room(
     rows: Vec<Room>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -647,6 +1181,7 @@ pub fn restore_room_area(
     rows: Vec<RoomArea>,
     sequence_floor: u64,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     restore_autoinc_rows(
@@ -664,6 +1199,7 @@ pub fn restore_room_area(
 // already guaranteed the table is empty -------------------------------
 #[spacetimedb::reducer]
 pub fn restore_citizen_state(ctx: &ReducerContext, rows: Vec<CitizenState>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     for row in rows {
@@ -672,10 +1208,13 @@ pub fn restore_citizen_state(ctx: &ReducerContext, rows: Vec<CitizenState>) -> R
     Ok(())
 }
 
-// --- replace: init-seeded (module_owner, the code tables) -- restore
-// deletes what init seeded, then inserts the exported rows ------------
+// --- replace: init-seeded (module_owner, the code tables), plus
+// cadence_liveness (init-armed, not init-seeded, but the same reason:
+// a real fire can write it before begin_restore ever runs) -- restore
+// deletes what is already there, then inserts the exported rows -------
 #[spacetimedb::reducer]
 pub fn restore_module_owner(ctx: &ReducerContext, rows: Vec<ModuleOwner>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     // The module's own guard against locking the operator out, not only
@@ -709,7 +1248,36 @@ pub fn restore_module_owner(ctx: &ReducerContext, rows: Vec<ModuleOwner>) -> Res
 }
 
 #[spacetimedb::reducer]
+pub fn restore_world_clock(ctx: &ReducerContext, rows: Vec<WorldClock>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    // Exactly one row, keyed 0: an empty export must never delete the only epoch.
+    if rows.len() != 1 {
+        return Err(format!(
+            "restore_world_clock requires exactly one row, got {}",
+            rows.len()
+        ));
+    }
+    if let Some(row) = rows.iter().find(|r| r.id != 0) {
+        return Err(format!(
+            "restore_world_clock requires id 0 (the one-row table's key), got {}",
+            row.id
+        ));
+    }
+    let existing: Vec<u8> = ctx.db.world_clock().iter().map(|r| r.id).collect();
+    for id in existing {
+        ctx.db.world_clock().id().delete(id);
+    }
+    for row in rows {
+        ctx.db.world_clock().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
 pub fn restore_matter_kind(ctx: &ReducerContext, rows: Vec<MatterKind>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.matter_kind().iter().map(|r| r.code).collect();
@@ -724,6 +1292,7 @@ pub fn restore_matter_kind(ctx: &ReducerContext, rows: Vec<MatterKind>) -> Resul
 
 #[spacetimedb::reducer]
 pub fn restore_provision(ctx: &ReducerContext, rows: Vec<Provision>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.provision().iter().map(|r| r.code).collect();
@@ -738,6 +1307,7 @@ pub fn restore_provision(ctx: &ReducerContext, rows: Vec<Provision>) -> Result<(
 
 #[spacetimedb::reducer]
 pub fn restore_reason_code(ctx: &ReducerContext, rows: Vec<ReasonCode>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.reason_code().iter().map(|r| r.code).collect();
@@ -752,6 +1322,7 @@ pub fn restore_reason_code(ctx: &ReducerContext, rows: Vec<ReasonCode>) -> Resul
 
 #[spacetimedb::reducer]
 pub fn restore_node_kind(ctx: &ReducerContext, rows: Vec<NodeKind>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.node_kind().iter().map(|r| r.code).collect();
@@ -765,7 +1336,53 @@ pub fn restore_node_kind(ctx: &ReducerContext, rows: Vec<NodeKind>) -> Result<()
 }
 
 #[spacetimedb::reducer]
+pub fn restore_unit(ctx: &ReducerContext, rows: Vec<Unit>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<u32> = ctx.db.unit().iter().map(|r| r.code).collect();
+    for code in existing {
+        ctx.db.unit().code().delete(code);
+    }
+    for row in rows {
+        ctx.db.unit().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_holder_kind(ctx: &ReducerContext, rows: Vec<HolderKind>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<u32> = ctx.db.holder_kind().iter().map(|r| r.code).collect();
+    for code in existing {
+        ctx.db.holder_kind().code().delete(code);
+    }
+    for row in rows {
+        ctx.db.holder_kind().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_actor_kind(ctx: &ReducerContext, rows: Vec<ActorKind>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<u32> = ctx.db.actor_kind().iter().map(|r| r.code).collect();
+    for code in existing {
+        ctx.db.actor_kind().code().delete(code);
+    }
+    for row in rows {
+        ctx.db.actor_kind().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
 pub fn restore_layer_code(ctx: &ReducerContext, rows: Vec<LayerCode>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
     let existing: Vec<u32> = ctx.db.layer_code().iter().map(|r| r.code).collect();
@@ -774,6 +1391,29 @@ pub fn restore_layer_code(ctx: &ReducerContext, rows: Vec<LayerCode>) -> Result<
     }
     for row in rows {
         ctx.db.layer_code().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_cadence_liveness(
+    ctx: &ReducerContext,
+    rows: Vec<CadenceLiveness>,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    let existing: Vec<u32> = ctx
+        .db
+        .cadence_liveness()
+        .iter()
+        .map(|r| r.cadence)
+        .collect();
+    for cadence in existing {
+        ctx.db.cadence_liveness().cadence().delete(cadence);
+    }
+    for row in rows {
+        ctx.db.cadence_liveness().insert(row);
     }
     Ok(())
 }

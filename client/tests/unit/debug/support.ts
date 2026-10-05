@@ -48,6 +48,17 @@ const POOL: readonly Drawable[] = [
   { stableId: 2n, x: toSortUnits(2), y: toSortUnits(0), rank: 30, floor: 0 },
 ];
 
+/** The player's own body (story 15.4), well clear of every object above --
+ * a fixed, half-cell-wide rect so the collision overlay's own player entry
+ * is always present without perturbing any of this fixture's existing
+ * three-state assertions. */
+export const PLAYER_BODY = {
+  x0: 12 * SUBCELLS - 4,
+  y0: 12 * SUBCELLS - 4,
+  x1: 12 * SUBCELLS + 4,
+  y1: 12 * SUBCELLS,
+};
+
 /** A world holding one real collider, one object with no collider and two
  * zero-area colliders -- the three states AC2 requires be distinguishable,
  * with the zero-area one present in both its grid-visible and its
@@ -61,6 +72,7 @@ export function conformanceView(): DebugWorldView {
   const bounds = { floor: 0, cellX0: -4, cellY0: -4, cellX1: 8, cellY1: 8 };
   return {
     tileSizePx: TILE,
+    zoom: 1,
     storeyHeightPx: STOREY,
     colliderSubcellsPerCell: SUBCELLS,
     viewerFloor: () => 0,
@@ -69,6 +81,8 @@ export function conformanceView(): DebugWorldView {
     objects: (b) => world.objects(b),
     pool: () => POOL,
     orderOf: (id) => POOL.findIndex((d) => d.stableId === id),
+    viewerBody: () => PLAYER_BODY,
+    l3Bodies: () => [],
   };
 }
 
@@ -106,6 +120,14 @@ export function countingView(inner: DebugWorldView): {
       orderOf: (id) => {
         reads++;
         return inner.orderOf(id);
+      },
+      viewerBody: () => {
+        reads++;
+        return inner.viewerBody();
+      },
+      l3Bodies: () => {
+        reads++;
+        return inner.l3Bodies();
       },
     },
   };

@@ -25,6 +25,7 @@ usage: bc-pr.sh <command> [args]
   head <pr>                         -- the PR's current head sha
   ci-status <pr>                    -- "success" | "failure" | "pending" for $BC_REQUIRED_CHECK on its head
   ci-run-url <pr>                    -- the $BC_REQUIRED_CHECK run's html_url, empty if none
+  conflicts <pr>                     -- yes/exit 0 when the PR conflicts with its base, exit 1 otherwise
 EOF
 }
 
@@ -54,6 +55,20 @@ open)
     echo "bc-pr open: refusing to open a PR from $BC_BASE_BRANCH" >&2
     exit 2
   fi
+
+  # Story 4.24: no PR without the story's live declaration. Undeclared and
+  # unreadable both refuse -- before the push, nothing created. There is no
+  # environment hook around this gate.
+  live="$(bash "$_BC_PR_DIR/bc-issue.sh" live "$issue" 2>/dev/null)" || live=""
+  case "$(printf '%s' "$live" | "$JQ" -r '.live // empty' 2>/dev/null)" in
+    visible | none) ;;
+    *)
+      echo "bc-pr open: issue #$issue has no readable live declaration. Say whether a player on the deployed client, with no debug overlay, console or dev tool, can see or do this story:" >&2
+      echo "  bash $_BC_PR_DIR/bc-issue.sh declare-live $issue visible <wherefile>   (one line: where to go and what to do)" >&2
+      echo "  bash $_BC_PR_DIR/bc-issue.sh declare-live $issue none" >&2
+      exit 2
+      ;;
+  esac
 
   # BC_SKIP_PUSH=1 is a test hook -- tests run against a scratch repo with no
   # real remote to push to.
@@ -197,6 +212,22 @@ ci-run-url)
   runs="$(gh_pr_check_runs "$sha")" || exit 1
   printf '%s' "$runs" | "$JQ" -r --arg name "$BC_REQUIRED_CHECK" \
     '[.[]? | select(.name == $name)][0].html_url // empty' 2>/dev/null
+  exit 0
+  ;;
+
+conflicts)
+  # With several stories in flight, every merge moves the base under the
+  # PRs still open, and one that now touches the same lines can no longer
+  # merge -- nor will CI run on it, since GitHub builds no merge commit for a
+  # conflicting PR. Only GitHub's own CONFLICTING counts: UNKNOWN is what it
+  # answers while it is still recomputing after a push to the base, and an
+  # unreadable answer is not evidence of a conflict either -- both read as
+  # "no", and a merge that then fails says so itself.
+  pr="${1:-}"
+  [ -n "$pr" ] || { usage; exit 2; }
+  state="$(gh_pr_mergeable "$pr" 2>/dev/null)" || exit 1
+  [ "$state" = "CONFLICTING" ] || exit 1
+  echo "yes"
   exit 0
   ;;
 

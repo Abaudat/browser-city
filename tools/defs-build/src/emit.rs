@@ -9,9 +9,10 @@ use std::collections::BTreeMap;
 use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
-    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, INTERACT_AT_MAX_REACH_CELLS,
-    MAX_FOOTPRINT_CELLS, NeighbourTermDef, RawAdjacencyRelation, RawCoherenceMode, RawDirection,
-    RoleDef, RuleKindDef, SpriteRect,
+    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, FlightDef, INTERACT_AT_MAX_REACH_CELLS,
+    MAX_DENOMINATIONS, MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS, MAX_SHELF_LIFE_MINUTES,
+    MIN_FLOOR, NeighbourTermDef, POSITION_UNITS_PER_CELL, REAL_MS_PER_CITY_MINUTE,
+    RawAdjacencyRelation, RawCoherenceMode, RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
 
 // `RawLandUse::as_str` is used via the fully-qualified method call above,
@@ -66,11 +67,35 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     ));
 
     out.push_str(&format!(
+        "/// Units per cell of a position on the wire (`player_position`'s fraction columns).\npub const POSITION_UNITS_PER_CELL: i32 = {POSITION_UNITS_PER_CELL};\n\n"
+    ));
+
+    out.push_str(&format!(
         "/// How far beyond its own footprint an `interact_at` rect may reach, in whole cells.\npub const INTERACT_AT_MAX_REACH_CELLS: i32 = {INTERACT_AT_MAX_REACH_CELLS};\n\n"
     ));
 
     out.push_str(&format!(
         "/// FR127's cap: a footprint's width and height are each held to this.\npub const MAX_FOOTPRINT_CELLS: i32 = {MAX_FOOTPRINT_CELLS};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// The world's declared floor range: no row may sit outside it.\npub const MIN_FLOOR: i32 = {MIN_FLOOR};\npub const MAX_FLOOR: i32 = {MAX_FLOOR};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// The longest an item may take to spoil, in minutes; 0 means never.\npub const MAX_SHELF_LIFE_MINUTES: u32 = {MAX_SHELF_LIFE_MINUTES};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// The largest face value one denomination may carry, in the currency's smallest unit.\npub const MAX_FACE_VALUE: u32 = {MAX_FACE_VALUE};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// The most denominations the defs may declare.\npub const MAX_DENOMINATIONS: usize = {MAX_DENOMINATIONS};\n\n"
+    ));
+
+    out.push_str(&format!(
+        "/// FR1: real milliseconds per in-city minute.\npub const REAL_MS_PER_CITY_MINUTE: i64 = {REAL_MS_PER_CITY_MINUTE};\n\n"
     ));
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
@@ -80,7 +105,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("pub struct SpriteRect {\n    pub sheet: &'static str,\n    pub x: u32,\n    pub y: u32,\n    pub w: u32,\n    pub h: u32,\n}\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct ObjectDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub name: &'static str,\n    pub layer: u32,\n    pub sprite: SpriteRect,\n    pub width: u32,\n    pub height: u32,\n    pub collider: Option<ColliderRect>,\n    pub interact_at: Option<ColliderRect>,\n    pub window: bool,\n    pub tags: &'static [u32],\n}\n\n");
+    out.push_str("pub struct ObjectDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub name: &'static str,\n    pub layer: u32,\n    pub sprite: Option<SpriteRect>,\n    pub width: u32,\n    pub height: u32,\n    pub collider: Option<ColliderRect>,\n    pub interact_at: Option<ColliderRect>,\n    pub window: bool,\n    pub tags: &'static [u32],\n}\n\n");
     out.push_str("pub const OBJECTS: &[ObjectDef] = &[\n");
     for o in &defs.objects {
         out.push_str(&format!(
@@ -101,12 +126,28 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("];\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct ItemDef {\n    pub id: u32,\n    pub key: &'static str,\n}\n\n");
+    out.push_str("pub struct ItemDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub unit: u32,\n    pub shelf_life_minutes: u32,\n    pub width: u32,\n    pub height: u32,\n}\n\n");
     out.push_str("pub const ITEMS: &[ItemDef] = &[\n");
     for i in &defs.items {
         out.push_str(&format!(
-            "    ItemDef {{ id: {}, key: {:?} }},\n",
-            i.id, i.key
+            "    ItemDef {{ id: {}, key: {:?}, unit: {}, shelf_life_minutes: {}, width: {}, height: {} }},\n",
+            i.id, i.key, i.unit, i.shelf_life_minutes, i.width, i.height
+        ));
+    }
+    out.push_str("];\n\n");
+
+    out.push_str(
+        "/// An item that is money (FR92).\n#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n",
+    );
+    out.push_str(
+        "pub struct Denomination {\n    pub item_id: u32,\n    pub face_value: u32,\n}\n\n",
+    );
+    out.push_str("/// Every denomination, largest face value first.\n");
+    out.push_str("pub const DENOMINATIONS: &[Denomination] = &[\n");
+    for d in &defs.denominations {
+        out.push_str(&format!(
+            "    Denomination {{ item_id: {}, face_value: {} }},\n",
+            d.item_id, d.face_value
         ));
     }
     out.push_str("];\n\n");
@@ -566,14 +607,28 @@ fn fmt_opt_str_json(s: &Option<String>) -> String {
     }
 }
 
-fn fmt_sprite_rust(sprite: &SpriteRect) -> String {
+fn fmt_sprite_rust(sprite: &Option<SpriteRect>) -> String {
+    match sprite {
+        Some(s) => format!("Some({})", fmt_sprite_rust_rect(s)),
+        None => "None".to_string(),
+    }
+}
+
+fn fmt_sprite_rust_rect(sprite: &SpriteRect) -> String {
     format!(
         "SpriteRect {{ sheet: {:?}, x: {}, y: {}, w: {}, h: {} }}",
         sprite.sheet, sprite.x, sprite.y, sprite.w, sprite.h
     )
 }
 
-fn fmt_sprite_json(sprite: &SpriteRect) -> String {
+fn fmt_sprite_json(sprite: &Option<SpriteRect>) -> String {
+    match sprite {
+        Some(s) => fmt_sprite_json_rect(s),
+        None => "null".to_string(),
+    }
+}
+
+fn fmt_sprite_json_rect(sprite: &SpriteRect) -> String {
     format!(
         "{{ \"sheet\": {}, \"x\": {}, \"y\": {}, \"w\": {}, \"h\": {} }}",
         json_escape(&sprite.sheet),
@@ -627,6 +682,17 @@ fn fmt_atlas_rect_json(rect: &AtlasRect) -> String {
 /// programming-invariant failure, since `build_atlas` always covers every
 /// object it is given; `.expect` here, not a `Result`, for the same
 /// reason `build.rs`'s own placement lookups do).
+/// `null`, or the flight's three fields (client-only).
+fn fmt_flight_json(flight: Option<FlightDef>) -> String {
+    match flight {
+        None => "null".to_string(),
+        Some(f) => format!(
+            "{{ \"drop_px\": {}, \"from_px\": {}, \"to_px\": {} }}",
+            f.drop_px, f.from_px, f.to_px
+        ),
+    }
+}
+
 pub fn emit_json(
     defs: &Defs,
     defs_version: &str,
@@ -648,10 +714,27 @@ pub fn emit_json(
         "  \"collider_subcells_per_cell\": {COLLIDER_SUBCELLS_PER_CELL},\n"
     ));
     out.push_str(&format!(
+        "  \"position_units_per_cell\": {POSITION_UNITS_PER_CELL},\n"
+    ));
+    out.push_str(&format!(
         "  \"interact_at_max_reach_cells\": {INTERACT_AT_MAX_REACH_CELLS},\n"
     ));
     out.push_str(&format!(
         "  \"max_footprint_cells\": {MAX_FOOTPRINT_CELLS},\n"
+    ));
+    out.push_str(&format!("  \"min_floor\": {MIN_FLOOR},\n"));
+    out.push_str(&format!("  \"max_floor\": {MAX_FLOOR},\n"));
+    out.push_str(&format!(
+        "  \"max_shelf_life_minutes\": {MAX_SHELF_LIFE_MINUTES},\n"
+    ));
+    out.push_str(&format!("  \"max_face_value\": {MAX_FACE_VALUE},\n"));
+    out.push_str(&format!("  \"max_denominations\": {MAX_DENOMINATIONS},\n"));
+    out.push_str(&format!(
+        "  \"denomination_unit\": {},\n",
+        defs.denomination_unit
+    ));
+    out.push_str(&format!(
+        "  \"real_ms_per_city_minute\": {REAL_MS_PER_CITY_MINUTE},\n"
     ));
     out.push_str(&format!(
         "  \"atlas_max_pages_per_group\": {ATLAS_MAX_PAGES_PER_GROUP},\n"
@@ -676,13 +759,17 @@ pub fn emit_json(
     out.push_str("  \"objects\": [\n");
     for (i, o) in defs.objects.iter().enumerate() {
         let comma = if i + 1 < defs.objects.len() { "," } else { "" };
-        let atlas = atlas_by_object_id
-            .get(&o.id)
-            .unwrap_or_else(|| panic!("object '{}' (id {}) has no packed atlas rect", o.key, o.id));
+        // An undrawn object (a flight) has no sprite and no atlas rect.
+        let atlas = match atlas_by_object_id.get(&o.id) {
+            Some(rect) => fmt_atlas_rect_json(rect),
+            None if o.sprite.is_none() => "null".to_string(),
+            None => panic!("object '{}' (id {}) has no packed atlas rect", o.key, o.id),
+        };
         out.push_str(&format!(
-            "    {{ \"atlas\": {}, \"collider\": {}, \"height\": {}, \"id\": {}, \"interact_at\": {}, \"key\": {}, \"layer\": {}, \"name\": {}, \"sprite\": {}, \"tags\": {}, \"width\": {}, \"window\": {} }}{comma}\n",
-            fmt_atlas_rect_json(atlas),
+            "    {{ \"atlas\": {}, \"collider\": {}, \"flight\": {}, \"height\": {}, \"id\": {}, \"interact_at\": {}, \"key\": {}, \"layer\": {}, \"name\": {}, \"sprite\": {}, \"tags\": {}, \"width\": {}, \"window\": {} }}{comma}\n",
+            atlas,
             fmt_collider_json(o.collider),
+            fmt_flight_json(o.flight),
             o.height,
             o.id,
             fmt_collider_json(o.interact_at),
@@ -701,9 +788,27 @@ pub fn emit_json(
     for (i, it) in defs.items.iter().enumerate() {
         let comma = if i + 1 < defs.items.len() { "," } else { "" };
         out.push_str(&format!(
-            "    {{ \"id\": {}, \"key\": {} }}{comma}\n",
+            "    {{ \"id\": {}, \"key\": {}, \"unit\": {}, \"shelf_life_minutes\": {}, \"width\": {}, \"height\": {} }}{comma}\n",
             it.id,
-            json_escape(&it.key)
+            json_escape(&it.key),
+            it.unit,
+            it.shelf_life_minutes,
+            it.width,
+            it.height
+        ));
+    }
+    out.push_str("  ],\n");
+
+    out.push_str("  \"denominations\": [\n");
+    for (i, d) in defs.denominations.iter().enumerate() {
+        let comma = if i + 1 < defs.denominations.len() {
+            ","
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            "    {{ \"item_id\": {}, \"face_value\": {} }}{comma}\n",
+            d.item_id, d.face_value
         ));
     }
     out.push_str("  ],\n");
@@ -953,6 +1058,18 @@ pub fn emit_id_manifest(defs: &Defs) -> String {
     for i in &items {
         lines.push(format!("item {} {}", i.id, i.key));
     }
+    // A denomination has no id of its own: its face value is unique, so it is
+    // the row's id, and the manifest pins both it and the item it is worth.
+    let mut denominations = defs.denominations.clone();
+    denominations.sort_by_key(|d| d.face_value);
+    for d in &denominations {
+        let key = &items
+            .iter()
+            .find(|i| i.id == d.item_id)
+            .expect("a denomination names an item that exists")
+            .key;
+        lines.push(format!("denomination {} {}", d.face_value, key));
+    }
     let mut recipes = defs.recipes.clone();
     recipes.sort_by_key(|r| r.id);
     for r in &recipes {
@@ -1037,18 +1154,20 @@ mod tests {
 
     fn sample() -> Defs {
         Defs {
+            denomination_unit: 0,
+            denominations: vec![],
             objects: vec![ObjectDef {
                 id: 1,
                 key: "trash_bin".into(),
                 name: "Trash Bin".into(),
                 layer: 2,
-                sprite: SpriteRect {
+                sprite: Some(SpriteRect {
                     sheet: "ModernTileset/Pier_Bin_1.png".into(),
                     x: 0,
                     y: 0,
                     w: 16,
                     h: 16,
-                },
+                }),
                 width: 1,
                 height: 1,
                 collider: Some(ColliderRect {
@@ -1065,10 +1184,19 @@ mod tests {
                 }),
                 window: false,
                 tags: vec![2],
+                flight: Some(FlightDef {
+                    drop_px: 8,
+                    from_px: 5,
+                    to_px: 34,
+                }),
             }],
             items: vec![ItemDef {
                 id: 1,
                 key: "bottle".into(),
+                unit: 0,
+                shelf_life_minutes: 0,
+                width: 1,
+                height: 1,
             }],
             recipes: vec![RecipeDef {
                 id: 1,
@@ -1253,11 +1381,14 @@ mod tests {
         assert!(out.starts_with(GENERATED_HEADER_RUST));
         assert!(out.contains("pub const DEFS_VERSION: &str = \"abc123\";"));
         assert!(out.contains(
-            "ObjectDef { id: 1, key: \"trash_bin\", name: \"Trash Bin\", layer: 2, sprite: SpriteRect { sheet: \"ModernTileset/Pier_Bin_1.png\", x: 0, y: 0, w: 16, h: 16 }, width: 1, height: 1, collider: Some(ColliderRect { x0: 4, y0: 4, x1: 12, y1: 12 }), interact_at: Some(ColliderRect { x0: 0, y0: 16, x1: 16, y1: 32 }), window: false, tags: &[2] }"
+            "ObjectDef { id: 1, key: \"trash_bin\", name: \"Trash Bin\", layer: 2, sprite: Some(SpriteRect { sheet: \"ModernTileset/Pier_Bin_1.png\", x: 0, y: 0, w: 16, h: 16 }), width: 1, height: 1, collider: Some(ColliderRect { x0: 4, y0: 4, x1: 12, y1: 12 }), interact_at: Some(ColliderRect { x0: 0, y0: 16, x1: 16, y1: 32 }), window: false, tags: &[2] }"
         ));
         assert!(out.contains("pub const COLLIDER_SUBCELLS_PER_CELL: i32 = 16;"));
         assert!(out.contains("pub const INTERACT_AT_MAX_REACH_CELLS: i32 = 2;"));
         assert!(out.contains("pub const MAX_FOOTPRINT_CELLS: i32 = 8;"));
+        assert!(out.contains("pub const MIN_FLOOR: i32 = -1;"));
+        assert!(out.contains("pub const MAX_FLOOR: i32 = 7;"));
+        assert!(out.contains("pub const REAL_MS_PER_CITY_MINUTE: i64 = 2500;"));
         assert!(!out.contains('\r'));
     }
 
@@ -1313,9 +1444,17 @@ mod tests {
         assert!(lines[1].contains("\"generated_by\""));
         assert!(lines[2].contains("\"defs_version\": \"abc123\""));
         assert!(lines[3].contains("\"collider_subcells_per_cell\": 16"));
-        assert!(lines[4].contains("\"interact_at_max_reach_cells\": 2"));
-        assert!(lines[5].contains("\"max_footprint_cells\": 8"));
-        assert!(lines[6].contains("\"atlas_max_pages_per_group\": 2"));
+        assert!(lines[4].contains("\"position_units_per_cell\": 256"));
+        assert!(lines[5].contains("\"interact_at_max_reach_cells\": 2"));
+        assert!(lines[6].contains("\"max_footprint_cells\": 8"));
+        assert!(lines[7].contains("\"min_floor\": -1"));
+        assert!(lines[8].contains("\"max_floor\": 7"));
+        assert!(lines[9].contains("\"max_shelf_life_minutes\": 525600"));
+        assert!(lines[10].contains("\"max_face_value\": 1000"));
+        assert!(lines[11].contains("\"max_denominations\": 16"));
+        assert!(lines[12].contains("\"denomination_unit\": 0"));
+        assert!(lines[13].contains("\"real_ms_per_city_minute\": 2500"));
+        assert!(lines[14].contains("\"atlas_max_pages_per_group\": 2"));
         assert!(!out.contains('\r'));
     }
 
@@ -1363,7 +1502,7 @@ mod tests {
         assert!(out.contains("name: \"Trash Bin\""));
         assert!(out.contains("layer: 2"));
         assert!(out.contains(
-            "sprite: SpriteRect { sheet: \"ModernTileset/Pier_Bin_1.png\", x: 0, y: 0, w: 16, h: 16 }"
+            "sprite: Some(SpriteRect { sheet: \"ModernTileset/Pier_Bin_1.png\", x: 0, y: 0, w: 16, h: 16 })"
         ));
     }
 
@@ -1429,6 +1568,9 @@ mod tests {
             &sample_character_atlas_map(),
         );
         assert!(out.contains("\"tags\": [2]"));
+        assert!(out.contains("\"flight\": { \"drop_px\": 8, \"from_px\": 5, \"to_px\": 34 }"));
+        // Client-only: the generated Rust never learns a flight.
+        assert!(!emit_rust(&sample(), "v1").contains("flight"));
         assert!(out.contains("{ \"id\": 1, \"key\": \"waste\", \"role\": null }"));
         assert!(out.contains("{ \"id\": 2, \"key\": \"seating\", \"role\": null }"));
     }
@@ -1659,19 +1801,20 @@ mod tests {
             key: "aardvark".into(),
             name: "Aardvark".into(),
             layer: 2,
-            sprite: SpriteRect {
+            sprite: Some(SpriteRect {
                 sheet: "ModernTileset/Pier_Bin_1.png".into(),
                 x: 0,
                 y: 0,
                 w: 16,
                 h: 16,
-            },
+            }),
             width: 1,
             height: 1,
             collider: None,
             interact_at: None,
             window: false,
             tags: vec![],
+            flight: None,
         });
         let manifest = emit_id_manifest(&defs);
         let lines: Vec<&str> = manifest.lines().collect();

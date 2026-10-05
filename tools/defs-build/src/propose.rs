@@ -6,6 +6,7 @@
 //! `defs/` access -- an in-memory RGBA8 buffer and its pixel dimensions
 //! in, a [`Proposal`] or a named [`ProposeError`] out.
 
+use crate::alpha::is_opaque;
 use crate::model::{COLLIDER_SUBCELLS_PER_CELL, ColliderRect, MAX_FOOTPRINT_CELLS};
 
 /// The tileset's own tile size, in pixels -- `defs/balance/render.toml`'s
@@ -16,16 +17,6 @@ use crate::model::{COLLIDER_SUBCELLS_PER_CELL, ColliderRect, MAX_FOOTPRINT_CELLS
 /// `tools/defs-build/tests/propose_tile_size_pinned.rs`, so the two can
 /// never silently drift apart.
 pub const PROPOSE_TILE_SIZE_PX: u32 = 16;
-
-/// Any pixel whose alpha channel is at or above this counts as opaque
-/// for every coverage measurement below (AC1's "alpha coverage") --
-/// declared once so no call site repeats the literal (Quentin's
-/// direction). `1` (any non-zero alpha): the tileset's own sprites are
-/// either fully opaque or fully transparent per pixel outside a thin
-/// anti-aliased edge, and this is a starting point for review, never
-/// authority, so a slightly generous bounding box costs nothing a
-/// reviewer cannot immediately see and correct.
-pub const ALPHA_OPAQUE_THRESHOLD: u8 = 1;
 
 /// A footprint and collider proposal, in the same units `defs/objects/
 /// *.toml` authors a real object in -- `width`/`height` in cells,
@@ -115,11 +106,6 @@ impl std::fmt::Display for ProposeError {
             ),
         }
     }
-}
-
-fn is_opaque(rgba: &[u8], width_px: u32, x: u32, y: u32) -> bool {
-    let i = (y as usize * width_px as usize + x as usize) * 4 + 3;
-    rgba[i] >= ALPHA_OPAQUE_THRESHOLD
 }
 
 fn row_has_opaque_pixel(rgba: &[u8], width_px: u32, y: u32) -> bool {
@@ -746,6 +732,25 @@ mod tests {
         rgba
     }
 
+    #[test]
+    fn the_threshold_boundary_is_the_same_for_propose_as_for_the_check() {
+        use crate::alpha::ALPHA_OPAQUE_THRESHOLD;
+        let sprite_with = |a: u8| {
+            let mut rgba = transparent(16, 16);
+            for y in 0..16 {
+                for x in 0..16 {
+                    set_alpha(&mut rgba, 16, x, y, a);
+                }
+            }
+            rgba
+        };
+        assert_eq!(
+            propose(16, 16, &sprite_with(ALPHA_OPAQUE_THRESHOLD - 1)),
+            Err(ProposeError::LowerBandFullyTransparent)
+        );
+        assert!(propose(16, 16, &sprite_with(ALPHA_OPAQUE_THRESHOLD)).is_ok());
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(
             std::env::var("PROPTEST_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(64)
@@ -924,14 +929,35 @@ mod tests {
                 [("fixtures/proposed.png".to_string(), (w, h))]
                     .into_iter()
                     .collect();
-            let layer_codes: std::collections::BTreeMap<String, u32> =
-                [("objects".to_string(), 3u32)].into_iter().collect();
-            let result = crate::validate::validate(&raw, &sheet_dims, &layer_codes, "");
+            let code_tables = crate::codes::CodeTables::from_entries(&[("layer", "objects", 3), ("unit", "piece", 0)]);
+            let result = crate::validate::validate(
+                &raw,
+                &sheet_dims,
+                &code_tables,
+                "",
+            );
             prop_assert!(
                 result.is_ok(),
                 "propose() output failed the real validator: {:?}",
                 result.err()
             );
+
+            // The drift guard between the two pixel readers: a proposal
+            // the build would refuse on the art it was measured from is
+            // worthless.
+            if let Some(c) = p.collider {
+                let sprite = crate::model::SpriteRect {
+                    sheet: "fixtures/proposed.png".to_string(),
+                    x: 0,
+                    y: 0,
+                    w,
+                    h,
+                };
+                let verdict = crate::silhouette::check_collider_against_art(
+                    &rgba, w, &sprite, p.height, PROPOSE_TILE_SIZE_PX, c,
+                );
+                prop_assert_eq!(verdict, Ok(()));
+            }
         }
 
         /// Determinism: the same buffer always gives the same output,

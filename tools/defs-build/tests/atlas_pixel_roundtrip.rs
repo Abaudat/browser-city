@@ -15,8 +15,7 @@ use std::path::{Path, PathBuf};
 
 use defs_build::atlas::character::{collect_character_parts, strip_size};
 use defs_build::{
-    appearance_sheet_paths, atlas, fsio, layer_codes, model, object_sprite_sheet_paths, parse,
-    validate,
+    appearance_sheet_paths, atlas, codes, fsio, model, object_sprite_sheet_paths, parse, validate,
 };
 
 fn repo_root() -> PathBuf {
@@ -46,11 +45,11 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
         .collect();
 
     let codes_golden = fsio::read_codes_golden(&root).unwrap();
-    let layer_codes = layer_codes::parse_layer_codes(&codes_golden);
+    let code_tables = codes::CodeTables::parse(&codes_golden);
     let defs = validate::validate(
         &raw,
         &sheet_dims,
-        &layer_codes,
+        &code_tables,
         model::SPRITE_SHEET_ALLOWED_ROOT,
     )
     .unwrap();
@@ -94,7 +93,10 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
 
     let out = atlas::build::build_atlas(
         &defs.objects,
-        &object_sheet_bytes,
+        &object_sheet_bytes
+            .iter()
+            .map(|(k, v)| (k.clone(), atlas::image::decode_rgba8(v).unwrap()))
+            .collect(),
         &page_groups,
         &character_parts,
         &appearance_sheet_bytes,
@@ -115,26 +117,27 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
         .map(|bytes| atlas::image::decode_rgba8(bytes).unwrap())
         .collect();
 
-    for o in &defs.objects {
+    for o in defs.objects.iter().filter(|o| o.sprite.is_some()) {
+        let sprite = o.sprite.as_ref().unwrap();
         let rect = out.atlas_by_object_id[&o.id];
         let (page_w, page_h, page_rgba) = &decoded_pages[rect.page as usize];
         let (page_w, page_h) = (*page_w, *page_h);
         assert!(rect.x + rect.w <= page_w && rect.y + rect.h <= page_h);
 
-        let src_bytes = object_sheet_bytes.get(&o.sprite.sheet).unwrap();
+        let src_bytes = object_sheet_bytes.get(&sprite.sheet).unwrap();
         let (src_w, src_h, src_rgba) = atlas::image::decode_rgba8(src_bytes).unwrap();
-        assert!(o.sprite.x + o.sprite.w <= src_w && o.sprite.y + o.sprite.h <= src_h);
+        assert!(sprite.x + sprite.w <= src_w && sprite.y + sprite.h <= src_h);
 
-        for row in 0..o.sprite.h {
-            for col in 0..o.sprite.w {
+        for row in 0..sprite.h {
+            for col in 0..sprite.w {
                 let page_i = ((rect.y + row) * page_w + (rect.x + col)) as usize * 4;
-                let src_i = ((o.sprite.y + row) * src_w + (o.sprite.x + col)) as usize * 4;
+                let src_i = ((sprite.y + row) * src_w + (sprite.x + col)) as usize * 4;
                 assert_eq!(
                     &page_rgba[page_i..page_i + 4],
                     &src_rgba[src_i..src_i + 4],
                     "object '{}' pixel ({col},{row}) mismatches its source sheet '{}'",
                     o.key,
-                    o.sprite.sheet
+                    sprite.sheet
                 );
             }
         }

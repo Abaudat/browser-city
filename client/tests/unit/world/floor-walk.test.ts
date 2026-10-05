@@ -2,6 +2,7 @@
 // 1.7): a transition is edge-triggered (entered by walking), never
 // level-triggered by a key still held -- the class of bug that let two
 // mutually-targeting transitions bounce a player between floors forever.
+
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { CollisionGridQuery, GridEntry } from "../../../src/world/collision-grid";
@@ -12,6 +13,8 @@ import {
 } from "../../../src/world/floor-walk";
 import type { MovementConfig } from "../../../src/world/movement";
 import { TransitionIndex } from "../../../src/world/transitions";
+import { sizeProbe } from "../setup/size-probe";
+import { OPEN_ENTRY_BAND } from "./entry-band";
 
 /** Open space, no colliders -- this module's own logic is what is under
  * test, not `movement.ts`'s collision resolution (already covered by
@@ -50,9 +53,15 @@ describe("initialFloorWalkState", () => {
 });
 
 describe("stepAndTransition", () => {
-  const transitions = new TransitionIndex([
-    { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
-  ]);
+  // `skipPairSymmetry`: this suite is testing `stepAndTransition`'s own
+  // edge-triggered gating, never `TransitionIndex`'s own pair-symmetry
+  // rule (story 15.2) -- a single, deliberately one-way transition (and,
+  // below, a same-cell mutual pair) would otherwise fail construction
+  // before any of these tests got to run at all.
+  const transitions = new TransitionIndex(
+    [{ x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 }],
+    { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND },
+  );
 
   it("does not consult the transition index at all while the step stays inside the same cell", () => {
     const state: FloorWalkState = { x: 4.5, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
@@ -72,7 +81,29 @@ describe("stepAndTransition", () => {
       transitions,
     );
     expect(result.transitioned).toBe(true);
-    expect(result).toMatchObject({ x: 5.5, y: 0.5, floor: -1, cellX: 5, cellY: 0 });
+    // The target is the anchor's own cell: the walker keeps its position and
+    // only the floor changes.
+    expect(result).toMatchObject({ y: 0.5, floor: -1, cellX: 5, cellY: 0 });
+    expect(result.x).toBeGreaterThanOrEqual(5);
+    expect(result.x).toBeLessThan(6);
+    expect(result.x).not.toBe(5.5);
+  });
+
+  it("lands at the centre of the target cell when that is another cell", () => {
+    const elsewhere = new TransitionIndex(
+      [{ x: 5, y: 0, floor: 0, targetX: 9, targetY: 3, targetFloor: -1 }],
+      { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND },
+    );
+    const state: FloorWalkState = { x: 4.9, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
+    const result = stepAndTransition(
+      state,
+      { x: 1, y: 0 },
+      BIG_DELTA_MS,
+      OPEN_GRID,
+      FAST_CONFIG,
+      elsewhere,
+    );
+    expect(result).toMatchObject({ x: 9.5, y: 3.5, floor: -1, cellX: 9, cellY: 3 });
   });
 
   it("never re-fires on the very next call after landing, even holding the identical input", () => {
@@ -99,15 +130,26 @@ describe("stepAndTransition", () => {
     // construction: two transitions whose targets are each other's own
     // anchor. Landing on either, and continuing to hold the same
     // direction, must settle on the far side, never oscillate.
-    const mutual = new TransitionIndex([
-      { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
-      { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
-    ]);
+    // skipPairSymmetry: this is the exact same-cell mutual shape story
+    // 15.2's own pair-symmetry rule refuses by construction -- this
+    // suite's whole point is that stepAndTransition's own edge-triggered
+    // gating alone never bounces on it, so it must still be constructible.
+    const mutual = new TransitionIndex(
+      [
+        { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
+        { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
+      ],
+      { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND },
+    );
 
+    const probe = sizeProbe({ min: 1, max: 30 });
     fc.assert(
       fc.property(
         fc.constantFrom({ x: 1, y: 0 } as const, { x: -1, y: 0 } as const),
-        fc.array(fc.integer({ min: 1, max: BIG_DELTA_MS }), { minLength: 1, maxLength: 30 }),
+        probe.over(
+          fc.array(fc.integer({ min: 1, max: BIG_DELTA_MS }), { minLength: 1, maxLength: 30 }),
+          (a) => a.length,
+        ),
         (direction, deltas) => {
           let state: FloorWalkState = { x: 4.5, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
           let transitionCount = 0;
@@ -129,6 +171,7 @@ describe("stepAndTransition", () => {
         },
       ),
     );
+    probe.expectReached(24);
   });
 
   it("the mutually-targeting pair never fires on two consecutive steps, for any sequence of direction changes (Quentin's cycle-2 direction: a stronger property than holding one direction the whole way)", () => {
@@ -140,24 +183,35 @@ describe("stepAndTransition", () => {
     // impossible: landing on one transition's anchor and having the very
     // next step immediately fire the other (a still-held or newly-issued
     // key re-checked against a cell that is itself an anchor).
-    const mutual = new TransitionIndex([
-      { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
-      { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
-    ]);
+    // skipPairSymmetry: this is the exact same-cell mutual shape story
+    // 15.2's own pair-symmetry rule refuses by construction -- this
+    // suite's whole point is that stepAndTransition's own edge-triggered
+    // gating alone never bounces on it, so it must still be constructible.
+    const mutual = new TransitionIndex(
+      [
+        { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
+        { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
+      ],
+      { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND },
+    );
     const directions = [
       { x: 1, y: 0 },
       { x: -1, y: 0 },
       { x: 0, y: 0 },
     ] as const;
 
+    const probe = sizeProbe({ min: 1, max: 40 });
     fc.assert(
       fc.property(
-        fc.array(
-          fc.record({
-            direction: fc.constantFrom(...directions),
-            deltaMs: fc.integer({ min: 1, max: BIG_DELTA_MS }),
-          }),
-          { minLength: 1, maxLength: 40 },
+        probe.over(
+          fc.array(
+            fc.record({
+              direction: fc.constantFrom(...directions),
+              deltaMs: fc.integer({ min: 1, max: BIG_DELTA_MS }),
+            }),
+            { minLength: 1, maxLength: 40 },
+          ),
+          (a) => a.length,
         ),
         (steps) => {
           let state: FloorWalkState = { x: 4.5, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
@@ -180,5 +234,6 @@ describe("stepAndTransition", () => {
         },
       ),
     );
+    probe.expectReached(30);
   });
 });

@@ -7,7 +7,7 @@
 // the client must never be quietly lenient about input the module
 // rejects at build time.
 
-import { LAYER_TABLE } from "../render/layer-table";
+import { LAYER_TABLE, passOfLayer } from "../render/layer-table";
 import { compositeStripSize } from "./composite-strip";
 import type {
   AccessoryDef,
@@ -20,8 +20,10 @@ import type {
   ChainDef,
   ColliderRect,
   Defs,
+  DenominationDef,
   EyesDef,
   Family,
+  FlightDef,
   HairstyleDef,
   ItemDef,
   ObjectDef,
@@ -202,6 +204,23 @@ function parseAtlasPage(value: unknown, path: string): AtlasPageDef {
   };
 }
 
+/** A flight (FR182): all three fields, `fromPx < toPx` -- the way `defs-build`
+ * refuses a partial or inverted table. Absent or null is no flight. */
+function parseNullableFlight(value: unknown, path: string): FlightDef | undefined {
+  if (value === undefined || value === null) return undefined;
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["drop_px", "from_px", "to_px"], path);
+  const flight = {
+    dropPx: expectU32(obj.drop_px, `${path}.drop_px`),
+    fromPx: expectU32(obj.from_px, `${path}.from_px`),
+    toPx: expectU32(obj.to_px, `${path}.to_px`),
+  };
+  if (flight.fromPx >= flight.toPx) {
+    fail(`${path}: from_px ${flight.fromPx} is not below to_px ${flight.toPx}`);
+  }
+  return flight;
+}
+
 function parseObject(value: unknown, path: string): ObjectDef {
   const obj = expectRecord(value, path);
   checkKnownKeys(
@@ -217,6 +236,7 @@ function parseObject(value: unknown, path: string): ObjectDef {
       "height",
       "collider",
       "interact_at",
+      "flight",
       "window",
       "tags",
     ],
@@ -225,19 +245,25 @@ function parseObject(value: unknown, path: string): ObjectDef {
   const collider = parseNullableCollider(obj.collider, `${path}.collider`);
   const interactAt = parseNullableCollider(obj.interact_at, `${path}.interact_at`);
   const tags = expectU32Array(obj.tags, `${path}.tags`);
+  const flight = parseNullableFlight(obj.flight, `${path}.flight`);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
     name: expectString(obj.name, `${path}.name`),
     layer: expectU32(obj.layer, `${path}.layer`),
-    sprite: parseSpriteRect(obj.sprite, `${path}.sprite`),
-    atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
+    ...(obj.sprite === null || obj.sprite === undefined
+      ? {}
+      : {
+          sprite: parseSpriteRect(obj.sprite, `${path}.sprite`),
+          atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
+        }),
     width: expectU32(obj.width, `${path}.width`),
     height: expectU32(obj.height, `${path}.height`),
     window: expectBoolean(obj.window, `${path}.window`),
     tags,
     ...(collider ? { collider } : {}),
     ...(interactAt ? { interactAt } : {}),
+    ...(flight ? { flight } : {}),
   };
 }
 
@@ -263,10 +289,23 @@ function parseTag(value: unknown, path: string): TagDef {
 
 function parseItem(value: unknown, path: string): ItemDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key"], path);
+  checkKnownKeys(obj, ["id", "key", "unit", "shelf_life_minutes", "width", "height"], path);
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
+    unit: expectU32(obj.unit, `${path}.unit`),
+    shelfLifeMinutes: expectU32(obj.shelf_life_minutes, `${path}.shelf_life_minutes`),
+    width: expectU32(obj.width, `${path}.width`),
+    height: expectU32(obj.height, `${path}.height`),
+  };
+}
+
+function parseDenomination(value: unknown, path: string): DenominationDef {
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["item_id", "face_value"], path);
+  return {
+    itemId: expectU32(obj.item_id, `${path}.item_id`),
+    faceValue: expectU32(obj.face_value, `${path}.face_value`),
   };
 }
 
@@ -518,13 +557,22 @@ export function parseDefs(data: unknown): Defs {
       "generated_by",
       "defs_version",
       "collider_subcells_per_cell",
+      "position_units_per_cell",
       "interact_at_max_reach_cells",
       "max_footprint_cells",
+      "min_floor",
+      "max_floor",
+      "max_shelf_life_minutes",
+      "max_face_value",
+      "max_denominations",
+      "denomination_unit",
+      "real_ms_per_city_minute",
       "atlas_max_pages_per_group",
       "character_composite_pages",
       "atlas_pages",
       "objects",
       "items",
+      "denominations",
       "recipes",
       "professions",
       "chains",
@@ -546,11 +594,24 @@ export function parseDefs(data: unknown): Defs {
     root.collider_subcells_per_cell,
     "$.collider_subcells_per_cell",
   );
+  const positionUnitsPerCell = expectU32(root.position_units_per_cell, "$.position_units_per_cell");
   const interactAtMaxReachCells = expectU32(
     root.interact_at_max_reach_cells,
     "$.interact_at_max_reach_cells",
   );
   const maxFootprintCells = expectU32(root.max_footprint_cells, "$.max_footprint_cells");
+  const minFloor = expectI32(root.min_floor, "$.min_floor");
+  const maxFloor = expectU32(root.max_floor, "$.max_floor");
+  const maxShelfLifeMinutes = expectU32(root.max_shelf_life_minutes, "$.max_shelf_life_minutes");
+  const maxFaceValue = expectU32(root.max_face_value, "$.max_face_value");
+  const maxDenominations = expectU32(root.max_denominations, "$.max_denominations");
+  const denominationUnit = expectU32(root.denomination_unit, "$.denomination_unit");
+  const realMsPerCityMinute = expectU32(root.real_ms_per_city_minute, "$.real_ms_per_city_minute");
+  // FR1: a zero rate would divide by zero in every city-time derivation.
+  // and `sim::time` carries the sub-minute remainder in a u16.
+  if (realMsPerCityMinute < 1 || realMsPerCityMinute > 65_535) {
+    fail(`$.real_ms_per_city_minute: must be in [1, 65535], got ${realMsPerCityMinute}`);
+  }
   const atlasMaxPagesPerGroup = expectU32(
     root.atlas_max_pages_per_group,
     "$.atlas_max_pages_per_group",
@@ -575,6 +636,13 @@ export function parseDefs(data: unknown): Defs {
     parseObject(v, `$.objects[${i}]`),
   );
   const items = expectArray(root.items, "$.items").map((v, i) => parseItem(v, `$.items[${i}]`));
+  for (const item of items) {
+    checkItemFields(item, maxFootprintCells, maxShelfLifeMinutes);
+  }
+  const denominations = expectArray(root.denominations, "$.denominations").map((v, i) =>
+    parseDenomination(v, `$.denominations[${i}]`),
+  );
+  checkDenominations(items, denominations, { maxFaceValue, maxDenominations, denominationUnit });
   const recipes = expectArray(root.recipes, "$.recipes").map((v, i) =>
     parseRecipe(v, `$.recipes[${i}]`),
   );
@@ -748,6 +816,7 @@ export function parseDefs(data: unknown): Defs {
     checkSpriteNonZeroArea(object);
     if (tileSizePx !== undefined) {
       checkSpriteMatchesFootprint(object, tileSizePx);
+      checkFlatLayerSprite(object, tileSizePx);
     }
     checkColliderWithinFootprint(object, colliderSubcellsPerCell);
     checkInteractAtReach(object, colliderSubcellsPerCell, interactAtMaxReachCells);
@@ -757,6 +826,7 @@ export function parseDefs(data: unknown): Defs {
     // object-level rejection above gets its own chance to fire on a
     // payload built to exercise it before this one does.
     checkObjectWalkabilityTag(object, underfootTagId);
+    checkFlatLayerUnderfoot(object, underfootTagId);
     // Story 2.9: after the walkability catch-all, same reasoning.
     checkObjectRole(object, tagsById);
   }
@@ -764,8 +834,17 @@ export function parseDefs(data: unknown): Defs {
   return {
     defsVersion,
     colliderSubcellsPerCell,
+    positionUnitsPerCell,
     interactAtMaxReachCells,
     maxFootprintCells,
+    minFloor,
+    maxFloor,
+    maxShelfLifeMinutes,
+    maxFaceValue,
+    maxDenominations,
+    denominationUnit,
+    denominations,
+    realMsPerCityMinute,
     atlasMaxPagesPerGroup,
     characterCompositePages,
     atlasPages,
@@ -790,6 +869,7 @@ export function parseDefs(data: unknown): Defs {
  * skipped check here is a check that passes on bad data, same as every
  * other cross-reference below. */
 function checkObjectAtlasPage(object: ObjectDef, atlasPageCount: number): void {
+  if (object.atlas === undefined) return;
   if (object.atlas.page >= atlasPageCount) {
     fail(
       `object '${object.key}' names atlas page ${object.atlas.page} but only ${atlasPageCount} page(s) exist`,
@@ -867,6 +947,31 @@ function checkObjectLayer(object: ObjectDef): void {
   }
 }
 
+/** An object on a flat-pass layer lies flat on the ground: its sprite
+ * height equals `height * tileSizePx` exactly (a pool layer allows
+ * `>=`). Mirrors `tools/defs-build`'s `check_object_flat_layers`. */
+function checkFlatLayerSprite(object: ObjectDef, tileSizePx: number): void {
+  if (passOfLayer(object.layer) === "pool") return;
+  if (object.sprite === undefined) return;
+  const expectedH = object.height * tileSizePx;
+  if (object.sprite.h !== expectedH) {
+    fail(
+      `object '${object.key}' is on a flat-pass layer so its sprite height ${object.sprite.h} must equal its footprint height ${object.height} * tileSizePx ${tileSizePx} (${expectedH}px) exactly -- a flat object never overhangs`,
+    );
+  }
+}
+
+/** An object on a flat-pass layer must carry `underfoot` (one direction
+ * only: an `underfoot` object on a pool layer is fine). */
+function checkFlatLayerUnderfoot(object: ObjectDef, underfootTagId: number | undefined): void {
+  if (passOfLayer(object.layer) === "pool") return;
+  if (underfootTagId === undefined || !object.tags.includes(underfootTagId)) {
+    fail(
+      `object '${object.key}' is on a flat-pass layer but is not tagged '${UNDERFOOT_TAG_KEY}' -- an object lying flat on the ground has nothing to collide with`,
+    );
+  }
+}
+
 /** Story 2.10 (FR111): every tag id an object names must be a real row in
  * `Defs.tags`, exactly like `tools/defs-build`'s own `validate.rs`
  * resolves the same reference at build time -- the rule engine's only
@@ -924,6 +1029,84 @@ function checkObjectWalkabilityTag(object: ObjectDef, underfootTagId: number | u
   }
 }
 
+/** Mirrors `validate.rs`'s `check_item_fields`: an item's bulk is the world
+ * footprint reused unchanged (FR94), so it shares the object cap and
+ * refusal of 0; its shelf life is bounded by `MAX_SHELF_LIFE_MINUTES`. */
+function checkItemFields(
+  item: ItemDef,
+  maxFootprintCells: number,
+  maxShelfLifeMinutes: number,
+): void {
+  if (item.width === 0 || item.height === 0) {
+    fail(`item '${item.key}' bulk width or height of 0 -- every item occupies at least one cell`);
+  }
+  for (const [axis, v] of [
+    ["width", item.width],
+    ["height", item.height],
+  ] as const) {
+    if (v > maxFootprintCells) {
+      fail(
+        `item '${item.key}' bulk ${axis} ${v} exceeds MAX_FOOTPRINT_CELLS (${maxFootprintCells})`,
+      );
+    }
+  }
+  if (item.shelfLifeMinutes > maxShelfLifeMinutes) {
+    fail(
+      `item '${item.key}' shelf_life_minutes ${item.shelfLifeMinutes} exceeds MAX_SHELF_LIFE_MINUTES (${maxShelfLifeMinutes})`,
+    );
+  }
+}
+
+/** Mirrors `validate.rs`'s `check_denominations` (FR92): a denomination is
+ * worth 1 to `maxFaceValue`, names a real item counted in the denomination
+ * unit that never spoils, names it once, shares its face value with no other,
+ * and there are at most `maxDenominations` of them. */
+function checkDenominations(
+  items: readonly ItemDef[],
+  denominations: readonly DenominationDef[],
+  limits: { maxFaceValue: number; maxDenominations: number; denominationUnit: number },
+): void {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const named = new Set<number>();
+  const faces = new Map<number, string>();
+  denominations.forEach((d, n) => {
+    if (d.faceValue === 0) {
+      fail(
+        `denomination for item ${d.itemId} face_value of 0 -- a denomination is worth at least 1`,
+      );
+    }
+    if (d.faceValue > limits.maxFaceValue) {
+      fail(
+        `denomination for item ${d.itemId} face_value ${d.faceValue} exceeds MAX_FACE_VALUE (${limits.maxFaceValue})`,
+      );
+    }
+    const item = byId.get(d.itemId);
+    if (!item) {
+      fail(`denomination names unknown item ${d.itemId}`);
+    }
+    if (named.has(d.itemId)) {
+      fail(`item '${item.key}' is already a denomination`);
+    }
+    named.add(d.itemId);
+    if (item.unit !== limits.denominationUnit) {
+      fail(`denomination '${item.key}' must be counted in the denomination unit`);
+    }
+    if (item.shelfLifeMinutes !== 0) {
+      fail(`denomination '${item.key}' must never spoil: its shelf_life_minutes is not 0`);
+    }
+    const first = faces.get(d.faceValue);
+    if (first !== undefined) {
+      fail(`denomination '${item.key}' face_value ${d.faceValue} is already item '${first}'s`);
+    }
+    faces.set(d.faceValue, item.key);
+    if (n + 1 > limits.maxDenominations) {
+      fail(
+        `denomination '${item.key}' is number ${n + 1}, over MAX_DENOMINATIONS (${limits.maxDenominations})`,
+      );
+    }
+  });
+}
+
 /** FR127's cap, checked on `width` and `height` independently, exactly
  * like `tools/defs-build`'s own `validate.rs` -- the error names the
  * object and its size, and directs the author to compose the structure
@@ -952,6 +1135,7 @@ function checkObjectFootprintCap(object: ObjectDef, maxFootprintCells: number): 
  * whether its sheet's real dimensions are known, exactly like `tools/
  * defs-build`'s own `validate.rs`. */
 function checkSpriteNonZeroArea(object: ObjectDef): void {
+  if (object.sprite === undefined) return;
   if (object.sprite.w === 0 || object.sprite.h === 0) {
     fail(`object '${object.key}' sprite rect has zero width or height`);
   }
@@ -965,6 +1149,7 @@ function checkSpriteNonZeroArea(object: ObjectDef): void {
  * upward, never downward -- bottom-anchored). */
 function checkSpriteMatchesFootprint(object: ObjectDef, tileSizePx: number): void {
   const sprite = object.sprite;
+  if (sprite === undefined) return;
   const expectedW = object.width * tileSizePx;
   if (sprite.w !== expectedW) {
     fail(
@@ -1067,11 +1252,17 @@ export function canonicalDump(defs: Defs): string {
   for (const o of defs.objects) {
     const tags = [...o.tags].sort((a, b) => a - b).join(",");
     lines.push(
-      `object ${o.key} id=${o.id} name=${o.name} layer=${o.layer} sprite=${o.sprite.sheet}:${o.sprite.x},${o.sprite.y},${o.sprite.w},${o.sprite.h} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} window=${o.window} tags=[${tags}]`,
+      `object ${o.key} id=${o.id} name=${o.name} layer=${o.layer} sprite=${o.sprite ? `${o.sprite.sheet}:${o.sprite.x},${o.sprite.y},${o.sprite.w},${o.sprite.h}` : "none"} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} window=${o.window} tags=[${tags}]`,
     );
   }
   for (const i of defs.items) {
-    lines.push(`item ${i.key} id=${i.id}`);
+    lines.push(
+      `item ${i.key} id=${i.id} unit=${i.unit} shelf_life_minutes=${i.shelfLifeMinutes} width=${i.width} height=${i.height}`,
+    );
+  }
+  for (const d of defs.denominations) {
+    const key = defs.items.find((i) => i.id === d.itemId)?.key ?? "?";
+    lines.push(`denomination ${key} face_value=${d.faceValue}`);
   }
   for (const r of defs.recipes) {
     const inputs = [...r.inputs].sort().join(",");

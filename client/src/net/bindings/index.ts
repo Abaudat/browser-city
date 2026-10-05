@@ -34,38 +34,119 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcceptOidcIssuerReducer from "./accept_oidc_issuer_reducer";
+import BeginLinkReducer from "./begin_link_reducer";
 import BeginRestoreReducer from "./begin_restore_reducer";
+import CompleteLinkReducer from "./complete_link_reducer";
+import CreateCharacterReducer from "./create_character_reducer";
+import CreateDistrictReducer from "./create_district_reducer";
+import FinishPublishReducer from "./finish_publish_reducer";
 import FinishRestoreReducer from "./finish_restore_reducer";
-import ReseedCodesReducer from "./reseed_codes_reducer";
+import RestoreActorKindReducer from "./restore_actor_kind_reducer";
+import RestoreActorLocationReducer from "./restore_actor_location_reducer";
 import RestoreBuildingReducer from "./restore_building_reducer";
 import RestoreBuildingAreaReducer from "./restore_building_area_reducer";
+import RestoreBusinessReducer from "./restore_business_reducer";
+import RestoreCadenceLivenessReducer from "./restore_cadence_liveness_reducer";
 import RestoreCharacterReducer from "./restore_character_reducer";
 import RestoreCharacterIdentityReducer from "./restore_character_identity_reducer";
 import RestoreCitizenReducer from "./restore_citizen_reducer";
 import RestoreCitizenStateReducer from "./restore_citizen_state_reducer";
+import RestoreContainerKindReducer from "./restore_container_kind_reducer";
 import RestoreDemoPingReducer from "./restore_demo_ping_reducer";
+import RestoreDistrictReducer from "./restore_district_reducer";
 import RestoreFloorTransitionReducer from "./restore_floor_transition_reducer";
+import RestoreHolderKindReducer from "./restore_holder_kind_reducer";
+import RestoreItemHeldReducer from "./restore_item_held_reducer";
+import RestoreItemInstanceReducer from "./restore_item_instance_reducer";
+import RestoreItemPlacedReducer from "./restore_item_placed_reducer";
 import RestoreLayerCodeReducer from "./restore_layer_code_reducer";
+import RestoreLinkRequestReducer from "./restore_link_request_reducer";
 import RestoreMatterKindReducer from "./restore_matter_kind_reducer";
 import RestoreModuleOwnerReducer from "./restore_module_owner_reducer";
 import RestoreNodeKindReducer from "./restore_node_kind_reducer";
+import RestoreOidcIssuerReducer from "./restore_oidc_issuer_reducer";
 import RestorePlacedObjectReducer from "./restore_placed_object_reducer";
+import RestorePlayerPositionReducer from "./restore_player_position_reducer";
 import RestoreProvisionReducer from "./restore_provision_reducer";
 import RestoreReasonCodeReducer from "./restore_reason_code_reducer";
+import RestoreReducerClassCounterReducer from "./restore_reducer_class_counter_reducer";
+import RestoreReducerClassSampleReducer from "./restore_reducer_class_sample_reducer";
 import RestoreRoomReducer from "./restore_room_reducer";
 import RestoreRoomAreaReducer from "./restore_room_area_reducer";
+import RestoreStockReducer from "./restore_stock_reducer";
+import RestoreStorageSampleReducer from "./restore_storage_sample_reducer";
+import RestoreTableSampleReducer from "./restore_table_sample_reducer";
+import RestoreUnitReducer from "./restore_unit_reducer";
+import RestoreWorldClockReducer from "./restore_world_clock_reducer";
 import SendPingReducer from "./send_ping_reducer";
+import SetPlayerPositionReducer from "./set_player_position_reducer";
 
 // Import all procedure arg schemas
+import * as SyncClockProcedure from "./sync_clock_procedure";
 
 // Import all table schema definitions
+import ActorLocationRow from "./actor_location_table";
+import BuildingAreaRow from "./building_area_table";
+import CadenceLivenessRow from "./cadence_liveness_table";
 import DemoPingRow from "./demo_ping_table";
+import FloorTransitionRow from "./floor_transition_table";
 import ModuleVersionRow from "./module_version_table";
+import MyCharacterRow from "./my_character_table";
+import PlacedObjectRow from "./placed_object_table";
+import PlayerPositionRow from "./player_position_table";
+import RoomAreaRow from "./room_area_table";
+import WorldClockRow from "./world_clock_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  actorLocation: __table({
+    name: 'actor_location',
+    indexes: [
+      { accessor: 'actor_id', name: 'actor_location_actor_id_idx_btree', algorithm: 'btree', columns: [
+        'actorId',
+      ] },
+      { accessor: 'chunk_key', name: 'actor_location_chunk_key_idx_btree', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+      { accessor: 'location_id', name: 'actor_location_location_id_idx_btree', algorithm: 'btree', columns: [
+        'locationId',
+      ] },
+    ],
+    constraints: [
+      { name: 'actor_location_location_id_key', constraint: 'unique', columns: ['locationId'] },
+    ],
+  }, ActorLocationRow),
+  buildingArea: __table({
+    name: 'building_area',
+    indexes: [
+      { accessor: 'area_id', name: 'building_area_area_id_idx_btree', algorithm: 'btree', columns: [
+        'areaId',
+      ] },
+      { accessor: 'building_id', name: 'building_area_building_id_idx_btree', algorithm: 'btree', columns: [
+        'buildingId',
+      ] },
+      { accessor: 'chunk_key', name: 'building_area_chunk_key_idx_btree', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+    ],
+    constraints: [
+      { name: 'building_area_area_id_key', constraint: 'unique', columns: ['areaId'] },
+    ],
+  }, BuildingAreaRow),
+  cadenceLiveness: __table({
+    name: 'cadence_liveness',
+    indexes: [
+      { accessor: 'cadence', name: 'cadence_liveness_cadence_idx_btree', algorithm: 'btree', columns: [
+        'cadence',
+      ] },
+    ],
+    constraints: [
+      { name: 'cadence_liveness_cadence_key', constraint: 'unique', columns: ['cadence'] },
+    ],
+  }, CadenceLivenessRow),
   demoPing: __table({
     name: 'demo_ping',
     indexes: [
@@ -77,6 +158,76 @@ const tablesSchema = __schema({
       { name: 'demo_ping_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, DemoPingRow),
+  floorTransition: __table({
+    name: 'floor_transition',
+    indexes: [
+      { accessor: 'chunk_key', name: 'floor_transition_chunk_key_idx_btree', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+      { accessor: 'transition_id', name: 'floor_transition_transition_id_idx_btree', algorithm: 'btree', columns: [
+        'transitionId',
+      ] },
+    ],
+    constraints: [
+      { name: 'floor_transition_transition_id_key', constraint: 'unique', columns: ['transitionId'] },
+    ],
+  }, FloorTransitionRow),
+  placedObject: __table({
+    name: 'placed_object',
+    indexes: [
+      { accessor: 'chunk_key', name: 'placed_object_chunk_key_idx_btree', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+      { accessor: 'object_id', name: 'placed_object_object_id_idx_btree', algorithm: 'btree', columns: [
+        'objectId',
+      ] },
+    ],
+    constraints: [
+      { name: 'placed_object_object_id_key', constraint: 'unique', columns: ['objectId'] },
+    ],
+  }, PlacedObjectRow),
+  playerPosition: __table({
+    name: 'player_position',
+    indexes: [
+      { accessor: 'character_id', name: 'player_position_character_id_idx_btree', algorithm: 'btree', columns: [
+        'characterId',
+      ] },
+      { accessor: 'chunk_key', name: 'player_position_chunk_key_idx_btree', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+    ],
+    constraints: [
+      { name: 'player_position_character_id_key', constraint: 'unique', columns: ['characterId'] },
+    ],
+  }, PlayerPositionRow),
+  roomArea: __table({
+    name: 'room_area',
+    indexes: [
+      { accessor: 'area_id', name: 'room_area_area_id_idx_btree', algorithm: 'btree', columns: [
+        'areaId',
+      ] },
+      { accessor: 'chunk_key', name: 'room_area_chunk_key_idx_btree', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+      { accessor: 'room_id', name: 'room_area_room_id_idx_btree', algorithm: 'btree', columns: [
+        'roomId',
+      ] },
+    ],
+    constraints: [
+      { name: 'room_area_area_id_key', constraint: 'unique', columns: ['areaId'] },
+    ],
+  }, RoomAreaRow),
+  worldClock: __table({
+    name: 'world_clock',
+    indexes: [
+      { accessor: 'id', name: 'world_clock_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'world_clock_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, WorldClockRow),
   moduleVersion: __table({
     name: 'module_version',
     indexes: [
@@ -84,43 +235,95 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, ModuleVersionRow),
+  myCharacter: __table({
+    name: 'my_character',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyCharacterRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("accept_oidc_issuer", AcceptOidcIssuerReducer),
+  __reducerSchema("begin_link", BeginLinkReducer),
   __reducerSchema("begin_restore", BeginRestoreReducer),
+  __reducerSchema("complete_link", CompleteLinkReducer),
+  __reducerSchema("create_character", CreateCharacterReducer),
+  __reducerSchema("create_district", CreateDistrictReducer),
+  __reducerSchema("finish_publish", FinishPublishReducer),
   __reducerSchema("finish_restore", FinishRestoreReducer),
-  __reducerSchema("reseed_codes", ReseedCodesReducer),
+  __reducerSchema("restore_actor_kind", RestoreActorKindReducer),
+  __reducerSchema("restore_actor_location", RestoreActorLocationReducer),
   __reducerSchema("restore_building", RestoreBuildingReducer),
   __reducerSchema("restore_building_area", RestoreBuildingAreaReducer),
+  __reducerSchema("restore_business", RestoreBusinessReducer),
+  __reducerSchema("restore_cadence_liveness", RestoreCadenceLivenessReducer),
   __reducerSchema("restore_character", RestoreCharacterReducer),
   __reducerSchema("restore_character_identity", RestoreCharacterIdentityReducer),
   __reducerSchema("restore_citizen", RestoreCitizenReducer),
   __reducerSchema("restore_citizen_state", RestoreCitizenStateReducer),
+  __reducerSchema("restore_container_kind", RestoreContainerKindReducer),
   __reducerSchema("restore_demo_ping", RestoreDemoPingReducer),
+  __reducerSchema("restore_district", RestoreDistrictReducer),
   __reducerSchema("restore_floor_transition", RestoreFloorTransitionReducer),
+  __reducerSchema("restore_holder_kind", RestoreHolderKindReducer),
+  __reducerSchema("restore_item_held", RestoreItemHeldReducer),
+  __reducerSchema("restore_item_instance", RestoreItemInstanceReducer),
+  __reducerSchema("restore_item_placed", RestoreItemPlacedReducer),
   __reducerSchema("restore_layer_code", RestoreLayerCodeReducer),
+  __reducerSchema("restore_link_request", RestoreLinkRequestReducer),
   __reducerSchema("restore_matter_kind", RestoreMatterKindReducer),
   __reducerSchema("restore_module_owner", RestoreModuleOwnerReducer),
   __reducerSchema("restore_node_kind", RestoreNodeKindReducer),
+  __reducerSchema("restore_oidc_issuer", RestoreOidcIssuerReducer),
   __reducerSchema("restore_placed_object", RestorePlacedObjectReducer),
+  __reducerSchema("restore_player_position", RestorePlayerPositionReducer),
   __reducerSchema("restore_provision", RestoreProvisionReducer),
   __reducerSchema("restore_reason_code", RestoreReasonCodeReducer),
+  __reducerSchema("restore_reducer_class_counter", RestoreReducerClassCounterReducer),
+  __reducerSchema("restore_reducer_class_sample", RestoreReducerClassSampleReducer),
   __reducerSchema("restore_room", RestoreRoomReducer),
   __reducerSchema("restore_room_area", RestoreRoomAreaReducer),
+  __reducerSchema("restore_stock", RestoreStockReducer),
+  __reducerSchema("restore_storage_sample", RestoreStorageSampleReducer),
+  __reducerSchema("restore_table_sample", RestoreTableSampleReducer),
+  __reducerSchema("restore_unit", RestoreUnitReducer),
+  __reducerSchema("restore_world_clock", RestoreWorldClockReducer),
   __reducerSchema("send_ping", SendPingReducer),
+  __reducerSchema("set_player_position", SetPlayerPositionReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
+  __procedureSchema("sync_clock", SyncClockProcedure.params, SyncClockProcedure.returnType),
 );
 
 type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "tables"> & {
   tables: typeof tablesSchema.schemaType.tables & {
+    /** @deprecated Use `actorLocation` instead. This alias will be removed in the next major version. */
+    readonly "actor_location": Omit<typeof tablesSchema.schemaType.tables["actorLocation"], "accessorName"> & { readonly accessorName: "actor_location" };
+    /** @deprecated Use `buildingArea` instead. This alias will be removed in the next major version. */
+    readonly "building_area": Omit<typeof tablesSchema.schemaType.tables["buildingArea"], "accessorName"> & { readonly accessorName: "building_area" };
+    /** @deprecated Use `cadenceLiveness` instead. This alias will be removed in the next major version. */
+    readonly "cadence_liveness": Omit<typeof tablesSchema.schemaType.tables["cadenceLiveness"], "accessorName"> & { readonly accessorName: "cadence_liveness" };
     /** @deprecated Use `demoPing` instead. This alias will be removed in the next major version. */
     readonly "demo_ping": Omit<typeof tablesSchema.schemaType.tables["demoPing"], "accessorName"> & { readonly accessorName: "demo_ping" };
+    /** @deprecated Use `floorTransition` instead. This alias will be removed in the next major version. */
+    readonly "floor_transition": Omit<typeof tablesSchema.schemaType.tables["floorTransition"], "accessorName"> & { readonly accessorName: "floor_transition" };
+    /** @deprecated Use `placedObject` instead. This alias will be removed in the next major version. */
+    readonly "placed_object": Omit<typeof tablesSchema.schemaType.tables["placedObject"], "accessorName"> & { readonly accessorName: "placed_object" };
+    /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
+    readonly "player_position": Omit<typeof tablesSchema.schemaType.tables["playerPosition"], "accessorName"> & { readonly accessorName: "player_position" };
+    /** @deprecated Use `roomArea` instead. This alias will be removed in the next major version. */
+    readonly "room_area": Omit<typeof tablesSchema.schemaType.tables["roomArea"], "accessorName"> & { readonly accessorName: "room_area" };
+    /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
+    readonly "world_clock": Omit<typeof tablesSchema.schemaType.tables["worldClock"], "accessorName"> & { readonly accessorName: "world_clock" };
     /** @deprecated Use `moduleVersion` instead. This alias will be removed in the next major version. */
     readonly "module_version": Omit<typeof tablesSchema.schemaType.tables["moduleVersion"], "accessorName"> & { readonly accessorName: "module_version" };
+    /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
+    readonly "my_character": Omit<typeof tablesSchema.schemaType.tables["myCharacter"], "accessorName"> & { readonly accessorName: "my_character" };
   };
 };
 
@@ -139,8 +342,17 @@ const REMOTE_MODULE = {
 >;
 
 const tableAccessorAliases = {
+  "actor_location": "actorLocation",
+  "building_area": "buildingArea",
+  "cadence_liveness": "cadenceLiveness",
   "demo_ping": "demoPing",
+  "floor_transition": "floorTransition",
+  "placed_object": "placedObject",
+  "player_position": "playerPosition",
+  "room_area": "roomArea",
+  "world_clock": "worldClock",
   "module_version": "moduleVersion",
+  "my_character": "myCharacter",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -161,18 +373,54 @@ function __withTableAccessorAliases<T extends object>(target: T, freeze = false)
 
 type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
 export type DbView = __DbViewBase & {
+  /** @deprecated Use `actorLocation` instead. This alias will be removed in the next major version. */
+  readonly "actor_location": __DbViewBase["actorLocation"];
+  /** @deprecated Use `buildingArea` instead. This alias will be removed in the next major version. */
+  readonly "building_area": __DbViewBase["buildingArea"];
+  /** @deprecated Use `cadenceLiveness` instead. This alias will be removed in the next major version. */
+  readonly "cadence_liveness": __DbViewBase["cadenceLiveness"];
   /** @deprecated Use `demoPing` instead. This alias will be removed in the next major version. */
   readonly "demo_ping": __DbViewBase["demoPing"];
+  /** @deprecated Use `floorTransition` instead. This alias will be removed in the next major version. */
+  readonly "floor_transition": __DbViewBase["floorTransition"];
+  /** @deprecated Use `placedObject` instead. This alias will be removed in the next major version. */
+  readonly "placed_object": __DbViewBase["placedObject"];
+  /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
+  readonly "player_position": __DbViewBase["playerPosition"];
+  /** @deprecated Use `roomArea` instead. This alias will be removed in the next major version. */
+  readonly "room_area": __DbViewBase["roomArea"];
+  /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
+  readonly "world_clock": __DbViewBase["worldClock"];
   /** @deprecated Use `moduleVersion` instead. This alias will be removed in the next major version. */
   readonly "module_version": __DbViewBase["moduleVersion"];
+  /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
+  readonly "my_character": __DbViewBase["myCharacter"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
 export type Tables = __TablesBase & {
+  /** @deprecated Use `actorLocation` instead. This alias will be removed in the next major version. */
+  readonly "actor_location": __TablesBase["actorLocation"];
+  /** @deprecated Use `buildingArea` instead. This alias will be removed in the next major version. */
+  readonly "building_area": __TablesBase["buildingArea"];
+  /** @deprecated Use `cadenceLiveness` instead. This alias will be removed in the next major version. */
+  readonly "cadence_liveness": __TablesBase["cadenceLiveness"];
   /** @deprecated Use `demoPing` instead. This alias will be removed in the next major version. */
   readonly "demo_ping": __TablesBase["demoPing"];
+  /** @deprecated Use `floorTransition` instead. This alias will be removed in the next major version. */
+  readonly "floor_transition": __TablesBase["floorTransition"];
+  /** @deprecated Use `placedObject` instead. This alias will be removed in the next major version. */
+  readonly "placed_object": __TablesBase["placedObject"];
+  /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
+  readonly "player_position": __TablesBase["playerPosition"];
+  /** @deprecated Use `roomArea` instead. This alias will be removed in the next major version. */
+  readonly "room_area": __TablesBase["roomArea"];
+  /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
+  readonly "world_clock": __TablesBase["worldClock"];
   /** @deprecated Use `moduleVersion` instead. This alias will be removed in the next major version. */
   readonly "module_version": __TablesBase["moduleVersion"];
+  /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
+  readonly "my_character": __TablesBase["myCharacter"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

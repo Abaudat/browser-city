@@ -114,3 +114,112 @@ fn every_scheduled_table_has_the_required_columns_and_names_a_real_reducer() {
 
 // Every table has a `TABLE_BOUNDS` row (NFR37): `registry_matches_tables.rs`
 // owns that assertion; it is not duplicated here.
+
+/// The words a table or column may not be named for: a till's cash is
+/// `stock` rows and nothing else (story 6.8, FR92).
+const CASH_WORDS: [&str; 3] = ["cash", "till", "denomination"];
+
+/// The banned word a name is made of, matched on `_`-separated segments,
+/// singular or plural -- never as a substring, so `open_until` and
+/// `cashier_id` are not caught.
+fn cash_word_in(name: &str) -> Option<&'static str> {
+    name.to_lowercase().split('_').find_map(|segment| {
+        CASH_WORDS.into_iter().find(|word| {
+            segment == *word
+                || segment.strip_suffix('s') == Some(word)
+                || segment.strip_suffix("es") == Some(word)
+        })
+    })
+}
+
+#[test]
+fn the_cash_name_check_matches_whole_words_only() {
+    for flagged in [
+        "till_id",
+        "tills",
+        "cash_total",
+        "denomination",
+        "cashes",
+        "open_till",
+    ] {
+        assert!(
+            cash_word_in(flagged).is_some(),
+            "{flagged} should be flagged"
+        );
+    }
+    for fine in [
+        "open_until",
+        "valid_until",
+        "cashier_id",
+        "tillage",
+        "stock_id",
+    ] {
+        assert!(cash_word_in(fine).is_none(), "{fine} should not be flagged");
+    }
+}
+
+#[test]
+fn no_table_or_column_is_named_for_cash_a_till_or_a_denomination() {
+    for table in &schema().tables {
+        let names = std::iter::once(&table.accessor)
+            .chain(std::iter::once(&table.struct_name))
+            .chain(table.columns.iter().map(|c| &c.name));
+        for name in names {
+            assert!(
+                cash_word_in(name).is_none(),
+                "`{name}` in table `{}` is named for cash, a till or a denomination -- cash is `stock` rows (FR92)",
+                table.accessor
+            );
+        }
+    }
+}
+
+/// Story 4.5 (FR142): a player's data keys on `character_id`; an identity
+/// column anywhere else would silently split a player in two the moment a
+/// second identity is linked.
+const IDENTITY_COLUMN_ALLOWED: &[&str] = &["character_identity", "module_owner", "link_request"];
+
+#[test]
+fn only_the_listed_tables_hold_an_identity_column() {
+    for table in &schema().tables {
+        if IDENTITY_COLUMN_ALLOWED.contains(&table.accessor.as_str()) {
+            continue;
+        }
+        for col in &table.columns {
+            assert!(
+                !col.ty.contains("Identity"),
+                "table `{}` column `{}` is an Identity -- key player data on `character_id` (FR142), or add the table to IDENTITY_COLUMN_ALLOWED with a reason",
+                table.accessor,
+                col.name
+            );
+        }
+    }
+}
+
+#[test]
+fn the_character_table_carries_no_identity_column() {
+    let s = schema();
+    let t = s
+        .tables
+        .iter()
+        .find(|t| t.accessor == "character")
+        .expect("character table");
+    assert!(t.columns.iter().all(|c| !c.ty.contains("Identity")));
+}
+
+#[test]
+fn identity_tables_are_private() {
+    let s = schema();
+    for name in [
+        "character",
+        "character_identity",
+        "link_request",
+        "oidc_issuer",
+    ] {
+        let t = s.tables.iter().find(|t| t.accessor == name).expect("table");
+        assert!(
+            !t.public,
+            "`{name}` must stay private -- clients read `my_character` instead"
+        );
+    }
+}

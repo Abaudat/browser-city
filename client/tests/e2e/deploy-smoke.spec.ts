@@ -94,6 +94,15 @@ test("the deployed client boots for real: connects, subscribes and reaches playe
   );
   expect(marks[BOOT_MARK.HANDSHAKE_OPEN], "handshake never opened").toBeDefined();
   expect(marks[BOOT_MARK.SUBSCRIPTION_APPLIED], "initial subscription never applied").toBeDefined();
+  // The city clock's epoch row reached the client -- a world with no
+  // `world_clock` row (or one the subscription never delivers) shows no
+  // clock to any player. Bounded wait: the row can arrive after the mark
+  // above.
+  await page.waitForFunction(
+    (markName) => performance.getEntriesByName(markName).length > 0,
+    BOOT_MARK.CITY_CLOCK_KNOWN,
+    { timeout: 10_000 },
+  );
   expect(
     marks[BOOT_MARK.PLAYER_CONTROLLABLE],
     "player-controllable mark never fired",

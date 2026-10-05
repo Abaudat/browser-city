@@ -1,6 +1,6 @@
 //! Extensible-set code tables (NFR36): matter kinds, provisions, reason
-//! codes and node kinds are `u32` codes plus a name, each backed by a
-//! companion data table in `../../src/tables/codes.rs`, never a Rust enum
+//! codes, node kinds and item units are `u32` codes plus a name, each
+//! backed by a companion data table in `../../src/tables/codes.rs`, never a Rust enum
 //! -- a new variant is a row insert rather than a migration. The codes
 //! themselves are pure data, defined once here so they are unit-testable
 //! without `spacetimedb` (NFR28), and seeded into their companion tables
@@ -107,9 +107,11 @@ pub mod reason_code {
 /// a code once and never updates an existing row, so there is no update
 /// path for a rank once seeded.
 ///
-/// `ground` (rank 0) is the flat-pass floor/road surface: never a pool
-/// member (see the client's own render-order comparator), so its rank is
-/// never compared against a pool rank. The five pool layers -- `furniture`,
+/// Every rank below 10 is a flat-pass layer, never a pool member (see the
+/// client's own render-order comparator), so its rank is never compared
+/// against a pool rank: `ground` (rank 0) is the floor/road surface and
+/// `ground_objects` (code 7, rank 5) is anything lying flat on it -- a
+/// manhole cover, a doormat. Ranks 2-4 stay free for a future decal pass. The five pool layers -- `furniture`,
 /// `objects`, `walls`, `wall_decals`, `characters` -- are minted a decade
 /// apart (story 1.6), leaving every in-between number free for a future
 /// layer to slot into without renumbering anything. Every live rank is
@@ -130,6 +132,11 @@ pub mod layer {
         pub name: &'static str,
         pub rank: u32,
     }
+
+    /// Every live rank below this is a flat-pass layer; this and above is a
+    /// pool layer. The client's and `tools/defs-build`'s copies are held
+    /// equal by `scripts/ci/check-layer-table-current.sh`.
+    pub const FIRST_POOL_RANK: u32 = 10;
 
     pub const CODES: &[LayerCode] = &[
         LayerCode {
@@ -166,6 +173,11 @@ pub mod layer {
             code: 6,
             name: "characters",
             rank: 50,
+        },
+        LayerCode {
+            code: 7,
+            name: "ground_objects",
+            rank: 5,
         },
     ];
 
@@ -213,6 +225,29 @@ pub mod layer {
     }
 }
 
+/// What an item is counted in (FR86): pieces for a discrete item, grams
+/// and millilitres for bulk stock. An item's `unit` names one of these in
+/// its `[[item]]` row; `tools/defs-build` resolves the name against the
+/// codes golden, so only the code reaches either runtime artefact.
+pub mod unit {
+    use super::Code;
+
+    pub const CODES: &[Code] = &[
+        Code {
+            code: 0,
+            name: "piece",
+        },
+        Code {
+            code: 1,
+            name: "gram",
+        },
+        Code {
+            code: 2,
+            name: "millilitre",
+        },
+    ];
+}
+
 /// A macro-graph node's kind (FR134): interiors collapse to an entrance
 /// node, plus an internal node for large buildings.
 pub mod node_kind {
@@ -234,6 +269,82 @@ pub mod node_kind {
         Code {
             code: 3,
             name: "transit_stop",
+        },
+    ];
+}
+
+/// What can hold stock (FR87): a business instance, a citizen, a vehicle,
+/// a building or a municipal facility -- never a room and never a brand.
+/// A holder is referenced by this code plus the id of the row in that
+/// kind's own table (`crate::stock::HolderRef`), so a reducer names a kind
+/// by these constants, never by a literal.
+pub mod holder_kind {
+    use super::Code;
+
+    pub const BUSINESS: u32 = 0;
+    pub const CITIZEN: u32 = 1;
+    pub const VEHICLE: u32 = 2;
+    pub const BUILDING: u32 = 3;
+    pub const MUNICIPAL_FACILITY: u32 = 4;
+
+    pub const CODES: &[Code] = &[
+        Code {
+            code: BUSINESS,
+            name: "business",
+        },
+        Code {
+            code: CITIZEN,
+            name: "citizen",
+        },
+        Code {
+            code: VEHICLE,
+            name: "vehicle",
+        },
+        Code {
+            code: BUILDING,
+            name: "building",
+        },
+        Code {
+            code: MUNICIPAL_FACILITY,
+            name: "municipal_facility",
+        },
+    ];
+}
+
+/// What can hold an item in a grid (FR94, FR95): a thing with a grid, never
+/// a stock holder (`holder_kind`). A container is referenced by this code
+/// plus the id of the row in that kind's own table
+/// (`crate::item_instance::ContainerRef`). An item that is itself a
+/// container is a code appended by the story that needs it.
+pub mod container_kind {
+    use super::Code;
+
+    /// The id is a `placed_object.object_id`.
+    pub const OBJECT: u32 = 0;
+
+    pub const CODES: &[Code] = &[Code {
+        code: OBJECT,
+        name: "object",
+    }];
+}
+
+/// What can stand somewhere in the world (FR136): a player's character or
+/// a citizen. An actor is referenced by this code plus the id of the row
+/// in that kind's own table (`crate::actor_location::ACTOR_TABLES`).
+pub mod actor_kind {
+    use super::Code;
+
+    pub const CHARACTER: u32 = 0;
+    pub const CITIZEN: u32 = 1;
+
+    pub const CODES: &[Code] = &[
+        Code {
+            code: CHARACTER,
+            name: "character",
+        },
+        Code {
+            code: CITIZEN,
+            name: "citizen",
         },
     ];
 }

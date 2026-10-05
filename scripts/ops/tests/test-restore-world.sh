@@ -34,8 +34,14 @@ make_export() {
     : > "$dir/$table.jsonl"
   done < <("$WB" snapshot-tables "$SNAPSHOT")
   printf '[0,["%s"]]\n' "$REAL_OWNER_HEX" > "$dir/module_owner.jsonl"
+  # tr -d '\r' first: restore-world.sh hashes $BC_SNAPSHOT through
+  # bc_schema_sha256 (line-ending-insensitive, story 4.18) precisely so a
+  # Windows checkout's own CRLF-normalised working-tree copy still
+  # matches a schema selected from git history (always LF) -- this
+  # fixture's own manifest.json must agree with that, not a raw
+  # sha256sum of whatever line endings are on disk right now.
   local sha
-  sha="$(sha256sum "$SNAPSHOT" | awk '{print $1}' | sed 's/^\\//')"
+  sha="$(tr -d '\r' < "$SNAPSHOT" | sha256sum | awk '{print $1}' | sed 's/^\\//')"
   local floors="" first=1
   while IFS= read -r table; do
     [ -n "$table" ] || continue

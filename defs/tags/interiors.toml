@@ -10,82 +10,82 @@
 # `staff` is what "back room" means; keys, opening hours and the guard's
 # door round read these later.
 [[tag]]
-id = 34
+id = 36
 key = "public"
 
 [[tag]]
-id = 35
+id = 37
 key = "staff"
 
 [[tag]]
-id = 36
+id = 38
 key = "private"
 
 # Carried by every room type: the container "every room has a light"
 # is stated over.
 [[tag]]
-id = 37
+id = 39
 key = "room"
 
 # Function tags: what a room is for, hence which anchors it owes.
 [[tag]]
-id = 38
+id = 40
 key = "sleeping"
 
 [[tag]]
-id = 39
+id = 41
 key = "cooking"
 
 [[tag]]
-id = 40
+id = 42
 key = "washing"
 
 [[tag]]
-id = 41
+id = 43
 key = "dining"
 
 [[tag]]
-id = 42
+id = 44
 key = "trading"
 
 [[tag]]
-id = 43
+id = 45
 key = "seated_service"
 
 [[tag]]
-id = 44
+id = 46
 key = "working"
 
 [[tag]]
-id = 45
+id = 47
 key = "making"
 
 # Anchor fixtures: a citizen acts at each of these to meet a need or hold
 # a post. `stock` is an empty container -- no item, no quantity.
 [[tag]]
-id = 46
+id = 48
 key = "stock"
 
 [[tag]]
-id = 47
+id = 49
 key = "bed"
 
 [[tag]]
-id = 48
+id = 50
 key = "cooker"
 
 [[tag]]
-id = 49
+id = 51
 key = "basin"
 
 [[tag]]
-id = 50
+id = 52
 key = "table_set"
 
 [[tag]]
-id = 51
+id = 53
 key = "desk"
 
 [[tag]]
-id = 52
+id = 54
 key = "workbench"

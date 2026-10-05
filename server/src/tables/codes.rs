@@ -1,11 +1,12 @@
 //! Companion tables for the extensible sets defined in `sim::codes`
-//! (NFR36): matter kinds, provisions, reason codes and node kinds are each
-//! a `u32` code plus a name; layers are a `u32` code plus a name and a
-//! FR123 depth-sort `rank`. Never a Rust enum, so a new variant is a row
+//! (NFR36): matter kinds, provisions, reason codes, node kinds and item
+//! units and holder kinds are each a `u32` code plus a name; layers are a `u32` code plus a
+//! name and a FR123 depth-sort `rank`. Never a Rust enum, so a new variant is a row
 //! insert rather than a migration.
 
 use spacetimedb::{ReducerContext, Table};
 
+use super::actor::{ActorKind, actor_kind};
 use super::world::{LayerCode, layer_code};
 
 #[spacetimedb::table(accessor = matter_kind)]
@@ -36,11 +37,32 @@ pub struct NodeKind {
     pub name: String,
 }
 
+#[spacetimedb::table(accessor = unit)]
+pub struct Unit {
+    #[primary_key]
+    pub code: u32,
+    pub name: String,
+}
+
+#[spacetimedb::table(accessor = holder_kind)]
+pub struct HolderKind {
+    #[primary_key]
+    pub code: u32,
+    pub name: String,
+}
+
+#[spacetimedb::table(accessor = container_kind)]
+pub struct ContainerKind {
+    #[primary_key]
+    pub code: u32,
+    pub name: String,
+}
+
 /// Inserts every code in `sim::codes` not already present in its companion
 /// table, keyed by `code`. Idempotent, so it is safe to call from `init`
-/// and again from the `reseed_codes` reducer (`../lib.rs`) any time after
+/// and again from the `finish_publish` reducer (`../lib.rs`) any time after
 /// -- `init` only ever runs on the module's first publish, so
-/// `reseed_codes` is the explicit, re-callable path that lands a code
+/// `finish_publish` is the explicit, re-callable path that lands a code
 /// added in month six (NFR38's read-through backfill posture) without
 /// waiting for a data-wiping republish.
 pub fn seed_all_codes(ctx: &ReducerContext) {
@@ -71,6 +93,38 @@ pub fn seed_all_codes(ctx: &ReducerContext) {
     for c in sim::codes::node_kind::CODES {
         if ctx.db.node_kind().code().find(c.code).is_none() {
             ctx.db.node_kind().insert(NodeKind {
+                code: c.code,
+                name: c.name.to_string(),
+            });
+        }
+    }
+    for c in sim::codes::unit::CODES {
+        if ctx.db.unit().code().find(c.code).is_none() {
+            ctx.db.unit().insert(Unit {
+                code: c.code,
+                name: c.name.to_string(),
+            });
+        }
+    }
+    for c in sim::codes::holder_kind::CODES {
+        if ctx.db.holder_kind().code().find(c.code).is_none() {
+            ctx.db.holder_kind().insert(HolderKind {
+                code: c.code,
+                name: c.name.to_string(),
+            });
+        }
+    }
+    for c in sim::codes::container_kind::CODES {
+        if ctx.db.container_kind().code().find(c.code).is_none() {
+            ctx.db.container_kind().insert(ContainerKind {
+                code: c.code,
+                name: c.name.to_string(),
+            });
+        }
+    }
+    for c in sim::codes::actor_kind::CODES {
+        if ctx.db.actor_kind().code().find(c.code).is_none() {
+            ctx.db.actor_kind().insert(ActorKind {
                 code: c.code,
                 name: c.name.to_string(),
             });

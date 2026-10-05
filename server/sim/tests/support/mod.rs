@@ -19,6 +19,10 @@ pub mod grid;
 #[allow(dead_code)]
 pub mod generation_doc;
 
+// Story 6.3: the one stock ledger driver, applying a `Write` only.
+#[allow(dead_code)]
+pub mod stock_ledger;
+
 /// Story 2.11: every `tests/*.rs` call site moved from `evaluate(&rules,
 /// ..)` to this one helper (Tim's direction -- "mechanical, no assertion
 /// changes") once [`sim::rules::evaluate`] started taking a [`RuleSet`]
@@ -124,3 +128,7 @@ pub fn rule(key: &str) -> RuleDef {
         .find(|r| r.key == key)
         .unwrap_or_else(|| panic!("defs/rules/*.toml must still declare rule '{key}'"))
 }
+
+// Story 4.5: the identity tables' model, used by `invariants.rs`.
+#[allow(dead_code)]
+pub mod identity_model;

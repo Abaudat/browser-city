@@ -4,10 +4,21 @@
 //! `institutions`/`matters` are not yet files because nothing needs one
 //! yet, not because they were forgotten.
 
+pub mod actor;
+pub mod cadences;
 pub mod citizen;
+pub mod clock;
 pub mod codes;
+pub mod district;
 pub mod identity;
+pub mod item_instance;
+pub mod metrics;
 pub mod ops;
+pub mod player_position;
+pub mod publish;
 pub mod restore;
 pub mod schedules;
+pub mod stock;
+#[cfg(feature = "time-control")]
+pub mod time_control;
 pub mod world;

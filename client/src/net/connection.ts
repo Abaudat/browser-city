@@ -6,13 +6,34 @@
 
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import type { HandshakeVersion } from "../boot/handshake";
-import { DbConnection } from "./bindings";
+import { readStoredToken, rememberFirstToken } from "../identity/identity-storage";
+import type { SettingsStorage } from "../settings/settings-storage";
+import type { ClockSync } from "../time/clock-sync";
+import type { ServerClock } from "../time/server-clock";
+import { DbConnection, tables } from "./bindings";
+import type {
+  ActorLocation,
+  BuildingArea,
+  FloorTransition,
+  PlacedObject,
+  PlayerPosition,
+  RoomArea,
+} from "./bindings/types";
+import { startNetClockSync, type VisibilitySource } from "./clock-sync";
 import { NET_CONFIG } from "./config";
 import type { ConnectionStatus } from "./connection-status";
 import { observePingInsert, type PingObservation } from "./observe-ping";
+import {
+  REGION_TABLE_NAMES,
+  type RegionController,
+  type RegionTableName,
+  sdkRegionBackend,
+} from "./region-subscription";
+import { type PlayerPositionRow, plainPlayerRow } from "./remote-rows";
 
 export type { HandshakeVersion } from "../boot/handshake";
 export type { ConnectionStatus } from "./connection-status";
+export type { RegionTableName } from "./region-subscription";
 
 export type PingListener = (observation: PingObservation) => void;
 
@@ -23,6 +44,102 @@ export type StatusListener = (status: ConnectionStatus) => void;
  * initial subscription apply, and again on any later republish this
  * connection stays open across (a tab left open across a deploy). */
 export type HandshakeListener = (version: HandshakeVersion) => void;
+
+/** Story 4.1 (FR1-FR3): what the in-city clock needs from the connection --
+ * the shared skew estimate the sync round trips feed, and the clock row's
+ * `epoch_at` (microseconds since the Unix epoch) and `speed` multiplier on
+ * insert and on any later rewrite. */
+export interface ClockWiring {
+  readonly serverClock: ServerClock;
+  /** The page's `document`, passed in by `main.ts` (DOM globals stay out
+   * of `net/`). */
+  readonly visibility: VisibilitySource;
+  readonly onClock: (
+    clock: { epochMicros: bigint; speed: number },
+    kind: "insert" | "update",
+  ) => void;
+}
+
+/** Story 4.5 (FR141): who this device is, reported once per connection --
+ * `persisted` is whether the token is in storage (a character must never
+ * be created for an identity that could not be kept). */
+export interface IdentityReport {
+  readonly identityHex: string;
+  readonly persisted: boolean;
+}
+
+/** Story 4.5: the caller's own character, from the per-sender
+ * `my_character` view -- `linked` once any of its identities came through
+ * an OIDC issuer. */
+export interface CharacterReport {
+  readonly characterId: bigint;
+  readonly createdAtMicros: bigint;
+  readonly linked: boolean;
+}
+
+export type RegionRow =
+  | PlacedObject
+  | FloorTransition
+  | BuildingArea
+  | RoomArea
+  | ActorLocation
+  | PlayerPosition;
+
+/** Story 4.4: the other players, as plain data. An update is an upsert. */
+export interface PlayerRowListener {
+  onUpsert(row: PlayerPositionRow): void;
+  onRemove(characterId: string): void;
+}
+
+/** Streamed rows as plain data, registered once per table. The SDK client
+ * cache stays the only store of them: nothing here keeps a second copy. */
+export interface RegionRowListener {
+  onInsert(table: RegionTableName, row: RegionRow): void;
+  onUpdate(table: RegionTableName, oldRow: RegionRow, row: RegionRow): void;
+  onDelete(table: RegionTableName, row: RegionRow): void;
+}
+
+/** Story 4.3: the interest region. `controller` owns the player's
+ * position and the floor range; every connection attaches a fresh backend
+ * to it. */
+export interface RegionWiring {
+  readonly controller: Pick<RegionController, "attach">;
+  readonly rows?: RegionRowListener;
+  readonly players?: PlayerRowListener;
+  /** Subscribe to `player_position`. A DEV build may switch it off;
+   * absent means yes. */
+  readonly remotePlayers?: boolean;
+  /** The new connection's initial region has fully applied. */
+  readonly onInitialApplied?: () => void;
+}
+
+/** Story 4.8: the identity a page presents on every connection after its
+ * first -- the stored token, or for a session-only tab (`persisted: false`)
+ * the one its first connection was issued. */
+export interface SessionIdentity {
+  readonly token: string;
+  readonly persisted: boolean;
+}
+
+export interface ConnectOptions {
+  readonly onPing: PingListener;
+  readonly onStatus?: StatusListener;
+  readonly onHandshake?: HandshakeListener;
+  readonly clock?: ClockWiring;
+  /** Where the identity token lives; none means a session-only identity. */
+  readonly storage?: SettingsStorage | null;
+  readonly onIdentity?: (identity: IdentityReport) => void;
+  readonly onCharacter?: (character: CharacterReport) => void;
+  /** Story 4.3: the interest region. */
+  readonly region?: RegionWiring;
+  /** Story 4.8: presented instead of reading `storage`; set on a reconnect. */
+  readonly session?: SessionIdentity;
+  /** Story 4.8: the identity this connection used. */
+  readonly onSession?: (session: SessionIdentity) => void;
+  /** Story 4.8: false on a reconnect, so the boot marks keep meaning the
+   * page's first connection. Absent means true. */
+  readonly marks?: boolean;
+}
 
 /**
  * Opens the connection, subscribes to `demo_ping`, and calls `onPing` for
@@ -38,28 +155,51 @@ export type HandshakeListener = (version: HandshakeVersion) => void;
  * successful connect are otherwise indistinguishable from this module's
  * only two ways of reaching "not connected").
  */
-export function connect(
-  onPing: PingListener,
-  onStatus?: StatusListener,
-  onHandshake?: HandshakeListener,
-): DbConnection {
-  onStatus?.("connecting");
 
-  const conn = DbConnection.builder()
+/**
+ * Story 4.5 (FR141): the stored token, if any, is presented with
+ * `withToken`; a first visit takes the one the server issues in the
+ * handshake and stores it. The stored token is never replaced or removed by
+ * a failure of any kind: a refused token shows the connection notice and
+ * keeps the token, it never falls back to a fresh anonymous identity. A
+ * tab that finds another tab's token already stored keeps its own
+ * connection as a session-only identity (`persisted: false`).
+ */
+export function connect(options: ConnectOptions): DbConnection {
+  options.onStatus?.("connecting");
+  const { onPing, onStatus, onHandshake, clock, region, storage, onIdentity, onCharacter } =
+    options;
+  const mark = (name: Parameters<typeof markBoot>[0]): void => {
+    if (options.marks !== false) markBoot(name);
+  };
+  let clockSync: ClockSync | undefined;
+  // The whole-table subscription is three singletons; the world arrives
+  // through the region. `SUBSCRIPTION_APPLIED` keeps meaning the first
+  // subscription's own decode term; `REGION_APPLIED` is the initial
+  // region's.
+
+  const stored = options.session?.token ?? readStoredToken(storage);
+  const base = DbConnection.builder()
     .withUri(NET_CONFIG.uri)
-    .withDatabaseName(NET_CONFIG.databaseName)
-    .onConnect((connection) => {
+    .withDatabaseName(NET_CONFIG.databaseName);
+  const conn = (stored === null ? base : base.withToken(stored))
+    .onConnect((connection, identity, token) => {
+      const persisted =
+        options.session?.persisted ??
+        (stored === null ? rememberFirstToken(storage, token).kind === "stored" : true);
+      onIdentity?.({ identityHex: identity.toHexString(), persisted });
+      options.onSession?.({ token: stored ?? token, persisted });
       // Story 1.14 (NFR1): the handshake term ends here, and the
       // subscription-decode term ends at this subscription's own
       // `onApplied` -- the two are never conflated under one mark.
-      markBoot(BOOT_MARK.HANDSHAKE_OPEN);
+      mark(BOOT_MARK.HANDSHAKE_OPEN);
       onStatus?.("connected");
       // Story 2.8 (FR147): `module_version` rides the same subscribe
       // call as `demo_ping` -- one subscribe message, one `onApplied`, no
       // extra round trip on the common (matched-version) path.
       connection
         .subscriptionBuilder()
-        .onApplied(() => markBoot(BOOT_MARK.SUBSCRIPTION_APPLIED))
+        .onApplied(() => mark(BOOT_MARK.SUBSCRIPTION_APPLIED))
         .onError((ctx) => {
           // Cycle 1 review (Tim's finding 6): with no `onError`, a
           // rejected subscribe left the boot gate's own handshake latch
@@ -70,7 +210,27 @@ export function connect(
           console.error("[net] subscription failed", ctx.event);
           onStatus?.("disconnected");
         })
-        .subscribe(["SELECT * FROM demo_ping", "SELECT * FROM module_version"]);
+        .subscribe([
+          tables.demoPing.build(),
+          tables.moduleVersion.build(),
+          tables.worldClock.build(),
+          tables.myCharacter.build(),
+        ]);
+      // Story 4.3: a new connection is a new region manager, built around
+      // the player's current position.
+      region?.controller.attach(
+        sdkRegionBackend(connection, { remotePlayers: region.remotePlayers }),
+        {
+          onError: () => onStatus?.("disconnected"),
+          onInitialApplied: () => {
+            mark(BOOT_MARK.REGION_APPLIED);
+            region.onInitialApplied?.();
+          },
+        },
+      );
+      // Story 4.1: the first stamped round trip rides the same connect
+      // moment; a reconnect is a new `connect()` and so a new sync.
+      if (clock) clockSync = startNetClockSync(connection, clock.serverClock, clock.visibility);
     })
     .onConnectError((_ctx, error) => {
       // NFR42: the client degrades to not-drawing, never to crashing.
@@ -83,6 +243,7 @@ export function connect(
       // callback touches nothing but status, never the Pixi Application,
       // the scene, its ticker or any pool.
       if (error) console.error("[net] connection dropped", error);
+      clockSync?.stop();
       onStatus?.("disconnected");
     })
     .build();
@@ -99,6 +260,44 @@ export function connect(
   conn.db.moduleVersion.onInsert((_ctx, row) => {
     onHandshake?.({ defsVersion: row.defsVersion, protocolVersion: row.protocolVersion });
   });
+
+  // `my_character` is a per-sender view without a primary key: a change
+  // arrives as a delete-then-insert pair, so `onInsert` alone covers it.
+  conn.db.myCharacter.onInsert((_ctx, row) => {
+    onCharacter?.({
+      characterId: row.characterId,
+      createdAtMicros: row.createdAt.microsSinceUnixEpoch,
+      linked: row.linked,
+    });
+  });
+
+  const rows = region?.rows;
+  if (rows) {
+    for (const name of REGION_TABLE_NAMES) {
+      const table = conn.db[name];
+      table.onInsert((_ctx, row) => rows.onInsert(name, row));
+      table.onUpdate((_ctx, oldRow, row) => rows.onUpdate(name, oldRow, row));
+      table.onDelete((_ctx, row) => rows.onDelete(name, row));
+    }
+  }
+
+  const players = region?.players;
+  if (players) {
+    conn.db.playerPosition.onInsert((_ctx, row) => players.onUpsert(plainPlayerRow(row)));
+    conn.db.playerPosition.onUpdate((_ctx, _old, row) => players.onUpsert(plainPlayerRow(row)));
+    conn.db.playerPosition.onDelete((_ctx, row) => players.onRemove(String(row.characterId)));
+  }
+
+  if (clock) {
+    // `world_clock` is subscribed (not merely read once) so an FR163 epoch
+    // rewrite reaches a running client without a reload.
+    conn.db.worldClock.onInsert((_ctx, row) => {
+      clock.onClock({ epochMicros: row.epochAt.microsSinceUnixEpoch, speed: row.speed }, "insert");
+    });
+    conn.db.worldClock.onUpdate((_ctx, _old, row) => {
+      clock.onClock({ epochMicros: row.epochAt.microsSinceUnixEpoch, speed: row.speed }, "update");
+    });
+  }
 
   return conn;
 }

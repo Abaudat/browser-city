@@ -1,0 +1,6 @@
+rules: cafe_present
+expect: pass
+floor: 0
+legend: C=cafe
+grid:
+C.

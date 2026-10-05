@@ -31,17 +31,51 @@
 #      the moment anyone widens its error handling, so it must go through
 #      `scripts/ops/check-database-exists.sh`, which positively
 #      recognises "not found" rather than treating any failure as one.
+#   4. Neither `deploy.yml`'s `backup` job nor `backup.yml`'s `export` job
+#      -- the two real callers of `scripts/ops/export-world.sh` -- may
+#      have a shallow checkout (story 4.18): export-world.sh walks the
+#      schema snapshot's own git history to find which committed snapshot
+#      is actually live, and a shallow clone (the default
+#      `actions/checkout` depth, 1) hides that history from it -- a
+#      future "speed up checkout" commit in *either* file would otherwise
+#      silently turn the next additive deploy's backup, or the next
+#      scheduled backup, into "does not match" (Quentin's/Tim's
+#      direction, cycle 1: `backup.yml`'s own `export` job has the
+#      identical bug, and had no guard at all). `fetch-depth: 0` is the
+#      only value this accepts, in either file.
+#   5. The `report-failure` job's own `if:` must account for a `cancelled`
+#      job, not only a `failure`d one (story 4.20, NFR49): a
+#      `timeout-minutes` expiry ends a job `cancelled`, and a condition
+#      that only ever checks `failure()`/`contains(..., 'failure')` lets a
+#      hung `publish-module`/`smoke` run to its own budget and file
+#      nothing.
+#   6. `publish-module` calls `finish_publish` (story 4.2, 363): the one
+#      post-publish path -- one-row tables, code seeds and every armed
+#      cadence -- and nothing but this rule stands between docs/
+#      architecture.md and someone deleting the step.
+#   6b. Every job that runs `spacetime publish` ends with a step running
+#      `scripts/ops/assert-world-invariants.sh` (issue 363): a deploy is
+#      red the instant the live world is inconsistent.
+#   7. In `backup.yml`'s `export` job, a step that runs `storage-report.sh`
+#      (an alarm that exits 1 on a breach) must come after the
+#      `upload-artifact` step (story 4.12): the day storage is in trouble
+#      must still be a day the backup is encrypted and uploaded.
 #
-# Usage: check-deploy-workflow.sh [deploy.yml path]
+# Usage: check-deploy-workflow.sh [deploy.yml path] [backup.yml path]
 #   [deploy.yml path]  defaults to .github/workflows/deploy.yml at the repo
 #                       root; overridden by scripts/ci/tests/
 #                       test-check-deploy-workflow.sh's own fixtures
+#   [backup.yml path]  defaults to .github/workflows/backup.yml the same
+#                       way -- only rule 4 above reads this second file
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKFLOW="${1:-$REPO_ROOT/.github/workflows/deploy.yml}"
+BACKUP_WORKFLOW="${2:-$REPO_ROOT/.github/workflows/backup.yml}"
+SCAN_ROOT="${3:-$REPO_ROOT}"
 
 [ -f "$WORKFLOW" ] || { echo "check-deploy-workflow: $WORKFLOW not found" >&2; exit 1; }
+[ -f "$BACKUP_WORKFLOW" ] || { echo "check-deploy-workflow: $BACKUP_WORKFLOW not found" >&2; exit 1; }
 
 FAILED=0
 
@@ -64,14 +98,17 @@ fi
 
 # --- every job that runs `spacetime publish` must needs: the backup job,
 # and its own condition must never be able to run it after a failed one --
-job_block() { # <name> -- the job's full body, from its "  <name>:" line to
-              # (but not including) the next top-level "  <other>:" line.
-  local name="$1"
+job_block() { # <name> [file] -- the job's full body, from its "  <name>:"
+              # line to (but not including) the next top-level
+              # "  <other>:" line. [file] defaults to $WORKFLOW (deploy.
+              # yml) -- rule 4 below also calls this against $BACKUP_
+              # WORKFLOW (backup.yml).
+  local name="$1" file="${2:-$WORKFLOW}"
   awk -v name="$name" '
     $0 ~ "^  " name ":$" { inblock = 1; print; next }
     inblock && /^  [A-Za-z0-9_-]+:$/ { inblock = 0 }
     inblock { print }
-  ' "$WORKFLOW"
+  ' "$file"
 }
 
 job_header() { # <name> -- the job's own keys (needs:/if:/runs-on:/...) and
@@ -167,5 +204,129 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, and the backup job's first-deploy exception is the positive not-found script" >&2
+# --- story 4.18: neither export-world.sh caller's checkout may be
+# shallow -- the default actions/checkout depth (1) hides the schema
+# snapshot's own git history from it, and export-world.sh cannot find
+# which commit is actually live without it -----------------------------
+check_shallow_checkout() { # <job-name> <file>
+  local job="$1" file="$2" block
+  block="$(job_block "$job" "$file")"
+  if [ -z "$block" ]; then
+    echo "check-deploy-workflow: FAIL -- $file has no '$job:' job" >&2
+    FAILED=1
+    return
+  fi
+  # Anchored to a real YAML mapping line (only leading whitespace before
+  # the key) -- never a comment: a checkout step's own comment
+  # explaining *why* fetch-depth is 0 can itself contain the literal text
+  # "fetch-depth: 1 (a shallow default) ...", and an unanchored grep
+  # matched a comment like that ahead of the real key, parsing the rest
+  # of that sentence as though it were the value (this file's own
+  # regression, PR #345's first CI run against deploy.yml's checkout
+  # comment).
+  local line value
+  line="$(printf '%s\n' "$block" | grep -E '^[[:space:]]*fetch-depth:' | head -n1 || true)"
+  value="$(printf '%s' "$line" | sed -E 's/.*fetch-depth:[[:space:]]*//')"
+  if [ -z "$line" ] || [ "$value" != "0" ]; then
+    echo "check-deploy-workflow: FAIL -- '$job' job's checkout in $file is shallow (fetch-depth: ${value:-1, the actions/checkout default}) -- scripts/ops/export-world.sh needs the schema snapshot's full git history to find which commit is actually live (story 4.18); use fetch-depth: 0" >&2
+    FAILED=1
+  fi
+}
+check_shallow_checkout backup "$WORKFLOW"
+check_shallow_checkout export "$BACKUP_WORKFLOW"
+
+# --- rule 7: the storage alarm never precedes the backup's upload -----------
+EXPORT_BLOCK="$(job_block export "$BACKUP_WORKFLOW")"
+REPORT_LINE="$(printf '%s
+' "$EXPORT_BLOCK" | grep -vE '^[[:space:]]*#' | grep -nF 'storage-report.sh' | head -n1 | cut -d: -f1 || true)"
+if [ -n "$REPORT_LINE" ]; then
+  UPLOAD_LINE="$(printf '%s
+' "$EXPORT_BLOCK" | grep -vE '^[[:space:]]*#' | grep -nF 'upload-artifact' | head -n1 | cut -d: -f1 || true)"
+  if [ -z "$UPLOAD_LINE" ] || [ "$REPORT_LINE" -le "$UPLOAD_LINE" ]; then
+    echo "check-deploy-workflow: FAIL -- $BACKUP_WORKFLOW's 'export' job runs storage-report.sh before (or without) its upload-artifact step -- the alarm exits 1 on a breach, so the backup would not be uploaded on exactly the day storage is in trouble (story 4.12)" >&2
+    FAILED=1
+  fi
+fi
+
+if [ "$FAILED" -ne 0 ]; then
+  exit 1
+fi
+
+# --- the report-failure job's own condition must account for a
+# cancelled job too, not only a failed one (story 4.20, NFR49) ----------
+REPORT_HEADER="$(job_header report-failure)"
+if [ -z "$REPORT_HEADER" ]; then
+  echo "check-deploy-workflow: FAIL -- $WORKFLOW has no 'report-failure' job" >&2
+  FAILED=1
+else
+  IF_LINES="$(printf '%s\n' "$REPORT_HEADER" | grep -E '^ *if:' || true)"
+  # A bare substring check for "cancelled" would pass `!cancelled()`, the
+  # one spelling that means the opposite (Tim's direction, cycle 1) --
+  # require the literal `contains(needs.*.result, 'cancelled')` predicate
+  # instead, the only form that actually reports one.
+  if [ -z "$IF_LINES" ] || ! printf '%s' "$IF_LINES" | grep -qE "contains\(needs\.\*\.result,[[:space:]]*'cancelled'\)"; then
+    echo "check-deploy-workflow: FAIL -- 'report-failure' job's if: condition does not contain a contains(needs.*.result, 'cancelled') check -- a timeout-minutes expiry ends a job 'cancelled', not 'failure' (NFR49), and must be reported the same way" >&2
+    FAILED=1
+  fi
+fi
+
+if [ "$FAILED" -ne 0 ]; then
+  exit 1
+fi
+
+# --- publish-module calls finish_publish; every publishing job ends with
+# the world-invariants assert -------------------------------------------
+PUBLISH_MODULE_BLOCK="$(job_block publish-module)"
+if [ -z "$PUBLISH_MODULE_BLOCK" ]; then
+  echo "check-deploy-workflow: FAIL -- $WORKFLOW has no 'publish-module:' job" >&2
+  FAILED=1
+elif ! printf '%s
+' "$PUBLISH_MODULE_BLOCK" | grep -qE 'spacetime call .* finish_publish'; then
+  echo "check-deploy-workflow: FAIL -- 'publish-module' never calls finish_publish -- a redeployed world must have every one-row table, code and armed cadence re-established (docs/architecture.md)" >&2
+  FAILED=1
+fi
+# --- story 4.5: the OIDC provider is configuration, never code. Both
+# halves read the same two repository variables: publish-module registers
+# the issuer after finish_publish, and the client build is handed the same
+# pair. Unset means linking is off.
+if [ -n "$PUBLISH_MODULE_BLOCK" ]; then
+  for needle in 'accept_oidc_issuer' 'vars.OIDC_AUTHORITY' 'vars.OIDC_CLIENT_ID'; do
+    if ! printf '%s
+' "$PUBLISH_MODULE_BLOCK" | grep -qF "$needle"; then
+      echo "check-deploy-workflow: FAIL -- 'publish-module' does not use '$needle' -- the OIDC provider must be registered from the repository variables after finish_publish (story 4.5)" >&2
+      FAILED=1
+    fi
+  done
+  for needle in 'VITE_OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}' 'VITE_OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}'; do
+    if ! grep -qF "$needle" "$WORKFLOW"; then
+      echo "check-deploy-workflow: FAIL -- the client build does not set '$needle' -- the client and the module must read the same provider (story 4.5)" >&2
+      FAILED=1
+    fi
+  done
+fi
+while IFS= read -r job; do
+  [ -n "$job" ] || continue
+  LAST_STEP="$(job_block "$job" | awk '/^      - / { step = "" } { step = step $0 "\n" } END { printf "%s", step }')"
+  if ! printf '%s' "$LAST_STEP" | grep -qF 'scripts/ops/assert-world-invariants.sh'; then
+    echo "check-deploy-workflow: FAIL -- '$job' (which runs 'spacetime publish') does not end with a scripts/ops/assert-world-invariants.sh step -- a deploy must be red the instant the live world is inconsistent" >&2
+    FAILED=1
+  fi
+done <<< "$PUBLISH_JOBS"
+
+# --- 8. nothing under .github/workflows or scripts/ops names create_district:
+# the live world gets no generated district until the story that picks its
+# seed flips this assertion.
+CD_HITS="$(grep -rnF create_district "$SCAN_ROOT/.github/workflows" "$SCAN_ROOT/scripts/ops" 2>/dev/null | tr -d '\r' || true)"
+if [ -n "$CD_HITS" ]; then
+  echo "check-deploy-workflow: FAIL -- create_district is named under .github/workflows or scripts/ops; the live world gets no generated district yet:" >&2
+  printf '%s
+' "$CD_HITS" >&2
+  FAILED=1
+fi
+
+if [ "$FAILED" -ne 0 ]; then
+  exit 1
+fi
+
+echo "check-deploy-workflow: no destructive command/flag, every publishing job needs: (and can only run after) the backup job, the backup job's first-deploy exception is the positive not-found script, neither deploy.yml's backup job nor backup.yml's export job has a shallow checkout, report-failure accounts for a cancelled job too, publish-module calls finish_publish and registers the OIDC provider from the repository variables the client build also reads, every publishing job ends with the world-invariants assert, and backup.yml's storage report never runs before the artifact upload" >&2
 exit 0

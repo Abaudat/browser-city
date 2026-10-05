@@ -23,17 +23,12 @@ export default defineConfig({
   // A flaky e2e is a failing e2e (Quentin, story 1.1): no re-run hides the
   // first red from a PR.
   retries: 0,
-  // Every spec shares one `webServer` -- one disposable SpacetimeDB
-  // instance, one Vite dev server (`serve-for-e2e.mjs`) -- so distinct
-  // test files were never running against isolated backends; running them
-  // on multiple workers only ever bought parallelism on a shared, CPU-
-  // bound runner. On a small CI machine that contention reliably pushed
-  // two unrelated, otherwise-reliable specs (story 1.10's own composite
-  // comparison and story 1.9's `intents.spec.ts`) right up against their
-  // own timeouts, reproducibly across runs, never locally. Serial on CI
-  // removes that contention outright rather than chasing it with a wider
-  // and wider timeout; locally (more cores, no shared-runner contention)
-  // the default multi-worker heuristic stays.
+  // One worker per runner: on a small CI machine, several workers sharing
+  // one `webServer` (one SpacetimeDB instance, one Vite dev server --
+  // `serve-for-e2e.mjs`) pushed unrelated specs against their timeouts.
+  // CI parallelises by sharding instead (`ci.yml`'s `e2e` matrix,
+  // `--shard=i/N`), each shard on its own runner with its own harness.
+  // Locally the default multi-worker heuristic stays.
   workers: process.env.CI ? 1 : undefined,
   reporter: "list",
   use: {
@@ -49,10 +44,12 @@ export default defineConfig({
     BOOT_PREVIEW_URL || DEPLOY_URL
       ? undefined
       : {
-          command: "node tests/e2e/serve-for-e2e.mjs",
+          command: "node --experimental-strip-types tests/e2e/serve-for-e2e.mjs",
           url: "http://127.0.0.1:5173",
           reuseExistingServer: false,
-          timeout: 30_000,
+          // The module is built here (with the time-control feature), not
+          // only published.
+          timeout: 240_000,
         },
   projects: [
     {

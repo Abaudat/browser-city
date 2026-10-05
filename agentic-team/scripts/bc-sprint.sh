@@ -1,31 +1,24 @@
 #!/usr/bin/env bash
-# LEVEL 2 -- sprint-level facts and the two sprint-boundary actions
-# (closing-sprint/starting-next-sprint in high-level-agentic-flow.mmd).
-# Composes project.sh's iteration primitives and gh-cli.sh's issue close;
-# the one piece of judgement it delegates is
-# "what fits next sprint", via Scotty (`bc-session.sh scotty` +
-# judge-sprint-scope.md).
+# LEVEL 2 -- sprint-level facts and the sprint's two writes: `close`
+# (closing-sprint in high-level-agentic-flow.mmd) and `scope-in`
+# (starting-dev-cycle). Composes project.sh's iteration primitives and
+# gh-cli.sh's issue close. Nothing here needs judgement, so nothing here
+# calls Scotty.
 #
-# `start` and `write-scope` are the two halves of starting-next-sprint, the
-# same split `bc-issue.sh` uses for creating-demo-issue: start gathers the
-# candidates and hands them to Scotty, and Scotty calls write-scope back to
-# move his picks onto the next sprint in one step. The board is the artefact
-# here -- there is no prose -- so what makes the split worth it is not
-# atomicity of text and carrier but that the *guards* live with the write:
-# write-scope re-derives the candidate set itself and drops anything that is
-# not one, so a picked number Scotty invented, or one another tick scoped in
-# the meantime, cannot land on a sprint -- and it drops any story that would
-# start an epic while an earlier one still has stories left behind. That is
-# also why write-scope is in the bc-sdlc skill.
+# There is no sprint planning. A sprint is not a batch of work chosen up
+# front; it is the week a story happened to be started in. The backlog is one
+# pool that `bc-issue.sh next` picks from whenever the team is free -- highest
+# priority, smallest size, no open blocker, any epic -- and `scope-in` is the
+# orchestrator putting that one pick onto the sprint in play as it starts it.
+# So a sprint fills as it goes, the team never runs dry because a plan did,
+# and the Sprint field is left meaning exactly what the demo needs it to mean:
+# "this is what was worked on that week".
 #
-# The unit of scoping is the story. An epic is a grouping (see `bc-issue.sh
-# next`): it is never scoped itself, and a story is scoped on its own rather
-# than riding in on its epic's back. The first sprint-closing that ran for
-# real showed what the other way costs: `close` put an unfinished epic's
-# Backlog stories back on no sprint, but the candidates were epics and
-# parentless stories only, so those stories could not be offered at all --
-# and Scotty, handed only the next epics, scoped Epic 2 over the ten stories
-# Epic 1 still had.
+# It used to be otherwise: `start` handed Scotty the candidates after each
+# demo and `write-scope` moved his picks in, held to epic order. That stopped
+# the team whenever the plan ran out before the week did, and epic order was
+# standing in for dependencies the board could not express. GitHub's native
+# issue dependencies express them now, story by story.
 set -u
 _BC_SPRINT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config.sh
@@ -35,8 +28,6 @@ bc_init
 . "$_BC_SPRINT_DIR/lib/project.sh"
 # shellcheck source=lib/gh-cli.sh
 . "$_BC_SPRINT_DIR/lib/gh-cli.sh"
-# shellcheck source=lib/claude.sh
-. "$_BC_SPRINT_DIR/lib/claude.sh"
 
 usage() {
   cat >&2 <<'EOF'
@@ -46,8 +37,7 @@ usage: bc-sprint.sh <command> [args]
   over                  -- yes/no: is it past BC_DEMO_HOUR on current's last day
   items <n> [<status>]  -- the issues scoped into Sprint n, optionally one Status
   close                 -- close the current sprint, carry active work, close the demo
-  start                 -- scope candidates into the next sprint via Scotty
-  write-scope <n> <story>...  -- Scotty, starting-next-sprint: move his picks in
+  scope-in <story>      -- starting-dev-cycle: put the picked story on the sprint in play
 EOF
 }
 
@@ -70,47 +60,14 @@ _bc_sprint_next_after() { # <current-json-or-empty> -> next iteration json or em
   fi
 }
 
-# What may be scoped into a sprint at all: an open story on no sprint that is
-# not finished. Never an epic -- a grouping is not work -- and never the Demo
-# issue, which belongs to the sprint it summarises. `start` offers exactly
-# this set to Scotty and `write-scope` intersects his answer with it again --
-# one predicate, both halves, so his picks cannot widen it.
-_bc_sprint_candidates() { # <project_items JSON> on stdin -> the candidate items
-  "$JQ" -c '
-    [.[] | select(.state=="OPEN" and .sprintId==null and .isParent!=true
-        and .status!="Done" and ((.labels|index("demo"))|not))]
-  '
-}
-
-# The epic order, enforced: of the candidates <asked> names, the ones that may
-# land. The first epic that would still have a candidate left over once these
-# picks are gone is the one in flight, and nothing from a later epic may start
-# ahead of it -- a sprint can take part of an epic, but never skip past one.
-# Epics are ordered by issue number, the order they were opened in; a story in
-# no epic is outside that order and always admitted.
-_bc_sprint_admit() { # <candidates JSON> <asked JSON array of numbers> -> JSON array of numbers
-  printf '%s\n%s\n' "$1" "$2" | "$JQ" -sc '
-    .[0] as $cand | .[1] as $asked
-    | [ $cand[] | .number as $x | select($asked | any(. == $x)) ] as $picked
-    | ([ $cand[] | .number as $x | select($asked | any(. == $x) | not)
-         | .parent | select(. != null) ] | min) as $first
-    | [ $picked[] | select(.parent == null or $first == null or .parent <= $first) | .number ]
-    | unique
-  '
-}
-
-# Every story in <scoped> onto iteration <id>, each defaulted to Backlog only
-# if the board has no Status for it yet.
-_bc_sprint_carry_in() { # <scoped JSON array> <iteration-id>
-  local scoped="$1" iid="$2" n st
-  # jq.exe on this machine writes CRLF even for -r output; tr strips the \r so
-  # `for` doesn't see e.g. "10\r" as the token (it would compare unequal to
-  # "10" and, worse, get passed straight through to project_set_iteration).
-  for n in $(printf '%s' "$scoped" | "$JQ" -r '.[]' | tr -d '\r' | sort -n); do
-    project_set_iteration "$n" "$iid"
-    st="$(project_field_get "$n" Status 2>/dev/null || true)"
-    [ -n "$st" ] || project_set_single "$n" Status Backlog
-  done
+# Is <iteration JSON> over -- past its last day, or on it at/after
+# BC_DEMO_HOUR. `over` answers with it and `scope-in` steers by it.
+_bc_sprint_is_over() { # <iteration-json>
+  local end today
+  end="$(printf '%s' "$1" | "$JQ" -r '.end')"
+  today="$(bc_zurich_date)"
+  [[ "$today" > "$end" ]] && return 0
+  [ "$today" = "$end" ] && [ "$(bc_zurich_hour)" -ge "$BC_DEMO_HOUR" ]
 }
 
 # The iteration titled "Sprint <n>", or exit 2 with a message naming the
@@ -154,14 +111,7 @@ over)
     echo no
     exit 1
   fi
-  end="$(printf '%s' "$cur" | "$JQ" -r '.end')"
-  today="$(bc_zurich_date)"
-  hour="$(bc_zurich_hour)"
-  if [[ "$today" > "$end" ]]; then
-    echo yes
-    exit 0
-  fi
-  if [ "$today" = "$end" ] && [ "$hour" -ge "$BC_DEMO_HOUR" ]; then
+  if _bc_sprint_is_over "$cur"; then
     echo yes
     exit 0
   fi
@@ -182,10 +132,9 @@ items)
   fi
 
   # The board is the source of truth for Status, Priority and Size, and this
-  # is the read Scotty scopes and demoes from -- so it carries all three
-  # alongside the epic link, and nothing else. `parent` is the epic; `isEpic`
-  # tells him which rows ARE epics, since he must never scope one's own issue
-  # into a sprint alongside its stories.
+  # is the read Scotty demoes from -- so it carries all three alongside the
+  # epic link, and nothing else. `parent` is the epic; `isEpic` tells him
+  # which rows ARE epics (one rides along when `close` carries its story).
   out="$(printf '%s' "$items" | "$JQ" -c --arg s "$sprintid" --arg w "$want" '
     [ .[] | select(.sprintId==$s) | select($w=="" or .status==$w)
       | {number, title, status, priority, size, epic: .parent, isEpic: .isParent} ]
@@ -219,10 +168,11 @@ close)
 
   # What carries: work the team actually started (any status past Backlog and
   # short of Done) plus the epic grouping it, so the sprint it moves into
-  # still shows what the story belongs to. Nothing else does -- a story left
-  # in Backlog was scoped and not reached, and it goes back to the unscoped
-  # backlog for the next sprint's scoping to consider afresh, keeping the
-  # Status it has. Status is never written here: close moves Sprint fields.
+  # still shows what the story belongs to. Nothing else does -- a story still
+  # in Backlog on the sprint is one a crashed starting-dev-cycle scoped in and
+  # never started (or one put there by hand), and it goes back to the pool for
+  # `bc-issue.sh next` to weigh against everything else, keeping the Status it
+  # has. Status is never written here: close moves Sprint fields.
   carry_final="$(printf '%s' "$sprint_items" | "$JQ" -c '
     def isActive: . == "To analyze" or . == "In progress" or . == "Leads review" or . == "Reviewed";
     [.[] | select(.state=="OPEN" and (.status | isActive))] as $active
@@ -263,141 +213,31 @@ close)
   exit 0
   ;;
 
-start)
-  cur="$(project_iteration_for_date)"
-  nxt="$(_bc_sprint_next_after "$cur")"
-  if [ -z "$nxt" ]; then
-    echo "bc-sprint start: no next sprint iteration configured" >&2
-    exit 2
-  fi
-  nxtnum="$(printf '%s' "$nxt" | _bc_sprint_render | "$JQ" -r '.number')"
-  nxttitle="$(printf '%s' "$nxt" | "$JQ" -r '.title')"
-  nxtstart="$(printf '%s' "$nxt" | "$JQ" -r '.startDate')"
-  nxtend="$(printf '%s' "$nxt" | "$JQ" -r '.end')"
-  nxtdays="$(printf '%s' "$nxt" | "$JQ" -r '.duration')"
-
-  items="$(project_items)" || { echo "bc-sprint start: could not read project items" >&2; exit 2; }
-
-  candidates="$(printf '%s' "$items" | _bc_sprint_candidates)"
-  ccount="$(printf '%s' "$candidates" | "$JQ" 'length')"
-  if [ "$ccount" -eq 0 ]; then
-    printf '{"scoped":[]}\n'
-    exit 1
-  fi
-
-  curid=""
-  [ -n "$cur" ] && curid="$(printf '%s' "$cur" | "$JQ" -r '.id')"
-  nxtid="$(printf '%s' "$nxt" | "$JQ" -r '.id')"
-
-  # What Scotty scopes from: every candidate under its epic, epics in the
-  # order write-scope will hold him to, each with how far along it is -- so
-  # "Epic 1 still has ten stories" is on the page rather than something he
-  # would have to go and count -- then what is already on the next sprint
-  # (the work close carried) and what last sprint delivered, sizes included.
-  input="$(mktemp "${TMPDIR:-${TEMP:-/tmp}}/bc-sprint-start.XXXXXX")"
-  {
-    printf '## Candidates, by epic, in the order the epics must be finished\n'
-    printf '%s' "$items" | "$JQ" -r --argjson cand "$candidates" '
-      def line: "- #\(.number) \(.title) — priority: \(.priority // "unset"), size: \(.size // "unset")";
-      . as $items
-      | ($cand | sort_by(.number)) as $cand
-      | ($cand | map(.parent) | unique) as $ps
-      | (($ps | map(select(. != null))) + [ $ps[] | select(. == null) ])[] as $e
-      | ( if $e == null then "\n### Stories in no epic"
-          else [ $items[] | select(.parent == $e) ] as $k
-            | "\n### #\($e) \([ $items[] | select(.number == $e) ][0].title // "(epic not on the board)")"
-              + " — \($k | map(select(.state=="CLOSED" or .status=="Done")) | length) of \($k | length) stories done,"
-              + " \($k | map(select(.state=="OPEN" and .sprintId != null and .status != "Done")) | length) on a sprint"
-          end ),
-        ( $cand[] | select(.parent == $e) | line )
-    ' | tr -d '\r'
-    printf '\n## Already on %s\n\n' "$nxttitle"
-    printf '%s' "$items" | "$JQ" -r --arg nxt "$nxtid" '
-      [ .[] | select(.sprintId==$nxt and .isParent!=true and .state=="OPEN" and ((.labels|index("demo"))|not)) ]
-      | if length == 0 then "(nothing)"
-        else .[] | "- #\(.number) \(.title) — status: \(.status // "unset"), size: \(.size // "unset")" end
-    ' | tr -d '\r'
-    printf '\n## Last sprint delivered\n\n'
-    printf '%s' "$items" | "$JQ" -r --arg cur "$curid" '
-      [ .[] | select($cur != "" and .sprintId==$cur and .status=="Done" and .isParent!=true
-          and ((.labels|index("demo"))|not)) ]
-      | "\(length) stories" + (if length > 0 then " (sizes: \(map(.size // "unset") | join(", ")))" else "" end)
-    ' | tr -d '\r'
-    printf '\n## Next sprint\n\n%s %s→%s (%s days)\n' "$nxttitle" "$nxtstart" "$nxtend" "$nxtdays"
-  } > "$input"
-
-  # Scotty picks AND scopes, in one `write-scope` call of his own -- this
-  # command never sees a list of numbers to act on. His reply is not the
-  # product, so what he actually moved is read back off the board: the
-  # candidates offered to him that are now on the next sprint.
-  # The rendered prompt keeps its original basename -- `bc-session.sh scotty`
-  # logs and looks up fixtures by it -- so it goes in a temp dir of its own
-  # rather than under a mktemp'd name.
-  promptdir="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-sprint-start-prompt.XXXXXX")"
-  prompt="$promptdir/judge-sprint-scope.md"
-  claude_render_prompt "$_BC_SPRINT_DIR/prompts/judge-sprint-scope.md" \
-    scripts="$_BC_SPRINT_DIR" sprint="$nxtnum" > "$prompt"
-
-  bash "$_BC_SPRINT_DIR/bc-session.sh" scotty "$prompt" "$input"
-  rm -rf "$promptdir"
-  rm -f "$input"
-
-  after="$(project_items)" || { echo "bc-sprint start: could not re-read project items" >&2; exit 2; }
-  scoped="$(printf '%s\n%s\n' "$candidates" "$after" | "$JQ" -sc --arg nxt "$nxtid" '
-    (.[0] | map(.number)) as $offered
-    | [ .[1][] | select(.sprintId==$nxt) | .number as $x | select($offered | any(. == $x)) | $x ] | unique
-  ')"
-  if [ "$(printf '%s' "$scoped" | "$JQ" 'length')" -eq 0 ]; then
-    echo "bc-sprint start: judge-sprint-scope.md scoped nothing into $nxttitle" >&2
-    exit 2
-  fi
-  printf '{"scoped":%s,"sprint":"%s"}\n' "$scoped" "$nxttitle"
-  exit 0
-  ;;
-
-write-scope)
+scope-in)
   n="${1:-}"
   [ -n "$n" ] || { usage; exit 2; }
-  shift
-  [ "$#" -gt 0 ] || { usage; exit 2; }
-  for a in "$@"; do
-    case "$a" in
-      ''|*[!0-9]*) echo "bc-sprint write-scope: not an issue number: $a" >&2; exit 2 ;;
-    esac
-  done
+  case "$n" in
+    *[!0-9]*) echo "bc-sprint scope-in: not an issue number: $n" >&2; exit 2 ;;
+  esac
 
-  sprint="$(_bc_sprint_by_number "$n" write-scope)" || exit 2
-  sprintid="$(printf '%s' "$sprint" | "$JQ" -r '.id')"
-  sprinttitle="$(printf '%s' "$sprint" | "$JQ" -r '.title')"
-
-  items="$(project_items)" || { echo "bc-sprint write-scope: could not read project items" >&2; exit 2; }
-  candidates="$(printf '%s' "$items" | _bc_sprint_candidates)"
-
-  asked="$(printf '%s\n' "$@" | "$JQ" -Rsc 'split("\n") | map(select(length > 0) | tonumber)')"
-  scoped="$(_bc_sprint_admit "$candidates" "$asked")"
-
-  # Scotty reads this command's stderr in his session, so what was dropped,
-  # and why, is said there rather than left for him to notice by omission.
-  # Same "." rebinding trap as close's clear_final -- bind each number to $x
-  # before testing it against an array.
-  printf '%s\n%s\n%s\n' "$candidates" "$asked" "$scoped" | "$JQ" -sr '
-    .[0] as $cand | .[1] as $asked | .[2] as $scoped
-    | ($cand | map(.number)) as $nums
-    | ([ $asked[] as $x | select($nums | any(. == $x) | not) | $x ] | unique) as $not
-    | ([ $cand[] | .number as $x | select(($asked | any(. == $x)) and ($scoped | any(. == $x) | not)) ]) as $held
-    | ([ $cand[] | .number as $x | select($asked | any(. == $x) | not) | .parent | select(. != null) ] | min) as $first
-    | (if ($not | length) > 0 then "bc-sprint write-scope: not candidates (an epic, the demo, already on a sprint, finished, or no such issue), dropped: \($not | map("#\(.)") | join(" "))" else empty end),
-      (if ($held | length) > 0 then "bc-sprint write-scope: epic #\($first) still has stories you did not pick, so these from later epics were dropped: \($held | map("#\(.number)") | join(" "))" else empty end)
-  ' | tr -d '\r' >&2
-
-  if [ "$(printf '%s' "$scoped" | "$JQ" 'length')" -eq 0 ]; then
-    printf '{"scoped":[]}\n'
-    exit 1
+  # The sprint in play is the one containing today -- unless that one is
+  # already over. Nothing is picked between the demo hour and the demo's close
+  # (the orchestrator is in the Sprint Demo branch for all of it), so a pick
+  # made on an over sprint is one made after `close` ran: that week has been
+  # demoed and summed up, and the story belongs to the next.
+  cur="$(project_iteration_for_date)"
+  target="$cur"
+  if [ -z "$cur" ] || _bc_sprint_is_over "$cur"; then
+    target="$(_bc_sprint_next_after "$cur")"
+  fi
+  if [ -z "$target" ]; then
+    echo "bc-sprint scope-in: no sprint iteration to put #$n on -- add iterations to the board" >&2
+    exit 2
   fi
 
-  _bc_sprint_carry_in "$scoped" "$sprintid"
-
-  printf '{"scoped":%s,"sprint":"%s"}\n' "$scoped" "$sprinttitle"
+  project_set_iteration "$n" "$(printf '%s' "$target" | "$JQ" -r '.id')"     || { echo "bc-sprint scope-in: could not put #$n on a sprint" >&2; exit 2; }
+  printf '{"scoped":%s,"sprint":"%s"}
+' "$n" "$(printf '%s' "$target" | "$JQ" -r '.title')"
   exit 0
   ;;
 

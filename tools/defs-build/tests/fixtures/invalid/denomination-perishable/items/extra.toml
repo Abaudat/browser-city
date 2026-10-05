@@ -1,0 +1,6 @@
+[[item]]
+id = 100
+key = "stale"
+unit = "piece"
+shelf_life_minutes = 60
+bulk = { width = 1, height = 1 }

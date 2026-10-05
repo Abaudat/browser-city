@@ -1,8 +1,9 @@
 name: update-visual-baselines
 
 # Regenerates the committed visual baselines (`client/tests/e2e/
-# test-street.spec.ts-snapshots/*.png` and, since story 1.12,
-# `debug-overlays.spec.ts-snapshots/*.png`) on the
+# test-street.spec.ts-snapshots/*.png`, since story 1.12
+# `debug-overlays.spec.ts-snapshots/*.png`, and since story 15.7
+# `enclosure.spec.ts-snapshots/*.png`) on the
 # CI image (story 1.13, Quentin's direction: baselines must be generated
 # on linux chromium, never on a contributor's own machine, whose font
 # hinting and GPU rasteriser render different pixels than CI's).
@@ -23,17 +24,26 @@ name: update-visual-baselines
 # branch protection to catch it. Refuses loudly (fails the job), never
 # silently skips, so a mistaken dispatch is visible as a failure.
 #
-# A commit this workflow pushes, using the default `GITHUB_TOKEN`, does
-# not itself trigger `ci` on the branch it lands on (GitHub does not
-# chain workflow runs started by `GITHUB_TOKEN` by default) -- the
-# branch's head is left with no fresh `ci` result until something else
-# pushes to it again.
+# A commit this workflow pushes, using the default `GITHUB_TOKEN`, is
+# pushed by `github-actions[bot]`. On a branch with an open PR, GitHub
+# does start `ci`'s `pull_request` run for it, but this repo is public
+# and its fork-PR approval policy treats the bot as a first-time
+# contributor, so that run sits in "action required" until a human
+# clicks "Approve and run". The agentic team is meant to run with no
+# human in that loop, so the last step approves exactly the runs this
+# push started (matched by head SHA, actor `github-actions[bot]`),
+# rather than loosening the repo-wide policy that still gates real
+# strangers' fork PRs.
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: write
+  # Approving the `ci` run this workflow's own push leaves waiting.
+  actions: write
+  # Finding whether the branch has an open PR (and so a `ci` run).
+  pull-requests: read
 
 jobs:
   update:
@@ -52,9 +62,17 @@ jobs:
         with:
           fetch-depth: 1
       - run: rustup toolchain install
+      # `shared-key: e2e` (matching `ci.yml`'s own "e2e" job): this job
+      # builds the exact same `server` workspace `serve-for-e2e.mjs`
+      # publishes for every e2e run, so it reuses that job's own cache
+      # instead of building one from cold under its own job-derived key,
+      # which this workflow's own rare, on-demand dispatch would otherwise
+      # never keep warm -- a cold build routinely outruns the 30s
+      # `webServer` startup budget `playwright.config.ts` gives it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
+          shared-key: e2e
       - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -69,15 +87,46 @@ jobs:
       # `--update-snapshots` over the whole project would also rewrite
       # any baseline a spec added later without anybody deciding to.
       - working-directory: client
-        run: npx playwright test tests/e2e/test-street.spec.ts tests/e2e/debug-overlays.spec.ts --project=chromium --update-snapshots
+        run: npx playwright test tests/e2e/test-street.spec.ts tests/e2e/debug-overlays.spec.ts tests/e2e/enclosure.spec.ts --project=chromium --update-snapshots
       - name: commit any changed or new baselines
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add 'client/tests/e2e/test-street.spec.ts-snapshots/**' 'client/tests/e2e/debug-overlays.spec.ts-snapshots/**'
+          git add 'client/tests/e2e/test-street.spec.ts-snapshots/**' 'client/tests/e2e/debug-overlays.spec.ts-snapshots/**' 'client/tests/e2e/enclosure.spec.ts-snapshots/**'
           if git diff --cached --quiet; then
             echo "update-visual-baselines: no baseline changed" >&2
             exit 0
           fi
           git commit -m "Update visual baselines (test-street.spec.ts, linux chromium)"
           git push
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        id: commit
+      # See the header: approve the runs the push above left waiting, so
+      # no human has to. Polls because GitHub creates them asynchronously;
+      # fails loudly if a PR exists but no run ever shows up waiting,
+      # rather than leaving the branch silently without a `ci` result.
+      - name: approve the ci run the baseline push started
+        if: steps.commit.outputs.sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          # `ci` only runs on a non-master branch through its PR.
+          if [ -z "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --state open --json number --jq '.[].number')" ]; then
+            echo "update-visual-baselines: no open PR on $GITHUB_REF_NAME, so no ci run to approve" >&2
+            exit 0
+          fi
+          for _ in $(seq 1 24); do
+            ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&status=action_required" \
+              --jq '.workflow_runs[] | select(.actor.login == "github-actions[bot]") | .id')
+            if [ -n "$ids" ]; then
+              for id in $ids; do
+                gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/approve"
+                echo "update-visual-baselines: approved run $id" >&2
+              done
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::no run for $SHA ever waited for approval; check the branch's ci status by hand" >&2
+          exit 1

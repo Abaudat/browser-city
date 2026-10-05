@@ -6,6 +6,14 @@ Read the PR at its current head and its discussion:
     gh pr view {{pr}} --comments
     gh pr diff {{pr}}
 
+Read the story's live declaration — whether a player on the deployed client,
+with no debug overlay, console or dev tool, can see or do it:
+
+    bash {{scripts}}/bc-issue.sh live {{issue}}
+
+and `reject` a declaration that is false of the PR: `none` for work that is
+visible, or `visible` for work a player cannot reach.
+
 Decide, from your area of ownership only, whether this PR is good to merge.
 Never ask questions; decide and note assumptions directly in your comment.
 

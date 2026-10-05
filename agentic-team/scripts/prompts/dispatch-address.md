@@ -8,6 +8,12 @@ Read the reviews requesting changes:
 Fix every point a lead raised, commit, and push to the PR's branch. Never
 ask questions; decide and note assumptions directly in your comment.
 
+A finding that a story's live declaration is false is not fixed by the
+branch: correct it with `bash {{scripts}}/bc-issue.sh declare-live {{issue}}
+visible <wherefile>` (or `none`), then push a commit — an empty one is fine —
+so the head moves and the leads review again. Without a new head the round
+never returns to them.
+
 Then stamp it addressed:
 
     bash {{scripts}}/bc-comment.sh mark-addressed {{pr}} [bodyfile]

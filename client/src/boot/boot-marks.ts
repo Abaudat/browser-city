@@ -25,6 +25,15 @@ export const BOOT_MARK = {
   /** The first subscription's `onApplied` -- the subscription-decode
    * term's end. */
   SUBSCRIPTION_APPLIED: "bc-boot:subscription-applied",
+  /** Every handle of the initial interest region has applied (story 4.3):
+   * the world around the player is in the client cache. Separate from
+   * `SUBSCRIPTION_APPLIED`, which stays the first subscription's own
+   * decode term. */
+  REGION_APPLIED: "bc-boot:region-applied",
+  /** The first `world_clock` row to reach `CityClock.setClock` -- the
+   * player-facing symptom of a world with no epoch. Set once; `deploy-
+   * smoke.spec.ts` asserts it. */
+  CITY_CLOCK_KNOWN: "bc-boot:city-clock-known",
   /** Every texture the street scene loads before its first frame has
    * resolved -- the atlas term's end (there is no real atlas yet; see
    * `docs/spikes/1.14-boot-budget.md` for the per-request breakdown this
@@ -51,7 +60,9 @@ export type BootMarkName = (typeof BOOT_MARK)[keyof typeof BOOT_MARK];
 /** Records `name` at the current time, relative to navigation start, the
  * same reference `first-contentful-paint` and every `PerformanceResourceTiming`
  * entry already use -- so a milestone and a resource fetch are always
- * directly comparable with no unit conversion. */
-export function markBoot(name: BootMarkName): void {
-  performance.mark(name);
+ * directly comparable with no unit conversion. `at` pins the timestamp, so
+ * marks that stand for one instant share it exactly. */
+export function markBoot(name: BootMarkName, at?: number): void {
+  if (at === undefined) performance.mark(name);
+  else performance.mark(name, { startTime: at });
 }

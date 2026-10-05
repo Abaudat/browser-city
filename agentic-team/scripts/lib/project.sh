@@ -105,7 +105,11 @@ project_set_iteration() { # <issue-number> <iteration-id|clear>
   fi
 }
 
-project_items() { # -> JSON array of {number,title,state,status,priority,size,sprintId,sprintTitle,labels,isParent,parent}
+# `blockedBy` is the story's OPEN blockers only -- GitHub's native issue
+# dependencies, read off the issue itself. A closed blocker no longer blocks,
+# so it is dropped here rather than by every caller; "startable" is then just
+# "blockedBy is empty".
+project_items() { # -> JSON array of {number,title,state,status,priority,size,sprintId,sprintTitle,labels,isParent,parent,blockedBy}
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read project_items; return; }
   local raw
   raw="$("$GH" api graphql --paginate --slurp -f query='
@@ -121,6 +125,7 @@ project_items() { # -> JSON array of {number,title,state,status,priority,size,sp
                   labels(first: 20) { nodes { name } }
                   parent { number }
                   subIssues(first: 1) { totalCount }
+                  blockedBy(first: 50) { nodes { number state } }
                 }
               }
               status: fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
@@ -146,7 +151,8 @@ project_items() { # -> JSON array of {number,title,state,status,priority,size,sp
         sprintTitle: (.sprint.title // null),
         labels: [.content.labels.nodes[].name],
         isParent: (.content.subIssues.totalCount > 0),
-        parent: (.content.parent.number // null)
+        parent: (.content.parent.number // null),
+        blockedBy: [(.content.blockedBy.nodes // [])[] | select(.state == "OPEN") | .number]
       })'
 }
 

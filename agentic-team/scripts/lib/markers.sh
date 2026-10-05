@@ -122,6 +122,25 @@ ${summary}
 EOF
 }
 
+# --- appended by the feedback-reply work: Scotty's report back to Adrian ----
+# integrating-feedback used to be a dead end for Adrian -- his feedback went
+# onto the board and he never heard back. `bc:feedback-reply` is the marker
+# that makes the report findable AND keeps it out of the feedback loop:
+# `is_human_comment` keys on "<!-- bc:", so a reply carrying this marker is
+# never read back as more feedback by demo-commented/integrate-feedback on a
+# later tick, however Scotty re-runs.
+
+render_feedback_reply() { # <text>
+  local text="$1"
+  cat <<EOF
+### Scotty's reply
+
+${text}
+
+<!-- bc:feedback-reply -->
+EOF
+}
+
 # --- appended by the bc-epic.sh work: the migration's provenance markers ----
 # `bc:epic <n>` and `bc:story <id>` are what make the epic import idempotent
 # and what the round-trip check reads. They are provenance ONLY -- Story 0.20
@@ -185,4 +204,51 @@ ${ruling}
 
 <!-- bc:taskreq:${role} ${outcome} -->
 EOF
+}
+
+# --- appended by the live-declaration work (story 4.24) ---------------------
+# Whether a finished story is visible in the live game is a fact recorded when
+# the story is built: ONE comment on the story issue, `bc:live <state>`, where
+# state is `visible` (the comment's prose says where to go and what to do) or
+# `none`. No such comment is a third state, `undeclared`, which every reader
+# treats as not visible. An unknown value or a `visible` with no where-line
+# parses as undeclared too -- the fact is only as good as what can be read.
+
+render_live() { # <visible|none> [where-line]
+  local state="$1" where="${2:-}"
+  if [ "$state" = "visible" ]; then
+    printf '### Live\n\n%s\n\n<!-- bc:live visible -->\n' "$where"
+  else
+    printf '### Live\n\nNot visible in the live game.\n\n<!-- bc:live none -->\n'
+  fi
+}
+
+# parse_live <body> -- prints `none`, `undeclared`, or `visible` followed by a
+# newline and the where-line.
+parse_live() {
+  local body state where
+  body="$(printf '%s' "$1" | tr -d '\r')"
+  state="$(marker_get "$body" live 2>/dev/null || true)"
+  case "$state" in
+    none) printf 'none'; return 0 ;;
+    visible)
+      where="$(printf '%s\n' "$body" | grep -v -e '^[[:space:]]*$' -e '^### Live$' -e '<!-- bc:' | head -1)"
+      if [ -n "$where" ]; then
+        printf 'visible\n%s' "$where"
+        return 0
+      fi
+      ;;
+  esac
+  printf 'undeclared'
+}
+
+# is_live_declaration <body> -- true only for the shape render_live writes: the
+# bc:live marker alone on its own line and no other bc: marker in the comment.
+# A comment that merely quotes the marker (a lead's direction, say) is not one.
+is_live_declaration() {
+  local body markers
+  body="$(printf '%s' "$1" | tr -d '\r')"
+  markers="$(printf '%s\n' "$body" | grep -F -- '<!-- bc:' || true)"
+  [ "$(printf '%s\n' "$markers" | grep -c .)" -eq 1 ] || return 1
+  printf '%s\n' "$markers" | grep -Eq -- '^<!-- bc:live [^>]* -->$'
 }

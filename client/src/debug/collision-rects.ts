@@ -4,7 +4,7 @@
 // at the same bar as the collision system itself. `collision-overlay.ts`
 // turns these records into elements and decides nothing.
 //
-// Two sources, each for exactly what only it can know (Quentin/Tim's
+// Three sources, each for exactly what only it can know (Quentin/Tim's
 // directions):
 //
 //   - a real, area-having collider comes from the *live collision grid*,
@@ -24,8 +24,14 @@
 //         nothing whatsoever -- and "nothing drawn" is indistinguishable
 //         from "this overlay is broken", which is the failure AC2 exists
 //         to prevent. The definition is the only source that always knows.
+//   - the player's own body (story 15.4) comes from `DebugWorldView.
+//     viewerBody()`, the scene's own `world/movement.ts` `bodyRect` --
+//     never a fourth expansion, this time of `MovementConfig` alone,
+//     which could just as easily confirm a body an overlay invented.
 //
-// Both reads are bounded by the viewport, never by how much world exists.
+// The two collider reads are bounded by the viewport, never by how much
+// world exists; the player's own body is drawn whenever there is a
+// viewport at all, since the viewer is always within their own.
 
 import { subcellRectPx } from "../render/screen-position";
 import { footprintOrigin } from "../world/footprint";
@@ -34,19 +40,25 @@ import { DEBUG_STYLE } from "./debug-style";
 import type { DebugWorldView } from "./world-view";
 
 /**
- * The three states AC2 requires be distinguishable, decided here and
- * never in a drawing layer:
+ * The three object-collider states AC2 requires be distinguishable, plus
+ * the player's own body (story 15.4, AC3), decided here and never in a
+ * drawing layer:
  *   - `collider`: a declared collider with area -- this is what stops a
  *     step.
  *   - `empty`: a collider declared with no area. It blocks nothing, but
  *     it is not absent, and the two are different bugs.
  *   - `none`: no collider declared at all (FR128's walkability).
+ *   - `player`: the viewer's own collision body -- the one entry that is
+ *     never an object.
  */
-export type CollisionRectKind = "collider" | "empty" | "none";
+export type CollisionRectKind = "collider" | "empty" | "none" | "player";
 
 /** One rect to draw, in world pixels on the viewer's own floor. */
 export interface CollisionRect {
-  readonly objectId: bigint;
+  /** Absent only for `kind: "player"`, which has no real object id --
+   * `kind` alone is the discriminator, never a sentinel value standing
+   * in for "not an object" (Tim's direction). */
+  readonly objectId?: bigint;
   readonly kind: CollisionRectKind;
   readonly x: number;
   readonly y: number;
@@ -65,13 +77,14 @@ const STROKE_BY_KIND: Readonly<Record<CollisionRectKind, string>> = {
   collider: DEBUG_STYLE.palette.collider,
   empty: DEBUG_STYLE.palette.emptyCollider,
   none: DEBUG_STYLE.palette.noCollider,
+  player: DEBUG_STYLE.palette.playerBody,
 };
 
 /**
  * Every collider state visible in `view`'s current viewport, on the
- * viewer's own floor. One record per object, whatever number of cells its
- * collider rasterises into: a reader is looking for the collider, not for
- * the grid's storage.
+ * viewer's own floor, plus the viewer's own body (story 15.4). One record
+ * per object, whatever number of cells its collider rasterises into: a
+ * reader is looking for the collider, not for the grid's storage.
  */
 export function buildCollisionRects(view: DebugWorldView): CollisionRect[] {
   const bounds = view.viewportCells();
@@ -170,6 +183,17 @@ export function buildCollisionRects(view: DebugWorldView): CollisionRect[] {
     // is simply not in view: its footprint reaches in, its collider does
     // not. Nothing to draw, and nothing wrong.
   }
+
+  // The player's own body (story 15.4, AC3), from the same `bodyRect`
+  // `world/movement.ts`'s resolver itself builds its start box from --
+  // one more entry, re-read every frame the player moves, never a second
+  // computation from `MovementConfig` here.
+  rects.push({
+    kind: "player",
+    ...subcellRectPx(view.viewerBody(), floor, colliderSubcellsPerCell, tileSizePx, storeyHeightPx),
+    stroke: STROKE_BY_KIND.player,
+    fill: DEBUG_STYLE.palette.playerBody,
+  });
 
   return rects;
 }

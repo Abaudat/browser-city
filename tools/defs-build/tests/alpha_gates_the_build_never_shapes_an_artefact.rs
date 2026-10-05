@@ -1,0 +1,105 @@
+//! Pixels may refuse a build, never shape an artefact (story 15.3,
+//! restating story 2.3 AC4): two sheets that both satisfy the silhouette
+//! rule but differ in alpha where the rule does not look -- the transparent
+//! margin and a shadow below the threshold -- produce identical footprint
+//! and collider data in both generated artefacts.
+
+mod support;
+
+use std::collections::BTreeMap;
+
+use support::{
+    appearance_sheet_bytes, code_tables, object_sheet_dims, read_tree, sheet_dims, valid_dir,
+};
+
+#[test]
+fn alpha_the_rule_does_not_look_at_never_changes_either_generated_artefact() {
+    let files = read_tree(&valid_dir());
+    let code_tables = code_tables();
+    let sheet_dims = sheet_dims();
+
+    let (sheet, (w, h)) = object_sheet_dims()
+        .into_iter()
+        .next()
+        .expect("at least one object sheet must exist in the shared valid fixture tree");
+
+    // Both sheets hold the agreeing block (columns 4..12, rows 4..12 of
+    // the band). They differ outside it: the second adds sub-threshold
+    // shadow pixels (alpha 100) in the margin and under the block, and
+    // keeps a different block colour.
+    let opaque_rgba = support::agreeing_art_rgba(w, h);
+    let mut punched_rgba = opaque_rgba.clone();
+    for y in 0..16u32 {
+        for x in 0..16u32 {
+            let i = ((y * w + x) * 4) as usize;
+            if punched_rgba[i + 3] == 0 {
+                punched_rgba[i + 3] = defs_build::alpha::ALPHA_OPAQUE_THRESHOLD / 2;
+            } else {
+                punched_rgba[i] = 9;
+            }
+        }
+    }
+
+    let opaque_bytes = defs_build::atlas::image::encode_rgba8(w, h, &opaque_rgba).unwrap();
+    let punched_bytes = defs_build::atlas::image::encode_rgba8(w, h, &punched_rgba).unwrap();
+    assert_ne!(
+        opaque_bytes, punched_bytes,
+        "the two fixture sheets must actually differ in their own bytes"
+    );
+
+    let mut object_sheet_bytes_a: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    object_sheet_bytes_a.insert(sheet.clone(), opaque_bytes);
+    let mut object_sheet_bytes_b: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    object_sheet_bytes_b.insert(sheet.clone(), punched_bytes);
+
+    let out_a = defs_build::build(
+        &files,
+        &sheet_dims,
+        &object_sheet_bytes_a,
+        &appearance_sheet_bytes(),
+        &code_tables,
+        "",
+        "test-version",
+    )
+    .unwrap();
+    let out_b = defs_build::build(
+        &files,
+        &sheet_dims,
+        &object_sheet_bytes_b,
+        &appearance_sheet_bytes(),
+        &code_tables,
+        "",
+        "test-version",
+    )
+    .unwrap();
+
+    // `defs.rs` never learns an atlas page exists at all (Tim's own
+    // direction, `model.rs`'s `AtlasRect` doc comment) -- unaffected by
+    // alpha, byte for byte.
+    assert_eq!(out_a.rust, out_b.rust);
+    assert_eq!(out_a.id_manifest, out_b.id_manifest);
+
+    // `defs.json` legitimately differs in one place: the packed atlas
+    // page's own content hash, embedded in its filename (story 2.6) --
+    // real pixels really did change. Strip only that content-hashed
+    // filename before comparing the rest, which is exactly the object's
+    // own `width`/`height`/`collider` (and everything else) unaffected by
+    // alpha.
+    let strip_page_hash = |json: &str| -> String {
+        let mut out = String::new();
+        let mut rest = json;
+        while let Some(idx) = rest.find("\"file\": \"") {
+            out.push_str(&rest[..idx]);
+            rest = &rest[idx + "\"file\": \"".len()..];
+            let end = rest.find('"').expect("unterminated file value");
+            rest = &rest[end..];
+        }
+        out.push_str(rest);
+        out
+    };
+    assert_eq!(strip_page_hash(&out_a.json), strip_page_hash(&out_b.json));
+    assert_ne!(
+        out_a.json, out_b.json,
+        "the two builds' JSON must differ somewhere (the atlas page's own content hash) -- otherwise this test is vacuous"
+    );
+}

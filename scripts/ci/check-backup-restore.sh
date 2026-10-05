@@ -48,18 +48,30 @@
 #      schedules are derived state and this restore never writes one;
 #  10. module_owner has exactly one row after restore and it is the
 #      exported owner; require_owner accepts that owner and rejects an
-#      anonymous caller (reseed_codes, as check-live-migration.sh proves
+#      anonymous caller (finish_publish, as check-live-migration.sh proves
 #      for AC3 -- proven again here because restore is what could have
 #      broken it, by leaving two owner rows or the wrong one);
+#  10a. world_clock's whole row (id, epoch_at) is equal by value in the restored database;
 #  11. five refusals, each asserted directly: a non-fresh target, a
 #      schema mismatch, a wrong restoring identity, a `restore_*` call
 #      with no restore open, and `restore_module_owner` given a row
 #      whose owner is not the caller.
+#
+# Story 4.18's own AC3, in this same instance: the ordinary export against
+# '$SRC' above (this checkout, live == HEAD) already proves schema_commit
+# is a real commit sha, never 'worktree'; export-world.sh, run for real
+# from a disposable git worktree one commit ahead of the real one (an
+# invented table, then a column), still exports the live database
+# cleanly, selecting the real, unmodified schema -- and a checkout whose
+# only candidate is a superset, a database at a completely foreign schema,
+# or a real `--depth 1` shallow clone, all still refuse, each naming why
+# distinctly (missing/extra tables; a shallow checkout, named as such).
 set -uo pipefail
 SCRIPT="check-backup-restore"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 OPS="$REPO_ROOT/scripts/ops"
 . "$OPS/lib.sh"
+. "$REPO_ROOT/scripts/ci/lib/spacetime-instance.sh"
 
 DATA_DIR="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-backup-restore.XXXXXX")"
 WORK="$DATA_DIR/work"
@@ -69,7 +81,6 @@ SERVER_URL="http://127.0.0.1:$PORT"
 SERVER_ARGS=(--server "$SERVER_URL")
 START_LOG="$DATA_DIR/start.log"
 HEALTH_DEADLINE_S=30
-POLL_INTERVAL_S=1
 START_PID=""
 
 cleanup() {
@@ -77,8 +88,13 @@ cleanup() {
     echo "$SCRIPT: BC_KEEP_DATA_DIR set -- leaving $DATA_DIR and the instance on $SERVER_URL running" >&2
     return
   fi
-  [ -n "$START_PID" ] && kill "$START_PID" 2>/dev/null
+  bc_stop_spacetime "$START_PID"
   rm -rf "$DATA_DIR"
+  # story 4.18 AC3's own disposable worktrees: removed right after each is
+  # used, but a failure partway through (fail() exits immediately) can
+  # skip that -- `worktree prune` clears any registration whose directory
+  # is already gone, harmless if there is nothing to prune.
+  git -C "$REPO_ROOT" worktree prune 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -89,15 +105,9 @@ fail() { # <message> [log-file]
 }
 ok() { echo "$SCRIPT: ok -- $1" >&2; }
 
-spacetime start --data-dir "$DATA_DIR/data" --listen-addr "127.0.0.1:$PORT" >"$START_LOG" 2>&1 &
-START_PID=$!
-deadline=$((SECONDS + HEALTH_DEADLINE_S))
-healthy=0
-while [ "$SECONDS" -lt "$deadline" ]; do
-  curl -sf -o /dev/null "$SERVER_URL/v1/ping" && { healthy=1; break; }
-  sleep "$POLL_INTERVAL_S"
-done
-[ "$healthy" -eq 1 ] || fail "SpacetimeDB did not become healthy within ${HEALTH_DEADLINE_S}s" "$START_LOG"
+START_PID="$(bc_start_spacetime "$DATA_DIR/data" "$PORT" "$START_LOG")"
+bc_wait_spacetime_healthy "$SERVER_URL" "$HEALTH_DEADLINE_S" \
+  || fail "SpacetimeDB did not become healthy within ${HEALTH_DEADLINE_S}s" "$START_LOG"
 
 publish() { # <db> <log-file>
   spacetime publish --server "$SERVER_URL" --no-config -y "$1" --module-path "$REPO_ROOT/server" >"$2" 2>&1
@@ -156,7 +166,7 @@ while IFS= read -r table; do
   [ "$table" = "module_owner" ] && continue
   n="$(row_count_live "$SRC" "$table")"
   [ "$n" -ge 1 ] || fail "'$table' has 0 rows before export -- seed-edge-rows.sh has a gap (every non-scheduled table but module_owner must be seeded)"
-done <<< "$(bc_table_names non-scheduled)"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" non-scheduled)"
 ok "every non-scheduled table but module_owner has at least one row before export (module_owner already has init's own)"
 
 # --- extra: a table with a row too big for one byte-budgeted batch -------
@@ -188,6 +198,20 @@ ok "'floor_transition' seeded with real id gaps (one deleted row, one ~${GAP_N}-
 EXPORT_A="$WORK/export-a"
 bash "$OPS/export-world.sh" "$SRC" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DIR/export-a.log" 2>&1 || fail "export-world.sh failed on '$SRC'" "$DATA_DIR/export-a.log"
 
+# story 4.18 (Quentin's direction, cycle 1): '$SRC' is published from this
+# very checkout, so this export's own manifest.json is exactly
+# backup.yml's nightly case -- live equals HEAD -- and its schema_commit
+# must be the real commit that last touched server/schema.snapshot.json,
+# never 'worktree' (a clean checkout's working tree is byte-identical to
+# HEAD's own committed snapshot, so it is never emitted as a distinct
+# candidate at all -- see bc_snapshot_candidates). One grep on an export
+# this file already produces, no second export needed.
+PRE_FAKE_SHA="$(git -C "$REPO_ROOT" log --first-parent --format=%H HEAD -- server/schema.snapshot.json | head -n1)"
+[ -n "$PRE_FAKE_SHA" ] || fail "could not resolve the commit that last touched server/schema.snapshot.json"
+EXPORT_A_COMMIT="$(grep -oE '"schema_commit": *"[^"]*"' "$EXPORT_A/manifest.json" | sed -E 's/.*"([^"]*)"$/\1/')"
+[ "$EXPORT_A_COMMIT" = "$PRE_FAKE_SHA" ] || fail "expected export A's (this checkout, live == HEAD -- exactly backup.yml's nightly-after-a-successful-deploy case) manifest.json schema_commit to be $PRE_FAKE_SHA, got '$EXPORT_A_COMMIT' -- a clean checkout must never record 'worktree'"
+ok "export A's schema_commit ($EXPORT_A_COMMIT) is the real live commit, not 'worktree', even though live == HEAD"
+
 DST=bc-backup-dst
 publish "$DST" "$DATA_DIR/dst-publish.log" || fail "could not publish '$DST'" "$DATA_DIR/dst-publish.log"
 BC_RESTORE_BATCH_BYTES=4000 bash "$OPS/restore-world.sh" "$DST" "$EXPORT_A" --server "$SERVER_URL" >"$DATA_DIR/restore.log" 2>&1 \
@@ -197,11 +221,197 @@ grep -qE "'demo_ping' restored [0-9]+ row\(s\) in [2-9][0-9]* batch\(es\)" "$DAT
   || fail "'demo_ping' (which includes a 20KB message) did not restore across multiple batches at a 4000-byte budget -- byte-budget batching is not exercised" "$DATA_DIR/restore.log"
 ok "a row too big for one batch restores across multiple byte-budgeted batches"
 
+# --- story 4.2: begin_restore disarms every scheduled table before its
+# own preconditions run -- a freshly published target's own init armed
+# maintenance_schedule immediately, so without this a real fire could
+# land on the target mid-restore, using an epoch that belongs to the
+# target's own pre-restore world. Checked directly, on its own throwaway
+# target: begin_restore, then every scheduled table's row count, before
+# any restore_* call has run at all ----------------------------------
+DISARM_TARGET=bc-backup-disarm
+publish "$DISARM_TARGET" "$DATA_DIR/disarm-publish.log" || fail "could not publish '$DISARM_TARGET'" "$DATA_DIR/disarm-publish.log"
+DISARM_BEFORE="$(row_count_live "$DISARM_TARGET" maintenance_schedule)"
+[ "$DISARM_BEFORE" -eq 1 ] || fail "freshly published '$DISARM_TARGET.maintenance_schedule' holds $DISARM_BEFORE pending row(s), expected exactly 1 (init's own arm) -- nothing to disarm, this leg would prove nothing" "$DATA_DIR/disarm-publish.log"
+spacetime call "$DISARM_TARGET" "${SERVER_ARGS[@]}" --no-config -y begin_restore '[]' >"$DATA_DIR/disarm-begin.log" 2>&1 \
+  || fail "begin_restore failed against '$DISARM_TARGET'" "$DATA_DIR/disarm-begin.log"
+while IFS= read -r table; do
+  [ -n "$table" ] || continue
+  n="$(row_count_live "$DISARM_TARGET" "$table")"
+  [ "$n" -eq 0 ] || fail "scheduled table '$table' on '$DISARM_TARGET' holds $n pending row(s) immediately after begin_restore, expected exactly 0 -- begin_restore must disarm every scheduled table before any cadence can fire mid-restore" "$DATA_DIR/disarm-begin.log"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" scheduled)"
+ok "begin_restore disarms every scheduled table -- zero pending rows on '$DISARM_TARGET' immediately after, before any restore_* call"
+
+# --- restore-world.sh's finish_restore re-arms every cadence from the
+# epoch just restored, inside the module's own transaction chain.
+# maintenance_schedule holds exactly one pending row, and its own
+# freshly-armed target is phase-aligned to the restored epoch: the gap
+# between them is a whole number of city minutes (REAL_MS_PER_CITY_MINUTE,
+# 2500ms -- sim::cadence's own floor every cadence period clears, never
+# the maintenance-specific period alone, so this check stays valid even if
+# that period constant later changes). Read from maintenance_schedule
+# itself, never cadence_liveness: that table is only ever written from
+# inside a cadence's own fired reducer (never by the arm alone), so right
+# after a restore -- nothing has fired yet -- it still has no row at all. -
+MAINT_PENDING="$(row_count_live "$DST" maintenance_schedule)"
+[ "$MAINT_PENDING" -eq 1 ] || fail "restored '$DST.maintenance_schedule' holds $MAINT_PENDING pending row(s) after finish_restore, expected exactly 1"
+RESTORED_EPOCH_MICROS="$(column_values_live "$DST" world_clock epoch_at | grep -oE '[0-9]+' | head -n1)"
+# scheduled_at is ScheduleAt (a sum type): SATS tags it as
+# `[variant_index, payload]` -- `[1,[micros]]` for `Time` -- so the
+# *last* digit run is the micros value, never the first (the variant
+# tag), confirmed empirically against a real instance (story 4.2's
+# check-authoritative-loop.sh carries the same fix, same reasoning).
+MAINT_TARGET_MICROS="$(column_values_live "$DST" maintenance_schedule scheduled_at | grep -oE '[0-9]+' | tail -n1)"
+[ -n "$RESTORED_EPOCH_MICROS" ] || fail "could not read '$DST.world_clock.epoch_at'"
+[ -n "$MAINT_TARGET_MICROS" ] || fail "could not read '$DST.maintenance_schedule.scheduled_at' -- finish_restore did not arm the maintenance cadence"
+CITY_MINUTE_MICROS=2500000
+REMAINDER=$(( (MAINT_TARGET_MICROS - RESTORED_EPOCH_MICROS) % CITY_MINUTE_MICROS ))
+[ "$REMAINDER" -eq 0 ] || fail "the restored maintenance cadence's own target ($MAINT_TARGET_MICROS) is not phase-aligned to the restored epoch ($RESTORED_EPOCH_MICROS) at a ${CITY_MINUTE_MICROS}us city-minute grid -- remainder ${REMAINDER}us"
+ok "restored 'maintenance_schedule' resumes with exactly one pending row, phase-aligned to the restored epoch"
+
 EXPORT_B="$WORK/export-b"
 bash "$OPS/export-world.sh" "$DST" "$EXPORT_B" --server "$SERVER_URL" >"$DATA_DIR/export-b.log" 2>&1 || fail "export-world.sh failed on '$DST'" "$DATA_DIR/export-b.log"
 
 bash "$OPS/verify-world.sh" "$EXPORT_A" "$EXPORT_B" >"$DATA_DIR/verify.log" 2>&1 || fail "verify-world.sh found a mismatch between '$SRC' and the restored '$DST' -- across a table with real id gaps, this is the gap-fill loop's own correctness proof" "$DATA_DIR/verify.log"
 ok "$(tail -n1 "$DATA_DIR/verify.log") (including 'floor_transition', seeded with real id gaps)"
+
+# --- story 4.18 AC3: the real export-world.sh, run from a disposable git
+# worktree of this very repo whose own HEAD is one commit *ahead* of the
+# real one (an invented table, then, separately, an invented column) --
+# exactly the shape of a deploy that adds a table/column -- proves the
+# fix directly: the pre-publish backup no longer refuses '$SRC' (published
+# from the real, unmodified module) just because the checkout it runs from
+# is ahead of it. No second local instance and no test-only branch in
+# export-world.sh: the checkout's own history is real, `bc_snapshot_
+# candidates`'s override is never used here. `server/target` is symlinked
+# from the real repo into each worktree (never `CARGO_TARGET_DIR`, which
+# would build to the right place but leave lib.sh's own `bc_wb()` -- a
+# fixed path relative to *its own* repo root, the worktree's -- looking in
+# the wrong one) so world_backup is never rebuilt from scratch for either
+# worktree (Tim's direction, keeps this inside its own time budget).
+#
+# add_json_line <file> <after-pattern> <line> -- inserts <line> right
+# after the first line matching <after-pattern> -- enough to add one table
+# or one column to server/schema.snapshot.json's own JSON without a JSON
+# library: this file is read by serde_json (world_backup), which does not
+# care about indentation or where in its own array a new element lands.
+add_json_line() { # <file> <after-pattern> <line>
+  awk -v pat="$2" -v line="$3" '
+    { print }
+    $0 ~ pat && !done { print line; done = 1 }
+  ' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+
+ac3_worktree() { # <dir> -- a disposable, detached worktree of $REPO_ROOT
+                 # at its own current HEAD, sharing the real repo's own
+                 # server/target so world_backup is never rebuilt from
+                 # scratch.
+  git -C "$REPO_ROOT" worktree add -q --detach "$1" HEAD \
+    || fail "could not add a disposable git worktree at '$1'"
+  # A silently-degraded symlink (`|| true`) would pay for a from-scratch
+  # world_backup build inside the worktree instead -- the exact time-
+  # budget failure this symlink exists to prevent (Tim's direction, cycle
+  # 1) -- so a checkout that cannot share the target dir (no symlink
+  # support) must say so loudly, not quietly eat the cost.
+  ln -s "$REPO_ROOT/server/target" "$1/server/target" \
+    || fail "could not symlink server/target into the disposable worktree '$1' -- world_backup would otherwise rebuild from scratch there"
+}
+ac3_commit() { # <dir> <message> -- commits every modified tracked file.
+  git -C "$1" -c user.email="ci@example.com" -c user.name="ci" commit -q -am "$2" \
+    || fail "could not commit '$2' in the disposable worktree '$1'"
+}
+
+# PRE_FAKE_SHA (the commit the fix must select once a fixture commit lands
+# on top of it) was already resolved above, right after EXPORT_A.
+
+echo
+echo "story 4.18 AC3 (positive): the incoming commit adds a whole table AND a column -- export still finds and selects the real, live schema"
+# One worktree/commit/export for both additive shapes (never two -- each
+# export already pays for a full table-by-table live-shape build, ~2s x
+# ~26 tables x N passes, and this check has its own time budget), one
+# commit adding both a whole invented table and a column on an existing
+# one -- exactly "a deploy whose commit adds a table or a column" (the
+# issue's own wording), together.
+AC3_WT="$WORK/ac3-positive"
+ac3_worktree "$AC3_WT"
+add_json_line "$AC3_WT/server/schema.snapshot.json" '"tables":' \
+  '    {"accessor":"story_4_18_invented_table","struct_name":"Story418InventedTable","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[{"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}]},'
+add_json_line "$AC3_WT/server/schema.snapshot.json" '"columns":' \
+  '        {"name":"story_4_18_invented_column","ty":"i32","primary_key":false,"auto_inc":false,"unique":false,"has_default":true,"indexed":false},'
+ac3_commit "$AC3_WT" "story 4.18 AC3 fixture: an invented table and an invented column, never merged"
+AC3_EXPORT="$WORK/ac3-positive-export"
+bash "$AC3_WT/scripts/ops/export-world.sh" "$SRC" "$AC3_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-positive.log" 2>&1 \
+  || fail "export-world.sh failed on '$SRC', run from a checkout one commit ahead (an invented table and column) -- this is exactly the bug #331/#338 report" "$DATA_DIR/ac3-positive.log"
+AC3_COMMIT="$(grep -oE '"schema_commit": *"[^"]*"' "$AC3_EXPORT/manifest.json" | sed -E 's/.*"([^"]*)"$/\1/')"
+[ "$AC3_COMMIT" = "$PRE_FAKE_SHA" ] || fail "expected the export's manifest.json schema_commit to be $PRE_FAKE_SHA (the commit before the invented table/column), got '$AC3_COMMIT'"
+[ ! -f "$AC3_EXPORT/story_4_18_invented_table.jsonl" ] || fail "the export wrote a file for 'story_4_18_invented_table', which the live database never had -- it must have exported against the real, live schema, not the incoming one"
+git -C "$REPO_ROOT" worktree remove --force "$AC3_WT" 2>/dev/null || true
+ok "'$SRC' exports cleanly from a checkout one commit ahead by a whole table and a column -- manifest.json's schema_commit is $PRE_FAKE_SHA, the real live commit"
+
+echo
+echo "story 4.18 AC3 (negative): a real mismatch still fails, naming the missing/extra tables"
+AC3_NEG_WT="$WORK/ac3-negative"
+ac3_worktree "$AC3_NEG_WT"
+# An orphan commit -- its own first-parent history is exactly this one
+# commit, never the real repo's, so the *only* candidate export-world.sh
+# can ever find here is the superset itself (Quentin's direction: "a
+# candidate list containing only the superset"). A unique branch name
+# (this process's own pid): a fixed one would collide with a still-around
+# branch from a previous local run -- `git worktree remove` deletes the
+# worktree, never the branch it had checked out -- and `checkout --orphan`
+# on a name that already exists fails *without aborting this script*
+# (only `set -u`/`-o pipefail`, no `-e`), silently leaving the worktree on
+# its real, non-orphan history instead.
+git -C "$AC3_NEG_WT" checkout -q --orphan "ac3-negative-$$" \
+  || fail "could not create the orphan branch for the AC3 negative fixture"
+add_json_line "$AC3_NEG_WT/server/schema.snapshot.json" '"tables":' \
+  '    {"accessor":"story_4_18_invented_table","struct_name":"Story418InventedTable","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[{"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false}]},'
+ac3_commit "$AC3_NEG_WT" "story 4.18 AC3 fixture: superset only, orphan history"
+AC3_NEG_EXPORT="$WORK/ac3-negative-export"
+if bash "$AC3_NEG_WT/scripts/ops/export-world.sh" "$SRC" "$AC3_NEG_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-negative.log" 2>&1; then
+  fail "export-world.sh succeeded against '$SRC' from a checkout whose only candidate snapshot is a superset with an invented table -- it must refuse (no real match exists)" "$DATA_DIR/ac3-negative.log"
+fi
+grep -qF "does not match" "$DATA_DIR/ac3-negative.log" || fail "the mismatch refusal did not name the reason" "$DATA_DIR/ac3-negative.log"
+grep -qF "story_4_18_invented_table" "$DATA_DIR/ac3-negative.log" || fail "the mismatch refusal did not name 'story_4_18_invented_table' as missing" "$DATA_DIR/ac3-negative.log"
+git -C "$REPO_ROOT" worktree remove --force "$AC3_NEG_WT" 2>/dev/null || true
+git -C "$REPO_ROOT" branch -D "ac3-negative-$$" 2>/dev/null || true
+ok "a real mismatch (a candidate list with no snapshot that actually matches '$SRC') still refuses, naming the invented table"
+
+echo
+echo "story 4.18 AC3 (negative): a foreign schema (a different module entirely) still refuses, naming missing and extra"
+FOREIGN=bc-backup-foreign-schema
+if ! spacetime publish --server "$SERVER_URL" --no-config -y "$FOREIGN" --module-path "$REPO_ROOT/server/tests/fixtures/migration_v1" >"$DATA_DIR/foreign-publish.log" 2>&1; then
+  fail "could not publish the migration_v1 fixture as '$FOREIGN'" "$DATA_DIR/foreign-publish.log"
+fi
+AC3_FOREIGN_EXPORT="$WORK/ac3-foreign-export"
+if bash "$OPS/export-world.sh" "$FOREIGN" "$AC3_FOREIGN_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-foreign.log" 2>&1; then
+  fail "export-world.sh succeeded against '$FOREIGN', a completely different module (migration_v1's own fixture_row table, none of this module's real tables) -- it must refuse" "$DATA_DIR/ac3-foreign.log"
+fi
+grep -qF "does not match" "$DATA_DIR/ac3-foreign.log" || fail "the foreign-schema refusal did not name the reason" "$DATA_DIR/ac3-foreign.log"
+grep -qF "fixture_row" "$DATA_DIR/ac3-foreign.log" || fail "the foreign-schema refusal did not name 'fixture_row' as extra" "$DATA_DIR/ac3-foreign.log"
+ok "a foreign schema (a different module's own database) still refuses, naming missing and extra tables"
+
+echo
+echo "story 4.18 AC3 (negative): a real --depth 1 shallow checkout names the reason distinctly, never a generic mismatch"
+# `git clone --depth 1 file://...`, never a bare local path -- a local-
+# path clone silently ignores --depth (confirmed empirically) and would
+# prove nothing here. Reuses '$FOREIGN' (already published, above): the
+# real shallow clone's own boundary commit (this repo's real, full
+# schema) still cannot match a database at a completely different
+# module's schema, so this is a real mismatch too -- the only thing under
+# test is which message export-world.sh gives for it.
+AC3_SHALLOW_CLONE="$WORK/ac3-shallow"
+git clone -q --depth 1 "file://$REPO_ROOT" "$AC3_SHALLOW_CLONE" >"$DATA_DIR/ac3-shallow-clone.log" 2>&1 \
+  || fail "could not create the --depth 1 fixture clone" "$DATA_DIR/ac3-shallow-clone.log"
+ln -s "$REPO_ROOT/server/target" "$AC3_SHALLOW_CLONE/server/target" \
+  || fail "could not symlink server/target into the shallow clone -- world_backup would otherwise rebuild from scratch there"
+AC3_SHALLOW_EXPORT="$WORK/ac3-shallow-export"
+if bash "$AC3_SHALLOW_CLONE/scripts/ops/export-world.sh" "$FOREIGN" "$AC3_SHALLOW_EXPORT" --server "$SERVER_URL" >"$DATA_DIR/ac3-shallow.log" 2>&1; then
+  fail "export-world.sh succeeded against '$FOREIGN' from a --depth 1 shallow clone -- it must refuse (no real match exists)" "$DATA_DIR/ac3-shallow.log"
+fi
+grep -qF "shallow checkout" "$DATA_DIR/ac3-shallow.log" || fail "a real shallow checkout's own mismatch did not name itself distinctly ('shallow checkout') -- it read as a plain mismatch instead" "$DATA_DIR/ac3-shallow.log"
+grep -qF "fetch-depth: 0" "$DATA_DIR/ac3-shallow.log" || fail "the shallow-checkout refusal did not say how to fix it (fetch-depth: 0)" "$DATA_DIR/ac3-shallow.log"
+grep -qF "does not match" "$DATA_DIR/ac3-shallow.log" || fail "the shallow-checkout refusal still must name the underlying mismatch (missing/extra), not only the shallow diagnosis" "$DATA_DIR/ac3-shallow.log"
+ok "a real --depth 1 shallow checkout's own mismatch names itself distinctly ('shallow checkout', fetch-depth: 0), while still naming the underlying missing/extra tables"
 
 # --- 4: an overshoot rolls back the whole call, no partial row left ------
 FRESH_OVERSHOOT=bc-backup-overshoot
@@ -281,6 +491,78 @@ ROOM_AREA_NEW_ID="$(max_id_live "$TAIL_DST" room_area)"
 [ "$ROOM_AREA_NEW_ID" -gt "$ROOM_AREA_FLOOR" ] || fail "expected the post-restore probe on '$TAIL_DST.room_area' (restored via the None/placeholder branch -- every row was deleted before export) to land past the manifest's own sequence floor ($ROOM_AREA_FLOOR); got $ROOM_AREA_NEW_ID" "$DATA_DIR/tail-room-area-probe.log"
 ok "tail-deletion (all rows gone): 'room_area' restores to exactly 0 rows and its sequence still advances past the manifest's own recorded floor ($ROOM_AREA_FLOOR), via restore_autoinc_rows's None/placeholder() branch (probe landed on $ROOM_AREA_NEW_ID)"
 
+# --- stock: every row survives with its id and holder pair intact --------
+# Before verify-independent.sh, whose probe inserts a row into the restored
+# database. Two oracles: the restored table's whole rows, primary-key sorted
+# (`rows-canonical`, never the scan order), equal the source's; and the three
+# real-shaped rows `seed-edge-rows.sh` wrote are asserted as literals on the
+# restored database, each selected by its own stock_id, so neither the export
+# nor the source is the oracle for them.
+stock_rows_live() { # <db> [where-clause]
+  local where="${2:-}" resp
+  resp="$WORK/stockrows-$1-${where//[^a-z0-9]/_}.json"
+  bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM stock $where" >"$resp"
+  bc_wb rows-canonical "$BC_SNAPSHOT" stock "$resp"
+}
+SRC_STOCK="$(stock_rows_live "$SRC")"
+DST_STOCK="$(stock_rows_live "$DST")"
+[ -n "$SRC_STOCK" ] || fail "'$SRC.stock' has no rows -- nothing to compare"
+[ "$SRC_STOCK" = "$DST_STOCK" ] || fail "restored 'stock' rows differ from '$SRC's own -- expected:
+$SRC_STOCK
+got:
+$DST_STOCK"
+# [stock_id, holder_kind, holder_id, item_id, quantity]: business 1 holds 500
+# of item 1, business 2 holds 20 of item 1, citizen 1 holds 3 of item 2.
+for expected in '[4,0,1,1,500]' '[5,0,2,1,20]' '[6,1,1,2,3]'; do
+  id="${expected#[}"; id="${id%%,*}"
+  got="$(stock_rows_live "$DST" "WHERE stock_id = $id")"
+  [ "$got" = "$expected" ] || fail "restored 'stock' row $id is '$got', expected the seeded '$expected' (holder kind, holder id, item, quantity intact)"
+done
+[ "$(row_count_live "$SRC" business)" = "$(row_count_live "$DST" business)" ] \
+  || fail "restored 'business' has a different row count from '$SRC'"
+ok "every stock row reads back identically from the restored database, and the three seeded business/citizen rows hold their exact holder pair, item and quantity"
+
+# --- item instances: both forms survive by value -------------------------
+# Whole rows, primary-key sorted, equal the source's for the identity and each
+# form; and the two real-shaped instances `seed-edge-rows.sh` wrote are read
+# back as literals: instance 4 placed at a cell with a sub-cell offset (no
+# holder), instance 5 held in object 1's grid at a slot (no position).
+item_rows_live() { # <db> <table> [where-clause]
+  local where="${3:-}" resp
+  resp="$WORK/itemrows-$1-$2-${where//[^a-z0-9]/_}.json"
+  bc_sql_json "$SCRIPT" "$1" "${SERVER_ARGS[@]}" "SELECT * FROM $2 $where" >"$resp"
+  bc_wb rows-canonical "$BC_SNAPSHOT" "$2" "$resp"
+}
+for t in item_instance item_placed item_held; do
+  SRC_ROWS="$(item_rows_live "$SRC" "$t")"
+  DST_ROWS="$(item_rows_live "$DST" "$t")"
+  [ -n "$SRC_ROWS" ] || fail "'$SRC.$t' has no rows -- nothing to compare"
+  [ "$SRC_ROWS" = "$DST_ROWS" ] || fail "restored '$t' rows differ from '$SRC's own -- expected:
+$SRC_ROWS
+got:
+$DST_ROWS"
+done
+got="$(item_rows_live "$DST" item_placed "WHERE instance_id = 4")"
+[ "$got" = '[4,12,-7,0,3,15,0,77]' ] || fail "restored 'item_placed' row 4 is '$got', expected the seeded '[4,12,-7,0,3,15,0,77]' (cell, floor, sub-cell offset intact)"
+got="$(item_rows_live "$DST" item_held "WHERE instance_id = 5")"
+[ "$got" = '[5,0,1,5,2,0]' ] || fail "restored 'item_held' row 5 is '$got', expected the seeded '[5,0,1,5,2,0]' (container pair and slot intact)"
+ok "every item instance, placed and held row reads back identically from the restored database, and the two seeded instances hold their exact cell/offset and container/slot"
+
+# --- player position: the durable row survives by value --------------------
+# The row carries a Timestamp, an i8 and two u8 columns; the real-shaped row
+# `seed-edge-rows.sh` wrote (character 9, a negative cell on floor -1, non-zero
+# fractions) is read back as a literal, `updated_at` included.
+SRC_POS="$(item_rows_live "$SRC" player_position)"
+DST_POS="$(item_rows_live "$DST" player_position)"
+[ -n "$SRC_POS" ] || fail "'$SRC.player_position' has no rows -- nothing to compare"
+[ "$SRC_POS" = "$DST_POS" ] || fail "restored 'player_position' rows differ from '$SRC's own -- expected:
+$SRC_POS
+got:
+$DST_POS"
+got="$(item_rows_live "$DST" player_position "WHERE character_id = 9")"
+[ "$got" = '[9,77,-5,-7,-1,13,200,[1700000000000002]]' ] || fail "restored 'player_position' row 9 is '$got', expected the seeded '[9,77,-5,-7,-1,13,200,[1700000000000002]]' (negative cell, floor, fractions and updated_at intact)"
+ok "every player_position row reads back identically, and the seeded row holds its exact cell, floor, fractions and timestamp"
+
 # --- 5/7: COUNT(*) on both live databases and the auto_inc sequence
 # strictly advancing -- scripts/ops/verify-independent.sh, shared with
 # .github/workflows/backup.yml's rehearsal job (Tim's direction: the
@@ -327,6 +609,16 @@ DST_IDENTITY_VALUES="$(column_values_live "$DST" character_identity identity | s
 $SRC_IDENTITY_VALUES
 got:
 $DST_IDENTITY_VALUES"
+# The generate-once record is restored by value, never re-stamped with the
+# restoring build's own versions or clock: the seeded rows carry versions
+# and generated_at no real build ever has.
+GEN_VERSIONS="$(column_values_live "$DST" district generation_version)"
+values_contain '4294967295' "$GEN_VERSIONS" || fail "u32::MAX not found exactly in restored 'district.generation_version' -- a restore must not re-stamp the record"
+DEFS_VALUES="$(column_values_live "$DST" district defs_version)"
+values_contain "$EXPECT_STRING_JSON" "$DEFS_VALUES" || fail "the adversarial string was not found byte-exact in restored 'district.defs_version'"
+GENERATED_AT="$(column_values_live "$DST" district generated_at)"
+values_contain '[0]' "$GENERATED_AT" || fail "Timestamp 0 not found exactly in restored 'district.generated_at'"
+values_contain '[9223372036854775807]' "$GENERATED_AT" || fail "Timestamp i64::MAX not found exactly in restored 'district.generated_at'"
 ok "sentinel values (u64::MAX, i32::MIN, i8 floor, the full adversarial string, a Timestamp at 0 and i64::MAX micros, and every Identity, exact and sorted) read back exactly, by column, from the restored database"
 
 # --- 9: scheduled tables restore to nothing -- compared against a
@@ -338,21 +630,30 @@ while IFS= read -r table; do
   a="$(row_count_live "$REF" "$table")"
   b="$(row_count_live "$DST" "$table")"
   [ "$a" = "$b" ] || fail "scheduled table '$table': restored '$DST' has $b row(s), a freshly published reference has $a -- schedules are derived state and must never be restored"
-done <<< "$(bc_table_names scheduled)"
+done <<< "$(bc_table_names "$BC_SNAPSHOT" scheduled)"
 ok "every scheduled table in the restored database matches a freshly published reference (compared by row count -- schedules are derived state, never restored, so both are always empty today)"
+
+# --- 10a: world_clock's epoch survives by value ------------------------------
+# The row-count check alone would pass a restore that re-ran init's own
+# `ctx.timestamp` -- shifting the epoch retimes every in-city timestamp.
+SRC_EPOCH="$(column_values_live "$SRC" world_clock id)/$(column_values_live "$SRC" world_clock epoch_at)"
+DST_EPOCH="$(column_values_live "$DST" world_clock id)/$(column_values_live "$DST" world_clock epoch_at)"
+[ "$SRC_EPOCH" != "/" ] || fail "'$SRC' has no world_clock epoch_at to compare"
+[ "$SRC_EPOCH" = "$DST_EPOCH" ] || fail "restored world_clock row (id/epoch_at) is '$DST_EPOCH', the source's was '$SRC_EPOCH' -- restore must carry the epoch through by value"
+ok "restored world_clock row (id and epoch_at) equals the source's ($SRC_EPOCH)"
 
 # --- 10: module_owner / require_owner --------------------------------------
 OWNER_COUNT="$(row_count_live "$DST" module_owner)"
 [ "$OWNER_COUNT" -eq 1 ] || fail "restored 'module_owner' has $OWNER_COUNT row(s), expected exactly 1"
 ok "restored 'module_owner' has exactly one row"
 
-spacetime call "$DST" --server "$SERVER_URL" --no-config -y reseed_codes >"$DATA_DIR/reseed.log" 2>&1 \
-  || fail "reseed_codes failed against the restored database, called as its owner" "$DATA_DIR/reseed.log"
+spacetime call "$DST" --server "$SERVER_URL" --no-config -y finish_publish >"$DATA_DIR/reseed.log" 2>&1 \
+  || fail "finish_publish failed against the restored database, called as its owner" "$DATA_DIR/reseed.log"
 OWNER_REJECTION_PATTERN="this reducer may only be invoked by the module owner"
-if spacetime call "$DST" --server "$SERVER_URL" --no-config -y --anonymous reseed_codes >"$DATA_DIR/reseed-anon.log" 2>&1; then
-  fail "reseed_codes accepted an anonymous caller against the restored database; it must be rejected" "$DATA_DIR/reseed-anon.log"
+if spacetime call "$DST" --server "$SERVER_URL" --no-config -y --anonymous finish_publish >"$DATA_DIR/reseed-anon.log" 2>&1; then
+  fail "finish_publish accepted an anonymous caller against the restored database; it must be rejected" "$DATA_DIR/reseed-anon.log"
 fi
-grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/reseed-anon.log" || fail "reseed_codes rejected the anonymous call, but not with require_owner's own message" "$DATA_DIR/reseed-anon.log"
+grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/reseed-anon.log" || fail "finish_publish rejected the anonymous call, but not with require_owner's own message" "$DATA_DIR/reseed-anon.log"
 ok "require_owner accepts the restored owner and rejects an anonymous caller, against the restored database"
 
 # --- 11a: refuses a non-fresh target ---------------------------------------

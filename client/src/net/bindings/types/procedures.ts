@@ -6,5 +6,8 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
+import * as SyncClockProcedure from "../sync_clock_procedure";
 
+export type SyncClockArgs = __Infer<typeof SyncClockProcedure.params>;
+export type SyncClockResult = __Infer<typeof SyncClockProcedure.returnType>;
 

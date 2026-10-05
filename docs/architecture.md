@@ -10,16 +10,19 @@ cited here by identifier.
 | ----------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Server module                 | Rust, edition 2024, `crate-type = ["cdylib"]`, target `wasm32-unknown-unknown`                           |
 | Server, database, replication | SpacetimeDB 2.9.x — the `spacetimedb` crate                                                              |
-| Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the table-bounds registry), and the `browser_city` module crate, which depends on both |
-| Property testing (server)     | `proptest`, dev-dependency of `sim` and `tools/defs-build` only; case count from `PROPTEST_CASES`       |
-| Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
+| Server workspace              | `server/` is a Cargo workspace: `sim` (pure logic), `bounds` (the native schema-test and fixture-tooling crate; the table-bounds registry is `sim::table_bounds`), and the `browser_city` module crate, which depends on `sim` |
+| Property testing (server)     | `proptest` `=1.11.0`, dev-dependency of `sim` and `tools/defs-build` only; case count from `PROPTEST_CASES`, RNG seed from `PROPTEST_RNG_SEED` — fixed in `ci.yml`, `github.run_id` in `explore.yml`; a failure reproduces with `PROPTEST_RNG_SEED=<log> PROPTEST_CASES=<log> cargo test -p sim --release --test invariants -- <property>` (NFR50) |
+| Property testing (client)     | `fast-check` 4.10.0, pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle; RNG seed from `FAST_CHECK_SEED` through the one vitest setup file (`tests/unit/setup/property-seed.ts`) — fixed in `ci.yml`, derived from `github.run_id` in `explore.yml`, fresh when unset locally, an error when unset under `CI`; no per-test `seed`/`path`, no `configureGlobal` outside the setup file, no `fc.sample`/`fc.check`; a failure prints `FAST_CHECK_SEED=<seed> npx vitest run <file>` (NFR50); the setup file sets `defaultSizeToMaxWhenMaxSpecified`, so a stated `maxLength`/`maxKeys` is the size explored — no per-arbitrary `size`, no `baseSize`, no unbounded length arbitrary, and a property above the default ceiling records its drawn size with `tests/unit/setup/size-probe.ts` (NFR51) |
+| Unit-test budget (client)     | `testTimeout` 5 s in `vitest.config.ts`; the guard fails a test over 30% of its own effective timeout under coverage on CI, and a test is settled only at or below 650 ms (about 13%, the guard limit over the 2.3× runner spread), enforced by `scripts/ci/check-unit-test-durations.sh` over `tests/unit/setup/duration-report.ts`; an explicit timeout is a named `*_TIMEOUT_MS` constant, at most 60 s and at least 10× the CI worst case, with that figure in a comment, only for work that is its own budget (a case count, a walk length); any `retry`/`repeats` (config, describe, test or `--retry`, all resolved per test) fails the guard (NFR49) |
 | E2E pixel compare             | `pixelmatch` 7.2.0 + `pngjs` 7.0.0 (`@types/pngjs` 6.0.5), pinned, `devDependency` of `client` only; never a runtime import, never in the built bundle |
 | Boot-budget HTTPS preview     | `@vitejs/plugin-basic-ssl` 2.3.0, pinned, `devDependency` of `client` only; enabled only when `BC_BOOT_HTTPS=1` (the boot-budget harness), never for `npm run dev`/`preview` defaults, never in the built bundle |
+| `proc-macro2`                 | `=1.0.107`, dev-dependency of `bounds` only (the token-level float scan over `sim`'s sources); native test tooling, never a dependency of `sim` or `browser_city` |
 | `serde`/`serde_json`          | Native-only tooling (`bounds`'s schema-snapshot serialization, the spike-report binaries under `server/spikes/*_report`, `server/tools/*` e.g. `world_backup`) — never a dependency of a published module crate |
 | Hosting                       | SpacetimeDB Maincloud                                                                                    |
 | CI / deploy                   | GitHub Actions is the only path to Maincloud; never a local `spacetime publish` |
 | Client                        | TypeScript + PixiJS v8, bundled by Vite                                                                  |
 | Client SDK                    | the `spacetimedb` npm package                                                                            |
+| Client OIDC                   | `oidc-client-ts` 3.5.0, pinned, a runtime dependency that exists only in the lazily imported `client/src/identity/link-flow.ts` chunk |
 | Client bindings               | `spacetime generate --lang typescript --out-dir client/src/net/bindings` — generated, never hand-written |
 | Client lint/format            | Biome                                                                                                    |
 | Client hosting                | GitHub Pages, deployed by CI on push to master                                                          |
@@ -54,11 +57,30 @@ and seeds its own PRNG (`sim::rng`, xoshiro256++ via splitmix64 — never
 determinism is pinned by a committed golden vector, keyed by
 `sim::rng::RNG_VERSION`; the golden and the version move together.
 
+`sim`'s `Cargo.toml` denies `clippy::disallowed_types`,
+`disallowed_methods` and `float_arithmetic`; `clippy.toml` also bans
+`sort_unstable_by`, `sort_unstable_by_key`, `select_nth_unstable_by*` and
+std's `DefaultHasher`/`RandomState` (plain `sort_unstable()` over a total
+key stays legal). A `#[cfg(test)]` canary in `sim/src/lint_canary.rs` expects every
+ban to fire, and `unfulfilled_lint_expectations` is denied, so a ban that
+stops applying fails clippy.
+
+A `bounds` test tokenises every file under `sim/src/` (`generated/` included; `sim/src/lint_canary.rs` is the one exempt path) and fails on any float literal, any identifier containing `f16`/`f32`/`f64`/`f128`, `c_float`/`c_double`, an `include!` or a `#[path]`, naming file and line; the clippy lints are the second layer.
+
 `browser_city` cannot be linked natively, so anything requiring a native
 test lives in `sim` or `bounds`.
 
-Every table declares a bound in the `bounds` crate's `TABLE_BOUNDS`
-registry, mechanical or engineering (NFR37).
+Every table declares a bound in `sim::table_bounds::TABLE_BOUNDS`,
+mechanical or engineering (NFR37): `max_rows` (the ceiling),
+`expected_rows` (launch-scale magnitude) and `alert_rows` (where the
+metrics sampler raises), with `0 < expected_rows <= alert_rows <=
+max_rows`, and `alert_rows < max_rows` for engineering bounds. The
+`sim::storage` constants `STORAGE_WALL_BYTES` (40 GiB), `STORAGE_REVIEW_BYTES`
+(10 GiB) and `STORAGE_LAUNCH_ESTIMATE_BYTES` (200 MiB) carry NFR15; a
+native test prices `expected_rows` and `max_rows` with a row-size
+estimator over the schema snapshot's column types (assumed mean for
+variable-length columns) and requires the sums to stay under the review
+trigger and the wall respectively.
 
 The published module runs with `overflow-checks` and `debug-assertions` on
 (`server/Cargo.toml`'s `[profile.release]`, the profile `spacetime build`
@@ -89,6 +111,39 @@ rather than replaying them all.
 Schedules are derived state: rebuilt from durable tables, never trusted
 to outlive a deploy purely by surviving as pending rows. See
 docs/spikes/1.3-scheduled-reducer-timing.md.
+
+- A cadence's origin is `world_clock.epoch_at`, and its period is a whole number of city minutes.
+- `sim::cadence::next_target` is the only function that computes a reschedule target.
+- A cadence's own scheduled table is armed with `ScheduleAt::Time` alone, never `ScheduleAt::Interval`.
+- `finish_publish` (owner-only, idempotent, one transaction) rebuilds every schedule from the epoch, beside establishing every one-row table and seeding every extensible set (see Data model).
+- `begin_restore` disarms every scheduled table before its own preconditions run; `finish_restore` re-arms every cadence after closing the restore, both inside the same transaction chain, so no cadence is ever armed from an epoch outside the world actually open for restore.
+- `cadence_liveness` holds one row per armed cadence, written only by that cadence's own fired reducer.
+- `next_target` takes the clock `speed` and derives its period from the effective minute. A cadence's work is a function of the city minute it fires for: bodies live in `tables/cadences.rs` as `fn(ctx, city_minute)`, and `ctx.timestamp`, `world_clock` and `read_clock` are banned there. A jump's replay starts at each cadence's own pending row (which may already be due); a cadence with no pending row replays nothing. A `time-control` jump replays every skipped grid point through those same bodies in one transaction, in city-minute order, or refuses; `replay_skipped_cadences` names every scheduled table once, as walked, refuse-if-pending, or skipped (an armed cadence a jump leaves alone).
+
+### Metrics
+
+- `metrics_sample_schedule` fires every `METRICS_PERIOD_CITY_MINUTES` (1440: one real hour at speed 1). Its body, `tables::metrics::run_sampler`, is a function of the present, not a city minute, so it lives outside `tables/cadences.rs` and a clock jump skips it.
+- Each fire writes one `table_sample` row per table (`rows` from `count()`, `bytes_est`, the declared `alert_rows`/`max_rows`, `over_alert = rows > alert_rows`) and one `storage_sample` row (`total_bytes_est`, `over_review`, `over_wall`, classified by `sim::storage::classify_total`, and the `review_bytes`/`wall_bytes` thresholds beside them). Both tables are private; breaches are columns, and a `log::warn!` accompanies them.
+- `bytes_est` is an estimate: the BSATN size of the first `METRICS_BYTES_SAMPLE_ROWS` (64) rows scaled to `rows`. It excludes indexes and the commit log. No per-fire cost grows with table size.
+- `sample_all_tables` names every table exactly once (`bounds/tests/metrics_coverage.rs`).
+- The sample tables are bounded by retention and by their own declared `max_rows`: each fire deletes samples older than `METRICS_RETENTION_DAYS` (90), then the oldest past the bound, through the `sampled_at` index. `run_sampler` is infallible, so a failure never stops the re-arm. `begin_restore` clears both tables.
+- Every reducer and procedure belongs to exactly one class in `sim::reducer_classes::REDUCER_CLASSES`: `scheduled`, `player` (anything else a client identity may call), `position` (`set_player_position`, the one term that scales with concurrency), `operator` (publish, restore, `time-control`) or `lifecycle` (`init`, connect/disconnect). `bounds/tests/reducer_classes_coverage.rs` fails on an unregistered one. The first statement of every reducer and procedure body is `tables::metrics::count_call(ctx, ReducerClass::X)`, which increments that class's row in `reducer_class_counter` (one row per class, established by `finish_publish`, restored by `restore_reducer_class_counter`); `scripts/ci/check-reducer-counted.sh` enforces it, `init` the one exemption, and `every_reducer_counts_under_its_registered_class` ties each body's `ReducerClass::X` to its registry entry. The unit is committed calls: `count_call` rides the reducer's transaction, so a call that returns `Err` is uncounted, and the figure is not the bill. The module SDK exposes no energy figure.
+- Each fire also writes one `reducer_class_sample` row per class (`calls_total`, `calls_delta` since the previous fire, `sampled_at` indexed), bounded and pruned like `table_sample`; `begin_restore` clears it. No threshold applies to it.
+- The sample-row shape for any metric: one sampler-written row per period in a `*_sample` table, `sampled_at` indexed, bounded by retention and its own `max_rows`, a declared threshold beside the figure as a column, a breach as a column. The watcher reads these tables.
+- The watcher is `.github/workflows/watch.yml` (`cron` every six hours plus `workflow_dispatch`, `maincloud` environment, gated on `vars.DEPLOY_ENABLED`, same credential as `backup.yml`): an external process, never a reducer. It runs `scripts/ops/storage-report.sh <database> --server maincloud --findings <file>`, which prints the newest fire's tables, storage total and per-class calls. Exit 0 healthy, 1 a breach (a table past `alert_rows`, total past the review trigger or the wall, newest sample older than three sampler periods), 2 could not read. `--findings` writes one `title<TAB>detail` line per breach; each goes to `scripts/ci/report-scheduled-failure.sh` on `failure() || cancelled()`. Issue titles: `watcher: table <accessor> over alert`, `watcher: storage over review`, `watcher: storage over wall`, `watcher: sampler stale`, `watcher: could not read the metrics`; the figure is in the body, a repeat run comments. `check-watch-workflow.sh` pins the workflow's shape. Nothing notices the watcher stopping (GitHub disables a cron after 60 idle days); the module cannot reach it (the WASM sandbox has no network).
+- `backup.yml` also runs `storage-report.sh` last, after the artifact upload (`check-deploy-workflow.sh` pins the order).
+
+## Time
+
+- In-city time is a pure function of one durable row and the server's `now`: `sim::time::city_time(epoch_at, now, speed)` returns `CityTime { day, hour, minute, weekday, real_ms_into_minute }`, integer arithmetic only, `weekday` being `day` mod 7. The smallest unit of city time is the minute; `real_ms_into_minute` exists for rendering interpolation only, and no reducer, rule or gameplay decision may read it.
+- `REAL_MS_PER_CITY_MINUTE` (FR1, 2500) is a fixed constant in `tools/defs-build/src/model.rs`, emitted into `sim/src/generated/defs.rs` and `client/public/defs/defs.json` (`real_ms_per_city_minute`, refused by `client/src/defs/parse.ts` when missing or below 1). `sim::time` derives its constants as expressions over it and refuses a value above `u16::MAX` at compile time.
+- `world_clock` is a public one-row table (`id` 0, `epoch_at`, `speed`): the real instant of day 0, 00:00, and the clock multiplier (default 1). `init` writes it once and a republish never rewrites it. It is restored by `restore_world_clock`.
+- The server holds the epoch; clients derive time arithmetically and are never told it. Nothing ticks the clock: `world_clock_schedule` carries no row and no per-minute broadcast exists.
+- The client subscribes to `world_clock` and estimates the server's clock from the `sync_clock` procedure (returns `ctx.timestamp`; its one write is the class call counter): on connect, every 5 real minutes and when the tab becomes visible. The estimate advances on `performance.now()`; nothing under `client/src/time/` reads `Date.now()`, and it imports no `net/`, `pixi.js` or DOM global.
+- `fixtures/city-clock-conformance.v2.json` (cases carry `speed`) pins `sim::time` and `client/src/time/city-time.ts` to each other.
+- The effective real microseconds per city minute are `REAL_MS_PER_CITY_MINUTE * 1000 / speed`. `sim::time::validate_speed` accepts only `1..=MAX_CLOCK_SPEED` (100) values that divide that exactly, so every grid point is an exact integer instant; `sim::time::reanchor` and `jumped_epoch` are the only clock arithmetic. Anything that interpolates on `real_ms_into_minute` divides by the effective minute, never the constant. The multiplier is for watching, not correctness: at high speed the catch-up rule skips ticks it cannot deliver, and `cadence_liveness.missed` is the meter.
+- FR163's `jump_clock(city_minutes)` and `set_clock_speed(speed)` exist only behind the `time-control` Cargo feature (never a default), open to any caller: that flavour is only ever published by `scripts/dev/publish-dev.sh` to a local instance (by hand, and by the functional e2e server `serve-for-e2e.mjs`, the one other caller; the deploy-smoke rehearsal stays on the production flavour), driven by `scripts/dev/clock.sh`; `deploy.yml` publishes `--module-path server` and never sees the feature. Every table and column is unconditional, so both flavours share one schema. A speed change re-anchors the epoch so the city minute never moves; a jump is forward only, at most `MAX_JUMP_CITY_MINUTES` (8 city days) and `MAX_JUMP_TICKS` replayed ticks, in one transaction, so any refusal changes nothing.
+- The client's `CityClock.setClock(epoch, speed)` takes both from `world_clock`'s `onInsert`/`onUpdate`; a jump or speed change reaches a running client without a reload.
 
 ## Backup
 
@@ -154,8 +209,11 @@ loud failure instead, never a silent no-op.
   specific wording, pinned to the version `scripts/ci/
   install-spacetimedb-cli.sh` installs) rather than `|| true` on the
   export -- any other failure is a hard failure of the job.
-- `publish-module` calls `reseed_codes` after publishing (NFR36/NFR38,
-  above). NFR33 (an additive-only schema, enforced at PR time) is what
+- `publish-module` calls `finish_publish` after publishing (NFR36/NFR38,
+  above) and ends with `scripts/ops/assert-world-invariants.sh` against
+  Maincloud, so a deploy is red the instant the live world is inconsistent
+  (`scripts/ci/check-deploy-rehearsal.sh` rehearses the same sequence over a
+  world born at the live database's first deploy). NFR33 (an additive-only schema, enforced at PR time) is what
   makes this publish forward-only: there is no schema rollback, only fix
   and republish -- `server/README.md`'s own recovery section.
 - `deploy-client` builds the client with `vite build --base=/browser-city/`
@@ -181,15 +239,21 @@ loud failure instead, never a silent no-op.
   production-base build under `/browser-city/`, backed by a disposable
   local SpacetimeDB, so a broken spec is caught before merge. Every run
   connects as a fresh, anonymous identity, like a real player -- there is
-  no fixed smoke identity today, because `identity_connected` writes
-  nothing yet; a fixed identity threaded through a URL query parameter
+  no fixed smoke identity, because `identity_connected` writes nothing
+  and only `create_character` writes a character (a smoke run leaves
+  `character` and `character_identity` as it found them, which
+  `serve-for-deploy-smoke.mjs` asserts); a fixed identity threaded through a URL query parameter
   would otherwise let any visitor forge another session, and would leak
   into an uploaded Playwright report on a public repo.
 - No automatic rollback: a published schema cannot be rolled back, only
-  rolled forward. A failure on master runs `scripts/ci/
-  report-scheduled-failure.sh`, so it becomes a tracking issue rather than
-  sitting unnoticed in the Actions tab; `server/README.md` names the
-  manual recovery path.
+  rolled forward. A failure *or a timeout* on master runs `scripts/ci/
+  report-scheduled-failure.sh` (`report-failure`'s `if:` matches
+  `cancelled` as well as `failure`: a `timeout-minutes` expiry ends a job
+  `cancelled`, NFR49), so it becomes a tracking issue labelled `alert`
+  rather than sitting unnoticed in the Actions tab; the agentic team's
+  orchestrator adopts it onto the board ahead of every other story
+  before it ever picks new work; `server/README.md` names
+  the manual recovery path.
 
 ## Schema
 
@@ -214,11 +278,16 @@ and just-in-time. So:
   in the same PR (`check-bindings-current.sh`).
 - An extensible set (NFR36) is a `u32` code plus a companion data table,
   never a Rust enum, so a new variant is a row insert rather than a
-  migration. Seeding is idempotent and lives in an explicit `reseed_codes`
-  reducer (called from `init`, and re-callable by hand) rather than on a
+  migration. Seeding is idempotent and lives in `finish_publish` rather than on a
   hot lifecycle path — publishing a module that adds a code is followed by
-  calling `reseed_codes`, automated by `deploy.yml`'s `publish-module` job.
-- An operator-facing reducer (`reseed_codes` is the first) is never left
+  calling it, automated by `deploy.yml`'s `publish-module` job.
+- `init` records the owner, then runs `finish_publish`'s body. `finish_publish`
+  (owner-only, idempotent, one transaction) establishes every one-row table,
+  seeds every extensible set and re-arms every cadence, and errs if a one-row
+  table is still absent; its callers are `init` and `deploy.yml`'s
+  `publish-module` job. A table is never populated by `init` alone: `init`
+  never re-runs on a republish.
+- An operator-facing reducer (`finish_publish` is the first) is never left
   open to any caller: `init` records the publishing identity in the
   one-row `module_owner` table, and the reducer rejects any other caller
   via `tables::ops::require_owner`. The next operator reducer (a balance
@@ -241,9 +310,108 @@ and just-in-time. So:
   halves of that last rule against a real local SpacetimeDB instance.
   A code's number in `sim::codes` is as permanent as a primary key;
   `scripts/ci/check-codes-append-only.sh` diffs
-  `sim/tests/goldens/codes_*.golden` the same way.
+  `sim/tests/goldens/codes_*.golden` the same way. `scripts/ops/
+  export-world.sh` exports against the newest first-parent snapshot in
+  this file's own git history that actually matches the live database,
+  never the checkout's own working-tree snapshot outright, recorded as
+  `schema_commit` in the export's manifest (story 4.18).
+
+## Identity
+
+The device's server-issued anonymous token is the everyday credential; an
+OIDC identity is a recovery key used once per device. Linking, and recovery
+on a fresh browser, are one operation: put this device's anonymous identity
+and an OIDC identity on the same character.
+
+- **Token.** `client/src/identity/identity-storage.ts`, key `bc.identity.v1`,
+  written only into an empty key, never cleared, never overwritten, read
+  back after a write. `connect()` takes one options object; the stored
+  token goes to `withToken`. A refused token shows the connection notice
+  and is kept. A tab that connected without a token and finds one stored
+  when it goes to write keeps its connection as a session-only identity
+  (`persisted: false`); nothing creates a character for it
+  (`identity/create-guard.ts`) and its next load uses the stored token. A first visit is the WebSocket alone; a return visit
+  adds the SDK's own `POST /v1/identity/websocket-token`.
+  `scripts/ci/check-identity-token-confined.sh` keeps the key, `withToken`,
+  and any `console.` in the token module where they belong.
+- **Server.** `tables/identity.rs` holds `character`,
+  `character_identity` (`issuer_id`: 0 anonymous, else an `oidc_issuer`
+  row), `oidc_issuer` and `link_request`, all private, and every read of
+  `character_identity` (`check-character-identity-path.sh`). `identity_connected`
+  writes nothing. `create_character()` is a no-op when the caller already
+  has a character. `begin_link(code)` stores a 256-bit code, with the
+  requester's own issuer, for ten minutes (replacing the caller's last,
+  pruning expired ones, refusing at `link_request`'s ceiling);
+  `complete_link(code)` consumes it as an OIDC identity of any registered
+  issuer and maps whichever of the two identities has no character onto the
+  other's, under its own issuer; two characters
+  or none is an `Err` that changes nothing. `accept_oidc_issuer` is
+  owner-only and idempotent; zero rows means linking is off. A token whose
+  issuer is registered must carry that row's `client_id` in `aud`
+  (`sim::identity::credential`), at connect and in every reducer. The plans
+  (`plan_create`, `plan_link`, `check_claim`, `credential`) are pure, in
+  `sim::identity`.
+- **Reads.** The client learns its own state from the per-sender view
+  `my_character` (`character_id`, `created_at`, `linked`). No table other
+  than `character_identity`, `module_owner` and `link_request` holds an
+  `Identity` column; player data keys on `character_id`.
+- **OIDC client.** Authorization code with PKCE through full-page redirect,
+  no popup, iframe, renew or kept user; the sign-in state lives in
+  `sessionStorage` and the link code travels in the library's own state. On return the page boots on the anonymous token,
+  strips the callback parameters, and `net/link.ts` opens a short-lived
+  connection with the ID token to call `complete_link`. The provider is
+  `VITE_OIDC_AUTHORITY`/`VITE_OIDC_CLIENT_ID` for the client and
+  `accept_oidc_issuer` for the module, both from the repository variables
+  `OIDC_AUTHORITY`/`OIDC_CLIENT_ID` (`check-deploy-workflow.sh`); unset means
+  the link is never offered.
+- **Offer.** Due (`client/src/identity/link-prompt.ts`) when the character
+  exists, is unlinked, its token is persisted, a provider is configured,
+  and the character's age and the time since the last offer are past
+  `identity.link_prompt_min_character_age_days` and
+  `identity.link_prompt_cooloff_days`; evaluated once per session as the scene
+  mounts (`identity/link-offer.ts`), recording the city day when shown. The
+  offer has no DOM and no canvas text: it is the `[[object]]` carrying the
+  `registry_post` tag, placed in the test street (`test-street/link-carrier.ts`,
+  throwaway) when due, and an in-reach intent on it starts `offerLink`. A
+  character's age is its real creation instant read on the city clock, so
+  the e2e harness (which publishes the `time-control` flavour) ages it with
+  `set_clock_speed`, never `jump_clock`.
+
+## Stock
+
+- A holder is `(holder_kind: u32, holder_id: u64)`: a `sim::codes::holder_kind` code plus the id in that kind's own table. Five codes: `business`, `citizen`, `vehicle`, `building`, `municipal_facility`. There is no holder table, and neither a room nor a brand is a holder. `sim::stock::HolderRef` is the one definition; `sim::stock::HOLDER_TABLES` names each kind's table, or none yet (vehicle, municipal facility).
+- `business` is the business instance: one row per shop.
+- `stock` has a surrogate `stock_id`, `holder_kind`, `holder_id`, `item_id` and `quantity` (`u64`, in the item's own unit). It is never addressed by room, brand or position. One index, `by_holder_item` on (`holder_kind`, `holder_id`, `item_id`).
+- At most one `stock` row per (holder, item); an absent row is zero and no row stores zero. `sim::stock::plan_make`, `plan_consume` and the transfers decide the one row a write lands on; a holder holds at most `sim::stock::MAX_LINES_PER_HOLDER` items.
+- `sim::author::Author` is a `citizen_id` and a `Cause` (`ProcedureStep` or `Consumption`, a closed enum; item instances and cash take the same type). `sim::stock::plan_make` (goods come into existence: procedure step only), `plan_consume` (goods leave existence: what a consumption eats, or inputs a step uses up -- never the first half of a move) and `plan_transfer` / `plan_transfer_exact` (goods that already exist move: procedure step only, both sides or neither) take one and return a `Write`; `plan_transfer_all` moves every line of a lot (item to quantity) in full or not at all, counting the receiver's new lines together against the ceiling, and returns a `Lot` whose `writes` are empty when a line was `short` or the receiver had `no_room`; nothing else constructs a `Write`. A cause that may not do a verb is an `Err`.
+- Nothing builds an `Author` or names a `Cause` outside `sim/src/author.rs` and the match in `sim/src/stock.rs`; `scripts/ci/check-author-construction.sh` fails any other non-test code under `server/src/` or `server/sim/src/`.
+- A write to `stock` applies a `Write` and nothing else. `restore_stock` is the one exception: it reproduces a past world by value. `scripts/ci/check-stock-write-path.sh` holds that nothing else under `server/src/` names the `stock` accessor (`restore.rs` only inside `begin_restore` and `restore_stock`; `metrics.rs` imports it for row-count sampling and never calls it).
+- A shortfall is a `Withdrawal` or `Transfer` with `taken` below the ask, and a receiver with no room for a new line is a `NoRoom` outcome (`taken` 0, nothing written), the same for a make and a move: never an `Err`, never a log line. `StockError` is only `QuantityOverflow` and `CauseNotPermitted`.
+- There is no stock movement table.
+- `stock`'s `max_rows` is `MAX_LINES_PER_HOLDER` times the sum of the holder tables' `max_rows`.
+
+## Cash
+
+- An amount of money is a `u64` count of the smallest currency unit.
+- A denomination is a `[[denomination]]` row (in `defs/denominations/`) naming an item and its `face_value` (1 to `MAX_FACE_VALUE`); the item is counted in `piece`, never perishable, named once, face values unique, at most `MAX_DENOMINATIONS`. Both parsers refuse a row that breaks any of these. Cash is `stock` rows of those items; `sim::stock` does not know it.
+- There is no till holder: a shop's till is its `business` holder's denomination lines. No total is stored anywhere; a value is summed when a step needs it.
+- `sim::cash` takes the denomination table (`generated::defs::DENOMINATIONS`, largest face value first) as a parameter. `choose_change` is exact over the pieces it is given and deterministic (fewest pieces, ties to the larger denomination), costs the square of the amount, and takes an amount under `MAX_FACE_VALUE` (1,000), which is what bounds it: a larger one is `CashError::AmountOutOfRange`. `plan_payment` returns every write of a payment or none, with the customer's `Author` on what leaves the customer and the cashier's on what leaves the till. Change is chosen from the till with the tender in it, and what each side hands over is netted per denomination, so a row moves one way or not at all. The change is exact while the change due is under `MAX_FACE_VALUE`; at or above it whole tendered pieces go back first, largest first, never more than the due covers, and what remains is exact (`Payment::TenderTooLarge` when it cannot be made). A payment that cannot be made is a `Payment` variant (a holder paying itself included), never an `Err`; `CashError` is only a stock error, a non-denomination item, a value overflow or an amount out of range.
+- `sim::cash` never makes or destroys a piece and offers no top-up: a short till is restocked by an authored transfer.
+
+## Item instances
+
+- An item instance is one row in `item_instance` (identity: `instance_id` auto_inc, `def_id`, `created_at`) and exactly one row in one of two form tables. A move never touches `item_instance`; anything keyed by `instance_id` travels with it.
+- `item_placed` is the world form: `instance_id` (primary key, not auto_inc), `x`, `y`, `floor`, `offset_x`, `offset_y`, `orientation`, `chunk_key` (btree index, as on `placed_object`). It references nothing.
+- `item_held` is the container form: `instance_id` (primary key, not auto_inc), `container_kind`, `container_id`, `slot_x`, `slot_y`, `orientation`; one index `by_container` on (`container_kind`, `container_id`).
+- A container is `(container_kind, container_id)`: a `sim::codes::container_kind` code (`object`, whose id is a `placed_object.object_id`) plus the id in that kind's own table. It is not `holder_kind`: a holder owns stock, a container has a grid. A further kind is a code append.
+- No foreign key and no cascade, and no `parent`/`supported_by` column on any item table: a `container_id` whose object is gone is a dangling reference.
+- Mutable per-instance state is its own table keyed by `instance_id`, never columns on a form.
+- `sim::item_instance` holds the types (`Placed`, `Held`, `Placement`, `ContainerRef`) and `plan_move`: across forms one delete and one insert, within a form an update. Out-of-range values are errors, never clamped. The sub-cell offset is `0..COLLIDER_SUBCELLS_PER_CELL`; a slot is `0..MAX_GRID_EXTENT`; `MAX_GRID_EXTENT` and `MAX_ITEMS_PER_CONTAINER` are declared only there. `Placed::chunk_key` is the one place `item_placed.chunk_key` is derived.
+- `item_held`'s `max_rows` is `placed_object`'s times `MAX_ITEMS_PER_CONTAINER`; `item_placed`'s is `placed_object`'s; `item_instance`'s is their sum.
 
 ## World addressing
+
+`sim::world::ORIENTATIONS` (4) is the range of every `orientation` column: `0..ORIENTATIONS`.
 
 A cell address is `(x: i32, y: i32, floor: i8, layer: u32)` (FR117). `x`/`y`
 are absolute world tile coordinates, always signed, never chunk-relative in
@@ -281,6 +449,41 @@ always derived from placed content, never stored per cell.
   cell. Both the anchor and the target cell must be standable on their own
   declared floor; `WorldSpec::build` rejects a world with a transition
   that violates this.
+- A two-way transition is a pair, and a pair must be an honest mirror of
+  itself (story 15.2): for some axis-aligned unit step `d`, the reverse
+  transition's own anchor is the forward one's landing cell offset by
+  `-d`, and the reverse transition's own landing is the forward one's
+  anchor cell offset by the same `-d` -- so walking the forward direction
+  through one, then its exact opposite through the other, returns an
+  entity to the cell it started from, never a detour through an unrelated
+  direction. A stairwell has one top and one bottom: the *other* three
+  neighbours of each anchor (every axis-aligned direction but the one `d`
+  names) must each refuse a step into it -- real colliders on the drawn
+  railings, never a rule that only checks the pairing shape and stops
+  there.
+  An entity lands at the centre of its transition's target cell, except for
+  a transition whose target is its own anchor cell (a stair stacked on
+  itself, one floor up): that keeps the entity's position and changes only
+  its floor. Every body position that steps into such an anchor from a clear
+  position must be clear on the target floor, which the client's
+  `TransitionIndex` checks at construction (`entryBand`).
+  The client's `world/transitions.ts` mirrors the pairing half as
+  `checkTransitionPairSymmetry`, pairing transitions one to one
+  (`pairTransitions`, never a plain `find` that lets two forwards claim
+  one reverse) and exposing each pairing's own `d` so a caller
+  (`street-conformance.test.ts`'s own "one entrance" geometry check) never
+  re-derives which neighbour is the entry side. This half is pure (no
+  grid) and runs on every `TransitionIndex` construction by default --
+  never an opt-in, so a subscription that hands this class real
+  transitions is checked the same way the committed street's own fixture
+  is. The standability half (both cells a pairing's own reverse
+  introduces must be standable for the real body) runs additionally when
+  `isStandable` is supplied. `skipPairSymmetry` is the named, visible
+  escape hatch a test double uses to construct an intentionally invalid
+  pair (`world/floor-walk.test.ts`'s own same-cell mutually-targeting
+  fixture, proving `stepAndTransition`'s edge-triggered gating alone never
+  bounces on it) -- the lenient path is a visible choice in that one test
+  file, never a silent default in `world/`.
 
 Chunking is the unit of subscription and of cost (FR145). `CHUNK_SIZE`
 (32 tiles, one floor) is declared once, in `sim::world`; a literal 32
@@ -342,6 +545,47 @@ fixture` by `bounds`'s `regen-world-fixture` binary; every case in that
 fixture is checked from the client side too
 (`client/tests/unit/world/conformance.test.ts`).
 
+## Interest management
+
+The client holds only the world around the player. Subscriptions are client-issued queries over public, chunk-keyed tables.
+
+- A query is one pure equality, `WHERE chunk_key = <key>`, built with the typed query builder. The engine parameterises, prunes and shares only that shape; a range, an `OR` or an extra `AND` is re-evaluated on every write to its table. Never a SQL string, never a whole table beyond the three singletons (`demo_ping`, `module_version`, `world_clock`) and the per-sender `my_character` view.
+- One handle per (chunk column, floor band), holding the equality for every floor of the band on every table in `REGION_QUERIES` (`net/region-subscription.ts`, the one place a region table is declared): `placed_object`, `floor_transition`, `building_area`, `room_area`, `actor_location`, `player_position`. Columns are disjoint, so a shifting region re-sends nothing.
+- `world/region.ts` declares the constants once and plans the region as a pure function of the player's cell and floor: wanted within `REGION_RADIUS_CHUNKS` (2) Chebyshev distance of the player's column, released only beyond `REGION_RADIUS_CHUNKS + REGION_HYSTERESIS_CHUNKS` (1). No timer. `REGION_MAX_HANDLES` bounds what is held. The radius covers a maximum half-viewport, `REGION_BODY_MARGIN_CELLS`, `MAX_FOOTPRINT_CELLS` and, to the south, `MAX_FLOOR * storey_height_px / tile_size_px`; a unit test holds it to that.
+- A band is the floors co-visible with the player's: `0..=MAX_FLOOR` or `MIN_FLOOR..=-1`. A band change adds the new band's handles; the old band's leave by the distance rule.
+- The region is recomputed only when the player's chunk column or band changes, never per frame. A handle is released only once applied (`unsubscribe()` throws on a pending or ended handle); a handle no longer wanted while pending is released on its `onApplied`. A handle ends on `onEnded` or `onError`, whichever comes first, and `onError` can come in any state. A region `onError` goes through `onStatus("disconnected")`. A reconnect is a new `connect()` and a new manager, built around the current position.
+- The SDK client cache is the only store of streamed rows; `net/` hands them on as plain-data insert/update/delete callbacks. `net/` is the only importer of binding values.
+- The floor range `MIN_FLOOR = -1`, `MAX_FLOOR = 7` is declared once in `tools/defs-build/src/model.rs` and generated into `sim::generated::defs` and `defs.json`; `WorldSpec::build` and `client/src/world/world-spec.ts` refuse a floor outside it.
+- `actor_location` (`actor_kind`, `actor_id`, `chunk_key`, `floor`) says which chunk an actor is in, and exists solely so a chunk filter is expressible as a subscription; no `x` or `y` is ever added. `actor_kind` is a code set (`character`, `citizen`) in `sim::codes`; a citizen names its table in `sim::actor_location::ACTOR_TABLES`, and a character never has an `actor_location` row (its chunk is `player_position.chunk_key`). The row is rewritten only when the actor's chunk or floor changes, decided by `sim::actor_location::plan_move`, which derives the chunk through `sim::world::chunk_key`.
+- A table is split by how often it is written, not by the entity it describes: anything rewritten more often than a chunk change is its own table, joined through `actor_id`.
+- `placed_object`, `floor_transition`, `building_area` and `room_area` are public; `item_placed`, `building` and `room` stay private until a client reader exists.
+- `scripts/ci/check-subscription-shape.sh` holds the query shape (`.subscribe(` only in `net/connection.ts` and `net/region-subscription.ts`, no `SELECT` literal under `client/src`, the whole-table set exactly the three singletons); `scripts/ci/check-interest-region.sh` proves it against a real instance.
+
+## Connection
+
+A reconnect is a new `connect()`; the SDK connection is single-use and has no reconnect of its own. No server change: `identity_disconnected` writes nothing to the world, there is no resume reducer, and the character stays where it stands (NFR4).
+
+- `net/reconnect.ts` is the one supervisor, built on `net/reconnect-policy.ts` (a pure state machine: `connecting`, `connected`, `waiting`; inputs succeeded, failed, dropped, wake) and wired by `net/supervised-connect.ts`. Timers, randomness and the page's `window` and `document` are injected from `main.ts`; `net/` touches no DOM global.
+- Backoff is exponential with full jitter: after k consecutive unsuccessful attempts since the last success (a lost connection counts as one) the wait is a uniform delay in `[0, min(BACKOFF.capMs, BACKOFF.baseMs * 2^(k-1)))`, base 1 s, cap 30 s, unlimited attempts, reset by a successful connect. At most one attempt is in flight.
+- A wake is `online`, `pageshow`, `focus` or `visibilitychange` to visible. While waiting it cancels the timer and attempts at once; while connecting it does nothing, so a burst of all four makes one attempt; while connected it probes. The probe: the SDK reports the socket closed, or `sync_clock` does not answer within `PROBE_TIMEOUT_MS` (5 s); either way the connection is disconnected and treated as a drop.
+- Only the first drop and the final connect are reported to `onStatus`; retries are silent, so the notice never flickers to "Connecting…". A region `onError` is a drop.
+- Callers read the connection through `current()` at the moment of use and never hold one. Every callback of a superseded connection is ignored by generation (`net/supervised-connect.ts`).
+- A reconnect presents the token this page is using: the stored one, or for a session-only tab (`persisted: false`) the one its first connection was issued, kept in memory. `rememberFirstToken` runs on the page's first successful connect only.
+- A connect attempt that does not settle within `CONNECT_TIMEOUT_MS` (10 s) has failed: it is superseded and the backoff goes on.
+- A new connection is a new SDK cache that re-inserts everything. The SDK cache stays the only store of streamed rows: `net/` keeps none in steady state. The superseded connection's cache is still readable after `disconnect()`, and is held only until the new connection's initial region has applied. In that window `net/reconcile.ts` hands a re-insert of a held key on as an update (nothing when unchanged), and afterwards each held key the new connection did not bring back as a delete; the old connection is then dropped. Keys come from `REGION_KEY_COLUMNS` in `net/region-subscription.ts`, checked against the bindings' primary-key metadata. `world/` and `render/` receive plain insert, update and delete and never learn of a reconnect. A new region manager is built around the player's current position, a new clock sync runs, and `module_version` re-inserts through `postMountGuard`.
+- `input/body-control.ts` is the one gate on whether the body is this page's to drive, holding named reasons it is not (today one: the connection is down after having been up; a page that has not yet connected is never closed). While it is closed the scene applies no movement (a stride stops where it stands) and a primary click does nothing at all (`attachPointer`'s `canAct`: no intent, no refusal, no cursor blip); hover and the options menu are untouched. A new reason is added to the gate, never to an input device.
+- `scripts/ci/check-subscription-shape.sh` holds `DbConnection.builder` to `net/connection.ts` and `net/link.ts` and `connect` to `net/supervised-connect.ts`; the link connection is short-lived and never supervised.
+
+## Player position
+
+- `player_position` (public, `character_id` primary key, `chunk_key` btree, `x`, `y`, `floor`, `frac_x`, `frac_y`, `updated_at`) is one durable row per character and nothing else: no identity, facing, velocity, sequence or online flag. `bounds/tests/player_position_shape.rs` pins it; its bound is `character`'s.
+- The position is the feet point `world/movement.ts` moves, as the cell plus the fraction of the cell in 1/`POSITION_UNITS_PER_CELL` (256, declared in `tools/defs-build/src/model.rs`, a multiple of `COLLIDER_SUBCELLS_PER_CELL`, generated into both artefacts). `world/position-codec.ts` rounds to the nearest unit inside the cell, so the cell and chunk of the wire position are those of the float.
+- The only writer is `set_player_position(x, y, floor, frac_x, frac_y)`, class `position`. It takes no character or identity argument: the row is the caller's own, found through `character_of`; a caller with no character is refused. `sim::player_position::plan_position` refuses a floor outside `MIN_FLOOR..=MAX_FLOOR` and a cell outside the chunk-addressable range (`sim::world::checked_chunk_key`), derives `chunk_key`, and checks nothing else (FR137). First write inserts, later writes update in place; `create_character` and disconnect never touch the row. `restore_player_position` restores by value. `scripts/ci/check-player-position-path.sh` holds the accessor to its file, `restore.rs` and `metrics.rs`, and the reducer call to `net/position-sender.ts`.
+- The dial is `net.player_position_hz` (min 1, max 20) and `net.player_interpolation_delay_ms`, read once by `world/position-config.ts`; the sender period is `1000 / hz`, and the delay is never under two periods. The server reads neither.
+- Sending: `net/position-sender.ts` polls the scene's latest position at half the period (injected timer, never the ticker) and offers its quantised form to `world/position-scheduler.ts`, which sends at most once per period, nothing while the position equals the last one sent, and always the rest position. `net/sender-lifecycle.ts` runs it while the connection is `connected` and the caller has a character and the scene is mounted: it stops on leaving `connected` (the SDK queues a call on a dead connection, unbounded) and restarts on the next `connected`, so its first send is the scene's position at that moment; a page with no character makes no call. The scene must adopt the stored row before the sender starts (story 4.7): the first send is the scene's own position and overwrites the row. `scripts/ci/check-client-write-allowlist.sh` holds the client's reducer and procedure calls to `createCharacter`, `beginLink`, `completeLink`, `syncClock` and `setPlayerPosition`.
+- Receiving: `net/` hands each row on as plain data. `world/remote-motion.ts` keeps at most `REMOTE_MAX_SAMPLES` samples per character, spaced by `updated_at`, and returns the position at the server clock minus the delay, linear between the bracketing samples and holding past the newest. A gap over two periods holds the older position until one period before the newer sample; a floor change or a jump over `REMOTE_SNAP_CELLS` snaps; an insert appears in place and a delete removes. Facing and walk or idle are read from the motion.
+- A DEV build subscribes to and draws no remote players unless the page has `?remotePlayers`; a production build always does. `scripts/ci/check-e2e-remote-players-isolation.sh` keeps that opt-in out of every spec that owns a `-snapshots` directory.
+
 ## Movement and collision (client)
 
 Player movement and collision are client-authoritative (FR137), permanent
@@ -359,7 +603,15 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   (`defs/balance/movement.toml`), read once into a `MovementConfig` by
   `client/src/world/movement-config.ts`. The body is a small rect at the
   feet, centred on the player's position with its bottom edge there --
-  never the sprite rect.
+  never the sprite rect. `world/movement.ts`'s `bodyRect` is the one
+  function that builds the body; `step` resolves against it and the
+  FR165 collision overlay draws it.
+- `render/screen-position.ts`'s `worldPointPx` is the only
+  world-to-screen projection: scale and floor offset, no anchor term. A
+  cell's drawn bottom-centre is `cellBottomCentre(cellX, cellY)`, integer
+  inputs only. `Drawable.x`/`y` are the drawn bottom-centre in sort
+  units, and every pool member is positioned from them through
+  `worldPointPx`.
 - The collision grid is derived, sparse by chunk and dense within one
   (`CHUNK_SIZE*CHUNK_SIZE`, indexed arithmetically), keyed by the
   client's own mirror of `chunk_key`. It is mutated only by
@@ -383,6 +635,13 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   or `document`; DOM input lives in `client/src/input/`.
 - The server's `FloorCollision` stays tile-granular and never consumes a
   `collider`.
+- Scripted e2e walks go through `client/tests/e2e/walk-support.ts`. Its
+  watcher (`walk-watcher.ts`) is armed before the key goes down and
+  releases it in the page. Overshoot is bounded by `RELEASE_LAG`
+  (`test-street/fixture.ts`), asserted by the helper on every walk and by
+  the unit feasibility tests over every walked route (`walkedRoutes`,
+  `tests/unit/test-street/`); `scripts/ci/check-one-walk-helper.sh`
+  enforces it.
 
 ## Input (client)
 
@@ -452,10 +711,9 @@ surface's own per-surface rule injector.
   `"disconnected"`, and "Reconnected" briefly on a later `"connected"`
   before fading (the fade is the only animation here, its duration set
   from the `fadeMs` option). Nothing in the disconnect path touches the
-  Pixi `Application`, the scene, its ticker or any pool. The
-  "Reconnected" path is currently unreachable (nothing calls
-  `setStatus("connected")` after a drop); kept in place for the
-  reconnection story to wire.
+  Pixi `Application`, the scene, its ticker or any pool. "Connection lost"
+  holds for the whole outage, through every retry; there is no countdown,
+  retry button or terminal state.
 - The options menu is one panel, three sections in this fixed order --
   Audio, Display, Controls -- as stacked headings, never tabs. Every
   control has a real consumer or a persisted value a named later story
@@ -502,6 +760,25 @@ under `test-street/` is held to the coverage bar the permanent modules
 are, though it is still exercised by real tests
 (`client/vitest.config.ts`'s coverage `include`/`exclude`).
 
+The street contributes no collider that is not drawn on the same floor
+(story 15.2): every `STREET_PROPS` row that carries a `solid` flag or a
+`defId` also carries a real sprite at that same footprint, and its
+collider lies inside that footprint. An asset-placed solid prop declares
+one `collider`.
+`STREET_BOUNDARY` is exactly one thing: the undrawn ring that closes the
+edge of the drawn world, in whole cells, every one outside every drawn
+ground pass on its floor. The exemptions are the footbridge's two rails, by
+id: the south rail (110), a sub-cell strip that keeps a walker leaning on it
+inside the deck's own row, and the deck flight's west edge (134), a sub-cell
+strip level with the street posts' own collider. `client/tests/unit/test-street/street-conformance.test.ts`
+holds this over the whole fixture: every collider cell traces back to a
+drawn prop's own footprint or the ring; no ring rect but ids 110 and 134 carries a
+collider, and none overlaps a drawn ground pass; every `walls`-layer,
+`furniture`-layer or `solid` row collides in its own footprint (all of
+it, unless it declares its own shape), bar an explicit, reasoned
+allow-list; and each subway stairwell's footprint is non-standable
+everywhere but its tread path.
+
 A frame draws four passes per floor, in this fixed order, declared even
 when a pass is empty: three flat passes -- ground, ground decals, ground
 objects -- followed by one y-sorted pool. A flat pass is never
@@ -530,7 +807,10 @@ everywhere one exists. Every component is an integer: `y`/`x` are world
 screen-space or floor-adjusted value -- a continuous, moving character
 needs sub-tile resolution to sort correctly against a static prop it is
 passing, and every caller that builds a drawable must convert a tile
-coordinate through `toSortUnits` or it silently mixes units. `rank`
+coordinate through `toSortUnits` or it silently mixes units. `x`/`y` are
+the drawable's drawn bottom-centre: a prop's cell through
+`cellBottomCentre` before `toSortUnits`, a character's feet as they are.
+`rank`
 comes from `sim::codes::layer` (below), never a literal; `stableId` is a
 `bigint` end to end (`object_id` for a placed drawable, a character's id
 for a character) and is never narrowed through `Number`. Floor is never a
@@ -539,12 +819,27 @@ offset (`render/screen-position.ts`'s `floorOffsetPx`), when a drawable
 is positioned on screen. Occlusion between floors is entirely
 "Visibility" below's job, not the sort key's.
 
+Every drawable's position and the camera anchor snap to a whole screen
+pixel through `render/screen-position.ts`'s `snapToScreenPx` (an integer
+`ZOOM` only), so the camera offset is a whole pixel and the world scrolls
+in whole screen pixels. Nothing under `test-street/` rounds a position
+(`scripts/ci/check-no-scene-rounding.sh`), and `computeCamera`'s own
+round only absorbs an odd viewport's half pixel.
+
 `sim::codes::layer`'s rank ladder (FR123) is minted in tens, leaving every
 in-between number free for a future layer to slot into without
 renumbering anything: `furniture` 10, `objects` 20, `walls` 30,
-`wall_decals` 40, `characters` 50. `ground` keeps rank 0 and is the flat
-ground pass's layer -- never a pool member, so its rank is never compared
-against a pool rank. `overhead` (code 1, rank 1) is deprecated: its row
+`wall_decals` 40, `characters` 50. Every rank below 10 is a flat-pass
+layer and every rank at or above 10 is a pool layer: `ground` (rank 0)
+is the ground pass's layer and `ground_objects` (code 7, rank 5) is the
+ground-objects pass's -- for anything lying flat, like a manhole cover or
+a doormat. A drawable's pass is its layer and nothing else
+(`layer-table.ts`'s `passOfLayer`); a flat-pass drawable is never
+y-sorted, and `applyDepthOrder` throws if handed one. An upright object
+standing on or overhanging a flat object's cell hides it -- the flat thing
+is underneath, and that is the intended reading -- so content never places
+a flat object where an upright prop stands if the flat object needs to be
+seen. `overhead` (code 1, rank 1) is deprecated: its row
 stays seeded forever (deprecation is a usage ban, not a deletion), but
 nothing may place new content on it, and a rank lookup that resolves an
 unknown or deprecated code throws rather than sorting it silently. A
@@ -557,15 +852,17 @@ build the moment it disagrees with the golden.
 
 A multi-cell prop (FR125/FR126) decomposes into one per-cell drawable per
 cell of its footprint, each with its own anchor and its own source
-sub-rect -- a placeholder sub-rect until an atlas exists, but the field is
-never optional. Extent comes from the placed object's `object_def`
-(`defs/`), never a hardcoded number, and is capped at approximately 8x8
-(FR127). A per-cell sub-rect is only ever legal on whole-tile boundaries:
-either the source art is already exactly one tile long on the decomposed
-axis (every cell repeats it whole) or exactly `cells * tile_size_px` long
-(sliced into equal whole-pixel cells) -- anything else, including any
-horizontal overhang, is refused at mount rather than drawn stretched or
-fractional.
+sub-rect, never optional. Extent comes from the placed object's
+`object_def` (`defs/`), never a hardcoded number, and is capped at
+approximately 8x8 (FR127). A per-cell sub-rect is only ever legal on
+whole-tile boundaries: either the source art is already exactly one tile
+long on the decomposed axis (every cell repeats it whole) or exactly
+`cells * tile_size_px` long (sliced into equal whole-pixel cells) --
+anything else, including any horizontal overhang, is refused at mount
+rather than drawn stretched or fractional. A def-placed prop's per-cell
+sub-rect is cut from its own packed `atlas` rect
+(`render/atlas-pages.ts`'s `AtlasPageLoader.objectCellTexture`), never
+from a raw `ModernTileset/` import.
 
 `render.tile_size_px` and `render.storey_height_px` are balance keys
 (`defs/balance/render.toml`), not TypeScript literals, so they fold into
@@ -575,10 +872,31 @@ subtracts `floor * storey_height_px`, and a drawable on a storey above the
 viewer's own must never sort as though it were on that floor because of
 it.
 
-The test street reads its remaining props straight out of the repo-root
-`ModernTileset/` at runtime (`new URL(..., import.meta.url)` asset
-imports), not out of `client/public/`. Character part sheets are never
-read this way: they are packed, at build time, into
+An actor on a flight is drawn with a flight offset
+(`render/flight-offset.ts`), a pure function of its position. A flight is
+the footprint of the placed object under a `floor_transition` anchor whose
+def declares a `flight` (`flight.drop_px`, `flight.from_px`,
+`flight.to_px`; JSON-only). The offset is zero at `flight.from_px` and
+`flight.drop_px` at `flight.to_px` (the first and last drawn nosing, from
+the footprint's open edge), linear between, flat outside, signed toward
+the target floor; the floor change takes whatever is left. A flight is walked
+along either axis of its footprint, in either direction, and a flight wider
+than one cell is one flight: every anchor of its far end must resolve the same
+flight (axis, direction, ramp, target floor), and `buildFlights` refuses
+anchors that disagree and a far-end cell `isStandable` says a body can stand in
+with no anchor. A flight may be undrawn (`sprite` omitted; `defs-build` allows
+it only with a `flight`, no collider and the `underfoot` tag) when its treads
+are drawn as their own rows on the lower floor, so a climber is drawn over
+them: floor N+1 is drawn after all of floor N. It is summed
+with the floor offset inside `worldPointPx` and exists nowhere else: not
+in the sort key, collision, walk state or picking.
+
+Only a test-street row with no `object_def` reads its art straight out of
+the repo-root `ModernTileset/` at runtime (`new URL(..., import.meta.url)`
+asset imports), not out of `client/public/`. A row placed by a real
+`object_def` draws only through its packed `atlas` rect (`AtlasPageLoader`),
+never a `ModernTileset/` import of its own. Character part sheets are never
+read the raw-import way either: they are packed, at build time, into
 `client/public/atlas/`, like every other atlas page. `deploy.yml`'s
 `deploy-client` job therefore checks out the whole repository -- never a
 sparse or `client/`-only checkout -- for as long as any client code reads
@@ -610,6 +928,15 @@ reorders a pool member.
   (`scripts/ci/check-no-masks.sh`).
 - Floors of opposite sign are never co-visible, compared by sign alone
   against the viewer's own floor, never against the literal `-1`.
+- Every container drawn on a floor is a child of that floor's own
+  `FloorStacks` stack, and every container beyond a stack's own four
+  structural passes (`ground`/`groundDecals`/`groundObjects`/`pool`) is
+  also a visibility member; nothing floor-bound is ever parented to
+  `world` directly. `client/src/render/floor-stacks.ts`'s
+  `FloorStacks.assertManaged` is the mount-time guard that holds both
+  halves: `world`'s own children are exactly its stack roots, and every
+  root's own children are either its four structural passes or a
+  registered visibility member.
 
 Retraction is keyed on `buildingId` alone, never `roomId`: a terrace shop
 is its own building, not a room of a shared one.
@@ -712,6 +1039,7 @@ behind a flag not exposed in production (FR168).
   sentinels; `client/tests/e2e/deploy-smoke.spec.ts` drives every
   registered overlay's activation against a real production build and
   asserts nothing appears.
+- The server half of the same gate: the dev-only clock reducers exist only in the `time-control` build. `ci.yml`'s `build` job greps the production wasm for `jump_clock`/`set_clock_speed` (must be absent) and the feature build's (must be present), and `check-authoritative-loop.sh` asserts against a live production-flavour instance that `describe --json` lists neither and a call is refused as a nonexistent reducer.
 - `main.ts` is the only importer. `client/biome.json` bans `../debug/**`
   everywhere else, and `scripts/ci/check-debug-boundary.sh` (run by
   `client-check`, tested by `scripts/ci/tests/`) re-checks that, that the
@@ -767,7 +1095,7 @@ behind a flag not exposed in production (FR168).
 ## Definitions (`defs/`)
 
 `defs/` is the single source of truth for game content data (NFR31),
-subdivided into `objects/`, `items/`, `recipes/`, `professions/`,
+subdivided into `objects/`, `items/`, `denominations/`, `recipes/`, `professions/`,
 `chains/`, `building-types/`, `room-types/`, `appearance/`, `balance/`,
 `tags/`, `rules/` and `archetypes/`, each a directory of TOML files
 (the naming table's `city-props.toml`). Neither build target writes here
@@ -783,6 +1111,24 @@ runtime; `client/public/defs/defs.json` is a canonical, static JSON asset
 fetched at runtime, cache-busted and compared against the FR147
 handshake's own `defs_version` (below). Both begin with a generated-file
 marker and are never hand-edited.
+
+An `[[item]]` (FR86) is `id`, `key`, `unit`, `shelf_life_minutes` and
+`bulk`, all required. `unit` is a name resolved at build time against
+`sim::codes::unit`'s golden, the way an object's `layer` is: it is a
+`u32` code with a companion `unit` table, never an enum, and only the code
+reaches either artefact. `shelf_life_minutes` is a `u32`, `0` meaning it
+never spoils, capped at `MAX_SHELF_LIFE_MINUTES`. `bulk = { width, height
+}` is the item's world footprint in whole cells (FR94), 1 to
+`MAX_FOOTPRINT_CELLS` per axis. The item id's companion data is the
+generated `ITEMS` / `defs.json` pair; there is no item database table
+until a server reader needs one. An item instance's storage is under
+"Item instances".
+
+A `[[denomination]]` (FR92) is `item` (an item key) and `face_value`, with no
+id of its own. Both artefacts carry a `denominations` table, largest face
+value first, with `MAX_FACE_VALUE`, `MAX_DENOMINATIONS` and the denomination
+unit code (`piece`; a missing code fails the build). The rules it keeps, and
+what is built on it, are under "Cash".
 
 ### The FR147 handshake
 
@@ -821,7 +1167,9 @@ never one derived from file order, position or a hash. An id or a key,
 once merged, is never
 renumbered, reused or retired: `tools/defs-build/goldens/defs-manifest.
 golden` pins the append-only `kind id key` list, guarded by
-`scripts/ci/check-defs-ids-append-only.sh`. `defs/balance/` entries seed
+`scripts/ci/check-defs-ids-append-only.sh`. A denomination's item and face
+value are pinned by the same golden (`denomination <face_value> <item key>`).
+`defs/balance/` entries seed
 data (NFR45), keyed by a dotted `snake_case` balance key, not an id.
 
 A single `defs_version` -- a SHA-256 over every git-tracked file under
@@ -863,14 +1211,27 @@ footprint's own north-west cell (matching the sprite's own pixel space).
 `client/src/world/footprint.ts`'s `footprintOrigin` is the one place that
 converts an anchor cell to its footprint's north-west cell; every client
 module that needs to place a footprint-relative rect or cell calls it,
-never re-deriving the offset itself. Three build-time checks apply only
-to `layer` and `sprite`: `layer` resolves against the codes golden (an
-unknown or deprecated name is refused, naming the accepted set); `sprite`
-fits entirely inside its own sheet's real `IHDR` bounds; and `sprite`
-agrees with the footprint exactly (`w == width * tile_size_px`, `h` a
-whole multiple of `tile_size_px` and `h >= height * tile_size_px` -- a
-tall prop may overhang upward, never sideways or downward). Every field
-is validated identically on both sides.
+never re-deriving the offset itself. Four build-time checks apply only
+to `layer`, `sprite` and the art under `collider`: `layer` resolves
+against the codes golden (an unknown or deprecated name is refused,
+naming the accepted set); `sprite` fits entirely inside its own sheet's
+real `IHDR` bounds; `sprite` agrees with the footprint exactly (`w ==
+width * tile_size_px`, `h` a whole multiple of `tile_size_px` and `h >=
+height * tile_size_px` -- a tall prop may overhang upward, never sideways
+or downward); and a `collider`'s columns and rows lie inside the opaque
+column and row spans of the sprite's footprint band (its bottom `height *
+tile_size_px` rows), and the band's lowest opaque row lies inside the
+collider's columns. Opaque is alpha at or above `ALPHA_OPAQUE_THRESHOLD`,
+declared once in `tools/defs-build/src/alpha.rs`. A fourth clause applies
+to objects tagged `upright` (`defs/tags/city.toml`): the collider's rows
+lie inside the foot of an archetype declared `foot = true`. An upright
+seen face-on collides at its foot; the drawn face above the foot is
+height, the ground behind it is walkable, and a walker there is drawn
+behind the upright. The foot is the object's own archetype's, otherwise
+the shallowest declared. This check is build-only; the client never reads
+a pixel. `sprite` never
+repeats: a surface wider than its own art is a one-cell object placed
+once per cell. Every field is validated identically on both sides.
 
 FR128's walkability rule is two-sided: an object with no `collider` must
 carry the `underfoot` tag (`defs/tags/city.toml`, permanent, append-only
@@ -878,7 +1239,10 @@ like every other tag), and an object that carries `underfoot` must not
 declare a `collider` -- both directions are wrong metadata, rejected by
 object key, never a hard-coded allow-list of object keys in either
 parser. The tag key is a single named constant (`UNDERFOOT_TAG_KEY`) on
-each side, never a repeated string literal.
+each side, never a repeated string literal. An object on a flat-pass layer
+must also carry `underfoot` and its sprite must not overhang upward
+(`h` equals `height * tile_size_px` exactly); the reverse is free --
+`underfoot` alone never selects a pass.
 
 An `[[object]]` may name an `archetype` instead of declaring its own
 `height` and/or `collider` directly -- `defs/archetypes/*.toml`, key
@@ -890,7 +1254,8 @@ parse and validation. `archetype` is authoring-time only: it is never
 emitted into either generated artefact and never reaches a runtime. A
 companion offline binary, `defs-propose`, prints `[[object]]` stanzas to
 stdout only, and is never an input to `tools/defs-build`'s own `build`
-path.
+path. `build` reads pixels only to refuse; no generated artefact depends
+on alpha.
 
 ### Atlases
 
@@ -914,27 +1279,29 @@ rule above.
 - A page's group comes from two steps: the sheet's own theme-sorter
   directory segment (e.g. `ME_Theme_Sorter_16x16/3_City_Props_Singles_
   16x16` -> `city_props`), then `defs/atlas/page-groups.toml`'s own
-  `theme -> group` table, which every street-kit theme (terrain, city
-  props, generic/floor-modular buildings, and whichever themed folders
-  the street kit borrows single props from) maps to one shared
-  `ATLAS_SHARED_GROUP` (`"street"`) group; a themed district keeps its
-  own group. A theme absent from the table fails the build naming it, and
+  `theme -> group` table, which every theme drawn in any scene -- street
+  kit and interior shell (`room_builder`) -- maps to the one shared
+  `ATLAS_SHARED_GROUP` (`"shared"`) group; a themed district keeps its
+  own group. A sheet under `Room_Builder_subfiles/`, with no theme-sorter
+  subfolder of its own, has theme `room_builder`. A theme absent from the
+  table fails the build naming it, and
   so does a table that maps nothing at all to `ATLAS_SHARED_GROUP`, or
   one that maps a theme onto a `character_*` group -- those are reserved
   for the packer's own character-part groups, one per declared part kind
   (body/eyes/hairstyle/outfit/accessory; see "Appearance" above for the
   CPU-only, per-look-compositing use they serve). A group never spans
   more than `ATLAS_MAX_PAGES_PER_GROUP` (2) pages. A scene is the shared
-  group plus at most one themed group -- a player is never on the street
-  and inside a themed interior at once -- plus the fixed
+  group plus the worst single themed group, plus the fixed
   `CHARACTER_COMPOSITE_PAGES` every scene with a crowd on it binds: the
   shared group's own page count, plus the *worst* other group's own page
   count (`character_*` groups excluded -- they are CPU-only, never
   bound), plus `CHARACTER_COMPOSITE_PAGES`, never spans more than
   `ATLAS_MAX_BOUND_PAGES` (8); a failure names all three terms and the
-  total. `atlas_max_pages_per_group`/`character_composite_pages` are
-  emitted into `defs.json`; the scene rule itself is the packer's own,
-  the client has no use for it.
+  total.
+  `2 × ATLAS_MAX_PAGES_PER_GROUP + CHARACTER_COMPOSITE_PAGES <=
+  ATLAS_MAX_BOUND_PAGES` is a compile-time assertion. `atlas_max_pages_per_group`/
+  `character_composite_pages` are emitted into `defs.json`; the scene
+  rule itself is the packer's own, the client has no use for it.
 - Every packed rect carries a permanent 1px border of extruded
   (edge-repeated, never transparent) pixels on every side -- nearest-
   neighbour sampling plus this stops bleed at a fractional camera
@@ -1034,9 +1401,10 @@ also reach `client/public/defs/defs.json` as a required field (an
 object's `tags` field, validated against the tag table on both sides
 identically), rule rows never do -- the client never evaluates a rule.
 
-There is no separate rule-set version: `defs_version` already hashes
-every tracked file under `defs/`, including `defs/rules/` and
-`defs/tags/`, and is the rule-set version FR108/FR109 refer to.
+The rule-set version is the triple `sim::generation::RuleSetVersion
+{ generation, rng, defs }` (`GENERATION_VERSION`, `RNG_VERSION`,
+`DEFS_VERSION`): three typed fields, never one string or hash.
+`RuleSetVersion::current()` is its only non-test constructor.
 
 `sim::rules::RuleSet` is the only thing `evaluate` accepts, and
 `RuleSet::committed` (wrapping `generated::defs::RULES`) is its only
@@ -1130,10 +1498,12 @@ no violation); `District::check_workplace_count(&cfg, &content)` holds
 AC4's workplace-count verdict, the same two-band shape as building count;
 `District::check_enterable_count(&cfg)` and
 `District::check_institutions_enterable(&content)` hold pass 6's two
-verdicts. `generation::generate` is `plan` plus all five, in that order,
-and is what production calls. `scripts/ci/check-generation-entry-point.sh` fails
-the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`/
-`interiors::run(` call under `server/sim/tests/` or `server/bounds/` not marked `//
+verdicts.
+`generation::generate` is `plan` plus all five, in that order; production
+calls `generation::create`, which wraps it. `generate` and `plan` are
+reachable outside `sim` only with the `test-fixtures` feature, which
+`browser_city` never enables. `scripts/ci/check-generation-entry-point.sh` fails
+the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`/`interiors::run(` call under `server/sim/tests/` or `server/bounds/` not marked `//
 generation-entry-point: allow` -- the marker is reserved for the
 independence properties and the golden's pass-2-run-twice test, which
 deliberately feed one pass a perturbed or repeated predecessor;
@@ -1159,6 +1529,13 @@ config error. Pass 1 (`land_use::run`) itself also returns `Result`,
 refusing (never silently truncating) a site whose extent is not a whole
 multiple of the coarse cell size.
 
+A measured generation ceiling (`generation.streets.max_detour_
+excess_cells`) is set from `cargo run -p bounds --release --bin
+measure-generation`'s own output by the margin rule stated in that key's
+own `defs/` comment; a `from_balance` refusal alongside one is a
+config-consistency (loosening) guard, never a generator worst-case
+claim.
+
 Pass 2's own junction registry enforces one specific case: where two
 *different* streets each cross the same third street (a staggered
 crossing), their own crossing points are either coincident (a true
@@ -1179,8 +1556,9 @@ Land use and the street network are independently generated fields (no
 land-use-boundary snapping) -- a block's own land use is decided once,
 after subdivision, by majority coarse-cell area (`generation::
 block_land_use`), so a change of use only ever reads at a real block
-edge. `subdivide` still forces a split whenever the current rect spans
-more than one land-use region, which is what keeps every region
+edge. `subdivide` still forces a split whenever the current rect
+encloses a region (no cell of it reaches a street-abutting side of the
+rect) or swallows one's land use, which is what keeps every region
 touching a street (AC2) without that snapping.
 
 Which of a block's own four sides abut a real street is
@@ -1356,18 +1734,56 @@ per kind at viewport scale, rooms as rects.
 regenerates them; `bounds/tests/generation_evidence_current.rs` fails
 the build if the committed files and a fresh render ever disagree.
 
-`GENERATION_VERSION` is bumped whenever any implemented pass's algorithm
-or seeding (never a `defs/balance/generation.toml` or
-`defs/building-types/`/`defs/rules/` retune) moves a fixed seed's
-output; `server/sim/tests/generation_golden.rs` runs against a config
-and a small `GenerationContent` both frozen in the test itself, under
-deliberately unrelated ids/keys, not live `defs::BALANCE`/
-`defs::BUILDING_TYPES`, so a balance or content retune alone never
-forces a version bump, and the same shape of output against a wholly
-different content table is itself proof the generator never branches on
-a content key. `server/sim/tests/goldens/generation_v<n>.golden` is keyed
-to it, guarded by `check-golden-version-bump.sh`'s `generation_*` arm the
-same way `RNG_VERSION`/`APPEARANCE_VERSION` are.
+- `GENERATION_VERSION` moves whenever a pass's algorithm or seeding moves a
+  fixed seed's output, never for a `defs/` retune. `RNG_VERSION`,
+  `APPEARANCE_VERSION` and `GENERATION_VERSION` only ever increase.
+- `server/sim/tests/generation_golden.rs` runs on a config and a
+  `GenerationContent` frozen in the test; its golden under
+  `server/sim/tests/goldens/` is keyed to `GENERATION_VERSION`, guarded by
+  `check-golden-version-bump.sh`.
+- Every draw under `generation/` goes through `Rng::below`, reduced in
+  `u64` before any narrowing.
+- `sim::generation::create(existing, seed, cfg, content)` is the one gate
+  to the generator: it refuses with `SiteAlreadyGenerated` when
+  `cfg.site()` overlaps any recorded site, whatever versions the record
+  carries; otherwise it runs `generate` and stamps
+  `RuleSetVersion::current()`.
+- The `district` table (private) has one row per generated district: seed,
+  world-absolute site, the three versions, `generated_at`. Rows are
+  inserted once, read back as stored and never rewritten; restore writes
+  them by value.
+- The `create_district` reducer (operator class) is the only caller of
+  `generation::`; `check-district-write-path.sh` enforces it.
+- No workflow and no `scripts/ops` file calls `create_district`;
+  `init` and `finish_publish` never generate.
+
+## Routing
+
+- `server/sim/src/routing/` owns the estimate, the graph and the search.
+- `Milliminutes` is the sole cost unit under `routing/`.
+- The estimate is Manhattan distance x the derived walking rate x the mode percent, plus a per-floor penalty: pure, cache-free and table-free, enforced by `scripts/ci/check-routing-estimate-purity.sh`.
+- `sim::time::REAL_MS_PER_CITY_MINUTE` is the one server-side FR1 constant.
+- Transport modes are `routing.speed_percent.*` multipliers on `movement.walk_speed_millicells_per_s`, never absolute speeds.
+
+## L3 (client)
+
+- `client/src/l3/` holds micro pathing, pace and gait for instantiated bodies, and the one function from a citizen state and city time to the frame to draw (`citizen.ts`). Nothing else.
+- Inputs are FR56's two citizen states only: `At(node, facing)` and `InTransit(route, t_depart, t_arrive)`. A route is an ordered list of waypoints; a leg stays on one floor. Before depart a transit stands at its origin, from arrive on at its destination.
+- A pose is a pure function of the route, the two instants, city time and tile walkability. A body keeps no position, progress, facing or clock; it holds caches only (the edge cursor and the micro paths of one grid revision). Despawn discards the body and nothing merges.
+- Time is `CityClock.nowMilliminutes()`, read once per frame by the caller and passed in. No reading, no body. `ServerClock` never reads backwards: a correction is slewed at half speed, and a forward one above a named limit steps.
+- Time wins over pace. Each waypoint's integer instant is the leg duration shared by cumulative straight-line distance between waypoints (the square root of an integer sum), floor division, from the route alone; on open ground every segment is then walked at one pace. Speed is constant between two waypoints and never clamped. The walking-pace band (`l3.walk_pace_band_percent`) is judged on the pace actually walked, per segment: walked path length over the segment's own interval. A segment outside it is a defect in whoever issued the leg.
+- Micro path: tile-level A* between consecutive waypoints, 4-connected, straight moves preferred and kept near the straight line between the endpoints, bounded to the waypoints' box plus `l3.path_box_margin_cells`, to `l3.path_max_cells` (refused before allocating) and to `l3.path_node_budget`. The tile path is pulled taut into straight edges that keep clear of every blocked tile (the goal is tried directly first, so open ground of any length is one edge), so a sidestep is a drift. It runs once per segment per collision-grid revision and never per frame. With no path the segment is walked straight and counted (`Body.fallbackCount`).
+- Walkability is one predicate, `world/npc-walkable.ts`: a cell is walkable iff no collider touches it. `CollisionGrid.revision` moves on every change; a cached path is keyed by it and recomputed whole.
+- Gait takes distance and heading only. The walk frame follows distance walked (`movement.gait_stride_millicells_per_cycle`) plus a per-citizen offset from the id, over the frames of the walk row of the body's appearance layout; facing is the dominant axis of the current edge, horizontal on a tie. Remote players share the walk frame (`advanceGait`); their facing is read from their motion by the same dominant-axis rule.
+- `poseAt` writes into a caller-owned pose and allocates nothing.
+- `l3/**` imports only `./...` and `../defs/types`, and uses no DOM, network, storage, timer, clock or randomness global: `client/biome.json`'s `src/l3/**` override and `scripts/ci/check-l3-boundary.sh`. `net/**` may not import `l3/` (same two).
+- An NPC is a member of the depth-sorted pool on the `characters` rank, placed through `positionSprite` with the flight offset of its position, and culled by floor like the player.
+- The L3 debug overlay (`?debug=l3`) reads each live body's straight-line fallbacks and out-of-band pace.
+- Until L2 exists, `test-street/timetable.ts` supplies the legs as data; story 5.5 deletes it.
+
+### Moving bodies -- must never be seen
+
+Foot slide. Slow-motion or hurried walking. A pivot or pause at a waypoint. Facing flicker. Staircase diagonals. A sprite cutting through a solid prop. Popping or fading in view. Standing mid-pavement.
 
 ## Boot budget
 
@@ -1390,8 +1806,24 @@ build.
 | Balance keys                       | dotted `snake_case`    | `citizen.bar_decay.rest`              |
 | Table names                        | `snake_case`, singular | `citizen_state`                       |
 
+## CI
+
+- `ci` is the only required check; it aggregates every job through
+  `scripts/ci/check-ci-gate.sh`.
+- `e2e` runs as N Playwright shards, each with its own harness and a
+  `timeout-minutes` of at most 10 (NFR49). When the slowest shard's tests
+  pass 6 minutes, N goes up and the timeout does not.
+- Perf and the deploy-smoke rehearsal run in `e2e-perf`, never behind a shard.
+- A later order dependency shows up as a red on an unrelated PR when a new
+  spec moves the shard boundaries; it is fixed in the leaking spec, never by
+  pinning or re-running.
+- `scripts/ci/check-e2e-shards.sh` pins the rules above.
+
 ## Toolchain
 
+`docs/trace-matrix.md`'s `| Requirement | Status | Guard |` tables are
+recognised by that exact header; `check-trace-matrix.sh` checks every
+`covered`/`partial` cell's paths and declared names (NFR47).
 
 | Prerequisite    | Notes                                                          |
 | --------------- | -------------------------------------------------------------- |

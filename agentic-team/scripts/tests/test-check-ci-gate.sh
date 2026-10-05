@@ -17,6 +17,10 @@ write_good_workflow() {
 name: CI
 on:
   pull_request:
+env:
+  PROPTEST_CASES: 4096
+  PROPTEST_RNG_SEED: 1
+  FAST_CHECK_SEED: 1
 jobs:
   changes:
     name: changes
@@ -30,7 +34,8 @@ jobs:
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     steps:
-      - run: echo noop
+      - run: echo "PROPTEST_CASES=$PROPTEST_CASES PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED"
+      - run: cargo test
 
   client-check:
     name: client-check
@@ -165,6 +170,24 @@ OUT="$(run_check "$ONE_CANCELLED" "$ALL_CHANGED" "$WF" 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 
 echo
+echo "red: the e2e shard matrix (one aggregate result) failed or was cancelled"
+matrix_red() {
+  local R="$1" WF OUT CODE
+  WF="$(fresh_workflow)"
+  OUT="$(run_check '{
+  "changes": {"result": "success"},
+  "check": {"result": "success"},
+  "client-check": {"result": "success"},
+  "client-build": {"result": "success"},
+  "e2e": {"result": "'"$R"'"}
+}' "$ALL_CHANGED" "$WF" 2>&1)"; CODE=$?
+  check "$2" 1 bash -c "exit $CODE"
+  check "$3" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"'e2e' did not succeed (result: '$R')\"" _ "$OUT"
+}
+matrix_red failure "e2e matrix failure: exits non-zero" "e2e matrix failure: names the job"
+matrix_red cancelled "e2e matrix cancelled: exits non-zero" "e2e matrix cancelled: names the job"
+
+echo
 echo "red: needs-json is missing an entry for a job ci.yml's 'ci:' needs"
 WF="$(fresh_workflow)"
 MISSING_JOB='{
@@ -288,5 +311,51 @@ echo "red: the workflow file does not exist"
 OUT="$(bash "$CHECK" "$ALL_SUCCESS" "$ALL_CHANGED" "$(fake_dir)/nope.yml" 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 check "names the missing file" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'not found'" _ "$OUT"
+
+echo
+echo "red: NFR50 -- the property gate's seed is pinned and logged"
+for pair in "PROPTEST_RNG_SEED: 1|PROPTEST_RNG_SEED: \${{ github.sha }}|fixed 'PROPTEST_RNG_SEED"             "PROPTEST_RNG_SEED: 1|OTHER: 1|fixed 'PROPTEST_RNG_SEED"             "PROPTEST_CASES: 4096|OTHER: 4096|PROPTEST_CASES: <n>"             "echo \"PROPTEST_CASES=|true \"PROPTEST_CASES=|echo" ; do
+  FROM="${pair%%|*}"; REST="${pair#*|}"; TO="${REST%%|*}"; WANT="${REST#*|}"
+  D5="$(fake_dir)"; rm -rf "$D5"; mkdir -p "$D5"
+  write_good_workflow "$D5/ci.yml"
+  T="$(cat "$D5/ci.yml")"; printf '%s
+' "${T/"$FROM"/"$TO"}" > "$D5/ci.yml"
+  OUT="$(run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D5/ci.yml" 2>&1)"; CODE=$?
+  check "exits non-zero without '$FROM'" 1 bash -c "exit $CODE"
+  check "names the missing piece" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"$WANT\"" _ "$OUT"
+done
+
+echo
+echo "red: a multi-line run: block with cargo test on its second line still needs the echo"
+D6="$(fake_dir)"; rm -rf "$D6"; mkdir -p "$D6"
+write_good_workflow "$D6/ci.yml"
+T="$(cat "$D6/ci.yml")"
+T="${T/'      - run: cargo test'/'      - run: |
+          echo hi
+          cargo test'}"
+T="${T/'      - run: echo "PROPTEST_CASES=$PROPTEST_CASES PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED"'/'      - run: echo noop'}"
+printf '%s\n' "$T" > "$D6/ci.yml"
+OUT="$(run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D6/ci.yml" 2>&1)"; CODE=$?
+check "exits non-zero" 1 bash -c "exit $CODE"
+check "names the job" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"job 'check' runs cargo test\"" _ "$OUT"
+
+echo
+echo "red: NFR50 -- the client property seed is a fixed literal, echoed by the job that runs the unit tests"
+for pair in "FAST_CHECK_SEED: 1|OTHER: 1|FAST_CHECK_SEED: <digits>" "FAST_CHECK_SEED: 1|FAST_CHECK_SEED: \${{ github.run_id }}|FAST_CHECK_SEED: <digits>" "FAST_CHECK_SEED: 1|FAST_CHECK_SEED: fixed|FAST_CHECK_SEED: <digits>"; do
+  FROM="${pair%%|*}"; REST="${pair#*|}"; TO="${REST%%|*}"; WANT="${REST#*|}"
+  D7="$(fake_dir)"; rm -rf "$D7"; mkdir -p "$D7"
+  write_good_workflow "$D7/ci.yml"
+  T="$(cat "$D7/ci.yml")"; printf '%s
+' "${T/"$FROM"/"$TO"}" > "$D7/ci.yml"
+  OUT="$(run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D7/ci.yml" 2>&1)"; CODE=$?
+  check "exits non-zero with '$TO'" 1 bash -c "exit $CODE"
+  check "names the missing piece" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"$WANT\"" _ "$OUT"
+done
+D8="$(fake_dir)"; rm -rf "$D8"; mkdir -p "$D8"
+write_good_workflow "$D8/ci.yml"
+sed -i '/^  client-check:/,/^  client-build:/ s/run: echo noop/run: npm run test:unit/' "$D8/ci.yml"
+OUT="$(run_check "$ALL_SUCCESS" "$ALL_CHANGED" "$D8/ci.yml" 2>&1)"; CODE=$?
+check "a unit-test job that never echoes the seed exits non-zero" 1 bash -c "exit $CODE"
+check "names the job" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"job 'client-check' runs the client unit tests\"" _ "$OUT"
 
 summary

@@ -49,7 +49,8 @@ The lead directions are input, not suggestions.
 4. **Then implement.**
 5. Run the consistency gate on your own work.
 6. Run the tests you added, and any tests that could have been affected by your work.
-7. Open the PR:
+7. Declare whether a player on the deployed client, with no debug overlay, console or dev tool, can see or do the story (`bash agentic-team/scripts/bc-issue.sh declare-live <issue> visible <wherefile>` with one line saying where to go and what to do, or `declare-live <issue> none`). `open` refuses without it.
+8. Open the PR:
 
 ```bash
 bash agentic-team/scripts/bc-pr.sh open <issue> "<title>" <bodyfile>
@@ -83,6 +84,8 @@ Work only from the **latest cycle section** in each comment — earlier sections
 **Pushing is what returns the PR to the leads.** Each lead records the commit it reviewed in `<!-- bc:reviewed <sha> -->`, and moving the head puts every lead in scope back on the hook, including any that had already approved. So push once, when the whole cycle is addressed — not per finding. A push mid-cycle costs every lead a re-review.
 
 Address every finding from every lead with `CHANGES`. Where you disagree with one, say so with your reasoning in the note below, and do it in the same cycle rather than silently not doing it — an unaddressed finding with no reply reads as an oversight and buys another cycle.
+
+A lead may reject a story's **live declaration** (`bash agentic-team/scripts/bc-issue.sh live <issue>` shows it). That is fixed with `declare-live`, which changes an issue comment and not the branch — so after it, push a commit (an empty one is fine) so the head moves and the leads review again.
 
 Then push, and stamp your own comment:
 

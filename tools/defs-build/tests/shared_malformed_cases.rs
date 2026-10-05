@@ -10,11 +10,20 @@
 //! *which* categories of bad input are covered, even though the physical
 //! input format (TOML files vs. one JSON payload) necessarily differs.
 //!
-//! Not every category this crate rejects is shareable: `sprite-sheet-
+//! Not every category this crate rejects is shareable: `item-unknown-unit`
+//! needs the codes golden's unit names, which the client never reads (its
+//! artefact carries the `u32` only); `sprite-sheet-
 //! missing` and `sprite-outside-sheet-bounds` need a real sheet's `IHDR`
 //! dimensions (`fsio::read_png_dims`), which the client never reads --
 //! its own artefact only ever carries an already-validated `sprite` rect.
-//! Those two exist as `tests/fixtures/invalid/` categories and
+//! The pixel rule (story 15.3: a collider agrees with the art under it)
+//! is the same kind: `defs.json` carries no pixels and the client never
+//! reads alpha -- `collider-outside-art-span`, `art-base-outside-collider`,
+//! `collider-outside-art-rows`, `collider-over-transparent-band` and
+//! `archetype-collider-disagrees-with-art` are build-only. Its second
+//! implementation is the proposer, held to it by
+//! `propose::tests::a_produced_proposal_always_fits_the_real_validator`.
+//! These exist as `tests/fixtures/invalid/` categories and
 //! `failure_fixtures.rs` tests only, deliberately absent from
 //! `fixtures/defs-malformed-cases.v1.json` (JSON has no comment syntax to
 //! say so inline). Every other rejection category both sides can check
@@ -62,9 +71,29 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "dangling-tag-reference" => "dangling-object-tag-reference",
         "no-collider-not-underfoot" => "prop-no-collider-not-underfoot",
         "underfoot-with-collider" => "underfoot-tag-with-collider",
+        "flat-layer-not-underfoot" => "flat-layer-not-underfoot",
+        "flat-layer-sprite-overhangs" => "flat-layer-sprite-overhangs",
         "object-role-count-zero" => "object-role-count-zero",
         "object-role-count-two" => "object-role-count-two",
         "role-layer-not-allowed" => "role-layer-not-allowed",
+        "item-missing-unit" => "item-missing-unit",
+        "item-unit-wrong-type" => "item-unit-wrong-type",
+        "item-bulk-zero" => "item-bulk-zero",
+        "item-missing-shelf-life" => "item-missing-shelf-life",
+        "item-missing-bulk" => "item-missing-bulk",
+        "item-shelf-life-wrong-type" => "item-shelf-life-wrong-type",
+        "item-bulk-height-cap-exceeded" => "item-bulk-height-cap-exceeded",
+        "item-bulk-footprint-cap-exceeded" => "item-bulk-footprint-cap-exceeded",
+        "item-shelf-life-out-of-range" => "item-shelf-life-out-of-range",
+        "denomination-face-value-zero" => "denomination-face-value-zero",
+        "denomination-face-value-over-cap" => "denomination-face-value-over-cap",
+        "denomination-face-value-wrong-type" => "denomination-face-value-wrong-type",
+        "denomination-unknown-item" => "denomination-unknown-item",
+        "denomination-item-twice" => "denomination-item-twice",
+        "denomination-not-piece" => "denomination-not-piece",
+        "denomination-perishable" => "denomination-perishable",
+        "denomination-face-value-duplicate" => "denomination-face-value-duplicate",
+        "denominations-over-cap" => "denominations-over-cap",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

@@ -8,6 +8,7 @@ import type { ColliderSource } from "../../../src/world/collision-grid";
 import type { FootprintSource } from "../../../src/world/footprint-index";
 import { FootprintIndex } from "../../../src/world/footprint-index";
 import { WorldIndex } from "../../../src/world/world-index";
+import { sizeProbe } from "../setup/size-probe";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -256,7 +257,10 @@ describe("FootprintIndex", () => {
     expect(entriesAtTarget(10_000)).toEqual(["999999"]);
   });
 
-  it("inv_footprint_index_matches_rebuild", () => {
+  // CI worst case under coverage: 0.59 s (run 37229489003); the property's case count is the thing under test, so the work
+  // cannot shrink. 60 s is over 10x that.
+  const PROPERTY_TIMEOUT_MS = 60_000;
+  it("inv_footprint_index_matches_rebuild", { timeout: PROPERTY_TIMEOUT_MS }, () => {
     const defs = new Map<number, FootprintSource>([
       [1, ONE_CELL],
       [2, THREE_WIDE],
@@ -286,18 +290,22 @@ describe("FootprintIndex", () => {
       return { cells, allocatedChunks: index.allocatedChunkCount() };
     }
 
+    const probe = sizeProbe({ min: 0, max: 30 });
     fc.assert(
       fc.property(
-        fc.array(
-          fc.oneof(
-            fc.record({ kind: fc.constant("insert" as const), row: rowArb }),
-            fc.record({
-              kind: fc.constant("delete" as const),
-              objectId: fc.integer({ min: 1, max: 6 }).map(BigInt),
-            }),
-            fc.record({ kind: fc.constant("update" as const), row: rowArb }),
+        probe.over(
+          fc.array(
+            fc.oneof(
+              fc.record({ kind: fc.constant("insert" as const), row: rowArb }),
+              fc.record({
+                kind: fc.constant("delete" as const),
+                objectId: fc.integer({ min: 1, max: 6 }).map(BigInt),
+              }),
+              fc.record({ kind: fc.constant("update" as const), row: rowArb }),
+            ),
+            { maxLength: 30 },
           ),
-          { maxLength: 30 },
+          (a) => a.length,
         ),
         (ops) => {
           const index = indexWith(defs);
@@ -329,6 +337,7 @@ describe("FootprintIndex", () => {
       ),
       { numRuns: 40 },
     );
+    probe.expectReached(20);
   });
 
   // FR126: extent comes from the def, not from a per-cell row -- an

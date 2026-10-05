@@ -15,6 +15,9 @@ pub const CHUNK_SIZE: i32 = 32;
 /// this can never silently drift once `MAX_FOOTPRINT_CELLS` changes.
 const _: () = assert!(crate::generated::defs::MAX_FOOTPRINT_CELLS <= CHUNK_SIZE);
 
+/// Facings a placed thing may take: `orientation` is `0..ORIENTATIONS`.
+pub const ORIENTATIONS: u8 = 4;
+
 /// Bit widths of `chunk_key`'s three packed fields. 24+24+8 = 56 of 64
 /// bits; the remaining 8 are reserved and always zero.
 const CHUNK_X_BITS: u32 = 24;
@@ -65,6 +68,21 @@ fn sign_extend(value: u64, bits: u32) -> i32 {
 /// this game ever declares.
 pub fn chunk_key(x: i32, y: i32, floor: i8) -> u64 {
     pack(chunk_coord(x), chunk_coord(y), floor)
+}
+
+/// The lowest and highest cell coordinate (either axis) whose chunk fits
+/// `chunk_key`'s 24-bit chunk field. Past either, `chunk_key` aliases
+/// another chunk's key.
+pub const ADDRESSABLE_CELL_MIN: i32 = (-(1i64 << (CHUNK_X_BITS - 1)) * CHUNK_SIZE as i64) as i32;
+pub const ADDRESSABLE_CELL_MAX: i32 =
+    (((1i64 << (CHUNK_X_BITS - 1)) * CHUNK_SIZE as i64) - 1) as i32;
+const _: () = assert!(CHUNK_X_BITS == CHUNK_Y_BITS);
+
+/// [`chunk_key`], or `None` when `x` or `y` lies outside the addressable
+/// range (where the plain form would alias another chunk).
+pub fn checked_chunk_key(x: i32, y: i32, floor: i8) -> Option<u64> {
+    let ok = |v: i32| (ADDRESSABLE_CELL_MIN..=ADDRESSABLE_CELL_MAX).contains(&v);
+    (ok(x) && ok(y)).then(|| chunk_key(x, y, floor))
 }
 
 /// Inverse of [`chunk_key`]'s packing: the chunk coordinates and floor it

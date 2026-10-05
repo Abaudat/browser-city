@@ -21,3 +21,15 @@ layer 3 objects 20
 layer 4 walls 30
 layer 5 wall_decals 40
 layer 6 characters 50
+layer 7 ground_objects 5
+unit 0 piece
+unit 1 gram
+unit 2 millilitre
+holder_kind 0 business
+holder_kind 1 citizen
+holder_kind 2 vehicle
+holder_kind 3 building
+holder_kind 4 municipal_facility
+container_kind 0 object
+actor_kind 0 character
+actor_kind 1 citizen

@@ -41,6 +41,19 @@ impl<T> Located<T> {
 /// literal 16 anywhere else in this crate or a caller is a defect.
 pub const COLLIDER_SUBCELLS_PER_CELL: i64 = 16;
 
+/// Units per cell of a position on the wire (`player_position`'s
+/// `frac_x`/`frac_y`, a `u8`): a position is its cell plus a fraction of
+/// the cell in 1/256. A multiple of [`COLLIDER_SUBCELLS_PER_CELL`], so
+/// every collider face is exact. Declared once, here, and emitted into both
+/// generated artefacts by `emit.rs`.
+pub const POSITION_UNITS_PER_CELL: i64 = 256;
+const _: () = assert!(POSITION_UNITS_PER_CELL % COLLIDER_SUBCELLS_PER_CELL == 0);
+
+/// FR1: real milliseconds per in-city minute (60 real minutes = one day).
+/// The only hand-typed copy; emitted into both generated artefacts, read by
+/// `sim::time` and the client's `time/city-time.ts`.
+pub const REAL_MS_PER_CITY_MINUTE: i64 = 2500;
+
 /// `defs/balance/*.toml`'s own dotted key for the pixels-per-cell scale a
 /// `collider`/`interact_at` sub-cell rect converts against (never
 /// [`COLLIDER_SUBCELLS_PER_CELL`] itself, which stays fixed when art
@@ -72,6 +85,29 @@ pub const INTERACT_AT_MAX_REACH_CELLS: i64 = 2;
 /// at compile time that it never exceeds `CHUNK_SIZE`, once this constant
 /// reaches `sim::generated::defs` (see `emit.rs`).
 pub const MAX_FOOTPRINT_CELLS: i64 = 8;
+
+/// The world's declared floor range (story 4.3): the subway is `-1`, and
+/// the eight floors `placed_object`'s bound assumes run `0..=7`. A region
+/// subscription is bounded only because floors are. Declared once, here,
+/// and emitted into both generated artefacts by `emit.rs`.
+pub const MIN_FLOOR: i64 = -1;
+pub const MAX_FLOOR: i64 = 7;
+
+/// The longest an item may take to spoil: one year of game minutes. `0`
+/// means it never spoils; anything above this is a typo, not a shelf life.
+pub const MAX_SHELF_LIFE_MINUTES: u32 = 525_600;
+
+/// The largest face value one denomination may carry, in the currency's
+/// smallest unit. `sim::cash::choose_change` searches a table whose size
+/// grows with the square of the change due and takes only a change due
+/// under this: raise it only together with that search.
+pub const MAX_FACE_VALUE: u32 = 1_000;
+
+/// The most denominations the defs may declare.
+pub const MAX_DENOMINATIONS: usize = 16;
+
+/// The unit every denomination is counted in.
+pub const DENOMINATION_UNIT: &str = "piece";
 
 /// The one root a `sprite.sheet` or an appearance part's `sheet` may ever
 /// name (Quentin's direction, cycle 2): enforced in `validate.rs`
@@ -113,14 +149,14 @@ pub const ATLAS_MAX_PAGES_PER_GROUP: usize = 2;
 /// groups and their own page counts.
 pub const ATLAS_MAX_BOUND_PAGES: usize = 8;
 
-/// The one page group every theme a street kit's own single props draw
-/// from shares (`defs/atlas/page-groups.toml`'s own table) -- a themed
+/// The one page group every theme drawn in any scene (street kit and
+/// interior shell) shares (`defs/atlas/page-groups.toml`'s own table) -- a themed
 /// district keeps its own group instead. At least one row in that table
 /// must map to this group; a table that maps nothing to it is a build
-/// error, because the shared set a street scene always binds is a
+/// error, because the shared set every scene binds is a
 /// structural requirement, not a convention any one row happens to
 /// establish.
-pub const ATLAS_SHARED_GROUP: &str = "street";
+pub const ATLAS_SHARED_GROUP: &str = "shared";
 
 /// Story 2.7: every character-part page group's own name starts with this
 /// prefix (`character_body`, `character_eyes`, ...) -- CPU-only compositing
@@ -138,6 +174,13 @@ pub const CHARACTER_GROUP_PREFIX: &str = "character_";
 /// ATLAS_MAX_BOUND_PAGES`), emitted into `defs.json` so the client never
 /// carries this as its own literal.
 pub const CHARACTER_COMPOSITE_PAGES: u32 = 2;
+
+// The reachable worst scene (shared + worst themed, each at its per-group
+// cap, + composites) must fit the bound: raising a constant breaks the
+// build here, before any packing.
+const _: () = assert!(
+    2 * ATLAS_MAX_PAGES_PER_GROUP + CHARACTER_COMPOSITE_PAGES as usize <= ATLAS_MAX_BOUND_PAGES
+);
 
 /// A 1px border of extruded (edge-repeated, never transparent -- Artie's
 /// direction) pixels surrounds every packed rect on every side, always --
@@ -197,6 +240,21 @@ pub struct AtlasPageDef {
 /// literal past either.
 pub const UNDERFOOT_TAG_KEY: &str = "underfoot";
 
+/// Story 15.12: the tag of an upright seen face-on (a railing, a fence).
+/// Its collider is its foot: `silhouette.rs` refuses one that rises above
+/// the foot an archetype declares with `foot = true`.
+pub const UPRIGHT_TAG_KEY: &str = "upright";
+
+/// Story 15.15: one flight's declaration. All three fields are required,
+/// so a partial table is a parse error.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawFlight {
+    pub drop_px: u32,
+    pub from_px: u32,
+    pub to_px: u32,
+}
+
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RawColliderRect {
@@ -238,6 +296,10 @@ pub struct RawArchetype {
     pub height: Option<Spanned<u32>>,
     #[serde(default)]
     pub collider_inset: Option<Spanned<RawColliderInset>>,
+    /// Story 15.12: this archetype's collider is the foot of an upright
+    /// (rows `top..` of the footprint); needs a `collider_inset`.
+    #[serde(default)]
+    pub foot: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -278,7 +340,7 @@ pub struct RawObject {
     /// numeric code at build time (`validate.rs`); the runtime artefacts
     /// only ever carry the resolved code.
     pub layer: Spanned<String>,
-    pub sprite: Spanned<RawSpriteRect>,
+    pub sprite: Option<Spanned<RawSpriteRect>>,
     pub width: u32,
     /// Story 2.3: absent when an `archetype` supplies it instead --
     /// `validate.rs`'s lowering step resolves this to a plain `u32`
@@ -305,6 +367,11 @@ pub struct RawObject {
     /// archetype at all.
     #[serde(default)]
     pub archetype: Option<Spanned<String>>,
+    /// Story 15.15: a flight of stairs -- how far its drawn treads
+    /// descend and where the first and last drawn nosing sit. Client-only;
+    /// refused on an object with a `collider`.
+    #[serde(default)]
+    pub flight: Option<Spanned<RawFlight>>,
     /// Story 1.9 (FR148): where a player must stand to interact with this
     /// object -- a half-open integer rect in sub-cells relative to the
     /// same north-west sub-cell origin a `collider` uses. Unlike a
@@ -338,6 +405,35 @@ pub struct ObjectFile {
 pub struct RawItem {
     pub id: Spanned<u32>,
     pub key: Spanned<String>,
+    /// A `sim::codes::unit` name, resolved against the codes golden.
+    pub unit: Spanned<String>,
+    /// Minutes until an instance spoils; `0` means it never does.
+    pub shelf_life_minutes: Spanned<u32>,
+    /// The item's world footprint, in whole cells.
+    pub bulk: RawBulk,
+}
+
+/// `defs/denominations/*.toml`: an item that plays the role of money.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DenominationFile {
+    pub denomination: Vec<RawDenomination>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawDenomination {
+    /// The key of an `[[item]]`.
+    pub item: Spanned<String>,
+    /// Whole units of the one currency.
+    pub face_value: Spanned<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawBulk {
+    pub width: Spanned<u32>,
+    pub height: Spanned<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -777,10 +873,9 @@ pub struct BalanceFile {
 /// `theme` is exactly [`crate::atlas::theme::theme_group`]'s own derived
 /// value (the folder segment, normalised), never a sheet path or an
 /// object key; `group` is the page group every sheet naming that theme
-/// actually packs onto. Artie's direction: every street-kit theme
-/// (terrain, city props, generic/floor-modular buildings, and whichever
-/// themed folders the street kit borrows single props from) maps to one
-/// shared `"street"` group; a themed district keeps its own group. A
+/// actually packs onto. Every theme drawn in any scene -- street kit
+/// and interior shell alike -- maps to one shared `"shared"` group; a
+/// themed district keeps its own group. A
 /// theme with no row here is a build error naming the theme -- there is
 /// no silent per-theme-folder default.
 #[derive(Debug, Deserialize)]
@@ -812,6 +907,7 @@ pub struct ArchetypeEntry {
     pub key: Located<String>,
     pub height: Option<Located<u32>>,
     pub collider_inset: Option<Located<RawColliderInset>>,
+    pub foot: bool,
 }
 
 // --- tags (story 2.10, FR111): the rule engine's only vocabulary -----------
@@ -1029,7 +1125,7 @@ pub struct ObjectEntry {
     /// resolves it against the codes golden and stores the numeric code
     /// on [`ObjectDef`].
     pub layer: Located<String>,
-    pub sprite: Located<RawSpriteRect>,
+    pub sprite: Option<Located<RawSpriteRect>>,
     pub width: u32,
     /// Story 2.3: `None` before `validate.rs`'s lowering step runs (an
     /// archetype supplies it instead); always `Some` on the lowered
@@ -1039,6 +1135,8 @@ pub struct ObjectEntry {
     pub interact_at: Option<Located<RawColliderRect>>,
     pub window: bool,
     pub tags: Vec<String>,
+    /// Story 15.15: see [`RawObject::flight`].
+    pub flight: Option<Located<RawFlight>>,
     /// Story 2.3 (AC3): the archetype key this object names, if any --
     /// resolved and consumed by `validate.rs`'s lowering step, never read
     /// past it.
@@ -1046,10 +1144,21 @@ pub struct ObjectEntry {
 }
 
 #[derive(Debug)]
+pub struct DenominationEntry {
+    pub path: PathBuf,
+    pub item: Located<String>,
+    pub face_value: Located<u32>,
+}
+
+#[derive(Debug)]
 pub struct ItemEntry {
     pub path: PathBuf,
     pub id: Located<u32>,
     pub key: Located<String>,
+    pub unit: Located<String>,
+    pub shelf_life_minutes: Located<u32>,
+    pub bulk_width: Located<u32>,
+    pub bulk_height: Located<u32>,
 }
 
 #[derive(Debug)]
@@ -1317,6 +1426,7 @@ impl_id_key_entry!(RequirementEntry);
 pub struct RawDefs {
     pub objects: Vec<ObjectEntry>,
     pub items: Vec<ItemEntry>,
+    pub denominations: Vec<DenominationEntry>,
     pub recipes: Vec<RecipeEntry>,
     pub professions: Vec<ProfessionEntry>,
     pub chains: Vec<ChainEntry>,
@@ -1359,6 +1469,15 @@ pub struct SpriteRect {
     pub h: u32,
 }
 
+/// A flight's resolved declaration, native pixels: the drop, and where the
+/// first and last nosing sit from the footprint's open edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FlightDef {
+    pub drop_px: u32,
+    pub from_px: u32,
+    pub to_px: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectDef {
     pub id: u32,
@@ -1367,7 +1486,7 @@ pub struct ObjectDef {
     /// The resolved `sim::codes::layer` numeric code -- never the
     /// authored name past `validate.rs`.
     pub layer: u32,
-    pub sprite: SpriteRect,
+    pub sprite: Option<SpriteRect>,
     pub width: u32,
     pub height: u32,
     pub collider: Option<ColliderRect>,
@@ -1377,12 +1496,26 @@ pub struct ObjectDef {
     /// Resolved tag ids (story 2.10, FR111), sorted and deduplicated --
     /// the engine's only vocabulary, never a literal key past this point.
     pub tags: Vec<u32>,
+    /// Story 15.15: client-only (`defs.json`, never `sim::generated::defs`).
+    pub flight: Option<FlightDef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemDef {
     pub id: u32,
     pub key: String,
+    /// A `sim::codes::unit` code, never a name.
+    pub unit: u32,
+    pub shelf_life_minutes: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// An item that is money: its id and face value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DenominationDef {
+    pub item_id: u32,
+    pub face_value: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1620,8 +1753,12 @@ pub struct RuleDef {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Defs {
+    /// The `sim::codes::unit` code every denomination is counted in.
+    pub denomination_unit: u32,
     pub objects: Vec<ObjectDef>,
     pub items: Vec<ItemDef>,
+    /// Largest face value first.
+    pub denominations: Vec<DenominationDef>,
     pub recipes: Vec<RecipeDef>,
     pub professions: Vec<ProfessionDef>,
     pub chains: Vec<ChainDef>,

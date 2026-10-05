@@ -31,6 +31,32 @@ function run(command, env) {
   }
 }
 
+/** Story 4.5: how many rows a table holds, read as the database's owner
+ * (the identity that published it) through the CLI. */
+function countRows(handle, table) {
+  const result = spawnSync(
+    "spacetime",
+    [
+      "sql",
+      "--server",
+      handle.serverUrl,
+      "--no-config",
+      "-y",
+      handle.dbName,
+      `SELECT * FROM ${table}`,
+    ],
+    { encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    throw new Error(`could not count '${table}': ${result.stderr}`);
+  }
+  return result.stdout.split(/\r?\n/).filter((line) => /^\s*\d+\s/.test(line)).length;
+}
+
+// The smoke run connects as a fresh anonymous identity on every deploy; it
+// must never litter the live world with a character (story 4.5).
+const IDENTITY_TABLES = ["character", "character_identity"];
+
 async function waitHealthy(url, deadlineMs) {
   const deadline = Date.now() + deadlineMs;
   let lastError;
@@ -84,6 +110,7 @@ try {
   await waitHealthy(previewUrl, HEALTH_DEADLINE_MS);
   console.error(`serve-for-deploy-smoke: production-base build served at ${previewUrl}`);
 
+  const before = IDENTITY_TABLES.map((t) => countRows(handle, t));
   const playwrightResult = spawnSync("npx playwright test --project=deploy-smoke", {
     cwd: CLIENT_DIR,
     shell: true,
@@ -97,6 +124,12 @@ try {
   });
   if (playwrightResult.status !== 0) {
     throw new Error("the deploy-smoke Playwright project failed");
+  }
+  const after = IDENTITY_TABLES.map((t) => countRows(handle, t));
+  if (before.some((n, i) => n !== after[i])) {
+    throw new Error(
+      `the smoke run changed ${IDENTITY_TABLES.join("/")} row counts (${before.join("/")} -> ${after.join("/")}): a deploy must never create a character`,
+    );
   }
 } finally {
   teardown();

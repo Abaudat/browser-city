@@ -1,23 +1,34 @@
 name: windows-install-check
 
-# The Windows CLI install method in server/README.md, run verbatim on a
-# clean windows-latest runner, so drift in the upstream installer or in
-# our version pin shows up on its own -- see that README section.
+# The Windows CLI install method in server/README.md, run on a clean
+# windows-latest runner so drift in the upstream installer or in our
+# version pin shows up on its own -- see that README section. Story 4.20:
+# the README's own "run it verbatim" premise was never true (a human
+# answers a confirmation prompt and opens a new shell partway through),
+# so this substitutes exactly the two things a human does by hand --
+# `-y`/`--yes` answered for it, `$GITHUB_PATH` refreshed for the job --
+# and runs the README's pinned-version lines verbatim, asserted against
+# its own first line so the two can never silently drift apart.
 on:
   push:
     branches: [master]
     paths:
       - server/README.md
       - scripts/ci/extract-windows-install.sh
+      - scripts/ci/extract-windows-install-pin.sh
+      - scripts/ci/check-windows-installer-asset.sh
       - .github/workflows/windows-install-check.yml
   pull_request:
     paths:
       - server/README.md
       - scripts/ci/extract-windows-install.sh
+      - scripts/ci/extract-windows-install-pin.sh
+      - scripts/ci/check-windows-installer-asset.sh
       - .github/workflows/windows-install-check.yml
   schedule:
     # Its real failure mode is upstream drift, not our own commits.
     - cron: "17 6 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,38 +43,133 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-      - name: extract the README's Windows install block
-        shell: bash
-        run: bash scripts/ci/extract-windows-install.sh server/README.md > "$RUNNER_TEMP/install.ps1"
-      - name: run it verbatim
+
+      # Every step below gets its own timeout well inside the job's own
+      # 15-minute budget (generous -- reaching the confirm prompt used to
+      # take ~1s): a step timeout is a step *failure* (`outcome`), not a
+      # `cancelled` job the way the job-level timeout used to be, which is
+      # what lets `failure()` below actually fire and the report step
+      # actually run (story 4.20's real fix for "silently cancelled").
+      # Observed, not assumed (Quentin's direction, cycle 1): a throwaway
+      # `Start-Sleep -Seconds 120` with this step's own timeout-minutes
+      # dropped to 1 confirmed the step completes at exactly its budget
+      # with conclusion `failure` --
+      # https://github.com/Abaudat/browser-city/actions/runs/36406318924.
+      - name: installer
+        id: install
+        timeout-minutes: 5
         shell: pwsh
         run: |
-          & "$env:RUNNER_TEMP\install.ps1"
-      - name: assert the pinned version is what actually got installed
-        shell: pwsh
-        run: |
-          $out = spacetime --version
-          Write-Host $out
-          if ($out -notmatch "2\.9\.\d+") {
-            Write-Error "expected spacetime --version to report 2.9.x, got: $out"
-            exit 1
+          $AssetName = "spacetimedb-update-x86_64-pc-windows-msvc.exe"
+          # -MaximumRetryCount/-RetryIntervalSec on both calls below (Tim's
+          # direction): install-spacetimedb-cli.sh carries the equivalent
+          # `--retry 5 --retry-all-errors` for the same CDN, which has
+          # answered with a transient error before -- without a retry here,
+          # that same blip files a false "upstream drift" alert.
+          $InstallScript = (Invoke-WebRequest https://windows.spacetimedb.com -UseBasicParsing -MaximumRetryCount 5 -RetryIntervalSec 3).Content
+          $InstallScriptFile = Join-Path $env:RUNNER_TEMP "upstream-install.ps1"
+          Set-Content -Path $InstallScriptFile -Value $InstallScript -NoNewline
+
+          # The cheapest possible drift detector: refuse to trust the
+          # download URL below if upstream stopped naming this asset.
+          bash scripts/ci/check-windows-installer-asset.sh "$AssetName" "$InstallScriptFile"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $DownloadUrl = "https://github.com/clockworklabs/SpacetimeDB/releases/latest/download/$AssetName"
+          $Executable = Join-Path $env:RUNNER_TEMP "spacetime-install.exe"
+          Invoke-WebRequest $DownloadUrl -OutFile $Executable -UseBasicParsing -MaximumRetryCount 5 -RetryIntervalSec 3
+
+          # The one substitution for the confirmation a human answers by
+          # hand -- `spacetime-install.exe` (upstream `crates/update/src/
+          # cli/self_install.rs`) only skips its "Would you like to
+          # continue?" prompt with this flag. -PassThru: Start-Process
+          # never sets $LASTEXITCODE on its own, so without it a failing
+          # installer would read as a pass.
+          $InstallProc = Start-Process -Wait -PassThru -FilePath $Executable -ArgumentList "--yes"
+          if ($InstallProc.ExitCode -ne 0) {
+            Write-Error "spacetime-install.exe exited with code $($InstallProc.ExitCode)"
+            exit $InstallProc.ExitCode
           }
+
+          # The other substitution: the installer only adds this to the
+          # *User* registry PATH ("log out and back in") -- refresh it for
+          # this job instead, since nothing later in the job would ever
+          # see that registry write otherwise.
+          $InstallDir = Join-Path $env:LOCALAPPDATA "SpacetimeDB"
+          Add-Content -Path $env:GITHUB_PATH -Value $InstallDir
+
+      - name: version pin
+        id: pin
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          # pwsh does not fail a script's own exit code on a native
+          # command's nonzero exit by default -- a $LASTEXITCODE guard
+          # after every extracted line (never inside
+          # extract-windows-install-pin.sh itself, which stays a pure,
+          # tested extractor) is what makes a bad pin an actual step
+          # failure instead of a silent pass.
+          bash scripts/ci/extract-windows-install-pin.sh server/README.md \
+            | awk '{ print; print "if ($LASTEXITCODE) { exit $LASTEXITCODE }" }' \
+            > "$RUNNER_TEMP/pin.ps1"
+          pwsh -NoProfile -File "$RUNNER_TEMP/pin.ps1"
+
+      - name: spacetime --version
+        id: verify
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          # The expected version is derived from server/README.md's own
+          # `spacetime version use` line, never hard-coded here (Quentin's
+          # direction): the same single-source rule
+          # scripts/ci/install-spacetimedb-cli.sh follows for Linux, so a
+          # version bump stays a one-file edit instead of a two-file edit
+          # this step's own regex silently falls out of step with.
+          EXPECTED_VERSION="$(grep -oE 'spacetime version use [0-9]+\.[0-9]+' server/README.md | tail -n1 | awk '{print $4}')"
+          if [ -z "$EXPECTED_VERSION" ]; then
+            echo "::error::could not derive the expected version from server/README.md's 'spacetime version use' line" >&2
+            exit 1
+          fi
+          OUT="$(spacetime --version)"
+          echo "$OUT"
+          if ! printf '%s\n' "$OUT" | grep -qE "version ${EXPECTED_VERSION//./\\.}\."; then
+            echo "::error::expected spacetime --version to report ${EXPECTED_VERSION}.x, got: $OUT" >&2
+            exit 1
+          fi
+
       # A weekly schedule reports to nobody by default -- the Actions tab
-      # is not something anyone watches. On a scheduled run (never on a
-      # push/PR, where the failing check itself is the signal) open or
-      # update one tracking issue instead, so upstream drift in the
-      # installer or a version pin doesn't sit undetected.
+      # is not something anyone watches. On a scheduled or manually
+      # dispatched run (never on a push/PR, where the failing check
+      # itself is the signal) open or update one tracking issue instead,
+      # so upstream drift in the installer or a version pin doesn't sit
+      # undetected. cancelled() is belt and braces alongside failure(): a
+      # step timeout above already surfaces as failure(), but nothing
+      # should ever again depend on that being the *only* way this run
+      # ends badly.
       # scripts/ci/report-scheduled-failure.sh: shared with
-      # .github/workflows/backup.yml, never a second copy of this logic.
-      - name: file or update a tracking issue on scheduled failure
-        if: failure() && github.event_name == 'schedule'
+      # .github/workflows/deploy.yml's report-failure job, never a second
+      # copy of this logic. backup.yml does NOT call it -- it is
+      # workflow_dispatch-only, deliberately (see its own header).
+      - name: file or update a tracking issue on scheduled/dispatched failure
+        if: (failure() || cancelled()) && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          PIN_OUTCOME: ${{ steps.pin.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
         run: |
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          STEP="unknown"
+          case "$INSTALL_OUTCOME" in failure|cancelled) STEP="installer" ;; esac
+          if [ "$STEP" = "unknown" ]; then
+            case "$PIN_OUTCOME" in failure|cancelled) STEP="version pin" ;; esac
+          fi
+          if [ "$STEP" = "unknown" ]; then
+            case "$VERIFY_OUTCOME" in failure|cancelled) STEP="spacetime --version" ;; esac
+          fi
           bash scripts/ci/report-scheduled-failure.sh \
             "windows-install-check: scheduled run failed" \
-            "The weekly Windows install check failed: $RUN_URL
+            "The weekly Windows install check failed in the '$STEP' step: $RUN_URL
 
           Likely upstream drift in the installer at https://windows.spacetimedb.com or in the pinned version in server/README.md's fenced block. Close this once resolved."

@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use crate::codes::CodeTables;
 use crate::error::DefsError;
 use crate::model::*;
 use crate::naming::{is_dotted_snake_case, is_snake_case};
@@ -102,7 +103,7 @@ pub fn validate_page_groups(raw: &RawDefs) -> Result<BTreeMap<String, String>, D
             0,
             0,
             format!(
-                "no theme maps to '{ATLAS_SHARED_GROUP}' -- the shared group every street scene binds is a structural requirement, not a convention; map at least one theme to it"
+                "no theme maps to '{ATLAS_SHARED_GROUP}' -- the shared group every scene binds is a structural requirement, not a convention; map at least one theme to it"
             ),
         ));
     }
@@ -1445,6 +1446,17 @@ fn check_archetype_self_consistency(entries: &[ArchetypeEntry]) -> Result<(), De
                 ),
             ));
         }
+        if a.foot && a.collider_inset.is_none() {
+            return Err(DefsError::new(
+                &a.path,
+                a.key.line,
+                a.key.col,
+                format!(
+                    "archetype '{}' is a foot but supplies no collider_inset -- the foot is that collider",
+                    a.key.value
+                ),
+            ));
+        }
         if let Some(h) = &a.height {
             if h.value == 0 {
                 return Err(DefsError::new(
@@ -1514,13 +1526,14 @@ struct LoweredObjectEntry {
     key: Located<String>,
     name: Located<String>,
     layer: Located<String>,
-    sprite: Located<RawSpriteRect>,
+    sprite: Option<Located<RawSpriteRect>>,
     width: u32,
     height: u32,
     collider: Option<Located<RawColliderRect>>,
     interact_at: Option<Located<RawColliderRect>>,
     window: bool,
     tags: Vec<String>,
+    flight: Option<Located<RawFlight>>,
 }
 
 /// Turns an archetype's own `collider_inset` into a concrete
@@ -1687,6 +1700,7 @@ fn lower_object(
         interact_at: e.interact_at.clone(),
         window: e.window,
         tags: e.tags.clone(),
+        flight: e.flight.clone(),
     })
 }
 
@@ -1846,14 +1860,54 @@ fn check_tag_structures(entries: &[TagEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
+/// An object on a flat-pass layer (rank below `FIRST_POOL_RANK`) lies flat
+/// on the ground: it must be tagged [`UNDERFOOT_TAG_KEY`] (no vertical
+/// extent means nothing to collide with -- one direction only, an
+/// `underfoot` object on a pool layer is fine) and its sprite must not
+/// overhang upward (`h == height * tile_size_px` exactly).
+fn check_object_flat_layers(
+    entries: &[LoweredObjectEntry],
+    tile_size_px: u32,
+    code_tables: &CodeTables,
+) -> Result<(), DefsError> {
+    for e in entries {
+        let Some(spr) = &e.sprite else { continue };
+        if !code_tables.is_flat_layer(&e.layer.value) {
+            continue;
+        }
+        if !e.tags.iter().any(|t| t == UNDERFOOT_TAG_KEY) {
+            return Err(DefsError::new(
+                &e.path,
+                e.layer.line,
+                e.layer.col,
+                format!(
+                    "object '{}' is on flat-pass layer '{}' but is not tagged '{UNDERFOOT_TAG_KEY}' -- an object lying flat on the ground has nothing to collide with",
+                    e.key.value, e.layer.value
+                ),
+            ));
+        }
+        let expected_h = e.height * tile_size_px;
+        if spr.value.h != expected_h {
+            return Err(DefsError::new(
+                &e.path,
+                spr.line,
+                spr.col,
+                format!(
+                    "object '{}' is on flat-pass layer '{}' so its sprite height {} must equal its footprint height {} * tile_size_px {tile_size_px} ({expected_h}px) exactly -- a flat object never overhangs",
+                    e.key.value, e.layer.value, spr.value.h, e.height
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Story 2.9 (AC1, FR119): a role tag's own `layers` list must name real,
 /// non-deprecated layers -- exactly the same two refusals an object's own
 /// `layer` field gets (`resolve_object_layer`), since a role that could
 /// never legally sit anywhere is not a role at all.
-fn check_tag_role_layers(
-    tags: &[TagEntry],
-    layer_codes: &BTreeMap<String, u32>,
-) -> Result<(), DefsError> {
+fn check_tag_role_layers(tags: &[TagEntry], code_tables: &CodeTables) -> Result<(), DefsError> {
+    let layer_codes = code_tables.set("layer");
     for t in tags {
         let Some(role) = &t.role else { continue };
         if role.layers.is_empty() {
@@ -1868,7 +1922,7 @@ fn check_tag_role_layers(
             ));
         }
         for layer in &role.layers {
-            if crate::layer_codes::DEPRECATED_LAYER_NAMES.contains(&layer.as_str()) {
+            if crate::codes::DEPRECATED_LAYER_NAMES.contains(&layer.as_str()) {
                 return Err(DefsError::new(
                     &t.path,
                     t.key.line,
@@ -2037,11 +2091,9 @@ fn check_object_names(entries: &[ObjectEntry]) -> Result<(), DefsError> {
 /// own `name -> code` map (Tim's direction: resolved at build time, never
 /// at runtime) -- refusing an unknown or deprecated name, naming the
 /// object and the accepted set.
-fn resolve_object_layer(
-    e: &ObjectEntry,
-    layer_codes: &BTreeMap<String, u32>,
-) -> Result<u32, DefsError> {
-    if crate::layer_codes::DEPRECATED_LAYER_NAMES.contains(&e.layer.value.as_str()) {
+fn resolve_object_layer(e: &ObjectEntry, code_tables: &CodeTables) -> Result<u32, DefsError> {
+    let layer_codes = code_tables.set("layer");
+    if crate::codes::DEPRECATED_LAYER_NAMES.contains(&e.layer.value.as_str()) {
         return Err(DefsError::new(
             &e.path,
             e.layer.line,
@@ -2071,12 +2123,9 @@ fn resolve_object_layer(
     }
 }
 
-fn check_object_layers(
-    entries: &[ObjectEntry],
-    layer_codes: &BTreeMap<String, u32>,
-) -> Result<(), DefsError> {
+fn check_object_layers(entries: &[ObjectEntry], code_tables: &CodeTables) -> Result<(), DefsError> {
     for e in entries {
-        resolve_object_layer(e, layer_codes)?;
+        resolve_object_layer(e, code_tables)?;
     }
     Ok(())
 }
@@ -2129,12 +2178,13 @@ fn check_object_sprite_sheet_root(
     allowed_root: &str,
 ) -> Result<(), DefsError> {
     for e in entries {
-        let sheet = &e.sprite.value.sheet;
+        let Some(spr) = &e.sprite else { continue };
+        let sheet = &spr.value.sheet;
         if !sheet_is_under_root(sheet, allowed_root) {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite sheet '{sheet}' is not under the allowed root '{allowed_root}'",
                     e.key.value
@@ -2153,12 +2203,13 @@ fn check_object_sprite_sheets(
     sheet_dims: &BTreeMap<String, (u32, u32)>,
 ) -> Result<(), DefsError> {
     for e in entries {
-        let sprite = &e.sprite.value;
+        let Some(spr) = &e.sprite else { continue };
+        let sprite = &spr.value;
         let Some(&(sheet_w, sheet_h)) = sheet_dims.get(&sprite.sheet) else {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' names sheet '{}' but its dimensions were never read",
                     e.key.value, sprite.sheet
@@ -2168,8 +2219,8 @@ fn check_object_sprite_sheets(
         if sprite.w == 0 || sprite.h == 0 {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite rect has zero width or height",
                     e.key.value
@@ -2181,8 +2232,8 @@ fn check_object_sprite_sheets(
         if x1 > sheet_w as u64 || y1 > sheet_h as u64 {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite rect ({}, {})-({x1}, {y1}) does not fit inside sheet '{}' ({sheet_w}x{sheet_h}px)",
                     e.key.value, sprite.x, sprite.y, sprite.sheet
@@ -2205,13 +2256,14 @@ fn check_object_sprite_matches_footprint(
     tile_size_px: u32,
 ) -> Result<(), DefsError> {
     for e in entries {
-        let sprite = &e.sprite.value;
+        let Some(spr) = &e.sprite else { continue };
+        let sprite = &spr.value;
         let expected_w = e.width * tile_size_px;
         if sprite.w != expected_w {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite width {} does not equal its footprint width {} * tile_size_px {tile_size_px} ({expected_w}px)",
                     e.key.value, sprite.w, e.width
@@ -2221,8 +2273,8 @@ fn check_object_sprite_matches_footprint(
         if sprite.h % tile_size_px != 0 {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite height {} is not a whole multiple of tile_size_px {tile_size_px}",
                     e.key.value, sprite.h
@@ -2233,8 +2285,8 @@ fn check_object_sprite_matches_footprint(
         if sprite.h < min_h {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite height {} is shorter than its footprint height {} * tile_size_px {tile_size_px} ({min_h}px)",
                     e.key.value, sprite.h, e.height
@@ -2249,6 +2301,152 @@ fn check_object_sprite_matches_footprint(
 /// direction) -- the error names the object and its size, and directs the
 /// author to compose the structure from multiple objects (the acceptance
 /// criterion's own sentence).
+/// Story 6.1: an item's `unit` names a real `sim::codes::unit`, its
+/// `bulk` is a footprint of 1..=`MAX_FOOTPRINT_CELLS` cells per axis (FR94:
+/// the world's own footprint, unchanged), and its shelf life is bounded.
+/// Each refusal points at the offending value.
+fn check_item_fields(items: &[ItemEntry], code_tables: &CodeTables) -> Result<(), DefsError> {
+    for i in items {
+        let at =
+            |line: usize, col: usize, message: String| DefsError::new(&i.path, line, col, message);
+        if code_tables.get("unit", &i.unit.value).is_none() {
+            let accepted: Vec<&str> = code_tables.set("unit").keys().map(|s| s.as_str()).collect();
+            return Err(at(
+                i.unit.line,
+                i.unit.col,
+                format!(
+                    "item '{}' names unknown unit '{}' -- accepted: {}",
+                    i.key.value,
+                    i.unit.value,
+                    accepted.join(", ")
+                ),
+            ));
+        }
+        for (axis, v) in [("width", &i.bulk_width), ("height", &i.bulk_height)] {
+            if v.value == 0 {
+                return Err(at(
+                    v.line,
+                    v.col,
+                    format!(
+                        "item '{}' bulk {axis} of 0 -- every item occupies at least one cell",
+                        i.key.value
+                    ),
+                ));
+            }
+            if v.value as i64 > MAX_FOOTPRINT_CELLS {
+                return Err(at(
+                    v.line,
+                    v.col,
+                    format!(
+                        "item '{}' bulk {axis} {} exceeds MAX_FOOTPRINT_CELLS ({MAX_FOOTPRINT_CELLS})",
+                        i.key.value, v.value
+                    ),
+                ));
+            }
+        }
+        if i.shelf_life_minutes.value > MAX_SHELF_LIFE_MINUTES {
+            return Err(at(
+                i.shelf_life_minutes.line,
+                i.shelf_life_minutes.col,
+                format!(
+                    "item '{}' shelf_life_minutes {} exceeds MAX_SHELF_LIFE_MINUTES ({MAX_SHELF_LIFE_MINUTES})",
+                    i.key.value, i.shelf_life_minutes.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A `[[denomination]]` makes an item money (FR92): it names a real item
+/// counted in pieces that never spoils, with a face value of 1 to
+/// `MAX_FACE_VALUE` that no other denomination shares; an item is named
+/// once and there are at most `MAX_DENOMINATIONS` rows.
+fn check_denominations(raw: &RawDefs) -> Result<(), DefsError> {
+    let items: HashMap<&str, &ItemEntry> = raw
+        .items
+        .iter()
+        .map(|i| (i.key.value.as_str(), i))
+        .collect();
+    let mut named: HashMap<&str, ()> = HashMap::new();
+    let mut faces: HashMap<u32, &str> = HashMap::new();
+    for (n, d) in raw.denominations.iter().enumerate() {
+        let at = |line, col, msg: String| DefsError::new(&d.path, line, col, msg);
+        let key = d.item.value.as_str();
+        if d.face_value.value == 0 {
+            return Err(at(
+                d.face_value.line,
+                d.face_value.col,
+                format!(
+                    "denomination '{key}' face_value of 0 -- a denomination is worth at least 1"
+                ),
+            ));
+        }
+        if d.face_value.value > MAX_FACE_VALUE {
+            return Err(at(
+                d.face_value.line,
+                d.face_value.col,
+                format!(
+                    "denomination '{key}' face_value {} exceeds MAX_FACE_VALUE ({MAX_FACE_VALUE})",
+                    d.face_value.value
+                ),
+            ));
+        }
+        let Some(item) = items.get(key) else {
+            return Err(at(
+                d.item.line,
+                d.item.col,
+                format!("denomination names unknown item '{key}'"),
+            ));
+        };
+        if named.insert(key, ()).is_some() {
+            return Err(at(
+                d.item.line,
+                d.item.col,
+                format!("item '{key}' is already a denomination"),
+            ));
+        }
+        if item.unit.value != DENOMINATION_UNIT {
+            return Err(at(
+                d.item.line,
+                d.item.col,
+                format!(
+                    "denomination '{key}' must be counted in '{DENOMINATION_UNIT}', not '{}'",
+                    item.unit.value
+                ),
+            ));
+        }
+        if item.shelf_life_minutes.value != 0 {
+            return Err(at(
+                d.item.line,
+                d.item.col,
+                format!("denomination '{key}' must never spoil: its shelf_life_minutes is not 0"),
+            ));
+        }
+        if let Some(first) = faces.insert(d.face_value.value, key) {
+            return Err(at(
+                d.face_value.line,
+                d.face_value.col,
+                format!(
+                    "denomination '{key}' face_value {} is already item '{first}''s",
+                    d.face_value.value
+                ),
+            ));
+        }
+        if n + 1 > MAX_DENOMINATIONS {
+            return Err(at(
+                d.item.line,
+                d.item.col,
+                format!(
+                    "denomination '{key}' is number {}, over MAX_DENOMINATIONS ({MAX_DENOMINATIONS})",
+                    n + 1
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn check_object_footprint_cap(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
     for e in entries {
         if e.width == 0 || e.height == 0 {
@@ -2283,6 +2481,93 @@ fn check_object_footprint_cap(entries: &[LoweredObjectEntry]) -> Result<(), Defs
                     e.key.value, e.height
                 ),
             ));
+        }
+    }
+    Ok(())
+}
+
+/// Story 15.15: a declared `flight` has `drop_px` in
+/// `1..=render.storey_height_px`, `from_px < to_px`, a ramp that fits some
+/// axis of the footprint (`to_px <= max(width, height) * tile_size_px`), and
+/// is refused on an object that declares a `collider` (a flight is walked
+/// over, never blocking).
+/// An object may omit its `sprite` only when it is a flight (its treads are
+/// drawn as their own rows on the lower floor): walked over, never blocking,
+/// lying flat. Every other sprite-less object is refused.
+fn check_object_undrawn(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        if e.sprite.is_some() {
+            continue;
+        }
+        let why = if e.flight.is_none() {
+            Some("declares no flight")
+        } else if e.collider.is_some() {
+            Some("declares a collider")
+        } else if !e.tags.iter().any(|t| t == UNDERFOOT_TAG_KEY) {
+            Some("is not tagged 'underfoot'")
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "object '{}' declares no sprite but {why} -- only an undrawn flight (underfoot, no collider) may omit its sprite",
+                    e.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn check_object_flight(
+    entries: &[LoweredObjectEntry],
+    balance: &[BalanceEntry],
+) -> Result<(), DefsError> {
+    let storey = balance
+        .iter()
+        .find(|b| b.key.value == "render.storey_height_px")
+        .map(|b| b.value.value as u32);
+    for e in entries {
+        let Some(flight) = &e.flight else {
+            continue;
+        };
+        let f = flight.value;
+        let at = |message: String| DefsError::new(&e.path, flight.line, flight.col, message);
+        let Some(storey) = storey else {
+            return Err(at(format!(
+                "object '{}' declares a flight but no 'render.storey_height_px' balance key exists to bound it",
+                e.key.value
+            )));
+        };
+        if f.drop_px == 0 || f.drop_px > storey {
+            return Err(at(format!(
+                "object '{}' flight drop_px {} is outside 1..=render.storey_height_px ({storey})",
+                e.key.value, f.drop_px
+            )));
+        }
+        if f.from_px >= f.to_px {
+            return Err(at(format!(
+                "object '{}' flight from_px {} is not below to_px {}",
+                e.key.value, f.from_px, f.to_px
+            )));
+        }
+        let tile = find_tile_size_px(balance).unwrap_or(0);
+        let longest = e.width.max(e.height) * tile;
+        if f.to_px > longest {
+            return Err(at(format!(
+                "object '{}' flight to_px {} leaves its footprint ({longest} px on its longest axis)",
+                e.key.value, f.to_px
+            )));
+        }
+        if e.collider.is_some() {
+            return Err(at(format!(
+                "object '{}' declares both a flight and a collider -- a flight is walked over, never blocking",
+                e.key.value
+            )));
         }
     }
     Ok(())
@@ -2693,7 +2978,7 @@ fn check_balance_range(entries: &[BalanceEntry]) -> Result<(), DefsError> {
 pub fn validate(
     raw: &RawDefs,
     sheet_dims: &BTreeMap<String, (u32, u32)>,
-    layer_codes: &BTreeMap<String, u32>,
+    code_tables: &CodeTables,
     sprite_sheet_allowed_root: &str,
 ) -> Result<Defs, DefsError> {
     check_key_format(&raw.objects, "object")?;
@@ -2720,6 +3005,8 @@ pub fn validate(
 
     check_id_key_dupes(&raw.objects, "object")?;
     check_id_key_dupes(&raw.items, "item")?;
+    check_item_fields(&raw.items, code_tables)?;
+    check_denominations(raw)?;
     check_id_key_dupes(&raw.recipes, "recipe")?;
     check_id_key_dupes(&raw.professions, "profession")?;
     check_id_key_dupes(&raw.chains, "chain")?;
@@ -2780,7 +3067,7 @@ pub fn validate(
         &raw.distributions,
         &raw.balance,
     )?;
-    check_tag_role_layers(&raw.tags, layer_codes)?;
+    check_tag_role_layers(&raw.tags, code_tables)?;
     check_tag_structures(&raw.tags)?;
     check_placement_floor_range(&raw.placements)?;
     check_distribution_ranges(&raw.distributions)?;
@@ -2800,7 +3087,7 @@ pub fn validate(
     rules.sort_by(|a, b| a.key.cmp(&b.key));
 
     check_object_names(&raw.objects)?;
-    check_object_layers(&raw.objects, layer_codes)?;
+    check_object_layers(&raw.objects, code_tables)?;
 
     // Story 2.3 (AC3): every archetype checks out on its own first, then
     // every object's own `height`/`collider` is resolved against
@@ -2837,6 +3124,7 @@ pub fn validate(
             )
         })?;
         check_object_sprite_matches_footprint(&lowered_objects, tile_size_px)?;
+        check_object_flat_layers(&lowered_objects, tile_size_px, code_tables)?;
         Some(tile_size_px)
     } else {
         None
@@ -2845,6 +3133,8 @@ pub fn validate(
     // rejection above (name, layer, footprint cap, collider/interact_at
     // geometry, sprite) gets its own chance to fire on a fixture built to
     // exercise it before this generic catch-all ever runs.
+    check_object_undrawn(&lowered_objects)?;
+    check_object_flight(&lowered_objects, &raw.balance)?;
     check_object_walkability_tag(&lowered_objects)?;
     // Story 2.9: after every other object-level rejection, same
     // reasoning as `check_object_walkability_tag`'s own placement.
@@ -2958,21 +3248,21 @@ pub fn validate(
             // raw, unlowered tree -- lowering never touches `layer`);
             // `validate` never partially resolves a tree it will go on
             // to reject.
-            let layer = *layer_codes
-                .get(&o.layer.value)
+            let layer = code_tables
+                .get("layer", &o.layer.value)
                 .expect("layer already validated");
             ObjectDef {
                 id: o.id.value,
                 key: o.key.value.clone(),
                 name: o.name.value.clone(),
                 layer,
-                sprite: SpriteRect {
-                    sheet: o.sprite.value.sheet.clone(),
-                    x: o.sprite.value.x,
-                    y: o.sprite.value.y,
-                    w: o.sprite.value.w,
-                    h: o.sprite.value.h,
-                },
+                sprite: o.sprite.as_ref().map(|s| SpriteRect {
+                    sheet: s.value.sheet.clone(),
+                    x: s.value.x,
+                    y: s.value.y,
+                    w: s.value.w,
+                    h: s.value.h,
+                }),
                 width: o.width,
                 height: o.height,
                 collider: o.collider.as_ref().map(|c| ColliderRect {
@@ -2990,6 +3280,11 @@ pub fn validate(
                 window: o.window,
                 tags: resolve_object_tags(&o.path, &o.key, &o.tags, &tag_ids)
                     .expect("tags already validated"),
+                flight: o.flight.as_ref().map(|f| FlightDef {
+                    drop_px: f.value.drop_px,
+                    from_px: f.value.from_px,
+                    to_px: f.value.to_px,
+                }),
             }
         })
         .collect();
@@ -3001,9 +3296,30 @@ pub fn validate(
         .map(|i| ItemDef {
             id: i.id.value,
             key: i.key.value.clone(),
+            unit: code_tables
+                .get("unit", &i.unit.value)
+                .expect("unit already validated by check_item_fields"),
+            shelf_life_minutes: i.shelf_life_minutes.value,
+            width: i.bulk_width.value,
+            height: i.bulk_height.value,
         })
         .collect();
     items.sort_by(|a, b| a.key.cmp(&b.key));
+
+    let item_ids: HashMap<&str, u32> = raw
+        .items
+        .iter()
+        .map(|i| (i.key.value.as_str(), i.id.value))
+        .collect();
+    let mut denominations: Vec<DenominationDef> = raw
+        .denominations
+        .iter()
+        .map(|d| DenominationDef {
+            item_id: item_ids[d.item.value.as_str()],
+            face_value: d.face_value.value,
+        })
+        .collect();
+    denominations.sort_by_key(|d| std::cmp::Reverse(d.face_value));
 
     let mut recipes: Vec<RecipeDef> = raw
         .recipes
@@ -3232,8 +3548,8 @@ pub fn validate(
                     .layers
                     .iter()
                     .map(|l| {
-                        *layer_codes
-                            .get(l)
+                        code_tables
+                            .get("layer", l)
                             .expect("role layer name already validated by check_tag_role_layers")
                     })
                     .collect(),
@@ -3243,9 +3559,20 @@ pub fn validate(
         .collect();
     tags.sort_by(|a, b| a.key.cmp(&b.key));
 
+    let denomination_unit = code_tables.get("unit", DENOMINATION_UNIT).ok_or_else(|| {
+        DefsError::new(
+            std::path::Path::new("defs/denominations"),
+            1,
+            1,
+            format!("the unit codes carry no '{DENOMINATION_UNIT}'"),
+        )
+    })?;
+
     Ok(Defs {
+        denomination_unit,
         objects,
         items,
+        denominations,
         recipes,
         professions,
         chains,
@@ -3308,15 +3635,18 @@ mod tests {
             .into_iter()
             .collect()
     }
+    fn piece_codes() -> CodeTables {
+        CodeTables::from_entries(&[("unit", "piece", 0)])
+    }
 
-    fn object_layer_codes() -> BTreeMap<String, u32> {
-        [
-            ("furniture".to_string(), 2u32),
-            ("objects".to_string(), 3u32),
-            ("walls".to_string(), 4u32),
-        ]
-        .into_iter()
-        .collect()
+    fn object_code_tables() -> CodeTables {
+        CodeTables::from_entries(&[
+            ("layer", "furniture", 2),
+            ("layer", "objects", 3),
+            ("layer", "walls", 4),
+            ("unit", "piece", 0),
+            ("unit", "millilitre", 2),
+        ])
     }
 
     fn valid_tree() -> Vec<(PathBuf, String)> {
@@ -3331,7 +3661,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
             (
                 "defs/items/sanitation.toml",
-                "[[item]]\nid = 1\nkey = \"bottle\"\n\n[[item]]\nid = 2\nkey = \"recycled_glass\"\n",
+                "[[item]]\nid = 1\nkey = \"bottle\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n\n[[item]]\nid = 2\nkey = \"recycled_glass\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n",
             ),
             (
                 "defs/recipes/sanitation.toml",
@@ -3355,11 +3685,14 @@ mod tests {
     #[test]
     fn a_consistent_tree_validates_and_sorts_by_key() {
         let raw = parse_all(&valid_tree()).unwrap();
-        let defs = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap();
+        let defs = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap();
         assert_eq!(defs.objects[0].key, "trash_bin");
         assert_eq!(defs.objects[0].name, "Trash Bin");
         assert_eq!(defs.objects[0].layer, 2);
-        assert_eq!(defs.objects[0].sprite.sheet, "fixtures/objects/test.png");
+        assert_eq!(
+            defs.objects[0].sprite.as_ref().unwrap().sheet,
+            "fixtures/objects/test.png"
+        );
         assert_eq!(defs.items[0].key, "bottle");
         assert_eq!(defs.recipes[0].inputs, vec!["bottle"]);
         assert_eq!(defs.chains[0].links, vec!["sanitation_worker"]);
@@ -3403,14 +3736,14 @@ mod tests {
         let explicit_defs = validate(
             &parse_all(&explicit).unwrap(),
             &object_sheet_dims(),
-            &object_layer_codes(),
+            &object_code_tables(),
             "",
         )
         .unwrap();
         let archetype_defs = validate(
             &parse_all(&via_archetype).unwrap(),
             &object_sheet_dims(),
-            &object_layer_codes(),
+            &object_code_tables(),
             "",
         )
         .unwrap();
@@ -3450,7 +3783,7 @@ mod tests {
         let defs = validate(
             &parse_all(&f).unwrap(),
             &object_sheet_dims(),
-            &object_layer_codes(),
+            &object_code_tables(),
             "",
         )
         .unwrap();
@@ -3480,7 +3813,7 @@ mod tests {
         let defs = validate(
             &parse_all(&f).unwrap(),
             &object_sheet_dims(),
-            &object_layer_codes(),
+            &object_code_tables(),
             "",
         )
         .unwrap();
@@ -3500,10 +3833,10 @@ mod tests {
     fn a_kebab_case_key_is_rejected_as_invalid_snake_case() {
         let f = files(&[(
             "defs/items/x.toml",
-            "[[item]]\nid = 1\nkey = \"trash-bin\"\n",
+            "[[item]]\nid = 1\nkey = \"trash-bin\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("invalid item key 'trash-bin'"));
     }
 
@@ -3514,7 +3847,7 @@ mod tests {
             "[[balance]]\nkey = \"citizen.bar-decay.rest\"\nvalue = 1\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(
             err.message
                 .contains("invalid balance key 'citizen.bar-decay.rest'")
@@ -3525,21 +3858,27 @@ mod tests {
     fn duplicate_id_within_one_file_is_rejected() {
         let f = files(&[(
             "defs/items/x.toml",
-            "[[item]]\nid = 1\nkey = \"a\"\n\n[[item]]\nid = 1\nkey = \"b\"\n",
+            "[[item]]\nid = 1\nkey = \"a\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n\n[[item]]\nid = 1\nkey = \"b\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("duplicate item id 1"));
     }
 
     #[test]
     fn duplicate_id_across_two_files_in_the_same_subdirectory_is_rejected() {
         let f = files(&[
-            ("defs/items/a.toml", "[[item]]\nid = 1\nkey = \"a\"\n"),
-            ("defs/items/b.toml", "[[item]]\nid = 1\nkey = \"b\"\n"),
+            (
+                "defs/items/a.toml",
+                "[[item]]\nid = 1\nkey = \"a\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n",
+            ),
+            (
+                "defs/items/b.toml",
+                "[[item]]\nid = 1\nkey = \"b\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n",
+            ),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.path.ends_with("b.toml"));
         assert!(err.message.contains("duplicate item id 1"));
         assert!(err.message.contains("a.toml"));
@@ -3549,10 +3888,10 @@ mod tests {
     fn duplicate_key_is_rejected_even_with_distinct_ids() {
         let f = files(&[(
             "defs/items/x.toml",
-            "[[item]]\nid = 1\nkey = \"a\"\n\n[[item]]\nid = 2\nkey = \"a\"\n",
+            "[[item]]\nid = 1\nkey = \"a\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n\n[[item]]\nid = 2\nkey = \"a\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = { width = 1, height = 1 }\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("duplicate item key 'a'"));
     }
 
@@ -3563,7 +3902,7 @@ mod tests {
             "[[balance]]\nkey = \"a\"\nvalue = 1\nmin = 0\nmax = 10\n\n[[balance]]\nkey = \"a\"\nvalue = 2\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("duplicate balance key 'a'"));
     }
 
@@ -3574,7 +3913,7 @@ mod tests {
             "[[recipe]]\nid = 1\nkey = \"r\"\ninputs = [\"nope\"]\noutputs = []\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("unknown item 'nope'"));
     }
 
@@ -3585,7 +3924,7 @@ mod tests {
             "[[chain]]\nid = 1\nkey = \"c\"\nlinks = [\"nope\"]\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("unknown profession 'nope'"));
     }
 
@@ -3596,7 +3935,7 @@ mod tests {
             "[[balance]]\nkey = \"a\"\nvalue = 999\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("out of its own declared range"));
     }
 
@@ -3612,7 +3951,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("zero or negative area"));
     }
 
@@ -3628,7 +3967,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("does not fit inside its footprint"));
     }
 
@@ -3650,7 +3989,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert_eq!(
             err.to_string(),
             "defs/objects/x.toml:9:12: object 'a' collider (0, 0)-(20, 8) does not fit inside its footprint (0, 0)-(16, 16) sub-cells"
@@ -3670,7 +4009,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap();
+        let defs = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap();
         assert_eq!(
             defs.objects[0].collider,
             Some(ColliderRect {
@@ -3704,7 +4043,7 @@ mod tests {
                 ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
             ]);
             let raw = parse_all(&f).unwrap();
-            let result = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "");
+            let result = validate(&raw, &object_sheet_dims(), &object_code_tables(), "");
             assert!(
                 result.is_ok(),
                 "'{key}' tagged underfoot should pass: {result:?}"
@@ -3726,7 +4065,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("trash_can"));
         assert!(err.message.contains("underfoot"));
     }
@@ -3746,7 +4085,7 @@ mod tests {
             ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("declares both a collider"));
     }
 
@@ -3763,7 +4102,7 @@ mod tests {
             ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap();
+        let defs = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap();
         assert_eq!(defs.objects[0].collider, None);
     }
 
@@ -3779,7 +4118,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("zero or negative area"));
         assert!(err.message.contains("interact_at"));
     }
@@ -3799,7 +4138,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("reaches further than"));
     }
 
@@ -3817,7 +4156,7 @@ mod tests {
             ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap();
+        let defs = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap();
         assert_eq!(defs.objects[0].interact_at.unwrap().x0, at as i32);
     }
 
@@ -3833,7 +4172,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("could never be reached"));
     }
 
@@ -3850,7 +4189,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        assert!(validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").is_ok());
+        assert!(validate(&raw, &object_sheet_dims(), &object_code_tables(), "").is_ok());
     }
 
     #[test]
@@ -3866,7 +4205,7 @@ mod tests {
             ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap();
+        let defs = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap();
         assert_eq!(defs.objects[0].interact_at, None);
     }
 
@@ -3880,7 +4219,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("empty name"));
     }
 
@@ -3894,7 +4233,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("unknown layer 'basement'"));
     }
 
@@ -3908,8 +4247,13 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let mut codes = object_layer_codes();
-        codes.insert("overhead".to_string(), 1);
+        let codes = CodeTables::from_entries(&[
+            ("unit", "piece", 0),
+            ("layer", "furniture", 2),
+            ("layer", "objects", 3),
+            ("layer", "walls", 4),
+            ("layer", "overhead", 1),
+        ]);
         let err = validate(&raw, &object_sheet_dims(), &codes, "").unwrap_err();
         assert!(err.message.contains("deprecated layer"));
     }
@@ -3924,7 +4268,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("dimensions were never read"));
     }
 
@@ -3938,7 +4282,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("does not fit inside sheet"));
     }
 
@@ -3952,7 +4296,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("does not equal its footprint width"));
     }
 
@@ -3968,7 +4312,7 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();
         dims.insert("fixtures/objects/test.png".to_string(), (16, 20));
-        let err = validate(&raw, &dims, &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &dims, &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("whole multiple of tile_size_px"));
     }
 
@@ -3982,7 +4326,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("shorter than its footprint height"));
     }
 
@@ -3999,7 +4343,7 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();
         dims.insert("fixtures/objects/test.png".to_string(), (16, 32));
-        assert!(validate(&raw, &dims, &object_layer_codes(), "").is_ok());
+        assert!(validate(&raw, &dims, &object_code_tables(), "").is_ok());
     }
 
     #[test]
@@ -4012,7 +4356,7 @@ mod tests {
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &object_sheet_dims(), &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &object_sheet_dims(), &object_code_tables(), "").unwrap_err();
         assert!(err.message.contains("footprint width or height of 0"));
     }
 
@@ -4029,7 +4373,7 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();
         dims.insert("fixtures/objects/test.png".to_string(), (128, 128));
-        assert!(validate(&raw, &dims, &object_layer_codes(), "").is_ok());
+        assert!(validate(&raw, &dims, &object_code_tables(), "").is_ok());
     }
 
     #[test]
@@ -4044,7 +4388,7 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();
         dims.insert("fixtures/objects/test.png".to_string(), (144, 16));
-        let err = validate(&raw, &dims, &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &dims, &object_code_tables(), "").unwrap_err();
         assert!(
             err.message
                 .contains("footprint width 9 exceeds MAX_FOOTPRINT_CELLS (8)")
@@ -4067,7 +4411,7 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();
         dims.insert("fixtures/objects/test.png".to_string(), (16, 144));
-        let err = validate(&raw, &dims, &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &dims, &object_code_tables(), "").unwrap_err();
         assert!(
             err.message
                 .contains("footprint height 9 exceeds MAX_FOOTPRINT_CELLS (8)")
@@ -4086,7 +4430,7 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();
         dims.insert("fixtures/objects/test.png".to_string(), (144, 144));
-        let err = validate(&raw, &dims, &object_layer_codes(), "").unwrap_err();
+        let err = validate(&raw, &dims, &object_code_tables(), "").unwrap_err();
         assert!(
             err.message
                 .contains("footprint width 9 exceeds MAX_FOOTPRINT_CELLS (8)")
@@ -4100,7 +4444,7 @@ mod tests {
             "[[balance]]\nkey = \"a\"\nvalue = 10\nmin = 0\nmax = 10\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        assert!(validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").is_ok());
+        assert!(validate(&raw, &BTreeMap::new(), &piece_codes(), "").is_ok());
     }
 
     // --- Story 1.10: appearance --------------------------------------------
@@ -4123,7 +4467,7 @@ mod tests {
             ),
         ]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").unwrap();
+        let defs = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap();
         assert_eq!(defs.bodies[0].key, "body_01");
     }
 
@@ -4139,7 +4483,7 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let mut small_dims = BTreeMap::new();
         small_dims.insert("sheets/body.png".to_string(), (32, 32));
-        let err = validate(&raw, &small_dims, &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &small_dims, &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("only accepts"));
     }
 
@@ -4158,7 +4502,7 @@ mod tests {
         // declared accepted_sizes -- must still be rejected by name, not
         // waved through for being "big enough".
         bigger_dims.insert("sheets/body.png".to_string(), (960, 700));
-        let err = validate(&raw, &bigger_dims, &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &bigger_dims, &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("only accepts"));
         assert!(err.message.contains("960x700"));
     }
@@ -4170,7 +4514,7 @@ mod tests {
             "[[body]]\nid = 1\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("no [[appearance_layout]] entry"));
     }
 
@@ -4181,7 +4525,7 @@ mod tests {
             "[[body]]\nid = 65536\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("does not fit in a u16"));
     }
 
@@ -4195,7 +4539,7 @@ mod tests {
             ),
         ]);
         let raw = parse_all(&f).unwrap();
-        let defs = validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").unwrap();
+        let defs = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap();
         assert_eq!(defs.bodies[0].id, 65535);
     }
 
@@ -4206,7 +4550,7 @@ mod tests {
             "[[body]]\nid = 0\nkey = \"body_01\"\nfamily = \"adult\"\nsheet = \"sheets/body.png\"\npool = \"civilian\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("declares id 0"));
     }
 
@@ -4217,7 +4561,7 @@ mod tests {
             "[[appearance_layout]]\nid = 1\nkey = \"a\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n\n[[appearance_layout]]\nid = 2\nkey = \"b\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("exactly one layout per family"));
     }
 
@@ -4231,7 +4575,7 @@ mod tests {
             "[[appearance_layout]]\nid = 1\nkey = \"adult\"\nfamily = \"adult\"\ncell_width = 16\ncell_height = 32\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 16, height = 32 }]\n\n[[appearance_layout]]\nid = 2\nkey = \"kid\"\nfamily = \"kid\"\ncell_width = 12\ncell_height = 24\ndirections = [\"down\"]\nrows = [{ animation = \"idle\", row = 0, frames_per_direction = 1 }]\naccepted_sizes = [{ width = 12, height = 24 }]\n",
         )]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &BTreeMap::new(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &BTreeMap::new(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("kid"), "{}", err.message);
         assert!(err.message.contains("16x32"), "{}", err.message);
         assert!(err.message.contains("12x24"), "{}", err.message);
@@ -4258,7 +4602,7 @@ mod tests {
             "[[uniform]]\nid = 1\nkey = \"sanitation_worker_uniform\"\nprofession = \"sanitation_worker\"\naccessory = \"jacket\"\n",
         );
         let raw = parse_all(&f).unwrap();
-        assert!(validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").is_ok());
+        assert!(validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").is_ok());
     }
 
     #[test]
@@ -4267,7 +4611,7 @@ mod tests {
             "[[uniform]]\nid = 1\nkey = \"ghost\"\nprofession = \"no_such_profession\"\naccessory = \"jacket\"\n",
         );
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("names unknown profession"));
     }
 
@@ -4277,7 +4621,7 @@ mod tests {
             "[[uniform]]\nid = 1\nkey = \"ghost\"\nprofession = \"sanitation_worker\"\naccessory = \"no_such_accessory\"\n",
         );
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("names unknown accessory"));
     }
 
@@ -4299,7 +4643,7 @@ mod tests {
             ),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("not an adult role_only accessory"));
     }
 
@@ -4309,7 +4653,7 @@ mod tests {
             "[[uniform]]\nid = 1\nkey = \"ghost\"\nprofession = \"sanitation_worker\"\n",
         );
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("overrides neither"));
     }
 
@@ -4331,7 +4675,7 @@ mod tests {
             ),
         ]);
         let raw = parse_all(&f).unwrap();
-        let err = validate(&raw, &appearance_sheet_dims(), &BTreeMap::new(), "").unwrap_err();
+        let err = validate(&raw, &appearance_sheet_dims(), &piece_codes(), "").unwrap_err();
         assert!(err.message.contains("exactly one uniform per profession"));
     }
 
@@ -4369,11 +4713,11 @@ mod tests {
     fn validate_page_groups_returns_the_theme_to_group_table() {
         let f = files(&[(
             "defs/atlas/page-groups.toml",
-            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"kitchen\"\n",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"shared\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"kitchen\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
         let table = validate_page_groups(&raw).unwrap();
-        assert_eq!(table.get("camping").map(String::as_str), Some("street"));
+        assert_eq!(table.get("camping").map(String::as_str), Some("shared"));
         assert_eq!(table.get("kitchen").map(String::as_str), Some("kitchen"));
     }
 
@@ -4381,7 +4725,7 @@ mod tests {
     fn validate_page_groups_rejects_a_theme_declared_twice() {
         let f = files(&[(
             "defs/atlas/page-groups.toml",
-            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"other\"\n",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"shared\"\n\n[[page_group]]\ntheme = \"camping\"\ngroup = \"other\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
         let err = validate_page_groups(&raw).unwrap_err();
@@ -4413,7 +4757,7 @@ mod tests {
     fn validate_page_groups_rejects_a_theme_mapped_to_a_character_prefixed_group() {
         let f = files(&[(
             "defs/atlas/page-groups.toml",
-            "[[page_group]]\ntheme = \"camping\"\ngroup = \"street\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"character_body\"\n",
+            "[[page_group]]\ntheme = \"camping\"\ngroup = \"shared\"\n\n[[page_group]]\ntheme = \"kitchen\"\ngroup = \"character_body\"\n",
         )]);
         let raw = parse_all(&f).unwrap();
         let err = validate_page_groups(&raw).unwrap_err();

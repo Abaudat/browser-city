@@ -33,6 +33,14 @@ pub struct ColumnDef {
     pub indexed: bool,
 }
 
+/// A table-level `index(accessor = .., btree(columns = [..]))`: its own
+/// accessor and its ordered columns.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexDef {
+    pub accessor: String,
+    pub columns: Vec<String>,
+}
+
 /// One `#[spacetimedb::table(...)]` struct.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableDef {
@@ -46,6 +54,42 @@ pub struct TableDef {
     /// reading).
     pub wide_table_waiver: Option<String>,
     pub columns: Vec<ColumnDef>,
+    /// Table-level indexes; omitted from the snapshot when there are none,
+    /// so a table without one keeps its snapshot entry byte for byte.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub indexes: Vec<IndexDef>,
+}
+
+/// Assumed mean encoded size of a variable-length column (`String`,
+/// `Vec<_>`, anything unrecognised), length prefix included.
+pub const VARIABLE_COLUMN_MEAN_BYTES: u64 = 32;
+
+/// Estimated encoded bytes of one column of Rust type `ty` (as the schema
+/// snapshot spells it): a static pricing, never a measurement.
+pub fn column_bytes_est(ty: &str) -> u64 {
+    match ty.trim() {
+        "bool" | "u8" | "i8" => 1,
+        "u16" | "i16" => 2,
+        "u32" | "i32" | "f32" => 4,
+        "u64" | "i64" | "f64" | "Timestamp" => 8,
+        "u128" | "i128" => 16,
+        "Identity" => 32,
+        "ScheduleAt" => 9,
+        other => match other
+            .strip_prefix("Option<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
+            Some(inner) => 1 + column_bytes_est(inner),
+            None => VARIABLE_COLUMN_MEAN_BYTES,
+        },
+    }
+}
+
+impl TableDef {
+    /// Estimated encoded bytes of one row of this table.
+    pub fn row_bytes_est(&self) -> u64 {
+        self.columns.iter().map(|c| column_bytes_est(&c.ty)).sum()
+    }
 }
 
 /// The whole module's table shape, sorted by accessor so the committed
@@ -289,6 +333,51 @@ fn assert_no_bare_table_attr(text: &str, path: &Path) {
     );
 }
 
+/// Splits a table attribute into itself without its `index(...)` clauses
+/// (each carries an `accessor =` of its own, which must never be read as
+/// the table's) and those clauses' parsed indexes.
+fn split_index_clauses(attr: &str) -> (String, Vec<IndexDef>) {
+    let mut rest = String::new();
+    let mut indexes = Vec::new();
+    let mut from = 0;
+    while let Some(rel) = attr[from..].find("index(") {
+        let at = from + rel;
+        let inside_word = attr[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        if inside_word {
+            rest.push_str(&attr[from..at + "index(".len()]);
+            from = at + "index(".len();
+            continue;
+        }
+        rest.push_str(&attr[from..at]);
+        let open = at + "index".len();
+        let close = matching_paren_end(attr, open);
+        let inner = &attr[open + 1..close - 1];
+        let accessor = attr_value_after(inner, "accessor").unwrap_or_default();
+        let columns = inner
+            .find("columns")
+            .and_then(|c| {
+                let list = &inner[c..];
+                let start = list.find('[')?;
+                let end = list.find(']')?;
+                Some(
+                    list[start + 1..end]
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect(),
+                )
+            })
+            .unwrap_or_default();
+        indexes.push(IndexDef { accessor, columns });
+        from = close;
+    }
+    rest.push_str(&attr[from..]);
+    (rest, indexes)
+}
+
 /// Every `#[spacetimedb::table(...)] pub struct Name { ... }` in `text`.
 fn tables_in(text: &str) -> Vec<TableDef> {
     let mut tables = Vec::new();
@@ -298,6 +387,8 @@ fn tables_in(text: &str) -> Vec<TableDef> {
         let close = matching_paren_end(rest, open);
         let attr = &rest[open + 1..close - 1];
 
+        let (attr, indexes) = split_index_clauses(attr);
+        let attr = attr.as_str();
         let accessor = attr_value_after(attr, "accessor").unwrap_or_default();
         let public = attr_has_token(attr, "public");
         let scheduled_reducer = scheduled_reducer_in(attr);
@@ -344,6 +435,7 @@ fn tables_in(text: &str) -> Vec<TableDef> {
             scheduled_reducer,
             wide_table_waiver,
             columns,
+            indexes,
         });
 
         rest = &after_struct_kw[body_close..];
@@ -384,6 +476,34 @@ pub fn parse_module_schema(src_dir: &Path) -> ModuleSchema {
     ModuleSchema { tables }
 }
 
+/// Every `#[spacetimedb::procedure...] pub fn <name>` in `text` -- the
+/// same guard-rail scan as [`reducer_names_in`].
+pub fn procedure_names_in(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("#[spacetimedb::procedure") {
+        let after = &rest[at..];
+        if let Some(fn_at) = after.find("fn ") {
+            let after_fn = &after[fn_at + "fn ".len()..];
+            let name_end = after_fn.find('(').unwrap_or(after_fn.len());
+            names.push(after_fn[..name_end].trim().to_string());
+            rest = &after[fn_at + 3..];
+        } else {
+            rest = &after[1..];
+        }
+    }
+    names
+}
+
+/// Every procedure named anywhere under `src_dir`.
+pub fn procedure_names_in_dir(src_dir: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+    for (_path, text) in read_rust_files(src_dir) {
+        names.extend(procedure_names_in(&text));
+    }
+    names
+}
+
 /// Every reducer named anywhere under `src_dir`.
 pub fn reducer_names_in_dir(src_dir: &Path) -> Vec<String> {
     let mut names = Vec::new();
@@ -396,6 +516,51 @@ pub fn reducer_names_in_dir(src_dir: &Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn table_of(types: &[&str]) -> TableDef {
+        TableDef {
+            accessor: "t".into(),
+            struct_name: "T".into(),
+            public: false,
+            scheduled_reducer: None,
+            wide_table_waiver: None,
+            indexes: vec![],
+            columns: types
+                .iter()
+                .map(|ty| ColumnDef {
+                    name: "c".into(),
+                    ty: (*ty).into(),
+                    primary_key: false,
+                    auto_inc: false,
+                    unique: false,
+                    has_default: false,
+                    indexed: false,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_fixed_width_row_is_exact() {
+        // u64 + Timestamp + u32 + bool
+        assert_eq!(
+            table_of(&["u64", "Timestamp", "u32", "bool"]).row_bytes_est(),
+            21
+        );
+    }
+
+    #[test]
+    fn a_string_column_uses_the_assumed_mean() {
+        assert_eq!(
+            table_of(&["u64", "String"]).row_bytes_est(),
+            8 + VARIABLE_COLUMN_MEAN_BYTES
+        );
+        assert_eq!(
+            column_bytes_est("Vec<(u32, u32)>"),
+            VARIABLE_COLUMN_MEAN_BYTES
+        );
+        assert_eq!(column_bytes_est("Option<u32>"), 5);
+    }
 
     #[test]
     fn parses_one_simple_table() {
@@ -452,6 +617,27 @@ mod tests {
     }
 
     #[test]
+    fn a_table_level_index_never_stands_in_for_the_tables_accessor() {
+        let src = "#[spacetimedb::table(accessor = stock, index(accessor = by_holder_item, btree(columns = [holder_kind, holder_id, item_id])))]\n\
+                   pub struct Stock {\n#[primary_key]\npub stock_id: u64,\npub holder_kind: u32,\n}\n\
+                   #[spacetimedb::table(index(accessor = by_x, btree(columns = [x])), accessor = other, public)]\n\
+                   pub struct Other { #[primary_key] pub id: u64, pub x: u32 }";
+        let tables = tables_in(src);
+        assert_eq!(tables[0].accessor, "stock");
+        assert!(!tables[0].public);
+        assert_eq!(
+            tables[0].indexes,
+            vec![IndexDef {
+                accessor: "by_holder_item".into(),
+                columns: vec!["holder_kind".into(), "holder_id".into(), "item_id".into()],
+            }]
+        );
+        assert_eq!(tables[1].accessor, "other");
+        assert!(tables[1].public);
+        assert_eq!(tables[1].indexes[0].accessor, "by_x");
+    }
+
+    #[test]
     #[should_panic(expected = "has a bare #[table(")]
     fn rejects_the_unqualified_spelling() {
         let src = "use spacetimedb::table;\n#[table(accessor = person)]\nstruct Person;";
@@ -502,6 +688,7 @@ mod tests {
                 public: false,
                 scheduled_reducer: None,
                 wide_table_waiver: None,
+                indexes: vec![],
                 columns: vec![ColumnDef {
                     name: "id".to_string(),
                     ty: "u64".to_string(),

@@ -5,12 +5,27 @@
 //! name exists) or `deferred` (the subsystem it protects does not exist yet).
 //! `scripts/ci/check-trace-matrix.sh` fails the build if the two ever
 //! disagree, so this file and the matrix cannot drift silently.
+//!
+//! Reproducing a CI failure (NFR50): `ci.yml` runs every property from one
+//! fixed `PROPTEST_RNG_SEED` and prints it with `PROPTEST_CASES`; locally,
+//! `PROPTEST_RNG_SEED=<from the log> PROPTEST_CASES=<from the log> cargo
+//! test -p sim --release --test invariants -- <property>` replays the same
+//! cases. With a fixed RNG seed every property draws the same
+//! `any::<u64>()` world seeds. An outlier found by `explore.yml` (fresh
+//! seeds) is diagnosed to the pass that owns it and pinned as a plain
+//! `#[test]`, never absorbed by widening a tolerance.
 
 use proptest::prelude::*;
 use sim::appearance;
+use sim::cadence;
 use sim::generated::defs::{self, Family, Pool};
-use sim::generation::{GenerationConfig, GenerationContent, envelopes, land_use, plots, streets};
+use sim::generation::{
+    DistrictRecord, GenerationConfig, GenerationContent, GenerationError, RuleSetVersion, create,
+    envelopes, land_use, plots, streets,
+};
 use sim::rng::{Rng, seed_from_ids};
+use sim::routing::estimate::{Correction, Rates, estimate};
+use sim::routing::{Point, TransportMode};
 use sim::rules::testing::SiteBuilder;
 use sim::rules::{
     AdjacencyRelation, AreaId, Cell, CoherenceMode, Direction, NeighbourTerm, RuleDef, RuleKind,
@@ -30,6 +45,20 @@ pub const INV_NO_MATTER_STARVES: &str = "no matter starves indefinitely";
 pub const INV_INVENTORY_SUPERSET_AFTER_ABSENCE: &str = "inventory is a superset after any absence";
 pub const INV_NO_OWNED_ITEM_DEGRADES_DURING_ABSENCE: &str = "no owned item degrades during absence";
 pub const INV_BUDGET_NEVER_NEGATIVE: &str = "budget never goes negative";
+pub const INV_STOCK_IS_INDEPENDENT_PER_HOLDER: &str = "stock is independent per holder: any interleaving of stock operations leaves each holder exactly as replaying its own operations alone";
+pub const INV_STOCK_MOVES_ONLY_BY_HAND: &str = "stock moves only by hand: across any interleaving of authored makes, consumptions and moves, every quantity change is a returned write naming a citizen and one of two causes, and each item's total changes only by what was made and consumed";
+pub const INV_STOCK_MOVE_CONSERVES_QUANTITY: &str = "a stock move conserves quantity: the per-item sum across holders is unchanged by any sequence of moves, and a move the receiver refuses takes nothing from the giver";
+pub const INV_CASH_PAYMENT_CONSERVES_EVERY_DENOMINATION: &str = "a cash payment conserves every denomination: after any payment outcome the count of each denomination across all holders is unchanged, a completed payment moves exactly the price of value from customer to till, and every other outcome moves nothing";
+pub const INV_ACTOR_LOCATION_WRITTEN_ONLY_ON_CHUNK_CHANGE: &str = "actor_location is written only on a chunk or floor change: the planner returns no write for any move that keeps chunk and floor, and exactly one write, naming the chunk sim::world::chunk_key derives, for any move that changes either";
+pub const INV_PLAYER_POSITION_IS_ONE_ROW_PER_PLAYER: &str = "Over any interleaving of position writes by any number of characters, the planned writes leave exactly one row per character that has written, equal to its last write, and no plan touches another character's row (FR138)";
+pub const INV_PLAYER_POSITION_CHUNK_KEY_FOLLOWS_POSITION: &str = "Over any walk (negative coordinates, corner crossings, floor changes, teleports) the stored chunk_key of a player_position row equals sim::world::chunk_key of its stored position, and an out-of-range input produces no write (FR138)";
+pub const INV_PLAYER_POSITION_PLANNING_NEVER_PANICS: &str = "Any i32 position and any i8 floor returns Ok or a typed Err and never wraps; a jump of any distance inside the addressable range is accepted, since FR137 forbids plausibility checks (NFR41)";
+pub const INV_CHANGE_IS_REFUSED_ONLY_WHEN_THE_TILL_CANNOT_MAKE_IT: &str = "change is refused only when the till cannot make it: while the change due is under the bound a payment reports no change if and only if no combination of the pieces the till holds and what was just tendered sums to the change due, and the change chosen is the fewest pieces with ties to the larger denomination";
+pub const INV_CASH_PLANNING_NEVER_PANICS: &str = "cash planning never panics: value_of, choose_change and plan_payment return Ok or a typed Err for any table, any lines, any tender and any price";
+pub const INV_ITEM_INSTANCE_IN_EXACTLY_ONE_STATE: &str = "an item instance is in exactly one of its two states: any interleaving of place and hold moves leaves each instance in one form, never both, never neither";
+pub const INV_IDENTITY_REACHES_AT_MOST_ONE_CHARACTER: &str = "an identity reaches at most one character: over any interleaving of create, link, repeated link, link-to-self and link-by-a-stranger, no identity maps to two characters and no plan remaps a mapped identity";
+pub const INV_LINKING_NEVER_CHANGES_OR_ORPHANS_A_CHARACTER: &str = "linking never changes or orphans a character: a character's identity set only grows and never empties, and the character row is identical before and after any link, successful or refused";
+pub const INV_IDENTITY_PLANNING_NEVER_PANICS: &str = "identity planning never panics: plan_create, plan_link, check_claim and credential return Ok or a typed Err for any input, a spent or expired claim and an issuer with no audience included";
 pub const INV_COLLIDER_WITHIN_FOOTPRINT: &str = "collider is contained within footprint";
 pub const INV_IDENTICAL_SEEDS_DERIVE_IDENTICALLY: &str =
     "two derivations from identical seeded inputs match";
@@ -64,24 +93,33 @@ pub const INV_SEALED_RING_YIELDS_EXACTLY_ONE_ENCLOSED_REGION: &str =
     "a ring with no gap at all always yields exactly one enclosed region (FR128)";
 pub const INV_REMOVING_A_DOOR_NEVER_REDUCES_ENCLOSED_REGIONS: &str = "narrowing a ring's own doorway gap (down to and including closing it entirely) never reduces the number of reported enclosed regions (FR128)";
 pub const INV_RING_OPEN_TO_ANY_WINDOW_EDGE_IS_NEVER_REPORTED: &str = "a ring's own interior, pushed flush against any one of the window's own four edges with no wall and no margin between them, is never reported by enclosed_regions or by narrow_passages, for a door narrower than the real player body (FR128)";
+pub const INV_EXISTING_CITY_NEVER_REGENERATES: &str = "an existing city is never regenerated: for any list of recorded districts in any order, with any seeds and any recorded versions -- equal to or different from this build's -- the generate-once gate refuses exactly when some recorded site shares a cell with the site and runs no generation; generation is reachable only from no overlapping record";
 pub const INV_GENERATION_TOTAL_NEVER_PANICS: &str = "generation is total: for any seed, both passes return a valid plan or a typed error, never a panic (FR110)";
 pub const INV_GENERATION_ALL_FOUR_LAND_USES_PRESENT: &str = "pass 1's coarse grid is fully assigned (no unassigned cell) and every one of the four land uses appears at least once, for any seed (FR110)";
 pub const INV_GENERATION_STREETS_CONNECTED_AND_NOT_STRANDED: &str = "pass 2's street graph is a single connected component, and every pass-1 region borders a street, for any seed (FR110)";
 pub const INV_GENERATION_NO_DEAD_ENDS_AWAY_FROM_BOUNDARY: &str =
     "pass 2 never produces a degree-1 node away from the site boundary, for any seed (FR110, NFR8)";
-pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, BFS network distance never exceeds max_detour_percent of Manhattan distance, for any seed (FR110)";
+pub const INV_ESTIMATE_IS_A_METRIC: &str = "the routing estimate is zero exactly when two cells coincide, symmetric, and obeys the triangle inequality, for any three cells on one floor and any mode (FR131)";
+pub const INV_ESTIMATE_IS_A_METRIC_ACROSS_FLOORS: &str = "the routing estimate obeys the triangle inequality across floors too, for any correction factor (FR131)";
+pub const INV_ESTIMATE_IS_ORIGIN_INDEPENDENT: &str = "translating both endpoints by the same offset never changes the routing estimate, and no i32 coordinate panics or wraps (FR131)";
+pub const INV_FASTER_MODE_NEVER_COSTS_MORE: &str = "a mode with a higher speed percent never returns a larger estimate, and a strictly smaller one over a non-zero distance when the percents differ enough to matter (FR131)";
+pub const INV_FLOOR_PENALTY_IS_ADDITIVE_AND_FLAT: &str = "changing floor adds exactly floor_change_penalty_milliminutes per floor crossed, whatever the mode or the horizontal distance (FR131)";
+pub const INV_GENERATION_MANHATTAN_BEATS_EUCLIDEAN: &str = "over a generated city's own sampled node pairs, Manhattan distance is a closer estimate of network distance than Euclidean, in total and on a clear majority of pairs (FR131)";
+pub const INV_GENERATION_DETOUR_RATIO_BOUNDED: &str = "over the deterministic node-pair sample, BFS network distance never exceeds max(manhattan + max_detour_excess_cells, manhattan * max_detour_percent / 100), for any pair and any seed (FR110, story 15.10)";
 pub const INV_GENERATION_NOT_A_PERFECT_GRID: &str = "block width and height each take at least min_distinct_block_sizes distinct values, both junction kinds are present, and at least two street classes are present, for any seed (FR110, NFR8)";
 pub const INV_GENERATION_EXACT_TILING: &str = "every site cell is covered by exactly one block or by at least one street, and no two blocks overlap, for any seed (FR110)";
 pub const INV_GENERATION_INSTITUTIONAL_POCKETS_ARE_SMALL: &str = "at least institutional_min_pockets mutually non-adjacent (edge or corner) institutional components per site, none over institutional_max_pocket_share_percent of the site's own coarse-cell count, for any seed (FR110, Artie's direction)";
 pub const INV_GENERATION_INDUSTRIAL_NEVER_TOUCHES_COMMERCIAL: &str =
     "no industrial coarse cell is ever adjacent to a commercial one, for any seed (FR110)";
 pub const INV_GENERATION_RESIDENTIAL_IS_THE_LARGEST_LAND_USE_BY_AREA: &str = "residential has more coarse cells than any other single land use, for any seed -- field-driven assignment (commercial at the peak, industrial one contiguous group, institutional the smallest leaves) structurally favours it over a blind weighted draw, but that only holds if something keeps checking it (FR110, Quentin's direction)";
+pub const INV_GENERATION_LAND_USE_AREA_SHARE_WITHIN_TOLERANCE: &str = "each non-residential land use's area share of the site sits within share_tolerance_pct percentage points of its own share_*_pct key, for any seed -- the pass-1 guard for what the share keys mean (story 4.21, FR110)";
 pub const INV_GENERATION_P99_DETOUR_RATIO_BOUNDED: &str = "the 99th-percentile BFS-network-vs-Manhattan detour ratio, over one city's own sampled pairs, never exceeds p99_detour_percent, for any seed (FR110, Tim's direction)";
 pub const INV_GENERATION_NO_STAGGERED_JUNCTIONS: &str = "no two junctions on the same street sit under junction_min_separation_cells apart unless they coincide, for any seed -- asserted at zero, a refused split rather than a measured ceiling (FR110, Tim's direction)";
 pub const INV_GENERATION_MIN_BLOCK_DEPTH_IS_RESPECTED: &str =
     "every block is at least min_block_depth_cells on both axes, for any seed (FR110)";
 pub const INV_GENERATION_ARTERIALS_ARE_CONTIGUOUS: &str = "every arterial line starts at its own near site edge with no gap, and at most one arterial line per city stops short of the far site edge (the T-termination), for any seed (FR110, Artie's direction)";
-pub const INV_GENERATION_PERIPHERAL_BLOCKS_ARE_NOT_DEGENERATE: &str = "mean block area in the bottom third of the density range is at least 0.7x the top third's, for any seed (NFR8, Tim's/Artie's direction)";
+pub const INV_GENERATION_AN_INSTITUTIONAL_REGION_IS_CARRIED_BY_A_BLOCK: &str = "for any seed, at least one pass-1 institutional region has a block whose own land use (majority area) is institutional -- the swallow rule keeps small regions from vanishing into a neighbour's block (story 4.22)";
+pub const INV_GENERATION_PERIPHERAL_BLOCKS_ARE_NOT_DEGENERATE: &str = "mean block area in the bottom third of the density range is at least `peripheral_low_band_floor_percent` of the top third's, for any seed (NFR8, Tim's/Artie's direction)";
 pub const INV_GENERATION_EVERY_PLOT_FRONTS_A_STREET: &str = "every non-open plot shares at least frontage_min_cells of edge length with a street-abutting side of its own block, for any seed (story 3.3 AC1, FR110)";
 pub const INV_GENERATION_PLOTS_TILE_THEIR_BLOCK: &str = "every plot is inside its own block, no two plots overlap, and a block's own area minus its plots' summed area (the explicit remainder) is never negative, for any seed (story 3.3 AC1, FR110)";
 pub const INV_GENERATION_ENVELOPE_SIZE_WITHIN_ITS_CLASS_BAND: &str = "every placed envelope's footprint is within its own land use's [min, max] band on both axes (the minimum interior plus the wall ring; the shared outer ceiling), for any seed (story 3.3 AC2/AC3, FR110, FR115)";
@@ -110,6 +148,7 @@ pub const INV_GENERATION_WORKPLACE_COUNT_WITHIN_TOLERANCE: &str = "at the commit
 pub const INV_GENERATION_WORKPLACE_COUNT_MEAN_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean workplace count sits within workplace_mean_count_tolerance_percent of the Scale Baseline target scaled to the site (story 3.4 AC4, NFR14)";
 pub const INV_GENERATION_PROFESSION_DEPTH_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean count of professions held by at least min_employers_per_profession distinct placed workplaces sits within the committed tolerance of target_profession_count (story 3.4, GDD Scale Baseline)";
 pub const INV_GENERATION_PROFESSION_DEPTH_NEVER_COLLAPSES_IN_ONE_CITY: &str = "for any seed, the count of professions held by at least min_employers_per_profession distinct placed workplaces in that one city never falls under the committed per-city floor (story 3.4 AC4)";
+pub const INV_GENERATION_BARISTA_HAS_AT_LEAST_MIN_EMPLOYERS: &str = "for any seed, the barista profession (an FR14 launch job, posted only at cafes) is held by at least min_employers_per_profession distinct placed workplaces in that one city (story 15.9)";
 pub const INV_GENERATION_BUILDING_TYPE_INDEPENDENT_OF_ENVELOPE_ORDER: &str = "shuffling pass 4's own placed-envelope order and re-running pass 5 over the shuffled list never changes any envelope's own assigned type, for any seed (story 3.4, NFR25)";
 pub const INV_GENERATION_NO_QUADRANT_LACKS_ITS_REQUIRED_SERVICES: &str = "for any seed, for every distribution row a building type actually feeds, and every site quadrant holding at least one hard-eligible, unclaimed, min-spacing-feasible candidate for its subject, the subjects actually placed in that quadrant clear its own catchment floor (per-tag count in that quadrant / ratio, never discounted by the row's own site-wide tolerance_percent) (story 3.4 AC3)";
 pub const INV_GENERATION_INTERIOR_CELLS_LIE_INSIDE_THEIR_OWN_ENVELOPE: &str = "every emitted interior cell (wall, floor, threshold, fixture) lies inside its own building's pass-4 footprint in world coordinates on the same tilemap, the interior carries the envelope's own footprint and front, the entrance is the envelope's own front cell, and no cell is claimed by two buildings, for any seed (story 3.5 AC1, FR110, FR113)";
@@ -125,6 +164,11 @@ pub const INV_GENERATION_PUBLIC_ROOMS_ARE_REACHABLE_WITHOUT_CROSSING_STAFF_OR_PR
 pub const INV_GENERATION_STOCK_SITS_IN_A_STAFF_ROOM_AND_NEVER_ON_THE_PUBLIC_FLOOR: &str = "for any seed, every stock fixture sits in a staff room, and the pass places no seating or waste fixture -- those are the prop-placement pass's (story 3.5, Derek's direction)";
 pub const INV_GENERATION_ENTERABLE_SHARE_MATCHES_THE_COMMITTED_BAND: &str = "pooled over the fixed seed range 0..256, the enterable share of placed buildings sits within enterable_target_tolerance_percent of enterable_target_percent (story 3.5 AC3)";
 pub const INV_GENERATION_EVERY_TYPE_WITH_AN_OPTIONAL_TAIL_SHOWS_MORE_THAN_ONE_ROOM_COUNT: &str = "pooled over a fixed seed range, every type with an optional room tail that is placed often enough shows more than one distinct room count -- size buys rooms (story 3.5, Derek's direction)";
+pub const INV_SCHEDULE_PHASE_PRESERVED: &str = "sim::cadence::next_target's returned target is always congruent to the origin passed in, modulo the period, for any origin/period/now (story 4.2)";
+pub const INV_SCHEDULE_NEVER_TARGETS_PAST: &str = "sim::cadence::next_target's returned target is always strictly after now, for any reasonable-range origin/period/now (story 4.2)";
+pub const INV_SCHEDULE_CATCH_UP_BOUNDED: &str = "sim::cadence::next_target, called with now a simulated week past the origin, returns instantly (no loop) with missed equal to the exact arithmetic gap in periods -- catch-up is bounded to one late fire, every skipped target is never separately dispatched (story 4.2)";
+pub const INV_SCHEDULE_ARITH_TOTAL: &str = "sim::cadence::next_target never panics and never wraps, for any i64 origin/now (including i64::MIN/i64::MAX) and any positive period_ms (story 4.2, NFR41)";
+pub const INV_SCHEDULE_NEVER_RETURNS_ITS_OWN_ORIGIN: &str = "sim::cadence::next_target's returned target is always strictly after origin, for any reasonable-range origin/period/now -- an early dispatch (now before origin) must never re-arm the already-due origin itself (story 4.2)";
 
 proptest! {
     /// `inv_identical_seeds_derive_identically`: the only invariant among the
@@ -1745,6 +1789,39 @@ proptest! {
 // unoptimised/256 cases (the `coverage` job's own level) ~5s total
 // (~0.8ms/case). Both still comfortably inside their own job's budget,
 // so no per-property case-count pin is needed here either.
+
+/// `inv_generation_detour_ratio_bounded`'s own predicate body, lifted out
+/// so the proptest below and the pinned regression test
+/// (`seed_8872365549107643721_holds_the_detour_ceilings`) call through
+/// exactly the same bound rather than risk two copies of it drifting
+/// apart (Quentin's direction, story 15.10). The comparison itself lives
+/// in `streets::detour_bound_violation` (Derek's max()-contract, the
+/// same function `measure_generation.rs`'s own detour-bounds sweep calls
+/// -- one place, never two hand-written copies).
+fn detour_bounds_hold(seed: u64, cfg: &GenerationConfig) -> Result<(), String> {
+    let lu = land_use::run(seed, cfg.site(), cfg).unwrap();
+    let net = streets::run(seed, &lu, cfg);
+    let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+    if let Some(v) = streets::detour_bound_violation(&samples, cfg) {
+        return Err(format!(
+            "seed {seed}: {:?}-{:?} network {} over its own allowed {} (manhattan {}) -- \
+             max_detour_excess_cells/max_detour_percent are measured values (see generation.\
+             toml's own comments and docs/generation.md's street-network pass), not a bug in \
+             your change unless it touches server/sim/src/generation/streets.rs or a \
+             generation.streets.* key. To fix: add this seed to streets::PINNED_DETOUR_SEEDS \
+             with its own exhaustive excess (`detour_samples(usize::MAX)`'s own worst pair), \
+             then re-run `cargo run -p bounds --release --bin measure-generation` and \
+             re-apply max_detour_excess_cells's own margin rule",
+            v.a,
+            v.b,
+            v.network,
+            v.detour_allowed(cfg),
+            v.manhattan
+        ));
+    }
+    Ok(())
+}
+
 proptest! {
 
     /// `inv_generation_total_never_panics`.
@@ -1796,29 +1873,32 @@ proptest! {
         prop_assert!(net.dead_end_nodes().is_empty());
     }
 
-    /// `inv_generation_detour_ratio_bounded` (Quentin's direction, cycle
-    /// 2: two separate bounds, not one flat ratio -- an additive ceiling
-    /// on every sampled pair's own overshoot, in world cells, since a
-    /// ratio is dominated by a single jitter-driven jog at short range;
-    /// a ratio ceiling only over pairs at least `detour_long_pair_cells`
-    /// apart, where a ratio is what the estimator actually relies on).
+    /// `inv_generation_detour_ratio_bounded` (story 15.10, Derek's
+    /// direction): one bound, not two, and no distance threshold of its
+    /// own -- `network <= max(manhattan + max_detour_excess_cells,
+    /// manhattan * max_detour_percent / 100)` for every sampled pair
+    /// (`streets::detour_bound_violation`, the one function this, the
+    /// pinned `seed_8872365549107643721_holds_the_detour_ceilings` test
+    /// and the sweep all call through). Story 3.18's `detour_long_pair_
+    /// cells` AND-with-threshold contract is gone: a value under the
+    /// takeover distance (`GenerationConfig::detour_ratio_takeover_
+    /// distance_cells`) was allowed *less* additive excess than a
+    /// shorter pair, the seam seed `8872365549107643721` walked into,
+    /// and no value of a separate threshold key could make it both
+    /// non-redundant and coherent. Since exceeding the max() of two
+    /// terms means exceeding both, a violation here is always also a
+    /// violation of the additive-excess-alone check every sampled pair
+    /// was already held to -- so the existing sweep's own 0 misses
+    /// against `max_detour_excess_cells` (unconditional, every pair,
+    /// 1,000,000 seeds, passes 1-2 only) already proves this contract's
+    /// own miss count is 0 too, without a second million-seed run. See
+    /// `defs/balance/generation.toml`'s `max_detour_percent` comment and
+    /// `docs/generation.md`'s street-network pass for the full sweep.
     #[test]
     fn inv_generation_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
-        let net = streets::run(seed, &lu, &cfg);
-        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
-        for s in &samples {
-            prop_assert!(
-                s.excess_cells() <= cfg.max_detour_excess_cells as i64,
-                "seed {seed}: {:?}-{:?} excess {} cells over {}", s.a, s.b, s.excess_cells(), cfg.max_detour_excess_cells
-            );
-            if s.manhattan >= cfg.detour_long_pair_cells as i64 {
-                prop_assert!(
-                    s.ratio_pct() <= cfg.max_detour_percent as i64,
-                    "seed {seed}: {:?}-{:?} ratio {}% over {}%", s.a, s.b, s.ratio_pct(), cfg.max_detour_percent
-                );
-            }
+        if let Err(msg) = detour_bounds_hold(seed, &cfg) {
+            prop_assert!(false, "{msg}");
         }
     }
 
@@ -1826,7 +1906,10 @@ proptest! {
     /// 2): `max_detour_percent` alone only bounds one city's own single
     /// worst pair, which stays green even if the *typical* case
     /// regressed -- the 99th percentile of this same sample is pinned
-    /// separately.
+    /// separately. Measured directly (story 15.10, `measure-generation`'s
+    /// own detour-bounds sweep, 1,000,000 seeds, passes 1-2 only, at this
+    /// exact 64-node sample): 0 misses -- <= 0.000300% per seed (rule of
+    /// three), a 4,096-case CI run failing at most 1.2213% of the time.
     #[test]
     fn inv_generation_p99_detour_ratio_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -1837,6 +1920,41 @@ proptest! {
         prop_assert!(
             p99 <= cfg.p99_detour_percent as i64,
             "seed {seed}: p99 detour ratio {p99}% over {}%", cfg.p99_detour_percent
+        );
+    }
+
+    /// `inv_generation_manhattan_beats_euclidean` (FR131, AC2): over real
+    /// generated geometry, never a hand-drawn grid. Euclidean is an
+    /// integer `isqrt`, so no float enters `sim`.
+    #[test]
+    fn inv_generation_manhattan_beats_euclidean(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
+        let (mut man_err, mut euc_err, mut man_wins, mut euc_wins) = (0i64, 0i64, 0usize, 0usize);
+        for s in &samples {
+            let dx = (s.a.0 as i64 - s.b.0 as i64).abs();
+            let dy = (s.a.1 as i64 - s.b.1 as i64).abs();
+            // Rounded to nearest: a floor would bias the comparison.
+            let euclid = ((4 * (dx * dx + dy * dy)).isqrt() + 1) / 2;
+            let (m, e) = ((s.network - s.manhattan).abs(), (s.network - euclid).abs());
+            man_err += m;
+            euc_err += e;
+            man_wins += usize::from(m < e);
+            euc_wins += usize::from(e < m);
+        }
+        prop_assert!(!samples.is_empty(), "seed {seed}: no sampled pairs");
+        prop_assert!(
+            man_err < euc_err,
+            "seed {seed}: summed |network - manhattan| {man_err} is not under summed \
+             |network - euclidean| {euc_err} over {} pairs", samples.len()
+        );
+        // Ties (axis-aligned pairs, where both agree) are neither side's win.
+        prop_assert!(
+            man_wins * 10 >= (man_wins + euc_wins) * 9,
+            "seed {seed}: Manhattan closer on {man_wins} pairs, Euclidean on {euc_wins} -- \
+             under the committed 90% of decided pairs"
         );
     }
 
@@ -1908,26 +2026,52 @@ proptest! {
     /// direction, cycle 1; cycle 3: switched from a median-distance
     /// split to `StreetNetwork::mean_area_by_density_band`, density
     /// bands rather than a proxy for density -- Tim's direction, cycle
-    /// 3). Measured over 5,000 arbitrary seeds at this generator's
-    /// committed values: 4,997 have the periphery (low-density) mean
-    /// strictly larger than the core (high-density) mean; the 3
-    /// exceptions land within single-digit percent of parity (worst
-    /// ratio 0.72x), real split-jitter noise rather than an inversion --
-    /// `peripheral_low_band_floor_percent` is the margin that keeps all
-    /// 5,000 green. This per-city floor alone cannot tell a healthy city
-    /// from a density-blind one, though: a uniform grid pools to parity
-    /// (1.0x), comfortably above 0.7x
+    /// 3). Measured at `GENERATION_VERSION` 9 over 1,000,000 uniformly
+    /// drawn seeds: none below the committed 60%; the worst is 80.4% --
+    /// real split-jitter noise rather than an inversion
+    /// (`peripheral_floor_clears_the_lowest_known_ratio_seeds` pins it).
+    /// This per-city floor alone cannot tell a healthy city from a
+    /// density-blind one, though: a uniform grid pools to parity (1.0x),
+    /// comfortably above 0.6x
     /// (`mean_area_by_density_band_reports_parity_for_a_uniform_grid` in
     /// `server/sim/src/generation/streets.rs` shows exactly this).
     /// `peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor`,
     /// below, is the guard that actually fails on that defect (Quentin's
-    /// direction, cycle 4). Artie's own harder, cycle-2 bar (2x) is
-    /// judged on the committed evidence seeds specifically
-    /// (`peripheral_blocks_are_at_least_1_6x_central_ones_on_the_
-    /// evidence_seeds` in `server/sim/src/generation/streets.rs`), kept
-    /// on `mean_area_split_by_peak_distance` (Tim's direction, cycle 3:
-    /// "keep it as is" -- the evidence-seed test is Artie's own bar, not
-    /// this proptest's).
+    /// direction, cycle 4). Artie's own harder bar (2x) is judged on the
+    /// committed evidence seeds specifically
+    /// (`peripheral_blocks_are_at_least_2x_central_ones_on_the_evidence_
+    /// seeds` in `server/sim/src/generation/streets.rs`), on this same
+    /// density-band metric.
+    /// The property `streets::SWALLOW_MIN_REGION_SHARE_DENOM` exists for:
+    /// a city with institutional land has at least one block that is
+    /// institutional, or pass 5 can never place a council or hospital.
+    /// Stronger claims do not hold -- about 2% of seeds lose *some* region
+    /// of some use to a neighbour's majority, and that is the design (a
+    /// block's use is decided by majority area). Without the rule 0.57% of
+    /// seeds break this; with it 0 of 1,000,000 do. Pinned seeds:
+    /// `institutional_regions_survive_on_seeds_that_lose_them_without_the_
+    /// swallow_rule` in `server/sim/src/generation/streets.rs`.
+    #[test]
+    fn inv_generation_an_institutional_region_is_carried_by_a_block(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let institutional = lu
+            .regions()
+            .iter()
+            .filter(|r| r.use_ == sim::generation::LandUse::Institutional)
+            .count();
+        let lost = net
+            .regions_carried_by_no_block(&lu)
+            .iter()
+            .filter(|r| r.use_ == sim::generation::LandUse::Institutional)
+            .count();
+        prop_assert!(
+            institutional == 0 || lost < institutional,
+            "seed {seed}: all {institutional} institutional regions are carried by no block"
+        );
+    }
+
     #[test]
     fn inv_generation_peripheral_blocks_are_not_degenerate(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -2094,6 +2238,29 @@ proptest! {
                 }
             }
         }
+    }
+
+    /// `inv_generation_land_use_area_share_within_tolerance` (story 4.21):
+    /// each non-residential use's area share sits within
+    /// `share_tolerance_pct` points of its own `share_*_pct` key, checked
+    /// at the pass that owns it rather than two passes downstream in the
+    /// building and workplace counts. Measured miss rate (`measure-generation -- bands 1000000`, 1,000,000
+    /// seeds, 2026-09-29): 0 misses; rule-of-three bound 0.000300% per seed,
+    /// implied failure probability per fresh-seed 4,096-case run
+    /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
+    #[test]
+    fn inv_generation_land_use_area_share_within_tolerance(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        prop_assert!(
+            lu.share_band_violation(&cfg).is_none(),
+            "seed {seed}: land-use share outside share_tolerance_pct: {:?} (commercial {}, industrial {}, institutional {} of {} coarse cells)",
+            lu.share_band_violation(&cfg),
+            lu.area_cells(land_use::LandUse::Commercial),
+            lu.area_cells(land_use::LandUse::Industrial),
+            lu.area_cells(land_use::LandUse::Institutional),
+            lu.cols() * lu.rows()
+        );
     }
 
     /// `inv_generation_residential_is_the_largest_land_use_by_area`
@@ -2342,6 +2509,54 @@ proptest! {
                     seed, b.bounds, side, sides.get(side), touches
                 );
             }
+        }
+    }
+
+    /// `inv_existing_city_never_regenerates`: whatever the recorded
+    /// districts say about their seeds and versions, `create` over a site
+    /// any of them shares a cell with refuses -- checked against an
+    /// independent cell-sharing oracle, for one to four records in any
+    /// order with the overlapping one at any position.
+    #[test]
+    fn inv_existing_city_never_regenerates(
+        rects in proptest::collection::vec(
+            (-3000i32..3000, -3000i32..3000, 1i32..3000, 1i32..3000),
+            1..5,
+        ),
+        seeds in proptest::collection::vec(any::<u64>(), 4),
+        generation_version in any::<u32>(),
+        rng_version in any::<u32>(),
+        defs_version in "[a-z0-9]{0,12}",
+        same_defs in any::<bool>(),
+        new_seed in any::<u64>(),
+    ) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let site = cfg.site();
+        let existing: Vec<DistrictRecord> = rects
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y, w, h))| DistrictRecord {
+                seed: seeds[i],
+                site: Rect { x0: x, y0: y, x1: x + w, y1: y + h },
+                version: RuleSetVersion {
+                    generation: generation_version,
+                    rng: rng_version,
+                    defs: if same_defs { defs::DEFS_VERSION.to_string() } else { defs_version.clone() },
+                },
+            })
+            .collect();
+        let shares_a_cell = |r: &Rect| {
+            r.x0.max(site.x0) < r.x1.min(site.x1) && r.y0.max(site.y0) < r.y1.min(site.y1)
+        };
+        // Acceptance is exercised by `record.rs`'s own cases; only the
+        // refusal is checked here, so a case costs no generation.
+        if existing.iter().any(|r| shares_a_cell(&r.site)) {
+            let r = create(&existing, new_seed, &cfg, &GenerationContent::committed());
+            prop_assert!(
+                matches!(r, Err(GenerationError::SiteAlreadyGenerated { .. })),
+                "a record sharing a cell must refuse, got {:?}",
+                r.map(|(rec, _)| rec)
+            );
         }
     }
 
@@ -2613,7 +2828,10 @@ proptest! {
     /// AC4's own tolerance guard is a world that fails to create, so the
     /// acceptable failure rate over arbitrary seeds is engineered to be
     /// negligible (`count_tolerance_percent`'s own key comment states the
-    /// sigma-based rule), not merely hoped for.
+    /// sigma-based rule), not merely hoped for. Measured miss rate (`measure-generation -- bands 1000000`, 1,000,000
+    /// seeds, 2026-09-29): 0 misses; rule-of-three bound 0.000300% per seed,
+    /// implied failure probability per fresh-seed 4,096-case run
+    /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
     #[test]
     fn inv_generation_building_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -2737,22 +2955,42 @@ proptest! {
     /// own "the district holds every required kind" claim by itself, for
     /// any seed. The real multi-instance rows (ratio under the same
     /// `MULTI_INSTANCE_RATIO_CEILING` `the_quadrant_floor_is_not_
-    /// vacuous_for_every_multi_instance_row_over_seeds_0_to_256` uses)
-    /// also assert `target >= 1` unconditionally, for any seed: their
-    /// own ratio is tuned to keep it that way (the balance comment only
-    /// claims this over the fixed 0..256 range that row's own sibling
-    /// pools over; here it is asserted for real). The three high-ratio,
-    /// near-singleton rows are not: Derek's own direction tunes their
-    /// ratio so `target == 1` *across the measured seed range*, never a
-    /// guarantee for literally every possible seed -- a basis just under
-    /// the ratio (found by `proptest`, not sequential measurement) is a
-    /// real, rare `target == 0` for those three, by design, not a bug
-    /// this invariant should flag. Also AC2's own "shops and cafes"
-    /// half: at least one placed type carries the `shop` tag and at
-    /// least one carries `cafe`, read off `defs::TAGS` by key (a test
-    /// file, never scanned by `check-generator-no-content-keys.sh`), not
-    /// a `[[distribution]]` row -- neither is distributed, both are
-    /// ordinary weighted fill.
+    /// vacuous_for_every_multi_instance_row_over_seeds_0_to_256` uses --
+    /// `welfare_office_present`, `shelter_present` and, since story 15.9,
+    /// `cafe_present`) also assert `target >= 1` unconditionally, for any
+    /// seed: their own ratio is tuned to keep it that way (the balance
+    /// comment only claims this over the fixed 0..256 range that row's
+    /// own sibling pools over; here it is asserted for real). The three
+    /// high-ratio, near-singleton rows are not: Derek's own direction
+    /// tunes their ratio so `target == 1` *across the measured seed
+    /// range*, never a guarantee for literally every possible seed -- a
+    /// basis just under the ratio (found by `proptest`, not sequential
+    /// measurement) is a real, rare `target == 0` for those three, by
+    /// design, not a bug this invariant should flag.
+    ///
+    /// Story 15.9 (the missing-cafe flake, seed `5671826158575195197`,
+    /// once a real ~1-in-120k failure of the ordinary-fill "shops and
+    /// cafes" branch this doc comment used to describe): cafe moved onto
+    /// the distribution mechanism above (`cafe.weight = 0`,
+    /// `cafe_present` in `defs/rules/generation.toml`) and is now
+    /// covered by the generic loop, not a hand-named branch, so the
+    /// district holds at least one cafe by construction rather than by
+    /// the fill's own luck -- measured (`cargo run -p bounds --release
+    /// --bin measure-generation -- 1000000`), 0 misses in 1,000,000
+    /// genuinely random seeds (`seed_from_ids`, never a sequential
+    /// sweep), for both `cafe_present`'s own basis/target claim and the
+    /// stricter "at least one placed building carries the `cafe` tag" --
+    /// zero by construction (`ratio` under `MULTI_INSTANCE_RATIO_
+    /// CEILING`), not by luck. `seed_5671826158575195197_places_a_cafe`,
+    /// below, pins that exact seed as a plain, non-random regression.
+    /// AC2's remaining "shops" half stays ordinary weighted fill by
+    /// design (Derek's direction: variety across five shop-tagged types
+    /// is the fill's own job there) -- at least one placed type carries
+    /// the `shop` tag, read off `defs::TAGS` by key (a test file, never
+    /// scanned by `check-generator-no-content-keys.sh`); measured over
+    /// the same 1,000,000-seed sweep, 0 misses (shop-tagged types hold
+    /// roughly 85% of the commercial fill weight, so a zero-shop city at
+    /// 100+ commercial envelopes is not a reachable event in practice).
     #[test]
     fn inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero(seed in any::<u64>()) {
         const MULTI_INSTANCE_RATIO_CEILING: u32 = 250;
@@ -2799,23 +3037,25 @@ proptest! {
             );
         }
 
-        for &wanted in &["shop", "cafe"] {
-            let tag_id = defs::TAGS
-                .iter()
-                .find(|t| t.key == wanted)
-                .map(|t| t.id)
-                .unwrap_or_else(|| panic!("committed tags must carry a '{wanted}' entry"));
-            prop_assert!(
-                tag_counts.get(&tag_id).copied().unwrap_or(0) > 0,
-                "seed {seed}: no placed building carries the '{wanted}' tag",
-            );
-        }
+        let wanted = "shop";
+        let tag_id = defs::TAGS
+            .iter()
+            .find(|t| t.key == wanted)
+            .map(|t| t.id)
+            .unwrap_or_else(|| panic!("committed tags must carry a '{wanted}' entry"));
+        prop_assert!(
+            tag_counts.get(&tag_id).copied().unwrap_or(0) > 0,
+            "seed {seed}: no placed building carries the '{wanted}' tag",
+        );
     }
 
     /// `inv_generation_workplace_count_within_tolerance` (AC4, story 3.4):
     /// the same shape as `inv_generation_building_count_within_tolerance`
     /// -- `generate`'s own `check_workplace_count` clears the per-seed
-    /// band, for any seed.
+    /// band, for any seed. Measured miss rate (`measure-generation -- bands 1000000`, 1,000,000
+    /// seeds, 2026-09-29): 0 misses; rule-of-three bound 0.000300% per seed,
+    /// implied failure probability per fresh-seed 4,096-case run
+    /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
     #[test]
     fn inv_generation_workplace_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -2895,6 +3135,35 @@ proptest! {
         prop_assert!(
             depth >= floor,
             "seed {seed}: this city's own profession depth {depth} is under the committed per-city floor {floor}"
+        );
+    }
+
+    /// `inv_generation_barista_has_at_least_min_employers` (story 15.9,
+    /// Derek's/Quentin's direction): `barista` is an FR14 launch job and
+    /// is posted only at cafes, so moving cafes onto `cafe_present` must
+    /// never leave one city with a barista held by fewer than
+    /// `min_employers_per_profession` distinct workplaces -- asserted per
+    /// seed by name, never left to the pooled profession-depth check.
+    #[test]
+    fn inv_generation_barista_has_at_least_min_employers(seed in any::<u64>()) {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
+        let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+            content.building_types.iter().map(|b| (b.id, b)).collect();
+        let min_employers = sim::balance::value(
+            defs::BALANCE,
+            "generation.building_types.min_employers_per_profession",
+        ) as usize;
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
+        let baristas = d
+            .building_types
+            .assignments()
+            .iter()
+            .filter(|a| by_id[&a.building_type].professions.contains(&"barista"))
+            .count();
+        prop_assert!(
+            baristas >= min_employers,
+            "seed {seed}: barista is held by {baristas} workplaces, under min_employers_per_profession {min_employers}"
         );
     }
 
@@ -3481,13 +3750,18 @@ fn block_edge_touches_street(block: Rect, street: Rect, side: sim::generation::S
     }
 }
 
-/// The argmin and argmax seeds of the building-count distribution over
-/// the committed harness's own 50,000-seed scan (`cargo run -p bounds
-/// --release --bin measure-generation` prints both) -- copied from its
-/// output, never hunted for, and re-taken whenever the harness is re-run
-/// after a retune. Pinned so a generator change that shifts the
-/// distribution fails deterministically, every run.
-const PINNED_BUILDING_COUNT_SEEDS: [u64; 2] = [18_959, 33_799];
+/// The argmin and argmax seeds of the building-count distribution at
+/// `GENERATION_VERSION` 9: the band sweep's (`measure-generation`, 50,000
+/// seeds: min 768 / max 1,002) and the plot/envelope scan's (min 778 / max
+/// 990), copied from the harness's output, never hunted for, and
+/// re-taken whenever the generator moves. A generator change that shifts
+/// the distribution fails deterministically, every run.
+const PINNED_BUILDING_COUNT_SEEDS: [u64; 4] = [
+    18_227_589_722_137_138_881,
+    6_786_936_242_335_454_667,
+    11_805_315_485_014_167_829,
+    11_123_925_265_906_853_341,
+];
 
 /// A handful of individually-measured seeds, pinned as fixed-seed tests
 /// asserting `Ok` -- a generator change that shifts the building-count
@@ -3503,50 +3777,112 @@ fn building_count_holds_at_individually_measured_extreme_seeds() {
     }
 }
 
-/// PR #317 cycle 5 (Quentin's direction): a failure found by luck
-/// becomes a deterministic test, `PINNED_BUILDING_COUNT_SEEDS`'s own
-/// precedent -- otherwise the next streets retune re-breaks the
-/// T-terminated-spur case and only luck finds it again. Found by a
-/// genuinely random `proptest` run against `inv_generation_detour_
-/// ratio_bounded`, never hunted for.
-const PINNED_DETOUR_SEEDS: [u64; 1] = [10_778_299_729_582_344_780];
-
-/// The pinned seed's own worst sampled pair, asserted against the
-/// committed ceiling (never a stale hardcoded number, so a real
-/// retune's own new committed value is what this checks against) *and*
-/// asserted to still end on a T-terminated dead-end spur -- degree 1,
-/// on the site's own boundary -- so this pins the mechanism the seed
-/// was kept for, not just a cell count that could quietly stop meaning
-/// what it once did.
+/// Each pinned seed's own worst *exhaustive* pair (`detour_samples(
+/// usize::MAX)`, the population `max_detour_excess_cells` is actually
+/// keyed against -- never the cheap `DETOUR_SAMPLE_MAX_NODES` sample,
+/// which is `inv_generation_detour_ratio_bounded`'s own job), asserted
+/// by **equality** against `streets::PINNED_DETOUR_SEEDS`'s own recorded
+/// figure -- never just an upper bound, so a pass-2 or streets-key
+/// change that moves a pinned seed's own worst pair goes red here
+/// instead of leaving a stale number sitting silently in a toml comment
+/// (Quentin's direction, story 3.18 cycle 1). Each worst pair is also
+/// asserted to still end on a boundary exit -- degree 1, on the site's
+/// own boundary, the ordinary way every street ends, not a special "T-
+/// terminated dead-end spur" case (Tim's direction: that framing was
+/// wrong -- see `docs/generation.md`'s street-network pass) -- so this
+/// pins the mechanism each seed was kept for too.
 #[test]
-fn detour_excess_holds_at_a_pinned_t_terminated_spur_seed() {
+fn detour_excess_holds_at_pinned_boundary_exit_seeds() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    for seed in PINNED_DETOUR_SEEDS {
+    for (seed, expected_exhaustive_excess) in streets::PINNED_DETOUR_SEEDS {
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
-        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+        let samples = net.detour_samples(usize::MAX);
         let worst = samples
             .iter()
             .max_by_key(|s| s.excess_cells())
             .unwrap_or_else(|| panic!("pinned seed {seed} sampled no pairs at all"));
-        assert!(
-            worst.excess_cells() <= cfg.max_detour_excess_cells as i64,
-            "pinned seed {seed}: worst pair {:?}-{:?} excess {} exceeds the committed ceiling {}",
+        assert_eq!(
+            worst.excess_cells(),
+            expected_exhaustive_excess,
+            "pinned seed {seed}: exhaustive worst pair {:?}-{:?} now measures {} cells, not \
+             the pinned {expected_exhaustive_excess} -- pass 2 or a generation.streets.* key \
+             moved this seed; re-run `cargo run -p bounds --release --bin measure-generation`, \
+             re-apply max_detour_excess_cells's own margin rule, and update this seed's own \
+             row in streets::PINNED_DETOUR_SEEDS",
             worst.a,
             worst.b,
             worst.excess_cells(),
-            cfg.max_detour_excess_cells
         );
-        let on_a_t_terminated_spur = |n: (i32, i32)| net.degree(n) == 1 && net.is_on_boundary(n);
+        let on_a_boundary_exit = |n: (i32, i32)| net.degree(n) == 1 && net.is_on_boundary(n);
         assert!(
-            on_a_t_terminated_spur(worst.a) || on_a_t_terminated_spur(worst.b),
-            "pinned seed {seed}: worst pair {:?}-{:?} no longer ends on a T-terminated dead-end \
-             spur (degree 1, on the site boundary) -- the mechanism this seed was pinned for \
-             moved; re-measure and re-pin",
+            on_a_boundary_exit(worst.a) || on_a_boundary_exit(worst.b),
+            "pinned seed {seed}: worst pair {:?}-{:?} no longer ends on a boundary exit (degree \
+             1, on the site boundary) -- the mechanism this seed was pinned for moved; \
+             re-measure and re-pin",
             worst.a,
             worst.b
         );
     }
+}
+
+/// Story 15.10: seed `8872365549107643721` failed `inv_generation_
+/// detour_ratio_bounded` on CI run 36388555866 (PR #349) -- the pair
+/// `(152,0)-(393,18)`, Manhattan 259, had a 204% ratio against the old,
+/// independently-set `max_detour_percent` (200%) while its network
+/// distance sat well under `manhattan + max_detour_excess_cells`: the
+/// old AND-with-threshold contract could allow *less* additive excess to a
+/// pair a few cells past `detour_long_pair_cells` than to one a few cells
+/// short of it. Fixed at the source (`streets::detour_bound_violation`'s
+/// own max()-contract), never a re-scan of this one seed. Story 4.21's
+/// area-share land use moved every pass-2 network, so that pair no longer
+/// exists on this seed; the pin now asserts the seed still clears the
+/// committed contract. It is an ordinary regression pin, not the seam's
+/// guard: the seam is held at the function by `streets::tests::detour_bound_
+/// violation_has_no_seam_at_the_takeover_distance`.
+#[test]
+fn seed_8872365549107643721_holds_the_detour_ceilings() {
+    const SEED: u64 = 8872365549107643721;
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    detour_bounds_hold(SEED, &cfg).unwrap_or_else(|e| panic!("pinned seed {SEED}: {e}"));
+}
+
+/// Quentin's direction, story 3.18 cycle 1: `max_detour_excess_cells`'s
+/// own margin rule (its own `generation.toml` comment: the largest
+/// pinned exhaustive excess, times 1.25, rounded up to a multiple of 8,
+/// never above the loosening guard) was prose in three files and
+/// arithmetic in none. Applied here mechanically against the live
+/// committed config, so a retune that quietly stops following its own
+/// stated rule goes red rather than only reading wrong on review.
+/// Integer arithmetic throughout (NFR28): `* 5` then a ceiling `/ 4` is
+/// exactly `* 1.25` rounded up (never a float), then a ceiling `/ 8 *
+/// 8` rounds up to the next multiple of 8.
+#[test]
+fn max_detour_excess_cells_matches_its_own_margin_rule() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let largest_pinned_exhaustive_excess = streets::PINNED_DETOUR_SEEDS
+        .iter()
+        .map(|&(_, excess)| excess)
+        .max()
+        .expect("PINNED_DETOUR_SEEDS is never empty");
+    let times_1_25 = (largest_pinned_exhaustive_excess * 5 + 3) / 4;
+    let expected = (times_1_25 + 7) / 8 * 8;
+    assert_eq!(
+        cfg.max_detour_excess_cells as i64, expected,
+        "max_detour_excess_cells ({}) no longer matches its own margin rule -- the largest \
+         pinned exhaustive excess ({largest_pinned_exhaustive_excess}) times 1.25, rounded up \
+         to a multiple of 8, is {expected}; re-derive by hand from `measure-generation`'s own \
+         output and update generation.toml's own key (or this test, if the rule itself \
+         changed)",
+        cfg.max_detour_excess_cells
+    );
+    assert!(
+        cfg.max_detour_excess_cells as i64 <= cfg.detour_excess_loosening_guard(),
+        "max_detour_excess_cells ({}) exceeds its own loosening guard ({}) -- from_balance \
+         should already have refused this",
+        cfg.max_detour_excess_cells,
+        cfg.detour_excess_loosening_guard()
+    );
 }
 
 /// AC3's tight pooled mean-size assertion, over the fixed seed range
@@ -4058,6 +4394,138 @@ fn check_rules_reports_a_planted_missing_institution_violation_by_its_own_rule_k
     }
 }
 
+/// Story 4.21: seed `16021368561388801292` once failed
+/// `inv_generation_workplace_count_within_tolerance` on CI: 539 workplaces
+/// against a 171-514 band (about 6.5 sigma). Pass 5 was behaving as on any
+/// seed; pass 1 had given commercial 33.3% of the site's coarse cells
+/// against `share_commercial_pct = 18`, because the share keys were applied
+/// to the count of BSP leaves rather than to their area. A plain,
+/// non-random pin: it must hold under every property, and a `cc` entry in
+/// `invariants.proptest-regressions` would pin the generator's RNG state,
+/// not this world seed, so a strategy change would silently re-map it.
+#[test]
+fn seed_16021368561388801292_holds_its_commercial_share_and_workplace_band() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let seed = 16021368561388801292u64;
+    let d = sim::generation::generate(seed, &cfg, &content)
+        .unwrap_or_else(|e| panic!("seed {seed}: generate is no longer Ok: {e:?}"));
+    d.check_workplace_count(&cfg, &content)
+        .unwrap_or_else(|e| panic!("seed {seed}: workplace count outside its band: {e:?}"));
+    let lu = &d.land_use;
+    assert_eq!(
+        lu.share_band_violation(&cfg),
+        None,
+        "seed {seed}: a land-use share is outside share_tolerance_pct (commercial {} of {} cells)",
+        lu.area_cells(land_use::LandUse::Commercial),
+        lu.cols() * lu.rows()
+    );
+}
+
+/// Story 15.9: seed `5671826158575195197` -- 174 cafe-eligible envelopes,
+/// zero cafes drawn -- once failed
+/// `inv_generation_required_institutions_are_present_when_their_own_
+/// target_is_nonzero` on `master` (run 36108601641) and on the
+/// `issue-310`/`issue-335` branches, at about 1 in 120,000 uniformly
+/// drawn seeds (a ~3-4% chance per CI run at `PROPTEST_CASES=4096`). A
+/// plain, non-random pin, never folded into `invariants.proptest-
+/// regressions` (a `cc` entry pins the generator's RNG state, not the
+/// world seed, so a strategy change would silently re-map it): cafe moved onto the distribution mechanism (`cafe_present`,
+/// `defs/rules/generation.toml`) that guarantees this by construction,
+/// so this exact seed -- once a real failure -- now places a cafe and
+/// clears `check_rules` both, on every run.
+#[test]
+fn seed_5671826158575195197_places_a_cafe() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let seed = 5671826158575195197u64;
+    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let cafe_tag = defs::TAGS
+        .iter()
+        .find(|t| t.key == "cafe")
+        .map(|t| t.id)
+        .expect("committed tags must carry a 'cafe' entry");
+    let has_cafe = d
+        .building_types
+        .assignments()
+        .iter()
+        .any(|a| by_id[&a.building_type].tags.contains(&cafe_tag));
+    assert!(
+        has_cafe,
+        "seed {seed}: still places no cafe-tagged building"
+    );
+    assert!(
+        d.check_rules(&content).is_ok(),
+        "seed {seed}: check_rules is no longer Ok: {:?}",
+        d.check_rules(&content).err()
+    );
+}
+
+/// Story 15.9: seed `18237087621053529407`, found by the very proptest
+/// sweep this story tightened (`cargo test -p sim --release --test
+/// invariants -- inv_generation_committed_rules_hold_for_any_seed`, a
+/// genuinely random case, not sequential) -- a second, distinct bug from
+/// the one this story set out to fix, in the *mechanism* the fix itself
+/// leans on. This city has 190 hard-eligible cafe candidates and a
+/// `cafe_present` site-wide target of 5, so presence was never in
+/// question, yet the old `building_types::run` placed exactly 0: the
+/// per-catchment floor phase demanded its own floors summed to the
+/// *entire* site target (`catchment_floors`'s own `floors_sum ==
+/// site_target`), leaving a computed site-wide `remainder` of 0 -- but
+/// one of those catchments held zero locally-eligible commercial land,
+/// so its own `place_row` call placed 0 against a floor of nonzero, and
+/// nothing downstream ever revisited that shortfall. `sim::rules::
+/// evaluate`'s own zero-subjects branch
+/// (`distribution_coverage_violations`) then reported one violation per
+/// `per`-tagged cell (597 dwellings -- the `RuleViolations { count: 597,
+/// .. }` this seed once produced), not a single one. Fixed in `run`
+/// itself: the per-catchment phase's own real placed count is tracked
+/// alongside its own floor target, and whatever the floor phase could
+/// not actually place is folded into the site-wide remainder afterward
+/// (`floor_shortfall`), so a catchment that cannot supply its own floor
+/// no longer strands it -- the site-wide pool, which this same seed
+/// proves has real eligible land elsewhere, gets the chance the
+/// catchment-only view never gave it. This pin is a plain, non-random
+/// `#[test]`, mirroring the seed above: a `cc` entry in
+/// `invariants.proptest-regressions` pins the generator's RNG state, not
+/// the world seed, so a strategy change would silently re-map it.
+#[test]
+fn seed_18237087621053529407_places_its_full_cafe_target_despite_a_starved_catchment() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let seed = 18237087621053529407u64;
+    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let mut tag_counts: std::collections::BTreeMap<TagId, u64> = std::collections::BTreeMap::new();
+    for a in d.building_types.assignments() {
+        for &t in by_id[&a.building_type].tags {
+            *tag_counts.entry(t).or_insert(0) += 1;
+        }
+    }
+    let cafe_row = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .find(|r| r.key == "cafe_present")
+        .expect("committed content carries a 'cafe_present' distribution row");
+    let basis = tag_counts.get(&cafe_row.per).copied().unwrap_or(0);
+    let target = basis / (cafe_row.ratio.max(1) as u64);
+    let actual = tag_counts.get(&cafe_row.subject).copied().unwrap_or(0);
+    assert_eq!(
+        actual, target,
+        "seed {seed}: cafe_present placed {actual} against its own target {target} -- the \
+         starved-catchment shortfall must be picked up by the site-wide remainder"
+    );
+    assert!(
+        d.check_rules(&content).is_ok(),
+        "seed {seed}: check_rules is no longer Ok: {:?}",
+        d.check_rules(&content).err()
+    );
+}
+
 /// Companion to the two tests above: a `condo_block` (`form_high`) and a
 /// `villa` (`form_low`) sharing the same block -- `no_high_rise_within_
 /// a_low_rise_block`'s own coherence violation, AC1.
@@ -4260,7 +4728,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
 /// (deterministic -- never flaky, unlike a fresh `any::<u64>()` draw each
 /// CI run), summed low-band mean area over summed high-band mean area
 /// must clear `peripheral_pooled_min_ratio_percent` -- a density-blind
-/// generator pools to ~100%, this one to ~241% (Quentin's direction,
+/// generator pools to ~100%, this one to ~289% at `GENERATION_VERSION` 9
+/// (Quentin's direction,
 /// cycle 4: "the only test that goes red if `subdivide` stops reading
 /// density is a three-seed test tuned to one seed").
 #[test]
@@ -4280,6 +4749,2241 @@ fn peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor() {
         "pooled over seeds 0..256: low-band sum {low_sum} is under {}% of high-band sum {high_sum}",
         cfg.peripheral_pooled_min_ratio_percent
     );
+}
+
+/// The lowest per-city ratios known at `GENERATION_VERSION` 9, pinned so
+/// raising `peripheral_low_band_floor_percent` above them fails every run
+/// rather than one in N. Low-band mean over high-band mean, the three
+/// lowest of 1,000,000 seeds drawn through `seed_from_ids(0x5ca9, i)`
+/// (per-city p1 167%, p5 195%, median 276%): seed 5955473505560313928,
+/// 3086 / 3840 (80.4%); seed 12341508193973285094, 2347 / 2477 (94.7%);
+/// seed 16477458686111781630, 2163 / 2272 (95.2%).
+#[test]
+fn peripheral_floor_clears_the_lowest_known_ratio_seeds() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    for seed in [
+        5955473505560313928u64,
+        12341508193973285094,
+        16477458686111781630,
+    ] {
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let (low, high) = net
+            .mean_area_by_density_band(&lu, &cfg)
+            .expect("both density bands are populated for this seed");
+        assert!(
+            low * 100 >= high * cfg.peripheral_low_band_floor_percent as i64,
+            "seed {seed}: low-band mean {low} is under {}% of high-band mean {high}",
+            cfg.peripheral_low_band_floor_percent
+        );
+    }
+}
+
+/// What binds peripheral block size is density, not the pass-1 leaf
+/// layout: pooled over the fixed seed range `0..256`, at most
+/// `MAX_POOLED_CHOPPED_PERCENT` of the blocks in the bottom density third
+/// may have an area at or under a quarter of their own local
+/// `target_block_size` squared. A ratio cannot tell "periphery is small"
+/// from "periphery is chopped"; this can. Measured with this same
+/// counting rule pooled over 0..256: `GENERATION_VERSION` 8 (master at
+/// `f6ad0570`, region-spanning rule) 7,458 of 9,761 blocks, 76%;
+/// `GENERATION_VERSION` 9 1,886 of 5,600, 33%. 55 is midway between the
+/// two, so the bound separates the generators rather than fitting the
+/// newer one. Pooled rather than per city because the per-city share is
+/// too wide to separate them (1,000,000 seeds at 9: median 33%, p99 67%,
+/// max 88%). Not a balance key: only this test reads it.
+#[test]
+fn peripheral_blocks_pooled_chopped_share_stays_bounded() {
+    const MAX_POOLED_CHOPPED_PERCENT: usize = 55;
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let (mut chopped_sum, mut total_sum) = (0usize, 0usize);
+    for seed in 0u64..256 {
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let (chopped, total) = net.low_band_chopped_blocks(&lu, &cfg);
+        chopped_sum += chopped;
+        total_sum += total;
+    }
+    assert!(
+        chopped_sum * 100 <= total_sum * MAX_POOLED_CHOPPED_PERCENT,
+        "pooled over seeds 0..256: {chopped_sum} of {total_sum} low-density blocks are at or under a quarter of their own target's area, over {MAX_POOLED_CHOPPED_PERCENT}%"
+    );
+}
+
+// Story 3.11: the travel-time estimator (FR131). A handful of integer ops
+// per case, so 4,096 cases are pinned here rather than inherited.
+fn rates() -> Rates {
+    Rates::from_balance(defs::BALANCE)
+}
+
+fn arb_mode() -> impl Strategy<Value = TransportMode> {
+    prop_oneof![
+        Just(TransportMode::Walk),
+        Just(TransportMode::Bike),
+        Just(TransportMode::Transit)
+    ]
+}
+
+fn arb_point() -> impl Strategy<Value = Point> {
+    (any::<i32>(), any::<i32>(), any::<i8>()).prop_map(|(x, y, floor)| Point { x, y, floor })
+}
+
+fn arb_correction() -> impl Strategy<Value = Correction> {
+    (Correction::MIN_PERCENT..=Correction::MAX_PERCENT)
+        .prop_map(|p| Correction::percent(p).unwrap())
+}
+
+fn est(a: Point, b: Point, m: TransportMode) -> i64 {
+    estimate(&rates(), a, b, m, Correction::NONE).0
+}
+
+fn est_c(a: Point, b: Point, m: TransportMode, c: Correction) -> i64 {
+    estimate(&rates(), a, b, m, c).0
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 4096, ..ProptestConfig::default() })]
+
+    /// `inv_estimate_is_a_metric`.
+    #[test]
+    fn inv_estimate_is_a_metric(
+        a in arb_point(), b in arb_point(), c in arb_point(), m in arb_mode(),
+        floor in any::<i8>(), k in arb_correction(),
+    ) {
+        let (a, b, c) = (Point { floor, ..a }, Point { floor, ..b }, Point { floor, ..c });
+        prop_assert_eq!(est_c(a, b, m, k) == 0, a == b);
+        prop_assert_eq!(est_c(a, b, m, k), est_c(b, a, m, k));
+        prop_assert!(est_c(a, c, m, k) <= est_c(a, b, m, k) + est_c(b, c, m, k));
+    }
+
+    /// The triangle inequality across floors too: the correction is applied
+    /// once, so the floor penalty rounds with the travel time.
+    #[test]
+    fn inv_estimate_is_a_metric_across_floors(
+        a in arb_point(), b in arb_point(), c in arb_point(), m in arb_mode(), k in arb_correction(),
+    ) {
+        prop_assert!(est_c(a, c, m, k) <= est_c(a, b, m, k) + est_c(b, c, m, k));
+    }
+
+    /// `inv_estimate_is_origin_independent`.
+    #[test]
+    fn inv_estimate_is_origin_independent(
+        a in arb_point(), b in arb_point(), dx in any::<i32>(), dy in any::<i32>(), m in arb_mode(),
+        k in arb_correction(),
+    ) {
+        let shift = |p: Point| Point { x: p.x.wrapping_add(dx), y: p.y.wrapping_add(dy), ..p };
+        // A wrapped shift is not a translation; only compare when neither moved out of i32.
+        let ok = |p: Point| p.x.checked_add(dx).is_some() && p.y.checked_add(dy).is_some();
+        est_c(a, b, m, k); // total for any input
+        if ok(a) && ok(b) {
+            prop_assert_eq!(est_c(a, b, m, k), est_c(shift(a), shift(b), m, k));
+        }
+    }
+
+    /// `inv_faster_mode_never_costs_more`.
+    #[test]
+    fn inv_faster_mode_never_costs_more(
+        a in arb_point(), b in arb_point(), m1 in arb_mode(), m2 in arb_mode(), k in arb_correction(),
+    ) {
+        let r = rates();
+        let (fast, slow) = if r.percent(m1) >= r.percent(m2) { (m1, m2) } else { (m2, m1) };
+        let (ef, es) = (est_c(a, b, fast, k), est_c(a, b, slow, k));
+        prop_assert!(ef <= es);
+        let manhattan = (a.x as i64 - b.x as i64).abs() + (a.y as i64 - b.y as i64).abs();
+        // One cell already differs by tens of milliminutes between modes.
+        if manhattan >= 1 && r.percent(fast) > r.percent(slow) {
+            prop_assert!(ef < es);
+        }
+    }
+
+    /// `inv_floor_penalty_is_additive_and_flat`.
+    #[test]
+    fn inv_floor_penalty_is_additive_and_flat(a in arb_point(), b in arb_point(), m in arb_mode(), f2 in any::<i8>()) {
+        let same = Point { floor: a.floor, ..b };
+        let other = Point { floor: f2, ..b };
+        let floors = (a.floor as i64 - f2 as i64).abs();
+        prop_assert_eq!(
+            est(a, other, m) - est(a, same, m),
+            floors * rates().floor_change_penalty_milliminutes
+        );
+    }
+}
+
+// --- Story 4.1: the in-city clock (FR1-FR3) ---------------------------------
+
+pub const INV_CITY_TIME_DEPENDS_ONLY_ON_ELAPSED: &str = "the in-city delta between two instants is floor((t2-e)/k) - floor((t1-e)/k) whatever the epoch's own value, so in-city time advances exactly with elapsed real time at the fixed rate (FR1, FR3)";
+pub const INV_CITY_TIME_CONVERSION_EXACT: &str = "the day/hour/minute decomposition round-trips to the total minute count for every instant, including before the epoch and beyond i32/u32 milliseconds, with every field in range and no panic (FR1)";
+pub const INV_CITY_HOUR_DEPENDS_ONLY_ON_REAL_HOUR_PHASE: &str = "in-city time of day depends only on elapsed real milliseconds modulo one real hour, so the same real hh:mm on any two days gives the same in-city hour, while a session rotates through the day (FR1, FR2)";
+
+/// Microsecond instants kept where two of them and an epoch cannot overflow
+/// the plain `i64` reference arithmetic the oracle below uses.
+const CLOCK_RANGE: i64 = 1 << 60;
+
+proptest! {
+    /// `inv_city_time_depends_only_on_elapsed`.
+    #[test]
+    fn inv_city_time_depends_only_on_elapsed(
+        e in -CLOCK_RANGE..CLOCK_RANGE,
+        t1 in -CLOCK_RANGE..CLOCK_RANGE,
+        t2 in -CLOCK_RANGE..CLOCK_RANGE,
+    ) {
+        let k = sim::time::REAL_MS_PER_CITY_MINUTE;
+        let oracle = |t: i64| (t - e).div_euclid(1000).div_euclid(k);
+        let delta = sim::time::city_time(e, t2, 1).total_minutes()
+            - sim::time::city_time(e, t1, 1).total_minutes();
+        prop_assert_eq!(delta, oracle(t2) - oracle(t1));
+    }
+
+    /// `inv_city_time_conversion_exact`.
+    #[test]
+    fn inv_city_time_conversion_exact(e in any::<i64>(), t in any::<i64>()) {
+        let c = sim::time::city_time(e, t, 1);
+        prop_assert!(c.hour < 24 && c.minute < 60 && c.weekday < 7);
+        prop_assert!((c.real_ms_into_minute as i64) < sim::time::REAL_MS_PER_CITY_MINUTE);
+        prop_assert_eq!(c.weekday as i64, c.day.rem_euclid(7));
+        let elapsed_ms = (t as i128 - e as i128).div_euclid(1000);
+        let rebuilt = c.total_minutes() as i128 * sim::time::REAL_MS_PER_CITY_MINUTE as i128
+            + c.real_ms_into_minute as i128;
+        prop_assert_eq!(rebuilt, elapsed_ms);
+    }
+
+    /// `inv_city_hour_depends_only_on_real_hour_phase`.
+    #[test]
+    fn inv_city_hour_depends_only_on_real_hour_phase(
+        e in -CLOCK_RANGE..CLOCK_RANGE,
+        t in 0i64..CLOCK_RANGE,
+        days in 0i64..10_000,
+    ) {
+        let real_day_us = 24 * 3_600_000i64 * 1000;
+        let a = sim::time::city_time(e, e + t, 1);
+        let b = sim::time::city_time(e, e + t + days * real_day_us, 1);
+        prop_assert_eq!((a.hour, a.minute, a.real_ms_into_minute), (b.hour, b.minute, b.real_ms_into_minute));
+        // A 30-minute session crosses half the in-city day.
+        let later = sim::time::city_time(e, e + t + 30 * 60 * 1_000_000, 1);
+        let moved = (later.total_minutes() - a.total_minutes()) as i64;
+        prop_assert_eq!(moved, 720);
+    }
+}
+
+/// Story 15.9: a catchment can be owed a floor its own local land
+/// cannot supply -- one catchment holds every dwelling and zero
+/// eligible commercial land, a second holds zero dwellings (so the
+/// per-catchment floor phase never even considers it) but plenty of
+/// eligible commercial land. Before the fix, the first catchment's
+/// own floor alone summed to the whole site target, leaving a
+/// computed site-wide remainder of 0 even though the second
+/// catchment's own real, unused candidates could have supplied it --
+/// `run` placed 0 subjects against a target of 2. The fix folds
+/// whatever the floor phase could not actually place into the
+/// site-wide remainder afterward, so the second catchment's own real
+/// candidates get their chance.
+#[test]
+fn a_catchments_own_unmet_floor_is_placed_from_the_site_wide_remainder() {
+    const DWELLING_TAG: TagId = 9301;
+    const SHOP_TAG: TagId = 9302;
+    let dwelling_type = defs::BuildingTypeDef {
+        id: 9401,
+        key: "test_dwelling",
+        tags: &[DWELLING_TAG],
+        land_uses: [true, false, false, false],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 4,
+        min_interior_depth_cells: 4,
+        weight: 1,
+        requires_site: [false, false, false, false],
+        prefers_site: [false, false, false, false],
+        density_affinity: 0,
+        professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
+    };
+    // `weight = 0`, exactly like the real `cafe` building type
+    // (story 15.9): only the distribution row below ever assigns
+    // this type, never the ordinary weighted fill.
+    let shop_type = defs::BuildingTypeDef {
+        id: 9402,
+        key: "test_shop",
+        tags: &[SHOP_TAG],
+        land_uses: [false, true, false, false],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 4,
+        min_interior_depth_cells: 4,
+        weight: 0,
+        requires_site: [false, false, false, false],
+        prefers_site: [false, false, false, false],
+        density_affinity: 0,
+        professions: &["test_clerk"],
+        rooms: &[],
+        optional_rooms: &[],
+    };
+    // The ordinary fill's own baseline draw for every commercial
+    // envelope -- `shop_type`'s own `weight = 0` means this is the
+    // only real candidate the fill itself can ever pick, so every
+    // commercial envelope not overridden onto `shop_type` stays
+    // this type instead, the same as `general_retail` does for a
+    // real, un-overridden commercial plot.
+    let filler_type = defs::BuildingTypeDef {
+        id: 9403,
+        key: "test_filler",
+        tags: &[],
+        land_uses: [false, true, false, false],
+        density_min: 0,
+        density_max: 100,
+        min_interior_width_cells: 4,
+        min_interior_depth_cells: 4,
+        weight: 1,
+        requires_site: [false, false, false, false],
+        prefers_site: [false, false, false, false],
+        density_affinity: 0,
+        professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
+    };
+    let building_types = [dwelling_type, shop_type, filler_type];
+    let rules = [sim::rules::RuleDef {
+        id: 9501,
+        key: "test_shop_present",
+        kind: sim::rules::RuleKind::Distribution {
+            subject: SHOP_TAG,
+            per: DWELLING_TAG,
+            ratio: 2,
+            tolerance_percent: 20,
+            min_spacing: 1,
+            max_distance: 2000,
+        },
+    }];
+    let content = GenerationContent {
+        rules: sim::rules::RuleSet::for_test(&rules),
+        building_types: &building_types,
+        room_types: &[],
+        tags: &[],
+    };
+
+    // Catchment (0, 0): 4 dwellings, no commercial land at all --
+    // its own floor (4 / 2 = 2) already equals the whole site
+    // target, but it cannot supply any of it itself.
+    let mut plots = Vec::new();
+    let mut outcomes = Vec::new();
+    for i in 0..4i32 {
+        let footprint = Rect {
+            x0: i * 10,
+            y0: 0,
+            x1: i * 10 + 6,
+            y1: 6,
+        };
+        plots.push(sim::generation::Plot {
+            bounds: footprint,
+            block: 0,
+            front: Some(sim::generation::Side::South),
+            land_use: sim::generation::LandUse::Residential,
+            density: 20,
+            open: false,
+        });
+        outcomes.push(sim::generation::EnvelopeOutcome::Placed(
+            sim::generation::Envelope {
+                plot: plots.len() as u32 - 1,
+                footprint,
+                front: sim::generation::Side::South,
+            },
+        ));
+    }
+    // Catchment (1, 0): no dwellings, 3 hard-eligible shop
+    // candidates, well spaced from each other.
+    for i in 0..3i32 {
+        let footprint = Rect {
+            x0: 300 + i * 20,
+            y0: 0,
+            x1: 300 + i * 20 + 6,
+            y1: 6,
+        };
+        plots.push(sim::generation::Plot {
+            bounds: footprint,
+            block: 1,
+            front: Some(sim::generation::Side::South),
+            land_use: sim::generation::LandUse::Commercial,
+            density: 20,
+            open: false,
+        });
+        outcomes.push(sim::generation::EnvelopeOutcome::Placed(
+            sim::generation::Envelope {
+                plot: plots.len() as u32 - 1,
+                footprint,
+                front: sim::generation::Side::South,
+            },
+        ));
+    }
+
+    let site = sim::generation::SiteBounds {
+        x0: 0,
+        y0: 0,
+        x1: 512,
+        y1: 512,
+    };
+    let pm = plots::PlotMap::test_fixture(site, plots);
+    let em = envelopes::EnvelopeMap::test_fixture(outcomes);
+    let net = streets::StreetNetwork::test_fixture(
+        site,
+        Vec::new(),
+        vec![
+            sim::generation::Block {
+                bounds: Rect {
+                    x0: 0,
+                    y0: 0,
+                    x1: 256,
+                    y1: 256,
+                },
+            },
+            sim::generation::Block {
+                bounds: Rect {
+                    x0: 256,
+                    y0: 0,
+                    x1: 512,
+                    y1: 256,
+                },
+            },
+        ],
+    );
+    let c = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let map = sim::generation::building_types::run(1, &em, &pm, &net, &c, &content); // generation-entry-point: allow
+    let placed_shops = map
+        .assignments()
+        .iter()
+        .filter(|a| a.building_type == shop_type.id)
+        .count();
+    assert_eq!(
+        placed_shops, 2,
+        "the starved catchment's own unmet floor (2) must be placed from the site-wide \
+         remainder, using the second catchment's own real eligible land"
+    );
+}
+
+// --- story 4.2: the one scheduled-reducer repeat pattern (sim::cadence) --
+
+proptest! {
+    /// `inv_schedule_phase_preserved`: whatever `origin`/`period_ms`/`now`
+    /// are, the returned target is always exactly `origin + k * period_ms`
+    /// microseconds for some integer `k` -- congruent to `origin` modulo
+    /// the period, so chaining calls (each one's own `origin` is the
+    /// previous call's `target`) can never drift off the grid the very
+    /// first call established.
+    #[test]
+    fn inv_schedule_phase_preserved(
+        origin in any::<i64>(),
+        period_ms in 1i64..=1_000_000_000,
+        now in any::<i64>(),
+    ) {
+        let (target, _missed) = cadence::next_target(origin, period_ms, 1, now);
+        let period_micros = period_ms as i128 * 1000;
+        let delta = target as i128 - origin as i128;
+        prop_assert_eq!(delta.rem_euclid(period_micros), 0);
+    }
+
+    /// `inv_schedule_never_targets_past`: over a reasonable range (not the
+    /// extremes `inv_schedule_arith_total` covers, where saturating
+    /// arithmetic can no longer promise it), the returned target is
+    /// always strictly after `now` -- a target already in the past can
+    /// never be reinserted, so no back-to-back burst is possible.
+    #[test]
+    fn inv_schedule_never_targets_past(
+        origin in -1_000_000_000_000i64..=1_000_000_000_000,
+        period_ms in 1i64..=1_000_000_000,
+        now in -1_000_000_000_000i64..=1_000_000_000_000,
+    ) {
+        let (target, _missed) = cadence::next_target(origin, period_ms, 1, now);
+        prop_assert!(target > now);
+    }
+
+    /// `inv_schedule_never_returns_its_own_origin`: over the same
+    /// reasonable range, the returned target is always strictly after
+    /// `origin` too -- including when `now` lands before `origin` (an
+    /// early dispatch, which nothing forbids): the origin itself is
+    /// already due, so re-arming onto it would fire the same grid point
+    /// twice.
+    #[test]
+    fn inv_schedule_never_returns_its_own_origin(
+        origin in -1_000_000_000_000i64..=1_000_000_000_000,
+        period_ms in 1i64..=1_000_000_000,
+        now in -1_000_000_000_000i64..=1_000_000_000_000,
+    ) {
+        let (target, _missed) = cadence::next_target(origin, period_ms, 1, now);
+        prop_assert!(target > origin);
+    }
+
+    /// `inv_schedule_catch_up_bounded`: seeded a simulated week behind (a
+    /// pause far longer than any real cadence period), the call still
+    /// returns in O(1) -- no loop for a proptest time budget to catch,
+    /// exactly Quentin's own point -- with `missed` equal to the exact
+    /// arithmetic gap in whole periods, and the returned target itself is
+    /// still the very next grid point after `now`, never a burst of
+    /// intermediate ones.
+    #[test]
+    fn inv_schedule_catch_up_bounded(
+        origin in -1_000_000_000_000i64..=1_000_000_000_000,
+        period_ms in 1i64..=100_000,
+    ) {
+        const ONE_WEEK_MICROS: i64 = 7 * 24 * 60 * 60 * 1_000_000;
+        let now = origin + ONE_WEEK_MICROS;
+        let (target, missed) = cadence::next_target(origin, period_ms, 1, now);
+        let period_micros = period_ms as i128 * 1000;
+        let expected_missed = (ONE_WEEK_MICROS as i128).div_euclid(period_micros);
+        prop_assert_eq!(missed as i128, expected_missed);
+        prop_assert!(target > now);
+        prop_assert!((target as i128 - now as i128) <= period_micros);
+    }
+
+    /// `inv_schedule_arith_total` (NFR41): never panics, never wraps, for
+    /// any `i64` origin/now -- including `i64::MIN`/`i64::MAX` -- and any
+    /// positive `period_ms`. The published profile runs with
+    /// `overflow-checks` on, so a wrapping bug here would abort the
+    /// module's own heartbeat every period, forever.
+    #[test]
+    fn inv_schedule_arith_total(
+        origin in any::<i64>(),
+        period_ms in 1i64..=i64::MAX,
+        now in any::<i64>(),
+    ) {
+        let _ = cadence::next_target(origin, period_ms, 1, now);
+    }
+}
+
+/// A deterministic supplement to `inv_schedule_arith_total`'s randomised
+/// coverage: the exact extreme combinations (not merely "probably hit
+/// eventually" by `any::<i64>()`), pinned so they are never dropped by a
+/// future change to proptest's own case count.
+#[test]
+fn schedule_next_target_at_the_extremes_never_panics() {
+    for &origin in &[i64::MIN, i64::MAX, 0] {
+        for &now in &[i64::MIN, i64::MAX, 0] {
+            for &period_ms in &[1i64, cadence::MIN_PERIOD_MS, i64::MAX] {
+                let _ = cadence::next_target(origin, period_ms, 1, now);
+            }
+        }
+    }
+}
+
+// --- Story 4.3: time control (FR163) -----------------------------------------
+
+pub const INV_JUMP_PRESERVES_CITY_TIME_ARITHMETIC: &str = "for any epoch, any positive jump and any now, city_time(jumped_epoch, now) equals city_time(epoch, now + delta) field for field, never panicking or wrapping, over the whole i64 range (FR163, NFR41)";
+pub const INV_JUMP_NEVER_DROPS_A_FIRE: &str = "for any cadence origin, period and jumped interval, the skipped grid points sim::cadence counts equal a brute-force enumeration of them, in ascending city-minute order, and a target the cadence had already passed is never counted (FR163)";
+pub const INV_MULTIPLIER_SWITCH_IS_CONTINUOUS: &str = "at the instant a multiplier changes the whole city minute is unchanged, and thereafter exactly k city minutes elapse per k new-speed minutes, so switching speeds back and forth never moves the clock backward or skips a minute (FR163)";
+
+/// Every valid clock multiplier (`sim::time::validate_speed`).
+fn valid_speeds() -> Vec<u32> {
+    (1..=sim::time::MAX_CLOCK_SPEED)
+        .filter(|&s| sim::time::validate_speed(s).is_ok())
+        .collect()
+}
+
+proptest! {
+    /// `inv_jump_preserves_city_time_arithmetic`.
+    #[test]
+    fn inv_jump_preserves_city_time_arithmetic(
+        epoch in any::<i64>(),
+        now in any::<i64>(),
+        minutes in 1u32..=sim::time::MAX_JUMP_CITY_MINUTES,
+        speed_at in 0usize..11,
+    ) {
+        let speeds = valid_speeds();
+        let speed = speeds[speed_at % speeds.len()];
+        let jumped = sim::time::jumped_epoch(epoch, minutes, speed);
+        let delta = minutes as i128 * sim::time::micros_per_city_minute(speed) as i128;
+        // Only where nothing saturates: the reference arithmetic is exact.
+        prop_assume!(epoch as i128 - delta >= i64::MIN as i128);
+        prop_assume!(now as i128 + delta <= i64::MAX as i128);
+        prop_assert_eq!(
+            sim::time::city_time(jumped, now, speed),
+            sim::time::city_time(epoch, (now as i128 + delta) as i64, speed)
+        );
+    }
+
+    /// `inv_jump_preserves_city_time_arithmetic`: totality at the extremes.
+    #[test]
+    fn jump_arithmetic_is_total(epoch in any::<i64>(), now in any::<i64>(), minutes in any::<u32>(), speed in any::<u32>()) {
+        let jumped = sim::time::jumped_epoch(epoch, minutes, speed);
+        let _ = sim::time::city_time(jumped, now, speed);
+        let _ = sim::time::reanchor(epoch, now, speed, minutes);
+    }
+
+    /// `inv_jump_never_drops_a_fire`. The pending target is drawn from
+    /// the whole range a live row can hold: long past `now` (already due,
+    /// undispatched) through well ahead of it.
+    #[test]
+    fn inv_jump_never_drops_a_fire(
+        origin in -1_000_000_000i64..1_000_000_000,
+        period_minutes in 1i64..=60,
+        speed_at in 0usize..11,
+        now_offset in -10_000_000i64..200_000_000,
+        pending in 1i64..=400,
+        jump_minutes in 1i64..=2_000,
+    ) {
+        let speeds = valid_speeds();
+        let speed = speeds[speed_at % speeds.len()];
+        let period_ms = cadence::period_ms(period_minutes);
+        let now = origin + now_offset;
+        let jump_micros = jump_minutes * sim::time::micros_per_city_minute(speed);
+        let plan = cadence::replay_plan(
+            origin, &[(period_ms, pending as i128)], speed, now, jump_micros, u64::MAX,
+        )
+        .expect("no cap");
+        // Brute force: every grid point from the pending one, up to the
+        // jumped-to instant.
+        let mut expected = Vec::new();
+        let mut index = pending;
+        while cadence::grid_point(origin, period_ms, speed, index) <= now + jump_micros {
+            expected.push(index);
+            index += 1;
+        }
+        let got: Vec<i64> = plan.iter().map(|r| r.index).collect();
+        prop_assert_eq!(&got, &expected);
+        prop_assert!(plan.windows(2).all(|w| w[0].city_minute < w[1].city_minute));
+    }
+
+    /// The minute a replayed tick is handed is the minute the live tick for
+    /// the same grid point is handed.
+    #[test]
+    fn replayed_and_live_ticks_get_the_same_city_minute(
+        origin in -1_000_000_000_000i64..1_000_000_000_000,
+        period_minutes in 1i64..=60,
+        speed_at in 0usize..11,
+        index in 1i64..=5_000,
+    ) {
+        let speeds = valid_speeds();
+        let speed = speeds[speed_at % speeds.len()];
+        let period_ms = cadence::period_ms(period_minutes);
+        let at = cadence::grid_point(origin, period_ms, speed, index);
+        let live = cadence::city_minute_of(origin, speed, at);
+        let plan = cadence::replay_plan(
+            origin, &[(period_ms, index as i128)], speed, at, 0, u64::MAX,
+        )
+        .expect("no cap");
+        prop_assert_eq!(plan.len(), 1);
+        prop_assert_eq!(plan[0].city_minute, live);
+        prop_assert_eq!(live, index * period_minutes);
+    }
+
+    /// The merged plan across cadences is ordered and its size is the sum
+    /// of the parts.
+    #[test]
+    fn jump_plan_is_ordered_across_cadences(
+        a in 1i64..=30, b in 1i64..=30, jump_minutes in 1i64..=1_000,
+    ) {
+        let (pa, pb) = (cadence::period_ms(a), cadence::period_ms(b));
+        let jump = jump_minutes * sim::time::REAL_MS_PER_CITY_MINUTE * 1000;
+        let both = cadence::replay_plan(0, &[(pa, 1), (pb, 1)], 1, 0, jump, u64::MAX).expect("no cap");
+        let one = cadence::replay_plan(0, &[(pa, 1)], 1, 0, jump, u64::MAX).expect("no cap");
+        let two = cadence::replay_plan(0, &[(pb, 1)], 1, 0, jump, u64::MAX).expect("no cap");
+        prop_assert_eq!(both.len(), one.len() + two.len());
+        prop_assert!(both.windows(2).all(|w| (w[0].city_minute, w[0].cadence) <= (w[1].city_minute, w[1].cadence)));
+    }
+
+    /// `inv_multiplier_switch_is_continuous`.
+    #[test]
+    fn inv_multiplier_switch_is_continuous(
+        epoch in -CLOCK_RANGE..CLOCK_RANGE,
+        // Small enough that a 100x -> 1x switch's epoch does not saturate i64.
+        now_offset in 0i64..(1 << 50),
+        from_at in 0usize..11,
+        to_at in 0usize..11,
+        k in 1i64..=500,
+    ) {
+        let speeds = valid_speeds();
+        let (from, to) = (speeds[from_at % speeds.len()], speeds[to_at % speeds.len()]);
+        let now = epoch + now_offset;
+        let reanchored = sim::time::reanchor(epoch, now, from, to);
+        let before = sim::time::city_time(epoch, now, from);
+        let at = sim::time::city_time(reanchored, now, to);
+        prop_assert_eq!((before.day, before.hour, before.minute), (at.day, at.hour, at.minute));
+        // Thereafter exactly k minutes per k new-speed minutes.
+        let step = sim::time::micros_per_city_minute(to);
+        let later = sim::time::city_time(reanchored, now + k * step, to);
+        prop_assert_eq!(later.total_minutes(), at.total_minutes() + k);
+        // Never backward, and never more than one minute in one microsecond.
+        let next = sim::time::city_time(reanchored, now + 1, to);
+        prop_assert!(next.total_minutes() - at.total_minutes() <= 1 && next.total_minutes() >= at.total_minutes());
+        // And back again is continuous too.
+        let back = sim::time::reanchor(reanchored, now, to, from);
+        prop_assert_eq!(sim::time::city_time(back, now, from).total_minutes(), before.total_minutes());
+    }
+}
+
+/// Story 6.2 (FR87): holders across all five kinds, including two business
+/// instances (sharing one brand and one building, neither of which is part
+/// of a holder) and one numeric id under every kind.
+fn stock_holders() -> Vec<sim::stock::HolderRef> {
+    use sim::codes::holder_kind as k;
+    let pairs = [
+        (k::BUSINESS, 1),
+        (k::BUSINESS, 2),
+        (k::BUSINESS, 7),
+        (k::CITIZEN, 1),
+        (k::CITIZEN, 7),
+        (k::VEHICLE, 7),
+        (k::BUILDING, 7),
+        (k::MUNICIPAL_FACILITY, 7),
+    ];
+    pairs
+        .into_iter()
+        .map(|(kind, id)| sim::stock::HolderRef::new(kind, id).unwrap())
+        .collect()
+}
+
+proptest! {
+    /// `inv_stock_is_independent_per_holder`: the oracle is an independent
+    /// per-holder map replayed alone, never the ledger checked against
+    /// itself; the ledger keeps one row per (holder, item) and none at zero.
+    #[test]
+    fn inv_stock_is_independent_per_holder(
+        ops in proptest::collection::vec(
+            (
+                0usize..8,
+                0u32..5,
+                any::<bool>(),
+                prop_oneof![0u64..20, Just(u64::MAX), (u64::MAX - 10)..=u64::MAX],
+            ),
+            0..80,
+        )
+    ) {
+        use std::collections::BTreeMap;
+        use sim::author::{Author, Cause};
+        use sim::stock::{Made, plan_consume, plan_make};
+        use support::stock_ledger::Ledger;
+
+        let make = Author::new(1, Cause::ProcedureStep).unwrap();
+        let eat = Author::new(2, Cause::Consumption).unwrap();
+        let holders = stock_holders();
+        let mut ledger = Ledger::default();
+        for &(h, item, deposit, amount) in &ops {
+            let holder = holders[h];
+            if deposit {
+                // An overflow is refused whole: nothing is written.
+                if let Ok(Made::Done(w)) = plan_make(ledger.lines(), make, holder, item, amount) {
+                    ledger.apply(&w);
+                }
+            } else {
+                let w = plan_consume(ledger.lines(), eat, holder, item, amount).unwrap();
+                ledger.apply(&w.write);
+            }
+        }
+
+        for (i, &holder) in holders.iter().enumerate() {
+            // Five items are ever used, well under the line ceiling.
+            let mut model: BTreeMap<u32, u64> = BTreeMap::new();
+            for &(_, item, deposit, amount) in ops.iter().filter(|o| o.0 == i) {
+                let held = model.get(&item).copied().unwrap_or(0);
+                let next = if deposit {
+                    held.checked_add(amount).unwrap_or(held)
+                } else {
+                    held.saturating_sub(amount)
+                };
+                if next == 0 {
+                    model.remove(&item);
+                } else {
+                    model.insert(item, next);
+                }
+            }
+            let mut actual: BTreeMap<u32, u64> = BTreeMap::new();
+            for line in ledger.lines().iter().filter(|l| l.holder == holder) {
+                prop_assert!(line.quantity > 0, "a stored line is never zero");
+                prop_assert!(
+                    actual.insert(line.item_id, line.quantity).is_none(),
+                    "two rows for one (holder, item)"
+                );
+            }
+            prop_assert_eq!(actual, model);
+        }
+    }
+}
+
+/// One authored stock operation of a generated sequence. The cause is
+/// drawn independently of the verb, so a consumption is also driven into a
+/// make and a move, and a procedure step into a take.
+#[derive(Debug, Clone, Copy)]
+struct StockOp {
+    /// 0 make, 1 consume, 2 up-to transfer, 3 exact transfer, 4 a lot of
+    /// two lines moved in full or not at all.
+    verb: u8,
+    consumption: bool,
+    from: usize,
+    to: usize,
+    item: u32,
+    amount: u64,
+    /// The second line of a lot.
+    item2: u32,
+    amount2: u64,
+    citizen: u64,
+}
+
+impl StockOp {
+    /// The lot a verb-4 operation moves: its two lines, the second
+    /// overriding the first when they name one item, zero lines left out.
+    fn lot(&self) -> std::collections::BTreeMap<u32, u64> {
+        let mut lot = std::collections::BTreeMap::new();
+        lot.insert(self.item, self.amount);
+        lot.insert(self.item2, self.amount2);
+        lot.retain(|_, q| *q > 0);
+        lot
+    }
+}
+
+fn stock_op() -> impl Strategy<Value = StockOp> {
+    let amount = || prop_oneof![0u64..20, Just(u64::MAX), (u64::MAX - 10)..=u64::MAX];
+    (
+        (0u8..5, any::<bool>(), 0usize..8, 0usize..8),
+        (0u32..6, amount()),
+        (0u32..6, amount()),
+        1u64..5,
+    )
+        .prop_map(
+            |((verb, consumption, from, to), (item, amount), (item2, amount2), citizen)| StockOp {
+                verb,
+                consumption,
+                from,
+                to,
+                item,
+                amount,
+                item2,
+                amount2,
+                citizen,
+            },
+        )
+}
+
+fn stock_op_author(op: &StockOp) -> sim::author::Author {
+    use sim::author::{Author, Cause};
+    let cause = if op.consumption {
+        Cause::Consumption
+    } else {
+        Cause::ProcedureStep
+    };
+    Author::new(op.citizen, cause).unwrap()
+}
+
+/// A non-empty starting ledger: (holder, item, quantity) triples, one per
+/// (holder, item), and in a share of cases one holder at the line ceiling
+/// on items outside the generated range (so a new line is refused there).
+fn stock_start() -> impl Strategy<Value = (Vec<(usize, u32, u64)>, Option<usize>)> {
+    (
+        proptest::collection::vec(
+            (
+                0usize..8,
+                0u32..6,
+                prop_oneof![1u64..50, Just(u64::MAX), (u64::MAX - 10)..=u64::MAX],
+            ),
+            1..12,
+        ),
+        proptest::option::of(0usize..8),
+    )
+}
+
+fn stock_start_ledger(
+    start: &(Vec<(usize, u32, u64)>, Option<usize>),
+) -> support::stock_ledger::Ledger {
+    use sim::stock::StockLine;
+    let holders = stock_holders();
+    let mut lines: Vec<StockLine> = Vec::new();
+    let push = |lines: &mut Vec<StockLine>, holder, item, quantity| {
+        if lines
+            .iter()
+            .any(|l| l.holder == holder && l.item_id == item)
+        {
+            return;
+        }
+        let row_id = lines.len() as u64 + 1;
+        lines.push(StockLine {
+            row_id,
+            holder,
+            item_id: item,
+            quantity,
+        });
+    };
+    for &(h, item, quantity) in &start.0 {
+        push(&mut lines, holders[h], item, quantity);
+    }
+    if let Some(h) = start.1 {
+        for item in 100..100 + sim::stock::MAX_LINES_PER_HOLDER as u32 {
+            push(&mut lines, holders[h], item, 1);
+        }
+    }
+    support::stock_ledger::Ledger::from_lines(lines)
+}
+
+type StockModel = std::collections::BTreeMap<(sim::stock::HolderRef, u32), u64>;
+
+/// What an operation must come to, computed from the model alone (never
+/// from the ledger or the code under test).
+struct StockExpect {
+    err: Option<sim::stock::StockError>,
+    taken: u64,
+    no_room: bool,
+    /// Rows the operation changes: 0, 1 (make, consume) or 2 (move).
+    changed: usize,
+}
+
+fn stock_expect(
+    model: &StockModel,
+    op: &StockOp,
+    holders: &[sim::stock::HolderRef],
+) -> StockExpect {
+    use sim::stock::{MAX_LINES_PER_HOLDER, StockError};
+    let (from, to) = (holders[op.from], holders[op.to]);
+    let q = |h, item| model.get(&(h, item)).copied().unwrap_or(0);
+    let lines = |h| model.keys().filter(|k| k.0 == h).count();
+    // Whether `amount` more of the item fits at `h`: Err on overflow,
+    // Ok(false) with no room for a new line.
+    let fits = |h, amount: u64| -> Result<bool, StockError> {
+        if amount == 0 {
+            return Ok(true);
+        }
+        let held = q(h, op.item);
+        if held.checked_add(amount).is_none() {
+            return Err(StockError::QuantityOverflow);
+        }
+        Ok(held > 0 || lines(h) < MAX_LINES_PER_HOLDER)
+    };
+    let none = |err| StockExpect {
+        err,
+        taken: 0,
+        no_room: false,
+        changed: 0,
+    };
+    match op.verb {
+        0 if op.consumption => none(Some(StockError::CauseNotPermitted)),
+        0 => match fits(from, op.amount) {
+            Err(e) => none(Some(e)),
+            Ok(false) => StockExpect {
+                no_room: true,
+                ..none(None)
+            },
+            Ok(true) => StockExpect {
+                taken: op.amount,
+                changed: usize::from(op.amount > 0),
+                ..none(None)
+            },
+        },
+        1 => {
+            let taken = op.amount.min(q(from, op.item));
+            StockExpect {
+                taken,
+                changed: usize::from(taken > 0),
+                ..none(None)
+            }
+        }
+        _ if op.consumption => none(Some(StockError::CauseNotPermitted)),
+        4 => {
+            let lot = op.lot();
+            if from == to || lot.is_empty() {
+                return none(None);
+            }
+            if lot.iter().any(|(&i, &want)| q(from, i) < want) {
+                return none(None);
+            }
+            let new_lines = lot.keys().filter(|&&i| q(to, i) == 0).count();
+            if lines(to) + new_lines > MAX_LINES_PER_HOLDER {
+                return StockExpect {
+                    no_room: true,
+                    ..none(None)
+                };
+            }
+            if lot
+                .iter()
+                .any(|(&i, &want)| q(to, i).checked_add(want).is_none())
+            {
+                return none(Some(StockError::QuantityOverflow));
+            }
+            StockExpect {
+                taken: lot.values().fold(0u64, |a, &b| a.wrapping_add(b)),
+                changed: 2 * lot.len(),
+                ..none(None)
+            }
+        }
+        verb => {
+            let held = q(from, op.item);
+            let give = if verb == 3 {
+                if held >= op.amount { op.amount } else { 0 }
+            } else {
+                op.amount.min(held)
+            };
+            if from == to || give == 0 {
+                return none(None);
+            }
+            match fits(to, give) {
+                Err(e) => none(Some(e)),
+                Ok(false) => StockExpect {
+                    no_room: true,
+                    ..none(None)
+                },
+                Ok(true) => StockExpect {
+                    taken: give,
+                    changed: 2,
+                    ..none(None)
+                },
+            }
+        }
+    }
+}
+
+/// What the code under test returned for an operation.
+struct StockRun {
+    taken: u64,
+    no_room: bool,
+    remaining: Option<u64>,
+    writes: Vec<sim::stock::Write>,
+}
+
+fn stock_run(
+    lines: &[sim::stock::StockLine],
+    op: &StockOp,
+    holders: &[sim::stock::HolderRef],
+) -> Result<StockRun, sim::stock::StockError> {
+    use sim::stock::{
+        Made, plan_consume, plan_make, plan_transfer, plan_transfer_all, plan_transfer_exact,
+    };
+    let (from, to) = (holders[op.from], holders[op.to]);
+    let by = stock_op_author(op);
+    match op.verb {
+        0 => plan_make(lines, by, from, op.item, op.amount).map(|m| match m {
+            Made::Done(w) => StockRun {
+                taken: if w.plan() == sim::stock::Plan::Nothing {
+                    0
+                } else {
+                    op.amount
+                },
+                no_room: false,
+                remaining: None,
+                writes: vec![w],
+            },
+            Made::NoRoom(_) => StockRun {
+                taken: 0,
+                no_room: true,
+                remaining: None,
+                writes: vec![],
+            },
+        }),
+        1 => plan_consume(lines, by, from, op.item, op.amount).map(|w| StockRun {
+            taken: w.taken,
+            no_room: false,
+            remaining: Some(w.remaining),
+            writes: vec![w.write],
+        }),
+        4 => {
+            let lot = op.lot();
+            plan_transfer_all(lines, by, from, to, &lot).map(|t| StockRun {
+                taken: if t.writes.is_empty() {
+                    0
+                } else {
+                    lot.values().fold(0u64, |a, &b| a.wrapping_add(b))
+                },
+                no_room: t.no_room.is_some(),
+                remaining: None,
+                writes: t.writes,
+            })
+        }
+        verb => {
+            let t = if verb == 2 {
+                plan_transfer(lines, by, from, to, op.item, op.amount)
+            } else {
+                plan_transfer_exact(lines, by, from, to, op.item, op.amount)
+            }?;
+            Ok(StockRun {
+                taken: t.taken,
+                no_room: t.no_room.is_some(),
+                remaining: Some(t.remaining),
+                writes: t.writes.map(|w| w.to_vec()).unwrap_or_default(),
+            })
+        }
+    }
+}
+
+proptest! {
+    /// `inv_stock_moves_only_by_hand` (FR89): a long interleaving of
+    /// authored makes, consumptions and moves under either cause. The
+    /// oracle is a map built only by replaying the returned writes onto the
+    /// starting ledger, an expectation computed from that map alone, and a
+    /// per-item total moved only by what was made and consumed -- it never
+    /// reads the ledger to check the ledger. Checked after every operation.
+    #[test]
+    fn inv_stock_moves_only_by_hand(
+        start in stock_start(),
+        ops in proptest::collection::vec(stock_op(), 0..120),
+    ) {
+        use std::collections::BTreeMap;
+        use sim::stock::Plan;
+
+        let holders = stock_holders();
+        let mut ledger = stock_start_ledger(&start);
+        let mut model: StockModel = ledger
+            .lines()
+            .iter()
+            .map(|l| ((l.holder, l.item_id), l.quantity))
+            .collect();
+        let mut totals: BTreeMap<u32, u128> = BTreeMap::new();
+        for (&(_, item), &q) in &model {
+            *totals.entry(item).or_default() += q as u128;
+        }
+
+        for op in &ops {
+            let want = stock_expect(&model, op, &holders);
+            let got = stock_run(ledger.lines(), op, &holders);
+            let run = match (want.err, got) {
+                (Some(e), got) => {
+                    prop_assert_eq!(got.err(), Some(e));
+                    continue;
+                }
+                (None, Err(e)) => return Err(TestCaseError::fail(format!("unexpected error {e:?}"))),
+                (None, Ok(run)) => run,
+            };
+
+            prop_assert_eq!(run.taken, want.taken);
+            prop_assert_eq!(run.no_room, want.no_room);
+            if let Some(remaining) = run.remaining {
+                let before = model.get(&(holders[op.from], op.item)).copied().unwrap_or(0);
+                let expected_after = if op.from == op.to && op.verb >= 2 { before } else { before - run.taken };
+                prop_assert_eq!(remaining, expected_after);
+            }
+
+            // Every returned write names exactly the author the call was
+            // made with, whether or not it changes a row.
+            let author = stock_op_author(op);
+            let mut changed = 0;
+            for w in &run.writes {
+                prop_assert_eq!(w.author(), author);
+                prop_assert_ne!(w.author().citizen_id(), 0);
+                let key = (w.holder(), w.item_id());
+                match w.plan() {
+                    Plan::Insert { quantity } | Plan::Update { quantity, .. } => {
+                        model.insert(key, quantity);
+                        changed += 1;
+                    }
+                    Plan::Delete { .. } => {
+                        model.remove(&key);
+                        changed += 1;
+                    }
+                    Plan::Nothing => {}
+                }
+                ledger.apply(w);
+            }
+            prop_assert_eq!(changed, want.changed);
+
+            let total = totals.entry(op.item).or_default();
+            match op.verb {
+                0 => *total += run.taken as u128,
+                1 => *total -= run.taken as u128,
+                _ => {}
+            }
+
+            let mut actual: StockModel = BTreeMap::new();
+            for l in ledger.lines() {
+                prop_assert!(l.quantity > 0, "a stored line is never zero");
+                prop_assert!(
+                    actual.insert((l.holder, l.item_id), l.quantity).is_none(),
+                    "two rows for one (holder, item)"
+                );
+            }
+            prop_assert_eq!(&actual, &model);
+            let mut sums: BTreeMap<u32, u128> = BTreeMap::new();
+            for (&(_, item), &q) in &actual {
+                *sums.entry(item).or_default() += q as u128;
+            }
+            prop_assert_eq!(sums, totals.iter().filter(|(_, v)| **v != 0).map(|(k, v)| (*k, *v)).collect::<BTreeMap<_, _>>());
+        }
+    }
+
+    /// `inv_stock_move_conserves_quantity`: any sequence of moves leaves the
+    /// per-item sum across holders unchanged; the giver loses exactly what
+    /// the receiver gains and exactly what the move reports taken; and a
+    /// move the receiver refuses takes nothing from the giver.
+    #[test]
+    fn inv_stock_move_conserves_quantity(
+        start in stock_start(),
+        ops in proptest::collection::vec(stock_op(), 0..120),
+    ) {
+        use std::collections::BTreeMap;
+
+        let holders = stock_holders();
+        let mut ledger = stock_start_ledger(&start);
+        let sum = |l: &support::stock_ledger::Ledger| {
+            let mut m: BTreeMap<u32, u128> = BTreeMap::new();
+            for line in l.lines() {
+                *m.entry(line.item_id).or_default() += line.quantity as u128;
+            }
+            m
+        };
+        let before = sum(&ledger);
+        for op in ops.iter().filter(|o| o.verb >= 2) {
+            let (from, to) = (holders[op.from], holders[op.to]);
+            let model: StockModel = ledger
+                .lines()
+                .iter()
+                .map(|l| ((l.holder, l.item_id), l.quantity))
+                .collect();
+            let want = stock_expect(&model, op, &holders);
+            if op.verb == 4 {
+                match stock_run(ledger.lines(), op, &holders) {
+                    Err(e) => prop_assert_eq!(Some(e), want.err),
+                    Ok(run) => {
+                        prop_assert_eq!(want.err, None);
+                        prop_assert_eq!(run.taken, want.taken);
+                        prop_assert_eq!(run.no_room, want.no_room);
+                        let lot = op.lot();
+                        let before_lot: Vec<(u64, u64)> = lot
+                            .keys()
+                            .map(|&i| (ledger.quantity(from, i), ledger.quantity(to, i)))
+                            .collect();
+                        for w in &run.writes {
+                            ledger.apply(w);
+                        }
+                        if run.writes.is_empty() {
+                            // A refused or empty lot takes nothing from anyone.
+                            let after: Vec<(u64, u64)> = lot
+                                .keys()
+                                .map(|&i| (ledger.quantity(from, i), ledger.quantity(to, i)))
+                                .collect();
+                            prop_assert_eq!(after, before_lot);
+                        } else {
+                            for (&i, &(giver, receiver)) in lot.keys().zip(before_lot.iter()) {
+                                prop_assert_eq!(ledger.quantity(from, i), giver - lot[&i]);
+                                prop_assert_eq!(ledger.quantity(to, i), receiver + lot[&i]);
+                            }
+                        }
+                    }
+                }
+                prop_assert_eq!(sum(&ledger), before.clone());
+                continue;
+            }
+            let (giver, receiver) = (ledger.quantity(from, op.item), ledger.quantity(to, op.item));
+            let run = match stock_run(ledger.lines(), op, &holders) {
+                Err(e) => {
+                    prop_assert_eq!(Some(e), want.err);
+                    prop_assert_eq!(sum(&ledger), before.clone());
+                    continue;
+                }
+                Ok(run) => run,
+            };
+            prop_assert_eq!(want.err, None);
+            prop_assert_eq!(run.taken, want.taken);
+            prop_assert_eq!(run.no_room, want.no_room);
+            for w in &run.writes {
+                ledger.apply(w);
+            }
+            if from != to {
+                prop_assert_eq!(ledger.quantity(from, op.item), giver - run.taken);
+                prop_assert_eq!(ledger.quantity(to, op.item), receiver + run.taken);
+                prop_assert_eq!(run.remaining, Some(ledger.quantity(from, op.item)));
+            } else {
+                prop_assert_eq!(ledger.quantity(from, op.item), giver);
+            }
+            if run.no_room {
+                prop_assert!(run.writes.is_empty() && ledger.quantity(from, op.item) == giver);
+            }
+            prop_assert_eq!(sum(&ledger), before.clone());
+        }
+    }
+}
+
+proptest! {
+    /// `inv_item_instance_in_exactly_one_state` (FR95): the driver applies
+    /// each `plan_move` as the plan says -- one delete and one insert across
+    /// forms -- to two separate form maps; the oracle is the last target
+    /// requested per instance.
+    #[test]
+    fn inv_item_instance_in_exactly_one_state(
+        ops in proptest::collection::vec(
+            (0u64..4, any::<bool>(), 0i32..6, 0..sim::item_instance::OFFSET_SUBCELLS, 0..sim::item_instance::MAX_GRID_EXTENT),
+            0..80,
+        )
+    ) {
+        use std::collections::BTreeMap;
+        use sim::codes::container_kind;
+        use sim::item_instance::{ContainerRef, Form, Held, MovePlan, Placed, Placement, plan_move};
+
+        let mut placed: BTreeMap<u64, Placement> = BTreeMap::new();
+        let mut held: BTreeMap<u64, Placement> = BTreeMap::new();
+        let mut last: BTreeMap<u64, Placement> = BTreeMap::new();
+        for &(id, to_world, x, off, slot) in &ops {
+            let target = if to_world {
+                Placement::Placed(Placed::new(x, 0, 0, (off, off), 0).unwrap())
+            } else {
+                let c = ContainerRef::new(container_kind::OBJECT, 1 + x as u64).unwrap();
+                Placement::Held(Held::new(c, (slot, slot), 0).unwrap())
+            };
+            match last.get(&id).copied() {
+                None => {
+                    match target.form() {
+                        Form::Placed => placed.insert(id, target),
+                        Form::Held => held.insert(id, target),
+                    };
+                }
+                Some(current) => match plan_move(current, target) {
+                    MovePlan::Cross { delete, insert } => {
+                        let (from, into) = match delete {
+                            Form::Placed => (&mut placed, &mut held),
+                            Form::Held => (&mut held, &mut placed),
+                        };
+                        prop_assert!(from.remove(&id).is_some(), "FR95: the delete hits the form being left");
+                        prop_assert!(into.insert(id, insert).is_none(), "FR95: the insert lands in the form being entered");
+                    }
+                    MovePlan::Within(p) => {
+                        let map = match p.form() { Form::Placed => &mut placed, Form::Held => &mut held };
+                        prop_assert!(map.insert(id, p).is_some(), "FR95: an in-place update replaces a row");
+                    }
+                    MovePlan::Nothing => {}
+                },
+            }
+            last.insert(id, target);
+            for (&i, &want) in &last {
+                let in_placed = placed.get(&i);
+                let in_held = held.get(&i);
+                prop_assert!(in_placed.is_some() != in_held.is_some(), "FR95: instance {} is in exactly one form", i);
+                prop_assert_eq!(in_placed.or(in_held).copied(), Some(want));
+            }
+        }
+    }
+}
+
+/// Story 6.8 (FR92): a generated denomination set (never the committed
+/// one), three holders -- a till, a customer and a bystander, or in a share
+/// of cases one holder on both sides of the counter -- and a payment drawn
+/// from the customer's own wallet. Some payments are built so that their
+/// change is a sub-multiset of the till and the tender, and some holders
+/// are filled with other lines to the ceiling or one or two short of it, so completed, short-of-change, short-of-tender,
+/// exact and no-room cases all occur unfiltered.
+#[derive(Debug, Clone)]
+struct CashCase {
+    /// Face values, largest first, unique.
+    faces: Vec<u32>,
+    till: Vec<u64>,
+    customer: Vec<u64>,
+    bystander: Vec<u64>,
+    /// Per denomination, how much of the wallet is tendered.
+    pick: Vec<u64>,
+    /// Per denomination, how much of till-and-tender the change is built from.
+    sub_pick: Vec<u64>,
+    /// Asks for one piece more than held, of the first kind.
+    overdraw: bool,
+    price_kind: u8,
+    price_pick: u64,
+    till_junk: usize,
+    customer_junk: usize,
+    same_holder: bool,
+}
+
+fn cash_case() -> impl Strategy<Value = CashCase> {
+    let faces = prop_oneof![
+        5 => proptest::collection::hash_set(1u32..=30, 2..=4),
+        3 => proptest::collection::hash_set(300u32..=sim::generated::defs::MAX_FACE_VALUE, 2..=4),
+    ];
+    faces.prop_flat_map(|set| {
+        let mut faces: Vec<u32> = set.into_iter().collect();
+        faces.sort_unstable();
+        faces.reverse();
+        let n = faces.len();
+        let quantities = move || proptest::collection::vec(0u64..=6, n);
+        let sparse = move || {
+            proptest::collection::vec(prop_oneof![1 => Just(0u64), 1 => 1u64..=6], n)
+        };
+        let junk = || prop_oneof![2 => Just(0usize), 6 => Just(1usize), 1 => 2usize..=3];
+        (
+            (
+                Just(faces),
+                quantities(),
+                sparse(),
+                quantities(),
+                proptest::collection::vec(any::<u64>(), n),
+                proptest::collection::vec(any::<u64>(), n),
+            ),
+            (
+                prop_oneof![9 => Just(false), 1 => Just(true)],
+                prop_oneof![1 => Just(0u8), 1 => Just(1u8), 4 => Just(2u8), 1 => Just(3u8), 5 => Just(4u8), 4 => Just(5u8)],
+                any::<u64>(),
+                junk(),
+                junk(),
+                prop_oneof![24 => Just(false), 1 => Just(true)],
+            ),
+        )
+            .prop_map(
+                |(
+                    (faces, till, customer, bystander, pick, sub_pick),
+                    (overdraw, price_kind, price_pick, till_junk, customer_junk, same_holder),
+                )| CashCase {
+                    faces,
+                    till,
+                    customer,
+                    bystander,
+                    pick,
+                    sub_pick,
+                    overdraw,
+                    price_kind,
+                    price_pick,
+                    till_junk,
+                    customer_junk,
+                    same_holder,
+                },
+            )
+    })
+}
+
+const CASH_ITEM_BASE: u32 = 200;
+const CASH_JUNK_BASE: u32 = 1000;
+
+fn cash_denoms(faces: &[u32]) -> Vec<sim::generated::defs::Denomination> {
+    faces
+        .iter()
+        .enumerate()
+        .map(|(i, &face_value)| sim::generated::defs::Denomination {
+            item_id: CASH_ITEM_BASE + i as u32,
+            face_value,
+        })
+        .collect()
+}
+
+type CashLot = std::collections::BTreeMap<u32, u64>;
+
+fn cash_lot(quantities: &[u64]) -> CashLot {
+    quantities
+        .iter()
+        .enumerate()
+        .filter(|&(_, &q)| q > 0)
+        .map(|(i, &q)| (CASH_ITEM_BASE + i as u32, q))
+        .collect()
+}
+
+/// `(till, customer, bystander)`; the customer is the till when the case
+/// has one holder on both sides.
+fn cash_holders(case: &CashCase) -> [sim::stock::HolderRef; 3] {
+    use sim::codes::holder_kind as k;
+    let till = sim::stock::HolderRef::new(k::BUSINESS, 1).unwrap();
+    let customer = if case.same_holder {
+        till
+    } else {
+        sim::stock::HolderRef::new(k::CITIZEN, 1).unwrap()
+    };
+    [
+        till,
+        customer,
+        sim::stock::HolderRef::new(k::BUSINESS, 2).unwrap(),
+    ]
+}
+
+fn cash_ledger(case: &CashCase) -> support::stock_ledger::Ledger {
+    use sim::author::{Author, Cause};
+    use sim::stock::{Made, plan_make};
+    let by = Author::new(1, Cause::ProcedureStep).unwrap();
+    let [till, customer, bystander] = cash_holders(case);
+    let mut ledger = support::stock_ledger::Ledger::default();
+    let wallets = [
+        (till, &case.till),
+        (customer, &case.customer),
+        (bystander, &case.bystander),
+    ];
+    for (holder, quantities) in wallets {
+        for (item, quantity) in cash_lot(quantities) {
+            let Made::Done(w) = plan_make(ledger.lines(), by, holder, item, quantity).unwrap()
+            else {
+                panic!("a handful of lines always has room")
+            };
+            ledger.apply(&w);
+        }
+    }
+    for (holder, fill) in [(till, case.till_junk), (customer, case.customer_junk)] {
+        // 0 leaves the holder alone; 1 to 3 fill it to the ceiling, or one or
+        // two lines short of it.
+        let used = ledger.lines().iter().filter(|l| l.holder == holder).count();
+        let junk = if fill == 0 {
+            0
+        } else {
+            sim::stock::MAX_LINES_PER_HOLDER.saturating_sub(used + fill - 1)
+        };
+        for i in 0..junk as u32 {
+            // A holder that is full stops there: that is the point.
+            if let Made::Done(w) =
+                plan_make(ledger.lines(), by, holder, CASH_JUNK_BASE + i, 1).unwrap()
+            {
+                ledger.apply(&w);
+            }
+        }
+    }
+    ledger
+}
+
+fn cash_junk_at(ledger: &support::stock_ledger::Ledger, h: sim::stock::HolderRef) -> usize {
+    ledger
+        .lines()
+        .iter()
+        .filter(|l| l.holder == h && l.item_id >= CASH_JUNK_BASE)
+        .count()
+}
+
+/// The tender and the price this case asks for, from the customer's wallet.
+fn cash_ask(case: &CashCase, ledger: &support::stock_ledger::Ledger) -> (CashLot, u64) {
+    let [till, customer, _] = cash_holders(case);
+    let mut tender = CashLot::new();
+    for i in 0..case.faces.len() {
+        let item = CASH_ITEM_BASE + i as u32;
+        let held = ledger.quantity(customer, item);
+        let mut count = case.pick[i] % (held + 1);
+        if case.overdraw && i == 0 {
+            count = held + 1;
+        }
+        if count > 0 {
+            tender.insert(item, count);
+        }
+    }
+    let face = |item: u32| u64::from(case.faces[(item - CASH_ITEM_BASE) as usize]);
+    let value: u64 = tender.iter().map(|(&item, &q)| q * face(item)).sum();
+    let smallest = tender.keys().map(|&item| face(item)).min().unwrap_or(1);
+    let built_change: u64 = (0..case.faces.len())
+        .map(|i| {
+            let item = CASH_ITEM_BASE + i as u32;
+            let pool = ledger.quantity(till, item) + tender.get(&item).copied().unwrap_or(0);
+            (case.sub_pick[i] % (pool + 1)) * face(item)
+        })
+        .sum();
+    let price = match case.price_kind {
+        0 => value,
+        1 => value.saturating_sub(case.price_pick % smallest),
+        2 => value.saturating_sub(case.price_pick % 50),
+        3 => value + 1 + case.price_pick % 5,
+        5 => value.saturating_sub(
+            u64::from(sim::generated::defs::MAX_FACE_VALUE) + case.price_pick % 100,
+        ),
+        _ => value - built_change.min(value),
+    };
+    (tender, price)
+}
+
+fn cash_authors() -> (sim::author::Author, sim::author::Author) {
+    use sim::author::{Author, Cause};
+    (
+        Author::new(9, Cause::ProcedureStep).unwrap(),
+        Author::new(10, Cause::ProcedureStep).unwrap(),
+    )
+}
+
+/// Past the bound the hand-back is the engine's, so the oracle stays the
+/// plain one: whether any sub-multiset of the till and the whole tender
+/// sums to the whole due. A completed payment implies one exists (the
+/// pieces handed back plus the change are such a sub-multiset).
+fn cash_past_the_bound_feasible(
+    case: &CashCase,
+    ledger: &support::stock_ledger::Ledger,
+    tender: &CashLot,
+    price: u64,
+) -> bool {
+    let [till, _, _] = cash_holders(case);
+    let face = |item: u32| u64::from(case.faces[(item - CASH_ITEM_BASE) as usize]);
+    let due = tender.iter().map(|(&i, &q)| q * face(i)).sum::<u64>() - price;
+    let pool: Vec<u64> = (0..case.faces.len())
+        .map(|i| {
+            let item = CASH_ITEM_BASE + i as u32;
+            ledger.quantity(till, item) + tender.get(&item).copied().unwrap_or(0)
+        })
+        .collect();
+    cash_oracle(&case.faces, &pool, due).is_some()
+}
+
+/// What the model alone says a case must come to: the brute-force oracle
+/// over the till and what was just tendered, then the final line counts.
+fn cash_expected(
+    case: &CashCase,
+    ledger: &support::stock_ledger::Ledger,
+    tender: &CashLot,
+    price: u64,
+) -> sim::cash::Payment {
+    use sim::cash::{Payment, Side};
+    let [till, customer, _] = cash_holders(case);
+    if case.same_holder {
+        return Payment::SameHolder;
+    }
+    let face = |item: u32| u64::from(case.faces[(item - CASH_ITEM_BASE) as usize]);
+    let value: u64 = tender.iter().map(|(&i, &q)| q * face(i)).sum();
+    if let Some((&item_id, _)) = tender
+        .iter()
+        .find(|&(&i, &q)| q > ledger.quantity(customer, i))
+    {
+        return Payment::TenderNotHeld { item_id };
+    }
+    if value < price {
+        return Payment::TenderBelowPrice;
+    }
+    let due = value - price;
+    if due >= u64::from(sim::generated::defs::MAX_FACE_VALUE) {
+        // Past the bound the outcome is checked by `cash_past_the_bound`.
+        return Payment::TenderTooLarge;
+    }
+    let n = case.faces.len();
+    let item = |i: usize| CASH_ITEM_BASE + i as u32;
+    let tendered = |i: usize| tender.get(&item(i)).copied().unwrap_or(0);
+    let pool: Vec<u64> = (0..n)
+        .map(|i| ledger.quantity(till, item(i)) + tendered(i))
+        .collect();
+    let Some(change) = cash_oracle(&case.faces, &pool, due) else {
+        return Payment::NoChange;
+    };
+    let till_lines = cash_junk_at(ledger, till) + (0..n).filter(|&i| pool[i] > change[i]).count();
+    if till_lines > sim::stock::MAX_LINES_PER_HOLDER {
+        return Payment::NoRoom(Side::Till);
+    }
+    let customer_lines = cash_junk_at(ledger, customer)
+        + (0..n)
+            .filter(|&i| ledger.quantity(customer, item(i)) + change[i] > tendered(i))
+            .count();
+    if customer_lines > sim::stock::MAX_LINES_PER_HOLDER {
+        return Payment::NoRoom(Side::Customer);
+    }
+    Payment::Paid {
+        change: cash_lot(&change),
+        writes: Vec::new(),
+    }
+}
+
+proptest! {
+    /// `inv_cash_payment_conserves_every_denomination`: after applying the
+    /// returned writes, each denomination's count summed across all holders
+    /// is unchanged (counts, not value: value alone lets a note turn into
+    /// coins); the bystander is untouched; a completed payment moves
+    /// exactly the price from customer to till; any other outcome leaves
+    /// the ledger as it was; what leaves the customer is authored by the
+    /// customer and what leaves the till by the cashier, both procedure
+    /// steps; one row per (holder, item), none at zero, none past the
+    /// ceiling -- with holders that hold up to 63 other lines in a share of
+    /// cases, so the ceiling is met. Mutations that turn it red: drop the
+    /// change transfer; swap the two authors; count any touched line as
+    /// freed in `without_emptied`; delete the room check in
+    /// `plan_transfer_all`.
+    #[test]
+    fn inv_cash_payment_conserves_every_denomination(case in cash_case()) {
+        use sim::cash::{Payment, plan_payment, value_of};
+        use sim::stock::MAX_LINES_PER_HOLDER;
+
+        let denoms = cash_denoms(&case.faces);
+        let [till, customer, bystander] = cash_holders(&case);
+        let mut ledger = cash_ledger(&case);
+        let start: Vec<_> = ledger.lines().to_vec();
+        let (tender, price) = cash_ask(&case, &ledger);
+        let (by_customer, by_cashier) = cash_authors();
+
+        let value_at = |ledger: &support::stock_ledger::Ledger, h| {
+            let lot: CashLot = ledger.lines().iter().filter(|l| l.holder == h && l.item_id < CASH_JUNK_BASE)
+                .map(|l| (l.item_id, l.quantity)).collect();
+            value_of(&lot, &denoms).unwrap()
+        };
+        let (till_before, customer_before) = (value_at(&ledger, till), value_at(&ledger, customer));
+        let counts = |ledger: &support::stock_ledger::Ledger| -> Vec<u64> {
+            (0..denoms.len() as u32)
+                .map(|i| ledger.lines().iter().filter(|l| l.item_id == CASH_ITEM_BASE + i).map(|l| l.quantity).sum())
+                .collect()
+        };
+        let counts_before = counts(&ledger);
+
+        let outcome = plan_payment(
+            &start,
+            sim::cash::Party { holder: customer, by: by_customer },
+            sim::cash::Party { holder: till, by: by_cashier },
+            &tender,
+            price,
+            &denoms,
+        )
+        .unwrap();
+        match &outcome {
+            Payment::Paid { writes, .. } => {
+                for w in writes {
+                    prop_assert!(w.holder() != bystander, "the bystander is never written");
+                    prop_assert_eq!(w.author().cause(), sim::author::Cause::ProcedureStep);
+                    // Direction: the item's net movement at the till.
+                    let item = w.item_id();
+                    let at_till = |l: &support::stock_ledger::Ledger| l.quantity(till, item);
+                    let before = start.iter().find(|l| l.holder == till && l.item_id == item).map_or(0, |l| l.quantity);
+                    let mut probe = support::stock_ledger::Ledger::from_lines(start.clone());
+                    for x in writes { probe.apply(x); }
+                    let after = at_till(&probe);
+                    let want = if after > before { by_customer } else { by_cashier };
+                    prop_assert_eq!(w.author(), want, "item {}", item);
+                    ledger.apply(w);
+                }
+                prop_assert_eq!(value_at(&ledger, till), till_before + price);
+                prop_assert_eq!(value_at(&ledger, customer), customer_before - price);
+            }
+            _ => prop_assert_eq!(ledger.lines(), &start[..]),
+        }
+        prop_assert_eq!(counts(&ledger), counts_before);
+        let of = |h| -> Vec<_> { ledger.lines().iter().filter(|l| l.holder == h).map(|l| (l.item_id, l.quantity)).collect() };
+        let bystander_start: Vec<_> = start.iter().filter(|l| l.holder == bystander).map(|l| (l.item_id, l.quantity)).collect();
+        prop_assert_eq!(of(bystander), bystander_start);
+        for h in [till, customer, bystander] {
+            let mut items: Vec<u32> = ledger.lines().iter().filter(|l| l.holder == h).map(|l| l.item_id).collect();
+            let rows = items.len();
+            items.sort_unstable();
+            items.dedup();
+            prop_assert_eq!(rows, items.len(), "one row per (holder, item)");
+            prop_assert!(rows <= MAX_LINES_PER_HOLDER);
+        }
+        prop_assert!(ledger.lines().iter().all(|l| l.quantity > 0), "no zero row");
+    }
+}
+
+/// The best combination of the held pieces that sums to `amount` by the
+/// contract: fewest pieces, then more of the larger denomination. Brute
+/// force over every sub-multiset, the oracle for `choose_change`.
+fn cash_oracle(faces: &[u32], held: &[u64], amount: u64) -> Option<Vec<u64>> {
+    fn walk(
+        faces: &[u32],
+        held: &[u64],
+        k: usize,
+        left: u64,
+        picked: &mut Vec<u64>,
+        best: &mut Option<Vec<u64>>,
+    ) {
+        if k == faces.len() {
+            if left == 0 {
+                let better = match best {
+                    None => true,
+                    Some(b) => {
+                        let (np, bp): (u64, u64) = (picked.iter().sum(), b.iter().sum());
+                        np < bp || (np == bp && *picked > *b)
+                    }
+                };
+                if better {
+                    *best = Some(picked.clone());
+                }
+            }
+            return;
+        }
+        for c in 0..=held[k] {
+            if c * u64::from(faces[k]) > left {
+                break;
+            }
+            picked.push(c);
+            walk(
+                faces,
+                held,
+                k + 1,
+                left - c * u64::from(faces[k]),
+                picked,
+                best,
+            );
+            picked.pop();
+        }
+    }
+    let mut best = None;
+    walk(faces, held, 0, amount, &mut Vec::new(), &mut best);
+    best
+}
+
+/// Runs a case: the outcome, and what the model says it must be.
+fn cash_run(case: &CashCase) -> (sim::cash::Payment, sim::cash::Payment) {
+    let denoms = cash_denoms(&case.faces);
+    let [till, customer, _] = cash_holders(case);
+    let ledger = cash_ledger(case);
+    let (tender, price) = cash_ask(case, &ledger);
+    let (by_customer, by_cashier) = cash_authors();
+    let outcome = sim::cash::plan_payment(
+        ledger.lines(),
+        sim::cash::Party {
+            holder: customer,
+            by: by_customer,
+        },
+        sim::cash::Party {
+            holder: till,
+            by: by_cashier,
+        },
+        &tender,
+        price,
+        &denoms,
+    )
+    .unwrap();
+    (outcome, cash_expected(case, &ledger, &tender, price))
+}
+
+proptest! {
+    /// `inv_change_is_refused_only_when_the_till_cannot_make_it`: against a
+    /// brute-force oracle over every sub-multiset of what the till holds
+    /// *and what was just tendered* (tendered cash counts as available for
+    /// change), the payment reports "no change" if and only if no
+    /// sub-multiset sums to the change due, while the change due is under
+    /// `MAX_FACE_VALUE`. Past it the outcome is never `NoChange` (that says the
+    /// till is short): it is `TenderTooLarge` or a completed payment, and a
+    /// completed payment implies the plain oracle finds an answer for the whole
+    /// due -- the oracle is not taught the hand-back. The change chosen is the
+    /// oracle's: fewest pieces, ties to the larger denomination; every lot
+    /// `choose_change` returns moves through `plan_transfer_all` with no
+    /// shortfall. The room outcomes are checked against the final line
+    /// counts. Mutation that turns it red: swap in largest-first greedy.
+    #[test]
+    fn inv_change_is_refused_only_when_the_till_cannot_make_it(
+        case in cash_case(),
+        amount in 0u64..=60,
+    ) {
+        use sim::cash::{Payment, choose_change};
+
+        let denoms = cash_denoms(&case.faces);
+        let [till, customer, _] = cash_holders(&case);
+        let ledger = cash_ledger(&case);
+
+        let held: Vec<u64> = (0..case.faces.len() as u32).map(|i| ledger.quantity(till, CASH_ITEM_BASE + i)).collect();
+        let want = cash_oracle(&case.faces, &held, amount);
+        let money: CashLot = ledger
+            .lines()
+            .iter()
+            .filter(|l| l.holder == till && l.item_id < CASH_JUNK_BASE)
+            .map(|l| (l.item_id, l.quantity))
+            .collect();
+        let chosen = choose_change(&money, amount, &denoms).unwrap();
+        let got = chosen.as_ref().map(|lot| {
+            (0..case.faces.len() as u32)
+                .map(|i| lot.get(&(CASH_ITEM_BASE + i)).copied().unwrap_or(0))
+                .collect::<Vec<u64>>()
+        });
+        prop_assert_eq!(got, want);
+        if let Some(lot) = chosen {
+            let by = cash_authors().0;
+            if till != customer {
+                let moved = sim::stock::plan_transfer_all(ledger.lines(), by, till, customer, &lot).unwrap();
+                prop_assert!(moved.short.is_none(), "a chosen change is held");
+            }
+        }
+
+        // The payment-level classification, from the model alone.
+        let (outcome, expected) = cash_run(&case);
+        match (&outcome, &expected) {
+            (Payment::Paid { change: a, .. }, Payment::Paid { change: b, .. }) => prop_assert_eq!(a, b),
+            // Past the bound: never "the till is short"; a completed payment
+            // implies the plain oracle finds an answer for the whole due.
+            (_, Payment::TenderTooLarge) => {
+                prop_assert!(outcome != Payment::NoChange);
+                if matches!(outcome, Payment::Paid { .. }) {
+                    let ledger = cash_ledger(&case);
+                    let (tender, price) = cash_ask(&case, &ledger);
+                    prop_assert!(cash_past_the_bound_feasible(&case, &ledger, &tender, price));
+                }
+            }
+            _ => prop_assert_eq!(outcome, expected),
+        }
+    }
+}
+
+/// A deterministic walk over the generator (fixed RNG, no proptest seed):
+/// a property over a generator that silently stops reaching a branch is
+/// decoration, so every branch has a minimum share.
+#[test]
+fn the_cash_generator_reaches_every_branch() {
+    use proptest::strategy::{Strategy, ValueTree};
+    use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
+    use sim::cash::{Payment, Side};
+
+    const CASES: usize = 4096;
+    let mut runner = TestRunner::new_with_rng(
+        Config::default(),
+        TestRng::from_seed(RngAlgorithm::ChaCha, &[7u8; 32]),
+    );
+    let strategy = cash_case();
+    let (mut paid_with_change, mut multi_kind, mut no_change) = (0usize, 0usize, 0usize);
+    let (mut room_till, mut room_customer, mut same_holder) = (0usize, 0usize, 0usize);
+    let (mut too_large, mut paid_past_bound) = (0usize, 0usize);
+    for _ in 0..CASES {
+        let case = strategy.new_tree(&mut runner).unwrap().current();
+        let (outcome, expected) = cash_run(&case);
+        paid_past_bound += usize::from(
+            expected == Payment::TenderTooLarge && matches!(outcome, Payment::Paid { .. }),
+        );
+        match outcome {
+            Payment::Paid { change, .. } => {
+                paid_with_change += usize::from(!change.is_empty());
+                multi_kind += usize::from(change.len() > 1);
+            }
+            Payment::NoChange => no_change += 1,
+            Payment::TenderTooLarge => too_large += 1,
+            Payment::NoRoom(Side::Till) => room_till += 1,
+            Payment::NoRoom(Side::Customer) => room_customer += 1,
+            Payment::SameHolder => same_holder += 1,
+            Payment::TenderBelowPrice | Payment::TenderNotHeld { .. } => {}
+        }
+    }
+    // Whole-number percentages: sim is integer-only.
+    eprintln!(
+        "counts: change {paid_with_change} multi {multi_kind} none {no_change} till {room_till} cust {room_customer} large {too_large} paidpast {paid_past_bound}"
+    );
+    let percent = |n: usize| n * 100 / CASES;
+    for (name, n, at_least) in [
+        ("paid with change", paid_with_change, 20),
+        ("multi-kind change", multi_kind, 5),
+        ("no change", no_change, 10),
+        ("no room at the till", room_till, 2),
+        ("no room at the customer", room_customer, 2),
+        ("past the bound, refused", too_large, 2),
+        ("past the bound, paid", paid_past_bound, 2),
+    ] {
+        assert!(
+            percent(n) >= at_least,
+            "{name}: {}% under {at_least}%",
+            percent(n)
+        );
+    }
+    assert!(same_holder > 0, "a holder paying itself never occurs");
+}
+
+/// Any table, lines, tender and price: the three public functions of
+/// `sim::cash` return `Ok` or a typed `Err`, never panic. Faces cover the
+/// whole `u32` range, including 0, duplicates and values far over the cap;
+/// quantities reach `u64::MAX`.
+/// A table of `(item, face)`, lines of `(holder, item, quantity)`, a tender, a
+/// change amount, a price and whether one holder is on both sides.
+type TotalityCase = (
+    Vec<(u32, u32)>,
+    Vec<(u8, u32, u64)>,
+    Vec<(u32, u64)>,
+    u64,
+    u64,
+    bool,
+);
+
+fn totality_case() -> impl Strategy<Value = TotalityCase> {
+    let qty = || {
+        prop_oneof![
+            0u64..20,
+            Just(u64::MAX),
+            (u64::MAX - 10)..=u64::MAX,
+            any::<u64>()
+        ]
+    };
+    let face = || prop_oneof![0u32..40, 900u32..1100, Just(u32::MAX), any::<u32>()];
+    (
+        proptest::collection::vec((0u32..6, face()), 0..7),
+        proptest::collection::vec((0u8..3, 0u32..7, qty()), 0..14),
+        proptest::collection::vec((0u32..7, qty()), 0..6),
+        prop_oneof![0u64..2000, Just(u64::MAX), any::<u64>()],
+        prop_oneof![0u64..3000, any::<u64>()],
+        any::<bool>(),
+    )
+}
+
+proptest! {
+    /// `inv_cash_planning_never_panics`: `value_of`, `choose_change` and
+    /// `plan_payment` are total over every argument their signatures take.
+    #[test]
+    fn inv_cash_planning_never_panics(
+        (table, lines, tender, amount, price, same_holder) in totality_case(),
+    ) {
+        use sim::author::{Author, Cause};
+        use sim::cash::{Party, choose_change, plan_payment, value_of};
+        use sim::codes::holder_kind as k;
+        use sim::generated::defs::Denomination;
+        use sim::stock::{HolderRef, StockLine};
+
+        let denoms: Vec<Denomination> = table
+            .iter()
+            .map(|&(item, face_value)| Denomination { item_id: item, face_value })
+            .collect();
+        let till = HolderRef::new(k::BUSINESS, 1).unwrap();
+        let customer = if same_holder { till } else { HolderRef::new(k::CITIZEN, 1).unwrap() };
+        let holders = [till, customer, HolderRef::new(k::BUSINESS, 2).unwrap()];
+        let mut stock: Vec<StockLine> = Vec::new();
+        for &(h, item, quantity) in &lines {
+            let holder = holders[h as usize];
+            if !stock.iter().any(|l| l.holder == holder && l.item_id == item) {
+                stock.push(StockLine { row_id: stock.len() as u64 + 1, holder, item_id: item, quantity });
+            }
+        }
+        let lot: CashLot = tender.iter().copied().collect();
+        let held: CashLot = stock.iter().filter(|l| l.holder == till).map(|l| (l.item_id, l.quantity)).collect();
+        let by = Author::new(1, Cause::ProcedureStep).unwrap();
+
+        let _ = value_of(&lot, &denoms);
+        let _ = choose_change(&held, amount, &denoms);
+        let _ = plan_payment(
+            &stock,
+            Party { holder: customer, by },
+            Party { holder: till, by },
+            &lot,
+            price,
+            &denoms,
+        );
+    }
+}
+
+// Story 4.5 (FR141-FR143): which character an identity reaches. The plans are
+// `sim::identity`'s; the model applies them the way the reducers do.
+
+proptest! {
+    /// `inv_identity_reaches_at_most_one_character`
+    #[test]
+    fn inv_identity_reaches_at_most_one_character(ops in prop::collection::vec(support::identity_model::op(), 0..60)) {
+        use sim::identity::{LinkError, LinkPlan, plan_link};
+        use support::identity_model::Model;
+        let mut m = Model::default();
+        for o in &ops {
+            let _ = m.apply(o);
+            for (&i, &c) in &m.mapping {
+                prop_assert!(
+                    m.characters.contains_key(&c),
+                    "identity {i} maps to a missing character"
+                );
+            }
+        }
+        for (a, b) in (0u8..6).flat_map(|a| (0u8..6).map(move |b| (a, b))) {
+            if let (Some(x), Some(y)) = (m.mapping.get(&a), m.mapping.get(&b)) {
+                let p = plan_link(Some(*x), Some(*y));
+                prop_assert!(
+                    p == Ok(LinkPlan::AlreadyLinked) || p == Err(LinkError::DifferentCharacters)
+                );
+            }
+        }
+    }
+
+    /// `inv_linking_never_changes_or_orphans_a_character`
+    #[test]
+    fn inv_linking_never_changes_or_orphans_a_character(
+        ops in prop::collection::vec(support::identity_model::op(), 0..60)
+    ) {
+        use support::identity_model::{Model, Op};
+        let mut m = Model::default();
+        for o in &ops {
+            let before_chars = m.characters.clone();
+            let before_sets = m.identity_sets();
+            let _ = m.apply(o);
+            if matches!(o, Op::Link(..)) {
+                prop_assert_eq!(&m.characters, &before_chars);
+            }
+            let after_sets = m.identity_sets();
+            for (c, set) in &before_sets {
+                let now = after_sets.get(c);
+                prop_assert!(now.is_some_and(|n| n.is_superset(set) && !n.is_empty()));
+            }
+        }
+    }
+
+    /// `inv_identity_planning_never_panics`
+    #[test]
+    fn inv_identity_planning_never_panics(
+        a in prop::option::of(any::<u64>()),
+        b in prop::option::of(any::<u64>()),
+        now in any::<i64>(),
+        exp in prop::option::of(any::<i64>()),
+        issuer in ".{0,12}",
+        aud in prop::collection::vec(".{0,8}", 0..4),
+        rows in prop::collection::vec((any::<u64>(), ".{0,12}", ".{0,8}"), 0..4),
+    ) {
+        use sim::identity::{IssuerRow, check_claim, credential, plan_create, plan_link};
+        let _ = plan_create(a);
+        let _ = plan_link(a, b);
+        let _ = check_claim(exp, now);
+        let accepted: Vec<IssuerRow> = rows
+            .iter()
+            .map(|(id, i, c)| IssuerRow {
+                issuer_id: *id,
+                issuer: i.clone(),
+                client_id: c.clone(),
+            })
+            .collect();
+        let aud: Vec<&str> = aud.iter().map(String::as_str).collect();
+        let _ = credential(&issuer, &aud, &accepted);
+    }
+}
+
+proptest! {
+    /// `inv_actor_location_written_only_on_chunk_change` (FR136): the pure
+    /// planner is the only thing deciding whether `actor_location` is
+    /// rewritten, and it derives the chunk itself -- from the position,
+    /// never from a key the caller supplies.
+    #[test]
+    fn inv_actor_location_written_only_on_chunk_change(
+        (x0, y0, f0, x1, y1, f1) in (
+            prop_oneof![any::<i32>(), -70i32..70, Just(i32::MIN), Just(i32::MAX)],
+            prop_oneof![any::<i32>(), -70i32..70, Just(i32::MIN), Just(i32::MAX)],
+            -1i8..=7,
+            prop_oneof![any::<i32>(), -70i32..70, Just(i32::MIN), Just(i32::MAX)],
+            prop_oneof![any::<i32>(), -70i32..70, Just(i32::MIN), Just(i32::MAX)],
+            -1i8..=7,
+        ),
+        near in any::<bool>(),
+    ) {
+        use sim::actor_location::{Placement, plan_move};
+        use sim::world::{CHUNK_SIZE, chunk_key};
+
+        // Half the cases stay in the same chunk by construction.
+        let (x1, y1) = if near {
+            let cx = x0.div_euclid(CHUNK_SIZE) as i64 * CHUNK_SIZE as i64;
+            let cy = y0.div_euclid(CHUNK_SIZE) as i64 * CHUNK_SIZE as i64;
+            (
+                (cx + (x1 as i64).rem_euclid(CHUNK_SIZE as i64)) as i32,
+                (cy + (y1 as i64).rem_euclid(CHUNK_SIZE as i64)) as i32,
+            )
+        } else {
+            (x1, y1)
+        };
+        let here = Placement { chunk_key: chunk_key(x0, y0, f0), floor: f0 };
+        let there = Placement { chunk_key: chunk_key(x1, y1, f1), floor: f1 };
+
+        // An actor with no row yet always gets exactly one write.
+        prop_assert_eq!(plan_move(None, x0, y0, f0), Some(here));
+        match plan_move(Some(here), x1, y1, f1) {
+            None => prop_assert_eq!(here, there, "a move that changed chunk or floor wrote nothing"),
+            Some(w) => {
+                prop_assert_ne!(here, there, "a move inside one chunk and floor wrote a row");
+                prop_assert_eq!(w, there);
+            }
+        }
+    }
+}
+
+proptest! {
+    /// `inv_player_position_is_one_row_per_player` (FR138): a model of the
+    /// table (a map keyed by character) driven only by `plan_position`.
+    #[test]
+    fn inv_player_position_is_one_row_per_player(
+        writes in proptest::collection::vec(
+            (0u64..5, -2000i32..2000, -2000i32..2000, -1i8..=7, any::<u8>(), any::<u8>()),
+            0..60,
+        ),
+    ) {
+        use sim::player_position::{Write, plan_position};
+        use std::collections::BTreeMap;
+
+        let mut table: BTreeMap<u64, sim::player_position::PositionRow> = BTreeMap::new();
+        let mut last: BTreeMap<u64, (i32, i32, i8, u8, u8)> = BTreeMap::new();
+        for (who, x, y, floor, fx, fy) in writes {
+            let before = table.clone();
+            let plan = plan_position(table.contains_key(&who), x, y, floor, fx, fy);
+            let row = match plan {
+                Ok(Write::Insert(r)) => {
+                    prop_assert!(!before.contains_key(&who), "inserted over an existing row");
+                    r
+                }
+                Ok(Write::Update(r)) => {
+                    prop_assert!(before.contains_key(&who), "updated a row that is not there");
+                    r
+                }
+                Err(e) => return Err(TestCaseError::fail(format!("in-range write refused: {e:?}"))),
+            };
+            table.insert(who, row);
+            last.insert(who, (x, y, floor, fx, fy));
+            for (other, r) in &before {
+                if *other != who {
+                    prop_assert_eq!(table.get(other), Some(r), "a write touched another character's row");
+                }
+            }
+        }
+        prop_assert_eq!(table.len(), last.len());
+        for (who, (x, y, floor, fx, fy)) in last {
+            let r = table.get(&who).expect("a row per writer");
+            prop_assert_eq!((r.x, r.y, r.floor, r.frac_x, r.frac_y), (x, y, floor, fx, fy));
+        }
+    }
+
+    /// `inv_player_position_chunk_key_follows_position` (FR138): walks that
+    /// mostly stay in range, cross chunk edges and floors, with out-of-range
+    /// inputs mixed in. A write is accepted exactly when the floor and both
+    /// cells are addressable; an accepted one stores the chunk its position
+    /// is in, and is an update exactly when the character already has a row.
+    #[test]
+    fn inv_player_position_chunk_key_follows_position(
+        steps in proptest::collection::vec(
+            (
+                prop_oneof![
+                    6 => -70i32..70,
+                    1 => any::<i32>(),
+                    1 => Just(i32::MIN),
+                    1 => Just(sim::player_position::CELL_MAX + 1),
+                    1 => Just(sim::player_position::CELL_MIN - 1),
+                ],
+                prop_oneof![
+                    6 => -70i32..70,
+                    1 => any::<i32>(),
+                    1 => Just(sim::player_position::CELL_MAX),
+                ],
+                prop_oneof![8 => -1i8..=7, 1 => any::<i8>()],
+            ),
+            1..40,
+        ),
+    ) {
+        use sim::generated::defs::{MAX_FLOOR, MIN_FLOOR};
+        use sim::player_position::{CELL_MAX, CELL_MIN, Write, plan_position};
+        use sim::world::chunk_key;
+
+        let mut exists = false;
+        for (x, y, floor) in steps {
+            let addressable = (MIN_FLOOR..=MAX_FLOOR).contains(&(floor as i32))
+                && (CELL_MIN..=CELL_MAX).contains(&x)
+                && (CELL_MIN..=CELL_MAX).contains(&y);
+            let plan = plan_position(exists, x, y, floor, 0, 0);
+            prop_assert_eq!(plan.is_ok(), addressable, "accepted exactly when addressable");
+            if let Ok(w) = plan {
+                let (Write::Insert(r) | Write::Update(r)) = w;
+                prop_assert_eq!(matches!(w, Write::Update(_)), exists);
+                prop_assert_eq!(r.chunk_key, chunk_key(x, y, floor));
+                exists = true;
+            }
+        }
+    }
+
+    /// `inv_player_position_planning_never_panics` (NFR41, FR137).
+    #[test]
+    fn inv_player_position_planning_never_panics(
+        x in prop_oneof![any::<i32>(), Just(i32::MIN), Just(i32::MAX)],
+        y in prop_oneof![any::<i32>(), Just(i32::MIN), Just(i32::MAX)],
+        floor in any::<i8>(),
+        fx in any::<u8>(),
+        fy in any::<u8>(),
+        jump in any::<i32>(),
+    ) {
+        use sim::player_position::plan_position;
+        let _ = plan_position(false, x, y, floor, fx, fy);
+
+        // A jump of any distance between two addressable cells is accepted.
+        use sim::player_position::{CELL_MAX, CELL_MIN};
+        let a = (jump as i64).clamp(CELL_MIN as i64, CELL_MAX as i64) as i32;
+        prop_assert!(plan_position(true, a, a, 0, fx, fy).is_ok());
+    }
+}
+
+#[test]
+fn player_position_refuses_an_out_of_range_floor_and_cell() {
+    use sim::generated::defs::{MAX_FLOOR, MIN_FLOOR};
+    use sim::player_position::{CELL_MAX, CELL_MIN, PositionError, plan_position};
+    assert_eq!(
+        plan_position(false, 0, 0, (MAX_FLOOR + 1) as i8, 0, 0),
+        Err(PositionError::FloorOutOfRange)
+    );
+    assert_eq!(
+        plan_position(false, 0, 0, (MIN_FLOOR - 1) as i8, 0, 0),
+        Err(PositionError::FloorOutOfRange)
+    );
+    assert_eq!(
+        plan_position(false, CELL_MAX + 1, 0, 0, 0, 0),
+        Err(PositionError::CellOutOfRange)
+    );
+    assert_eq!(
+        plan_position(false, 0, CELL_MIN - 1, 0, 0, 0),
+        Err(PositionError::CellOutOfRange)
+    );
+    assert!(plan_position(false, CELL_MAX, CELL_MIN, MAX_FLOOR as i8, 255, 255).is_ok());
+}
+
+#[test]
+fn player_position_walk_across_chunk_edges_and_floors_updates_and_crosses() {
+    use sim::player_position::{Write, plan_position};
+    let walk = [
+        (-1, 0, 0),
+        (0, 0, 0),
+        (31, 5, 0),
+        (32, 5, 0),
+        (32, 5, -1),
+        (-33, -40, 7),
+    ];
+    let mut exists = false;
+    let (mut updates, mut crossings) = (0, 0);
+    let mut last = None;
+    for (x, y, f) in walk {
+        let w = plan_position(exists, x, y, f, 0, 0).expect("in range");
+        let (Write::Insert(r) | Write::Update(r)) = w;
+        updates += usize::from(matches!(w, Write::Update(_)));
+        crossings += usize::from(last.is_some_and(|k| k != r.chunk_key));
+        last = Some(r.chunk_key);
+        exists = true;
+    }
+    assert_eq!(updates, walk.len() - 1);
+    assert_eq!(crossings, 4, "four chunk or floor changes along the walk");
 }
 
 // --- story 3.5: pass 6, the interior layout --------------------------------

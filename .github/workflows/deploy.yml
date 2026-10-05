@@ -219,10 +219,17 @@ jobs:
     timeout-minutes: 15
     environment: maincloud
     steps:
+      # fetch-depth: 0 (story 4.18), never 1: export-world.sh walks
+      # server/schema.snapshot.json's own git history to find which
+      # committed snapshot is actually live -- a shallow clone hides that
+      # history from it, and this job's own commit is, by definition, at
+      # or ahead of whatever the live database currently is.
+      # check-deploy-workflow.sh's own structural guard fails the moment
+      # this regresses.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.sha }}
-          fetch-depth: 1
+          fetch-depth: 0
       - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
       # export-world.sh builds server/tools/world_backup the first time it
       # needs it -- same toolchain backup.yml's own export job installs.
@@ -299,7 +306,7 @@ jobs:
           retention-days: 90
 
   # Publishes the module to Maincloud and lands any newly-added
-  # sim::codes rows -- server/README.md names this job as `reseed_codes`'s
+  # sim::codes rows -- server/README.md names this job as `finish_publish`'s
   # automated caller. NFR33 (an additive-only schema, enforced at PR time
   # by check-schema-additive.sh) is what makes forward-only the only
   # publish this job ever has to make -- see server/README.md's Maincloud
@@ -358,10 +365,22 @@ jobs:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
         run: spacetime publish --server maincloud --no-config -y "$BACKUP_DATABASE" --module-path server
 
-      - name: land any newly-added sim::codes rows (NFR36/NFR38) -- server/README.md's own manual step, now automated here
+      - name: finish the publish (issue 363) -- establishes every one-row table, lands new sim::codes rows (NFR36/NFR38) and re-arms every cadence; idempotent, the one post-publish path
         env:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
-        run: spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" reseed_codes
+        run: spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" finish_publish
+
+      - name: accept the OIDC provider (story 4.5) -- idempotent; unset repository variables mean linking stays off
+        env:
+          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
+          OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}
+          OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
+        run: if [ -n "$OIDC_AUTHORITY" ] && [ -n "$OIDC_CLIENT_ID" ]; then spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" accept_oidc_issuer "$OIDC_AUTHORITY" "$OIDC_CLIENT_ID"; fi
+
+      - name: assert the live world is consistent -- a deploy is red the instant it is not
+        env:
+          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
+        run: bash scripts/ops/assert-world-invariants.sh "$BACKUP_DATABASE" --server maincloud
 
   # Builds the production client and deploys it to GitHub Pages. Skips on
   # a module-only change (`needs.changes.outputs.client == 'false'`); the
@@ -402,6 +421,8 @@ jobs:
         env:
           VITE_SPACETIME_URI: ${{ env.MAINCLOUD_WS_URI }}
           VITE_SPACETIME_DB: ${{ vars.BACKUP_DATABASE }}
+          VITE_OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}
+          VITE_OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
         run: npx vite build --base="$BASE_PATH"
 
       - name: stamp the build with the exact commit deployed -- the smoke job's own propagation check
@@ -512,7 +533,11 @@ jobs:
   report-failure:
     name: report-failure
     needs: [resolve, changes, backup, publish-module, deploy-client, smoke]
-    if: always() && failure()
+    # A timeout-minutes expiry ends a job `cancelled`, not `failure`
+    # (docs/architecture.md, story 4.20) -- `failure()` alone would miss
+    # a `publish-module`/`smoke` that hangs to its own 15-minute budget
+    # and never file an alert, which is exactly what NFR49 forbids.
+    if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -522,12 +547,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+      # Names which job ended with what (Tim's direction, story 4.20): the
+      # whole reason the condition above was widened to `cancelled` is
+      # that a hung publish-module/smoke must not read as indistinguishable
+      # from a real publish failure to whoever picks the filed issue up.
       - env:
           GH_TOKEN: ${{ github.token }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          JOB_RESULTS="$(printf '%s' "$NEEDS_JSON" | jq -r '
+            to_entries[]
+            | select(.value.result != "success" and .value.result != "skipped")
+            | "\(.key): \(.value.result)"
+          ')"
           bash scripts/ci/report-scheduled-failure.sh \
             "deploy failed" \
             "deploy.yml failed: $RUN_URL
+
+          $JOB_RESULTS
 
           No automatic rollback exists (server/README.md's own manual recovery path): a published schema cannot be rolled back, only rolled forward -- fix and merge, then redeploy (workflow_dispatch) once the cause is fixed. Redeploying an older SHA re-ships the client only, and only while its schema is still compatible with the live one; it never un-publishes a module. Restore only through scripts/ops/restore-world.sh, into a fresh database. Close this once resolved."

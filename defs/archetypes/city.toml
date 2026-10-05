@@ -5,13 +5,12 @@
 # only the shapes the objects already committed under `defs/objects/`
 # actually justify -- never invented ahead of real props that need them.
 
-# The lamppost's own base collider (story 1.8's worked example): a small
-# footprint-relative pole near the bottom of the cell, so a player passes
-# through the rest of the cell freely.
+# The lamppost's own base collider (story 1.8's worked example): the
+# drawn plinth, so a player passes through the rest of the cell freely.
 [[archetype]]
 key = "pole"
 height = 1
-collider_inset = { left = 6, top = 10, right = 6, bottom = 2 }
+collider_inset = { left = 2, top = 7, right = 2, bottom = 0 }
 
 # A prop whose whole footprint blocks -- the collider fills every cell of
 # it exactly, regardless of how wide the footprint is (a counter, a wall
@@ -27,3 +26,15 @@ collider_inset = { left = 0, top = 0, right = 0, bottom = 0 }
 [[archetype]]
 key = "underfoot_flat"
 height = 1
+
+# An upright seen face-on (a railing, a fence) collides at its foot only:
+# the drawn face above the foot is height, the ground behind it is
+# walkable, and a walker there is drawn behind the upright. The foot is
+# the bottom 5 sub-cells of the footprint, full width. Objects carrying
+# the `upright` tag are refused at build time if their collider rises
+# above the foot of a `foot = true` archetype.
+[[archetype]]
+key = "railing_foot"
+height = 1
+foot = true
+collider_inset = { left = 0, top = 11, right = 0, bottom = 0 }

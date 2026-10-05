@@ -23,6 +23,9 @@ jobs:
     name: backup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
 
   publish-module:
@@ -31,6 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
+      - run: spacetime call --server maincloud --no-config -y "$DB" finish_publish
+      - run: spacetime call --server maincloud --no-config -y "$DB" accept_oidc_issuer "${{ vars.OIDC_AUTHORITY }}" "${{ vars.OIDC_CLIENT_ID }}"
+      - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud
 
   deploy-client:
     name: deploy-client
@@ -38,6 +44,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo deploying client
+        env:
+          VITE_OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}
+          VITE_OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
+
+  report-failure:
+    name: report-failure
+    needs: [backup, publish-module, deploy-client]
+    if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo reporting
 YAML
 }
 
@@ -46,6 +63,30 @@ fresh_workflow() {
   d="$(fake_dir)"
   write_good_workflow "$d/deploy.yml"
   printf '%s' "$d/deploy.yml"
+}
+
+write_good_backup_workflow() { # <path>
+  cat > "$1" <<'YAML'
+name: backup
+on:
+  workflow_dispatch:
+jobs:
+  export:
+    name: export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: bash scripts/ops/export-world.sh "$DB" /tmp/export --server maincloud
+YAML
+}
+
+fresh_backup_workflow() {
+  local d
+  d="$(fake_dir)"
+  write_good_backup_workflow "$d/backup.yml"
+  printf '%s' "$d/backup.yml"
 }
 
 WF="$(fresh_workflow)"
@@ -129,6 +170,9 @@ jobs:
     name: backup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
 
   publish-module:
@@ -153,6 +197,9 @@ jobs:
     name: backup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
 
   publish-module:
@@ -160,7 +207,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
+      - run: spacetime call --server maincloud --no-config -y "$DB" finish_publish
+      - run: spacetime call --server maincloud --no-config -y "$DB" accept_oidc_issuer "${{ vars.OIDC_AUTHORITY }}" "${{ vars.OIDC_CLIENT_ID }}"
+      - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud
     needs: [backup]
+
+  deploy-client:
+    name: deploy-client
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo deploying client
+        env:
+          VITE_OIDC_AUTHORITY: ${{ vars.OIDC_AUTHORITY }}
+          VITE_OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
+
+  report-failure:
+    name: report-failure
+    needs: [backup, publish-module]
+    if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo reporting
 YAML
 check "needs: [backup] written *after* steps: still passes (not a false FAIL)" 0 bash "$CHECK" "$D7C/deploy.yml"
 
@@ -177,6 +244,102 @@ sed -i 's#bash scripts/ops/check-database-exists.sh "\$DB" --server maincloud#ec
 OUT="$(bash "$CHECK" "$D10/deploy.yml" 2>&1)"; CODE=$?
 check "a backup job that never calls check-database-exists.sh fails" 1 bash -c "exit $CODE"
 check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'never calls scripts/ops/check-database-exists.sh'" _ "$OUT"
+
+echo
+echo "story 4.18: the backup job's own checkout must not be shallow"
+D11="$(fake_dir)"; write_good_workflow "$D11/deploy.yml"
+sed -i 's/fetch-depth: 0/fetch-depth: 1/' "$D11/deploy.yml"
+OUT="$(bash "$CHECK" "$D11/deploy.yml" 2>&1)"; CODE=$?
+check "fetch-depth: 1 on the backup job's checkout fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+D12="$(fake_dir)"
+cat > "$D12/deploy.yml" <<'YAML'
+name: deploy
+on:
+  workflow_dispatch:
+jobs:
+  backup:
+    name: backup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/ops/check-database-exists.sh "$DB" --server maincloud
+
+  publish-module:
+    name: publish-module
+    needs: [backup]
+    runs-on: ubuntu-latest
+    steps:
+      - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
+YAML
+OUT="$(bash "$CHECK" "$D12/deploy.yml" 2>&1)"; CODE=$?
+check "a checkout with no fetch-depth at all (the actions/checkout default, 1) fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+check "the good workflow's own fetch-depth: 0 passes (not a false FAIL)" 0 bash "$CHECK" "$WF"
+
+D13="$(fake_dir)"; write_good_workflow "$D13/deploy.yml"
+# A comment mentioning fetch-depth in prose, right above the real key --
+# must never be what the check reads (regression: PR #345's own CI run
+# hit exactly this, a comment explaining *why* fetch-depth is 0
+# containing the literal text "fetch-depth: 1 (a shallow default)" ahead
+# of the real, correct "fetch-depth: 0" key).
+sed -i "/fetch-depth: 0/i\\      # fetch-depth: 1 (a shallow default) would be wrong here, see below" "$D13/deploy.yml"
+check "a comment mentioning a different fetch-depth in prose is ignored -- the real key still passes" 0 bash "$CHECK" "$D13/deploy.yml"
+
+D14="$(fake_dir)"; write_good_workflow "$D14/deploy.yml"
+sed -i 's/fetch-depth: 0/fetch-depth: 1/' "$D14/deploy.yml"
+sed -i "/fetch-depth: 1/i\\      # fetch-depth: 0 (a comment, not the real key)" "$D14/deploy.yml"
+OUT="$(bash "$CHECK" "$D14/deploy.yml" 2>&1)"; CODE=$?
+check "a comment mentioning fetch-depth: 0 in prose never masks a real, shallow fetch-depth: 1" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+echo
+echo "story 4.18 (Quentin's/Tim's cycle-1 direction): backup.yml's own export job checkout must not be shallow either -- the second real caller of export-world.sh, previously unguarded"
+BF="$(fresh_backup_workflow)"
+check "a well-formed backup.yml (fetch-depth: 0) passes, alongside the good deploy.yml" 0 bash "$CHECK" "$WF" "$BF"
+
+D15="$(fake_dir)"; write_good_backup_workflow "$D15/backup.yml"
+sed -i 's/fetch-depth: 0/fetch-depth: 1/' "$D15/backup.yml"
+OUT="$(bash "$CHECK" "$WF" "$D15/backup.yml" 2>&1)"; CODE=$?
+check "fetch-depth: 1 on backup.yml's export job fails" 1 bash -c "exit $CODE"
+check "names the reason, and the job/file" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"'export' job's checkout in $D15/backup.yml is shallow\"" _ "$OUT"
+
+D16="$(fake_dir)"
+cat > "$D16/backup.yml" <<'YAML'
+name: backup
+on:
+  workflow_dispatch:
+jobs:
+  export:
+    name: export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/ops/export-world.sh "$DB" /tmp/export --server maincloud
+YAML
+OUT="$(bash "$CHECK" "$WF" "$D16/backup.yml" 2>&1)"; CODE=$?
+check "backup.yml's export job with no fetch-depth at all fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'is shallow'" _ "$OUT"
+
+D17="$(fake_dir)"
+cat > "$D17/backup.yml" <<'YAML'
+name: backup
+on:
+  workflow_dispatch:
+jobs:
+  rehearsal:
+    name: rehearsal
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo no export job here
+YAML
+OUT="$(bash "$CHECK" "$WF" "$D17/backup.yml" 2>&1)"; CODE=$?
+check "a backup.yml with no 'export:' job at all fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"has no 'export:' job\"" _ "$OUT"
+
+check "a missing backup.yml path fails" 1 bash "$CHECK" "$WF" "$(fake_dir)/nope-backup.yml"
 
 D8="$(fake_dir)"
 cat > "$D8/deploy.yml" <<'YAML'
@@ -195,6 +358,117 @@ check "no job runs spacetime publish at all fails" 1 bash -c "exit $CODE"
 check "names the missing publish job" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'no job in'" _ "$OUT"
 
 check "a missing workflow file fails" 1 bash "$CHECK" "$(fake_dir)/nope.yml"
+
+echo
+echo "story 4.20 (NFR49): report-failure must account for a cancelled job too, not only a failed one"
+check "the good workflow's own report-failure condition passes (not a false FAIL)" 0 bash "$CHECK" "$WF"
+
+D18="$(fake_dir)"; write_good_workflow "$D18/deploy.yml"
+sed -i "s/if: always() && (contains(needs.\*.result, 'failure') || contains(needs.\*.result, 'cancelled'))/if: always() \&\& failure()/" "$D18/deploy.yml"
+OUT="$(bash "$CHECK" "$D18/deploy.yml" 2>&1)"; CODE=$?
+check "if: always() && failure() alone (no cancelled) fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"does not contain a contains(needs.*.result, 'cancelled')\"" _ "$OUT"
+
+echo
+echo "a bare substring check for the word 'cancelled' is not enough -- !cancelled() contains it too and means the opposite (Tim's direction, cycle 1)"
+D18B="$(fake_dir)"; write_good_workflow "$D18B/deploy.yml"
+sed -i "s/if: always() && (contains(needs.\*.result, 'failure') || contains(needs.\*.result, 'cancelled'))/if: always() \&\& !cancelled()/" "$D18B/deploy.yml"
+OUT="$(bash "$CHECK" "$D18B/deploy.yml" 2>&1)"; CODE=$?
+check "if: always() && !cancelled() fails (it's the negation, not the check)" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"does not contain a contains(needs.*.result, 'cancelled')\"" _ "$OUT"
+
+D19="$(fake_dir)"; write_good_workflow "$D19/deploy.yml"
+sed -i '/^  report-failure:$/,$d' "$D19/deploy.yml"
+OUT="$(bash "$CHECK" "$D19/deploy.yml" 2>&1)"; CODE=$?
+check "no report-failure job at all fails" 1 bash -c "exit $CODE"
+check "names the missing job" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"has no 'report-failure' job\"" _ "$OUT"
+
+echo
+echo "publish-module must call finish_publish, and end with the world-invariants assert"
+D20="$(fake_dir)"; write_good_workflow "$D20/deploy.yml"
+sed -i '/ finish_publish$/d' "$D20/deploy.yml"
+OUT="$(bash "$CHECK" "$D20/deploy.yml" 2>&1)"; CODE=$?
+check "publish-module with no finish_publish call fails" 1 bash -c "exit $CODE"
+check "names the missing call" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'never calls finish_publish'" _ "$OUT"
+
+D21="$(fake_dir)"; write_good_workflow "$D21/deploy.yml"
+sed -i '/assert-world-invariants.sh/d' "$D21/deploy.yml"
+OUT="$(bash "$CHECK" "$D21/deploy.yml" 2>&1)"; CODE=$?
+check "a publishing job with no assert step fails" 1 bash -c "exit $CODE"
+check "names the missing assert" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'assert-world-invariants.sh'" _ "$OUT"
+
+D22="$(fake_dir)"; write_good_workflow "$D22/deploy.yml"
+sed -i '/assert-world-invariants.sh/d' "$D22/deploy.yml"
+sed -i '/ finish_publish$/i      - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud' "$D22/deploy.yml"
+OUT="$(bash "$CHECK" "$D22/deploy.yml" 2>&1)"; CODE=$?
+check "an assert step that is not the job's last step fails" 1 bash -c "exit $CODE"
+
+check "the good workflow's finish_publish-then-assert ending passes (not a false FAIL)" 0 bash "$CHECK" "$WF"
+
+echo "story 4.12: backup.yml's storage report never runs before the artifact upload"
+write_report_workflow() { # <path> <report-first|report-last>
+  {
+    printf 'name: backup
+on:
+  workflow_dispatch:
+jobs:
+  export:
+    name: export
+    runs-on: ubuntu-latest
+    steps:
+'
+    printf '      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+'
+    printf '      - run: bash scripts/ops/export-world.sh "$DB" /tmp/export --server maincloud
+'
+    if [ "$2" = report-first ]; then printf '      - run: bash scripts/ops/storage-report.sh "$DB" --server maincloud
+'; fi
+    printf '      - uses: actions/upload-artifact@v7
+        with:
+          name: x
+'
+    if [ "$2" = report-last ]; then printf '      - if: always()
+        run: bash scripts/ops/storage-report.sh "$DB" --server maincloud
+'; fi
+  } > "$1"
+}
+D13="$(fake_dir)"; write_good_workflow "$D13/deploy.yml"
+write_report_workflow "$D13/backup-first.yml" report-first
+OUT="$(bash "$CHECK" "$D13/deploy.yml" "$D13/backup-first.yml" 2>&1)"; CODE=$?
+check "a storage report before the upload fails" 1 bash -c "exit $CODE"
+check "names the reason" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'storage-report.sh before'" _ "$OUT"
+write_report_workflow "$D13/backup-last.yml" report-last
+check "a storage report after the upload passes" 0 bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml"
+
+echo
+echo "story 4.5: the OIDC provider comes from the repository variables on both halves"
+D30="$(fake_dir)"; write_good_workflow "$D30/deploy.yml"
+sed -i '/accept_oidc_issuer/d' "$D30/deploy.yml"
+OUT="$(bash "$CHECK" "$D30/deploy.yml" 2>&1)"; CODE=$?
+check "publish-module that never registers the issuer fails" 1 bash -c "exit $CODE"
+check "names the missing call" 0 bash -c "printf '%s' \"\$1\" | grep -qF \"does not use 'accept_oidc_issuer'\"" _ "$OUT"
+
+D31="$(fake_dir)"; write_good_workflow "$D31/deploy.yml"
+sed -i '/VITE_OIDC_CLIENT_ID/d' "$D31/deploy.yml"
+OUT="$(bash "$CHECK" "$D31/deploy.yml" 2>&1)"; CODE=$?
+check "a client build that is not handed the client id fails" 1 bash -c "exit $CODE"
+
+# No workflow and no ops script may call create_district: the live world
+# gets no generated district until the story that picks its seed says so.
+R1="$(fake_dir)"; mkdir -p "$R1/.github/workflows" "$R1/scripts/ops"
+check "a tree that never names create_district passes" 0 bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml" "$R1"
+printf 'jobs: {}
+# spacetime call "$DB" create_district 7
+' > "$R1/.github/workflows/x.yml"
+OUT="$(bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml" "$R1" 2>&1)"; CODE=$?
+check "a workflow naming create_district fails" 1 bash -c "exit $CODE"
+check "names the reducer" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'create_district'" _ "$OUT"
+rm "$R1/.github/workflows/x.yml"
+printf 'spacetime call "$1" create_district 7
+' > "$R1/scripts/ops/seed.sh"
+check "an ops script naming create_district fails" 1 bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml" "$R1"
 
 summary
 exit $?

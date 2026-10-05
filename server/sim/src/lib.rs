@@ -3,11 +3,16 @@
 //! table and touches no clock, filesystem, or network; every input it needs
 //! is passed in by its caller in `../src` (the reducer crate).
 
+pub mod actor_location;
 pub mod appearance;
+pub mod author;
 pub mod balance;
+pub mod cadence;
+pub mod cash;
 pub mod codes;
 pub mod demo_ping;
 pub mod generation;
+pub mod identity;
 // `tools/defs-build` emits already-formatted text (docs/architecture.md's
 // "defs/" section), never by shelling out to `rustfmt` -- but its own
 // notion of "formatted" (one struct literal per array element, on one
@@ -16,7 +21,18 @@ pub mod generation;
 // --check`.
 #[rustfmt::skip]
 pub mod generated;
+pub mod item_instance;
+pub mod player_position;
+pub mod reducer_classes;
 pub mod rng;
+pub mod routing;
 pub mod rules;
+pub mod stock;
+pub mod storage;
+pub mod table_bounds;
+pub mod time;
 pub mod validation;
 pub mod world;
+
+#[cfg(test)]
+mod lint_canary;

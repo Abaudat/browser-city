@@ -45,14 +45,18 @@
 //! inflated by how many dwellings it happens to hold (Derek's direction,
 //! cycle 2: proportional remainder allocation dragged civic buildings
 //! toward the dwelling periphery, the opposite of "sited toward the
-//! peak"). The remainder -- the units the floors do not account for --
-//! is placed site-wide, by the same ranking. Both the per-catchment
-//! floor and the site-wide remainder call the one [`place_row`], which
-//! only ever removes a candidate for a real `min_spacing` violation --
-//! never a reason to strand a catchment's own guaranteed floor below
-//! what its own real, unused candidates could still satisfy, but also
-//! never a reason to inflate one catchment's own share at another's
-//! expense.
+//! peak"). The remainder -- the units the floors do not account for,
+//! plus, since story 15.9, whatever a catchment's own floor phase could
+//! not actually place against its own local land (`floor_shortfall`,
+//! never left stranded: a catchment can be owed a floor its own real
+//! geometry cannot supply, and the site-wide pool is where that owed
+//! unit still gets its chance) -- is placed site-wide, by the same
+//! ranking. Both the per-catchment floor and the site-wide remainder
+//! call the one [`place_row`], which only ever removes a candidate for a
+//! real `min_spacing` violation -- never a reason to strand a
+//! catchment's own guaranteed floor below what its own real, unused
+//! candidates could still satisfy, but also never a reason to inflate
+//! one catchment's own share at another's expense.
 //!
 //! Infallible, like passes 2-4: AC2/AC3's own presence/spread verdict is
 //! a property of the finished district (`District::check_rules`, via
@@ -339,7 +343,7 @@ fn weighted_fill(
             );
         }
         let mut rng = Rng::new(seed_from_ids(pass_seed, rect_seed_key(e.footprint)));
-        let mut roll = rng.next_u64() % total_weight;
+        let mut roll = rng.below(total_weight);
         let mut pick = eligible[0];
         for b in &eligible {
             if roll < b.weight as u64 {
@@ -452,7 +456,11 @@ fn backtrack_search(
     if chosen.len() == target {
         return true;
     }
-    if pool.len().saturating_sub(start) < target - chosen.len() {
+    // Prune only a branch that cannot beat `best` -- never merely one
+    // that cannot reach `target`: an unreachable `target` still owes the
+    // largest real partial (story 15.9, seed 5433998721198148372: pruning
+    // against `target` returned 2 of a feasible 3).
+    if chosen.len() + pool.len().saturating_sub(start) <= best.len() {
         return false;
     }
     for i in start..pool.len() {
@@ -703,21 +711,43 @@ pub fn run(
         let mut catchments: Vec<(i32, i32)> = per_by_catchment.keys().copied().collect();
         catchments.sort();
 
+        // A catchment's own floor is what it is *owed*, never a promise
+        // its own local land can actually deliver: a catchment whose
+        // eligible candidates are scarcer than its own floor (or whose
+        // ranked-and-spaced search falls short of the achievable max)
+        // still leaves real units unplaced. `floor_shortfall` is exactly
+        // that gap -- the floors summed on paper minus what this row
+        // actually placed while working through them -- folded into the
+        // site-wide remainder below so the row's own whole-site target
+        // is still pursued everywhere the floor phase could not reach
+        // it, rather than silently dropped (a catchment that could have
+        // supplied another catchment's shortfall is exactly what "site-
+        // wide remainder" already means; this only widens what counts as
+        // "the floors did not account for it" to include a floor the
+        // floor phase itself could not fill).
+        let mut floor_target_sum = 0u64;
+        let mut floor_placed_sum = 0u64;
+
         for &c in &catchments {
             let target = floors.get(&c).copied().unwrap_or(0);
             if target == 0 {
                 continue;
             }
+            floor_target_sum += target;
             let mut pool: Vec<usize> = (0..placed.len())
                 .filter(|&i| !overridden[i] && ctx[i].catchment == c && eligible_for_subject(i))
                 .collect();
             pool.sort_by_key(|&i| rank_key(i));
             let chosen = place_row(&pool, target, row.min_spacing, &ctx, &mut chosen_cells);
+            floor_placed_sum += chosen.len() as u64;
             for &i in &chosen {
                 final_type[i] = resolve(i);
                 overridden[i] = true;
             }
         }
+
+        let floor_shortfall = floor_target_sum.saturating_sub(floor_placed_sum);
+        let remainder = remainder + floor_shortfall;
 
         if remainder > 0 {
             let mut pool: Vec<usize> = (0..placed.len())
@@ -1096,6 +1126,31 @@ mod tests {
             vec![0],
             "rank order's own top candidate is what first_fit -- the floor -- already picks"
         );
+    }
+
+    #[test]
+    fn place_row_finds_the_largest_partial_not_just_first_fits_when_the_target_is_unreachable() {
+        // Story 15.9, seed 5433998721198148372's own quadrant: five
+        // candidates 10-11 cells apart on one row, `min_spacing` 12,
+        // `target` 4 (unreachable). First-fit in this rank order takes
+        // x=270 and x=291 (2); the real maximum is {259, 280, 302} (3).
+        // The search used to prune any branch that could not reach
+        // `target`, so it never improved on first-fit's 2.
+        let cell = |x: i32| Context {
+            land_use_idx: 1,
+            density: 50,
+            interior_width: 8,
+            interior_depth: 8,
+            site_context: [false; 4],
+            x,
+            y: 256,
+            catchment: (1, 1),
+        };
+        let ctx = vec![cell(270), cell(291), cell(259), cell(280), cell(302)];
+        let pool: Vec<usize> = vec![0, 1, 2, 3, 4];
+        let mut chosen_cells = Vec::new();
+        let chosen = place_row(&pool, 4, 12, &ctx, &mut chosen_cells);
+        assert_eq!(chosen.len(), 3, "the feasible maximum is 3, got {chosen:?}");
     }
 
     #[test]

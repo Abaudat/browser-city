@@ -4,30 +4,34 @@
 // event on a real canvas, against the real fixture, reaching the real
 // pick and coming back out as an intent.
 //
-// Click points are computed from the real `screenPositionPx` and the real
-// fixture cells, turned into canvas offsets by the scene's own recorded
-// camera transform. No literal pixel appears anywhere below: a scene that
-// moved its camera would otherwise start clicking empty pavement while
-// still passing.
+// Click points are computed from the real `worldPointPx`/`cellBottomCentre`
+// and the real fixture cells, turned into canvas offsets by the scene's own
+// recorded camera transform. No literal pixel appears anywhere below: a
+// scene that moved its camera would otherwise start clicking empty
+// pavement while still passing.
 import { mkdirSync } from "node:fs";
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { KEYBINDINGS_STORAGE_KEY } from "../../src/input/keybindings-storage";
 import type {} from "../../src/net/e2e-hooks";
-import { screenPositionPx } from "../../src/render/screen-position";
+import { ZOOM } from "../../src/render/camera";
+import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
 import {
+  isDefStreetProp,
   PLAYER_START,
   SHOP_COUNTER_DEF_ID,
   STREET_PROPS,
   TRASH_BIN_DEF_ID,
 } from "../../src/test-street/fixture";
 import { committedDefs } from "../unit/test-street/street-world";
+import { waitForPlayerControllable } from "./boot-test-support";
+import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
 
 const COUNTER_ID = 8n;
 const BIN_ID = 15n;
 
 /** Artie reviews the feel from images, not from a pixel-delta count, so
  * the spec leaves them behind as CI artifacts. */
-const SHOT_DIR = "test-results/story-1.9-shots";
+const SHOT_DIR = "test-results/review-shots/story-1.9";
 
 function balance(key: string): number {
   const entry = committedDefs().balance.find((b) => b.key === key);
@@ -43,7 +47,7 @@ const SUBCELLS_PER_CELL = committedDefs().colliderSubcellsPerCell;
  * this spec's clicks with it. */
 function propById(id: bigint, expectedDefId: number) {
   const prop = STREET_PROPS.find((p) => p.id === id);
-  if (!prop || prop.defId !== expectedDefId) {
+  if (!prop || !isDefStreetProp(prop) || prop.defId !== expectedDefId) {
     throw new Error(`fixture prop ${id} is no longer placed by defs id ${expectedDefId}`);
   }
   return prop;
@@ -58,10 +62,12 @@ function interactAtOf(defId: number) {
 }
 
 /** A world pixel inside a cell's own drawn rect: every drawable is
- * bottom-centre anchored on its cell (`screenPositionPx`), so the anchor
- * is the bottom-centre of that rect and half a tile above it is inside. */
+ * bottom-centre anchored on its cell (`cellBottomCentre`, projected
+ * through `worldPointPx`), so the anchor is the bottom-centre of that
+ * rect and half a tile above it is inside. */
 function worldPixelOfCell(cellX: number, cellY: number, floor: number) {
-  const anchor = screenPositionPx(cellX, cellY, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX);
+  const centre = cellBottomCentre(cellX, cellY);
+  const anchor = worldPointPx(centre.x, centre.y, floor, TILE_SIZE_PX, STOREY_HEIGHT_PX, ZOOM, 0);
   return { x: anchor.x, y: anchor.y - TILE_SIZE_PX / 2 };
 }
 
@@ -69,30 +75,21 @@ async function ready(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
     timeout: 10_000,
   });
-  await page.waitForFunction(() => window.__bc?.viewTransform !== undefined, undefined, {
-    timeout: 10_000,
-  });
-}
-
-function canvasOf(page: Page): Locator {
-  return page.locator("#test-street canvas");
-}
-
-/** Converts a world pixel to the canvas offset to click, through the
- * scene's own recorded zoom and camera offset. */
-async function canvasOffset(page: Page, worldPx: { x: number; y: number }) {
-  const view = await page.evaluate(() => window.__bc?.viewTransform);
-  if (!view) throw new Error("the street scene never recorded its view transform");
-  return { x: worldPx.x * view.zoom + view.offsetX, y: worldPx.y * view.zoom + view.offsetY };
+  // The camera/viewport story (Quentin's direction): `viewTransform` is
+  // live now, updated every frame the camera moves, so its mere
+  // existence stopped being a one-shot readiness signal -- the boot mark
+  // is what actually promises the scene has mounted and is accepting
+  // input.
+  await waitForPlayerControllable(page, 10_000);
 }
 
 async function clickCell(page: Page, cellX: number, cellY: number, floor: number): Promise<void> {
-  const position = await canvasOffset(page, worldPixelOfCell(cellX, cellY, floor));
+  const position = await canvasOffsetForWorldPx(page, worldPixelOfCell(cellX, cellY, floor));
   await canvasOf(page).click({ position });
 }
 
 async function hoverCell(page: Page, cellX: number, cellY: number, floor: number): Promise<void> {
-  const position = await canvasOffset(page, worldPixelOfCell(cellX, cellY, floor));
+  const position = await canvasOffsetForWorldPx(page, worldPixelOfCell(cellX, cellY, floor));
   await canvasOf(page).hover({ position });
 }
 
@@ -249,11 +246,11 @@ test("a click on the drawn part of a tall prop hits that prop, not the cell behi
   // the lid must hit the bin.
   const bin = propById(BIN_ID, TRASH_BIN_DEF_ID);
   const lid = worldPixelOfCell(bin.x, bin.y - 1, bin.floor);
-  await canvasOf(page).hover({ position: await canvasOffset(page, lid) });
+  await canvasOf(page).hover({ position: await canvasOffsetForWorldPx(page, lid) });
   await canvasOf(page).screenshot({ path: `${SHOT_DIR}/hover-bin-lid.png` });
   await expect(canvasOf(page)).toHaveCSS("cursor", "pointer");
 
-  await canvasOf(page).click({ position: await canvasOffset(page, lid) });
+  await canvasOf(page).click({ position: await canvasOffsetForWorldPx(page, lid) });
   const seen = await Promise.all([intents(page), ignoredIntents(page)]);
   const touchedTheBin =
     seen[0].some((i) => i.objectId === BIN_ID.toString()) || seen[1].includes(BIN_ID.toString());

@@ -1,0 +1,227 @@
+//! Story 15.3: the committed colliders agree with the committed art, read
+//! as real PNGs, and moving one by a sub-cell turns the build red naming the
+//! key and the columns -- the mutation check, automated. Every object in
+//! `defs/` is held to the rule; the trash can and the lamppost are also
+//! shifted.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use defs_build::atlas::image::decode_rgba8;
+use defs_build::model::{ColliderRect, Defs, ObjectDef, SPRITE_SHEET_ALLOWED_ROOT};
+use defs_build::silhouette::{Disagreement, check_collider_against_art};
+use defs_build::{codes, fsio, parse, validate};
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn real_defs() -> Defs {
+    let root = repo_root();
+    let mut files = fsio::read_text(&root, &fsio::list_defs_sources(&root).unwrap()).unwrap();
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    let raw = parse::parse_all(&files).unwrap();
+    let mut sheets = defs_build::appearance_sheet_paths(&raw);
+    sheets.extend(defs_build::object_sprite_sheet_paths(&raw));
+    sheets.sort();
+    sheets.dedup();
+    let dims: BTreeMap<String, (u32, u32)> = fsio::read_png_dims(&root, &sheets)
+        .unwrap()
+        .into_iter()
+        .collect();
+    let tables = codes::CodeTables::parse(&fsio::read_codes_golden(&root).unwrap());
+    validate::validate(&raw, &dims, &tables, SPRITE_SHEET_ALLOWED_ROOT).unwrap()
+}
+
+fn verdict(o: &ObjectDef, tile: u32, collider: ColliderRect) -> Result<(), Disagreement> {
+    let sprite = o.sprite.as_ref().expect("a drawn object");
+    let bytes = fsio::read_bytes(&repo_root(), &[PathBuf::from(&sprite.sheet)])
+        .unwrap()
+        .remove(0)
+        .1;
+    let (w, _h, rgba) = decode_rgba8(&bytes).unwrap();
+    check_collider_against_art(&rgba, w, sprite, o.height, tile, collider)
+}
+
+fn object<'a>(defs: &'a Defs, key: &str) -> &'a ObjectDef {
+    defs.objects.iter().find(|o| o.key == key).unwrap()
+}
+
+#[test]
+fn every_committed_collider_agrees_with_its_art() {
+    let defs = real_defs();
+    let tile = defs.tile_size_px.unwrap();
+    let mut examined = 0;
+    for o in &defs.objects {
+        if let Some(c) = o.collider {
+            assert_eq!(verdict(o, tile, c), Ok(()), "{}", o.key);
+            examined += 1;
+        }
+    }
+    assert!(examined >= 6, "examined only {examined} colliders");
+}
+
+/// The real tree built with one line of `defs/objects/city-props.toml`
+/// replaced; the rendered build error.
+fn build_error_with(old: &str, new: &str) -> String {
+    let root = repo_root();
+    let mut files = fsio::read_text(&root, &fsio::list_defs_sources(&root).unwrap()).unwrap();
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut replaced = 0;
+    for (path, text) in &mut files {
+        if path.ends_with("defs/objects/city-props.toml") && text.contains(old) {
+            *text = text.replacen(old, new, 1);
+            replaced += 1;
+        }
+    }
+    assert_eq!(replaced, 1, "'{old}' must appear once in the real tree");
+    defs_build::build_from_text_files(&root, &files, "test")
+        .expect_err("the altered tree must fail the build")
+        .to_string()
+}
+
+/// Moving a committed collider turns the build red naming the key and the
+/// columns. The can's bottom solid row is columns 5..11 (the lid above is
+/// full width).
+#[test]
+fn shifting_the_trash_can_collider_names_the_key_and_the_columns() {
+    let msg = build_error_with(
+        "collider = { x0 = 2, y0 = 7, x1 = 14, y1 = 15 }",
+        "collider = { x0 = 6, y0 = 7, x1 = 14, y1 = 15 }",
+    );
+    assert!(
+        msg.contains("object 'trash_bin' collider (6, 7)-(14, 15)")
+            && msg.contains(
+                "collider columns 6..14 do not cover the bottom solid row's columns 5..11"
+            ),
+        "{msg}"
+    );
+}
+
+/// The counter's bamboo body starts at column 1 and ends before its two
+/// shadow columns; its collider one sub-cell wider is refused.
+#[test]
+fn widening_the_counter_collider_names_the_key_and_the_columns() {
+    let msg = build_error_with(
+        "collider = { x0 = 1, y0 = 0, x1 = 46, y1 = 15 }",
+        "collider = { x0 = 0, y0 = 0, x1 = 46, y1 = 15 }",
+    );
+    assert!(
+        msg.contains("object 'shop_counter' collider (0, 0)-(46, 15)")
+            && msg.contains("collider columns 0..46 reach outside the solid columns 1..46"),
+        "{msg}"
+    );
+}
+
+/// The bench's art starts five rows down: a collider from row 4 is refused.
+#[test]
+fn raising_the_bench_collider_names_the_key_and_the_rows() {
+    let msg = build_error_with(
+        "collider = { x0 = 0, y0 = 5, x1 = 32, y1 = 12 }",
+        "collider = { x0 = 0, y0 = 4, x1 = 32, y1 = 12 }",
+    );
+    assert!(
+        msg.contains("object 'park_bench' collider (0, 4)-(32, 12)")
+            && msg.contains("collider rows 4..12 reach outside the solid rows 5.."),
+        "{msg}"
+    );
+}
+
+/// The plinth is columns 2..14: the old 4x4 box no longer covers the drawn
+/// base.
+#[test]
+fn shrinking_the_lamppost_collider_to_its_old_box_names_the_columns() {
+    let defs = real_defs();
+    let tile = defs.tile_size_px.unwrap();
+    let o = object(&defs, "lamppost");
+    let old_box = ColliderRect {
+        x0: 6,
+        y0: 10,
+        x1: 10,
+        y1: 14,
+    };
+    assert_eq!(
+        verdict(o, tile, old_box),
+        Err(Disagreement::BottomRowOutsideCollider {
+            collider: (6, 10),
+            art: (2, 14)
+        })
+    );
+}
+
+/// Story 15.11: the platform flight's railing is a real collider row, so the
+/// check reads it. Its solid columns are 0..47 (the last pixel column is
+/// shadow); shifted one sub-cell east, the build names the key and columns.
+#[test]
+fn shifting_the_platform_stair_railing_collider_names_the_key_and_the_columns() {
+    let msg = build_error_with(
+        "collider = { x0 = 0, y0 = 0, x1 = 47, y1 = 16 }",
+        "collider = { x0 = 1, y0 = 0, x1 = 48, y1 = 16 }",
+    );
+    assert!(
+        msg.contains("object 'platform_stair_railing' collider (1, 0)-(48, 16)")
+            && msg.contains("collider columns 1..48 reach outside the solid columns 0..47"),
+        "{msg}"
+    );
+}
+
+/// The railing carries a collider at all: a colliderless row is exactly how
+/// the old newel post escaped the check.
+#[test]
+fn the_platform_stair_railing_has_a_collider() {
+    let defs = real_defs();
+    assert!(object(&defs, "platform_stair_railing").collider.is_some());
+    assert!(object(&defs, "platform_stair_flight").collider.is_none());
+}
+
+/// Story 15.12: the top railing is an upright seen face-on, so its collider
+/// is its foot, never its face. The bar-and-baluster face is opaque top to
+/// bottom, which is why clauses 1-3 alone could not see the full cell.
+const TOP_RAILING_TAIL: &str = "archetype = \"railing_foot\"\ntags = [\"stairs\", \"fixture\", \"upright\"]\n\n[[object]]\nid = 13";
+
+#[test]
+fn putting_the_full_cell_collider_back_on_the_top_railing_names_the_key_and_the_rows() {
+    let msg = build_error_with(
+        TOP_RAILING_TAIL,
+        "archetype = \"full_cell_blocker\"\ntags = [\"stairs\", \"fixture\", \"upright\"]\n\n[[object]]\nid = 13",
+    );
+    assert!(
+        msg.contains("object 'stairwell_top_railing' collider (0, 0)-(48, 16)")
+            && msg.contains("collider rows 0..16 reach outside the foot rows 11..16"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn moving_the_top_railing_collider_one_subcell_north_names_the_key_and_the_rows() {
+    let msg = build_error_with(
+        TOP_RAILING_TAIL,
+        "height = 1
+collider = { x0 = 0, y0 = 10, x1 = 48, y1 = 16 }\ntags = [\"stairs\", \"fixture\", \"upright\"]\n\n[[object]]\nid = 13",
+    );
+    assert!(
+        msg.contains("object 'stairwell_top_railing' collider (0, 10)-(48, 16)")
+            && msg.contains("collider rows 10..16 reach outside the foot rows 11..16"),
+        "{msg}"
+    );
+}
+
+/// The build layer alone must refuse the original defect: the top railing is
+/// an `upright` whose collider is the `railing_foot` rows. Putting back master's
+/// `full_cell_blocker` without the tag would otherwise build green.
+#[test]
+fn the_top_railing_is_an_upright_on_its_foot() {
+    let defs = real_defs();
+    let o = object(&defs, "stairwell_top_railing");
+    let upright = defs
+        .tags
+        .iter()
+        .find(|t| t.key == defs_build::model::UPRIGHT_TAG_KEY)
+        .expect("the upright tag is declared");
+    assert!(
+        o.tags.contains(&upright.id),
+        "stairwell_top_railing must carry `upright`"
+    );
+    let c = o.collider.expect("the top railing has a collider");
+    assert_eq!((c.x0, c.y0, c.x1, c.y1), (0, 11, 48, 16));
+}

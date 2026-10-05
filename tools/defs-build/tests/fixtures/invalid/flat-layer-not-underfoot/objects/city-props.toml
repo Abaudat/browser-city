@@ -1,0 +1,11 @@
+[[object]]
+id = 1
+key = "manhole"
+name = "Manhole Cover"
+layer = "ground_objects"
+sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+# A flat-pass layer means lying on the ground: an object there must be
+# `underfoot`, and this one blocks with a collider instead.
+collider = { x0 = 4, y0 = 4, x1 = 12, y1 = 12 }

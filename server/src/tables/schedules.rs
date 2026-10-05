@@ -1,13 +1,39 @@
-//! One scheduled table per system that owns a cadence (NFR34), declared now
-//! even where a story has not yet given it work to do -- a normal table can
-//! never become a scheduled one, so the alternative is being wrong forever.
-//! Each carries exactly `scheduled_id`/`scheduled_at` plus nothing yet, and
-//! each reducer does exactly two things: refuses any caller that is not
-//! the scheduler itself, and otherwise returns `Ok(())`. Nothing is
-//! scheduled from `init` in this story (an empty scheduled table costs
-//! nothing); the first row is a later story's problem.
+//! One scheduled table per system that owns a cadence (NFR34), declared
+//! now even where a story has not yet given it work to do -- a normal
+//! table can never become a scheduled one, so the alternative is being
+//! wrong forever. Each carries exactly `scheduled_id`/`scheduled_at` plus
+//! nothing yet, and each reducer does exactly two things: refuses any
+//! caller that is not the scheduler itself, and otherwise returns
+//! `Ok(())`.
+//!
+//! Story 4.2 arms the first one for real: `maintenance_schedule`, ten
+//! city minutes. Every cadence in this module shares the one repeat
+//! pattern below -- `sim::cadence::next_target`, `ScheduleAt::Time` only,
+//! never `ScheduleAt::Interval` (`scripts/ci/check-server-src-bans.sh`
+//! bans it mechanically). The other six scheduled tables stay unarmed:
+//! an empty-bodied cadence still costs one dispatch's worth of scheduler
+//! bookkeeping per fire for nothing (Tim's direction) -- each is armed by
+//! the story that first gives it real work.
+//!
+//! `cadence_liveness` (below) is the durable proof a cadence is alive:
+//! one row per armed cadence, written only from inside that cadence's own
+//! fired reducer, never from an arm. What `scripts/ci/
+//! check-authoritative-loop.sh` reads with zero clients connected, what a
+//! future metrics sampler (story 4.12) will sample for lateness, and what
+//! a future dead-man's check in `backup.yml` can alarm on.
+//!
+//! `begin_restore`/`finish_restore` (`tables::restore`) bracket every
+//! restore with [`disarm_all_scheduled_tables`] and [`arm_every_cadence`]:
+//! a restore target's own cadence is live and armed the instant `init`
+//! publishes it, so nothing may be allowed to fire between opening a
+//! restore and re-arming from the epoch actually being restored.
 
-use spacetimedb::{ReducerContext, ScheduleAt};
+use spacetimedb::{ReducerContext, ScheduleAt, Table, Timestamp};
+
+use super::cadences;
+use super::clock::read_clock;
+use super::metrics::{self, count_call};
+use sim::reducer_classes::ReducerClass;
 
 /// Only the module's own scheduler may invoke a scheduled reducer --
 /// otherwise any client could call it directly, which is a security hole,
@@ -17,6 +43,57 @@ fn require_scheduler(ctx: &ReducerContext) -> Result<(), String> {
         return Err("this reducer may only be invoked by the scheduler".to_string());
     }
     Ok(())
+}
+
+/// A fired cadence row's own `scheduled_at` must always be
+/// `ScheduleAt::Time` -- this module never inserts `ScheduleAt::Interval`
+/// anywhere (`scripts/ci/check-server-src-bans.sh`). Written with a
+/// `let-else`, never a `match` naming `ScheduleAt::Interval` by pattern,
+/// so that ban has nothing to except itself against.
+fn schedule_at_micros(at: ScheduleAt) -> Result<i64, String> {
+    let ScheduleAt::Time(t) = at else {
+        return Err(
+            "a cadence's own scheduled row must always hold ScheduleAt::Time -- never a repeating schedule"
+                .to_string(),
+        );
+    };
+    Ok(t.to_micros_since_unix_epoch())
+}
+
+/// Deletes every pending row `iter_ids`/`delete` can see and inserts
+/// exactly one, at the next phase-preserving, catch-up-bounded target
+/// computed by `sim::cadence::next_target` from `origin_micros`/
+/// `period_ms`/`ctx.timestamp`. The one function every cadence's arm
+/// (`arm_every_cadence_from`/`arm_every_cadence`) and every cadence's own
+/// fired reducer body (re-arming itself after doing its work) both call.
+/// `insert`/`delete`/`iter_ids` close over `ctx` and one
+/// cadence's own scheduled table -- the same shape
+/// `tables::restore::restore_autoinc_rows` uses, for the same reason: no
+/// shared trait across SpacetimeDB's per-table generated accessors to
+/// abstract this genuinely generically. Returns `(target_micros,
+/// missed)`.
+fn arm_cadence(
+    ctx: &ReducerContext,
+    origin_micros: i64,
+    period_ms: i64,
+    speed: u32,
+    mut iter_ids: impl FnMut() -> Vec<u64>,
+    mut delete: impl FnMut(u64),
+    mut insert: impl FnMut(ScheduleAt),
+) -> (i64, u64) {
+    for id in iter_ids() {
+        delete(id);
+    }
+    let (target_micros, missed) = sim::cadence::next_target(
+        origin_micros,
+        period_ms,
+        speed,
+        ctx.timestamp.to_micros_since_unix_epoch(),
+    );
+    insert(ScheduleAt::Time(Timestamp::from_micros_since_unix_epoch(
+        target_micros,
+    )));
+    (target_micros, missed)
 }
 
 /// L2 citizen transitions (FR49): advances every citizen identically at
@@ -34,22 +111,21 @@ pub fn advance_citizen_transitions(
     ctx: &ReducerContext,
     _row: CitizenTransitionSchedule,
 ) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)
 }
 
-/// The metrics sampler (FR169): samples per-table row counts and bytes on a
-/// slow cadence.
+/// The metrics sampler (FR169): samples per-table row counts and estimated
+/// bytes on a slow cadence (`sim::cadence::METRICS_PERIOD_MS`, one real
+/// hour at speed 1). Its work is a function of the present, not of a city
+/// minute, so its body is `tables::metrics::run_sampler` and a clock jump
+/// leaves it alone.
 #[spacetimedb::table(accessor = metrics_sample_schedule, scheduled(sample_metrics))]
 pub struct MetricsSampleSchedule {
     #[primary_key]
     #[auto_inc]
     pub scheduled_id: u64,
     pub scheduled_at: ScheduleAt,
-}
-
-#[spacetimedb::reducer]
-pub fn sample_metrics(ctx: &ReducerContext, _row: MetricsSampleSchedule) -> Result<(), String> {
-    require_scheduler(ctx)
 }
 
 /// The institutional calendar's budget review (FR78): drains the demand
@@ -64,11 +140,14 @@ pub struct BudgetReviewSchedule {
 
 #[spacetimedb::reducer]
 pub fn run_budget_review(ctx: &ReducerContext, _row: BudgetReviewSchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)
 }
 
 /// The world clock (FR1-FR3): advances continuously whether or not any
-/// client is connected; the server never spins down.
+/// client is connected; the server never spins down. Story 4.1's own
+/// decision stands: nothing ticks it, so this table carries no row and
+/// this reducer is never armed.
 #[spacetimedb::table(accessor = world_clock_schedule, scheduled(advance_world_clock))]
 pub struct WorldClockSchedule {
     #[primary_key]
@@ -79,6 +158,7 @@ pub struct WorldClockSchedule {
 
 #[spacetimedb::reducer]
 pub fn advance_world_clock(ctx: &ReducerContext, _row: WorldClockSchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)
 }
 
@@ -94,6 +174,7 @@ pub struct EconomySchedule {
 
 #[spacetimedb::reducer]
 pub fn run_economy_tick(ctx: &ReducerContext, _row: EconomySchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)
 }
 
@@ -109,13 +190,19 @@ pub struct GrowthSchedule {
 
 #[spacetimedb::reducer]
 pub fn run_growth_tick(ctx: &ReducerContext, _row: GrowthSchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
     require_scheduler(ctx)
 }
 
 /// Maintenance/janitor slot: the one cadence reserved for upkeep that
-/// belongs to no gameplay system -- expiring matters (FR79), pruning stale
-/// memory, and whatever else earns its own slot rather than piggybacking on
-/// someone else's cadence.
+/// belongs to no gameplay system -- expiring matters (FR79), pruning
+/// stale memory, and whatever else earns its own slot rather than
+/// piggybacking on someone else's cadence. Story 4.2's first real
+/// occupant: armed at ten city minutes (`sim::cadence::
+/// MAINTENANCE_PERIOD_MS`), a placeholder ops cadence, not a design
+/// decision. Has nothing to maintain yet (matters do not exist), so its
+/// only work today is recording that the loop is alive
+/// (`cadence_liveness`, below).
 #[spacetimedb::table(accessor = maintenance_schedule, scheduled(run_maintenance))]
 pub struct MaintenanceSchedule {
     #[primary_key]
@@ -124,7 +211,311 @@ pub struct MaintenanceSchedule {
     pub scheduled_at: ScheduleAt,
 }
 
+/// One row per armed cadence -- the durable proof a repeat is alive.
+/// `cadence` is this table's own small, closed code space (never
+/// `sim::codes`' NFR36 extensible sets: there are exactly as many
+/// cadences as this file declares scheduled tables, never a
+/// content-extensible one). Public and ordinary (non-scheduled) durable
+/// state, restored like the code tables and `module_owner`:
+/// `restore_cadence_liveness` replaces whatever is there rather than
+/// requiring it empty, because a freshly-published target's own `init`
+/// arms its cadence immediately, and that cadence can fire for real (and
+/// write this table) any time before `begin_restore` ever runs.
+#[derive(Clone)]
+#[spacetimedb::table(accessor = cadence_liveness, public)]
+pub struct CadenceLiveness {
+    #[primary_key]
+    // `pub`: `tables::restore::restore_cadence_liveness` constructs this
+    // row.
+    pub cadence: u32,
+    pub last_target_at: Timestamp,
+    pub last_fired_at: Timestamp,
+    pub fires: u64,
+    pub missed: u64,
+}
+
+/// [`CadenceLiveness::cadence`] codes -- one per scheduled table this
+/// file arms for real, added the story that arms it.
+pub mod cadence_code {
+    pub const MAINTENANCE: u32 = 1;
+    pub const METRICS: u32 = 2;
+}
+
+/// Generates `$name(ctx, origin_micros, speed) -> (target, missed)`, which
+/// re-arms one cadence's scheduled table from `origin_micros`. Shared by
+/// `arm_every_cadence_from` (the initial arm, from `init`/
+/// `finish_restore`), `arm_every_cadence` (from `finish_restore`), and
+/// the cadence's own fired reducer (the re-arm after firing). One
+/// invocation per armed cadence, never a hand-copied closure triple.
+macro_rules! arm_schedule {
+    ($name:ident, $accessor:ident, $Row:ident, $period_ms:expr) => {
+        fn $name(ctx: &ReducerContext, origin_micros: i64, speed: u32) -> (i64, u64) {
+            arm_cadence(
+                ctx,
+                origin_micros,
+                $period_ms,
+                speed,
+                || ctx.db.$accessor().iter().map(|r| r.scheduled_id).collect(),
+                |id| {
+                    ctx.db.$accessor().scheduled_id().delete(id);
+                },
+                |at| {
+                    ctx.db.$accessor().insert($Row {
+                        scheduled_id: 0,
+                        scheduled_at: at,
+                    });
+                },
+            )
+        }
+    };
+}
+
+arm_schedule!(
+    arm_maintenance_schedule,
+    maintenance_schedule,
+    MaintenanceSchedule,
+    sim::cadence::MAINTENANCE_PERIOD_MS
+);
+arm_schedule!(
+    arm_metrics_schedule,
+    metrics_sample_schedule,
+    MetricsSampleSchedule,
+    sim::cadence::METRICS_PERIOD_MS
+);
+
+/// Records that `cadence` fired: `origin_micros` is the target *this*
+/// fire satisfies (the row's own `scheduled_at` before re-arming -- never
+/// the freshly re-armed *next* target, which is always about one period
+/// in the future and would make every recorded drift read as roughly
+/// `-period_ms`), `ctx.timestamp` the real fire time, `fires` and
+/// `missed` (NFR41: the whole quantity below is `Copy`/plain arithmetic,
+/// nothing here can panic) both accumulated across the cadence's whole
+/// life -- an upsert, since the very first fire creates this row.
+pub(super) fn record_cadence_fire(
+    ctx: &ReducerContext,
+    cadence: u32,
+    origin_micros: i64,
+    missed_this_fire: u64,
+) {
+    let last_target_at = Timestamp::from_micros_since_unix_epoch(origin_micros);
+    let last_fired_at = ctx.timestamp;
+    match ctx.db.cadence_liveness().cadence().find(cadence) {
+        Some(row) => {
+            ctx.db.cadence_liveness().cadence().update(CadenceLiveness {
+                last_target_at,
+                last_fired_at,
+                fires: row.fires + 1,
+                missed: row.missed + missed_this_fire,
+                ..row
+            });
+        }
+        None => {
+            ctx.db.cadence_liveness().insert(CadenceLiveness {
+                cadence,
+                last_target_at,
+                last_fired_at,
+                fires: 1,
+                missed: missed_this_fire,
+            });
+        }
+    }
+}
+
 #[spacetimedb::reducer]
-pub fn run_maintenance(ctx: &ReducerContext, _row: MaintenanceSchedule) -> Result<(), String> {
-    require_scheduler(ctx)
+pub fn run_maintenance(ctx: &ReducerContext, row: MaintenanceSchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
+    require_scheduler(ctx)?;
+    let origin_micros = schedule_at_micros(row.scheduled_at)?;
+    // The work is a function of the city minute this fire is for, never
+    // of the real time it happened to run at.
+    let (epoch_micros, speed) =
+        read_clock(ctx).ok_or_else(|| "world_clock has no row -- init did not run".to_string())?;
+    cadences::maintenance(
+        ctx,
+        sim::cadence::city_minute_of(epoch_micros, speed, origin_micros),
+    );
+    let (_next_target_micros, missed) = arm_maintenance_schedule(ctx, origin_micros, speed);
+    record_cadence_fire(ctx, cadence_code::MAINTENANCE, origin_micros, missed);
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn sample_metrics(ctx: &ReducerContext, row: MetricsSampleSchedule) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Scheduled);
+    require_scheduler(ctx)?;
+    let origin_micros = schedule_at_micros(row.scheduled_at)?;
+    let (epoch_micros, speed) =
+        read_clock(ctx).ok_or_else(|| "world_clock has no row -- init did not run".to_string())?;
+    // Infallible by construction: nothing between the clock read and the
+    // re-arm may abort, or the cadence would stop.
+    metrics::run_sampler(ctx);
+    let (_next_target_micros, missed) = arm_metrics_schedule(ctx, epoch_micros, speed);
+    record_cadence_fire(ctx, cadence_code::METRICS, origin_micros, missed);
+    Ok(())
+}
+
+/// Arms every cadence this file gives real work to (`maintenance_schedule`,
+/// `metrics_sample_schedule`) from an already-known epoch (micros) and clock
+/// `speed` -- infallible, since the caller already has both in hand
+/// (`init` just wrote them; `finish_restore` just restored `world_clock`
+/// itself) and there is no lookup here that could fail. Schedules are
+/// derived state, rebuilt explicitly, never trusted to survive a deploy
+/// purely by surviving as pending rows (docs/architecture.md).
+pub fn arm_every_cadence_from(ctx: &ReducerContext, epoch_micros: i64, speed: u32) {
+    arm_maintenance_schedule(ctx, epoch_micros, speed);
+    arm_metrics_schedule(ctx, epoch_micros, speed);
+}
+
+/// Looks up `world_clock.epoch_at` and arms every cadence from it.
+/// `ok_or(Err)`, never `unwrap`/`expect` (NFR41): an absent epoch aborts
+/// the whole call and arms nothing, which is the correct outcome for an
+/// inconsistent world. `finish_restore`
+/// (`restore.rs`) is this function's only caller -- every other caller
+/// already has the epoch in hand and calls [`arm_every_cadence_from`]
+/// directly instead.
+pub fn arm_every_cadence(ctx: &ReducerContext) -> Result<(), String> {
+    let (epoch_micros, speed) =
+        read_clock(ctx).ok_or_else(|| "world_clock has no row -- init did not run".to_string())?;
+    arm_every_cadence_from(ctx, epoch_micros, speed);
+    Ok(())
+}
+
+/// Deletes every pending row of every scheduled table this module
+/// declares, armed or not. Called from `begin_restore` (`tables::
+/// restore`, story 4.2): a restore target's own cadence is live and armed
+/// from its own `init` the instant it is published, so without this a
+/// scheduled reducer can fire on the target at any point during the
+/// restore, using an epoch that belongs to the target's own pre-restore
+/// world, not the one being restored. Schedules are derived state
+/// (docs/architecture.md) -- disarming the target's own is exactly as
+/// disposable as never restoring the source's.
+///
+/// One `disarm!(accessor)` invocation per scheduled table, never a
+/// hand-copied loop body per table (seven identical bodies is the shape
+/// that gets one of them wrong) -- the same `macro_rules!`-per-table
+/// precedent `tables::restore::impl_autoinc_row!` sets.
+/// `bounds/tests/schedules_coverage.rs` keeps this list itself honest:
+/// every scheduled accessor the schema declares must appear as a
+/// `disarm!(...)` call here, and nothing else may.
+pub fn disarm_all_scheduled_tables(ctx: &ReducerContext) {
+    macro_rules! disarm {
+        ($accessor:ident) => {
+            for id in ctx
+                .db
+                .$accessor()
+                .iter()
+                .map(|r| r.scheduled_id)
+                .collect::<Vec<_>>()
+            {
+                ctx.db.$accessor().scheduled_id().delete(id);
+            }
+        };
+    }
+    disarm!(citizen_transition_schedule);
+    disarm!(metrics_sample_schedule);
+    disarm!(budget_review_schedule);
+    disarm!(world_clock_schedule);
+    disarm!(economy_schedule);
+    disarm!(growth_schedule);
+    disarm!(maintenance_schedule);
+}
+
+/// Replays every fire a forward clock jump skips, through the same
+/// bodies the live loop calls, in ascending city minute (ties in walk
+/// order), recording each in `cadence_liveness` with its target
+/// expressed in the post-jump epoch `new_epoch_micros`. Refuses --
+/// before anything is written -- when the jump holds more than
+/// `sim::time::MAX_JUMP_TICKS` ticks, or when a scheduled table this
+/// walker does not own has a pending row. The caller (`time_control`)
+/// runs it inside the one reducer transaction, so any `Err` rolls the
+/// whole jump back.
+///
+/// One `walk!`/`refuse!`/`skip!` invocation per scheduled table:
+/// `bounds/tests/schedules_coverage.rs` requires every scheduled
+/// accessor to appear here exactly once, so a cadence added later cannot
+/// be silently skipped by a jump.
+#[cfg(feature = "time-control")]
+pub fn replay_skipped_cadences(
+    ctx: &ReducerContext,
+    epoch_micros: i64,
+    speed: u32,
+    jump_micros: i64,
+    new_epoch_micros: i64,
+) -> Result<(), String> {
+    type Body = fn(&ReducerContext, i64);
+    // (cadence code, period, body, first index): a cadence's first
+    // replayed fire is its own pending row's, which may already be due.
+    let mut walked: Vec<(u32, i64, Body, i128)> = Vec::new();
+    macro_rules! walk {
+        ($accessor:ident, $code:expr, $period_ms:expr, $body:expr) => {
+            let rows: Vec<_> = ctx.db.$accessor().iter().collect();
+            if rows.len() > 1 {
+                return Err(format!(
+                    "{} has more than its one armed row",
+                    stringify!($accessor)
+                ));
+            }
+            // No pending row: nothing of this cadence to replay.
+            if let Some(row) = rows.first() {
+                let target = schedule_at_micros(row.scheduled_at)?;
+                let first = sim::cadence::pending_index(epoch_micros, $period_ms, speed, target);
+                walked.push(($code, $period_ms, $body, first));
+            }
+        };
+    }
+    macro_rules! skip {
+        ($accessor:ident) => {
+            // Deliberately nothing: the armed row survives the jump (the
+            // caller re-arms it from the new epoch).
+            let _ = stringify!($accessor);
+        };
+    }
+    macro_rules! refuse {
+        ($accessor:ident) => {
+            if ctx.db.$accessor().iter().next().is_some() {
+                return Err(format!(
+                    "{} has a pending row a clock jump cannot replay",
+                    stringify!($accessor)
+                ));
+            }
+        };
+    }
+    // Always armed and a function of the present: a jump leaves it alone.
+    skip!(metrics_sample_schedule);
+    refuse!(citizen_transition_schedule);
+    refuse!(budget_review_schedule);
+    refuse!(world_clock_schedule);
+    refuse!(economy_schedule);
+    refuse!(growth_schedule);
+    walk!(
+        maintenance_schedule,
+        cadence_code::MAINTENANCE,
+        sim::cadence::MAINTENANCE_PERIOD_MS,
+        cadences::maintenance
+    );
+
+    let cadences: Vec<(i64, i128)> = walked.iter().map(|w| (w.1, w.3)).collect();
+    let plan = sim::cadence::replay_plan(
+        epoch_micros,
+        &cadences,
+        speed,
+        ctx.timestamp.to_micros_since_unix_epoch(),
+        jump_micros,
+        sim::time::MAX_JUMP_TICKS,
+    )
+    .map_err(|total| {
+        format!(
+            "this jump would replay {total} cadence ticks, over the {} allowed -- jump less",
+            sim::time::MAX_JUMP_TICKS
+        )
+    })?;
+    for replay in plan {
+        let Some(&(code, period_ms, body, _)) = walked.get(replay.cadence) else {
+            return Err("replay plan names a cadence that is not walked".to_string());
+        };
+        body(ctx, replay.city_minute);
+        let target = sim::cadence::grid_point(new_epoch_micros, period_ms, speed, replay.index);
+        record_cadence_fire(ctx, code, target, 0);
+    }
+    Ok(())
 }

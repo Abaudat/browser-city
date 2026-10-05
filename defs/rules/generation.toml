@@ -145,3 +145,48 @@ ratio = 100
 tolerance_percent = 70
 min_spacing = 20
 max_distance = 2000
+
+# Story 15.9: cafes are the barista's own workplace (FR14, a launch job,
+# posted only at cafes) -- a city with none reads as broken, not as a
+# quirk of the site, so "at least one cafe" is a real content
+# requirement, expressed the way every other required kind already is:
+# `weight = 0` (`defs/building-types/commercial.toml`) plus this row,
+# never a count field on the type itself. Placed after
+# `welfare_office_present`/`shelter_present` so it takes what those two
+# leave -- cafes sit on ordinary commercial land.
+#
+# `ratio` keeps the city's own cafe count where the ordinary fill had it
+# (Derek's direction: "not more or fewer cafes than the city has today"):
+# `round(dwelling mean 585.24 / the pre-change fill's own cafe mean
+# 11.77)` = 50. Well under `MULTI_INSTANCE_RATIO_CEILING` (250), so
+# `target >= 1` is asserted for every seed.
+#
+# Measured after this story's two `building_types` fixes (the floor
+# shortfall folded into the site-wide remainder; `backtrack_search`
+# pruning against `best` rather than `target`), `cargo run -p bounds
+# --release --bin measure-generation -- 1000000`:
+# - 5,000 genuinely random seeds: cafes per city min 8, mean 11.21
+#   (within 5% of the fill's 11.77); barista employers per city min 8,
+#   never under `min_employers_per_profession` (5) --
+#   `inv_generation_barista_has_at_least_min_employers` asserts it per
+#   seed. Pooled actual/expected 100.0%, worst single seed 100.0%.
+# - 1,000,000 genuinely random seeds: 0 with a nonzero target but no
+#   cafe placed.
+# `tolerance_percent` 20 is margin over that 100.0% worst case, confirmed
+# clean over 100,000 further genuinely random `PROPTEST_CASES`
+# (`inv_generation_committed_rules_hold_for_any_seed`,
+# `inv_generation_no_quadrant_lacks_its_required_services`).
+#
+# `welfare_office_present`/`shelter_present` measured by the same command
+# (5,000 genuinely random seeds): both pooled/worst 100.0% after the
+# same fixes, so their committed 35%/70% still hold with room to spare;
+# tightening them is separate balance work.
+[[distribution]]
+id = 26
+key = "cafe_present"
+subject = "cafe"
+per = "dwelling"
+ratio = 50
+tolerance_percent = 20
+min_spacing = 12
+max_distance = 2000

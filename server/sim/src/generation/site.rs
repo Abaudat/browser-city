@@ -62,7 +62,7 @@ const NONE: u32 = u32::MAX;
 pub struct ProfileId(u32);
 
 /// A dense slot for one area id, handed out by [`SiteBuilder::area`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AreaSlot(u32);
 
 /// `(start, len)` into one of the pools below -- a profile owns no
@@ -267,7 +267,7 @@ impl SiteBuilder {
             .chain(span(&self.pools.area_slots, b.area_slots))
             .map(|&s| AreaSlot(s))
             .collect();
-        slots.sort_unstable_by_key(|s| s.0);
+        slots.sort_unstable();
         let m = self.shared_profile(&tags, &slots).0;
         self.merged.insert(key, m);
         self.grid[i] = m;

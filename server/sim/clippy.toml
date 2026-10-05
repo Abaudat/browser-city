@@ -7,4 +7,16 @@ disallowed-types = [
     { path = "std::collections::HashSet", reason = "ordered collections only -- use BTreeSet (NFR25)" },
     { path = "std::time::SystemTime", reason = "sim never reads the wall clock -- time is an injected parameter" },
     { path = "std::time::Instant", reason = "sim never reads the wall clock -- time is an injected parameter" },
+    { path = "std::hash::random::DefaultHasher", reason = "std documents its algorithm as unspecified across releases -- use sim::rng" },
+    { path = "std::hash::random::RandomState", reason = "std documents its algorithm as unspecified across releases -- use sim::rng" },
+]
+
+# Tie order of an unstable sort / selection is not guaranteed across std
+# versions, so a toolchain bump could move a generated city. Plain
+# `sort_unstable()` over a totally ordered key stays legal.
+disallowed-methods = [
+    { path = "slice::sort_unstable_by", reason = "tie order is not stable across toolchains -- use a total key with sort_unstable()" },
+    { path = "slice::sort_unstable_by_key", reason = "tie order is not stable across toolchains -- use a total key with sort_unstable()" },
+    { path = "slice::select_nth_unstable_by", reason = "tie order is not stable across toolchains" },
+    { path = "slice::select_nth_unstable_by_key", reason = "tie order is not stable across toolchains" },
 ]

@@ -53,6 +53,15 @@ export interface AtlasPageDef {
   readonly height: number;
 }
 
+/** A flight's declaration (FR182), native pixels: how far its drawn treads
+ * descend, and where the first and the last drawn nosing sit from the
+ * footprint's open edge along the walked axis. */
+export interface FlightDef {
+  readonly dropPx: number;
+  readonly fromPx: number;
+  readonly toPx: number;
+}
+
 export interface ObjectDef {
   readonly id: number;
   readonly key: string;
@@ -63,11 +72,13 @@ export interface ObjectDef {
    * artefact only ever carries the resolved code, never the authored
    * name. */
   readonly layer: number;
-  readonly sprite: SpriteRect;
+  /** Absent only on an undrawn flight (story 15.19): its treads are drawn as
+   * their own rows on the lower floor. */
+  readonly sprite?: SpriteRect;
   /** Story 2.6: where this object's sprite lives in a packed atlas page --
-   * required, never optional (an object without one is a build failure,
-   * never a runtime fallback to `sprite.sheet`). */
-  readonly atlas: AtlasRect;
+   * present exactly when it has a sprite (a drawn object without one is a
+   * build failure, never a runtime fallback to `sprite.sheet`). */
+  readonly atlas?: AtlasRect;
   readonly width: number;
   readonly height: number;
   /** Absent means walkable (FR128) -- there is no separate `walkable`
@@ -80,6 +91,9 @@ export interface ObjectDef {
    * Absent means this object declares no interaction at all -- there is
    * no separate `interactable` flag anywhere. */
   readonly interactAt?: ColliderRect;
+  /** Story 15.15 (FR182): a flight of stairs. Absent means the object is
+   * not one. Client-only: the server never learns it. */
+  readonly flight?: FlightDef;
   /** Story 1.7 (FR121): a window wall tile draws semi-transparently
    * (`render.window_alpha`) and retracts like any other front wall. */
   readonly window: boolean;
@@ -111,9 +125,23 @@ export interface TagDef {
   readonly role?: RoleDef;
 }
 
+export interface DenominationDef {
+  /** The id of the `ItemDef` that plays the role of money. */
+  readonly itemId: number;
+  /** Whole units of the one currency. */
+  readonly faceValue: number;
+}
+
 export interface ItemDef {
   readonly id: number;
   readonly key: string;
+  /** A `sim::codes::unit` code (never a name). */
+  readonly unit: number;
+  /** Minutes until an instance spoils; 0 means it never does. */
+  readonly shelfLifeMinutes: number;
+  /** The item's world footprint, in whole cells (FR94). */
+  readonly width: number;
+  readonly height: number;
 }
 
 export interface RecipeDef {
@@ -249,6 +277,9 @@ export interface Defs {
    * declared in (story 1.8) -- generated once by `tools/defs-build` into
    * both artefacts, never a client-side literal. */
   readonly colliderSubcellsPerCell: number;
+  /** Units per cell of a position on the wire (story 4.4) -- generated
+   * once by `tools/defs-build`, never a client-side literal. */
+  readonly positionUnitsPerCell: number;
   /** How far beyond its own footprint an `interactAt` rect may reach, in
    * whole cells (story 1.9) -- generated once by `tools/defs-build` into
    * both artefacts, never a client-side literal. */
@@ -257,6 +288,24 @@ export interface Defs {
    * this -- generated once by `tools/defs-build` into both artefacts,
    * never a client-side literal. */
   readonly maxFootprintCells: number;
+  /** The world's declared floor range (story 4.3) -- generated once by
+   * `tools/defs-build`, never a client-side literal. */
+  readonly minFloor: number;
+  readonly maxFloor: number;
+  /** The longest an item may take to spoil, in minutes -- generated once
+   * by `tools/defs-build`, never a client-side literal. */
+  readonly maxShelfLifeMinutes: number;
+  /** The largest face value one denomination may carry. */
+  readonly maxFaceValue: number;
+  /** The most denominations the defs may declare. */
+  readonly maxDenominations: number;
+  /** The `sim::codes::unit` code every denomination is counted in. */
+  readonly denominationUnit: number;
+  /** Every item that is money (FR92), largest face value first. */
+  readonly denominations: readonly DenominationDef[];
+  /** FR1: real milliseconds per in-city minute -- generated once by
+   * `tools/defs-build`, never a client-side literal. */
+  readonly realMsPerCityMinute: number;
   /** NFR12's build-time cap, emitted alongside `maxFootprintCells` --
    * never a client-side literal. */
   readonly atlasMaxPagesPerGroup: number;

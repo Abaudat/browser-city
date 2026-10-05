@@ -19,10 +19,12 @@ warning on every build is expected and correct.
 ### Installing the CLI on Windows
 
 The documented installer (`curl ... | sh`) is a Unix shell script and does not run in PowerShell.
-The block below is the working Windows method, extracted verbatim and run on a clean
-`windows-latest` runner by `.github/workflows/windows-install-check.yml`
-(`scripts/ci/extract-windows-install.sh`) on every change to this file and weekly, so drift in the
-upstream installer or in our version pin shows up on its own rather than at the next new machine.
+The block below is the working Windows method. `.github/workflows/windows-install-check.yml` runs it
+on a clean `windows-latest` runner on every change to this file and weekly, so drift in the upstream
+installer or in our version pin shows up on its own rather than at the next new machine -- but not
+verbatim: it substitutes the two things a person does by hand -- answers the installer's confirmation
+prompt, and opens a new shell before the two `spacetime version` lines below so the installer's PATH
+change takes effect. On a real machine, open that new shell after the first line before continuing.
 
 <!-- bc:windows-install:start -->
 ```powershell
@@ -79,22 +81,43 @@ master still trigger `deploy.yml`, but its `resolve` job only emits a `::notice:
 else (no failed presence check, no tracking issue) -- so this workflow can be merged and live on
 master well before provisioning is finished, with zero effect until it is.
 
+**The OIDC provider (account linking, optional).** Linking a character to an account (story 4.5)
+is offered only once both the `OIDC_AUTHORITY` and `OIDC_CLIENT_ID` repository variables exist; unset,
+the offer is never made and nothing else changes. `deploy.yml` hands the pair to the client build
+(`VITE_OIDC_AUTHORITY`/`VITE_OIDC_CLIENT_ID`) and registers it in the module after `finish_publish`
+(`accept_oidc_issuer`, idempotent). SpacetimeAuth is the intended first provider: create a project
+and a client for the Pages URL (redirect URI = the deployed game URL, authorization code with PKCE,
+`openid` scope), then set `OIDC_AUTHORITY` to its issuer URL and `OIDC_CLIENT_ID` to the client id.
+SpacetimeAuth is in beta with no published price: confirm its terms before setting the variables.
+A second provider is a second `accept_oidc_issuer` call, not a migration. `OIDC_AUTHORITY` must equal
+the ID token's `iss` claim byte for byte (the module compares strings): a trailing slash that the
+provider's tokens do not carry means every `complete_link` is refused as "needs a token from the
+configured provider".
+
 ## Running locally
 
 ```bash
 spacetime start --data-dir .spacetime/data --listen-addr 127.0.0.1:3000   # the local instance
 spacetime publish --yes                                                   # build + publish to it
-spacetime call browser-city reseed_codes                                  # land sim::codes' rows
+spacetime call browser-city finish_publish                                # establish one-row tables, land sim::codes' rows, arm every cadence
 spacetime dev --client-lang typescript \
   --module-bindings-path ../client/src/net/bindings --yes                 # hot-reload on file change
 ```
 
-`reseed_codes` inserts any `sim::codes` row not already present (NFR36/NFR38) and is idempotent, so
-calling it again is always safe. `init` already calls it on a fresh database's first publish; call
-it by hand (as above) after any later publish that adds a code -- the deploy work is what should
-eventually automate this call. It is operator-only: `init` records whoever published the module as
-its owner, and the reducer rejects any other caller, so run the `spacetime call` above as the same
-identity that ran `spacetime publish`.
+`finish_publish` ensures the one-row tables (`module_owner`, `world_clock`), inserts any `sim::codes` row
+not already present (NFR36/NFR38) and re-derives every scheduled cadence's pending row from
+`world_clock.epoch_at` (`docs/architecture.md`'s "Scheduled reducers" section); it is idempotent, so
+calling it again is always safe. `init` runs its body on a fresh database's first publish; call it by
+hand after any later publish. `deploy.yml`'s `publish-module` job calls it automatically after every
+Maincloud publish, so the manual step is only ever needed locally. It is operator-only: `init` records
+whoever published the module as its owner, and the reducer rejects any other caller, so run the
+`spacetime call` above as the same identity that ran `spacetime publish`. A restore re-arms through
+`finish_restore` itself, never through this reducer.
+
+`scripts/dev/publish-dev.sh <db> --server local` builds and publishes the module with the
+`time-control` Cargo feature (the dev-only `jump_clock`/`set_clock_speed` reducers, FR163) -- the
+only way that flavour is published, never to Maincloud; `scripts/dev/clock.sh <db> jump <city-minutes>`
+and `clock.sh <db> speed <n>` drive it.
 
 `spacetime dev` rebuilds, automigrates, republishes and regenerates `client/src/net/bindings` on
 every save; existing rows survive the migration. Run `scripts/dev/check-hot-reload.sh` to verify
@@ -152,7 +175,14 @@ is never a way to undo a published migration.
 
 A world restore is a separate, deliberate operation, never part of a deploy: `scripts/ops/
 restore-world.sh`, into a *fresh* database, from an export `backup.yml` produced -- see
-`docs/architecture.md`'s own Backup section.
+`docs/architecture.md`'s own Backup section. If `restore-world.sh` refuses because the target's
+schema does not match the export's own (`schema_sha256`), check out the export's `manifest.json`'s
+`schema_commit` (the exact commit that snapshot came from, or `worktree`) and retry from there.
+
+A `backup`/`export` job that refuses with "does not match" (`export-world.sh`) means the *live*
+database's own tables/columns matched no snapshot in `server/schema.snapshot.json`'s git history --
+a wrong database name, a foreign module, or a table that vanished, never merely "the deploy adds a
+table" (that case matches an older, still-live snapshot on its own).
 
 A `deploy.yml` failure on `master` opens or updates a tracking issue (`scripts/ci/
 report-scheduled-failure.sh`) rather than sitting unnoticed in the Actions tab; that issue links

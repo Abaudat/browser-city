@@ -1,20 +1,24 @@
 // `test-street/citizens.ts`'s own pure fixture builder, tested against the real
 // committed `client/public/defs/defs.json` -- the same "no hand-typed
 // id" property the module doc comment claims.
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { CitizenBody, createCitizenFrame } from "../../../src/l3/citizen";
+import { pathConfigOf } from "../../../src/l3/config";
+import { ZOOM } from "../../../src/render/camera";
+import { worldPointPx } from "../../../src/render/screen-position";
 import {
   buildCitizenFixtures,
   buildPlayerAppearanceTuple,
   buildUniformedWalkerFixture,
   buildWalkerFixture,
+  CROWD_FLOOR,
   UNIFORMED_WALKER_ID,
-  WALK_CELLS_PER_SECOND,
-  WALK_FRAMES_PER_DIRECTION,
-  WALK_FRAMES_PER_SECOND,
   WALKER_ID,
-  WALKER_LOOP,
-  walkerPoseAt,
+  WALKER_SPECS,
 } from "../../../src/test-street/citizens";
+import { Timetable } from "../../../src/test-street/timetable";
+import { l3Config } from "../l3/defs-config";
 import { committedDefs } from "./street-world";
 
 describe("buildCitizenFixtures", () => {
@@ -184,60 +188,67 @@ describe("buildWalkerFixture / buildUniformedWalkerFixture", () => {
   });
 });
 
-describe("WALKER_LOOP", () => {
-  it("visits all four axis directions (right, up, left, down) and returns to its start", () => {
-    let x = 0;
-    let y = 0;
-    const directionsSeen = new Set<string>();
-    for (const leg of WALKER_LOOP) {
-      x += leg.dx;
-      y += leg.dy;
-      if (leg.dx > 0) directionsSeen.add("right");
-      if (leg.dx < 0) directionsSeen.add("left");
-      if (leg.dy < 0) directionsSeen.add("up");
-      if (leg.dy > 0) directionsSeen.add("down");
+describe("WALKER_SPECS", () => {
+  it("gives each walker an L-shaped route on the crowd's own pavement", () => {
+    for (const id of [WALKER_ID, UNIFORMED_WALKER_ID]) {
+      const spec = WALKER_SPECS[id];
+      expect(spec?.out.length).toBeGreaterThanOrEqual(3);
+      expect(spec?.out.every((c) => c.floor === CROWD_FLOOR)).toBe(true);
     }
-    expect(directionsSeen).toEqual(new Set(["right", "up", "left", "down"]));
-    expect(x).toBe(0);
-    expect(y).toBe(0);
   });
 });
 
-describe("walkerPoseAt", () => {
-  it("stays at the start with the right-leg's frame 0 at elapsedMS 0", () => {
-    const pose = walkerPoseAt(10, 20, 0);
-    expect(pose.x).toBe(10);
-    expect(pose.y).toBe(20);
-    expect(pose.direction).toBe("right");
-    expect(pose.frameIndex).toBe(0);
-  });
+// `citizens.ts` no longer has its own screen-space placement function
+// (story 15.4, Tim's direction): the crowd is placed through the one
+// shared `worldPointPx` projection, at `CROWD_FLOOR` (always 0, so
+// `storeyHeightPx` never matters here) -- the same call
+// `citizens-layer.ts` makes.
+describe("crowd placement through worldPointPx", () => {
+  const tile = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value ?? 0;
+  const storey =
+    committedDefs().balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
+  const crowdScreenPx = (x: number, y: number, tileSizePx: number, zoom: number) =>
+    worldPointPx(x, y, CROWD_FLOOR, tileSizePx, storey, zoom, 0);
 
-  it("returns to the exact start position after one full loop", () => {
-    const legDurationsMS = WALKER_LOOP.map(
-      (leg) => (Math.hypot(leg.dx, leg.dy) / WALK_CELLS_PER_SECOND) * 1000,
+  // A walker's drawn position, frame by frame at a constant delta: whole
+  // screen pixels at every zoom.
+  it("draws an L3 walker at whole screen pixels", () => {
+    const config = l3Config();
+    const walkerSpec = WALKER_SPECS[WALKER_ID];
+    if (!walkerSpec) throw new Error("no walker spec");
+    const open = { revision: () => 0, walkable: () => true };
+    const pathDials = pathConfigOf(config);
+    const timetable = new Timetable(walkerSpec, config, open, pathDials);
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 10_000_000 }),
+        fc.integer({ min: 4, max: 60 }),
+        fc.constantFrom(ZOOM, 1, 2, 4),
+        fc.constantFrom(tile, 8, 16, 32),
+        (startMilli, deltaMS, zoom, tileSizePx) => {
+          const walker = new CitizenBody(
+            open,
+            pathDials,
+            { strideCells: config.strideCells, framesPerCycle: 6 },
+            WALKER_ID,
+          );
+          const frame = createCitizenFrame();
+          const stepMilli = (deltaMS * 1000) / config.realMsPerCityMinute;
+          for (let k = 0; k < 300; k++) {
+            const t = startMilli + k * stepMilli;
+            walker.frameAt(timetable.stateAt(t), t, frame);
+            const px = crowdScreenPx(frame.x, frame.y, tileSizePx, zoom);
+            expect(Math.abs(px.x * zoom - Math.round(px.x * zoom))).toBeLessThan(1e-6);
+            expect(Math.abs(px.y * zoom - Math.round(px.y * zoom))).toBeLessThan(1e-6);
+          }
+        },
+      ),
+      { numRuns: 50 },
     );
-    const loopDurationMS = legDurationsMS.reduce((sum, ms) => sum + ms, 0);
-    const pose = walkerPoseAt(5, 5, loopDurationMS);
-    expect(pose.x).toBeCloseTo(5, 6);
-    expect(pose.y).toBeCloseTo(5, 6);
-    expect(pose.direction).toBe("right");
   });
 
-  it("is exactly at the first corner, facing up, right after the right leg finishes", () => {
-    const rightLeg = WALKER_LOOP[0];
-    if (!rightLeg) throw new Error("WALKER_LOOP has no first leg");
-    const rightLegMS = (Math.hypot(rightLeg.dx, rightLeg.dy) / WALK_CELLS_PER_SECOND) * 1000;
-    const pose = walkerPoseAt(0, 0, rightLegMS);
-    expect(pose.x).toBeCloseTo(rightLeg.dx, 6);
-    expect(pose.y).toBeCloseTo(rightLeg.dy, 6);
-    expect(pose.direction).toBe("up");
-  });
-
-  it("cycles its frame index over WALK_FRAMES_PER_DIRECTION, at WALK_FRAMES_PER_SECOND", () => {
-    const msPerFrame = 1000 / WALK_FRAMES_PER_SECOND;
-    expect(walkerPoseAt(0, 0, 0).frameIndex).toBe(0);
-    expect(walkerPoseAt(0, 0, msPerFrame).frameIndex).toBe(1);
-    expect(walkerPoseAt(0, 0, msPerFrame * WALK_FRAMES_PER_DIRECTION).frameIndex).toBe(0);
+  it("refuses a non-integer zoom", () => {
+    expect(() => crowdScreenPx(1, 1, 16, 2.5)).toThrow(/zoom/);
   });
 });
 

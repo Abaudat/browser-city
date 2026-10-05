@@ -50,6 +50,31 @@ A `[[tag]]` row may name the structural part it is with `structure =
 "wall" | "wall_run" | "floor" | "threshold" | "entrance" | "pavement" |
 "fixture"`; once any does, exactly one tag names each.
 
+## Items
+
+`defs/items/*.toml` (story 6.1, FR86): a new item is a row, never code. A
+row: permanent `id`/`key`; `unit` (a name from `sim::codes::unit`'s golden
+`server/sim/tests/goldens/codes_v1.golden`, e.g. `piece`, `gram`,
+`millilitre` -- an unknown name fails the build); `shelf_life_minutes`
+(whole minutes until an instance spoils, `0` = never, at most
+`MAX_SHELF_LIFE_MINUTES`); `bulk = { width = <n>, height = <n> }` (world
+footprint in cells, each 1 to `MAX_FOOTPRINT_CELLS`). All five are
+required; there are no defaults.
+
+## Denominations
+
+`defs/denominations/*.toml` (story 6.8, FR92): being money is a role an item
+plays, never a field of the item. A `[[denomination]]` row is `item` (the key
+of an `[[item]]`, whose coins and notes live in `defs/items/cash.toml`) and
+`face_value` (whole units of the one currency, 1 to `MAX_FACE_VALUE`). The item
+must be counted in `piece`, never spoil, appear once, and have a face value no
+other denomination shares; there are at most `MAX_DENOMINATIONS`. A new
+denomination is two rows, never code.
+
+## Objects
+
+`defs/objects/*.toml`: an object that is a flight of stairs may declare `flight = { drop_px = 8, from_px = 5, to_px = 34 }`, all three required: `drop_px` (`1..=render.storey_height_px`) is how many native pixels its drawn treads descend; `from_px < to_px` (at most `max(width, height) * render.tile_size_px`) are where, in native pixels from the footprint's open edge along the walked axis, the first and the last drawn nosing sit. A flight is refused on an object with a `collider`, and goes into `defs.json` only. Which floors the flight joins is a `floor_transition` row anchored on one of its cells, never a field here.
+
 ## The example corpus
 
 Every committed rule key must be named by at least one passing example

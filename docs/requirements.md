@@ -7,7 +7,7 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 ### Time and the core loop
 
 - **FR1** — One in-city day equals 60 real minutes; one in-city hour equals 2.5 real minutes
-- **FR2** — The in-city clock is detached from real-world time, so a player rotates through all in-city hours across their real week
+- **FR2** — The in-city clock is detached from real-world time: in-city midnight is aligned to no real boundary, and because a real hour spans a whole in-city day, ordinary sessions cover every in-city hour
 - **FR3** — The clock advances continuously whether or not any client is connected; the server never spins down
 - **FR4** — The player's day is composed of sleep (8 in-city hours), work (8h), commute (2h) and own-time (6h)
 - **FR5** — The core loop runs wake -> commute -> shift -> paid -> spend -> rent -> sleep, and repeats
@@ -157,6 +157,7 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 - **FR122** — The subway floor is culled until entered, at which point the street floor above is culled instead
 - **FR123** — Depth sorting uses the key (y, layer_rank, x, object_id) over one y-sorted pool after three flat passes; objects are never sliced
 - **FR124** — Floor is a vertical screen offset, not a sort key
+- **FR182** — On stairs and ramps, a character's floor offset is applied gradually along the walked path, following the drawn surface, and never moves the character off it. Where the art shows less than a full storey, the remainder is taken at the floor change
 - **FR125** — Multi-cell props decompose into per-cell drawables, each with its own anchor
 - **FR126** — Tilemap rows are placed object instances at their anchor cell; a multi-cell prop is one row and extent comes from `object_def`
 - **FR127** — Object footprints are capped at approximately 8x8; larger structures compose from multiple objects
@@ -233,6 +234,7 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 
 - **NFR1** — Cold boot to player-controllable in under 1 second, measured from navigation on a mid-range laptop over a typical domestic connection, including load, with no character creation ceremony
 - **NFR2** — Sustained 60 FPS at 1080p over a 10-minute session including a busy street at rush hour and an interior transition
+- **NFR48** — The camera keeps the player centred at all times during continuous movement in any direction, with no easing, lag or world-edge clamp; the page renders full-viewport with no browser scroll bar in either axis, at any supported viewport size from 800x600 to 2560x1440, either orientation; and the scene's own incremental load renders at its final camera zoom throughout, with no zoom jump or reflow once loading completes
 - **NFR3** — The server tick is continuous and never spins down; the city simulates with zero clients connected
 - **NFR4** — Reconnection has zero seam; nothing is suspended, so nothing needs resuming
 - **NFR5** — Browser exclusive and non-negotiable - no install, no plugin, no download gate
@@ -287,3 +289,10 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 - **NFR44** — Logging is by exception, not by event, with structured fields; logs and observability are separate systems and must not be merged
 - **NFR45** — Balance parameters live in tables and are runtime-tunable; constants are compiled; definitions are baked under `defs_version`
 - **NFR46** — Live parameters and seed values are visibly marked, because tuning a seed value on a running world has no effect
+- **NFR47** — A `covered` or `partial` row in the trace matrix names a guard that exists: every path and every test it cites is checked mechanically in CI, and a dangling one fails the build
+
+### Delivery and CI
+
+- **NFR49** — Every CI check that runs on master reaches a pass or a fail verdict within its own time budget; a check that cannot is fixed or removed, never left permanently red or cancelled
+- **NFR50** — A property test that gates master reports the seed it ran with, and every failure can be reproduced locally from that seed alone; the seed is fixed in the workflow, never drawn fresh per run, so a retry cannot change the verdict
+- **NFR51** — A property test that gates master explores the sizes it states: a size above the library's default is set explicitly, and CI fails when one is not

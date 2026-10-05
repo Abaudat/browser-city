@@ -15,7 +15,7 @@ mod support;
 use std::path::{Path, PathBuf};
 
 use support::{
-    appearance_sheet_bytes, build_err, build_err_enforcing_sheet_root, layer_codes, merged_tree,
+    appearance_sheet_bytes, build_err, build_err_enforcing_sheet_root, code_tables, merged_tree,
     object_sheet_bytes, read_tree, sheet_dims, valid_dir,
 };
 
@@ -31,7 +31,7 @@ fn unknown_key_is_named_with_its_own_line() {
     let err = build_err("unknown-key");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:4:1: unknown field `bogus`, expected `id` or `key`"
+        "defs/items/sanitation.toml:7:1: unknown field `bogus`, expected one of `id`, `key`, `unit`, `shelf_life_minutes`, `bulk`"
     );
 }
 
@@ -58,7 +58,7 @@ fn duplicate_id_within_one_file_is_named() {
     let err = build_err("duplicate-id-in-file");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:6:6: duplicate item id 1 -- first declared at defs/items/sanitation.toml:2:6"
+        "defs/items/sanitation.toml:9:6: duplicate item id 1 -- first declared at defs/items/sanitation.toml:2:6"
     );
 }
 
@@ -76,7 +76,7 @@ fn duplicate_key_within_one_file_is_named() {
     let err = build_err("duplicate-key-in-file");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:7:7: duplicate item key 'bottle' -- first declared at defs/items/sanitation.toml:3:7"
+        "defs/items/sanitation.toml:10:7: duplicate item key 'bottle' -- first declared at defs/items/sanitation.toml:3:7"
     );
 }
 
@@ -441,6 +441,93 @@ fn an_interact_at_inside_its_own_collider_is_named() {
     assert!(err.message.contains("could never be reached"));
 }
 
+/// Story 15.15: a flight's `drop_px` is `1..=render.storey_height_px` and is
+/// refused on an object that declares a `collider`.
+#[test]
+fn a_zero_flight_drop_is_named() {
+    let err = build_err("flight-drop-zero");
+    assert!(err.message.contains("flight drop_px 0 is outside"), "{err}");
+}
+
+#[test]
+fn a_flight_drop_with_no_storey_height_balance_key_is_named() {
+    let err = build_err("flight-drop-without-storey-key");
+    assert!(
+        err.message
+            .contains("no 'render.storey_height_px' balance key"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_partial_flight_table_is_named() {
+    let err = build_err("flight-partial-table");
+    assert!(err.message.contains("missing field `to_px`"), "{err}");
+}
+
+#[test]
+fn an_inverted_flight_ramp_is_named() {
+    let err = build_err("flight-ramp-inverted");
+    assert!(
+        err.message.contains("from_px 34 is not below to_px 5"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_flight_ramp_beyond_its_footprint_is_named() {
+    let err = build_err("flight-ramp-beyond-footprint");
+    assert!(
+        err.message.contains("to_px 17 leaves its footprint"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_flight_drop_above_the_storey_height_is_named() {
+    let err = build_err("flight-drop-above-storey");
+    assert!(err.message.contains("flight drop_px 49"), "{err}");
+}
+
+#[test]
+fn a_flight_drop_on_an_object_with_a_collider_is_named() {
+    let err = build_err("flight-drop-with-collider");
+    assert!(
+        err.message.contains("both a flight and a collider"),
+        "{err}"
+    );
+}
+
+#[test]
+fn an_object_with_no_sprite_and_no_flight_is_named() {
+    let err = build_err("undrawn-without-flight");
+    assert!(
+        err.message
+            .contains("declares no sprite but declares no flight"),
+        "{err}"
+    );
+}
+
+#[test]
+fn an_undrawn_flight_with_a_collider_is_named() {
+    let err = build_err("undrawn-flight-with-collider");
+    assert!(
+        err.message
+            .contains("declares no sprite but declares a collider"),
+        "{err}"
+    );
+}
+
+#[test]
+fn an_undrawn_flight_not_tagged_underfoot_is_named() {
+    let err = build_err("undrawn-flight-not-underfoot");
+    assert!(
+        err.message
+            .contains("object 'treads' declares no sprite but is not tagged 'underfoot'"),
+        "{err}"
+    );
+}
+
 #[test]
 fn a_non_boolean_window_is_named() {
     let err = build_err("non-boolean-window");
@@ -506,7 +593,7 @@ fn a_real_body_sheet_too_small_for_its_own_declared_layout_grid_is_named() {
         &sheet_dims(),
         &object_sheet_bytes(),
         &bytes,
-        &layer_codes(),
+        &code_tables(),
         "",
         "test-version",
     );
@@ -665,6 +752,24 @@ fn a_manhole_absent_from_the_underfoot_tag_is_named() {
     );
 }
 
+/// An object on a flat-pass layer must be `underfoot`.
+#[test]
+fn a_flat_layer_object_not_tagged_underfoot_is_named() {
+    let err = build_err("flat-layer-not-underfoot");
+    assert!(
+        err.to_string().contains("flat-pass layer 'ground_objects'")
+            && err.to_string().contains("not tagged 'underfoot'"),
+        "{err}"
+    );
+}
+
+/// A flat-layer object's sprite may not overhang upward.
+#[test]
+fn a_flat_layer_object_whose_sprite_overhangs_is_named() {
+    let err = build_err("flat-layer-sprite-overhangs");
+    assert!(err.to_string().contains("never overhangs"), "{err}");
+}
+
 /// The other direction of the same invariant: an object cannot declare a
 /// `collider` (it blocks) and the `underfoot` tag (it is explicitly
 /// walkable) at once -- contradictory metadata, rejected by name.
@@ -720,6 +825,133 @@ fn a_density_covered_only_by_a_site_restricted_building_type_is_named() {
         err.to_string(),
         "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 0 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
     );
+}
+
+// --- story 15.3: a collider must agree with the art under it --------------
+//
+// The valid base sheet holds one solid block at columns 4..12, rows 4..12
+// of its top 16 rows and nothing below.
+
+#[test]
+fn a_collider_wider_than_the_art_is_named_with_both_spans() {
+    assert_eq!(
+        build_err("collider-outside-art-span").to_string(),
+        "defs/objects/city-props.toml:9:12: object 'trash_bin' collider (3, 4)-(12, 12): collider columns 3..12 reach outside the solid columns 4..12 of the sprite's footprint band (sub-cells)"
+    );
+}
+
+#[test]
+fn a_collider_narrower_than_the_bottom_row_is_named_with_both_spans() {
+    assert_eq!(
+        build_err("art-base-outside-collider").to_string(),
+        "defs/objects/city-props.toml:9:12: object 'trash_bin' collider (5, 4)-(12, 12): collider columns 5..12 do not cover the bottom solid row's columns 4..12 (sub-cells)"
+    );
+}
+
+#[test]
+fn a_collider_taller_than_the_art_is_named_with_both_spans() {
+    assert_eq!(
+        build_err("collider-outside-art-rows").to_string(),
+        "defs/objects/city-props.toml:9:12: object 'trash_bin' collider (4, 3)-(12, 12): collider rows 3..12 reach outside the solid rows 4..12 of the sprite's footprint band (sub-cells)"
+    );
+}
+
+#[test]
+fn a_collider_over_a_transparent_band_is_named() {
+    assert_eq!(
+        build_err("collider-over-transparent-band").to_string(),
+        "defs/objects/city-props.toml:9:12: object 'trash_bin' collider (4, 4)-(12, 12): the sprite's footprint band has no solid pixel under its collider"
+    );
+}
+
+#[test]
+fn an_archetype_derived_collider_that_disagrees_is_reported_at_the_archetype_line_naming_both() {
+    assert_eq!(
+        build_err("archetype-collider-disagrees-with-art").to_string(),
+        "defs/objects/city-props.toml:8:13: object 'trash_bin' collider (3, 4)-(12, 12) from archetype 'wide_base': collider columns 3..12 reach outside the solid columns 4..12 of the sprite's footprint band (sub-cells)"
+    );
+}
+
+/// `build` decodes every object sheet itself (once, shared with the pixel
+/// check and the packer): a sheet whose bytes were never read, or do not
+/// decode, fails the build naming the sheet path.
+#[test]
+fn a_referenced_sheet_that_was_never_read_or_does_not_decode_names_its_path() {
+    let files = read_tree(&valid_dir());
+    let (path, _) = object_sheet_bytes().into_iter().next().unwrap();
+    let run = |bytes: std::collections::BTreeMap<String, Vec<u8>>| {
+        defs_build::build(
+            &files,
+            &sheet_dims(),
+            &bytes,
+            &appearance_sheet_bytes(),
+            &code_tables(),
+            "",
+            "test-version",
+        )
+        .expect_err("the build must refuse")
+    };
+    let missing = run(std::collections::BTreeMap::new());
+    assert!(missing.message.contains(&path), "{missing}");
+    assert!(missing.message.contains("never read"), "{missing}");
+    let corrupt = run([(path.clone(), b"not a png".to_vec())]
+        .into_iter()
+        .collect());
+    assert!(corrupt.message.contains(&path), "{corrupt}");
+}
+
+/// Every message the pixel rule can print. Each of the four variants of
+/// `silhouette::Disagreement` carries one of these two phrases.
+fn is_pixel_rule_message(message: &str) -> bool {
+    message.contains("footprint band") || message.contains("bottom solid row")
+}
+
+const PIXEL_CATEGORIES: [&str; 5] = [
+    "collider-outside-art-span",
+    "art-base-outside-collider",
+    "collider-outside-art-rows",
+    "collider-over-transparent-band",
+    "archetype-collider-disagrees-with-art",
+];
+
+/// Every pre-existing invalid category fails for its own reason: the pixel
+/// rule runs last among the object checks, so it must never be the error
+/// an older category reports (`shared_malformed_cases.rs` only asserts
+/// "fails"). The marker is held honest by asserting every pixel fixture
+/// matches it, so a reworded message cannot silently blind this guard.
+#[test]
+fn no_pre_existing_invalid_category_fails_on_the_pixel_rule() {
+    for category in PIXEL_CATEGORIES {
+        let err = build_err(category);
+        assert!(
+            is_pixel_rule_message(&err.message),
+            "pixel fixture '{category}' no longer matches the pixel-rule marker: {err}"
+        );
+    }
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
+    let mut checked = 0;
+    let mut total = 0;
+    for entry in std::fs::read_dir(&base).unwrap() {
+        let category = entry.unwrap().file_name().to_string_lossy().to_string();
+        total += 1;
+        if PIXEL_CATEGORIES.contains(&category.as_str()) {
+            continue;
+        }
+        let enforcing =
+            category.starts_with("sprite-sheet-outside") || category == "sprite-sheet-path-escape";
+        let err = if enforcing {
+            build_err_enforcing_sheet_root(&category)
+        } else {
+            build_err(&category)
+        };
+        assert!(
+            !is_pixel_rule_message(&err.message),
+            "'{category}' fails on the pixel rule: {err}"
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no pre-existing category was examined");
+    assert_eq!(checked, total - PIXEL_CATEGORIES.len());
 }
 
 /// Story 3.5: the room-type kind and the room program a building type
@@ -861,6 +1093,25 @@ fn every_known_category_has_a_fixture_directory() {
         "appearance-id-too-large",
         "appearance-family-mismatch",
         "appearance-dangling-uniform-profession",
+        "item-missing-unit",
+        "item-unknown-unit",
+        "item-unit-wrong-type",
+        "item-missing-shelf-life",
+        "item-missing-bulk",
+        "item-bulk-zero",
+        "denomination-face-value-duplicate",
+        "denomination-face-value-over-cap",
+        "denomination-face-value-wrong-type",
+        "denomination-face-value-zero",
+        "denomination-item-twice",
+        "denomination-not-piece",
+        "denomination-perishable",
+        "denomination-unknown-item",
+        "denominations-over-cap",
+        "item-bulk-footprint-cap-exceeded",
+        "item-shelf-life-out-of-range",
+        "item-shelf-life-wrong-type",
+        "item-bulk-height-cap-exceeded",
         "unknown-layer",
         "deprecated-layer",
         "sprite-sheet-missing",
@@ -887,6 +1138,8 @@ fn every_known_category_has_a_fixture_directory() {
         "prop-no-collider-not-underfoot",
         "manhole-not-tagged-underfoot",
         "underfoot-tag-with-collider",
+        "flat-layer-not-underfoot",
+        "flat-layer-sprite-overhangs",
         "object-role-count-zero",
         "object-role-count-two",
         "role-layer-not-allowed",
@@ -922,6 +1175,24 @@ fn every_known_category_has_a_fixture_directory() {
         "building-type-program-too-large",
         "building-type-front-room-not-public",
         "building-type-workplace-without-staff-room",
+        "foot-archetype-without-inset",
+        "upright-without-foot-archetype",
+        "upright-without-collider",
+        "collider-outside-art-span",
+        "art-base-outside-collider",
+        "collider-outside-art-rows",
+        "collider-over-transparent-band",
+        "archetype-collider-disagrees-with-art",
+        "flight-drop-zero",
+        "flight-drop-above-storey",
+        "flight-drop-with-collider",
+        "flight-drop-without-storey-key",
+        "flight-partial-table",
+        "flight-ramp-inverted",
+        "flight-ramp-beyond-footprint",
+        "undrawn-without-flight",
+        "undrawn-flight-with-collider",
+        "undrawn-flight-not-underfoot",
     ];
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/invalid");
     let mut on_disk: Vec<String> = std::fs::read_dir(&base)
@@ -973,7 +1244,7 @@ fn every_invalid_fixture_leaves_pre_existing_output_untouched() {
             &sheet_dims(),
             &object_sheet_bytes(),
             &appearance_sheet_bytes(),
-            &layer_codes(),
+            &code_tables(),
             "",
             "test-version",
         );
@@ -1013,9 +1284,171 @@ fn the_valid_base_tree_builds_cleanly() {
         &sheet_dims(),
         &object_sheet_bytes(),
         &appearance_sheet_bytes(),
-        &layer_codes(),
+        &code_tables(),
         "",
         "test-version",
     );
     assert!(result.is_ok(), "valid fixture failed: {:?}", result.err());
+}
+
+/// Story 6.1: an `[[item]]` carries `unit`, `shelf_life_minutes` and
+/// `bulk`, all required -- each absence or bad value is a build error
+/// naming the offending value's own line and column.
+fn assert_item_error(category: &str, expected: &str) {
+    assert_eq!(build_err(category).to_string(), expected, "{category}");
+}
+
+#[test]
+fn an_item_missing_its_unit_is_named() {
+    assert_item_error(
+        "item-missing-unit",
+        "defs/items/sanitation.toml:1:1: missing field `unit`",
+    );
+}
+
+#[test]
+fn an_item_missing_its_shelf_life_is_named() {
+    assert_item_error(
+        "item-missing-shelf-life",
+        "defs/items/sanitation.toml:1:1: missing field `shelf_life_minutes`",
+    );
+}
+
+#[test]
+fn an_item_missing_its_bulk_is_named() {
+    assert_item_error(
+        "item-missing-bulk",
+        "defs/items/sanitation.toml:1:1: missing field `bulk`",
+    );
+}
+
+#[test]
+fn an_item_with_an_unknown_unit_names_the_accepted_list() {
+    assert_item_error(
+        "item-unknown-unit",
+        "defs/items/sanitation.toml:4:8: item 'bottle' names unknown unit 'furlong' -- accepted: gram, millilitre, piece",
+    );
+}
+
+#[test]
+fn an_item_unit_of_the_wrong_type_is_refused() {
+    assert_item_error(
+        "item-unit-wrong-type",
+        "defs/items/sanitation.toml:4:8: invalid type: integer `3`, expected a string",
+    );
+}
+
+#[test]
+fn an_item_shelf_life_of_the_wrong_type_is_refused() {
+    assert_item_error(
+        "item-shelf-life-wrong-type",
+        "defs/items/sanitation.toml:5:22: invalid type: string \"long\", expected u32",
+    );
+}
+
+#[test]
+fn an_item_bulk_of_zero_is_refused_at_the_value() {
+    assert_item_error(
+        "item-bulk-zero",
+        "defs/items/sanitation.toml:6:18: item 'bottle' bulk width of 0 -- every item occupies at least one cell",
+    );
+}
+
+#[test]
+fn an_item_bulk_width_over_the_footprint_cap_is_refused_at_the_value() {
+    assert_item_error(
+        "item-bulk-footprint-cap-exceeded",
+        "defs/items/sanitation.toml:6:18: item 'bottle' bulk width 9 exceeds MAX_FOOTPRINT_CELLS (8)",
+    );
+}
+
+#[test]
+fn an_item_bulk_height_over_the_footprint_cap_is_refused_at_the_value() {
+    assert_item_error(
+        "item-bulk-height-cap-exceeded",
+        "defs/items/sanitation.toml:6:30: item 'bottle' bulk height 9 exceeds MAX_FOOTPRINT_CELLS (8)",
+    );
+}
+
+#[test]
+fn an_item_shelf_life_over_the_cap_is_refused_at_the_value() {
+    assert_item_error(
+        "item-shelf-life-out-of-range",
+        &format!(
+            "defs/items/sanitation.toml:5:22: item 'bottle' shelf_life_minutes 999999999 exceeds MAX_SHELF_LIFE_MINUTES ({})",
+            defs_build::model::MAX_SHELF_LIFE_MINUTES
+        ),
+    );
+    assert_eq!(defs_build::model::MAX_SHELF_LIFE_MINUTES, 525_600);
+}
+
+fn build_ok(files: &[(PathBuf, String)]) -> defs_build::BuildOutput {
+    defs_build::build(
+        files,
+        &sheet_dims(),
+        &object_sheet_bytes(),
+        &appearance_sheet_bytes(),
+        &code_tables(),
+        "",
+        "test-version",
+    )
+    .unwrap()
+}
+
+/// The boundaries themselves are accepted: the longest shelf life and the
+/// largest bulk build cleanly.
+#[test]
+fn an_item_at_the_shelf_life_and_bulk_caps_builds() {
+    let item = format!(
+        "[[item]]\nid = 1\nkey = \"bottle\"\nunit = \"piece\"\nshelf_life_minutes = {}\nbulk = {{ width = {m}, height = {m} }}\n\n[[item]]\nid = 2\nkey = \"recycled_glass\"\nunit = \"piece\"\nshelf_life_minutes = 0\nbulk = {{ width = 1, height = 1 }}\n",
+        defs_build::model::MAX_SHELF_LIFE_MINUTES,
+        m = defs_build::model::MAX_FOOTPRINT_CELLS
+    );
+    let mut files = read_tree(&valid_dir());
+    files.retain(|(p, _)| p != Path::new("defs/items/sanitation.toml"));
+    files.retain(|(p, _)| p != Path::new("defs/denominations/cash.toml"));
+    files.push((PathBuf::from("defs/items/sanitation.toml"), item));
+    let out = build_ok(&files);
+    assert!(out.rust.contains(
+        "ItemDef { id: 1, key: \"bottle\", unit: 0, shelf_life_minutes: 525600, width: 8, height: 8 }"
+    ));
+}
+
+/// AC2: a new item is a row, not code -- the valid tree's third item
+/// (`milk`, litre-kind unit, perishable, 1x2) reaches both artefacts.
+#[test]
+fn a_fully_authored_item_reaches_both_emitted_artefacts() {
+    let out = build_ok(&read_tree(&valid_dir()));
+    assert!(out.rust.contains(
+        "ItemDef { id: 3, key: \"milk\", unit: 2, shelf_life_minutes: 4320, width: 1, height: 2 }"
+    ));
+    assert!(out.json.contains(
+        "{ \"id\": 3, \"key\": \"milk\", \"unit\": 2, \"shelf_life_minutes\": 4320, \"width\": 1, \"height\": 2 }"
+    ));
+}
+
+// --- story 15.12: an upright collides at its foot --------------------------
+
+#[test]
+fn a_foot_archetype_with_no_collider_inset_is_named() {
+    assert_eq!(
+        build_err("foot-archetype-without-inset").to_string(),
+        "defs/archetypes/city.toml:2:7: archetype 'railing_foot' is a foot but supplies no collider_inset -- the foot is that collider"
+    );
+}
+
+#[test]
+fn an_upright_when_no_archetype_is_a_foot_is_named_at_the_object() {
+    assert_eq!(
+        build_err("upright-without-foot-archetype").to_string(),
+        "defs/objects/city-props.toml:3:7: object 'trash_bin' is tagged 'upright' but no archetype is a `foot`"
+    );
+}
+
+#[test]
+fn an_upright_with_no_collider_is_named_at_the_object() {
+    assert_eq!(
+        build_err("upright-without-collider").to_string(),
+        "defs/objects/city-props.toml:3:7: object 'trash_bin' is tagged 'upright' but has no collider -- an upright collides at its foot"
+    );
 }

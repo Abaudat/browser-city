@@ -111,6 +111,11 @@ gh_pr_head() { # <pr> -> current head SHA
   "$GH" pr view "$1" --repo "$BC_REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null
 }
 
+gh_pr_mergeable() { # <pr> -> MERGEABLE | CONFLICTING | UNKNOWN
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_pr_mergeable "$1"; return; }
+  "$GH" pr view "$1" --repo "$BC_REPO" --json mergeable --jq '.mergeable' 2>/dev/null
+}
+
 gh_pr_create() { # <base> <head> <title> <bodyfile> <labels-csv> -> new PR number
   [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_pr_create "$@"; return; }
   local base="$1" head="$2" title="$3" bodyfile="$4" labels="$5" url
@@ -269,4 +274,25 @@ gh_content_put() { # <branch> <path> <file> [blob-sha] -- blob-sha replaces an e
   rc=$?
   rm -f "$b64" "$payload"
   return "$rc"
+}
+
+# --- appended by the continuous-scoping work ---------------------------------
+# GitHub's native issue dependencies: "<n> is blocked by <blocker>". Like
+# gh_issue_add_subissue, the endpoint takes the blocker's DATABASE id, not its
+# number -- gh_issue_id converts. The read side needs no primitive of its own:
+# project_items already carries each story's open blockers.
+gh_issue_add_blocker() { # <n> <blocker-database-id>
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_write gh_issue_add_blocker "$@"; return; }
+  "$GH" api "repos/$BC_REPO/issues/$1/dependencies/blocked_by" -F issue_id="$2" >/dev/null 2>&1
+}
+
+# --- appended by the failure-reports-worked-first work (story 4.19) --------
+# adopt-alerts' one read: every open issue CI has labelled `alert` --
+# `report-scheduled-failure.sh` files one on a scheduled/deploy workflow's
+# failure -- so the orchestrator can find one nothing else on the board yet
+# points at (a fresh alert is invisible to project_items until it is a
+# project item at all).
+gh_issue_list_label() { # <label> -> JSON array of {number}, open issues only
+  [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_issue_list_label "$1"; return; }
+  "$GH" issue list --repo "$BC_REPO" --label "$1" --state open --json number 2>/dev/null
 }

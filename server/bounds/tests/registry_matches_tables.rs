@@ -42,3 +42,57 @@ fn every_registered_bound_has_a_matching_table() {
         );
     }
 }
+
+#[test]
+fn no_accessor_is_registered_twice() {
+    let mut seen: Vec<&str> = Vec::new();
+    for bound in TABLE_BOUNDS {
+        assert!(
+            !seen.contains(&bound.accessor),
+            "bounds::TABLE_BOUNDS registers `{}` more than once",
+            bound.accessor
+        );
+        seen.push(bound.accessor);
+    }
+}
+
+#[test]
+fn every_bound_is_a_well_shaped_triple() {
+    for b in TABLE_BOUNDS {
+        assert!(
+            0 < b.expected_rows,
+            "`{}`: expected_rows must be positive",
+            b.accessor
+        );
+        assert!(
+            b.expected_rows <= b.alert_rows,
+            "`{}`: expected_rows {} is past alert_rows {} -- a threshold already passed",
+            b.accessor,
+            b.expected_rows,
+            b.alert_rows
+        );
+        assert!(
+            b.alert_rows <= b.max_rows,
+            "`{}`: alert_rows {} is past max_rows {}",
+            b.accessor,
+            b.alert_rows,
+            b.max_rows
+        );
+    }
+}
+
+#[test]
+fn an_engineering_alert_fires_strictly_before_its_ceiling() {
+    for b in TABLE_BOUNDS
+        .iter()
+        .filter(|b| b.kind == bounds::BoundKind::Engineering)
+    {
+        assert!(
+            b.alert_rows < b.max_rows,
+            "`{}`: an Engineering alert_rows {} must be strictly below max_rows {}",
+            b.accessor,
+            b.alert_rows,
+            b.max_rows
+        );
+    }
+}

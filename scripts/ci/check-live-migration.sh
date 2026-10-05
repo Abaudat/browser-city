@@ -10,7 +10,7 @@
 #   - `migration_v2_bad` (adds a column with neither a default nor
 #     #[auto_inc]) must fail with the automigration rejection SpacetimeDB
 #     itself emits, and the row inserted under v1 must still be there.
-# Then publishes the real module and proves `reseed_codes` is idempotent
+# Then publishes the real module and proves `finish_publish` is idempotent
 # for its owner (calling it a second time changes no companion table's row
 # count) and rejects a freshly-anonymous, non-owner caller -- `browser_city`
 # has no native tests, so this is the only place either claim is ever
@@ -27,13 +27,13 @@
 # an instance.
 set -uo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+. "$REPO_ROOT/scripts/ci/lib/spacetime-instance.sh"
 FIXTURES="$REPO_ROOT/server/tests/fixtures"
 DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bc-live-migration.XXXXXX")"
 PORT=3987
 SERVER_URL="http://127.0.0.1:$PORT"
 START_LOG="$DATA_DIR/start.log"
 HEALTH_DEADLINE_S=30
-POLL_INTERVAL_S=1
 # The exact substring SpacetimeDB 2.9 prints when a publish is rejected for
 # requiring a manual migration -- the one piece of evidence that
 # distinguishes "NFR33 held" from "something else went wrong".
@@ -42,7 +42,7 @@ REJECTION_PATTERN="Aborting because publishing would require manual migration"
 START_PID=""
 
 cleanup() {
-  [ -n "$START_PID" ] && kill "$START_PID" 2>/dev/null
+  bc_stop_spacetime "$START_PID"
   rm -rf "$DATA_DIR"
 }
 trap cleanup EXIT
@@ -87,19 +87,9 @@ assert_pure_addition() {
 assert_pure_addition "migration_v2_good" "$FIXTURES/migration_v1/src/lib.rs" "$FIXTURES/migration_v2_good/src/lib.rs"
 assert_pure_addition "migration_v2_bad" "$FIXTURES/migration_v1/src/lib.rs" "$FIXTURES/migration_v2_bad/src/lib.rs"
 
-spacetime start --data-dir "$DATA_DIR/data" --listen-addr "127.0.0.1:$PORT" >"$START_LOG" 2>&1 &
-START_PID=$!
-
-deadline=$((SECONDS + HEALTH_DEADLINE_S))
-healthy=0
-while [ "$SECONDS" -lt "$deadline" ]; do
-  if curl -sf -o /dev/null "$SERVER_URL/v1/ping"; then
-    healthy=1
-    break
-  fi
-  sleep "$POLL_INTERVAL_S"
-done
-[ "$healthy" -eq 1 ] || fail "SpacetimeDB did not become healthy within ${HEALTH_DEADLINE_S}s" "$START_LOG"
+START_PID="$(bc_start_spacetime "$DATA_DIR/data" "$PORT" "$START_LOG")"
+bc_wait_spacetime_healthy "$SERVER_URL" "$HEALTH_DEADLINE_S" \
+  || fail "SpacetimeDB did not become healthy within ${HEALTH_DEADLINE_S}s" "$START_LOG"
 
 publish() { # <module-dir> <db-name> <log-file>
   spacetime publish --server "$SERVER_URL" --no-config -y "$2" --module-path "$1" >"$3" 2>&1
@@ -156,11 +146,17 @@ AFTER_BAD="$(row_count bc-live-migration-bad fixture_row)"
 echo "check-live-migration: ok -- publish was rejected, $AFTER_BAD row(s) intact. What the platform said:" >&2
 echo "  $MATCHED_LINE" >&2
 
-echo "check-live-migration: reseed_codes must be idempotent -- proven nowhere else, since browser_city has no native tests" >&2
+echo "check-live-migration: finish_publish must be idempotent -- proven nowhere else, since browser_city has no native tests" >&2
 publish "$REPO_ROOT/server" bc-live-migration-codes "$DATA_DIR/codes-v1.log" \
   || fail "could not publish the real module" "$DATA_DIR/codes-v1.log"
 
-CODE_TABLES="matter_kind provision reason_code node_kind"
+CODE_TABLES="$(grep -m1 "^CODE_TABLES=" "$REPO_ROOT/scripts/ops/assert-world-invariants.sh" | cut -d\" -f2)"
+[ -n "$CODE_TABLES" ] || fail "could not read CODE_TABLES from scripts/ops/assert-world-invariants.sh"
+# A table added to seed_all_codes must join CODE_TABLES, or its idempotency
+# goes unproven: count the seeded tables in the source and compare.
+SEEDED_COUNT="$(sed -n '/^pub fn seed_all_codes/,/^}/p' "$REPO_ROOT/server/src/tables/codes.rs" | grep -c '^        *ctx\.db\.[a-z_]*()\.insert(')"
+LISTED_COUNT="$(wc -w <<<"$CODE_TABLES")"
+[ "$SEEDED_COUNT" -eq "$LISTED_COUNT" ]   || fail "seed_all_codes seeds $SEEDED_COUNT table(s) but CODE_TABLES lists $LISTED_COUNT -- add the new companion table to CODE_TABLES so finish_publish' idempotency is proven for it"
 declare -A BEFORE_COUNT
 for table in $CODE_TABLES; do
   count="$(row_count bc-live-migration-codes "$table")"
@@ -168,25 +164,41 @@ for table in $CODE_TABLES; do
   BEFORE_COUNT["$table"]="$count"
 done
 
-spacetime call bc-live-migration-codes --server "$SERVER_URL" --no-config -y reseed_codes >"$DATA_DIR/reseed.log" 2>&1 \
-  || fail "reseed_codes itself failed" "$DATA_DIR/reseed.log"
+spacetime call bc-live-migration-codes --server "$SERVER_URL" --no-config -y finish_publish >"$DATA_DIR/reseed.log" 2>&1 \
+  || fail "finish_publish itself failed" "$DATA_DIR/reseed.log"
 
 for table in $CODE_TABLES; do
   after="$(row_count bc-live-migration-codes "$table")"
   [ "$after" = "${BEFORE_COUNT[$table]}" ] || fail "table '$table' row count changed across a re-seed (${BEFORE_COUNT[$table]} -> $after) -- seed_all_codes is not idempotent" "$DATA_DIR/reseed.log"
 done
-echo "check-live-migration: ok -- reseed_codes changed nothing on a second call, across all four companion tables" >&2
+echo "check-live-migration: ok -- finish_publish changed nothing on a second call, across every companion table" >&2
 
-echo "check-live-migration: reseed_codes must reject a caller that is not the module owner" >&2
+echo "check-live-migration: finish_publish must reject a caller that is not the module owner" >&2
 OWNER_REJECTION_PATTERN="this reducer may only be invoked by the module owner"
-if spacetime call bc-live-migration-codes --server "$SERVER_URL" --no-config -y --anonymous reseed_codes \
+if spacetime call bc-live-migration-codes --server "$SERVER_URL" --no-config -y --anonymous finish_publish \
   >"$DATA_DIR/reseed-non-owner.log" 2>&1; then
-  fail "reseed_codes accepted a call from a freshly-anonymous, non-owner identity; it must be rejected" "$DATA_DIR/reseed-non-owner.log"
+  fail "finish_publish accepted a call from a freshly-anonymous, non-owner identity; it must be rejected" "$DATA_DIR/reseed-non-owner.log"
 fi
 if ! grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/reseed-non-owner.log"; then
-  fail "reseed_codes rejected the non-owner call, but not for the reason the owner check names -- expected to find '$OWNER_REJECTION_PATTERN'" "$DATA_DIR/reseed-non-owner.log"
+  fail "finish_publish rejected the non-owner call, but not for the reason the owner check names -- expected to find '$OWNER_REJECTION_PATTERN'" "$DATA_DIR/reseed-non-owner.log"
 fi
 echo "check-live-migration: ok -- a non-owner call was rejected with the owner-check message" >&2
+
+# Proves only that a row the current `init` wrote survives a republish; a
+# world whose `init` predates the table is check-deploy-rehearsal.sh's case.
+echo "check-live-migration: a republish must not reset a city clock that init wrote" >&2
+epoch_rows() { # <db-name> <tag> -- every world_clock data row, or a hard failure
+  local log="$DATA_DIR/epoch-$1-$2.log"
+  spacetime sql "$1" --server "$SERVER_URL" --no-config -y "SELECT epoch_at FROM world_clock" >"$log" 2>&1     || fail "could not query '$1' for world_clock" "$log"
+  awk '/^[- +]+$/ { seen=1; next } seen && NF' "$log"
+}
+EPOCH_VALUE_BEFORE="$(epoch_rows bc-live-migration-codes before)"
+[ "$(grep -c . <<<"$EPOCH_VALUE_BEFORE")" = "1" ] || fail "world_clock must hold exactly one row right after publish, got: '$EPOCH_VALUE_BEFORE' -- init did not write the epoch" "$DATA_DIR/epoch-bc-live-migration-codes-before.log"
+sleep 2
+publish "$REPO_ROOT/server" bc-live-migration-codes "$DATA_DIR/codes-v2.log"   || fail "could not republish the real module over the live database" "$DATA_DIR/codes-v2.log"
+EPOCH_VALUE_AFTER="$(epoch_rows bc-live-migration-codes after)"
+[ "$EPOCH_VALUE_AFTER" = "$EPOCH_VALUE_BEFORE" ]   || fail "world_clock's epoch changed across a republish ($EPOCH_VALUE_BEFORE -> $EPOCH_VALUE_AFTER) -- a deploy must never reset the city to dawn" "$DATA_DIR/codes-v2.log"
+echo "check-live-migration: ok -- the epoch row was untouched by a republish ($EPOCH_VALUE_AFTER)" >&2
 
 echo "check-live-migration: both halves of AC3 hold against a real SpacetimeDB instance" >&2
 exit 0
