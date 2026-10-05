@@ -16,8 +16,9 @@
 
 import { Container, Sprite, type Texture } from "pixi.js";
 import type { Defs } from "../defs/types";
-import { CitizenBody, type CitizenFrame, createCitizenFrame } from "../l3/citizen";
-import { type L3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
+import { AvoidanceField, type AvoidDials } from "../l3/avoidance";
+import { CitizenBody, type CitizenFrame, createCitizenFrame, type LifeDials } from "../l3/citizen";
+import { idleFramesPerCycle, type L3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
 import type { Walkability } from "../l3/micro-path";
 import type {
   AppearanceTextureCache,
@@ -30,8 +31,11 @@ import {
 } from "../render/appearance/composite";
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
 import { snapToScreenPx, worldPointPx } from "../render/screen-position";
+import { CHUNK_SIZE } from "../world/chunk";
 import { cellOf } from "../world/ownership";
 import {
+  AVOIDANCE_SPECS,
+  buildAvoidanceFixtures,
   buildCitizenFixtures,
   buildUniformedWalkerFixture,
   buildWalkerFixture,
@@ -46,6 +50,45 @@ import { Timetable } from "./timetable";
 export interface WalkerSource {
   readonly walk: Walkability;
   readonly config: L3Config;
+  /** A frozen crowd (a screenshot test) is staged with no avoidance
+   * fixtures and never animated. */
+  readonly frozen?: boolean;
+}
+
+/** One L3 body as the debug tooling reads it. */
+export interface L3BodyReport {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  readonly floor: number;
+  /** Segments walked straight for want of a path. */
+  readonly fallbacks: number;
+  /** Some segment is walked outside the walking-pace band. */
+  readonly paceOutOfBand: boolean;
+  /** The sidestep in cells (positive to the right of the heading), whether
+   * the body's neighbours were cut at the cap, and whether its sidestep met a
+   * blocked tile. */
+  readonly avoidance?: {
+    readonly offsetCells: number;
+    readonly capped: boolean;
+    readonly blocked: boolean;
+  };
+  /** The flavour a standing body is showing, when not nothing. */
+  readonly activity?: string;
+}
+
+/** What two clients must agree on, for one citizen at one city time (the
+ * documented list in `docs/architecture.md`): the ledger position, what it is
+ * doing, the frame, the facing and the sidestep. */
+export interface L3AgreementSample {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  readonly activity: "walk" | "idle" | "glance";
+  readonly frameIndex: number;
+  readonly facing: string;
+  readonly offsetX: number;
+  readonly offsetY: number;
 }
 
 export interface CitizensLayerHandle {
@@ -67,38 +110,61 @@ export interface CitizensLayerHandle {
    * (one driver of frame-by-frame state). */
   update(cityMilliminutes: number): void;
   /** What each walking citizen's body says about itself (the L3 overlay). */
-  l3Bodies(): readonly {
-    readonly id: string;
-    readonly x: number;
-    readonly y: number;
-    readonly floor: number;
-    readonly fallbacks: number;
-    readonly paceOutOfBand: boolean;
-  }[];
+  l3Bodies(): readonly L3BodyReport[];
+  /** Every citizen's agreed state at city time `cityMilliminutes`, computed
+   * from scratch -- what the e2e agreement spec compares between clients. */
+  agreementAt(cityMilliminutes: number): readonly L3AgreementSample[];
 }
 
-interface WalkerState {
+/** One citizen the layer animates: a walker on a timetable, or a standing
+ * member of the crowd. Both play flavour; both are bodies avoidance knows. */
+interface Member {
+  readonly id: string;
   readonly sprite: Sprite;
   readonly frames: CompositeFrames;
-  readonly timetable: Timetable;
   readonly body: CitizenBody;
   readonly frame: CitizenFrame;
+  /** Present for a walker; a stander has `at`. */
+  readonly timetable?: Timetable;
+  readonly at?: { readonly x: number; readonly y: number };
+  readonly facing: string;
+  index: number;
+  glancing: boolean;
 }
 
-function poseWalker(
-  state: WalkerState,
-  cityMilliminutes: number,
-  tileSizePx: number,
-  storeyHeightPx: number,
-  zoom: number,
+/** The shared half of one frame: every member's ledger pose, then every
+ * sidestep. Used for drawing and for the agreement sample alike, so the two
+ * cannot differ. */
+function solve(
+  members: Iterable<Member>,
+  t: number,
+  field: AvoidanceField,
+  dials: AvoidDials,
+  walk: Walkability,
 ): void {
-  const { frame, sprite, frames } = state;
-  state.body.frameAt(state.timetable.stateAt(cityMilliminutes), cityMilliminutes, frame);
-  const px = worldPointPx(frame.x, frame.y, CROWD_FLOOR, tileSizePx, storeyHeightPx, zoom, 0);
-  sprite.x = px.x;
-  sprite.y = px.y;
-  sprite.zIndex = frame.y;
-  sprite.texture = frames.frame(frame.animation, frame.direction, frame.frameIndex);
+  field.reset();
+  for (const m of members) {
+    const f = m.frame;
+    if (m.timetable) {
+      m.body.frameAt(m.timetable.stateAt(t), t, f);
+    } else {
+      const at = m.at as { x: number; y: number };
+      m.body.frameAt(
+        {
+          kind: "at",
+          node: { x: cellOf(at.x), y: cellOf(at.y), floor: CROWD_FLOOR },
+          facing: m.facing as never,
+        },
+        t,
+        f,
+      );
+      // A stander is drawn where it stands, not on its tile's centre.
+      f.x = at.x;
+      f.y = at.y;
+    }
+    m.index = field.add(m.id, f.x, f.y, f.floor, f.headingX, f.headingY, f.moving, f.ramp);
+  }
+  field.resolve(dials, walk);
 }
 
 export async function mountCitizensLayer(
@@ -142,6 +208,7 @@ export async function mountCitizensLayer(
     ...buildCitizenFixtures(defs, identicalTuples),
     buildWalkerFixture(defs),
     buildUniformedWalkerFixture(defs),
+    ...(l3.frozen ? [] : buildAvoidanceFixtures(defs)),
   ];
   const layoutByFamily = new Map(defs.appearanceLayouts.map((l) => [l.family, l]));
 
@@ -157,7 +224,18 @@ export async function mountCitizensLayer(
   }
 
   const textureIdsById: Record<string, number> = {};
-  const walkers = new Map<string, WalkerState>();
+  const members = new Map<string, Member>();
+  const path = pathConfigOf(l3.config);
+  const avoid: AvoidDials = {
+    radiusCells: l3.config.avoidRadiusCells,
+    maxOffsetCells: l3.config.avoidMaxOffsetCells,
+    maxNeighbours: l3.config.avoidMaxNeighbours,
+    halfWidthCells: l3.config.bodyHalfWidthCells,
+    chunkSize: CHUNK_SIZE,
+  };
+  const field = new AvoidanceField();
+  /** How to build one member's body and timetable again, for the scratch set. */
+  const makers = new Map<string, () => Pick<Member, "body" | "timetable">>();
 
   await Promise.all(
     fixtures.map(async (fixture) => {
@@ -191,32 +269,93 @@ export async function mountCitizensLayer(
       sprite.zIndex = fixture.gridY;
       layer.addChild(sprite);
 
-      const spec = WALKER_SPECS[fixture.id];
-      if (spec) {
-        const path = pathConfigOf(l3.config);
-        walkers.set(fixture.id, {
-          sprite,
-          frames,
-          timetable: new Timetable(spec, l3.config, l3.walk, path),
-          body: new CitizenBody(
-            l3.walk,
-            path,
-            {
-              strideCells: l3.config.strideCells,
-              framesPerCycle: walkFramesPerCycle(defs, body.family),
-            },
-            fixture.id,
-          ),
-          frame: createCitizenFrame(),
-        });
-      }
+      const spec = WALKER_SPECS[fixture.id] ?? AVOIDANCE_SPECS[fixture.id];
+      const life: LifeDials = {
+        bucketMilliminutes: l3.config.flavourBucketMilliminutes,
+        glancePercent: l3.config.flavourGlancePercent,
+        glanceMilliminutes: l3.config.flavourGlanceMilliminutes,
+        idleFrameMilliminutes: l3.config.idleFrameMilliminutes,
+        idleFrames: idleFramesPerCycle(defs, body.family),
+        rampCells: l3.config.avoidRadiusCells,
+      };
+      const make = (): Pick<Member, "body" | "timetable"> => ({
+        timetable: spec ? new Timetable(spec, l3.config, l3.walk, path) : undefined,
+        body: new CitizenBody(
+          l3.walk,
+          path,
+          {
+            strideCells: l3.config.strideCells,
+            framesPerCycle: walkFramesPerCycle(defs, body.family),
+          },
+          fixture.id,
+          life,
+        ),
+      });
+      makers.set(fixture.id, make);
+      members.set(fixture.id, {
+        id: fixture.id,
+        sprite,
+        frames,
+        ...make(),
+        frame: createCitizenFrame(),
+        at: spec ? undefined : { x: fixture.gridX, y: fixture.gridY },
+        facing: fixture.facing,
+        index: -1,
+        glancing: false,
+      });
     }),
   );
 
   function update(cityMilliminutes: number): void {
-    for (const walker of walkers.values()) {
-      poseWalker(walker, cityMilliminutes, tileSizePx, storeyHeightPx, zoom);
+    solve(members.values(), cityMilliminutes, field, avoid, l3.walk);
+    for (const m of members.values()) {
+      const { frame, sprite, frames } = m;
+      m.glancing = frame.glancing;
+      sprite.texture = frames.frame(frame.animation, frame.direction, frame.frameIndex);
+      if (!m.timetable) continue;
+      const ox = field.offsetX(m.index);
+      const oy = field.offsetY(m.index);
+      const px = worldPointPx(
+        frame.x + ox,
+        frame.y + oy,
+        CROWD_FLOOR,
+        tileSizePx,
+        storeyHeightPx,
+        zoom,
+        0,
+      );
+      sprite.x = px.x;
+      sprite.y = px.y;
+      sprite.zIndex = frame.y + oy;
     }
+  }
+
+  let scratch: Member[] | undefined;
+  const scratchField = new AvoidanceField();
+  function agreementAt(cityMilliminutes: number): readonly L3AgreementSample[] {
+    scratch ??= [...members.values()].map((m) => ({
+      ...m,
+      ...(makers.get(m.id) as () => Pick<Member, "body" | "timetable">)(),
+      frame: createCitizenFrame(),
+    }));
+    solve(scratch, cityMilliminutes, scratchField, avoid, l3.walk);
+    // Sorted by id: members mount as their textures arrive, in any order.
+    return [...scratch]
+      .sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0))
+      .map((m) => {
+        const activity =
+          m.frame.animation === "walk" ? "walk" : m.frame.glancing ? "glance" : "idle";
+        return {
+          id: m.id,
+          x: m.frame.x,
+          y: m.frame.y,
+          activity,
+          frameIndex: m.frame.frameIndex,
+          facing: m.frame.direction,
+          offsetX: scratchField.offsetX(m.index),
+          offsetY: scratchField.offsetY(m.index),
+        };
+      });
   }
 
   function compareForE2e(
@@ -257,18 +396,31 @@ export async function mountCitizensLayer(
     distinctTextureCount: nextTextureId,
     compareForE2e,
     update,
+    agreementAt,
     l3Bodies: () => {
-      const out = [];
+      const out: L3BodyReport[] = [];
       const msPerMilliminute = l3.config.realMsPerCityMinute / 1000;
-      for (const [id, walker] of walkers) {
-        const report = walker.body.diagnostics(msPerMilliminute, l3.config);
-        if (!report) continue;
+      for (const m of members.values()) {
+        const frame = m.frame;
+        const report = m.body.diagnostics(msPerMilliminute, l3.config);
+        const glancing = m.glancing;
+        if (!report && !glancing) continue;
+        const ox = field.offsetX(m.index);
+        const oy = field.offsetY(m.index);
         out.push({
-          id,
-          x: walker.frame.x,
-          y: walker.frame.y,
-          floor: walker.frame.floor,
-          ...report,
+          id: m.id,
+          x: frame.x + ox,
+          y: frame.y + oy,
+          floor: frame.floor,
+          fallbacks: report?.fallbacks ?? 0,
+          paceOutOfBand: report?.paceOutOfBand ?? false,
+          avoidance: {
+            // Positive to the right of the heading.
+            offsetCells: ox * -frame.headingY + oy * frame.headingX,
+            capped: field.capped(m.index),
+            blocked: field.blocked(m.index),
+          },
+          activity: glancing ? "glance" : undefined,
         });
       }
       return out;

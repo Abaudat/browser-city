@@ -1721,14 +1721,27 @@ the build if the committed files and a fresh render ever disagree.
 - Walkability is one predicate, `world/npc-walkable.ts`: a cell is walkable iff no collider touches it. `CollisionGrid.revision` moves on every change; a cached path is keyed by it and recomputed whole.
 - Gait takes distance and heading only. The walk frame follows distance walked (`movement.gait_stride_millicells_per_cycle`) plus a per-citizen offset from the id, over the frames of the walk row of the body's appearance layout; facing is the dominant axis of the current edge, horizontal on a tie. Remote players share the walk frame (`advanceGait`); their facing is read from their motion by the same dominant-axis rule.
 - `poseAt` writes into a caller-owned pose and allocates nothing.
-- `l3/**` imports only `./...` and `../defs/types`, and uses no DOM, network, storage, timer, clock or randomness global: `client/biome.json`'s `src/l3/**` override and `scripts/ci/check-l3-boundary.sh`. `net/**` may not import `l3/` (same two).
+- `l3/**` imports only `./...` and `../defs/types`, and uses no DOM, network, storage, timer, clock or randomness global: `client/biome.json`'s `src/l3/**` override and `scripts/ci/check-l3-boundary.sh`. `net/**` may not import `l3/` (same two). The script also allows only `Math.abs|floor|ceil|round|trunc|min|max|sqrt|imul|sign`, called directly (no alias, destructuring or computed member), and `Math.imul` and 32-bit hex literals only in `seed.ts`; each rule has a planted-violation case in `scripts/ci/tests/test-check-l3-boundary.sh`.
+- `l3/seed.ts` is the only id-to-number source: `seedOf(id, ...salts)` (u32) and `unitOf`, integer arithmetic only. One named salt per feature (`SALTS`: flavour, flavourStart, flavourOffset, glanceFacing, idlePhase); the gait phase is the unsalted draw. Client code outside `l3/` that feeds flavour calls it.
+- A value two clients must agree on is a pure function of replicated L2 state, the city time handed in, stable ids and the collision grid. No frame count, frame delta, spawn order or per-body history.
+- Flavour (`l3/flavour.ts`) applies only to a standing body (`At`, and a transit before depart or after arrive): the idle row on city time with an id-seeded phase (`l3.idle_frame_milliminutes`), and a glance. The draw is `seedOf(id, flavour, bucket)` with `bucket = (t + id offset) div l3.flavour_bucket_milliminutes`; `l3.flavour_glance_percent` of buckets glance, the rest are nothing. A glance starts at a seeded point in its bucket, lasts `l3.flavour_glance_milliminutes`, turns the head to another facing and returns to the rest facing; it is not drawn if it would not end before the next departure. Flavour writes frame and facing, never position. Players get none.
+- Flavour vocabulary: idle and glance. A flavour is eligible only if every composed layer has its row. Phone and book wait for their rows in the appearance layouts; sit waits for a story that binds a body to a seat. Never ambient: sleep, push cart, pick up, gift, lift, throw, hit, punch, stab, gun rows, hurt.
+- Avoidance (`l3/avoidance.ts`) is a draw-only lateral offset from the ledger pose, a closed form of the base poses of the bodies within `l3.avoid_radius_millicells` at city time `t`. A walker passes on its own right of its heading; two walkers on one heading spread by id order; a standing body is never displaced and the walker gives the clearance. The offset eases with the gap, is at most `l3.avoid_max_offset_millicells`, is zero at both ends of a leg, and is shortened or dropped so the body, edge included, stays on walkable ground. Facing, walk frame, arrival and depth order never read it. Bodies are visited in (x, id) order and at most `l3.avoid_max_neighbours` count per body.
+- A body is resolved only when its chunk and the eight round it are held (`world/chunk.ts`'s `CHUNK_SIZE`, passed in); anywhere else it is drawn at its ledger pose. Bodies driven by live input (the local and remote players) are neither displaced nor an input.
+- The e2e hook `l3Agreement(t)` computes every street citizen's agreed state from scratch; `l3-agreement.spec.ts` compares two clients with different views on exactly the list below.
+
+### L3 -- must agree
+
+Every client agrees on, for a citizen at a city time: the segment and ledger position (gross position), the activity (walk, idle, glance), the walk frame, the idle frame, the facing, the arrival instant, and the avoidance offset of a body in a fully held region. A divergence on this list is a defect.
+
+Nobody checks: render-only easing and snapping, depth order between bodies, anything not listed.
 - An NPC is a member of the depth-sorted pool on the `characters` rank, placed through `positionSprite` with the flight offset of its position, and culled by floor like the player.
-- The L3 debug overlay (`?debug=l3`) reads each live body's straight-line fallbacks and out-of-band pace.
-- Until L2 exists, `test-street/timetable.ts` supplies the legs as data; story 5.5 deletes it.
+- The L3 debug overlay (`?debug=l3`) reads each live body's straight-line fallbacks, out-of-band pace, sidestep, avoidance cap and blocked-tile hits, and a standing body's glance.
+- Until L2 exists, `test-street/timetable.ts` supplies the legs as data (including the avoidance staging in `test-street/citizens.ts`); story 5.5 deletes it.
 
 ### Moving bodies -- must never be seen
 
-Foot slide. Slow-motion or hurried walking. A pivot or pause at a waypoint. Facing flicker. Staircase diagonals. A sprite cutting through a solid prop. Popping or fading in view. Standing mid-pavement.
+Foot slide. Slow-motion or hurried walking. A pivot or pause at a waypoint. Facing flicker. Staircase diagonals. A sprite cutting through a solid prop. Popping or fading in view. Standing mid-pavement. Citizens passing through each other on open ground. A sidestep that pops, or a stop to let someone by. A displaced standing citizen. A sliding idle sprite. Gestures in unison. A gesture that reads as work. A layer out of step with the body.
 
 ## Boot budget
 

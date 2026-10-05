@@ -136,3 +136,83 @@ describe("CitizenBody", () => {
     expect(d?.paceOutOfBand).toBe(true);
   });
 });
+
+describe("CitizenBody with flavour (story 5.2)", () => {
+  const flavour = {
+    bucketMilliminutes: cfg.flavourBucketMilliminutes,
+    glancePercent: cfg.flavourGlancePercent,
+    glanceMilliminutes: cfg.flavourGlanceMilliminutes,
+    idleFrameMilliminutes: cfg.idleFrameMilliminutes,
+    idleFrames: 6,
+    rampCells: cfg.avoidRadiusCells,
+  };
+  const make = (id = "c") => new CitizenBody(new TestGrid(), CFG, gait, id, flavour);
+  const stand = { kind: "at", node: { x: 3, y: 4, floor: 0 }, facing: "left" } as const;
+
+  it("a standing citizen never leaves its node, whatever it shows", () => {
+    const body = make("crowd-1");
+    const facings = new Set<string>();
+    const frames = new Set<number>();
+    for (let t = 0; t < 200_000; t += 40) {
+      const f = frameOf(body, stand, t);
+      expect([f.x, f.y, f.animation]).toEqual([3.5, 4.5, "idle"]);
+      facings.add(f.direction);
+      frames.add(f.frameIndex);
+    }
+    expect(facings.size).toBeGreaterThan(1);
+    expect(frames.size).toBe(6);
+  });
+
+  it("two independent bodies draw the same frame, whatever each was asked before", () => {
+    const a = make("same");
+    const b = make("same");
+    for (const t of [5, 99_999, 40_000, 7]) frameOf(a, stand, t);
+    for (let t = 0; t < 120_000; t += 777) {
+      const x = frameOf(a, stand, t);
+      const y = frameOf(b, stand, t);
+      for (const k of Object.keys(x) as (keyof typeof x)[])
+        expect(Object.is(x[k], y[k])).toBe(true);
+    }
+  });
+
+  it("a walker shows the walk row and no flavour", () => {
+    const body = make("w");
+    for (let t = 1100; t < 2900; t += 100) {
+      const f = frameOf(body, transit, t);
+      expect(f.animation).toBe("walk");
+      expect(f.direction).toBe("right");
+      expect(f.moving).toBe(true);
+    }
+  });
+
+  it("a citizen waiting to depart shows no glance that would run into its departure", () => {
+    let checked = 0;
+    for (let n = 0; n < 30; n++) {
+      const body = make(`c${n}`);
+      for (let t = 0; t < 60_000; t += 25) {
+        if (frameOf(body, stand, t).direction === "left") continue;
+        // Glancing at `t` while free to stay; its leg departs right after.
+        const leaving: TransitState = {
+          ...transit,
+          key: 100 + checked,
+          startFacing: "left",
+          leg: { ...transit.leg, departAt: t + 1, arriveAt: t + 2001 },
+        };
+        const f = frameOf(make(`c${n}`), leaving, t);
+        expect(f.direction).toBe("left");
+        checked++;
+        break;
+      }
+    }
+    expect(checked).toBeGreaterThan(5);
+  });
+
+  it("reports the heading and the ramp a sidestep needs, zero at both ends of the leg", () => {
+    const body = make();
+    const mid = frameOf(body, transit, 2000);
+    expect([mid.headingX, mid.headingY, mid.moving]).toEqual([1, 0, true]);
+    expect(mid.ramp).toBe(1);
+    expect(frameOf(body, transit, 1000).ramp).toBe(0);
+    expect(frameOf(body, transit, 3000).ramp).toBe(0);
+  });
+});

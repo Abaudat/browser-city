@@ -81,12 +81,16 @@ interface SegmentPath {
   readonly length: number;
 }
 
+function segmentLength(dx: number, dy: number): number {
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 function buildSegment(points: Float64Array): SegmentPath {
   const along = new Float64Array(points.length / 2);
   for (let i = 1; i < along.length; i++) {
     along[i] =
       (along[i - 1] as number) +
-      Math.hypot(
+      segmentLength(
         (points[i * 2] as number) - (points[i * 2 - 2] as number),
         (points[i * 2 + 1] as number) - (points[i * 2 - 1] as number),
       );

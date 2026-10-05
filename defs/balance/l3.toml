@@ -48,3 +48,59 @@ key = "l3.path_max_cells"
 value = 65536
 min = 64
 max = 16777216
+
+# Story 5.2 (FR64, FR65, NFR26): local avoidance and flavour. Both are draw
+# only: a pure function of ledger poses, ids and city time.
+
+[[balance]]
+# Two bodies closer than this (millicells) step around each other; the
+# sidestep is zero at this distance and grows smoothly as they close.
+key = "l3.avoid_radius_millicells"
+value = 1500
+min = 500
+max = 8000
+
+[[balance]]
+# The largest sidestep of one body from its ledger pose, in millicells. Under
+# half a cell, so a body never leaves its tile's neighbourhood.
+key = "l3.avoid_max_offset_millicells"
+value = 450
+min = 0
+max = 499
+
+[[balance]]
+# Neighbours one body steps around at once; any more are ignored, in a fixed
+# order every client shares.
+key = "l3.avoid_max_neighbours"
+value = 16
+min = 1
+max = 256
+
+[[balance]]
+# A standing citizen resolves one flavour draw per bucket this long
+# (milliminutes), its boundaries shifted by an offset from its id.
+key = "l3.flavour_bucket_milliminutes"
+value = 10000
+min = 400
+max = 100000
+
+[[balance]]
+# The share of buckets that resolve to a glance; the rest resolve to nothing.
+key = "l3.flavour_glance_percent"
+value = 25
+min = 0
+max = 100
+
+[[balance]]
+# How long a glance lasts, in milliminutes; it always fits inside its bucket.
+key = "l3.flavour_glance_milliminutes"
+value = 1200
+min = 40
+max = 20000
+
+[[balance]]
+# How long each frame of the idle row shows, in milliminutes.
+key = "l3.idle_frame_milliminutes"
+value = 80
+min = 4
+max = 2000

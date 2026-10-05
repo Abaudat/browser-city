@@ -18,6 +18,17 @@ export interface L3Config {
   /** Ground distance of one walk cycle, in cells. */
   readonly strideCells: number;
   readonly realMsPerCityMinute: number;
+  /** Bodies closer than this step around each other, in cells. */
+  readonly avoidRadiusCells: number;
+  /** The largest sidestep from the ledger pose, in cells. */
+  readonly avoidMaxOffsetCells: number;
+  readonly avoidMaxNeighbours: number;
+  /** Half the width of a body, in cells: the sidestep keeps this clear of walls. */
+  readonly bodyHalfWidthCells: number;
+  readonly flavourBucketMilliminutes: number;
+  readonly flavourGlancePercent: number;
+  readonly flavourGlanceMilliminutes: number;
+  readonly idleFrameMilliminutes: number;
 }
 
 function balance(defs: Defs, key: string): number {
@@ -39,6 +50,15 @@ export function loadL3Config(defs: Defs): L3Config {
     maxCells: balance(defs, "l3.path_max_cells"),
     strideCells: balance(defs, "movement.gait_stride_millicells_per_cycle") / MILLICELLS_PER_CELL,
     realMsPerCityMinute: defs.realMsPerCityMinute,
+    avoidRadiusCells: balance(defs, "l3.avoid_radius_millicells") / MILLICELLS_PER_CELL,
+    avoidMaxOffsetCells: balance(defs, "l3.avoid_max_offset_millicells") / MILLICELLS_PER_CELL,
+    avoidMaxNeighbours: balance(defs, "l3.avoid_max_neighbours"),
+    bodyHalfWidthCells:
+      balance(defs, "movement.player_body_width_subcells") / defs.colliderSubcellsPerCell / 2,
+    flavourBucketMilliminutes: balance(defs, "l3.flavour_bucket_milliminutes"),
+    flavourGlancePercent: balance(defs, "l3.flavour_glance_percent"),
+    flavourGlanceMilliminutes: balance(defs, "l3.flavour_glance_milliminutes"),
+    idleFrameMilliminutes: balance(defs, "l3.idle_frame_milliminutes"),
   };
 }
 
@@ -61,5 +81,13 @@ export function walkFramesPerCycle(defs: Defs, family: Family): number {
   const layout = defs.appearanceLayouts.find((l) => l.family === family);
   const row = layout?.rows.find((r) => r.animation === "walk");
   if (!row) throw new Error(`walkFramesPerCycle: no walk row in the ${family} appearance layout`);
+  return row.framesPerDirection;
+}
+
+/** The frames in one direction of the idle row for `family`. */
+export function idleFramesPerCycle(defs: Defs, family: Family): number {
+  const layout = defs.appearanceLayouts.find((l) => l.family === family);
+  const row = layout?.rows.find((r) => r.animation === "idle");
+  if (!row) throw new Error(`idleFramesPerCycle: no idle row in the ${family} appearance layout`);
   return row.framesPerDirection;
 }

@@ -89,6 +89,55 @@ setTimeout(() => {}, 1);
 setInterval(() => {}, 1);
 GLOBALS
 
+# Story 5.2 (NFR26, FR65): unseeded or engine-approximated numbers.
+while IFS= read -r code; do
+  d="$(plant "$code")"
+  check "banned numeric source: $code" 1 bash "$CHECK" "$d"
+done <<'NUMERIC'
+const { random } = Math; export const r = random();
+const M = Math; export const r = M.random();
+export const r = Math["random"]();
+export const r = Math[name]();
+export const r = Reflect.get(Math, "random")();
+export const r = crypto.getRandomValues(new Uint32Array(1));
+export const t = Date.now();
+export const t = performance.now();
+export const d = Math.hypot(1, 2);
+export const d = Math.sin(1);
+export const d = Math.cos(1);
+export const d = Math.atan2(1, 2);
+export const d = Math.exp(1);
+export const d = Math.pow(2, 0.5);
+export const d = Math.cbrt(2);
+export const d = Math.log(2);
+export const h = Math.imul(1, 2);
+export const h = 0x811c9dc5;
+export const h = 0xDEADBEEF;
+NUMERIC
+
+while IFS= read -r code; do
+  d="$(plant "$code")"
+  check "allowed numeric source: $code" 0 bash "$CHECK" "$d"
+done <<'ALLOWED'
+export const a = Math.abs(1) + Math.floor(1.5) + Math.ceil(1.5) + Math.round(1.5) + Math.trunc(1.5);
+export const a = Math.min(1, 2) + Math.max(1, 2) + Math.sqrt(4) + Math.sign(-1);
+export const a = 0xff + 0x1000;
+// Math.hypot and Math.random are named in a comment, never called
+ALLOWED
+
+# The seed module alone may mix integers and hold hash constants.
+d="$(fake_dir)"
+printf '%s
+' 'export const h = Math.imul(0x811c9dc5, 0x01000193) >>> 0;' > "$d/seed.ts"
+check "seed.ts may use Math.imul and 32-bit hash constants" 0 bash "$CHECK" "$d"
+printf '%s
+' 'export const h = Math.imul(0x811c9dc5, 0x01000193) >>> 0;' > "$d/other.ts"
+check "any other module may not" 1 bash "$CHECK" "$d"
+d="$(fake_dir)"
+printf '%s
+' 'export const r = Math.random();' > "$d/seed.ts"
+check "seed.ts may not use Math.random" 1 bash "$CHECK" "$d"
+
 d="$(plant_net 'import { findMicroPath } from "../l3/micro-path";')"
 check "net/ importing l3/" 1 bash "$CHECK" "$REAL_L3" "$d"
 d="$(plant_net 'const m = await import("../l3/body");')"

@@ -367,6 +367,73 @@ export const WALKER_SPECS: Readonly<Record<string, TimetableSpec>> = {
   },
 };
 
+/** Story 5.2: the demo staging for local avoidance, as timetable data (story
+ * 5.5 deletes it with the rest). Two citizens meeting head-on on open
+ * pavement, one walking past a standing citizen, two leaving one node
+ * together. Everyone walks the same row from end to end, so the pairs meet
+ * mid-leg. */
+export const CROSSER_EAST_ID = "crosser-east";
+export const CROSSER_WEST_ID = "crosser-west";
+export const PASSER_ID = "passer";
+export const BYSTANDER_ID = "bystander";
+export const TWIN_A_ID = "twin-a";
+export const TWIN_B_ID = "twin-b";
+
+const LANE_X0 = PLAZA_X0 + STRIP_WIDTH + 2;
+const LANE_X1 = PLAZA_X0 + STRIP_WIDTH + 13;
+const CROSSING_ROW = PLAZA_Y0;
+const PASSING_ROW = PLAZA_Y0 + 4;
+const TWINS_ROW = PLAZA_Y0 + 6;
+
+function lane(row: number, reverse = false): TimetableSpec {
+  const a = { x: LANE_X0, y: row, floor: CROWD_FLOOR };
+  const b = { x: LANE_X1, y: row, floor: CROWD_FLOOR };
+  return {
+    out: reverse ? [b, a] : [a, b],
+    dwellMs: 1500,
+    homeFacing: reverse ? "left" : "right",
+    outFacing: reverse ? "left" : "right",
+  };
+}
+
+export const AVOIDANCE_SPECS: Readonly<Record<string, TimetableSpec>> = {
+  [CROSSER_EAST_ID]: lane(CROSSING_ROW),
+  [CROSSER_WEST_ID]: lane(CROSSING_ROW, true),
+  [PASSER_ID]: lane(PASSING_ROW),
+  [TWIN_A_ID]: lane(TWINS_ROW),
+  [TWIN_B_ID]: lane(TWINS_ROW),
+};
+
+/** Where the standing citizen the passer walks past stands: on the passer's
+ * own row, halfway along it. */
+export const BYSTANDER_CELL = {
+  x: Math.floor((LANE_X0 + LANE_X1) / 2),
+  y: PASSING_ROW,
+};
+
+export function buildAvoidanceFixtures(defs: Defs): CitizenFixture[] {
+  const walking = [CROSSER_EAST_ID, CROSSER_WEST_ID, PASSER_ID, TWIN_A_ID, TWIN_B_ID];
+  const fixtures: CitizenFixture[] = walking.map((id, k) => {
+    const spec = AVOIDANCE_SPECS[id] as TimetableSpec;
+    const origin = spec.out[0] as { x: number; y: number };
+    return {
+      id,
+      tuple: tupleFor(defs, "adult", ADULT_COUNT + 4 + k),
+      gridX: origin.x + 0.5,
+      gridY: origin.y + 0.5,
+      facing: spec.homeFacing,
+    };
+  });
+  fixtures.push({
+    id: BYSTANDER_ID,
+    tuple: tupleFor(defs, "adult", ADULT_COUNT + 4 + walking.length),
+    gridX: BYSTANDER_CELL.x + 0.5,
+    gridY: BYSTANDER_CELL.y + 0.5,
+    facing: "down",
+  });
+  return fixtures;
+}
+
 export function buildWalkerFixture(defs: Defs): CitizenFixture {
   return {
     id: WALKER_ID,

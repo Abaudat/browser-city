@@ -3,8 +3,10 @@
 // t_arrive)`. Pose comes from `Body`, the walk frame from distance walked, the
 // facing from the path; nothing here reads a clock or keeps a position.
 
+import { endpointRamp } from "./avoidance";
 import { Body, type BodyPose, type Cell, createBodyPose, type Leg } from "./body";
 import type { L3Config } from "./config";
+import { createFlavourFrame, type FlavourDials, type FlavourFrame, flavourAt } from "./flavour";
 import { type Facing, facingOfHeading, phaseOffsetFor, walkFrame } from "./gait";
 import type { PathConfig, Walkability } from "./micro-path";
 
@@ -41,6 +43,15 @@ export interface CitizenFrame {
   legKey: number;
   departAt: number;
   arriveAt: number;
+  /** Whether the body is walking a leg, and its unit heading (0, 0 when not):
+   * what avoidance needs, never what facing is drawn from. */
+  moving: boolean;
+  headingX: number;
+  headingY: number;
+  /** How far into its sidestep a walker is: 0 at both ends of a leg. */
+  ramp: number;
+  /** A standing citizen is showing a glance. */
+  glancing: boolean;
 }
 
 export function createCitizenFrame(): CitizenFrame {
@@ -55,7 +66,18 @@ export function createCitizenFrame(): CitizenFrame {
     legKey: 0,
     departAt: 0,
     arriveAt: 0,
+    moving: false,
+    headingX: 0,
+    headingY: 0,
+    ramp: 0,
+    glancing: false,
   };
+}
+
+/** What a citizen's life on screen needs besides its pose: the flavour dials
+ * and the distance over which a sidestep eases in from either end of a leg. */
+export interface LifeDials extends FlavourDials {
+  readonly rampCells: number;
 }
 
 export interface GaitDials {
@@ -77,11 +99,24 @@ export class CitizenBody {
   readonly #path: PathConfig;
   readonly #gait: GaitDials;
   readonly #phase: number;
+  readonly #id: string;
+  readonly #flavour: LifeDials | undefined;
+  readonly #flavourFrame: FlavourFrame = createFlavourFrame();
   readonly #pose: BodyPose = createBodyPose();
   #body: Body | undefined;
   #key = Number.NaN;
 
-  constructor(walk: Walkability, path: PathConfig, gait: GaitDials, citizenId: string) {
+  /** With `flavour`, a standing citizen plays its idle row on city time and
+   * now and then glances; without, it stands on frame 0. */
+  constructor(
+    walk: Walkability,
+    path: PathConfig,
+    gait: GaitDials,
+    citizenId: string,
+    flavour?: LifeDials,
+  ) {
+    this.#id = citizenId;
+    this.#flavour = flavour;
     this.#walk = walk;
     this.#path = path;
     this.#gait = gait;
@@ -98,19 +133,36 @@ export class CitizenBody {
     return this.#body;
   }
 
+  /** Standing: the idle row and, now and then, a glance. `until` is the
+   * instant the next leg departs. */
+  #stand(facing: Facing, t: number, until: number, out: CitizenFrame): void {
+    out.animation = "idle";
+    out.direction = facing;
+    out.frameIndex = 0;
+    out.moving = false;
+    out.headingX = 0;
+    out.headingY = 0;
+    out.ramp = 0;
+    out.glancing = false;
+    if (!this.#flavour) return;
+    const f = this.#flavourFrame;
+    flavourAt(this.#id, t, facing, this.#flavour, until, f);
+    out.direction = f.direction;
+    out.frameIndex = f.frameIndex;
+    out.glancing = f.glancing;
+  }
+
   /** Writes the frame to draw for `state` at city time `t` (milliminutes). */
   frameAt(state: CitizenState, t: number, out: CitizenFrame): void {
     if (state.kind === "at") {
       out.x = state.node.x + 0.5;
       out.y = state.node.y + 0.5;
       out.floor = state.node.floor;
-      out.animation = "idle";
-      out.direction = state.facing;
-      out.frameIndex = 0;
       out.distance = 0;
       out.legKey = 0;
       out.departAt = 0;
       out.arriveAt = 0;
+      this.#stand(state.facing, t, Number.POSITIVE_INFINITY, out);
       return;
     }
     if (state.key !== this.#key || !this.#body) {
@@ -127,6 +179,11 @@ export class CitizenBody {
     out.departAt = state.leg.departAt;
     out.arriveAt = state.leg.arriveAt;
     if (pose.moving) {
+      out.moving = true;
+      out.glancing = false;
+      out.headingX = pose.headingX;
+      out.headingY = pose.headingY;
+      out.ramp = endpointRamp(pose.distance, this.#body.totalLength, this.#flavour?.rampCells ?? 0);
       out.animation = "walk";
       out.direction = facingOfHeading(pose.headingX, pose.headingY);
       out.frameIndex = walkFrame(
@@ -137,9 +194,13 @@ export class CitizenBody {
       );
       return;
     }
-    out.animation = "idle";
-    out.direction = t >= state.leg.arriveAt ? state.endFacing : state.startFacing;
-    out.frameIndex = 0;
+    const arrived = t >= state.leg.arriveAt;
+    this.#stand(
+      arrived ? state.endFacing : state.startFacing,
+      t,
+      arrived ? Number.POSITIVE_INFINITY : state.leg.departAt,
+      out,
+    );
   }
 
   /** The current body's diagnostics, or none while not on a leg. */

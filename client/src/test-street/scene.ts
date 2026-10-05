@@ -71,7 +71,7 @@ import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
 import { ASSET_URLS, type PixelRect } from "./assets";
 import { buildCommuterAppearanceTuple, buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
-import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
+import { type CitizensLayerHandle, type L3BodyReport, mountCitizensLayer } from "./citizens-layer";
 import { COMMUTER_ID, COMMUTER_SPEC, COMMUTER_STABLE_ID } from "./commuter";
 import {
   buildCharacterDrawable,
@@ -298,18 +298,6 @@ export interface MountStreetSceneOptions {
    * fixture module. Absent (or `false`) means the crowd's own tuples
    * stay distinct, exactly as they always have. */
   readonly crowdIdenticalTuples?: boolean;
-}
-
-/** One L3 body as the debug tooling reads it. */
-export interface L3BodyReport {
-  readonly id: string;
-  readonly x: number;
-  readonly y: number;
-  readonly floor: number;
-  /** Segments walked straight for want of a path. */
-  readonly fallbacks: number;
-  /** Some segment is walked outside the walking-pace band. */
-  readonly paceOutOfBand: boolean;
 }
 
 export interface CommuterDrawn {
@@ -1722,7 +1710,7 @@ export async function mountStreetScene(
     textureFor("sidewalk", textures),
     atlasBaseUrl,
     crowdIdenticalTuples ?? false,
-    { walk: npcWalk, config: l3Config },
+    { walk: npcWalk, config: l3Config, frozen: crowdFrozen },
   );
   // Story 4.4: the other players, in the same floor-0 container, advanced
   // from the same ticker below.
