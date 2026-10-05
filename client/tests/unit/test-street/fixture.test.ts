@@ -36,7 +36,7 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
     // `wall_segment` cells (west, east and party runs). One-cell defs are
     // placed once per cell (`sprite` never repeats), so this counts
     // *placed rows*, not distinct props.
-    expect(defRows.length).toBe(52);
+    expect(defRows.length).toBe(54);
   });
 
   it("names only real, currently-declared defs/objects keys", () => {
@@ -64,6 +64,7 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
       "stairwell_top_railing",
       "stairwell_treads",
       "stairwell_well",
+      "threshold_arch_slate",
       "trash_bin",
       "wall_face",
       "wall_segment",

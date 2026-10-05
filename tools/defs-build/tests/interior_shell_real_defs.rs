@@ -5,14 +5,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use defs_build::atlas::build::{build_atlas, check_max_bound_pages, scene_page_budget};
-use defs_build::atlas::character::collect_character_parts;
-use defs_build::atlas::image::decode_rgba8;
+use defs_build::atlas::build::scene_page_budget;
 use defs_build::atlas::pack::PageMeta;
 use defs_build::atlas::theme::{resolve_page_group, theme_group};
-use defs_build::{
-    appearance_sheet_paths, codes, fsio, model, object_sprite_sheet_paths, parse, validate,
-};
+use defs_build::{build_from_repo_root, fsio, model, parse, validate};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -53,104 +49,68 @@ fn every_real_room_builder_sheet_resolves_to_a_page_group() {
     assert!(seen > 0, "no sheets found in {dir:?} -- vacuous");
 }
 
-/// The real mixed scene: every street-kit object plus the interior shell
-/// objects, all in the shared group (no themed group exists in the real
-/// tree today, so the worst-themed term is 0), plus the character
-/// composites -- through the production budget check, on real packed pages.
+/// The text of `field`'s value in one `defs.json` row (`"field": 12` or
+/// `"field": "text"`), or `None`.
+fn field<'a>(row: &'a str, field: &str) -> Option<&'a str> {
+    let needle = format!("\"{field}\": ");
+    let rest = &row[row.find(&needle)? + needle.len()..];
+    let end = rest.find([',', '}']).unwrap_or(rest.len());
+    Some(rest[..end].trim().trim_matches('"'))
+}
+
+/// The real mixed scene, read from the emitted `defs.json` -- the artefact
+/// the client loads -- through the production build: every street-kit
+/// object and the interior shell objects resolve to shared-group pages, and
+/// the packed pages fit the bound (no themed group exists in the real tree
+/// today, so the worst-themed term is 0).
 #[test]
 fn the_real_mixed_street_and_interior_shell_scene_fits_the_bound_page_budget() {
-    let root = repo_root();
-    let mut text_files = fsio::read_text(&root, &fsio::list_defs_sources(&root).unwrap()).unwrap();
-    text_files.sort_by(|a, b| a.0.cmp(&b.0));
-    let raw = parse::parse_all(&text_files).unwrap();
-
-    let mut object_sheet_paths = object_sprite_sheet_paths(&raw);
-    object_sheet_paths.sort();
-    object_sheet_paths.dedup();
-    let mut all_sheet_paths = appearance_sheet_paths(&raw);
-    all_sheet_paths.extend(object_sheet_paths.iter().cloned());
-    all_sheet_paths.sort();
-    all_sheet_paths.dedup();
-    let sheet_dims: BTreeMap<String, (u32, u32)> = fsio::read_png_dims(&root, &all_sheet_paths)
+    let json = build_from_repo_root(&repo_root(), "interior-shell-test-version")
         .unwrap()
-        .into_iter()
+        .json;
+
+    let pages: Vec<(String, PageMeta)> = json
+        .lines()
+        .filter(|l| l.contains("\"file\":") && l.contains("\"group\":"))
+        .map(|l| {
+            (
+                field(l, "file").unwrap().to_string(),
+                PageMeta {
+                    group: field(l, "group").unwrap().to_string(),
+                    width: field(l, "width").unwrap().parse().unwrap(),
+                    height: field(l, "height").unwrap().parse().unwrap(),
+                },
+            )
+        })
         .collect();
-    let code_tables = codes::CodeTables::parse(&fsio::read_codes_golden(&root).unwrap());
-    let defs = validate::validate(
-        &raw,
-        &sheet_dims,
-        &code_tables,
-        model::SPRITE_SHEET_ALLOWED_ROOT,
-    )
-    .unwrap();
+    assert!(!pages.is_empty(), "no atlas_pages in defs.json -- vacuous");
 
-    let read = |paths: &[String]| -> BTreeMap<String, Vec<u8>> {
-        let bufs: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
-        fsio::read_bytes(&root, &bufs)
-            .unwrap()
-            .into_iter()
-            .map(|(p, b)| (p.to_string_lossy().replace('\\', "/"), b))
-            .collect()
-    };
-    let object_bytes = read(&object_sheet_paths);
-    let appearance_bytes = read(&appearance_sheet_paths(&raw));
-    let character_parts = collect_character_parts(
-        &defs.bodies,
-        &defs.eyes,
-        &defs.hairstyles,
-        &defs.outfits,
-        &defs.accessories,
-    );
-    let out = build_atlas(
-        &defs.objects,
-        &object_bytes
-            .iter()
-            .map(|(k, v)| (k.clone(), decode_rgba8(v).unwrap()))
-            .collect(),
-        &validate::validate_page_groups(&raw).unwrap(),
-        &character_parts,
-        &appearance_bytes,
-        &defs.appearance_layouts,
-    )
-    .unwrap();
-
-    // The scene: street kit + interior shell, every one on a shared page.
-    let scene_keys = [
+    for key in [
         "floor_pale_stone",
         "threshold_arch_slate",
         "wall_face",
         "sidewalk_pavement",
         "road_asphalt",
         "grass_ground",
-    ];
-    for key in scene_keys {
-        let o = defs
-            .objects
-            .iter()
-            .find(|o| o.key == key)
-            .unwrap_or_else(|| panic!("real object '{key}' is missing"));
-        let page = out.atlas_by_object_id[&o.id].page as usize;
+    ] {
+        let row = json
+            .lines()
+            .find(|l| field(l, "key") == Some(key))
+            .unwrap_or_else(|| panic!("real object '{key}' is missing from defs.json"));
+        let atlas = &row[row.find("\"atlas\"").unwrap()..];
+        let page: usize = field(atlas, "page").unwrap().parse().unwrap();
         assert_eq!(
-            out.pages[page].group,
+            pages[page].1.group,
             model::ATLAS_SHARED_GROUP,
             "'{key}' must pack onto the shared group"
         );
     }
 
-    let pages: Vec<PageMeta> = out
-        .pages
-        .iter()
-        .map(|p| PageMeta {
-            group: p.group.clone(),
-            width: p.width,
-            height: p.height,
-        })
-        .collect();
-    let budget = scene_page_budget(&pages);
+    let metas: Vec<PageMeta> = pages.into_iter().map(|(_, m)| m).collect();
+    let budget = scene_page_budget(&metas);
     assert!(
         budget.total <= model::ATLAS_MAX_BOUND_PAGES,
         "real scene budget {budget:?} exceeds ATLAS_MAX_BOUND_PAGES ({})",
         model::ATLAS_MAX_BOUND_PAGES
     );
-    check_max_bound_pages(&pages).unwrap();
 }

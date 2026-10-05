@@ -72,6 +72,7 @@ import {
   streetSubwayApproachRoute,
   streetWalkRoute,
   streetWalkUntilMet,
+  THRESHOLD_ARCH_SLATE_DEF_ID,
   TRASH_BIN_DEF_ID,
   WINDOW_DEF_ID,
 } from "../../../src/test-street/fixture";
@@ -535,6 +536,8 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
     for (const prop of STREET_PROPS) {
       const inScope = prop.layer === "walls" || prop.layer === "furniture" || prop.solid === true;
       if (!inScope || UNCOLLIDED_FURNITURE.has(prop.id)) continue;
+      // A doorway is an opening: `threshold_arch_slate` is walkable by design.
+      if (isDefStreetProp(prop) && prop.defId === THRESHOLD_ARCH_SLATE_DEF_ID) continue;
       const defId = isDefStreetProp(prop) ? prop.defId : streetDefId(prop.id);
       const source = sources.get(defId);
       if (!source) {
@@ -1358,9 +1361,6 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
   // ground pass still paints it outside any def's own footprint. Never
   // grows silently: a key lands here only by a human adding it, and this
   // test fails the day it stops colliding, so the list can only shrink.
-  // `floorSheet` (story 2.14): the harness floor fill is cropped from the
-  // same sheet `floor_pale_stone` is, at the same rect; drawing it through
-  // the atlas is the scene rewiring story 2.14 left out.
   const ACCEPTED_SHEET_COLLISIONS = new Set(["sidewalk", "floorSheet"]);
 
   it("no ModernTileset/ import a real StreetProp row still uses names a sheet a real defs/objects entry's own sprite already names", () => {

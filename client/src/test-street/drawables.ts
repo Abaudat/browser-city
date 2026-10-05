@@ -18,6 +18,7 @@ import {
   type StreetFootprint,
   type StreetLayer,
   type StreetPropByDef,
+  THRESHOLD_ARCH_SLATE_DEF_ID,
   WALL_SEGMENT_DEF_ID,
 } from "./fixture";
 
@@ -37,6 +38,9 @@ interface PropDrawableBase extends Drawable, VisibilityDrawable {
  * `AtlasPageLoader.objectCellTexture` -- never carries `assetKey`. */
 export interface PropDrawableByDef extends PropDrawableBase {
   readonly defId: number;
+  /** Screen pixels the sprite is drawn above its sort anchor (the wall-top
+   * band over a doorway); sorting and visibility are unchanged. */
+  readonly liftPx?: number;
 }
 
 /** A drawable for a prop placed by a hand-picked asset key into `scene.ts`'s
@@ -69,6 +73,17 @@ export function isDefPropDrawable(drawable: PropDrawable): drawable is PropDrawa
  * translucent window as a grey block over the furniture even while the
  * real wall is drawn -- Artie's cycle-2 finding). */
 const STUB_ID_OFFSET = 500_000n;
+
+/** The wall-top band companion's stable-id offset (see
+ * [`WALL_TOP_BAND_LIFT_PX`]). */
+const BAND_ID_OFFSET = 600_000n;
+
+/** `threshold_arch_slate` is 32px tall: one cell of opening plus 16px of
+ * lintel, where the `wall_face` run beside it rises 48px. The remaining
+ * 16px of the wall-top band is the flush `wall_segment` swatch drawn this
+ * far above the doorway cell's bottom edge, sorted and retracted with the
+ * threshold itself (never a colliding wall cell). */
+export const WALL_TOP_BAND_LIFT_PX = 32;
 
 /** The def ids `defs/` marks as windows (FR121) -- resolved once by the
  * caller (`world/object-defs.ts`'s `windowDefIds`), never looked up while
@@ -178,7 +193,29 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
       // to invert that into "hidden while the parent shows, normal while
       // it's retracted" rather than applying the ordinary retraction rule
       // a real wall follows.
-      if (isNearSide) {
+      const isThreshold = isDef && prop.defId === THRESHOLD_ARCH_SLATE_DEF_ID;
+      if (isThreshold) {
+        drawables.push({
+          x: toSortUnits(anchor.x),
+          y: toSortUnits(anchor.y),
+          rank,
+          stableId: prop.id + BAND_ID_OFFSET,
+          floor: prop.floor,
+          defId: WALL_SEGMENT_DEF_ID,
+          sourceCol: 0,
+          sourceRow: 0,
+          footprintWidth: 1,
+          footprintHeight: 1,
+          layerCode,
+          ownerBuildingId,
+          isWindow: false,
+          isNearSide,
+          isStub: false,
+          liftPx: WALL_TOP_BAND_LIFT_PX,
+        });
+      }
+      // A doorway has no wall stub: an opening stays an opening.
+      if (isNearSide && !isThreshold) {
         drawables.push({
           x: toSortUnits(anchor.x),
           y: toSortUnits(anchor.y),

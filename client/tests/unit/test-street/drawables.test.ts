@@ -16,6 +16,7 @@ import {
   buildCharacterDrawable,
   buildPropDrawables,
   updateCharacterDrawable,
+  WALL_TOP_BAND_LIFT_PX,
 } from "../../../src/test-street/drawables";
 import {
   BRIDGE_FLIGHT_X0,
@@ -44,6 +45,7 @@ import {
   streetDefId,
   streetNearRailingPressRoute,
   streetPlacedRows,
+  THRESHOLD_ARCH_SLATE_DEF_ID,
   wallRunCellId,
 } from "../../../src/test-street/fixture";
 import type { Vec2 } from "../../../src/world/movement";
@@ -886,6 +888,33 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
     for (const id of [82n, 15n]) {
       const p = props.find((q) => q.stableId === id);
       expect(p && passOfLayer(p.layerCode)).toBe("pool");
+    }
+  });
+});
+
+describe("story 2.14: a shop door's threshold", () => {
+  const props = buildStreetProps();
+  const thresholds = props.filter((d) => "defId" in d && d.defId === THRESHOLD_ARCH_SLATE_DEF_ID);
+
+  it("is placed at both shop doors, and retracts with its wall run", () => {
+    expect(thresholds).toHaveLength(2);
+    for (const t of thresholds) {
+      expect(t.isNearSide).toBe(true);
+      expect(t.ownerBuildingId).not.toBe(NO_OWNER);
+    }
+  });
+
+  it("has a wall-top band companion at the same sort point, lifted above it, retracting with it, and no wall stub", () => {
+    const band = props.filter((d) => "liftPx" in d && d.liftPx === WALL_TOP_BAND_LIFT_PX);
+    expect(band).toHaveLength(2);
+    for (const b of band) {
+      const owner = thresholds.find((t) => t.x === b.x && t.y === b.y);
+      expect(owner, "a band must share its threshold's sort point").toBeDefined();
+      expect(b.isNearSide).toBe(owner?.isNearSide);
+      expect(b.ownerBuildingId).toBe(owner?.ownerBuildingId);
+    }
+    for (const t of thresholds) {
+      expect(props.some((d) => d.isStub && d.x === t.x && d.y === t.y)).toBe(false);
     }
   });
 });

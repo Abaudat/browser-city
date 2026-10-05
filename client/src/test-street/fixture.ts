@@ -176,6 +176,12 @@ export const STAIRWELL_WELL_DEF_ID = 19;
 /** `wall_face`: the tall interior face of a north or south wall run, one
  * cell wide. West and east runs are `wall_segment` rows. */
 export const WALL_FACE_DEF_ID = 15;
+/** `floor_pale_stone`: the interior room fill (drawn by the flat ground
+ * pass). */
+export const FLOOR_PALE_STONE_DEF_ID = 24;
+/** `threshold_arch_slate`: the one-cell doorway lintel placed at each
+ * shop door. */
+export const THRESHOLD_ARCH_SLATE_DEF_ID = 25;
 /** The platform's way up: a flat flight and the railing along its south
  * side (story 15.11). */
 export const PLATFORM_STAIR_FLIGHT_DEF_ID = 16;
@@ -642,6 +648,25 @@ const STREET_PROP_LIST: StreetProp[] = [
   // front while the player is inside -- the same corner id 4/id 2 already
   // form on the west side, just party-wall side.
   ...wallRun(40n, "horizontal", PARTY_WALL_X, SOUTH_WALL_Y, 1, 0),
+  // Each shop's door: a one-cell threshold in the front wall line, so the
+  // opening reads as a doorway under a lintel rather than a hole. Placed on
+  // `walls` like the run it interrupts, so it retracts with it.
+  {
+    id: 150n,
+    x: DOOR_X_A,
+    y: SOUTH_WALL_Y,
+    floor: 0,
+    layer: "walls",
+    defId: THRESHOLD_ARCH_SLATE_DEF_ID,
+  },
+  {
+    id: 151n,
+    x: DOOR_X_B,
+    y: SOUTH_WALL_Y,
+    floor: 0,
+    layer: "walls",
+    defId: THRESHOLD_ARCH_SLATE_DEF_ID,
+  },
 
   // A poster mounted flat on the north wall face (wall_decals, FR123's
   // tens rank above `walls`).
@@ -1108,7 +1133,10 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
  * every other drawable is culled (FR122), through `render/pixi-
  * visibility.ts`'s `VisibilityApplier`, never a second, ad hoc rule. */
 export interface StreetGroundTiles {
-  readonly assetKey: string;
+  /** A raw `ASSET_URLS` texture, or -- for a real def -- `defId`. Exactly
+   * one is set. */
+  readonly assetKey?: string;
+  readonly defId?: number;
   readonly floor: number;
   readonly x0: number;
   readonly y0: number;
@@ -1121,7 +1149,7 @@ export interface StreetGroundTiles {
  * and edge strip are two more, from the subway pack, never the shops'
  * `floor` crop (Artie's direction: it must read as somewhere new). */
 export const INTERIOR_FLOOR_TILES: StreetGroundTiles = {
-  assetKey: "floor",
+  defId: FLOOR_PALE_STONE_DEF_ID,
   floor: STREET_FLOOR,
   x0: WEST_WALL_X,
   y0: NORTH_WALL_Y,
@@ -1130,7 +1158,7 @@ export const INTERIOR_FLOOR_TILES: StreetGroundTiles = {
 };
 
 export const INTERIOR_FLOOR_TILES_B: StreetGroundTiles = {
-  assetKey: "floor",
+  defId: FLOOR_PALE_STONE_DEF_ID,
   floor: STREET_FLOOR,
   x0: PARTY_WALL_X + 1,
   y0: NORTH_WALL_Y,

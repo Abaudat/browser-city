@@ -16,7 +16,7 @@ tags = ["underfoot", "floor"]
 
 # A one-cell doorway: the centre of the slate arch, same finish as
 # `wall_face`, so its cap lines up with the wall's. Opening below, lintel
-# above; no collider. For north/south wall runs only -- west/east runs
+# above (the footprint is the one walkable cell; the lintel overhangs); no collider. For north/south wall runs only -- west/east runs
 # are flush swatches with no face to cut an arch into.
 [[object]]
 id = 25
@@ -25,5 +25,5 @@ name = "Slate Threshold"
 layer = "walls"
 sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Arched_Entryways_16x16.png", x = 104, y = 352, w = 16, h = 32 }
 width = 1
-height = 2
+archetype = "underfoot_flat"
 tags = ["underfoot", "threshold", "wall_run"]

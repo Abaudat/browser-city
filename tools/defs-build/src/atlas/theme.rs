@@ -243,28 +243,10 @@ mod tests {
     }
 
     #[test]
-    fn derives_the_room_builder_theme_for_every_flat_room_builder_sheet() {
-        for name in [
-            "3d_walls",
-            "Arched_Entryways",
-            "Baseboards",
-            "borders",
-            "Floor_Connectors",
-            "Floor_Paths",
-            "Floor_Shadows",
-            "Floors",
-            "Walls",
-        ] {
-            let sheet = format!(
-                "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_{name}_16x16.png"
-            );
-            assert_eq!(
-                theme_group(&sheet).as_deref(),
-                Ok("room_builder"),
-                "{sheet}"
-            );
-            assert_eq!(shadow_variant(&sheet), ShadowVariant::Default, "{sheet}");
-        }
+    fn derives_the_room_builder_theme_for_a_flat_non_theme_sorter_folder() {
+        let sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png";
+        assert_eq!(theme_group(sheet).as_deref(), Ok("room_builder"));
+        assert_eq!(shadow_variant(sheet), ShadowVariant::Default);
     }
 
     #[test]
@@ -304,12 +286,15 @@ mod tests {
 
     #[test]
     fn resolve_page_group_maps_a_known_theme() {
-        let table: BTreeMap<String, String> = [("camping".to_string(), "street".to_string())]
-            .into_iter()
-            .collect();
+        let table: BTreeMap<String, String> = [(
+            "camping".to_string(),
+            crate::model::ATLAS_SHARED_GROUP.to_string(),
+        )]
+        .into_iter()
+        .collect();
         assert_eq!(
             resolve_page_group("camping", &table).as_deref(),
-            Ok("street")
+            Ok(crate::model::ATLAS_SHARED_GROUP)
         );
     }
 

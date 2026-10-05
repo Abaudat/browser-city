@@ -677,8 +677,11 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   //
   // Story 15.3: -2, the stairwell's raw sheet (both flights) and the raw
   // wall sheet (the retraction stub) now draw through the atlas.
+  //
+  // Story 2.14: -1, the interior floor fill now draws from the atlas
+  // (`floor_pale_stone`) instead of its own raw sheet.
   const allBoundTextureSources = await page.evaluate(() => window.__bc?.allBoundTextureSources);
-  expect(allBoundTextureSources).toBe(18);
+  expect(allBoundTextureSources).toBe(17);
 
   // FR120, from inside: this building's own near-side walls are gone, and
   // the neighbour's are not -- keyed on the enclosure id, never proximity.

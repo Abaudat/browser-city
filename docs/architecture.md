@@ -1281,8 +1281,8 @@ rule above.
   16x16` -> `city_props`), then `defs/atlas/page-groups.toml`'s own
   `theme -> group` table, which every theme drawn in any scene -- street
   kit and interior shell (`room_builder`) -- maps to the one shared
-  `ATLAS_SHARED_GROUP` (`"shared"`) group (1 page, 128 px tall today);
-  a themed district keeps its own group. A sheet under `Room_Builder_subfiles/`, with no theme-sorter
+  `ATLAS_SHARED_GROUP` (`"shared"`) group; a themed district keeps its
+  own group. A sheet under `Room_Builder_subfiles/`, with no theme-sorter
   subfolder of its own, has theme `room_builder`. A theme absent from the
   table fails the build naming it, and
   so does a table that maps nothing at all to `ATLAS_SHARED_GROUP`, or
@@ -1291,14 +1291,14 @@ rule above.
   (body/eyes/hairstyle/outfit/accessory; see "Appearance" above for the
   CPU-only, per-look-compositing use they serve). A group never spans
   more than `ATLAS_MAX_PAGES_PER_GROUP` (2) pages. A scene is the shared
-  group plus at most one themed group -- a player is never on the street
-  and inside a themed interior at once -- plus the fixed
+  group plus the worst single themed group, plus the fixed
   `CHARACTER_COMPOSITE_PAGES` every scene with a crowd on it binds: the
   shared group's own page count, plus the *worst* other group's own page
   count (`character_*` groups excluded -- they are CPU-only, never
   bound), plus `CHARACTER_COMPOSITE_PAGES`, never spans more than
   `ATLAS_MAX_BOUND_PAGES` (8); a failure names all three terms and the
-  total. `atlas_max_pages_per_group`/`character_composite_pages` are
+  total. At the per-group cap that is 2 + 2 + 2 = 6 of 8, asserted at
+  compile time against the constants. `atlas_max_pages_per_group`/`character_composite_pages` are
   emitted into `defs.json`; the scene rule itself is the packer's own,
   the client has no use for it.
 - Every packed rect carries a permanent 1px border of extruded

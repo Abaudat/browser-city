@@ -76,7 +76,7 @@ pub fn scene_page_budget(pages: &[PageMeta]) -> ScenePageBudget {
 
 /// Fails naming all three terms and the total when [`scene_page_budget`]'s
 /// total exceeds [`crate::model::ATLAS_MAX_BOUND_PAGES`].
-pub fn check_max_bound_pages(pages: &[PageMeta]) -> Result<(), String> {
+fn check_max_bound_pages(pages: &[PageMeta]) -> Result<(), String> {
     let b = scene_page_budget(pages);
     if b.total > crate::model::ATLAS_MAX_BOUND_PAGES {
         return Err(format!(
@@ -749,10 +749,11 @@ mod tests {
         }
     }
 
-    /// A shared group at its per-group cap beside the worst themed group
-    /// at its cap and the composites lands exactly on the bound (2+2+2 =
-    /// 6 here; with a 4-page themed group 2+4+2 = 8 passes, 9 fails),
-    /// and `scene_page_budget` reports every term.
+    /// The budget formula beyond what the caps can reach: `pack_all` never
+    /// lets a group exceed `ATLAS_MAX_PAGES_PER_GROUP`, so a real build
+    /// cannot get here (the const assertion in `model.rs` guards that); this
+    /// hand-built page list pins the arithmetic itself -- every term
+    /// reported, 8 passes, 9 fails naming the terms and the total.
     #[test]
     fn scene_page_budget_reports_every_term_and_the_bound_is_exact() {
         let page = |g: &str| PageMeta {

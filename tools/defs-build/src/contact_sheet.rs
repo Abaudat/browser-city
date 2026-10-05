@@ -956,7 +956,7 @@ mod tests {
 
     fn atlas_pages() -> Vec<AtlasPageDef> {
         vec![AtlasPageDef {
-            file: "street-0123456789abcdef.png".into(),
+            file: "shared-0123456789abcdef.png".into(),
             group: crate::model::ATLAS_SHARED_GROUP.into(),
             width: 2048,
             height: 16,
@@ -1099,7 +1099,7 @@ mod tests {
         let obj = object(1, 1, 16);
         let cards = vec![card(&obj, None)];
         let html = build(&cards, Some(16), &atlas_pages(), "v1", "m1");
-        assert!(html.contains("url('../../client/public/atlas/street-0123456789abcdef.png')"));
+        assert!(html.contains("url('../../client/public/atlas/shared-0123456789abcdef.png')"));
     }
 
     #[test]
@@ -1201,7 +1201,7 @@ mod tests {
         let obj = object(1, 1, 16);
 
         let pages_a = vec![AtlasPageDef {
-            file: "street-aaaaaaaaaaaaaaaa.png".into(),
+            file: "shared-aaaaaaaaaaaaaaaa.png".into(),
             group: crate::model::ATLAS_SHARED_GROUP.into(),
             width: 2048,
             height: 16,
@@ -1222,7 +1222,7 @@ mod tests {
                 height: 16,
             },
             AtlasPageDef {
-                file: "street-aaaaaaaaaaaaaaaa.png".into(),
+                file: "shared-aaaaaaaaaaaaaaaa.png".into(),
                 group: crate::model::ATLAS_SHARED_GROUP.into(),
                 width: 2048,
                 height: 16,
@@ -1249,7 +1249,7 @@ mod tests {
                 height: 16,
             },
             AtlasPageDef {
-                file: "street-aaaaaaaaaaaaaaaa.png".into(),
+                file: "shared-aaaaaaaaaaaaaaaa.png".into(),
                 group: crate::model::ATLAS_SHARED_GROUP.into(),
                 width: 2048,
                 height: 16,

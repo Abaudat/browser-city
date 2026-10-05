@@ -105,7 +105,6 @@ import { Timetable } from "./timetable";
  * Room Builder sheet family as the walls -- real art, never a new PNG,
  * and visually distinct from the exterior `sidewalk` tile (Artie's
  * direction: there must be an inside). */
-const FLOOR_TILE_FRAME = new Rectangle(208, 560, 16, 16);
 
 /** A small, purely cosmetic screen-space nudge applied after normal
  * bottom-centre anchoring -- never applied to a drawable's sort
@@ -556,6 +555,11 @@ function assetNudgePx(drawable: PropDrawable): number {
   return isDefPropDrawable(drawable) ? 0 : (SCREEN_Y_NUDGE_PX[drawable.assetKey] ?? 0);
 }
 
+/** How far above its sort anchor a drawable is drawn (screen px). */
+function liftPx(drawable: PropDrawable): number {
+  return isDefPropDrawable(drawable) ? (drawable.liftPx ?? 0) : 0;
+}
+
 /** A debug-only label for a drawable (`PoolEntry.label`,
  * `assertNoOverhangBeyondStorey`'s own failure message) -- never read to
  * pick a texture or a nudge; `resolvePropTexture`/`assetNudgePx` do that
@@ -793,7 +797,6 @@ export async function mountStreetScene(
   );
 
   const textures = new Map(rawTextures);
-  textures.set("floor", cropped(textureFor("floorSheet", rawTextures), FLOOR_TILE_FRAME));
 
   // Story 2.6/2.13: every `defId`-placed prop draws through
   // `AtlasPageLoader` instead of a `ModernTileset/` URL import -- its own
@@ -905,7 +908,16 @@ export async function mountStreetScene(
 
   const groundSprites: Sprite[] = [];
   for (const tiles of STREET_GROUND_TILES) {
-    const groundTexture = textureFor(tiles.assetKey, textures);
+    const groundTexture =
+      tiles.defId !== undefined
+        ? await atlasPageLoader.objectCellTexture(
+            defs,
+            objectDefById(objectDefIndex, tiles.defId),
+            0,
+            tileSizePx,
+            0,
+          )
+        : textureFor(tiles.assetKey ?? "", textures);
     const container = groundContainerFor(tiles.floor);
     const offset = floorOffsetPx(tiles.floor, storeyHeightPx);
     for (let y = tiles.y0; y < tiles.y1; y++) {
@@ -949,7 +961,7 @@ export async function mountStreetScene(
         drawable.floor,
         tileSizePx,
         storeyHeightPx,
-        assetNudgePx(drawable),
+        assetNudgePx(drawable) - liftPx(drawable),
         0,
       );
       return { drawable, view: sprite, label: debugLabel(drawable) };

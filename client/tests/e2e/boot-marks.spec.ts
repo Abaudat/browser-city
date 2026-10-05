@@ -118,7 +118,7 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // Worker by default (`preferWorkers: true`), and a Worker's own fetches
 // never reach the page's own Resource Timing buffer, so the Resource-
 // Timing version of this gate was blind to every `AtlasPageLoader`/
-// `Assets.load` request (the packed `street` page, every raw
+// `Assets.load` request (the packed `shared` page, every raw
 // `ModernTileset/` sheet `scene.ts` still loads) and passed on ten
 // requests that were entirely the crowd's own main-thread-`fetch`
 // character part pages. `page.on("requestfinished")` sees Worker-
@@ -175,15 +175,15 @@ test("the atlas request count and byte total the mount actually fetches, once se
   //
   // The reconciliation against `allBoundTextureSources = 17`
   // (`test-street.spec.ts`), written down once because it is what would
-  // have caught the Resource-Timing gate's own blindness: this gate's 26
-  // requests are 15 raw `ModernTileset/` sheets (`scene.ts`'s own
-  // `ASSET_URLS`) + 1 packed `street` atlas page + 10 character part-
+  // have caught the Resource-Timing gate's own blindness: this gate's 25
+  // requests are 14 raw `ModernTileset/` sheets (`scene.ts`'s own
+  // `ASSET_URLS`) + 1 packed `shared` atlas page + 10 character part-
   // sheet fetches (`character-part-pages.ts`'s own main-thread `fetch`,
   // never a Worker) -- only 6 distinct part-sheet files, each fetched
   // twice because the player's own `AppearanceTextureCache` and the
   // crowd's own are two separate loader instances with two separate
   // fetch-dedup caches (pre-existing, not this story's own concern).
-  // `allBoundTextureSources`'s 17 is the same 15 raw sheets + 1 street
+  // `allBoundTextureSources`'s 17 is the same 14 raw sheets + 1 shared
   // page + only 1 bound *composite* character page -- the CPU-drawn
   // canvas texture built from those 6 part sheets, never itself
   // requested over the network, and the second of the two
@@ -195,7 +195,7 @@ test("the atlas request count and byte total the mount actually fetches, once se
   // things `allBoundTextureSources` also sees", never "does it equal it".
   expect(
     urls.some((u) => /\/atlas\/shared-/.test(u)),
-    `this gate never saw the packed street atlas page -- it cannot be measuring what it budgets. Fetched:\n${urls.join("\n")}`,
+    `this gate never saw the packed shared atlas page -- it cannot be measuring what it budgets. Fetched:\n${urls.join("\n")}`,
   ).toBe(true);
   expect(
     urls.some((u) => /\/atlas\/character_/.test(u)),
