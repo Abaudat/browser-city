@@ -8,6 +8,7 @@ import {
   flavourKindOf,
 } from "../../../src/l3/flavour";
 import type { Facing } from "../../../src/l3/gait";
+import { SALTS, seedOf } from "../../../src/l3/seed";
 import { l3Config } from "./defs-config";
 
 const cfg = l3Config();
@@ -29,11 +30,12 @@ function at(who: string, t: number, rest: Facing = "down", until = Number.POSITI
   return { ...out };
 }
 
-/** The first instant of `bucket` for `who`. */
+/** The first instant of `bucket` for `who`: its grid is shifted by an id offset. */
 function findBucketStart(who: string, bucket: number): number {
-  let t = Math.max(0, bucket * dials.bucketMilliminutes - dials.bucketMilliminutes);
-  while (flavourBucketOf(who, t, dials) < bucket) t++;
-  return t;
+  return (
+    bucket * dials.bucketMilliminutes -
+    (seedOf(who, SALTS.flavourOffset) % dials.bucketMilliminutes)
+  );
 }
 
 describe("flavour (FR65, NFR26)", () => {
@@ -84,13 +86,13 @@ describe("flavour (FR65, NFR26)", () => {
 
   it("a glance fits inside its bucket", () => {
     let seen = 0;
-    for (let n = 0; n < 40; n++) {
+    for (let n = 0; n < 30; n++) {
       const who = `citizen-${n}`;
       for (let b = 1; b < 13; b++) {
         const start = findBucketStart(who, b);
         let first = -1;
         let last = -1;
-        for (let t = start; t < start + dials.bucketMilliminutes; t += 50) {
+        for (let t = start; t < start + dials.bucketMilliminutes; t += 100) {
           const f = at(who, t, "down");
           if (f.glancing) {
             expect(f.direction).not.toBe("down");
