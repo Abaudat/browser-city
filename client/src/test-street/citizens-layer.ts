@@ -40,6 +40,7 @@ import {
   buildWalkerFixture,
   CROWD_FLOOR,
   plazaBounds,
+  stagingBounds,
   WALKER_SPECS,
 } from "./citizens";
 import { comparePipelineVsStack } from "./compare-pipeline-vs-stack";
@@ -148,6 +149,19 @@ export async function mountCitizensLayer(
       tile.x = snapToScreenPx(x * tileSizePx, zoom);
       tile.y = snapToScreenPx(y * tileSizePx, zoom);
       ground.addChild(tile);
+    }
+  }
+  // The avoidance staging's own patch, south of the street (never mounted for
+  // a frozen crowd, whose baselines it would move).
+  if (!l3.frozen) {
+    const stage = stagingBounds();
+    for (let y = stage.y0; y < stage.y1; y++) {
+      for (let x = stage.x0; x < stage.x1; x++) {
+        const tile = new Sprite(sidewalkTexture);
+        tile.x = snapToScreenPx(x * tileSizePx, zoom);
+        tile.y = snapToScreenPx(y * tileSizePx, zoom);
+        ground.addChild(tile);
+      }
     }
   }
   parent.addChild(ground);

@@ -11,14 +11,17 @@ import {
   CROSSER_EAST_ID,
   CROSSER_WEST_ID,
   PASSER_ID,
-  plazaBounds,
+  stagingBounds,
   TWIN_A_ID,
   TWIN_B_ID,
 } from "../../../src/test-street/citizens";
 import { lifeDialsFor, StreetLife, standState } from "../../../src/test-street/street-life";
 import { Timetable } from "../../../src/test-street/timetable";
+import { npcWalkability } from "../../../src/world/npc-walkable";
 import { l3Config } from "../l3/defs-config";
-import { committedDefs } from "./street-world";
+import { committedDefs, streetWorldIndex } from "./street-world";
+
+const streetWalk = npcWalkability(streetWorldIndex());
 
 const cfg = l3Config();
 const defs = committedDefs();
@@ -73,8 +76,8 @@ function pose(street: StreetLife, id: string) {
 }
 
 describe("the avoidance staging on the test street (story 5.2)", () => {
-  it("is plain data on the plaza, and no two citizens ever stand on one cell", () => {
-    const b = plazaBounds();
+  it("is plain data on its own pavement, and no two citizens ever stand on one cell", () => {
+    const b = stagingBounds();
     const fixtures = buildAvoidanceFixtures(defs);
     expect(fixtures.map((f) => f.id).sort()).toEqual(
       [...walking, ...standing.map((s) => s.id)].sort(),
@@ -84,6 +87,17 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
       expect(f.gridX).toBeLessThan(b.x1);
       expect(f.gridY).toBeGreaterThan(b.y0);
       expect(f.gridY).toBeLessThan(b.y1);
+    }
+    // Every cell on every lane is on that pavement, and none is a wall of the street.
+    for (const id of walking) {
+      const route = (AVOIDANCE_SPECS[id] as unknown as { out: { x: number; y: number }[] }).out;
+      for (const c of route) {
+        expect(c.x).toBeGreaterThanOrEqual(b.x0);
+        expect(c.x).toBeLessThan(b.x1);
+        expect(c.y).toBeGreaterThanOrEqual(b.y0);
+        expect(c.y).toBeLessThan(b.y1);
+        expect(streetWalk.walkable(0, c.x, c.y)).toBe(true);
+      }
     }
     // At no moment do two citizens stand on one cell.
     const street = build();
