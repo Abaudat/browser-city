@@ -5,4 +5,4 @@ legend: C=cafe
 grid:
 CC
 violations:
-cafe_present at (1, 0, 0) in catchment (0, 0)
+cafe_present at (1, 0, 0)

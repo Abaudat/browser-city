@@ -40,62 +40,81 @@ fn committed_row(key: &str) -> sim::rules::DistributionRow {
         .unwrap_or_else(|| panic!("committed rules carry '{key}'"))
 }
 
-/// Subjects of `row` per catchment of its own extent.
-fn placed_by_catchment(
-    d: &sim::generation::District,
-    content: &GenerationContent,
-    row: &sim::rules::DistributionRow,
-) -> std::collections::BTreeMap<(i32, i32), usize> {
-    let DistributionScope::Catchment { extent_cells } = row.scope else {
-        panic!("'{}' must be a catchment row", row.key)
-    };
-    let site = d.site(content);
-    let mut by = std::collections::BTreeMap::new();
-    for c in site.subjects_in_area(None, row.subject) {
-        *by.entry(sim::rules::catchment_of(c.x, c.y, extent_cells))
-            .or_insert(0usize) += 1;
-    }
-    by
-}
-
-#[test]
-fn changing_a_scoped_rows_ratio_moves_the_generators_allocation_and_the_verdict_together() {
+/// Changing a row's number moves the generator's allocation and the verdict
+/// together. A thicker ratio (`row.ratio / divisor`) makes the generator
+/// place more subjects, the thicker row is satisfied by what it produced,
+/// and the committed row -- reading its own, unchanged number -- finds the
+/// same district over its upper bound.
+fn assert_one_source(key: &str, divisor: u32, seed: u64) {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let committed = GenerationContent::committed();
-    let row = committed_row("cafe_present");
-    assert!(matches!(row.scope, DistributionScope::Catchment { .. }));
+    let row = committed_row(key);
 
-    let before = plan(SEED, &cfg, &committed).unwrap();
+    let before = plan(seed, &cfg, &committed).unwrap();
     assert!(before.check_rules(&committed).is_ok());
-    let cafes_before = placed_by_catchment(&before, &committed, &row);
+    let total_before = subjects_of(&before, &committed, &row);
 
-    // Ten times the ratio: each catchment owes a tenth.
-    let changed_rules = rules_with_ratio("cafe_present", row.ratio * 10);
+    let changed_rules = rules_with_ratio(key, (row.ratio / divisor).max(1));
     let changed = GenerationContent {
         rules: RuleSet::for_test(&changed_rules),
         building_types: committed.building_types,
     };
-    let after = plan(SEED, &cfg, &changed).unwrap();
+    let after = plan(seed, &cfg, &changed).unwrap();
 
     // The generator's allocation moved with the row...
-    let cafes_after = placed_by_catchment(&after, &changed, &row);
-    let (total_before, total_after): (usize, usize) =
-        (cafes_before.values().sum(), cafes_after.values().sum());
+    let total_after = subjects_of(&after, &changed, &row);
     assert!(
-        total_after < total_before,
-        "cafes {total_before} -> {total_after}: the allocation did not follow the row"
+        total_after > total_before,
+        "{key}: {total_before} -> {total_after} subjects: the allocation did not follow the row"
     );
     // ...the changed row is satisfied by what it produced...
-    assert!(after.check_rules(&changed).is_ok());
-    // ...and the committed row, reading the same number, now finds it short.
+    assert!(
+        after.check_rules(&changed).is_ok(),
+        "{key}: {:?}",
+        after.check_rules(&changed).err()
+    );
+    // ...and the committed row, reading its own number, now finds it over.
     match after.check_rules(&committed) {
-        Err(GenerationError::RuleViolations { first, .. }) => {
-            assert_eq!(committed.rules.key_of(first.rule_id), Some("cafe_present"));
-            assert!(
+        Err(e @ GenerationError::RuleViolations { .. }) => {
+            let GenerationError::RuleViolations {
+                rule_key, first, ..
+            } = &e
+            else {
+                unreachable!()
+            };
+            assert_eq!(rule_key, key);
+            assert_eq!(
                 first.catchment.is_some(),
-                "the violation names its catchment"
+                matches!(row.scope, DistributionScope::Catchment { .. })
+            );
+            assert!(
+                e.to_string().contains(key),
+                "the rendering names the rule key: {e}"
             );
         }
-        other => panic!("expected the committed row to reject the thinned district: {other:?}"),
+        other => {
+            panic!("{key}: expected the committed row to reject the thicker district: {other:?}")
+        }
     }
+}
+
+fn subjects_of(
+    d: &sim::generation::District,
+    content: &GenerationContent,
+    row: &sim::rules::DistributionRow,
+) -> usize {
+    d.site(content).subjects_in_area(None, row.subject).len()
+}
+
+/// A site row and a catchment row both read one number from the row.
+#[test]
+fn changing_a_site_rows_ratio_moves_the_generators_allocation_and_the_verdict_together() {
+    assert_one_source("depot_present", 2, SEED);
+}
+
+#[test]
+fn changing_a_scoped_rows_ratio_moves_the_generators_allocation_and_the_verdict_together() {
+    let row = committed_row("welfare_office_present");
+    assert!(matches!(row.scope, DistributionScope::Catchment { .. }));
+    assert_one_source("welfare_office_present", 4, SEED);
 }

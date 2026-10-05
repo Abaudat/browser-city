@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "9f5c463c24865421",
+  "defs_version": "cca6fa9323d119d3",
   "collider_subcells_per_cell": 16,
   "position_units_per_cell": 256,
   "interact_at_max_reach_cells": 2,

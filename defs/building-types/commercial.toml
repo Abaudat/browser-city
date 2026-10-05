@@ -28,7 +28,7 @@ professions = ["shop_clerk", "cashier"]
 [[building_type]]
 id = 6
 key = "cafe"
-tags = ["cafe", "shop"]
+tags = ["cafe"]
 land_uses = ["commercial"]
 density_min = 0
 density_max = 100

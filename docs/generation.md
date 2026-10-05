@@ -561,7 +561,7 @@ tail, not a re-expression of the excess budget at an arbitrary distance.
   type for an envelope's own plot (land use, density band, minimum
   interior, every `requires_site` context it demands), then a
   distribution-row override for each named institution (depot, council,
-  hospital, welfare office, shelter, cafe), read generically off the
+  hospital, welfare office, shelter, and, since story 15.9, cafe), read generically off the
   committed rule set (`sim::rules::RuleDef::as_distribution`) in
   ascending rule id order -- never a hand-named placer. A row's target is
   `sim::rules::distribution_target` over its `per` count, the figure
@@ -569,9 +569,7 @@ tail, not a re-expression of the excess budget at an arbitrary distance.
   catchment on its own land for a `catchment` row. Within a pool,
   candidates rank by how many of the subject type's own `prefers_site`
   contexts they match, then `density_affinity`, then a seeded draw key --
-  never a shuffled list taken greedily. A subject that is itself a `per`
-  member replaces only a `per` member, so placing it never moves the basis
-  its row is judged on. A catchment whose land cannot
+  never a shuffled list taken greedily. A catchment whose land cannot
   hold what it owes is left short and `check_rules` returns a typed
   `GenerationError`, never a silently missing institution.
 - **Reads:** density, land-use mix and affluence, plus each envelope's
@@ -812,7 +810,7 @@ disagree.
 | hospital_present | committed | Building type | site | - | same shape, the hospital |
 | welfare_office_present | committed | Building type | neighbourhood | Affluence | each catchment holds welfare offices at a real ratio of its own dwellings, thinning as the catchment's affluence rises, spaced apart -- they sit where land is cheap, and the walk to them is content, never guaranteed near; a catchment owing under one holds none |
 | shelter_present | committed | Building type | neighbourhood | Affluence | same shape, shelters -- thinning as affluence rises |
-| cafe_present | committed | Building type | neighbourhood | Affluence | each catchment holds a cafe per roughly `ratio` shops, thickening as the catchment's affluence rises, on ordinary commercial land -- "the district has a cafe" (AC2), a real launch job (barista, FR14) depends on it; a cafe is itself a shop and replaces only a shop, so placing one never moves its own basis |
+| cafe_present | committed | Building type | site | - | story 15.9: a cafe per roughly `ratio` dwellings, on ordinary commercial land -- "the district has a cafe" (AC2), guaranteed by construction rather than by the ordinary weighted fill's own luck, since a real launch job (barista, FR14) depends on it; `site` because a cafe needs commercial land, which gathers in a catchment or two, so a catchment row could not demand one where there is none |
 
 ## coherence
 | key | status | pass | scope | reads | intent |

@@ -437,14 +437,16 @@ fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
         })
         .collect();
     let threads = std::thread::available_parallelism().map_or(4, |t| t.get()) as u64;
-    type Partial = (Vec<(u64, String)>, Vec<u64>);
+    // Per row: pooled placed, fewest placed in one district, and districts
+    // where the row owes a subject somewhere yet placed none.
+    type Partial = (Vec<(u64, String)>, Vec<(u64, u64, u64)>);
     let partials: Vec<Partial> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..threads)
             .map(|t| {
                 let rows = &rows;
                 scope.spawn(move || {
                     let mut failing: Vec<(u64, String)> = Vec::new();
-                    let mut placed = vec![0u64; rows.len()];
+                    let mut placed = vec![(0u64, u64::MAX, 0u64); rows.len()];
                     let mut i = t;
                     while i < n {
                         let seed = seed_from_ids(MEASURE_ROWS_SEED_SALT, i);
@@ -455,7 +457,48 @@ fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
                             failing.push((seed, e.to_string()));
                         }
                         for (k, row) in rows.iter().enumerate() {
-                            placed[k] += site.subjects_in_area(None, row.subject).len() as u64;
+                            let n_placed = site.subjects_in_area(None, row.subject).len() as u64;
+                            placed[k].0 += n_placed;
+                            placed[k].1 = placed[k].1.min(n_placed);
+                            // Whether the row owes a subject in some catchment
+                            // (the evaluator's own mean and target).
+                            let per = site.subjects_in_area(None, row.per);
+                            let owed = match row.scope {
+                                sim::rules::DistributionScope::Site => {
+                                    sim::rules::distribution_target(
+                                        per.len() as u64,
+                                        row.ratio,
+                                        row.tolerance_percent,
+                                    )
+                                    .0 >= 1
+                                }
+                                sim::rules::DistributionScope::Catchment { extent_cells } => {
+                                    let mut by: BTreeMap<(i32, i32), (u64, i64)> = BTreeMap::new();
+                                    for c in per {
+                                        let e = by
+                                            .entry(sim::rules::catchment_of(c.x, c.y, extent_cells))
+                                            .or_default();
+                                        e.0 += 1;
+                                        e.1 += row.reads.map_or(0, |r| {
+                                            site.parameter_at(*c, r.parameter).unwrap_or(0) as i64
+                                        });
+                                    }
+                                    by.values().any(|&(n, sum)| {
+                                        let ratio = row.ratio_for(
+                                            row.reads.map(|_| (sum / n.max(1) as i64) as i32),
+                                        );
+                                        sim::rules::distribution_target(
+                                            n,
+                                            ratio,
+                                            row.tolerance_percent,
+                                        )
+                                        .0 >= 1
+                                    })
+                                }
+                            };
+                            if owed && n_placed == 0 {
+                                placed[k].2 += 1;
+                            }
                         }
                         i += threads;
                     }
@@ -479,9 +522,11 @@ rows sweep: {n} seeds, {threads} threads"
         println!("    {seed}: {why}");
     }
     for (k, row) in rows.iter().enumerate() {
-        let total: u64 = partials.iter().map(|p| p.1[k]).sum();
+        let total: u64 = partials.iter().map(|p| p.1[k].0).sum();
+        let fewest = partials.iter().map(|p| p.1[k].1).min().unwrap_or(0);
+        let owed_none: u64 = partials.iter().map(|p| p.1[k].2).sum();
         println!(
-            "  {}: pooled mean placed {}.{:02}",
+            "  {}: pooled mean placed {}.{:02}, fewest in one district {fewest}, owed somewhere but none placed in {owed_none} districts",
             content.rules.key_of(row.id).unwrap_or("?"),
             total / n,
             total * 100 / n % 100

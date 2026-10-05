@@ -34,10 +34,7 @@ mode = "forbid"
 # A catchment row may give its number as a two-ended pair read against one
 # neighbourhood parameter (`reads = "affluence"`, `ratio_at_min` where the
 # parameter is at its minimum, `ratio_at_max` at its maximum), interpolated
-# on the catchment's own mean over its `per` cells. `tolerance_percent`
-# wide enough that a row's lower bound is 0 at the largest target a
-# catchment can owe lets a catchment whose land cannot hold it stay short
-# without failing the district.
+# on the catchment's own mean over its `per` cells.
 #
 # `max_distance` is past the site's diagonal on every row: no coverage
 # ceiling on a municipal row, the walk to one is content.
@@ -73,10 +70,11 @@ max_distance = 2000
 
 # Welfare offices and shelters sit where land is cheap, at real number, and
 # thin as a catchment's affluence rises. They share the scarce
-# institutional-or-commercial land, so their tolerance is wider than the
-# rows above. Retune over a million seeds: no rule failure, pooled placed
-# means within 10% of the previous figures (welfare 3.3, shelter 5.2, cafe
-# 11.2 per district).
+# institutional-or-commercial land, so their tolerance is wide enough that a
+# catchment whose land cannot hold what it owes stays short without failing
+# the district. Retune with `cargo run -p bounds --release --bin
+# measure-generation -- rows 1000000`: no failing seed, pooled placed means
+# within 10% of the previous figures (welfare 3.3, shelter 5.2 per district).
 [[distribution]]
 id = 24
 key = "welfare_office_present"
@@ -104,19 +102,19 @@ max_distance = 2000
 scope = "catchment"
 
 # Cafes are the barista's own workplace (FR14): a city with none reads as
-# broken, so every catchment owes its share (`weight = 0` on the type in
-# `defs/building-types/commercial.toml` plus this row), thickening as a
-# catchment's affluence rises. A cafe is itself a shop, so the row is per
-# shop and a cafe replaces only a shop.
+# broken, and the barista holds at least `min_employers_per_profession`
+# workplaces, so the district-wide count is a guarantee by this row's own
+# bounds (`weight = 0` on the type in `defs/building-types/commercial.toml`
+# plus this row). It stays `site`: a cafe needs commercial land, which
+# gathers in a catchment or two, so a catchment row could not demand one
+# where there is none -- and a cafe's district-wide floor would be a
+# likelihood, not a bound.
 [[distribution]]
 id = 26
 key = "cafe_present"
 subject = "cafe"
-per = "shop"
-reads = "affluence"
-ratio_at_min = 20
-ratio_at_max = 7
-tolerance_percent = 80
+per = "dwelling"
+ratio = 50
+tolerance_percent = 20
 min_spacing = 12
 max_distance = 2000
-scope = "catchment"

@@ -671,10 +671,6 @@ pub fn run(
                 .iter()
                 .any(|b| b.tags.contains(&row.subject) && hard_eligible(b, &ctx[i]))
         };
-        // A subject that is itself a `per` member (a cafe is a shop) may only
-        // replace a `per` member, so placing it never moves the basis the
-        // row's own target -- and its verdict -- is computed from.
-        let subject_is_per = subject_def.is_some_and(|b| b.tags.contains(&row.per));
 
         let resolve = |i: usize| -> u32 {
             content
@@ -732,11 +728,7 @@ pub fn run(
                     }
                     let mut pool: Vec<usize> = (0..placed.len())
                         .filter(|&i| {
-                            !overridden[i]
-                                && catchment_of(i) == c
-                                && eligible_for_subject(i)
-                                && (!subject_is_per
-                                    || by_id[&final_type[i]].tags.contains(&row.per))
+                            !overridden[i] && catchment_of(i) == c && eligible_for_subject(i)
                         })
                         .collect();
                     pool.sort_by_key(|&i| rank_key(i));
@@ -753,11 +745,7 @@ pub fn run(
                     continue;
                 }
                 let mut pool: Vec<usize> = (0..placed.len())
-                    .filter(|&i| {
-                        !overridden[i]
-                            && eligible_for_subject(i)
-                            && (!subject_is_per || by_id[&final_type[i]].tags.contains(&row.per))
-                    })
+                    .filter(|&i| !overridden[i] && eligible_for_subject(i))
                     .collect();
                 pool.sort_by_key(|&i| rank_key(i));
                 let chosen = place_row(&pool, target, row.min_spacing, &ctx, &mut chosen_cells);

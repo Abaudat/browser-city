@@ -379,10 +379,10 @@ fn ratio_at_interpolates_between_the_two_ends_and_clamps() {
     assert!(down.ratio_at(100) < down.ratio_at(0));
 }
 
-/// The committed rows read affluence the way the design states: cafes
-/// thicken as it rises, welfare offices and shelters thin.
+/// The committed rows read affluence the way the design states: welfare
+/// offices and shelters thin as it rises.
 #[test]
-fn cafes_thicken_and_welfare_and_shelters_thin_as_affluence_rises() {
+fn welfare_offices_and_shelters_thin_as_affluence_rises() {
     let committed: Vec<_> = RuleSet::committed()
         .iter()
         .filter_map(|r| r.as_distribution())
@@ -394,11 +394,6 @@ fn cafes_thicken_and_welfare_and_shelters_thin_as_affluence_rises() {
             .unwrap_or_else(|| panic!("committed rows carry '{key}'"))
     };
     let (poor, rich) = (0, 100);
-    let cafe = by_key("cafe_present");
-    assert!(
-        cafe.ratio_for(Some(rich)) < cafe.ratio_for(Some(poor)),
-        "a smaller ratio is a thicker row"
-    );
     for key in ["welfare_office_present", "shelter_present"] {
         let r = by_key(key);
         assert!(
@@ -411,7 +406,12 @@ fn cafes_thicken_and_welfare_and_shelters_thin_as_affluence_rises() {
         );
     }
     // Rows that read nothing keep their one number.
-    for key in ["depot_present", "council_present", "hospital_present"] {
+    for key in [
+        "depot_present",
+        "council_present",
+        "hospital_present",
+        "cafe_present",
+    ] {
         let r = by_key(key);
         assert_eq!(r.reads, None);
         assert_eq!(r.ratio_for(Some(rich)), r.ratio_for(None));

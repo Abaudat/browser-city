@@ -2344,12 +2344,15 @@ proptest! {
 // A case is a full 512x512 generation of all four passes.
 
 /// The body of `inv_generation_required_institutions_are_present_when_
-/// their_own_target_is_nonzero` and of every seed pin: for each committed
-/// distribution row a building type feeds, the district places its
-/// subject whenever the row owes one -- a site row when `basis / ratio`
-/// is at least one, a catchment row when some catchment's own basis is --
-/// and `check_rules` holds. Rows and tags come from the committed
-/// content, never from a literal.
+/// their_own_target_is_nonzero` and of every seed pin: `check_rules` holds,
+/// every scoped row owes a subject somewhere, and every subject a row
+/// *demands* is present. A site row demands its subject whenever it has a
+/// `per` cell (an empty site reports every cell uncovered); a catchment
+/// row demands one where its own lower bound is above zero -- below that
+/// the row tolerates an empty catchment, because the catchment's own land
+/// may not hold one, and district-wide presence is a likelihood the
+/// measure-generation rows sweep reports, never asserted here. Rows and
+/// tags come from the committed content, never from a literal.
 fn assert_required_institutions(seed: u64) -> Result<(), String> {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let content = GenerationContent::committed();
@@ -2369,34 +2372,39 @@ fn assert_required_institutions(seed: u64) -> Result<(), String> {
     rows.sort_by_key(|d| d.id);
     for row in &rows {
         let per = site.subjects_in_area(None, row.per);
-        let owed_somewhere = match row.scope {
-            sim::rules::DistributionScope::Site => {
-                sim::rules::distribution_target(per.len() as u64, row.ratio, row.tolerance_percent)
-                    .0
-                    >= 1
-            }
+        let (owes_somewhere, demanded) = match row.scope {
+            sim::rules::DistributionScope::Site => (true, !per.is_empty()),
             sim::rules::DistributionScope::Catchment { extent_cells } => {
-                let mut by: std::collections::BTreeMap<(i32, i32), u64> = Default::default();
+                let mut by: std::collections::BTreeMap<(i32, i32), (u64, i64)> = Default::default();
                 for c in per {
-                    *by.entry(sim::rules::catchment_of(c.x, c.y, extent_cells))
-                        .or_insert(0) += 1;
+                    let entry = by
+                        .entry(sim::rules::catchment_of(c.x, c.y, extent_cells))
+                        .or_default();
+                    entry.0 += 1;
+                    entry.1 += row.reads.map_or(0, |r| {
+                        site.parameter_at(*c, r.parameter).unwrap_or(0) as i64
+                    });
                 }
-                // A scoped row owes at least one subject somewhere, for
-                // every seed: asserted unconditionally.
-                if !by.values().any(|&n| {
-                    sim::rules::distribution_target(n, row.ratio, row.tolerance_percent).0 >= 1
-                }) {
-                    return Err(format!(
-                        "seed {seed}: scoped rule {} owes nothing in any catchment",
-                        row.key
-                    ));
-                }
-                true
+                let bounds = |&(n, sum): &(u64, i64)| {
+                    let ratio = row.ratio_for(row.reads.map(|_| (sum / n.max(1) as i64) as i32));
+                    sim::rules::distribution_target(n, ratio, row.tolerance_percent)
+                };
+                (
+                    by.values().any(|v| bounds(v).0 >= 1),
+                    by.values().any(|v| bounds(v).1 >= 1),
+                )
             }
         };
-        if owed_somewhere && site.subjects_in_area(None, row.subject).is_empty() {
+        // A scoped row owes at least one subject somewhere, for every seed.
+        if !owes_somewhere {
             return Err(format!(
-                "seed {seed}: rule {} owes a subject but placed none",
+                "seed {seed}: scoped rule {} owes nothing in any catchment",
+                row.key
+            ));
+        }
+        if demanded && site.subjects_in_area(None, row.subject).is_empty() {
+            return Err(format!(
+                "seed {seed}: rule {} demands a subject but placed none",
                 row.key
             ));
         }
@@ -2955,9 +2963,8 @@ proptest! {
     }
 
     /// `inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero`
-    /// (AC2): every guaranteed subject -- read off the committed
-    /// `[[distribution]]` rows, never a key list -- is present for any
-    /// seed. [`assert_required_institutions`] is the one body; the named
+    /// (AC2): every subject a committed `[[distribution]]` row demands --
+    /// read off the rows, never a key list -- is present for any seed. [`assert_required_institutions`] is the one body; the named
     /// seed pins below call the same function, so a pin cannot drift from
     /// the property. Shops are weighted fill, a likelihood and not a
     /// guarantee, and are not asserted here (`docs/generation.md`).
@@ -3839,29 +3846,51 @@ fn seed_16021368561388801292_holds_its_commercial_share_and_workplace_band() {
 /// `5671826158575195197` (174 cafe-eligible envelopes, no cafe drawn)
 /// failed `master` before story 15.9 moved cafe onto `cafe_present`; the
 /// other four were green on `master` when pinned and stay as guards.
+/// A pin is a fact about one seed, not a guarantee: it asserts the cafe
+/// itself (the committed `cafe_present` row's own subject) as well as the
+/// property's body.
+fn assert_places_a_cafe(seed: u64) {
+    assert_required_institutions(seed).unwrap();
+    let content = GenerationContent::committed();
+    let cafe = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .find(|r| r.key == "cafe_present")
+        .expect("committed content carries 'cafe_present'");
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    assert!(
+        !d.site(&content)
+            .subjects_in_area(None, cafe.subject)
+            .is_empty(),
+        "seed {seed}: no cafe"
+    );
+}
+
 #[test]
 fn seed_5671826158575195197_places_a_cafe() {
-    assert_required_institutions(5671826158575195197).unwrap();
+    assert_places_a_cafe(5671826158575195197);
 }
 
 #[test]
 fn seed_18237087621053529407_places_a_cafe() {
-    assert_required_institutions(18237087621053529407).unwrap();
+    assert_places_a_cafe(18237087621053529407);
 }
 
 #[test]
 fn seed_10570461036942086058_places_a_cafe() {
-    assert_required_institutions(10570461036942086058).unwrap();
+    assert_places_a_cafe(10570461036942086058);
 }
 
 #[test]
 fn seed_5893400460575277432_places_a_cafe() {
-    assert_required_institutions(5893400460575277432).unwrap();
+    assert_places_a_cafe(5893400460575277432);
 }
 
 #[test]
 fn seed_6617268145519561593_places_a_cafe() {
-    assert_required_institutions(6617268145519561593).unwrap();
+    assert_places_a_cafe(6617268145519561593);
 }
 
 /// Companion to the two tests above: a `condo_block` (`form_high`) and a
