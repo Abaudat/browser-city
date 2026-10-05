@@ -2833,11 +2833,10 @@ proptest! {
     /// implied failure probability per fresh-seed 4,096-case run
     /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
     #[test]
-    fn inv_generation_building_count_within_tolerance(seed in any::<u64>()) {
-        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let result = sim::generation::generate(seed, &cfg, &content);
-        prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
+    fn inv_generation_building_count_within_tolerance(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
+        prop_assert!(city.generated.is_ok(), "seed {seed}: {:?}", city.generated);
     }
 
     /// `inv_generation_envelope_rejection_rate_bounded`.
@@ -2935,12 +2934,10 @@ proptest! {
     /// building_count_within_tolerance`'s own job) so a coherence or
     /// distribution regression reads by its own name.
     #[test]
-    fn inv_generation_committed_rules_hold_for_any_seed(seed in any::<u64>()) {
-        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-        let result = d.check_rules(&content);
-        prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
+    fn inv_generation_committed_rules_hold_for_any_seed(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
+        prop_assert!(city.rules.is_ok(), "seed {seed}: {:?}", city.rules);
     }
 
     /// `inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero`
@@ -3057,11 +3054,10 @@ proptest! {
     /// implied failure probability per fresh-seed 4,096-case run
     /// (`explore.yml`; `ci.yml`'s fixed seed cannot flake) <= 1.2213%.
     #[test]
-    fn inv_generation_workplace_count_within_tolerance(seed in any::<u64>()) {
-        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let result = sim::generation::generate(seed, &cfg, &content);
-        prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
+    fn inv_generation_workplace_count_within_tolerance(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
+        prop_assert!(city.generated.is_ok(), "seed {seed}: {:?}", city.generated);
     }
 
     /// `inv_generation_building_type_independent_of_envelope_order` (NFR25,
@@ -6986,6 +6982,84 @@ fn player_position_walk_across_chunk_edges_and_floors_updates_and_crosses() {
     assert_eq!(crossings, 4, "four chunk or floor changes along the walk");
 }
 
+/// How many distinct cities the pass-6 and rule-verdict invariants draw
+/// from. Planning a city and judging it whole costs tens of milliseconds
+/// -- more than every other invariant's case together -- and a dozen
+/// per-seed invariants each drawing 4096 fresh `u64` seeds blew the `test`
+/// job's 15-minute budget. So they share one process-wide pool of this
+/// many cities, each planned and judged once; the seeds are arbitrary
+/// `u64`s (a hash of the pool index), never a sequential range, and the
+/// pooled tests below still sweep 0..256.
+const CITY_POOL: u64 = 96;
+
+fn pool_seed(i: u64) -> u64 {
+    seed_from_ids(i, 0xC17F_0005)
+}
+
+/// Runs `check` once per `(name, seed)` for the whole process: a check
+/// that re-runs pass 6 (the two independence invariants) costs as much as
+/// planning the city again, so each is computed once per pooled city.
+fn memo_check(
+    name: &'static str,
+    seed: u64,
+    check: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    use std::sync::{Arc, Mutex, OnceLock};
+    type Slot = Arc<OnceLock<Result<(), String>>>;
+    static MEMO: OnceLock<Mutex<std::collections::BTreeMap<(&'static str, u64), Slot>>> =
+        OnceLock::new();
+    let slot: Slot = MEMO
+        .get_or_init(|| Mutex::new(std::collections::BTreeMap::new()))
+        .lock()
+        .unwrap()
+        .entry((name, seed))
+        .or_default()
+        .clone();
+    slot.get_or_init(check).clone()
+}
+
+/// One pooled city and every whole-district verdict, computed once.
+struct PooledCity {
+    district: sim::generation::District,
+    /// `District::check_rules`.
+    rules: Result<(), String>,
+    /// Everything `generate` checks, in its order.
+    generated: Result<(), String>,
+}
+
+fn pooled_city(seed: u64) -> std::sync::Arc<PooledCity> {
+    use std::sync::{Arc, Mutex, OnceLock};
+    type Slot = Arc<OnceLock<Arc<PooledCity>>>;
+    static POOL: OnceLock<Mutex<std::collections::BTreeMap<u64, Slot>>> = OnceLock::new();
+    let slot: Slot = POOL
+        .get_or_init(|| Mutex::new(std::collections::BTreeMap::new()))
+        .lock()
+        .unwrap()
+        .entry(seed)
+        .or_default()
+        .clone();
+    slot.get_or_init(|| {
+        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+        let content = GenerationContent::committed();
+        let district = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let rules = district.check_rules(&content).map_err(|e| format!("{e:?}"));
+        let generated = (|| {
+            district.check_building_count(&cfg)?;
+            district.check_rules(&content)?;
+            district.check_workplace_count(&cfg, &content)?;
+            district.check_enterable_count(&cfg)?;
+            district.check_institutions_enterable(&content)
+        })()
+        .map_err(|e| format!("{e:?}"));
+        Arc::new(PooledCity {
+            district,
+            rules,
+            generated,
+        })
+    })
+    .clone()
+}
+
 // --- story 3.5: pass 6, the interior layout --------------------------------
 
 /// Every cell an interior occupies, floor 0 -- walls, room floors and
@@ -7271,10 +7345,11 @@ proptest! {
     /// emitted cell is a world coordinate inside the building's own
     /// pass-4 footprint, and no two buildings claim one cell.
     #[test]
-    fn inv_generation_interior_cells_lie_inside_their_own_envelope(seed in any::<u64>()) {
+    fn inv_generation_interior_cells_lie_inside_their_own_envelope(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = &city.district;
         let by_plot: std::collections::BTreeMap<u32, &envelopes::Envelope> =
             d.envelopes.envelopes().map(|e| (e.plot, e)).collect();
         let site = cfg.site();
@@ -7324,10 +7399,10 @@ proptest! {
     /// rasterising story; this is the same engine over the same site
     /// adapter, plus the lane check.)
     #[test]
-    fn inv_generation_every_emitted_interior_validates_clean(seed in any::<u64>()) {
-        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    fn inv_generation_every_emitted_interior_validates_clean(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
+        let d = &city.district;
         for (plot, _, interior) in d.interiors.laid() {
             let walk = Walk::of(interior);
             for t in &interior.thresholds {
@@ -7341,15 +7416,16 @@ proptest! {
                 prop_assert!(walk.reachable_beside(f.x, f.y), "seed {seed}: plot {plot}: nobody can stand at a fixture");
             }
         }
-        prop_assert!(d.check_rules(&content).is_ok(), "seed {seed}: {:?}", d.check_rules(&content).err());
+        prop_assert!(city.rules.is_ok(), "seed {seed}: {:?}", city.rules);
     }
 
     /// `inv_generation_interior_retries_are_bounded` (story 3.5 AC2).
     #[test]
-    fn inv_generation_interior_retries_are_bounded(seed in any::<u64>()) {
+    fn inv_generation_interior_retries_are_bounded(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = &city.district;
         for o in d.interiors.outcomes() {
             match o {
                 sim::generation::InteriorOutcome::Laid { attempts, .. } => {
@@ -7370,13 +7446,14 @@ proptest! {
     /// `inv_generation_enterable_interior_count_meets_the_floor` (story 3.5
     /// AC3, FR114).
     #[test]
-    fn inv_generation_enterable_interior_count_meets_the_floor(seed in any::<u64>()) {
+    fn inv_generation_enterable_interior_count_meets_the_floor(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
         let vocab = sim::generation::interiors::Vocabulary::new(&content);
-        let d = sim::generation::generate(seed, &cfg, &content);
-        prop_assert!(d.is_ok(), "seed {seed}: {:?}", d.as_ref().err());
-        let d = d.unwrap();
+        prop_assert!(city.generated.is_ok(), "seed {seed}: {:?}", city.generated);
+        let d = &city.district;
         let enterable = d
             .interiors
             .laid()
@@ -7394,10 +7471,12 @@ proptest! {
     /// an enterable dwelling in the lowest density band (the starting flat
     /// is an edge flat).
     #[test]
-    fn inv_generation_enterable_set_spans_every_required_kind(seed in any::<u64>()) {
+    fn inv_generation_enterable_set_spans_every_required_kind(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = &city.district;
         let (placed, enterable, low_band_dwelling) = kind_counts(&d, &content, &cfg);
         let verdict = kind_spread_verdict(placed, enterable, d.interiors.enterable_count(), &cfg);
         prop_assert!(verdict.is_ok(), "seed {seed}: {verdict:?}");
@@ -7408,10 +7487,11 @@ proptest! {
     /// (story 3.5 AC4, FR119): through the function the client port
     /// mirrors, not the generator's own bookkeeping.
     #[test]
-    fn inv_generation_every_interior_cell_answers_its_own_building_id(seed in any::<u64>()) {
+    fn inv_generation_every_interior_cell_answers_its_own_building_id(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = &city.district;
         let spec = WorldSpec {
             building_areas: d.interiors.building_areas(),
             room_areas: d.interiors.room_areas(),
@@ -7489,10 +7569,13 @@ proptest! {
     /// each building's streams are seeded from its own bounds plus the
     /// attempt index, never its place in pass 5's list.
     #[test]
-    fn inv_generation_interior_independent_of_building_order(seed in any::<u64>()) {
+    fn inv_generation_interior_independent_of_building_order(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = &city.district;
+        let verdict = memo_check("order", seed, || {
         let mut pairs: Vec<(envelopes::Envelope, sim::generation::TypeAssignment)> = d
             .envelopes
             .envelopes()
@@ -7518,22 +7601,26 @@ proptest! {
             .map(|o| (outcome_plot(o), o))
             .collect();
         for o in shuffled.outcomes() {
-            prop_assert_eq!(
-                Some(&o),
-                original.get(&outcome_plot(o)),
-                "seed {}: plot {}'s interior moved when only list order changed", seed, outcome_plot(o)
-            );
+            if Some(&o) != original.get(&outcome_plot(o)) {
+                return Err(format!("seed {seed}: plot {}'s interior moved when only list order changed", outcome_plot(o)));
+            }
         }
+            Ok(())
+        });
+        prop_assert!(verdict.is_ok(), "{:?}", verdict);
     }
 
     /// `inv_generation_interior_independent_of_neighbouring_buildings`
     /// (NFR25): a retry in one building never shifts its neighbour's
     /// stream -- perturbing one building's type moves no other interior.
     #[test]
-    fn inv_generation_interior_independent_of_neighbouring_buildings(seed in any::<u64>()) {
+    fn inv_generation_interior_independent_of_neighbouring_buildings(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = &city.district;
+        let verdict = memo_check("neighbours", seed, || {
         let mut assignments = d.building_types.assignments().to_vec();
         let victim = (seed % assignments.len() as u64) as usize;
         let other = content
@@ -7548,8 +7635,13 @@ proptest! {
             if i == victim {
                 continue;
             }
-            prop_assert_eq!(a, b, "seed {}: building {} moved when building {} changed type", seed, i, victim);
+            if a != b {
+                return Err(format!("seed {seed}: building {i} moved when building {victim} changed type"));
+            }
         }
+            Ok(())
+        });
+        prop_assert!(verdict.is_ok(), "{:?}", verdict);
     }
 
     /// `inv_generation_public_rooms_are_reachable_without_crossing_staff_
@@ -7558,10 +7650,12 @@ proptest! {
     /// rooms only, a type with a public room has one as its front room,
     /// and no threshold joins two buildings.
     #[test]
-    fn inv_generation_public_rooms_are_reachable_without_crossing_staff_or_private(seed in any::<u64>()) {
+    fn inv_generation_public_rooms_are_reachable_without_crossing_staff_or_private(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = &city.district;
         let public = tag_id("public");
         let room_tags: std::collections::BTreeMap<u32, &[TagId]> =
             content.room_types.iter().map(|r| (r.id, r.tags)).collect();
@@ -7626,10 +7720,11 @@ proptest! {
     /// `inv_generation_stock_sits_in_a_staff_room_and_never_on_the_public_
     /// floor` (Derek's direction).
     #[test]
-    fn inv_generation_stock_sits_in_a_staff_room_and_never_on_the_public_floor(seed in any::<u64>()) {
-        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    fn inv_generation_stock_sits_in_a_staff_room_and_never_on_the_public_floor(idx in 0u64..CITY_POOL) {
+        let seed = pool_seed(idx);
+        let city = pooled_city(seed);
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = &city.district;
         let (stock, staff, seating, waste) = (tag_id("stock"), tag_id("staff"), tag_id("seating"), tag_id("waste"));
         let room_tags: std::collections::BTreeMap<u32, &[TagId]> =
             content.room_types.iter().map(|r| (r.id, r.tags)).collect();
