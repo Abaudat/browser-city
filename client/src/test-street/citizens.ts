@@ -407,7 +407,7 @@ export const AVOIDANCE_SPECS: Readonly<Record<string, TimetableSpec>> = {
 /** Where the standing citizen the passer walks past stands: on the passer's
  * own row, halfway along it. */
 export const BYSTANDER_CELL = {
-  x: Math.floor((LANE_X0 + LANE_X1) / 2),
+  x: (LANE_X0 + LANE_X1 - 1) / 2,
   y: PASSING_ROW,
 };
 
