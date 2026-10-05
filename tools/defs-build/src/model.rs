@@ -333,7 +333,7 @@ pub struct RawObject {
     /// numeric code at build time (`validate.rs`); the runtime artefacts
     /// only ever carry the resolved code.
     pub layer: Spanned<String>,
-    pub sprite: Spanned<RawSpriteRect>,
+    pub sprite: Option<Spanned<RawSpriteRect>>,
     pub width: u32,
     /// Story 2.3: absent when an `archetype` supplies it instead --
     /// `validate.rs`'s lowering step resolves this to a plain `u32`
@@ -1105,7 +1105,7 @@ pub struct ObjectEntry {
     /// resolves it against the codes golden and stores the numeric code
     /// on [`ObjectDef`].
     pub layer: Located<String>,
-    pub sprite: Located<RawSpriteRect>,
+    pub sprite: Option<Located<RawSpriteRect>>,
     pub width: u32,
     /// Story 2.3: `None` before `validate.rs`'s lowering step runs (an
     /// archetype supplies it instead); always `Some` on the lowered
@@ -1456,7 +1456,7 @@ pub struct ObjectDef {
     /// The resolved `sim::codes::layer` numeric code -- never the
     /// authored name past `validate.rs`.
     pub layer: u32,
-    pub sprite: SpriteRect,
+    pub sprite: Option<SpriteRect>,
     pub width: u32,
     pub height: u32,
     pub collider: Option<ColliderRect>,

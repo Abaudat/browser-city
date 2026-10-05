@@ -72,11 +72,13 @@ export interface ObjectDef {
    * artefact only ever carries the resolved code, never the authored
    * name. */
   readonly layer: number;
-  readonly sprite: SpriteRect;
+  /** Absent only on an undrawn flight (story 15.19): its treads are drawn as
+   * their own rows on the lower floor. */
+  readonly sprite?: SpriteRect;
   /** Story 2.6: where this object's sprite lives in a packed atlas page --
-   * required, never optional (an object without one is a build failure,
-   * never a runtime fallback to `sprite.sheet`). */
-  readonly atlas: AtlasRect;
+   * present exactly when it has a sprite (a drawn object without one is a
+   * build failure, never a runtime fallback to `sprite.sheet`). */
+  readonly atlas?: AtlasRect;
   readonly width: number;
   readonly height: number;
   /** Absent means walkable (FR128) -- there is no separate `walkable`

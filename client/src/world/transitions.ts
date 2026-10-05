@@ -277,6 +277,13 @@ export class TransitionIndex {
     transitions: readonly TransitionSpec[],
     options?: {
       readonly isStandable?: TransitionStandable;
+      /** Whether a body, its centre at `cx` and its feet at `feet` (sub-cells),
+       * overlaps no collider on `floor`. With it, a transition onto its own
+       * cell is checked over its whole entry band, not only its centre. */
+      readonly entryBand?: {
+        readonly subcellsPerCell: number;
+        readonly isBodyClear: (floor: number, cx: number, feet: number) => boolean;
+      };
       readonly skipPairSymmetry?: true;
     },
   ) {
@@ -291,6 +298,14 @@ export class TransitionIndex {
       map.set(k, { x: t.targetX, y: t.targetY, floor: t.targetFloor });
     }
     this.byAnchor = map;
+    if (options?.entryBand) {
+      const problems = sameCellEntryProblems(transitions, options.entryBand);
+      if (problems.length > 0) {
+        throw new Error(
+          `TransitionIndex: a kept position lands in a collider:\n${problems.join("\n")}`,
+        );
+      }
+    }
 
     if (!options?.skipPairSymmetry) {
       const problems = checkTransitionPairSymmetry(transitions, options?.isStandable);
@@ -300,6 +315,15 @@ export class TransitionIndex {
         );
       }
     }
+    // A guard the caller can switch off by omitting it is no guard: a transition
+    // onto its own cell keeps the walker's position, so the index is refused
+    // unless it can check that position is clear on both floors.
+    const sameCell = transitions.find((t) => t.targetX === t.x && t.targetY === t.y);
+    if (sameCell && !options?.entryBand) {
+      throw new Error(
+        `TransitionIndex: transition (${sameCell.x}, ${sameCell.y}, floor ${sameCell.floor}) targets its own cell, which keeps the walker's position, but no entryBand was given to check it`,
+      );
+    }
   }
 
   /** The floor transition anchored at this cell, if any (FR117).
@@ -307,4 +331,49 @@ export class TransitionIndex {
   transitionAt(x: number, y: number, floor: number): TransitionTarget | undefined {
     return this.byAnchor.get(key(x, y, floor));
   }
+}
+
+/**
+ * The transitions onto their own cell (a stair stacked on itself) keep the
+ * walker's position (`stepAndTransition`), so every body position that steps
+ * into the anchor cell from a clear position on its floor must be clear on the
+ * target floor too. Returns one problem per such transition, naming its cell
+ * and the first position that lands in a collider.
+ */
+export function sameCellEntryProblems(
+  transitions: readonly TransitionSpec[],
+  band: {
+    readonly subcellsPerCell: number;
+    readonly isBodyClear: (floor: number, cx: number, feet: number) => boolean;
+  },
+): string[] {
+  const s = band.subcellsPerCell;
+  const problems: string[] = [];
+  for (const t of transitions) {
+    if (t.targetX !== t.x || t.targetY !== t.y) continue;
+    const inAnchor = (cx: number, feet: number) =>
+      Math.floor(cx / s) === t.x && Math.floor(feet / s) === t.y;
+    for (let cx = t.x * s; cx < (t.x + 1) * s; cx++) {
+      for (let feet = t.y * s; feet < (t.y + 1) * s; feet++) {
+        const enters = [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ].some(([dx, dy]) => {
+          const ox = cx - (dx ?? 0);
+          const oy = feet - (dy ?? 0);
+          return !inAnchor(ox, oy) && band.isBodyClear(t.floor, ox, oy);
+        });
+        if (enters && !band.isBodyClear(t.targetFloor, cx, feet)) {
+          problems.push(
+            `transition (${t.x}, ${t.y}, floor ${t.floor}) -> floor ${t.targetFloor}: a body entering at sub-cell (${cx}, ${feet}) keeps its position and overlaps a collider on floor ${t.targetFloor}`,
+          );
+          cx = (t.x + 1) * s;
+          break;
+        }
+      }
+    }
+  }
+  return problems;
 }

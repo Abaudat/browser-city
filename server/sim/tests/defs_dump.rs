@@ -50,17 +50,16 @@ fn canonical_dump() -> String {
         let mut tags: Vec<u32> = o.tags.to_vec();
         tags.sort_unstable();
         let tags: Vec<String> = tags.iter().map(|t| t.to_string()).collect();
+        let sprite = match &o.sprite {
+            Some(s) => format!("{}:{},{},{},{}", s.sheet, s.x, s.y, s.w, s.h),
+            None => "none".to_string(),
+        };
         lines.push(format!(
-            "object {} id={} name={} layer={} sprite={}:{},{},{},{} height={} width={} collider={collider} interact_at={interact_at} window={} tags=[{}]",
+            "object {} id={} name={} layer={} sprite={sprite} height={} width={} collider={collider} interact_at={interact_at} window={} tags=[{}]",
             o.key,
             o.id,
             o.name,
             o.layer,
-            o.sprite.sheet,
-            o.sprite.x,
-            o.sprite.y,
-            o.sprite.w,
-            o.sprite.h,
             o.height,
             o.width,
             o.window,

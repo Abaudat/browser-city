@@ -13,7 +13,11 @@ import { ZOOM } from "../../src/render/camera";
 import { buildFlights, FlightIndex } from "../../src/render/flight-offset";
 import { worldPointPx } from "../../src/render/screen-position";
 import { STREET_TRANSITIONS, streetPlacedRows } from "../../src/test-street/fixture";
-import { streetMovementConfig, streetObjectSources } from "../unit/test-street/street-world";
+import {
+  streetMovementConfig,
+  streetObjectSources,
+  streetStandable,
+} from "../unit/test-street/street-world";
 
 interface Sample {
   realMs: number;
@@ -134,6 +138,7 @@ test("the commuter walks a leg on time, smoothly, in the walk row facing its tra
       streetObjectSources(),
       STOREY_HEIGHT_PX,
       TILE_SIZE_PX,
+      streetStandable,
     ),
     streetMovementConfig(),
   );

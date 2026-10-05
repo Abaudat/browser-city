@@ -130,7 +130,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         key: located(text, &o.key),
                         name: located(text, &o.name),
                         layer: located(text, &o.layer),
-                        sprite: located(text, &o.sprite),
+                        sprite: o.sprite.as_ref().map(|s| located(text, s)),
                         width: o.width,
                         height: o.height,
                         collider: o.collider.as_ref().map(|c| located(text, c)),
@@ -464,7 +464,7 @@ mod tests {
         assert_eq!(raw.objects[0].name.value, "Trash Bin");
         assert_eq!(raw.objects[0].layer.value, "furniture");
         assert_eq!(
-            raw.objects[0].sprite.value.sheet,
+            raw.objects[0].sprite.as_ref().unwrap().value.sheet,
             "fixtures/objects/test.png"
         );
         assert_eq!(raw.objects[1].width, 2);

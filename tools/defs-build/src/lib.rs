@@ -70,18 +70,23 @@ pub fn build(
     // packer share the result.
     let mut object_sheets: std::collections::BTreeMap<String, atlas::image::DecodedSheet> =
         std::collections::BTreeMap::new();
-    for o in &defs.objects {
-        if object_sheets.contains_key(&o.sprite.sheet) {
+    for (o, sprite) in defs
+        .objects
+        .iter()
+        .filter_map(|o| o.sprite.as_ref().map(|s| (o, s)))
+    {
+        let _ = o;
+        if object_sheets.contains_key(&sprite.sheet) {
             continue;
         }
-        let bytes = object_sheet_bytes.get(&o.sprite.sheet).ok_or_else(|| {
+        let bytes = object_sheet_bytes.get(&sprite.sheet).ok_or_else(|| {
             DefsError::new(
                 "tools/defs-build/atlas",
                 0,
                 0,
                 format!(
                     "sheet '{}' was referenced by an object but never read -- fsio must read every referenced sheet before build runs",
-                    o.sprite.sheet
+                    sprite.sheet
                 ),
             )
         })?;
@@ -90,10 +95,10 @@ pub fn build(
                 "tools/defs-build/atlas",
                 0,
                 0,
-                format!("sheet '{}': {e}", o.sprite.sheet),
+                format!("sheet '{}': {e}", sprite.sheet),
             )
         })?;
-        object_sheets.insert(o.sprite.sheet.clone(), decoded);
+        object_sheets.insert(sprite.sheet.clone(), decoded);
     }
     silhouette::check(&raw, &defs, &object_sheets)?;
     let character_parts = atlas::character::collect_character_parts(
@@ -183,8 +188,8 @@ pub fn appearance_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
 /// already built.
 pub fn object_sprite_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
     let mut paths: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for o in &raw.objects {
-        paths.insert(o.sprite.value.sheet.clone());
+    for sprite in raw.objects.iter().filter_map(|o| o.sprite.as_ref()) {
+        paths.insert(sprite.value.sheet.clone());
     }
     paths.into_iter().collect()
 }

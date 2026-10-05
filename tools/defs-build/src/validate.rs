@@ -1442,7 +1442,7 @@ struct LoweredObjectEntry {
     key: Located<String>,
     name: Located<String>,
     layer: Located<String>,
-    sprite: Located<RawSpriteRect>,
+    sprite: Option<Located<RawSpriteRect>>,
     width: u32,
     height: u32,
     collider: Option<Located<RawColliderRect>>,
@@ -1724,6 +1724,7 @@ fn check_object_flat_layers(
     code_tables: &CodeTables,
 ) -> Result<(), DefsError> {
     for e in entries {
+        let Some(spr) = &e.sprite else { continue };
         if !code_tables.is_flat_layer(&e.layer.value) {
             continue;
         }
@@ -1739,14 +1740,14 @@ fn check_object_flat_layers(
             ));
         }
         let expected_h = e.height * tile_size_px;
-        if e.sprite.value.h != expected_h {
+        if spr.value.h != expected_h {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' is on flat-pass layer '{}' so its sprite height {} must equal its footprint height {} * tile_size_px {tile_size_px} ({expected_h}px) exactly -- a flat object never overhangs",
-                    e.key.value, e.layer.value, e.sprite.value.h, e.height
+                    e.key.value, e.layer.value, spr.value.h, e.height
                 ),
             ));
         }
@@ -2030,12 +2031,13 @@ fn check_object_sprite_sheet_root(
     allowed_root: &str,
 ) -> Result<(), DefsError> {
     for e in entries {
-        let sheet = &e.sprite.value.sheet;
+        let Some(spr) = &e.sprite else { continue };
+        let sheet = &spr.value.sheet;
         if !sheet_is_under_root(sheet, allowed_root) {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite sheet '{sheet}' is not under the allowed root '{allowed_root}'",
                     e.key.value
@@ -2054,12 +2056,13 @@ fn check_object_sprite_sheets(
     sheet_dims: &BTreeMap<String, (u32, u32)>,
 ) -> Result<(), DefsError> {
     for e in entries {
-        let sprite = &e.sprite.value;
+        let Some(spr) = &e.sprite else { continue };
+        let sprite = &spr.value;
         let Some(&(sheet_w, sheet_h)) = sheet_dims.get(&sprite.sheet) else {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' names sheet '{}' but its dimensions were never read",
                     e.key.value, sprite.sheet
@@ -2069,8 +2072,8 @@ fn check_object_sprite_sheets(
         if sprite.w == 0 || sprite.h == 0 {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite rect has zero width or height",
                     e.key.value
@@ -2082,8 +2085,8 @@ fn check_object_sprite_sheets(
         if x1 > sheet_w as u64 || y1 > sheet_h as u64 {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite rect ({}, {})-({x1}, {y1}) does not fit inside sheet '{}' ({sheet_w}x{sheet_h}px)",
                     e.key.value, sprite.x, sprite.y, sprite.sheet
@@ -2106,13 +2109,14 @@ fn check_object_sprite_matches_footprint(
     tile_size_px: u32,
 ) -> Result<(), DefsError> {
     for e in entries {
-        let sprite = &e.sprite.value;
+        let Some(spr) = &e.sprite else { continue };
+        let sprite = &spr.value;
         let expected_w = e.width * tile_size_px;
         if sprite.w != expected_w {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite width {} does not equal its footprint width {} * tile_size_px {tile_size_px} ({expected_w}px)",
                     e.key.value, sprite.w, e.width
@@ -2122,8 +2126,8 @@ fn check_object_sprite_matches_footprint(
         if sprite.h % tile_size_px != 0 {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite height {} is not a whole multiple of tile_size_px {tile_size_px}",
                     e.key.value, sprite.h
@@ -2134,8 +2138,8 @@ fn check_object_sprite_matches_footprint(
         if sprite.h < min_h {
             return Err(DefsError::new(
                 &e.path,
-                e.sprite.line,
-                e.sprite.col,
+                spr.line,
+                spr.col,
                 format!(
                     "object '{}' sprite height {} is shorter than its footprint height {} * tile_size_px {tile_size_px} ({min_h}px)",
                     e.key.value, sprite.h, e.height
@@ -2340,6 +2344,38 @@ fn check_object_footprint_cap(entries: &[LoweredObjectEntry]) -> Result<(), Defs
 /// axis of the footprint (`to_px <= max(width, height) * tile_size_px`), and
 /// is refused on an object that declares a `collider` (a flight is walked
 /// over, never blocking).
+/// An object may omit its `sprite` only when it is a flight (its treads are
+/// drawn as their own rows on the lower floor): walked over, never blocking,
+/// lying flat. Every other sprite-less object is refused.
+fn check_object_undrawn(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        if e.sprite.is_some() {
+            continue;
+        }
+        let why = if e.flight.is_none() {
+            Some("declares no flight")
+        } else if e.collider.is_some() {
+            Some("declares a collider")
+        } else if !e.tags.iter().any(|t| t == UNDERFOOT_TAG_KEY) {
+            Some("is not tagged 'underfoot'")
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "object '{}' declares no sprite but {why} -- only an undrawn flight (underfoot, no collider) may omit its sprite",
+                    e.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn check_object_flight(
     entries: &[LoweredObjectEntry],
     balance: &[BalanceEntry],
@@ -2949,6 +2985,7 @@ pub fn validate(
     // rejection above (name, layer, footprint cap, collider/interact_at
     // geometry, sprite) gets its own chance to fire on a fixture built to
     // exercise it before this generic catch-all ever runs.
+    check_object_undrawn(&lowered_objects)?;
     check_object_flight(&lowered_objects, &raw.balance)?;
     check_object_walkability_tag(&lowered_objects)?;
     // Story 2.9: after every other object-level rejection, same
@@ -3071,13 +3108,13 @@ pub fn validate(
                 key: o.key.value.clone(),
                 name: o.name.value.clone(),
                 layer,
-                sprite: SpriteRect {
-                    sheet: o.sprite.value.sheet.clone(),
-                    x: o.sprite.value.x,
-                    y: o.sprite.value.y,
-                    w: o.sprite.value.w,
-                    h: o.sprite.value.h,
-                },
+                sprite: o.sprite.as_ref().map(|s| SpriteRect {
+                    sheet: s.value.sheet.clone(),
+                    x: s.value.x,
+                    y: s.value.y,
+                    w: s.value.w,
+                    h: s.value.h,
+                }),
                 width: o.width,
                 height: o.height,
                 collider: o.collider.as_ref().map(|c| ColliderRect {
@@ -3478,7 +3515,10 @@ mod tests {
         assert_eq!(defs.objects[0].key, "trash_bin");
         assert_eq!(defs.objects[0].name, "Trash Bin");
         assert_eq!(defs.objects[0].layer, 2);
-        assert_eq!(defs.objects[0].sprite.sheet, "fixtures/objects/test.png");
+        assert_eq!(
+            defs.objects[0].sprite.as_ref().unwrap().sheet,
+            "fixtures/objects/test.png"
+        );
         assert_eq!(defs.items[0].key, "bottle");
         assert_eq!(defs.recipes[0].inputs, vec!["bottle"]);
         assert_eq!(defs.chains[0].links, vec!["sanitation_worker"]);

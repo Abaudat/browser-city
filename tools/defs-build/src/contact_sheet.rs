@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{
     AtlasPageDef, AtlasRect, COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs,
-    INTERACT_AT_MAX_REACH_CELLS, ObjectDef, ObjectEntry, RawDefs,
+    INTERACT_AT_MAX_REACH_CELLS, ObjectDef, ObjectEntry, RawDefs, SpriteRect,
 };
 
 /// Fixed integer upscale (Artie's direction): one collider sub-cell lands
@@ -100,8 +100,8 @@ fn collider_rect_to_px(c: &ColliderRect, footprint_top: f64, tile_size_px: u32) 
 /// footprint (`h >= height * tile_size_px`, already enforced), so
 /// `footprint_top` is never negative.
 pub fn project(obj: &ObjectDef, tile_size_px: u32) -> ObjectGeometry {
-    let sprite_w = obj.sprite.w as f64;
-    let sprite_h = obj.sprite.h as f64;
+    let sprite_w = drawn(obj).w as f64;
+    let sprite_h = drawn(obj).h as f64;
     let footprint_w = obj.width as f64 * tile_size_px as f64;
     let footprint_h = obj.height as f64 * tile_size_px as f64;
     let footprint_top = sprite_h - footprint_h;
@@ -184,6 +184,8 @@ pub fn cards<'a>(
         defs.tags.iter().map(|t| (t.id, t.key.as_str())).collect();
     defs.objects
         .iter()
+        // An undrawn object (a flight whose treads are their own rows) has no card.
+        .filter(|o| o.sprite.is_some())
         .map(|o| {
             let raw_entry = raw_objects_by_key
                 .get(o.key.as_str())
@@ -209,6 +211,13 @@ pub fn cards<'a>(
             }
         })
         .collect()
+}
+
+/// The sprite of an object that has a card: cards are built for drawn objects only.
+fn drawn(obj: &ObjectDef) -> &SpriteRect {
+    obj.sprite
+        .as_ref()
+        .expect("a card is built for a drawn object")
 }
 
 fn html_escape(s: &str) -> String {
@@ -526,8 +535,8 @@ fn render_card(
         "<div class=\"sprite {page_class}\" style=\"left:{}px; top:{}px; width:{}px; height:{}px; background-position:-{}px -{}px;\"></div>",
         (pad as u32) * SCALE,
         (pad as u32) * SCALE,
-        card.obj.sprite.w * SCALE,
-        card.obj.sprite.h * SCALE,
+        drawn(card.obj).w * SCALE,
+        drawn(card.obj).h * SCALE,
         card.atlas.x * SCALE,
         card.atlas.y * SCALE,
     );
@@ -592,7 +601,7 @@ fn render_card(
         collider_text = html_escape(&collider_text),
         interact_text = html_escape(&interact_text),
         tags_text = html_escape(&tags_text),
-        sheet_leaf = html_escape(leaf_filename(&card.obj.sprite.sheet)),
+        sheet_leaf = html_escape(leaf_filename(&drawn(card.obj).sheet)),
         def_path = html_escape(card.def_path),
         def_line = card.def_line,
     )
@@ -673,12 +682,12 @@ pub fn build(
         // filename below it.
         let box_w = group_cards
             .iter()
-            .map(|c| ((c.obj.sprite.w as f64 + 2.0 * pad) as u32) * SCALE)
+            .map(|c| ((drawn(c.obj).w as f64 + 2.0 * pad) as u32) * SCALE)
             .max()
             .unwrap_or(0);
         let box_h = group_cards
             .iter()
-            .map(|c| ((c.obj.sprite.h as f64 + 2.0 * pad) as u32) * SCALE)
+            .map(|c| ((drawn(c.obj).h as f64 + 2.0 * pad) as u32) * SCALE)
             .max()
             .unwrap_or(0);
         for card in group_cards {
@@ -712,7 +721,7 @@ mod tests {
             key: "obj".into(),
             name: "Obj".into(),
             layer: 2,
-            sprite: sprite(width * 16, sprite_h),
+            sprite: Some(sprite(width * 16, sprite_h)),
             width,
             height,
             collider: None,
@@ -893,8 +902,8 @@ mod tests {
                 page: 0,
                 x: 0,
                 y: 0,
-                w: obj.sprite.w,
-                h: obj.sprite.h,
+                w: drawn(obj).w,
+                h: drawn(obj).h,
             },
         }
     }
@@ -961,7 +970,7 @@ mod tests {
         let html_a = build(&cards_a, Some(16), &atlas_pages(), "v1", "m1");
 
         let mut obj_b = object(1, 1, 16);
-        obj_b.sprite.w = 32;
+        obj_b.sprite.as_mut().unwrap().w = 32;
         obj_b.width = 2;
         let cards_b = vec![card(&obj_b, None)];
         let html_b = build(&cards_b, Some(16), &atlas_pages(), "v1", "m1");

@@ -62,7 +62,11 @@ export interface Flight {
  * object's def, the sign from `floorOffsetPx` of the two floors. An anchor
  * no flight object covers has no flight; two objects on one anchor, an
  * anchor that is not the footprint's far end, or a flight shorter than two
- * cells along its axis is an error.
+ * cells along its axis is an error. A flight wider than one cell is anchored
+ * in every column of its far end, and every column's anchor must resolve the
+ * same flight (footprint, axis, direction, ramp and drop): two anchors that
+ * disagree, or a far-end cell `isStandable` says a body can stand in with no
+ * anchor, is an error naming the cells.
  */
 export function buildFlights(
   transitions: readonly TransitionSpec[],
@@ -70,9 +74,15 @@ export function buildFlights(
   sources: ReadonlyMap<number, FlightSource>,
   storeyHeightPx: number,
   tileSizePx: number,
+  isStandable: (x: number, y: number, floor: number) => boolean,
 ): readonly Flight[] {
   const { pairings } = pairTransitions(transitions);
-  const flights: Flight[] = [];
+  // One entry per placed flight, in first-anchor order; `anchors` are the
+  // far-end cells its pairings anchor.
+  const built = new Map<
+    PlacedFlightRow,
+    { flight: Flight; first: string; targetFloor: number; anchors: Set<string> }
+  >();
   for (const pairing of pairings) {
     const sides = [
       { anchor: pairing.forward, dir: forwardOpenNeighbor(pairing).direction },
@@ -126,21 +136,60 @@ export function buildFlights(
         floorOffsetPx(anchor.targetFloor, storeyHeightPx) -
           floorOffsetPx(anchor.floor, storeyHeightPx),
       );
-      flights.push({
+      const flight: Flight = {
         floor: anchor.floor,
         x0: origin.x,
         y0: origin.y,
         x1,
         y1,
-        dirX: dir.x,
-        dirY: dir.y,
+        // `+ 0` keeps a -0 (from negating a zero axis) out of the flight.
+        dirX: dir.x + 0,
+        dirY: dir.y + 0,
         startS: lo + fromPx / tileSizePx,
         fullS: lo + toPx / tileSizePx,
         dropPx: sign * dropPx + 0,
-      });
+      };
+      const known = built.get(row);
+      if (!known) {
+        built.set(row, {
+          flight,
+          first: where,
+          targetFloor: anchor.targetFloor,
+          anchors: new Set([`${anchor.x}|${anchor.y}`]),
+        });
+        continue;
+      }
+      // The flight carries the target floor only as a sign, so compare the floor itself.
+      if (
+        known.targetFloor !== anchor.targetFloor ||
+        JSON.stringify(known.flight) !== JSON.stringify(flight)
+      ) {
+        throw new Error(
+          `buildFlights: the anchors ${known.first} and ${where} resolve the flight at row (${row.x}, ${row.y}, floor ${row.floor}) differently (axis, direction, ramp or target floor)`,
+        );
+      }
+      known.anchors.add(`${anchor.x}|${anchor.y}`);
     }
   }
-  return flights;
+  // Every standable cell of the far end is an anchor: an unanchored column
+  // would carry a walker to the full drop with no floor change.
+  for (const [row, { flight, first, anchors }] of built) {
+    const farX = flight.dirX !== 0 ? (flight.dirX > 0 ? flight.x1 - 1 : flight.x0) : undefined;
+    const farY = flight.dirY !== 0 ? (flight.dirY > 0 ? flight.y1 - 1 : flight.y0) : undefined;
+    for (let y = flight.y0; y < flight.y1; y++) {
+      for (let x = flight.x0; x < flight.x1; x++) {
+        if ((farX !== undefined && x !== farX) || (farY !== undefined && y !== farY)) continue;
+        // A cell no body can stand in (a railing's row) needs no anchor.
+        if (!isStandable(x, y, flight.floor)) continue;
+        if (!anchors.has(`${x}|${y}`)) {
+          throw new Error(
+            `buildFlights: the flight at row (${row.x}, ${row.y}, floor ${row.floor}), anchored at ${first}, has no anchor in its far-end cell (${x}, ${y})`,
+          );
+        }
+      }
+    }
+  }
+  return [...built.values()].map((entry) => entry.flight);
 }
 
 function cellKey(floor: number, x: number, y: number): string {

@@ -106,7 +106,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("pub struct SpriteRect {\n    pub sheet: &'static str,\n    pub x: u32,\n    pub y: u32,\n    pub w: u32,\n    pub h: u32,\n}\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct ObjectDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub name: &'static str,\n    pub layer: u32,\n    pub sprite: SpriteRect,\n    pub width: u32,\n    pub height: u32,\n    pub collider: Option<ColliderRect>,\n    pub interact_at: Option<ColliderRect>,\n    pub window: bool,\n    pub tags: &'static [u32],\n}\n\n");
+    out.push_str("pub struct ObjectDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub name: &'static str,\n    pub layer: u32,\n    pub sprite: Option<SpriteRect>,\n    pub width: u32,\n    pub height: u32,\n    pub collider: Option<ColliderRect>,\n    pub interact_at: Option<ColliderRect>,\n    pub window: bool,\n    pub tags: &'static [u32],\n}\n\n");
     out.push_str("pub const OBJECTS: &[ObjectDef] = &[\n");
     for o in &defs.objects {
         out.push_str(&format!(
@@ -597,14 +597,28 @@ fn fmt_opt_str_json(s: &Option<String>) -> String {
     }
 }
 
-fn fmt_sprite_rust(sprite: &SpriteRect) -> String {
+fn fmt_sprite_rust(sprite: &Option<SpriteRect>) -> String {
+    match sprite {
+        Some(s) => format!("Some({})", fmt_sprite_rust_rect(s)),
+        None => "None".to_string(),
+    }
+}
+
+fn fmt_sprite_rust_rect(sprite: &SpriteRect) -> String {
     format!(
         "SpriteRect {{ sheet: {:?}, x: {}, y: {}, w: {}, h: {} }}",
         sprite.sheet, sprite.x, sprite.y, sprite.w, sprite.h
     )
 }
 
-fn fmt_sprite_json(sprite: &SpriteRect) -> String {
+fn fmt_sprite_json(sprite: &Option<SpriteRect>) -> String {
+    match sprite {
+        Some(s) => fmt_sprite_json_rect(s),
+        None => "null".to_string(),
+    }
+}
+
+fn fmt_sprite_json_rect(sprite: &SpriteRect) -> String {
     format!(
         "{{ \"sheet\": {}, \"x\": {}, \"y\": {}, \"w\": {}, \"h\": {} }}",
         json_escape(&sprite.sheet),
@@ -735,12 +749,15 @@ pub fn emit_json(
     out.push_str("  \"objects\": [\n");
     for (i, o) in defs.objects.iter().enumerate() {
         let comma = if i + 1 < defs.objects.len() { "," } else { "" };
-        let atlas = atlas_by_object_id
-            .get(&o.id)
-            .unwrap_or_else(|| panic!("object '{}' (id {}) has no packed atlas rect", o.key, o.id));
+        // An undrawn object (a flight) has no sprite and no atlas rect.
+        let atlas = match atlas_by_object_id.get(&o.id) {
+            Some(rect) => fmt_atlas_rect_json(rect),
+            None if o.sprite.is_none() => "null".to_string(),
+            None => panic!("object '{}' (id {}) has no packed atlas rect", o.key, o.id),
+        };
         out.push_str(&format!(
             "    {{ \"atlas\": {}, \"collider\": {}, \"flight\": {}, \"height\": {}, \"id\": {}, \"interact_at\": {}, \"key\": {}, \"layer\": {}, \"name\": {}, \"sprite\": {}, \"tags\": {}, \"width\": {}, \"window\": {} }}{comma}\n",
-            fmt_atlas_rect_json(atlas),
+            atlas,
             fmt_collider_json(o.collider),
             fmt_flight_json(o.flight),
             o.height,
@@ -1129,13 +1146,13 @@ mod tests {
                 key: "trash_bin".into(),
                 name: "Trash Bin".into(),
                 layer: 2,
-                sprite: SpriteRect {
+                sprite: Some(SpriteRect {
                     sheet: "ModernTileset/Pier_Bin_1.png".into(),
                     x: 0,
                     y: 0,
                     w: 16,
                     h: 16,
-                },
+                }),
                 width: 1,
                 height: 1,
                 collider: Some(ColliderRect {
@@ -1346,7 +1363,7 @@ mod tests {
         assert!(out.starts_with(GENERATED_HEADER_RUST));
         assert!(out.contains("pub const DEFS_VERSION: &str = \"abc123\";"));
         assert!(out.contains(
-            "ObjectDef { id: 1, key: \"trash_bin\", name: \"Trash Bin\", layer: 2, sprite: SpriteRect { sheet: \"ModernTileset/Pier_Bin_1.png\", x: 0, y: 0, w: 16, h: 16 }, width: 1, height: 1, collider: Some(ColliderRect { x0: 4, y0: 4, x1: 12, y1: 12 }), interact_at: Some(ColliderRect { x0: 0, y0: 16, x1: 16, y1: 32 }), window: false, tags: &[2] }"
+            "ObjectDef { id: 1, key: \"trash_bin\", name: \"Trash Bin\", layer: 2, sprite: Some(SpriteRect { sheet: \"ModernTileset/Pier_Bin_1.png\", x: 0, y: 0, w: 16, h: 16 }), width: 1, height: 1, collider: Some(ColliderRect { x0: 4, y0: 4, x1: 12, y1: 12 }), interact_at: Some(ColliderRect { x0: 0, y0: 16, x1: 16, y1: 32 }), window: false, tags: &[2] }"
         ));
         assert!(out.contains("pub const COLLIDER_SUBCELLS_PER_CELL: i32 = 16;"));
         assert!(out.contains("pub const INTERACT_AT_MAX_REACH_CELLS: i32 = 2;"));
@@ -1467,7 +1484,7 @@ mod tests {
         assert!(out.contains("name: \"Trash Bin\""));
         assert!(out.contains("layer: 2"));
         assert!(out.contains(
-            "sprite: SpriteRect { sheet: \"ModernTileset/Pier_Bin_1.png\", x: 0, y: 0, w: 16, h: 16 }"
+            "sprite: Some(SpriteRect { sheet: \"ModernTileset/Pier_Bin_1.png\", x: 0, y: 0, w: 16, h: 16 })"
         ));
     }
 
@@ -1768,13 +1785,13 @@ mod tests {
             key: "aardvark".into(),
             name: "Aardvark".into(),
             layer: 2,
-            sprite: SpriteRect {
+            sprite: Some(SpriteRect {
                 sheet: "ModernTileset/Pier_Bin_1.png".into(),
                 x: 0,
                 y: 0,
                 w: 16,
                 h: 16,
-            },
+            }),
             width: 1,
             height: 1,
             collider: None,

@@ -63,14 +63,14 @@ fn propose_never_panics_over_every_committed_objects_own_sprite_rect() {
 
     let mut ok_count = 0;
     let mut err_count = 0;
-    for o in &raw.objects {
-        let sheet = &o.sprite.value.sheet;
+    for o in raw.objects.iter().filter(|o| o.sprite.is_some()) {
+        let sprite = &o.sprite.as_ref().unwrap().value;
+        let sheet = &sprite.sheet;
         let bytes = sheet_bytes
             .get(sheet)
             .unwrap_or_else(|| panic!("object '{}': sheet '{sheet}' never read", o.key.value));
         let (sheet_w, sheet_h, sheet_rgba) = decode_rgba8(bytes)
             .unwrap_or_else(|e| panic!("object '{}': cannot decode '{sheet}': {e}", o.key.value));
-        let sprite = &o.sprite.value;
         assert!(
             sprite.x + sprite.w <= sheet_w && sprite.y + sprite.h <= sheet_h,
             "object '{}': sprite rect does not fit inside its own sheet",
