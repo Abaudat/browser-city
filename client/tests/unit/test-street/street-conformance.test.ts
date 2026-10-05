@@ -32,6 +32,7 @@ import {
   BRIDGE_X0,
   BRIDGE_X1,
   furnitureBehindWindows,
+  groundTilesLabel,
   isDefStreetProp,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
@@ -73,6 +74,7 @@ import {
   streetWalkRoute,
   streetWalkUntilMet,
   TRASH_BIN_DEF_ID,
+  WALL_FACE_DEF_ID,
   WINDOW_DEF_ID,
 } from "../../../src/test-street/fixture";
 import {
@@ -102,6 +104,7 @@ import {
   streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
+  streetThresholdDefIds,
   streetTransitionIndex,
   streetWalkInputs,
   streetWindowDefIds,
@@ -435,6 +438,13 @@ describe("the scripted walk (AC3)", () => {
 describe("collision/silhouette conformance (FR117, FR128)", () => {
   const world = streetWorldIndex();
   const sources = streetObjectSources();
+  const thresholdDefIds = streetThresholdDefIds();
+
+  it("a walls-layer def without the threshold role still has to collide", () => {
+    expect(thresholdDefIds.has(WALL_FACE_DEF_ID)).toBe(false);
+    expect(sources.get(WALL_FACE_DEF_ID)?.collider).toBeDefined();
+    expect(thresholdDefIds.size).toBeGreaterThan(0);
+  });
 
   /** The one `STREET_BOUNDARY` rect allowed a sub-cell `collider`: the
    * footbridge's own south rail, floor 1. A walker pressed against a
@@ -512,7 +522,7 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
             if (tiles.floor !== floor) continue;
             if (cx >= tiles.x0 && cx < tiles.x1 && cy >= tiles.y0 && cy < tiles.y1) {
               failures.push(
-                `boundary id ${rect.id}'s own cell (${cx}, ${cy}) overlaps drawn ground-tile group '${tiles.assetKey}' -- looks walkable, is not`,
+                `boundary id ${rect.id}'s own cell (${cx}, ${cy}) overlaps drawn ground-tile group '${groundTilesLabel(tiles)}' -- looks walkable, is not`,
               );
             }
           }
@@ -535,6 +545,15 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
     for (const prop of STREET_PROPS) {
       const inScope = prop.layer === "walls" || prop.layer === "furniture" || prop.solid === true;
       if (!inScope || UNCOLLIDED_FURNITURE.has(prop.id)) continue;
+      // A doorway is an opening: a def with the `threshold` role and no
+      // collider of its own is walkable by design.
+      if (
+        isDefStreetProp(prop) &&
+        thresholdDefIds.has(prop.defId) &&
+        !sources.get(prop.defId)?.collider
+      ) {
+        continue;
+      }
       const defId = isDefStreetProp(prop) ? prop.defId : streetDefId(prop.id);
       const source = sources.get(defId);
       if (!source) {
@@ -1314,6 +1333,7 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
       rankOf,
       ownership,
       windowDefIds: streetWindowDefIds(),
+      thresholdDefIds: streetThresholdDefIds(),
       objectDefs: streetObjectSources(),
     });
     const defDrawables = drawables.filter(isDefPropDrawable);
@@ -1402,7 +1422,9 @@ describe("no raw-asset seam survives for a def-placed prop (story 2.13)", () => 
     const declaredKeys = [...sheetByAssetKey().keys()];
     expect(declaredKeys.length).toBeGreaterThan(0);
 
-    const groundAssetKeys = new Set(STREET_GROUND_TILES.map((tiles) => tiles.assetKey));
+    const groundAssetKeys = new Set(
+      STREET_GROUND_TILES.flatMap((tiles) => ("assetKey" in tiles ? [tiles.assetKey] : [])),
+    );
     const cropBaseKeys = new Set(
       [...sceneSrc.matchAll(/textureFor\(\s*"(\w+)"/g)]
         .map((m) => m[1])

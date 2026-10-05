@@ -54,7 +54,7 @@ function fakeSourceTexture() {
   return { source: { scaleMode: undefined, autoGenerateMipmaps: undefined } };
 }
 
-const PAGE: AtlasPageDef = { file: "street-abc.png", group: "street", width: 2048, height: 32 };
+const PAGE: AtlasPageDef = { file: "shared-abc.png", group: "shared", width: 2048, height: 32 };
 
 function defsWith(pages: readonly AtlasPageDef[]): Defs {
   return { atlasPages: pages } as unknown as Defs;
@@ -84,7 +84,7 @@ describe("AtlasPageLoader", () => {
     await loader.objectTexture(defs, OBJECT);
 
     expect(loadMock).toHaveBeenCalledTimes(1);
-    expect(loadMock).toHaveBeenCalledWith("/atlas/street-abc.png");
+    expect(loadMock).toHaveBeenCalledWith("/atlas/shared-abc.png");
   });
 
   it("reports the page as bound only after it actually resolves", async () => {

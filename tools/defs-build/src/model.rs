@@ -149,14 +149,14 @@ pub const ATLAS_MAX_PAGES_PER_GROUP: usize = 2;
 /// groups and their own page counts.
 pub const ATLAS_MAX_BOUND_PAGES: usize = 8;
 
-/// The one page group every theme a street kit's own single props draw
-/// from shares (`defs/atlas/page-groups.toml`'s own table) -- a themed
+/// The one page group every theme drawn in any scene (street kit and
+/// interior shell) shares (`defs/atlas/page-groups.toml`'s own table) -- a themed
 /// district keeps its own group instead. At least one row in that table
 /// must map to this group; a table that maps nothing to it is a build
-/// error, because the shared set a street scene always binds is a
+/// error, because the shared set every scene binds is a
 /// structural requirement, not a convention any one row happens to
 /// establish.
-pub const ATLAS_SHARED_GROUP: &str = "street";
+pub const ATLAS_SHARED_GROUP: &str = "shared";
 
 /// Story 2.7: every character-part page group's own name starts with this
 /// prefix (`character_body`, `character_eyes`, ...) -- CPU-only compositing
@@ -174,6 +174,13 @@ pub const CHARACTER_GROUP_PREFIX: &str = "character_";
 /// ATLAS_MAX_BOUND_PAGES`), emitted into `defs.json` so the client never
 /// carries this as its own literal.
 pub const CHARACTER_COMPOSITE_PAGES: u32 = 2;
+
+// The reachable worst scene (shared + worst themed, each at its per-group
+// cap, + composites) must fit the bound: raising a constant breaks the
+// build here, before any packing.
+const _: () = assert!(
+    2 * ATLAS_MAX_PAGES_PER_GROUP + CHARACTER_COMPOSITE_PAGES as usize <= ATLAS_MAX_BOUND_PAGES
+);
 
 /// A 1px border of extruded (edge-repeated, never transparent -- Artie's
 /// direction) pixels surrounds every packed rect on every side, always --
@@ -834,10 +841,9 @@ pub struct BalanceFile {
 /// `theme` is exactly [`crate::atlas::theme::theme_group`]'s own derived
 /// value (the folder segment, normalised), never a sheet path or an
 /// object key; `group` is the page group every sheet naming that theme
-/// actually packs onto. Artie's direction: every street-kit theme
-/// (terrain, city props, generic/floor-modular buildings, and whichever
-/// themed folders the street kit borrows single props from) maps to one
-/// shared `"street"` group; a themed district keeps its own group. A
+/// actually packs onto. Every theme drawn in any scene -- street kit
+/// and interior shell alike -- maps to one shared `"shared"` group; a
+/// themed district keeps its own group. A
 /// theme with no row here is a build error naming the theme -- there is
 /// no silent per-theme-folder default.
 #[derive(Debug, Deserialize)]
