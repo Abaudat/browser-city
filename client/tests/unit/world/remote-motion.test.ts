@@ -47,7 +47,10 @@ interface Interpolator {
 
 /** A walker at or below walk speed, with stamp jitter, bursts and late
  * updates, through any interpolator. */
-function assertContinuity(make: (cfg: RemoteMotionConfig) => Interpolator): void {
+function assertContinuity(
+  make: (cfg: RemoteMotionConfig) => Interpolator,
+  params: fc.Parameters<unknown> = {},
+): void {
   const frames = fc.array(
     fc.record({
       dt: fc.double({ min: 6, max: 34, noNaN: true }),
@@ -137,7 +140,7 @@ function assertContinuity(make: (cfg: RemoteMotionConfig) => Interpolator): void
         if (last) expect(prev).toMatchObject({ x: last.x, y: 0 });
       },
     ),
-    { numRuns: 60 },
+    { numRuns: 60, ...params },
   );
 }
 
@@ -239,12 +242,7 @@ describe("RemoteMotion", () => {
     expect(m.ids()).toEqual([]);
   });
 
-  // CI worst case under coverage: 1.40 s (run 37229489003); the shrinking of a deliberately failing property is the work, and the control must run it, so the work
-  // cannot shrink. 60 s is over 10x that.
-  const NEGATIVE_CONTROL_TIMEOUT_MS = 60_000;
-  it("a snap-to-latest interpolator fails inv_remote_motion_is_continuous (negative control)", {
-    timeout: NEGATIVE_CONTROL_TIMEOUT_MS,
-  }, () => {
+  it("a snap-to-latest interpolator fails inv_remote_motion_is_continuous (negative control)", () => {
     const snap = (): Interpolator => {
       const latest = new Map<string, { x: number; y: number; floor: number }>();
       return {
@@ -252,7 +250,8 @@ describe("RemoteMotion", () => {
         poseAt: (id) => latest.get(id),
       };
     };
-    expect(() => assertContinuity(snap)).toThrow();
+    // Stop at the first failure: the control needs the failure, not a minimal one.
+    expect(() => assertContinuity(snap, { endOnFailure: true })).toThrow();
   });
 });
 

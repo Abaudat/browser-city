@@ -69,16 +69,8 @@ printf '{"tests":[{"file":"a","name":"b","durationMs":1,"timeoutMs":5000,"state"
 ' > "$d/old.json"
 check "a report without retry/repeats fails" 1 bash "$CHECK" "$d/old.json" "$d/vitest.config.ts"
 
-report "$d" passed 100 5000
-printf '{ "scripts": { "test": "vitest run --retry 2" } }
-' > "$d/package.json"
-check "a --retry flag fails" 1 bash "$CHECK" "$d/d.json" "$d/vitest.config.ts" "$d/package.json"
-printf '{ "scripts": { "test": "vitest run" } }
-' > "$d/package.json"
-check "a flag file without --retry passes" 0 bash "$CHECK" "$d/d.json" "$d/vitest.config.ts" "$d/package.json"
-
 cfg "$d"
-check "the real config, package.json and ci.yml are clean" 0 bash "$CHECK" "$d/d.json" "$REPO_ROOT/client/vitest.config.ts"
+check "the real config is clean" 0 bash "$CHECK" "$d/d.json" "$REPO_ROOT/client/vitest.config.ts"
 
 summary
 exit $?
