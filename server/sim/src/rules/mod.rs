@@ -1768,10 +1768,16 @@ mod tests {
             .build();
         let whole = evaluate(RuleSet::for_test(&rules), &site);
         let local = evaluate_local(RuleSet::for_test(&rules), &site);
-        assert!(whole.iter().any(|v| v.rule_id == 2), "the whole-site pass sees the distribution row");
+        assert!(
+            whole.iter().any(|v| v.rule_id == 2),
+            "the whole-site pass sees the distribution row"
+        );
         assert_eq!(
             local,
-            whole.into_iter().filter(|v| v.rule_id != 2).collect::<Vec<_>>(),
+            whole
+                .into_iter()
+                .filter(|v| v.rule_id != 2)
+                .collect::<Vec<_>>(),
             "evaluate_local is evaluate minus the Distribution kind, nothing else"
         );
         assert_eq!(local.len(), 1);
@@ -1782,7 +1788,14 @@ mod tests {
         let rules = two_cafes_one_waste_requirement();
         let req = rules[0].as_requirement().expect("a requirement row");
         assert_eq!(
-            (req.id, req.key, req.container, req.requires, req.min, req.max),
+            (
+                req.id,
+                req.key,
+                req.container,
+                req.requires,
+                req.min,
+                req.max
+            ),
             (1, "needs_waste", ROOM, WASTE, 1, None)
         );
         assert!(rules[1].as_requirement().is_none());

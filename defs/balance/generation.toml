@@ -993,15 +993,18 @@ max = 100
 # AC3's pooled band: the enterable share of placed buildings, pooled over
 # the fixed seed range 0..256, must sit within the tolerance below of
 # this -- so the count cannot drift to "100, barely". Only a vacant unit
-# or a storage yard is a Shell, so the share sits near the top.
+# or a storage yard is a Shell, so the share sits near the top: measured
+# over 500 seeds (`measure-generation --interiors-only`) mean 97.9,
+# standard deviation 0.5, min 96; the pooled mean of 256 seeds has a
+# standard error under 0.05, so a 1-point band is 20 standard errors.
 key = "generation.interiors.enterable_target_percent"
-value = 97
+value = 98
 min = 1
 max = 100
 
 [[balance]]
 key = "generation.interiors.enterable_target_tolerance_percent"
-value = 3
+value = 1
 min = 0
 max = 100
 

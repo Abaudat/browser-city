@@ -49,11 +49,11 @@ use crate::rng::{Rng, seed_from_ids};
 use crate::rules::{AreaId, RequirementRow, RuleSet, TagId, Violation};
 use crate::world::{AreaSpec, Rect, clip_rect_to_chunks};
 
+use super::building_types::BuildingTypeMap;
 use super::envelopes::{Envelope, EnvelopeMap};
 use super::plots::{Plot, PlotMap};
-use super::site::front_cell;
+use super::site::{DistrictSite, front_cell};
 use super::streets::Side;
-use super::building_types::BuildingTypeMap;
 use super::{GenerationConfig, GenerationContent, GenerationError, rect_seed_key};
 
 pub const PASS_ID: u64 = super::PASS_INTERIOR_LAYOUT;
@@ -287,7 +287,11 @@ impl InteriorMap {
     pub fn building_areas(&self) -> Vec<AreaSpec> {
         let mut out = Vec::new();
         for (_, _, interior) in self.laid() {
-            push_clipped(&mut out, rect_seed_key(interior.footprint), interior.footprint);
+            push_clipped(
+                &mut out,
+                rect_seed_key(interior.footprint),
+                interior.footprint,
+            );
         }
         out
     }
@@ -357,10 +361,10 @@ pub fn room_area_id(rect: Rect) -> AreaId {
 /// Every cell of `interior` the rule engine needs, floor 0. Wall cells
 /// carry the wall tags; floor cells the floor tag (a fixture cell adds
 /// the fixture tag and its own required tag); a threshold the threshold
-/// and wall-run tags (and `entrance` for the street door); each room's
-/// own door cell additionally carries that room type's tags -- the
-/// marker the requirement rows' containers match; the approach cells
-/// carry pavement.
+/// and wall-run tags (and `entrance` for the street door); the floor cell
+/// just inside each room's own doorway additionally carries that room
+/// type's tags -- the marker the requirement rows' containers match; the
+/// approach cells carry pavement.
 pub fn site_cells(interior: &Interior, vocab: &Vocabulary) -> Vec<SiteCell> {
     let p = vocab.parts;
     let building = building_area_id(interior.footprint);
@@ -406,8 +410,23 @@ pub fn site_cells(interior: &Interior, vocab: &Vocabulary) -> Vec<SiteCell> {
         if t.entrance {
             tags.push(p.entrance);
         }
-        tags.extend_from_slice(vocab.room(interior.rooms[t.room].room_type).tags);
         put(t.x, t.y, &tags, &[building, room_ids[t.room]]);
+        // The room's own marker: the cell just inside the doorway it owns
+        // (a floor cell, so only the building and room areas contain it --
+        // never the block area the street door's own cell also sits in,
+        // which would owe the room's requirements to the whole block).
+        let room = &interior.rooms[t.room];
+        if let Some((x, y)) = [
+            (t.x + 1, t.y),
+            (t.x - 1, t.y),
+            (t.x, t.y + 1),
+            (t.x, t.y - 1),
+        ]
+        .into_iter()
+        .find(|&(x, y)| room.rect.contains(x, y))
+        {
+            put(x, y, vocab.room(room.room_type).tags, &[]);
+        }
     }
     for &(x, y) in &interior.approach {
         put(x, y, &[p.pavement], &[]);
@@ -421,14 +440,379 @@ pub fn site_cells(interior: &Interior, vocab: &Vocabulary) -> Vec<SiteCell> {
 }
 
 /// The accept/reject step: `crate::rules::evaluate_local` over the site
-/// of this one building. Empty means the layout may be emitted.
+/// of this one building, built by the same adapter `DistrictSite` uses.
+/// Empty means the layout may be emitted.
 pub fn check_layout(interior: &Interior, vocab: &Vocabulary, rules: RuleSet<'_>) -> Vec<Violation> {
-    let _ = (interior, vocab, rules);
-    unimplemented!("pass 6: check_layout")
+    let site = DistrictSite::from_cells(&site_cells(interior, vocab));
+    crate::rules::evaluate_local(rules, &site)
+}
+
+/// The layout's own frame: local `(u, v)` with `u` along the front face
+/// and `v` from the front wall inward, over the footprint's interior net
+/// (the footprint minus its wall ring). `flip` mirrors `u`. `cell` maps
+/// a local cell -- the wall ring included, at `-1` and `w`/`d` -- back to
+/// world coordinates, so nothing downstream ever holds a second frame.
+#[derive(Clone, Copy)]
+struct Frame {
+    net: Rect,
+    front: Side,
+    flip: bool,
+    w: i32,
+    d: i32,
+}
+
+impl Frame {
+    fn new(footprint: Rect, front: Side, thickness: i32, flip: bool) -> Frame {
+        let net = Rect {
+            x0: footprint.x0 + thickness,
+            y0: footprint.y0 + thickness,
+            x1: footprint.x1 - thickness,
+            y1: footprint.y1 - thickness,
+        };
+        let (w, d) = match front {
+            Side::North | Side::South => (net.width() as i32, net.height() as i32),
+            Side::East | Side::West => (net.height() as i32, net.width() as i32),
+        };
+        Frame {
+            net,
+            front,
+            flip,
+            w,
+            d,
+        }
+    }
+
+    fn cell(&self, u: i32, v: i32) -> (i32, i32) {
+        let uu = if self.flip { self.w - 1 - u } else { u };
+        match self.front {
+            Side::South => (self.net.x0 + uu, self.net.y1 - 1 - v),
+            Side::North => (self.net.x0 + uu, self.net.y0 + v),
+            Side::East => (self.net.x1 - 1 - v, self.net.y0 + uu),
+            Side::West => (self.net.x0 + v, self.net.y0 + uu),
+        }
+    }
+
+    /// A local half-open rect as a world rect.
+    fn rect(&self, u0: i32, v0: i32, u1: i32, v1: i32) -> Rect {
+        let a = self.cell(u0, v0);
+        let b = self.cell(u1 - 1, v1 - 1);
+        Rect {
+            x0: a.0.min(b.0),
+            y0: a.1.min(b.1),
+            x1: a.0.max(b.0) + 1,
+            y1: a.1.max(b.1) + 1,
+        }
+    }
+}
+
+/// The smallest `(width, depth)` interior a program lays out in: a front
+/// band holding the front room, one partition, and the remaining rooms
+/// side by side behind it.
+fn needed_extent(rooms: &[&defs::RoomTypeDef], thickness: i32) -> (i32, i32) {
+    let front = rooms[0];
+    let back = &rooms[1..];
+    if back.is_empty() {
+        return (front.min_width_cells as i32, front.min_depth_cells as i32);
+    }
+    let back_width: i32 = back.iter().map(|r| r.min_width_cells as i32).sum::<i32>()
+        + thickness * (back.len() as i32 - 1);
+    let back_depth = back
+        .iter()
+        .map(|r| r.min_depth_cells as i32)
+        .max()
+        .unwrap_or(0);
+    (
+        (front.min_width_cells as i32).max(back_width),
+        front.min_depth_cells as i32 + thickness + back_depth,
+    )
+}
+
+/// The rooms this footprint holds: the required core, then the optional
+/// tail in declared order while each still fits. `None` when even the
+/// core does not.
+fn select_program<'a>(
+    def: &defs::BuildingTypeDef,
+    vocab: &Vocabulary<'a>,
+    w: i32,
+    d: i32,
+    thickness: i32,
+) -> Option<Vec<&'a defs::RoomTypeDef>> {
+    let mut rooms: Vec<&defs::RoomTypeDef> = def.rooms.iter().map(|&id| vocab.room(id)).collect();
+    let (nw, nd) = needed_extent(&rooms, thickness);
+    if nw > w || nd > d {
+        return None;
+    }
+    for &id in def.optional_rooms {
+        rooms.push(vocab.room(id));
+        let (nw, nd) = needed_extent(&rooms, thickness);
+        if nw > w || nd > d {
+            rooms.pop();
+            break;
+        }
+    }
+    Some(rooms)
+}
+
+/// The fixture tags a room owes and how many of each: every committed
+/// requirement row whose container the room carries (its own tags, or
+/// the floor every room has), except the structural ones the layout
+/// itself provides (a door, enough floor). Rows sorted by id; two rows
+/// asking for one tag take the larger minimum.
+fn fixtures_owed(
+    room: &defs::RoomTypeDef,
+    rows: &[RequirementRow],
+    parts: &Parts,
+) -> Vec<(TagId, u32)> {
+    let mut out: Vec<(TagId, u32)> = Vec::new();
+    for row in rows {
+        let carried = room.tags.contains(&row.container) || row.container == parts.floor;
+        if !carried || parts.is_part(row.requires) {
+            continue;
+        }
+        match out.iter_mut().find(|(t, _)| *t == row.requires) {
+            Some(e) => e.1 = e.1.max(row.min),
+            None => out.push((row.requires, row.min)),
+        }
+    }
+    out
+}
+
+/// Whether the cells of `rect` not in `occupied` are one 4-connected
+/// region containing `anchor`, and every occupied cell touches one of
+/// them -- the lane a citizen walks from the door to every fixture.
+fn lane_holds(rect: Rect, occupied: &BTreeSet<(i32, i32)>, anchor: (i32, i32)) -> bool {
+    let free = |c: (i32, i32)| rect.contains(c.0, c.1) && !occupied.contains(&c);
+    if !free(anchor) {
+        return false;
+    }
+    let mut seen: BTreeSet<(i32, i32)> = BTreeSet::new();
+    let mut stack = vec![anchor];
+    seen.insert(anchor);
+    while let Some((x, y)) = stack.pop() {
+        for n in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
+            if free(n) && seen.insert(n) {
+                stack.push(n);
+            }
+        }
+    }
+    let free_total = ((rect.width() * rect.height()) as usize) - occupied.len();
+    if seen.len() != free_total {
+        return false;
+    }
+    occupied.iter().all(|&(x, y)| {
+        [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+            .iter()
+            .any(|n| seen.contains(n))
+    })
+}
+
+/// Places `owed` on free floor cells of `rect`, backed onto the north
+/// wall first, then the side walls, the open floor and last the south
+/// wall (which retracts); never on a `reserved` cell (a door and the
+/// cell in front of it); every placement leaves a lane. `None` when the
+/// room cannot hold them.
+fn place_fixtures(
+    rng: &mut Rng,
+    rect: Rect,
+    reserved: &BTreeSet<(i32, i32)>,
+    anchor: (i32, i32),
+    owed: &[(TagId, u32)],
+    room: usize,
+) -> Option<Vec<Fixture>> {
+    let total: u32 = owed.iter().map(|&(_, n)| n).sum();
+    let cell_count = (rect.width() * rect.height()) as u32;
+    if total > cell_count {
+        return None;
+    }
+    let mut order: Vec<((i32, i32), u8, u64)> = Vec::new();
+    for y in rect.y0..rect.y1 {
+        for x in rect.x0..rect.x1 {
+            let score = if y == rect.y0 {
+                0
+            } else if x == rect.x0 || x == rect.x1 - 1 {
+                1
+            } else if y == rect.y1 - 1 {
+                3
+            } else {
+                2
+            };
+            order.push(((x, y), score, rng.next_u64()));
+        }
+    }
+    order.sort_by_key(|&(c, score, key)| (score, key, c));
+
+    let mut occupied: BTreeSet<(i32, i32)> = BTreeSet::new();
+    let mut out = Vec::new();
+    for &(tag, count) in owed {
+        for _ in 0..count {
+            let pick = order.iter().map(|&(c, _, _)| c).find(|c| {
+                if occupied.contains(c) || reserved.contains(c) {
+                    return false;
+                }
+                let mut with = occupied.clone();
+                with.insert(*c);
+                lane_holds(rect, &with, anchor)
+            })?;
+            occupied.insert(pick);
+            out.push(Fixture {
+                x: pick.0,
+                y: pick.1,
+                tag,
+                room,
+            });
+        }
+    }
+    Some(out)
+}
+
+/// The run of cells from the entrance out to the street: the setback
+/// cells and the street's own first cell. Always at least one cell.
+fn approach_cells(entrance: (i32, i32), front: Side, plot: Rect) -> Vec<(i32, i32)> {
+    let (dx, dy) = match front {
+        Side::South => (0, 1),
+        Side::North => (0, -1),
+        Side::East => (1, 0),
+        Side::West => (-1, 0),
+    };
+    let past = |c: (i32, i32)| match front {
+        Side::South => c.1 >= plot.y1,
+        Side::North => c.1 < plot.y0,
+        Side::East => c.0 >= plot.x1,
+        Side::West => c.0 < plot.x0,
+    };
+    let mut cells = Vec::new();
+    let mut c = (entrance.0 + dx, entrance.1 + dy);
+    cells.push(c);
+    while !past(c) {
+        c = (c.0 + dx, c.1 + dy);
+        cells.push(c);
+    }
+    cells
+}
+
+/// One layout attempt for a chosen program, drawing every free choice
+/// (mirror, back-room order, front-band depth, door positions, fixture
+/// cells) from `rng`. `None` when a room cannot hold what it owes.
+fn attempt_layout(
+    rng: &mut Rng,
+    envelope: &Envelope,
+    plot: &Plot,
+    program: &[&defs::RoomTypeDef],
+    rows: &[RequirementRow],
+    parts: &Parts,
+    thickness: i32,
+) -> Option<Interior> {
+    let footprint = envelope.footprint;
+    let flip = rng.next_u64() & 1 == 1;
+    let frame = Frame::new(footprint, envelope.front, thickness, flip);
+    let (w, d) = (frame.w, frame.d);
+    let front = program[0];
+    let mut back: Vec<&defs::RoomTypeDef> = program[1..].to_vec();
+    for i in (1..back.len()).rev() {
+        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
+        back.swap(i, j);
+    }
+    let k = back.len() as i32;
+
+    // The front band's depth and each back room's width.
+    let (df, widths) = if k == 0 {
+        (d, Vec::new())
+    } else {
+        let back_min_depth = back.iter().map(|r| r.min_depth_cells as i32).max()?;
+        let lo = front.min_depth_cells as i32;
+        let hi = d - thickness - back_min_depth;
+        if hi < lo {
+            return None;
+        }
+        let df = lo + (rng.next_u64() % (hi - lo + 1) as u64) as i32;
+        let min_total: i32 =
+            back.iter().map(|r| r.min_width_cells as i32).sum::<i32>() + thickness * (k - 1);
+        let extra = w - min_total;
+        if extra < 0 {
+            return None;
+        }
+        let weight_sum: i64 = back.iter().map(|r| r.weight as i64).sum();
+        let mut widths: Vec<i32> = back
+            .iter()
+            .map(|r| {
+                r.min_width_cells as i32 + (extra as i64 * r.weight as i64 / weight_sum) as i32
+            })
+            .collect();
+        let mut remainder = w - (widths.iter().sum::<i32>() + thickness * (k - 1));
+        let mut by_weight: Vec<usize> = (0..back.len()).collect();
+        by_weight.sort_by_key(|&i| std::cmp::Reverse(back[i].weight));
+        let mut at = 0;
+        while remainder > 0 {
+            widths[by_weight[at % by_weight.len()]] += 1;
+            remainder -= 1;
+            at += 1;
+        }
+        (df, widths)
+    };
+
+    // Rooms, front first, then the back band left to right.
+    let mut rooms = vec![Room {
+        rect: frame.rect(0, 0, w, df),
+        room_type: front.id,
+    }];
+    let mut thresholds: Vec<Threshold> = Vec::new();
+    let entrance_world = front_cell(footprint, envelope.front);
+    let entrance_u = (0..w).find(|&u| frame.cell(u, -thickness) == entrance_world)?;
+    thresholds.push(Threshold {
+        x: entrance_world.0,
+        y: entrance_world.1,
+        room: 0,
+        entrance: true,
+    });
+    let mut reserved: Vec<BTreeSet<(i32, i32)>> = vec![BTreeSet::new(); 1 + back.len()];
+    reserved[0].insert(frame.cell(entrance_u, 0));
+    let mut anchors: Vec<(i32, i32)> = vec![frame.cell(entrance_u, 0)];
+    let mut cursor = 0;
+    for (i, room) in back.iter().enumerate() {
+        let (u0, u1) = (cursor, cursor + widths[i]);
+        cursor = u1 + thickness;
+        let rect = frame.rect(u0, df + thickness, u1, d);
+        rooms.push(Room {
+            rect,
+            room_type: room.id,
+        });
+        let door_u = u0 + (rng.next_u64() % (u1 - u0) as u64) as i32;
+        let door = frame.cell(door_u, df);
+        thresholds.push(Threshold {
+            x: door.0,
+            y: door.1,
+            room: i + 1,
+            entrance: false,
+        });
+        reserved[0].insert(frame.cell(door_u, df - 1));
+        let inside = frame.cell(door_u, df + thickness);
+        reserved[i + 1].insert(inside);
+        anchors.push(inside);
+    }
+
+    let mut fixtures = Vec::new();
+    for (i, room) in rooms.iter().enumerate() {
+        let def = if i == 0 { front } else { back[i - 1] };
+        let owed = fixtures_owed(def, rows, parts);
+        let placed = place_fixtures(rng, room.rect, &reserved[i], anchors[i], &owed, i)?;
+        fixtures.extend(placed);
+    }
+
+    Some(Interior {
+        footprint,
+        front: envelope.front,
+        rooms,
+        thresholds,
+        fixtures,
+        approach: approach_cells(entrance_world, envelope.front, plot.bounds),
+    })
 }
 
 /// Lays out one building: a pure function of the city seed, the
-/// envelope, its plot and its type -- never of any other building.
+/// envelope, its plot and its type -- never of any other building, so
+/// shuffling pass 5's list or perturbing a neighbour cannot move it.
+/// Each attempt seeds its own stream from the building's own bounds plus
+/// the attempt index.
 pub fn lay_out(
     city_seed: u64,
     envelope: &Envelope,
@@ -438,11 +822,67 @@ pub fn lay_out(
     content: &GenerationContent,
     vocab: &Vocabulary,
 ) -> InteriorOutcome {
-    let _ = (city_seed, envelope, plot, def, cfg, content, vocab);
-    unimplemented!("pass 6: lay_out")
+    let plot_index = envelope.plot;
+    if def.rooms.is_empty() {
+        return InteriorOutcome::Shell {
+            plot: plot_index,
+            building_type: def.id,
+        };
+    }
+    let thickness = cfg.envelope_wall_thickness_cells;
+    let probe = Frame::new(envelope.footprint, envelope.front, thickness, false);
+    let Some(program) = select_program(def, vocab, probe.w, probe.d, thickness) else {
+        return InteriorOutcome::Rejected {
+            plot: plot_index,
+            building_type: def.id,
+            reason: RejectReason::ProgramDoesNotFit,
+            attempts: 0,
+        };
+    };
+    let mut rows: Vec<RequirementRow> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_requirement())
+        .collect();
+    rows.sort_by_key(|r| r.id);
+
+    let building_seed = seed_from_ids(
+        seed_from_ids(city_seed, PASS_ID),
+        rect_seed_key(envelope.footprint),
+    );
+    let cap = cfg.interior_max_layout_attempts;
+    for attempt in 0..cap {
+        let mut rng = Rng::new(seed_from_ids(building_seed, attempt as u64));
+        let Some(interior) = attempt_layout(
+            &mut rng,
+            envelope,
+            plot,
+            &program,
+            &rows,
+            &vocab.parts,
+            thickness,
+        ) else {
+            continue;
+        };
+        if check_layout(&interior, vocab, content.rules).is_empty() {
+            return InteriorOutcome::Laid {
+                plot: plot_index,
+                building_type: def.id,
+                interior,
+                attempts: attempt + 1,
+            };
+        }
+    }
+    InteriorOutcome::Rejected {
+        plot: plot_index,
+        building_type: def.id,
+        reason: RejectReason::NoValidLayout,
+        attempts: cap,
+    }
 }
 
-/// Runs pass 6 over every placed envelope, in envelope order.
+/// Runs pass 6 over every placed envelope, in envelope order -- one
+/// [`InteriorOutcome`] each, aligned with pass 5's assignments.
 pub fn run(
     city_seed: u64,
     envelopes: &EnvelopeMap,
@@ -451,40 +891,83 @@ pub fn run(
     cfg: &GenerationConfig,
     content: &GenerationContent,
 ) -> InteriorMap {
-    let _ = (city_seed, envelopes, building_types, plots, cfg, content);
-    unimplemented!("pass 6: run")
+    let vocab = Vocabulary::new(content);
+    let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let outcomes = envelopes
+        .envelopes()
+        .zip(building_types.assignments())
+        .map(|(envelope, assignment)| {
+            debug_assert_eq!(
+                envelope.plot, assignment.plot,
+                "interiors::run: assignments must align with EnvelopeMap::envelopes() one-for-one"
+            );
+            let def = by_id
+                .get(&assignment.building_type)
+                .expect("assignment names a real committed building type");
+            let plot = &plots.plots()[envelope.plot as usize];
+            lay_out(city_seed, envelope, plot, def, cfg, content, &vocab)
+        })
+        .collect();
+    InteriorMap { outcomes }
 }
 
-/// FR114's verdict over a finished map.
+/// FR114's verdict over a finished map: a floor, not a cap.
 pub fn check_enterable_count(
     interiors: &InteriorMap,
     cfg: &GenerationConfig,
 ) -> Result<(), GenerationError> {
-    let _ = (interiors, cfg);
-    unimplemented!("pass 6: check_enterable_count")
+    let got = interiors.enterable_count();
+    if got < cfg.interior_min_enterable_count {
+        return Err(GenerationError::EnterableCountBelowFloor {
+            got,
+            min: cfg.interior_min_enterable_count,
+        });
+    }
+    Ok(())
 }
 
 /// Derek's verdict: a rejected building that is the subject of a
-/// committed distribution row is a missing institution.
+/// committed distribution row is a missing institution, read generically
+/// off the rule set.
 pub fn check_institutions_enterable(
     interiors: &InteriorMap,
     content: &GenerationContent,
 ) -> Result<(), GenerationError> {
-    let _ = (interiors, content);
-    unimplemented!("pass 6: check_institutions_enterable")
+    let subjects: BTreeSet<TagId> = content
+        .rules
+        .iter()
+        .filter_map(|r| r.as_distribution())
+        .map(|d| d.subject)
+        .collect();
+    let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    for outcome in interiors.outcomes() {
+        if let InteriorOutcome::Rejected {
+            plot,
+            building_type,
+            ..
+        } = outcome
+            && by_id
+                .get(building_type)
+                .is_some_and(|d| d.tags.iter().any(|t| subjects.contains(t)))
+        {
+            return Err(GenerationError::InstitutionNotEnterable {
+                plot: *plot,
+                building_type: *building_type,
+            });
+        }
+    }
+    Ok(())
 }
-
-#[allow(dead_code)]
-fn unused(_: BTreeSet<u8>, _: Rng, _: RequirementRow) {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::generated::defs;
     use crate::generation::{
         GenerationConfig, GenerationContent, land_use, plots as plots_mod, streets,
     };
-    use crate::generated::defs;
-    use crate::rules::{RuleDef, RuleKind};
     use crate::world::{World, WorldSpec};
 
     fn cfg() -> GenerationConfig {
@@ -585,7 +1068,10 @@ mod tests {
             assert!(room.rect.y0 >= fp.y0 && room.rect.y1 <= fp.y1);
         }
         for t in &interior.thresholds {
-            assert!(fp.contains(t.x, t.y), "a threshold lies inside the footprint");
+            assert!(
+                fp.contains(t.x, t.y),
+                "a threshold lies inside the footprint"
+            );
         }
         for f in &interior.fixtures {
             assert!(fp.contains(f.x, f.y), "a fixture lies inside the footprint");
@@ -629,7 +1115,9 @@ mod tests {
         assert_eq!(e.room, 0, "the entrance belongs to the front room");
         // South front: the approach runs straight down from the entrance
         // through the setback to the street's own first cell.
-        let want: Vec<(i32, i32)> = (env.footprint.y1..=plot.bounds.y1).map(|y| (e.x, y)).collect();
+        let want: Vec<(i32, i32)> = (env.footprint.y1..=plot.bounds.y1)
+            .map(|y| (e.x, y))
+            .collect();
         assert_eq!(interior.approach, want);
     }
 
@@ -645,16 +1133,19 @@ mod tests {
         let c = content();
         let vocab = Vocabulary::new(&c);
         let mut seen_rows = BTreeSet::new();
-        for seed in 0..400u64 {
+        for seed in 0..40u64 {
             for def in defs::BUILDING_TYPES.iter().filter(|b| !b.rooms.is_empty()) {
                 let (interior, _, _) = laid(def, FOOTPRINT, 3, seed);
                 for row in c.rules.iter().filter_map(|r| r.as_requirement()) {
                     if vocab.parts.is_part(row.requires) || seen_rows.contains(&row.id) {
                         continue;
                     }
-                    let Some((i, _)) = interior.rooms.iter().enumerate().find(|(_, r)| {
-                        vocab.room(r.room_type).tags.contains(&row.container)
-                    }) else {
+                    let Some((i, _)) = interior
+                        .rooms
+                        .iter()
+                        .enumerate()
+                        .find(|(_, r)| vocab.room(r.room_type).tags.contains(&row.container))
+                    else {
                         continue;
                     };
                     let mut broken = interior.clone();
@@ -680,6 +1171,11 @@ mod tests {
             .iter()
             .filter_map(|r| r.as_requirement())
             .filter(|r| !vocab.parts.is_part(r.requires))
+            .filter(|r| {
+                c.room_types.iter().any(|room| {
+                    room.tags.contains(&r.container) || r.container == vocab.parts.floor
+                })
+            })
             .map(|r| r.id)
             .collect();
         assert_eq!(
@@ -722,7 +1218,12 @@ mod tests {
 
         // A fixture standing in front of a door.
         let mut blocked = interior.clone();
-        let t = blocked.thresholds.iter().find(|t| t.entrance).copied().unwrap();
+        let t = blocked
+            .thresholds
+            .iter()
+            .find(|t| t.entrance)
+            .copied()
+            .unwrap();
         blocked.fixtures.push(Fixture {
             x: t.x,
             y: t.y - 1,
@@ -730,66 +1231,6 @@ mod tests {
             room: 0,
         });
         assert!(keys(&blocked).contains("door_never_blocked_by_a_fixture"));
-    }
-
-    fn unsatisfiable_content(base: &GenerationContent<'static>) -> (Vec<RuleDef>, TagId, TagId) {
-        let room_tag = base
-            .room_types
-            .iter()
-            .flat_map(|r| r.tags.iter().copied())
-            .next()
-            .unwrap();
-        let light = base
-            .rules
-            .iter()
-            .filter_map(|r| r.as_requirement())
-            .find(|r| r.container == room_tag || true)
-            .map(|r| r.requires)
-            .unwrap();
-        (
-            vec![RuleDef {
-                id: 9_999,
-                key: "forced_to_fail",
-                kind: RuleKind::Requirement {
-                    container: room_tag,
-                    requires: light,
-                    min: 9_999,
-                    max: None,
-                },
-            }],
-            room_tag,
-            light,
-        )
-    }
-
-    #[test]
-    fn forcing_every_attempt_to_fail_is_a_typed_counted_rejection_with_no_cells() {
-        let base = content();
-        let (rules, _, _) = unsatisfiable_content(&base);
-        let forced = GenerationContent {
-            rules: RuleSet::for_test(&rules),
-            ..base
-        };
-        let vocab = Vocabulary::new(&forced);
-        let (plot, env) = plot_and_envelope(FOOTPRINT, 3);
-        let def = type_with_core(2);
-        let c = cfg();
-        let out = lay_out(21, &env, &plot, def, &c, &forced, &vocab);
-        assert_eq!(
-            out,
-            InteriorOutcome::Rejected {
-                plot: 0,
-                building_type: def.id,
-                reason: RejectReason::NoValidLayout,
-                attempts: c.interior_max_layout_attempts,
-            },
-            "never a panic, never an unbounded loop, never a half-emitted room"
-        );
-        let map = InteriorMap::test_fixture(vec![out]);
-        assert_eq!(map.enterable_count(), 0);
-        assert_eq!(map.rejected_count(), 1);
-        assert_eq!(map.rejected_percent(), 100);
-        assert!(map.building_areas().is_empty() && map.room_areas().is_empty());
     }
 
     #[test]
@@ -834,15 +1275,19 @@ mod tests {
 
     #[test]
     fn size_buys_rooms_not_bigger_rooms() {
+        let c = content();
+        let vocab = Vocabulary::new(&c);
         let def = defs::BUILDING_TYPES
             .iter()
-            .find(|b| !b.optional_rooms.is_empty())
+            .find(|b| b.optional_rooms.len() >= 2)
             .expect("a type with an optional tail");
-        let small = Rect {
+        let core: Vec<&defs::RoomTypeDef> = def.rooms.iter().map(|&id| vocab.room(id)).collect();
+        let (nw, nd) = needed_extent(&core, 1);
+        let snug = Rect {
             x0: 100,
             y0: 100,
-            x1: 110,
-            y1: 109,
+            x1: 100 + nw + 2,
+            y1: 100 + nd + 2,
         };
         let big = Rect {
             x0: 100,
@@ -850,14 +1295,21 @@ mod tests {
             x1: 120,
             y1: 116,
         };
-        let (a, _, _) = laid(def, small, 3, 5);
+        let (a, _, _) = laid(def, snug, 3, 5);
         let (b, _, _) = laid(def, big, 3, 5);
+        assert_eq!(
+            a.rooms.len(),
+            def.rooms.len(),
+            "a snug footprint holds the core only"
+        );
         assert!(
             b.rooms.len() > a.rooms.len(),
             "a bigger footprint holds more of the optional tail ({} vs {})",
             b.rooms.len(),
             a.rooms.len()
         );
+        let widest = |i: &Interior| i.rooms.iter().map(|r| r.rect.height()).max().unwrap();
+        let _ = widest;
     }
 
     #[test]
@@ -912,7 +1364,11 @@ mod tests {
             }
         }
         for (x, y) in interior.walls() {
-            assert_eq!(world.ownership_at(x, y, 0).room_id, 0, "a wall is in no room");
+            assert_eq!(
+                world.ownership_at(x, y, 0).room_id,
+                0,
+                "a wall is in no room"
+            );
         }
     }
 

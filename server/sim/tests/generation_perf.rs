@@ -16,7 +16,10 @@
 //! for `open` plots (never more than a handful per block, whatever their
 //! own size), still linear, and neither pass carries an `O(n^2)` risk of
 //! its own (plots cuts a fixed `FACE_PRIORITY` strip set per block;
-//! envelopes sizes one plot at a time).
+//! envelopes sizes one plot at a time). Story 3.5 adds pass 6's: cells
+//! visited linear in footprint area times the retry cap, verdicts
+//! windowed to their own building, ownership areas per chunk under a
+//! derived ceiling.
 
 use sim::generated::defs;
 use sim::generation::{GenerationConfig, GenerationContent, LandUse, generate, land_use, streets};
@@ -158,6 +161,95 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
         d.building_types.assignments().len(),
         em.placed_count() as usize
     );
+
+    // Story 3.5: pass 6 is the first pass whose work scales with cells
+    // rather than buildings, and the first to run the rule engine inside
+    // a retry loop. Structural ceilings, derived from config, no
+    // stopwatch: one outcome per placed envelope; cells visited (a
+    // layout attempt touches its own footprint) at most total footprint
+    // area times the attempt cap; and every per-building verdict is
+    // windowed to its own building -- the site `check_layout` judges holds
+    // only that building's own cells (its footprint and its approach),
+    // never the district's, so no whole-district `evaluate` ever runs per
+    // building.
+    let io = &d.interiors;
+    assert_eq!(io.outcomes().len() as i64, em.placed_count());
+    let envelope_by_plot: std::collections::BTreeMap<u32, &sim::generation::envelopes::Envelope> =
+        em.envelopes().map(|e| (e.plot, e)).collect();
+    let area_of = |plot: u32| {
+        let f = envelope_by_plot[&plot].footprint;
+        f.width() * f.height()
+    };
+    let total_footprint_area: i64 = em
+        .envelopes()
+        .map(|e| e.footprint.width() * e.footprint.height())
+        .sum();
+    let mut visited = 0i64;
+    for o in io.outcomes() {
+        match o {
+            sim::generation::InteriorOutcome::Laid { plot, attempts, .. }
+            | sim::generation::InteriorOutcome::Rejected { plot, attempts, .. } => {
+                visited += area_of(*plot) * *attempts as i64;
+            }
+            sim::generation::InteriorOutcome::Shell { .. } => {}
+        }
+    }
+    let visited_ceiling = total_footprint_area * cfg.interior_max_layout_attempts as i64;
+    assert!(
+        visited <= visited_ceiling,
+        "layout attempts visited {visited} cells, past footprint area x attempt cap = {visited_ceiling}"
+    );
+    let vocab = sim::generation::interiors::Vocabulary::new(&content);
+    for (plot, _, interior) in io.laid() {
+        let cells = sim::generation::interiors::site_cells(interior, &vocab).len() as i64;
+        assert!(
+            cells <= area_of(plot) + interior.approach.len() as i64,
+            "plot {plot}: a per-building verdict site holds {cells} cells, more than its own footprint and approach"
+        );
+    }
+
+    // Ownership areas per chunk stay under the ceiling the world model's
+    // own bucketing defends: a chunk holds at most chunk-area over the
+    // smallest placed footprint's area, plus four corner clips, building
+    // areas, and each room contributes at most two rects (floor and
+    // doorway) -- so a query still scans one small bucket.
+    let spec = sim::world::WorldSpec {
+        building_areas: io.building_areas(),
+        room_areas: io.room_areas(),
+        ..sim::world::WorldSpec::default()
+    };
+    let world = spec.build().expect("the 1024 city's ownership areas build");
+    let min_footprint_area = em
+        .envelopes()
+        .map(|e| e.footprint.width() * e.footprint.height())
+        .min()
+        .unwrap_or(1)
+        .max(1);
+    let chunk_area = (sim::world::CHUNK_SIZE as i64) * (sim::world::CHUNK_SIZE as i64);
+    let max_rooms = content
+        .building_types
+        .iter()
+        .map(|b| b.rooms.len() + b.optional_rooms.len())
+        .max()
+        .unwrap_or(1) as i64;
+    let building_ceiling = chunk_area / min_footprint_area + 4;
+    let room_ceiling = building_ceiling * max_rooms * 2;
+    let chunks = cfg.site_extent_cells / sim::world::CHUNK_SIZE;
+    for cy in 0..chunks {
+        for cx in 0..chunks {
+            let (x, y) = (cx * sim::world::CHUNK_SIZE, cy * sim::world::CHUNK_SIZE);
+            let b = world.building_areas_in_chunk_of(x, y, 0) as i64;
+            let r = world.room_areas_in_chunk_of(x, y, 0) as i64;
+            assert!(
+                b <= building_ceiling,
+                "chunk ({cx}, {cy}) holds {b} building areas, past {building_ceiling}"
+            );
+            assert!(
+                r <= room_ceiling,
+                "chunk ({cx}, {cy}) holds {r} room areas, past {room_ceiling}"
+            );
+        }
+    }
 
     // Pass 5's own distribution-override scan (Quentin's direction, PR
     // #317 cycle 2): each row's own farthest-point selection re-scans its

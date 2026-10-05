@@ -10,13 +10,13 @@
 //! open street with no building at all -- a legal, real-object room
 //! needs a real threshold object, which does not exist yet. Every wall
 //! cell placed anywhere (any real object tagged `wall`) therefore always
-//! trips both real `container = "wall"` rows -- `building_has_an_
-//! entrance` and `walled_room_has_waste_bin` -- since no real `entrance`
-//! or `waste` cell is ever placed inside a wall's own area either, and
+//! trips the real `container = "wall"` row, `building_has_an_entrance`,
+//! since no real `entrance` cell is ever placed inside a wall's own area
+//! either, and
 //! every real `counter` cell always trips `counter_faces_a_shopfront`
 //! (no real `shopfront` neighbour is ever placed, and the one real
 //! object that carries `shopfront` also carries `wall`, which would
-//! trip the same two Requirement rows anyway): none of these are hidden
+//! trip the same Requirement row anyway): none of these are hidden
 //! -- they are genuine, already-committed content rules firing honestly
 //! on real content, not test noise, so the broken variants below include
 //! them all in their expected sets. `docs/trace-matrix.md` records the
@@ -203,6 +203,26 @@ fn baseline_floor_window() -> FloorWindow {
     }
 }
 
+/// The plaza the benches and the bin stand in: `walled_room_has_waste_bin`
+/// is a requirement over `seating`, so a bench needs a real area holding
+/// a bin -- a bench outside every area is itself a violation, the same
+/// "container outside any area" fallback the wall rows have. One area,
+/// holding the one `trash_bin` and all three benches.
+const PLAZA_OWNER: u64 = 900;
+
+fn plaza_areas() -> Vec<AreaSpec> {
+    vec![area(
+        PLAZA_OWNER,
+        BASELINE_FLOOR,
+        Rect {
+            x0: 16,
+            y0: 0,
+            x1: 26,
+            y1: 5,
+        },
+    )]
+}
+
 // --- break 1: lighting_ground_floor_only, a lamppost on floor 10 -------
 
 fn lighting_break_placements() -> Vec<Placement> {
@@ -287,9 +307,9 @@ fn stairwell_break_defects() -> Vec<Defect> {
 // entrance (Tim's direction). A closed, gapless 3x3 ring of real
 // `wall_segment` objects, placed inside its own real `building_areas`
 // entry that covers exactly its own footprint (Quentin's direction: the
-// ring must be inside a real area, so `building_has_an_entrance` and
-// `walled_room_has_waste_bin` fire through Requirement's ordinary
-// per-area counting -- the area holds zero `entrance`/`waste` cells --
+// ring must be inside a real area, so `building_has_an_entrance` fires
+// through Requirement's ordinary per-area counting -- the area holds
+// zero `entrance` cells --
 // never through the "container cell outside any real area" fallback,
 // which the dedicated
 // `a_wall_cell_outside_any_area_is_itself_a_violation_through_requirements_own_fallback`
@@ -350,11 +370,10 @@ fn sealed_ring_floor_window() -> FloorWindow {
 }
 
 /// Every real committed rule whose `container` is the `wall` tag --
-/// `building_has_an_entrance` and `walled_room_has_waste_bin` both are.
-/// A bare wall cell trips both at once; neither is hidden from the
-/// expected set (see this file's own module doc).
-fn wall_container_rule_keys() -> [&'static str; 2] {
-    ["building_has_an_entrance", "walled_room_has_waste_bin"]
+/// `building_has_an_entrance` today. A bare wall cell trips it; it is
+/// never hidden from the expected set (see this file's own module doc).
+fn wall_container_rule_keys() -> [&'static str; 1] {
+    ["building_has_an_entrance"]
 }
 
 fn sealed_ring_defects() -> Vec<Defect> {
@@ -488,10 +507,11 @@ fn narrow_passage_defects() -> Vec<Defect> {
 #[test]
 fn correct_block_validates_with_no_defects() {
     let placements = baseline_placements();
+    let plaza = plaza_areas();
     let candidate = Candidate {
         defs_version: sim::generated::defs::DEFS_VERSION,
         placements: &placements,
-        building_areas: &[],
+        building_areas: &plaza,
         room_areas: &[],
         floors: &[baseline_floor_window()],
     };
@@ -501,10 +521,9 @@ fn correct_block_validates_with_no_defects() {
 /// Quentin's direction: an explicit, named assertion of which committed
 /// rules the correct block gives a real subject to, so a future defs
 /// edit that silently stops exercising one of them fails loudly rather
-/// than an ever-green `[] == []`. Only two of today's fifteen rows
-/// qualify -- every other row's own subject/container tag (`wall`,
-/// `counter`, `floor`, `road`, `ground`, `pavement`, `threshold`,
-/// `entrance`) is either unplaceable today or, once placed (`wall`,
+/// than an ever-green `[] == []`. Only three of today's rows qualify --
+/// every other row's own subject/container tag (`wall`, `counter`,
+/// `floor`, `road`, `ground`, `pavement`, `threshold`, `entrance`) is either unplaceable today or, once placed (`wall`,
 /// `counter`), always trips an unrelated already-committed rule too (see
 /// this file's own module doc): giving it a subject here would trade the
 /// block's own correctness for non-vacuousness, which is the wrong
@@ -525,7 +544,11 @@ fn the_correct_block_gives_every_achievable_rule_at_least_one_subject_cell() {
         .collect();
     has_subject.sort_unstable();
 
-    let mut expected = vec!["lighting_ground_floor_only", "waste_per_three_seating"];
+    let mut expected = vec![
+        "lighting_ground_floor_only",
+        "waste_per_three_seating",
+        "walled_room_has_waste_bin",
+    ];
     expected.sort_unstable();
     assert_eq!(has_subject, expected);
 }
@@ -534,7 +557,8 @@ fn the_correct_block_gives_every_achievable_rule_at_least_one_subject_cell() {
 fn a_doorway_too_narrow_is_reported_and_only_it_changes_the_correct_block() {
     let mut placements = baseline_placements();
     placements.extend(narrow_passage_placements());
-    let building_areas = narrow_passage_areas();
+    let mut building_areas = narrow_passage_areas();
+    building_areas.extend(plaza_areas());
     let candidate = Candidate {
         defs_version: sim::generated::defs::DEFS_VERSION,
         placements: &placements,
@@ -597,7 +621,8 @@ fn a_doorway_too_narrow_is_reported_and_only_it_changes_the_correct_block() {
 fn a_sealed_wall_ring_with_no_door_is_reported() {
     let mut placements = baseline_placements();
     placements.extend(sealed_ring_placements());
-    let building_areas = sealed_ring_areas();
+    let mut building_areas = sealed_ring_areas();
+    building_areas.extend(plaza_areas());
     let candidate = Candidate {
         defs_version: sim::generated::defs::DEFS_VERSION,
         placements: &placements,
@@ -683,7 +708,8 @@ fn a_wall_cell_outside_any_area_is_itself_a_violation_through_requirements_own_f
 fn a_counter_sharing_a_stairwells_area_is_reported() {
     let mut placements = baseline_placements();
     placements.extend(stairwell_break_placements());
-    let building_areas = stairwell_break_areas();
+    let mut building_areas = stairwell_break_areas();
+    building_areas.extend(plaza_areas());
     let candidate = Candidate {
         defs_version: sim::generated::defs::DEFS_VERSION,
         placements: &placements,
@@ -700,10 +726,11 @@ fn a_counter_sharing_a_stairwells_area_is_reported() {
 fn a_lamppost_above_the_ground_floor_is_reported() {
     let mut placements = baseline_placements();
     placements.extend(lighting_break_placements());
+    let plaza = plaza_areas();
     let candidate = Candidate {
         defs_version: sim::generated::defs::DEFS_VERSION,
         placements: &placements,
-        building_areas: &[],
+        building_areas: &plaza,
         room_areas: &[],
         floors: &[baseline_floor_window()],
     };
@@ -725,6 +752,7 @@ fn all_four_breaks_combined_report_every_defect_with_no_short_circuit() {
     placements.extend(sealed_ring_placements());
     placements.extend(narrow_passage_placements());
     let mut building_areas = stairwell_break_areas();
+    building_areas.extend(plaza_areas());
     building_areas.extend(sealed_ring_areas());
     building_areas.extend(narrow_passage_areas());
 
@@ -768,10 +796,11 @@ fn all_four_breaks_combined_report_every_defect_with_no_short_circuit() {
 #[test]
 fn a_candidate_stamped_with_a_foreign_defs_version_is_refused_not_silently_validated() {
     let placements = baseline_placements();
+    let plaza = plaza_areas();
     let candidate = Candidate {
         defs_version: "0000000000000000",
         placements: &placements,
-        building_areas: &[],
+        building_areas: &plaza,
         room_areas: &[],
         floors: &[baseline_floor_window()],
     };
@@ -787,10 +816,11 @@ fn a_candidate_stamped_with_a_foreign_defs_version_is_refused_not_silently_valid
 #[test]
 fn the_same_site_stamped_with_the_committed_version_validates_normally() {
     let placements = baseline_placements();
+    let plaza = plaza_areas();
     let candidate = Candidate {
         defs_version: sim::generated::defs::DEFS_VERSION,
         placements: &placements,
-        building_areas: &[],
+        building_areas: &plaza,
         room_areas: &[],
         floors: &[baseline_floor_window()],
     };

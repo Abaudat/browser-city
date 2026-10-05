@@ -95,7 +95,7 @@ fn referenced_tags(kind: &RuleKind) -> Vec<TagId> {
 /// subject is `entrance`, which carries no role -- `pavement`, named in
 /// its one alternative, does). A pre-existing non-grammar row can still
 /// qualify if it happens to mention a role tag anywhere (e.g.
-/// `walled_room_has_waste_bin`'s `container = "wall"`) -- that is not a
+/// `building_has_an_entrance`'s `container = "wall"`) -- that is not a
 /// bug in the selector, it is a real constraint over that same
 /// vocabulary, and fixtures using this selector satisfy it like any
 /// other.

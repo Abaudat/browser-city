@@ -253,25 +253,111 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
 /// tag, three room-function tags and two fixture tags -- the pass reads
 /// every one of them through `structure`/the rule rows, never a key.
 const FROZEN_TAGS: &[TagDef] = &[
-    TagDef { id: 9301, key: "frozen_solid", role: None, structure: Some(TagStructure::Wall) },
-    TagDef { id: 9302, key: "frozen_solid_run", role: None, structure: Some(TagStructure::WallRun) },
-    TagDef { id: 9303, key: "frozen_ground_inside", role: None, structure: Some(TagStructure::Floor) },
-    TagDef { id: 9304, key: "frozen_gap", role: None, structure: Some(TagStructure::Threshold) },
-    TagDef { id: 9305, key: "frozen_way_in", role: None, structure: Some(TagStructure::Entrance) },
-    TagDef { id: 9306, key: "frozen_paving", role: None, structure: Some(TagStructure::Pavement) },
-    TagDef { id: 9307, key: "frozen_object", role: None, structure: Some(TagStructure::Fixture) },
-    TagDef { id: 9320, key: "frozen_room", role: None, structure: None },
-    TagDef { id: 9311, key: "frozen_open", role: None, structure: None },
-    TagDef { id: 9312, key: "frozen_cosy", role: None, structure: None },
-    TagDef { id: 9313, key: "frozen_back", role: None, structure: None },
-    TagDef { id: 9330, key: "frozen_lamp", role: None, structure: None },
-    TagDef { id: 9331, key: "frozen_crate", role: None, structure: None },
+    TagDef {
+        id: 9301,
+        key: "frozen_solid",
+        role: None,
+        structure: Some(TagStructure::Wall),
+    },
+    TagDef {
+        id: 9302,
+        key: "frozen_solid_run",
+        role: None,
+        structure: Some(TagStructure::WallRun),
+    },
+    TagDef {
+        id: 9303,
+        key: "frozen_ground_inside",
+        role: None,
+        structure: Some(TagStructure::Floor),
+    },
+    TagDef {
+        id: 9304,
+        key: "frozen_gap",
+        role: None,
+        structure: Some(TagStructure::Threshold),
+    },
+    TagDef {
+        id: 9305,
+        key: "frozen_way_in",
+        role: None,
+        structure: Some(TagStructure::Entrance),
+    },
+    TagDef {
+        id: 9306,
+        key: "frozen_paving",
+        role: None,
+        structure: Some(TagStructure::Pavement),
+    },
+    TagDef {
+        id: 9307,
+        key: "frozen_object",
+        role: None,
+        structure: Some(TagStructure::Fixture),
+    },
+    TagDef {
+        id: 9320,
+        key: "frozen_room",
+        role: None,
+        structure: None,
+    },
+    TagDef {
+        id: 9311,
+        key: "frozen_open",
+        role: None,
+        structure: None,
+    },
+    TagDef {
+        id: 9312,
+        key: "frozen_cosy",
+        role: None,
+        structure: None,
+    },
+    TagDef {
+        id: 9313,
+        key: "frozen_back",
+        role: None,
+        structure: None,
+    },
+    TagDef {
+        id: 9330,
+        key: "frozen_lamp",
+        role: None,
+        structure: None,
+    },
+    TagDef {
+        id: 9331,
+        key: "frozen_crate",
+        role: None,
+        structure: None,
+    },
 ];
 
 const FROZEN_ROOM_TYPES: &[RoomTypeDef] = &[
-    RoomTypeDef { id: 9401, key: "frozen_hall", tags: &[9320, 9311], min_width_cells: 3, min_depth_cells: 2, weight: 2 },
-    RoomTypeDef { id: 9402, key: "frozen_den", tags: &[9320, 9312], min_width_cells: 2, min_depth_cells: 2, weight: 1 },
-    RoomTypeDef { id: 9403, key: "frozen_store", tags: &[9320, 9313], min_width_cells: 2, min_depth_cells: 2, weight: 1 },
+    RoomTypeDef {
+        id: 9401,
+        key: "frozen_hall",
+        tags: &[9320, 9311],
+        min_width_cells: 3,
+        min_depth_cells: 2,
+        weight: 2,
+    },
+    RoomTypeDef {
+        id: 9402,
+        key: "frozen_den",
+        tags: &[9320, 9312],
+        min_width_cells: 2,
+        min_depth_cells: 2,
+        weight: 1,
+    },
+    RoomTypeDef {
+        id: 9403,
+        key: "frozen_store",
+        tags: &[9320, 9313],
+        min_width_cells: 2,
+        min_depth_cells: 2,
+        weight: 1,
+    },
 ];
 
 const FROZEN_RULES: &[RuleDef] = &[
@@ -416,35 +502,29 @@ fn plan_digest(
                 attempts,
                 ..
             } => {
-                text.push_str(&format!("interior laid plot={plot} attempts={attempts}
-"));
+                text.push_str(&format!("interior laid plot={plot} attempts={attempts}\n"));
                 for r in &interior.rooms {
                     text.push_str(&format!(
-                        "room {},{},{},{} type={}
-",
+                        "room {},{},{},{} type={}\n",
                         r.rect.x0, r.rect.y0, r.rect.x1, r.rect.y1, r.room_type
                     ));
                 }
                 for t in &interior.thresholds {
                     text.push_str(&format!(
-                        "threshold {},{} room={} entrance={}
-",
+                        "threshold {},{} room={} entrance={}\n",
                         t.x, t.y, t.room, t.entrance
                     ));
                 }
                 for f in &interior.fixtures {
                     text.push_str(&format!(
-                        "fixture {},{} tag={} room={}
-",
+                        "fixture {},{} tag={} room={}\n",
                         f.x, f.y, f.tag, f.room
                     ));
                 }
-                text.push_str(&format!("approach {:?}
-", interior.approach));
+                text.push_str(&format!("approach {:?}\n", interior.approach));
             }
             sim::generation::InteriorOutcome::Shell { plot, .. } => {
-                text.push_str(&format!("interior shell plot={plot}
-"));
+                text.push_str(&format!("interior shell plot={plot}\n"));
             }
             sim::generation::InteriorOutcome::Rejected {
                 plot,
@@ -453,8 +533,7 @@ fn plan_digest(
                 ..
             } => {
                 text.push_str(&format!(
-                    "interior rejected plot={plot} reason={reason:?} attempts={attempts}
-"
+                    "interior rejected plot={plot} reason={reason:?} attempts={attempts}\n"
                 ));
             }
         }

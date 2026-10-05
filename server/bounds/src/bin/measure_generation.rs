@@ -31,6 +31,9 @@ const SEED_COUNT: u64 = 50_000;
 /// smaller range than the four-pass stats above so this binary still
 /// finishes in a reasonable time; still large enough to see a real tail.
 const BUILDING_TYPE_SEED_COUNT: u64 = 5_000;
+/// Story 3.5: the interior pass lays out every building of every city, so
+/// it is measured over a smaller range again.
+const INTERIOR_SEED_COUNT: u64 = 500;
 
 struct Stats {
     values: Vec<i64>,
@@ -84,6 +87,10 @@ impl Stats {
 fn main() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).expect("committed balance is valid");
     let content = GenerationContent::committed();
+    if std::env::args().any(|a| a == "--interiors-only") {
+        measure_interiors(&cfg, &content);
+        return;
+    }
     let site = cfg.site();
     println!(
         "measure-generation: {SEED_COUNT} seeds at {}x{} cells",
@@ -264,4 +271,67 @@ fn main() {
     }
     Stats::new(deep_profession_count)
         .print("professions_employed_by_5_plus_workplaces_per_city (Scale Baseline target ~69)");
+
+    measure_interiors(&cfg, &content);
+}
+
+/// Story 3.5's own section, runnable alone (`-- --interiors-only`).
+fn measure_interiors(cfg: &GenerationConfig, content: &GenerationContent) {
+    // The future row count of the rasterised district (wall, floor,
+    // threshold and fixture cells per seed) is what the story that
+    // persists it must size against, so it is reported here first.
+    let mut enterable = Vec::with_capacity(INTERIOR_SEED_COUNT as usize);
+    let mut shells = Vec::new();
+    let mut rejected = Vec::new();
+    let mut enterable_share = Vec::new();
+    let mut wall_cells = Vec::new();
+    let mut floor_cells = Vec::new();
+    let mut threshold_cells = Vec::new();
+    let mut fixture_cells = Vec::new();
+    let mut attempts_total: BTreeMap<u32, u64> = BTreeMap::new();
+    for seed in 0..INTERIOR_SEED_COUNT {
+        let d = sim::generation::plan(seed, cfg, content).expect("pass 1 is total");
+        let io = &d.interiors;
+        enterable.push(io.enterable_count());
+        shells.push(io.shell_count());
+        rejected.push(io.rejected_count());
+        let placed = d.envelopes.placed_count().max(1);
+        enterable_share.push(io.enterable_count() * 100 / placed);
+        let (mut w, mut f, mut t, mut x) = (0i64, 0i64, 0i64, 0i64);
+        for o in io.outcomes() {
+            match o {
+                sim::generation::InteriorOutcome::Laid {
+                    interior, attempts, ..
+                } => {
+                    *attempts_total.entry(*attempts).or_insert(0) += 1;
+                    w += interior.walls().len() as i64;
+                    f += interior
+                        .rooms
+                        .iter()
+                        .map(|r| r.rect.width() * r.rect.height())
+                        .sum::<i64>();
+                    t += interior.thresholds.len() as i64;
+                    x += interior.fixtures.len() as i64;
+                }
+                sim::generation::InteriorOutcome::Rejected { .. } => {
+                    *attempts_total.entry(u32::MAX).or_insert(0) += 1;
+                }
+                sim::generation::InteriorOutcome::Shell { .. } => {}
+            }
+        }
+        wall_cells.push(w);
+        floor_cells.push(f);
+        threshold_cells.push(t);
+        fixture_cells.push(x);
+    }
+    println!("-- interiors over seeds 0..{INTERIOR_SEED_COUNT} --");
+    Stats::new(enterable).print("enterable_count");
+    Stats::new(enterable_share).print("enterable_share_percent");
+    Stats::new(shells).print("shell_count");
+    Stats::new(rejected).print("rejected_count");
+    Stats::new(wall_cells).print("wall_cells_per_city");
+    Stats::new(floor_cells).print("floor_cells_per_city");
+    Stats::new(threshold_cells).print("threshold_cells_per_city");
+    Stats::new(fixture_cells).print("fixture_cells_per_city");
+    println!("layout attempts needed (u32::MAX = rejected): {attempts_total:?}");
 }

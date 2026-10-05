@@ -287,14 +287,7 @@ pub fn plan(
     let plots = plots::run(city_seed, &land_use, &streets, cfg);
     let envelopes = envelopes::run(city_seed, &plots, cfg);
     let building_types = building_types::run(city_seed, &envelopes, &plots, &streets, cfg, content);
-    let interiors = interiors::run(
-        city_seed,
-        &envelopes,
-        &building_types,
-        &plots,
-        cfg,
-        content,
-    );
+    let interiors = interiors::run(city_seed, &envelopes, &building_types, &plots, cfg, content);
     Ok(District {
         land_use,
         streets,
@@ -838,10 +831,16 @@ impl GenerationConfig {
                 "generation.interiors.enterable_target_tolerance_percent",
             ),
             interior_kind_min_enterable_percent: [
-                get(balance, "generation.interiors.dwelling_min_enterable_percent"),
+                get(
+                    balance,
+                    "generation.interiors.dwelling_min_enterable_percent",
+                ),
                 get(balance, "generation.interiors.shop_min_enterable_percent"),
                 get(balance, "generation.interiors.cafe_min_enterable_percent"),
-                get(balance, "generation.interiors.back_room_min_enterable_percent"),
+                get(
+                    balance,
+                    "generation.interiors.back_room_min_enterable_percent",
+                ),
             ],
             interior_max_kind_share_percent: get(
                 balance,
@@ -1431,6 +1430,41 @@ mod tests {
                 1,
                 100000,
             ),
+            seed("generation.interiors.max_layout_attempts", 8, 1, 64),
+            seed("generation.interiors.min_enterable_count", 100, 1, 100000),
+            seed("generation.interiors.max_rejected_percent", 5, 0, 100),
+            seed("generation.interiors.enterable_target_percent", 98, 1, 100),
+            seed(
+                "generation.interiors.enterable_target_tolerance_percent",
+                1,
+                0,
+                100,
+            ),
+            seed(
+                "generation.interiors.dwelling_min_enterable_percent",
+                90,
+                0,
+                100,
+            ),
+            seed(
+                "generation.interiors.shop_min_enterable_percent",
+                90,
+                0,
+                100,
+            ),
+            seed(
+                "generation.interiors.cafe_min_enterable_percent",
+                90,
+                0,
+                100,
+            ),
+            seed(
+                "generation.interiors.back_room_min_enterable_percent",
+                90,
+                0,
+                100,
+            ),
+            seed("generation.interiors.max_kind_share_percent", 75, 1, 100),
         ]
     }
 

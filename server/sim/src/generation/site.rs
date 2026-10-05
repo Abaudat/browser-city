@@ -277,13 +277,17 @@ mod tests {
             let def = b.by_id[&a.building_type];
             let mut expected: Vec<TagId> = def.tags.to_vec();
             expected.sort_unstable();
-            let mut got: Vec<TagId> = b.site.tags_at(cell).to_vec();
-            got.sort_unstable();
-            assert_eq!(
-                got, expected,
-                "plot {}'s own front cell must carry exactly its assigned type's tags",
-                a.plot
-            );
+            let got: Vec<TagId> = b.site.tags_at(cell).to_vec();
+            // A laid-out building's entrance cell is also its doorway, so
+            // it carries the structural tags too -- never fewer than the
+            // type's own.
+            for t in &expected {
+                assert!(
+                    got.contains(t),
+                    "plot {}'s own front cell must carry its assigned type's tag {t}",
+                    a.plot
+                );
+            }
         }
     }
 
