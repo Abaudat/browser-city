@@ -53,6 +53,7 @@ import {
   STAIRWELL_TOP_RAILING_DEF_ID,
   STAIRWELL_X0,
   STREET_BOUNDARY,
+  STREET_FLOOR,
   STREET_BUILDING_AREAS,
   STREET_EXIT_X,
   STREET_EXIT_Y,
@@ -2065,5 +2066,64 @@ describe("a stairwell is drawn whole (story 15.14, FR126)", () => {
     const westEdge = Math.min(...rows.flatMap(propCells).map((c) => c.x));
     const half = config.bodyWidthSubcells / 2 / config.subcellsPerCell;
     expect(platformWestRestX() + half).toBeLessThanOrEqual(westEdge);
+  });
+});
+
+// Which defs make up a stairwell is pinned, not reviewed: the `stairs` tag drives
+// `stairwellRowsAt` and the `no_counter_in_a_stairwell` rule, so tagging anything
+// else (a deck tile, a counter) widens a game rule.
+describe("the stairs-tagged defs and the stairwell groups are pinned (story 15.19)", () => {
+  const stairsKeys = () => {
+    const tag = committedDefs().tags.find((t) => t.key === "stairs");
+    if (!tag) throw new Error("no stairs tag");
+    return committedDefs()
+      .objects.filter((o) => o.tags.includes(tag.id))
+      .map((o) => o.key)
+      .sort();
+  };
+
+  it("exactly these defs carry the stairs tag", () => {
+    expect(stairsKeys()).toEqual([
+      "bridge_stairs_abutment",
+      "bridge_stairs_deck",
+      "bridge_stairs_street",
+      "bridge_stairs_tread",
+      "platform_stair_flight",
+      "platform_stair_railing",
+      "stairwell_bottom_railing",
+      "stairwell_top_railing",
+      "stairwell_treads",
+      "stairwell_well",
+    ]);
+  });
+
+  it("every transition anchor's stairwell group is exactly the defs of its own staircase", () => {
+    const keyOfRow = (p: { readonly defId: number }) => objectDef(p.defId).key;
+    const groupKeys = (anchor: (typeof STREET_TRANSITIONS)[number]) =>
+      [...new Set(stairwellRowsAt(anchor).map(keyOfRow))].sort();
+    for (const anchor of STREET_TRANSITIONS) {
+      const where = `anchor (${anchor.x}, ${anchor.y}, floor ${anchor.floor})`;
+      if (anchor.floor === BRIDGE_FLOOR) {
+        expect(groupKeys(anchor), where).toEqual(["bridge_stairs_deck"]);
+      } else if (anchor.floor === STREET_FLOOR && anchor.targetFloor === BRIDGE_FLOOR) {
+        expect(groupKeys(anchor), where).toEqual([
+          "bridge_stairs_abutment",
+          "bridge_stairs_street",
+          "bridge_stairs_tread",
+        ]);
+      } else if (anchor.floor === SUBWAY_FLOOR) {
+        expect(groupKeys(anchor), where).toEqual([
+          "platform_stair_flight",
+          "platform_stair_railing",
+        ]);
+      } else {
+        expect(groupKeys(anchor), where).toEqual([
+          "stairwell_bottom_railing",
+          "stairwell_top_railing",
+          "stairwell_treads",
+          "stairwell_well",
+        ]);
+      }
+    }
   });
 });
