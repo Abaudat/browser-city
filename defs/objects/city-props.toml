@@ -135,7 +135,7 @@ width = 1
 # it and never contributes collision to it (FR117). Story 2.4 (FR128):
 # explicitly walkable, not merely absent a collider -- `underfoot`.
 archetype = "underfoot_flat"
-tags = ["stairs", "bridge", "underfoot", "fixture"]
+tags = ["bridge", "underfoot", "fixture"]
 
 [[object]]
 id = 8

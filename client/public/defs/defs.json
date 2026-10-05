@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "df9b4a856b57cf30",
+  "defs_version": "a070c5e9d79c7eb1",
   "collider_subcells_per_cell": 16,
   "position_units_per_cell": 256,
   "interact_at_max_reach_cells": 2,
@@ -24,7 +24,7 @@
     { "file": "street-d3dc182816403699.png", "group": "street", "height": 128, "width": 2048 }
   ],
   "objects": [
-    { "atlas": { "h": 16, "page": 6, "w": 16, "x": 577, "y": 1 }, "collider": null, "flight": null, "height": 1, "id": 7, "interact_at": null, "key": "bridge_deck", "layer": 7, "name": "Bridge Deck", "sprite": { "sheet": "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png", "x": 0, "y": 0, "w": 16, "h": 16 }, "tags": [7, 8, 9, 15], "width": 1, "window": false },
+    { "atlas": { "h": 16, "page": 6, "w": 16, "x": 577, "y": 1 }, "collider": null, "flight": null, "height": 1, "id": 7, "interact_at": null, "key": "bridge_deck", "layer": 7, "name": "Bridge Deck", "sprite": { "sheet": "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png", "x": 0, "y": 0, "w": 16, "h": 16 }, "tags": [7, 9, 15], "width": 1, "window": false },
     { "atlas": { "h": 16, "page": 6, "w": 32, "x": 475, "y": 1 }, "collider": { "x0": 0, "y0": 0, "x1": 32, "y1": 16 }, "flight": null, "height": 1, "id": 22, "interact_at": null, "key": "bridge_stairs_abutment", "layer": 3, "name": "Bridge Stairs Abutment", "sprite": { "sheet": "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png", "x": 0, "y": 29, "w": 32, "h": 16 }, "tags": [7, 8, 15], "width": 2, "window": false },
     { "atlas": null, "collider": null, "flight": { "drop_px": 24, "from_px": 0, "to_px": 16 }, "height": 2, "id": 21, "interact_at": null, "key": "bridge_stairs_deck", "layer": 7, "name": "Bridge Stairs (deck flight)", "sprite": null, "tags": [7, 8, 9, 15], "width": 2, "window": false },
     { "atlas": null, "collider": null, "flight": { "drop_px": 24, "from_px": 0, "to_px": 16 }, "height": 2, "id": 20, "interact_at": null, "key": "bridge_stairs_street", "layer": 7, "name": "Bridge Stairs (street flight)", "sprite": null, "tags": [7, 8, 9, 15], "width": 2, "window": false },
