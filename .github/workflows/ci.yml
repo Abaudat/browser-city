@@ -818,14 +818,13 @@ jobs:
         with:
           fetch-depth: 1
       - run: rustup toolchain install
-      # The shards only restore the shared `e2e` caches; `e2e-perf` saves
-      # them (it builds both module flavours, a shard only one), so one
-      # saver owns each key and the quota is not multiplied per runner.
+      # One cache for every e2e runner, saved by one of them: a target dir
+      # per runner would multiply the cache quota and evict build/test's.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
           shared-key: e2e
-          save-if: false
+          save-if: ${{ matrix.shard == 1 }}
       - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -846,6 +845,12 @@ jobs:
       - working-directory: client
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
+      - name: save Playwright browsers
+        if: matrix.shard == 1 && steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('client/package-lock.json') }}
       - working-directory: client
         run: npm run test:e2e -- --shard=${{ matrix.shard }}/4
       # Review evidence the e2e specs leave behind on every run, pass or
@@ -914,14 +919,13 @@ jobs:
         with:
           fetch-depth: 1
       - run: rustup toolchain install
-      # The only saver of the shared `e2e` caches: it builds both module
-      # flavours (production for the smoke rehearsal, time-control for
-      # perf), a superset of what a shard builds.
+      # One cache for every e2e runner, saved by one of them: a target dir
+      # per runner would multiply the cache quota and evict build/test's.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: server
           shared-key: e2e
-          save-if: true
+          save-if: ${{ true }}
       - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -943,7 +947,7 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
       - name: save Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        if: true && steps.playwright-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright

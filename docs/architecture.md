@@ -1743,10 +1743,7 @@ build.
   `timeout-minutes` of at most 10 (NFR49). When the slowest shard's tests
   pass 6 minutes, N goes up and the timeout does not.
 - Perf and the deploy-smoke rehearsal run in `e2e-perf`, never behind a shard.
-- A later order dependency shows up as a red on an unrelated PR when a new
-  spec moves the shard boundaries; it is fixed in the leaking spec, never by
-  pinning or re-running.
-- `scripts/ci/check-e2e-shards.sh` pins the rules above.
+- `scripts/ci/check-e2e-shards.sh` pins all three.
 
 ## Toolchain
 

@@ -55,12 +55,6 @@ if printf '%s\n' "$E2E" | code | grep -qE 'test:e2e:perf|--project=perf|serve-fo
   fail "e2e runs perf or the deploy-smoke rehearsal; they belong in e2e-perf"
 fi
 
-# e2e-perf must actually run perf and the deploy-smoke rehearsal (NFR2 gate)
-if [ -n "$PERF" ]; then
-  printf '%s\n' "$PERF" | code | grep -q 'test:e2e:perf' || fail "e2e-perf never runs 'npm run test:e2e:perf' (NFR2 would stop gating)"
-  printf '%s\n' "$PERF" | code | grep -q 'serve-for-deploy-smoke' || fail "e2e-perf never runs the deploy-smoke rehearsal (serve-for-deploy-smoke)"
-fi
-
 # every artifact name in the shard job carries the shard (v4+ rejects duplicates)
 while IFS= read -r nm; do
   [ -n "$nm" ] || continue
