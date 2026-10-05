@@ -83,7 +83,10 @@ export interface BuildPropDrawablesOptions {
    * on the row itself -- `scene.ts`'s own `objectDefs` (`world/object-defs.
    * ts`'s `objectDefsById`), so this can never fall out of step with the
    * def's own real art the way a restated number could. */
-  readonly objectDefs: ReadonlyMap<number, { readonly width: number; readonly height: number }>;
+  readonly objectDefs: ReadonlyMap<
+    number,
+    { readonly width: number; readonly height: number; readonly undrawn?: true }
+  >;
 }
 
 /** A `defId` row's own extent, read from the resolved def -- throws
@@ -120,6 +123,8 @@ export function buildPropDrawables(options: BuildPropDrawablesOptions): PropDraw
   const { rankOf, ownership, windowDefIds, objectDefs } = options;
   const drawables: PropDrawable[] = [];
   for (const prop of STREET_PROPS) {
+    // An undrawn flight (story 15.19) is walk data: nothing to draw.
+    if (isDefStreetProp(prop) && objectDefs.get(prop.defId)?.undrawn) continue;
     const rank = rankOf(prop.layer);
     const layerCode = layerCodeByName(prop.layer);
     const footprint = isDefStreetProp(prop)

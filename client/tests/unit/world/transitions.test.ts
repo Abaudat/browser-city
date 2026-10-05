@@ -1,5 +1,6 @@
 // `world/transitions.ts`'s own unit tests (Tim's direction, story 1.7;
 // pair symmetry story 15.2, Quentin's direction).
+
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { CollisionGridQuery, GridEntry } from "../../../src/world/collision-grid";
@@ -16,6 +17,7 @@ import {
   type TransitionSpec,
 } from "../../../src/world/transitions";
 import { sizeProbe } from "../setup/size-probe";
+import { OPEN_ENTRY_BAND } from "./entry-band";
 
 describe("TransitionIndex", () => {
   // skipPairSymmetry: these specs are deliberately one-way test data
@@ -27,20 +29,29 @@ describe("TransitionIndex", () => {
   ];
 
   it("returns undefined for a cell that is not a transition anchor", () => {
-    const index = new TransitionIndex(specs, { skipPairSymmetry: true });
+    const index = new TransitionIndex(specs, {
+      skipPairSymmetry: true,
+      entryBand: OPEN_ENTRY_BAND,
+    });
     expect(index.transitionAt(0, 0, 0)).toBeUndefined();
     // A door is never a transition (FR118): an ordinary walkable cell.
     expect(index.transitionAt(5, 1, 0)).toBeUndefined();
   });
 
   it("resolves the anchor's own target floor and position", () => {
-    const index = new TransitionIndex(specs, { skipPairSymmetry: true });
+    const index = new TransitionIndex(specs, {
+      skipPairSymmetry: true,
+      entryBand: OPEN_ENTRY_BAND,
+    });
     expect(index.transitionAt(18, 0, 0)).toEqual({ x: 18, y: 0, floor: -1 });
     expect(index.transitionAt(23, 0, 0)).toEqual({ x: 23, y: 0, floor: 1 });
   });
 
   it("never matches the same (x, y) on a different floor", () => {
-    const index = new TransitionIndex(specs, { skipPairSymmetry: true });
+    const index = new TransitionIndex(specs, {
+      skipPairSymmetry: true,
+      entryBand: OPEN_ENTRY_BAND,
+    });
     expect(index.transitionAt(18, 0, -1)).toBeUndefined();
   });
 
@@ -49,9 +60,9 @@ describe("TransitionIndex", () => {
       { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
       { x: 5, y: 0, floor: 0, targetX: 9, targetY: 9, targetFloor: 1 },
     ];
-    expect(() => new TransitionIndex(duplicated, { skipPairSymmetry: true })).toThrow(
-      /duplicate transition anchor/,
-    );
+    expect(
+      () => new TransitionIndex(duplicated, { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND }),
+    ).toThrow(/duplicate transition anchor/);
   });
 
   it("the same anchor cell on two different floors is not a duplicate", () => {
@@ -59,7 +70,20 @@ describe("TransitionIndex", () => {
       { x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 },
       { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
     ];
-    expect(() => new TransitionIndex(specs2, { skipPairSymmetry: true })).not.toThrow();
+    expect(
+      () => new TransitionIndex(specs2, { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND }),
+    ).not.toThrow();
+  });
+
+  it("a transition onto its own cell is refused without an entryBand to check its kept position, naming the transition", () => {
+    const same: TransitionSpec[] = [
+      { x: 5, y: 5, floor: 0, targetX: 5, targetY: 5, targetFloor: 1 },
+      { x: 5, y: 6, floor: 1, targetX: 5, targetY: 6, targetFloor: 0 },
+    ];
+    expect(() => new TransitionIndex(same)).toThrow(
+      /transition \(5, 5, floor 0\) targets its own cell/,
+    );
+    expect(() => new TransitionIndex(same, { entryBand: OPEN_ENTRY_BAND })).not.toThrow();
   });
 
   it("pair symmetry is on by default: an unpaired transition throws with no options at all", () => {
@@ -218,7 +242,9 @@ describe("TransitionIndex's own pair-symmetry rule (story 15.2, Quentin's findin
       { x: 5, y: 0, floor: -1, targetX: 5, targetY: 0, targetFloor: 0 },
     ];
     expect(() => new TransitionIndex(mutual)).toThrow(/transition pair symmetry violated/);
-    expect(() => new TransitionIndex(mutual, { skipPairSymmetry: true })).not.toThrow();
+    expect(
+      () => new TransitionIndex(mutual, { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND }),
+    ).not.toThrow();
   });
 });
 

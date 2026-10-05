@@ -251,8 +251,12 @@ function parseObject(value: unknown, path: string): ObjectDef {
     key: expectString(obj.key, `${path}.key`),
     name: expectString(obj.name, `${path}.name`),
     layer: expectU32(obj.layer, `${path}.layer`),
-    sprite: parseSpriteRect(obj.sprite, `${path}.sprite`),
-    atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
+    ...(obj.sprite === null || obj.sprite === undefined
+      ? {}
+      : {
+          sprite: parseSpriteRect(obj.sprite, `${path}.sprite`),
+          atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
+        }),
     width: expectU32(obj.width, `${path}.width`),
     height: expectU32(obj.height, `${path}.height`),
     window: expectBoolean(obj.window, `${path}.window`),
@@ -865,6 +869,7 @@ export function parseDefs(data: unknown): Defs {
  * skipped check here is a check that passes on bad data, same as every
  * other cross-reference below. */
 function checkObjectAtlasPage(object: ObjectDef, atlasPageCount: number): void {
+  if (object.atlas === undefined) return;
   if (object.atlas.page >= atlasPageCount) {
     fail(
       `object '${object.key}' names atlas page ${object.atlas.page} but only ${atlasPageCount} page(s) exist`,
@@ -947,6 +952,7 @@ function checkObjectLayer(object: ObjectDef): void {
  * `>=`). Mirrors `tools/defs-build`'s `check_object_flat_layers`. */
 function checkFlatLayerSprite(object: ObjectDef, tileSizePx: number): void {
   if (passOfLayer(object.layer) === "pool") return;
+  if (object.sprite === undefined) return;
   const expectedH = object.height * tileSizePx;
   if (object.sprite.h !== expectedH) {
     fail(
@@ -1129,6 +1135,7 @@ function checkObjectFootprintCap(object: ObjectDef, maxFootprintCells: number): 
  * whether its sheet's real dimensions are known, exactly like `tools/
  * defs-build`'s own `validate.rs`. */
 function checkSpriteNonZeroArea(object: ObjectDef): void {
+  if (object.sprite === undefined) return;
   if (object.sprite.w === 0 || object.sprite.h === 0) {
     fail(`object '${object.key}' sprite rect has zero width or height`);
   }
@@ -1142,6 +1149,7 @@ function checkSpriteNonZeroArea(object: ObjectDef): void {
  * upward, never downward -- bottom-anchored). */
 function checkSpriteMatchesFootprint(object: ObjectDef, tileSizePx: number): void {
   const sprite = object.sprite;
+  if (sprite === undefined) return;
   const expectedW = object.width * tileSizePx;
   if (sprite.w !== expectedW) {
     fail(
@@ -1244,7 +1252,7 @@ export function canonicalDump(defs: Defs): string {
   for (const o of defs.objects) {
     const tags = [...o.tags].sort((a, b) => a - b).join(",");
     lines.push(
-      `object ${o.key} id=${o.id} name=${o.name} layer=${o.layer} sprite=${o.sprite.sheet}:${o.sprite.x},${o.sprite.y},${o.sprite.w},${o.sprite.h} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} window=${o.window} tags=[${tags}]`,
+      `object ${o.key} id=${o.id} name=${o.name} layer=${o.layer} sprite=${o.sprite ? `${o.sprite.sheet}:${o.sprite.x},${o.sprite.y},${o.sprite.w},${o.sprite.h}` : "none"} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} window=${o.window} tags=[${tags}]`,
     );
   }
   for (const i of defs.items) {

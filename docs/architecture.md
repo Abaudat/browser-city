@@ -461,6 +461,12 @@ always derived from placed content, never stored per cell.
   names) must each refuse a step into it -- real colliders on the drawn
   railings, never a rule that only checks the pairing shape and stops
   there.
+  An entity lands at the centre of its transition's target cell, except for
+  a transition whose target is its own anchor cell (a stair stacked on
+  itself, one floor up): that keeps the entity's position and changes only
+  its floor. Every body position that steps into such an anchor from a clear
+  position must be clear on the target floor, which the client's
+  `TransitionIndex` checks at construction (`entryBand`).
   The client's `world/transitions.ts` mirrors the pairing half as
   `checkTransitionPairSymmetry`, pairing transitions one to one
   (`pairTransitions`, never a plain `find` that lets two forwards claim
@@ -761,11 +767,12 @@ collider lies inside that footprint. An asset-placed solid prop declares
 one `collider`.
 `STREET_BOUNDARY` is exactly one thing: the undrawn ring that closes the
 edge of the drawn world, in whole cells, every one outside every drawn
-ground pass on its floor. The one exemption is the footbridge's south rail
-(id 110), a sub-cell strip that keeps a walker leaning on it inside the
-deck's own row. `client/tests/unit/test-street/street-conformance.test.ts`
+ground pass on its floor. The exemptions are the footbridge's two rails, by
+id: the south rail (110), a sub-cell strip that keeps a walker leaning on it
+inside the deck's own row, and the deck flight's west edge (134), a sub-cell
+strip level with the street posts' own collider. `client/tests/unit/test-street/street-conformance.test.ts`
 holds this over the whole fixture: every collider cell traces back to a
-drawn prop's own footprint or the ring; no ring rect but id 110 carries a
+drawn prop's own footprint or the ring; no ring rect but ids 110 and 134 carries a
 collider, and none overlaps a drawn ground pass; every `walls`-layer,
 `furniture`-layer or `solid` row collides in its own footprint (all of
 it, unless it declares its own shape), bar an explicit, reasoned
@@ -872,7 +879,15 @@ def declares a `flight` (`flight.drop_px`, `flight.from_px`,
 `flight.to_px`; JSON-only). The offset is zero at `flight.from_px` and
 `flight.drop_px` at `flight.to_px` (the first and last drawn nosing, from
 the footprint's open edge), linear between, flat outside, signed toward
-the target floor; the floor change takes whatever is left. It is summed
+the target floor; the floor change takes whatever is left. A flight is walked
+along either axis of its footprint, in either direction, and a flight wider
+than one cell is one flight: every anchor of its far end must resolve the same
+flight (axis, direction, ramp, target floor), and `buildFlights` refuses
+anchors that disagree and a far-end cell `isStandable` says a body can stand in
+with no anchor. A flight may be undrawn (`sprite` omitted; `defs-build` allows
+it only with a `flight`, no collider and the `underfoot` tag) when its treads
+are drawn as their own rows on the lower floor, so a climber is drawn over
+them: floor N+1 is drawn after all of floor N. It is summed
 with the floor offset inside `worldPointPx` and exists nowhere else: not
 in the sort key, collision, walk state or picking.
 
@@ -1734,6 +1749,19 @@ build.
 | Data keys                          | `snake_case`           | matches Rust, so no translation layer |
 | Balance keys                       | dotted `snake_case`    | `citizen.bar_decay.rest`              |
 | Table names                        | `snake_case`, singular | `citizen_state`                       |
+
+## CI
+
+- `ci` is the only required check; it aggregates every job through
+  `scripts/ci/check-ci-gate.sh`.
+- `e2e` runs as N Playwright shards, each with its own harness and a
+  `timeout-minutes` of at most 10 (NFR49). When the slowest shard's tests
+  pass 6 minutes, N goes up and the timeout does not.
+- Perf and the deploy-smoke rehearsal run in `e2e-perf`, never behind a shard.
+- A later order dependency shows up as a red on an unrelated PR when a new
+  spec moves the shard boundaries; it is fixed in the leaking spec, never by
+  pinning or re-running.
+- `scripts/ci/check-e2e-shards.sh` pins the rules above.
 
 ## Toolchain
 

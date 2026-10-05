@@ -85,6 +85,12 @@ export function stepAndTransition(
     return { x: next.x, y: next.y, floor: state.floor, cellX, cellY, transitioned: false };
   }
 
+  // A transition whose target is its own anchor cell (a stair stacked on
+  // itself, one floor up) keeps the walker's position: only the floor
+  // changes. Any other transition lands at the centre of its target cell.
+  if (landing.x === cellX && landing.y === cellY) {
+    return { x: next.x, y: next.y, floor: landing.floor, cellX, cellY, transitioned: true };
+  }
   return {
     x: landing.x + 0.5,
     y: landing.y + 0.5,

@@ -244,8 +244,12 @@ pub fn check(
             }
             continue;
         };
+        let sprite = obj
+            .sprite
+            .as_ref()
+            .expect("an object with a collider is drawn (validated)");
         let (w, _h, rgba) = sheets
-            .get(&obj.sprite.sheet)
+            .get(&sprite.sheet)
             .expect("every object sheet was decoded before the silhouette check");
         let foot = if entry.tags.iter().any(|t| t == UPRIGHT_TAG_KEY) {
             let named = entry.archetype.as_ref().map(|a| a.value.as_str());
@@ -269,7 +273,7 @@ pub fn check(
         let Err(problem) = check_collider_against_art_with_foot(
             rgba,
             *w,
-            &obj.sprite,
+            sprite,
             obj.height,
             tile_size_px,
             collider,

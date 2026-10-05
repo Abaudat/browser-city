@@ -41,14 +41,8 @@ FAILED=0
 
 # --- extract a named job's block: from its "  <name>:" line up to (but
 # not including) the next top-level "  <other>:" line, or EOF. -----------
-job_block() {
-  local name="$1"
-  awk -v name="$name" '
-    $0 ~ "^  " name ":$" { inblock = 1; print; next }
-    inblock && /^  [A-Za-z0-9_-]+:$/ { inblock = 0 }
-    inblock { print }
-  ' "$WORKFLOW"
-}
+. "$REPO_ROOT/scripts/ci/lib/workflow-job.sh"
+job_block() { workflow_job_block "$WORKFLOW" "$1"; }
 
 # --- the `ci` job's own `needs:` list, as a flow sequence on one line ----
 CI_BLOCK="$(job_block ci)"

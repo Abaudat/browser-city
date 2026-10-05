@@ -93,13 +93,16 @@ pub fn check_max_bound_pages(pages: &[PageMeta]) -> Result<(), String> {
     Ok(())
 }
 
+/// The packed key of an object that draws (an undrawn object, a flight whose
+/// treads are drawn as their own rows, has no sprite and is never packed).
 fn sprite_key(o: &ObjectDef) -> SourceKey {
+    let sprite = o.sprite.as_ref().expect("only drawn objects are packed");
     SourceKey {
-        sheet: o.sprite.sheet.clone(),
-        x: o.sprite.x,
-        y: o.sprite.y,
-        w: o.sprite.w,
-        h: o.sprite.h,
+        sheet: sprite.sheet.clone(),
+        x: sprite.x,
+        y: sprite.y,
+        w: sprite.w,
+        h: sprite.h,
     }
 }
 
@@ -151,12 +154,13 @@ pub fn build_atlas(
     // choice for one theme folder), checked before themes are ever
     // merged into a shared page group.
     let mut sheets_by_theme: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for o in objects {
-        let theme = theme_group(&o.sprite.sheet)?;
+    for o in objects.iter().filter(|o| o.sprite.is_some()) {
+        let sprite = o.sprite.as_ref().expect("filtered to drawn objects");
+        let theme = theme_group(&sprite.sheet)?;
         sheets_by_theme
             .entry(theme.clone())
             .or_default()
-            .push(o.sprite.sheet.clone());
+            .push(sprite.sheet.clone());
         let group = resolve_page_group(&theme, page_groups)?;
         items.push(PackItem {
             group,
@@ -243,7 +247,8 @@ pub fn build_atlas(
     }
 
     let mut atlas_by_object_id = BTreeMap::new();
-    for o in objects {
+    for o in objects.iter().filter(|o| o.sprite.is_some()) {
+        let sprite = o.sprite.as_ref().expect("filtered to drawn objects");
         let key = sprite_key(o);
         let placement = result
             .placements
@@ -255,8 +260,8 @@ pub fn build_atlas(
                 page: placement.page,
                 x: placement.x,
                 y: placement.y,
-                w: o.sprite.w,
-                h: o.sprite.h,
+                w: sprite.w,
+                h: sprite.h,
             },
         );
     }
@@ -314,13 +319,13 @@ mod tests {
             key: key.to_string(),
             name: key.to_string(),
             layer: 2,
-            sprite: SpriteRect {
+            sprite: Some(SpriteRect {
                 sheet: sheet.to_string(),
                 x: 0,
                 y: 0,
                 w,
                 h,
-            },
+            }),
             width: 1,
             height: 1,
             collider: None,

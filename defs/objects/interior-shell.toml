@@ -5,7 +5,7 @@
 # six tiles and only the bottom-middle one is unshadowed; the other five
 # carry a baked wall shadow and are never a room fill.
 [[object]]
-id = 20
+id = 24
 key = "floor_pale_stone"
 name = "Pale Stone Floor"
 layer = "ground"
@@ -19,7 +19,7 @@ tags = ["underfoot", "floor"]
 # above; no collider. For north/south wall runs only -- west/east runs
 # are flush swatches with no face to cut an arch into.
 [[object]]
-id = 21
+id = 25
 key = "threshold_arch_slate"
 name = "Slate Threshold"
 layer = "walls"
