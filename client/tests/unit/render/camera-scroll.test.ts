@@ -104,9 +104,9 @@ const constantDeltasArb = fc
   .double({ min: 8, max: 34, noNaN: true })
   .map((d) => Array.from({ length: FRAMES }, () => d));
 
-// Two 200-case properties with thousands of expects each: about 1s on a
-// laptop, but a coverage-instrumented CI runner has taken over 5s, vitest's
-// default. The case count is the test's budget, so the timeout gives way.
+// Two 200-case properties with thousands of expects each: the case count is
+// the property under test, so the work cannot shrink. CI worst case under
+// coverage: 4.10 s (run 37229489003); 60 s is over 10x that.
 const PROPERTY_TIMEOUT_MS = 60_000;
 
 describe("camera scroll during a continuous walk", { timeout: PROPERTY_TIMEOUT_MS }, () => {

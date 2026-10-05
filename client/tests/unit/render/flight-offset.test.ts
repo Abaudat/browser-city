@@ -705,7 +705,12 @@ describe("the street's own flights (conformance)", () => {
     }
   });
 
-  it("no two adjacent standable feet positions differ by more than the steepest slope (never off the surface), on every floor", () => {
+  // CI worst case under coverage: 1.19 s (run 37229489003); the exhaustive scan of every sub-cell is the property under test (already one pass per grid), so the work
+  // cannot shrink. 60 s is over 10x that.
+  const EXHAUSTIVE_SCAN_TIMEOUT_MS = 60_000;
+  it("no two adjacent standable feet positions differ by more than the steepest slope (never off the surface), on every floor", {
+    timeout: EXHAUSTIVE_SCAN_TIMEOUT_MS,
+  }, () => {
     const index = new FlightIndex(flights, config);
     const world = streetWorldIndex();
     const sub = config.subcellsPerCell;
@@ -717,19 +722,36 @@ describe("the street's own flights (conformance)", () => {
     const floors = fixtureFloors();
     expect(floors).toEqual([SUBWAY_FLOOR, 0, BRIDGE_FLOOR]);
     const { widthCells, heightCells } = fixtureExtent();
+    const w = widthCells * sub;
+    const h = heightCells * sub;
     const nonZero = new Map<number, number>(floors.map((f) => [f, 0]));
+    let pairs = 0;
     for (const floor of floors) {
-      for (let cx = 0; cx < widthCells * sub; cx++) {
-        for (let feet = 0; feet < heightCells * sub; feet++) {
+      // Each position's clearance and offset once, then compare neighbours.
+      const clear = new Uint8Array(w * h);
+      const offset = new Float64Array(w * h);
+      for (let cx = 0; cx < w; cx++) {
+        for (let feet = 0; feet < h; feet++) {
           if (!isBodyClear(world, config, floor, cx, feet)) continue;
-          const here = index.offsetPx(cx / sub, feet / sub, floor);
+          clear[cx * h + feet] = 1;
+          offset[cx * h + feet] = index.offsetPx(cx / sub, feet / sub, floor);
+        }
+      }
+      for (let cx = 0; cx < w; cx++) {
+        for (let feet = 0; feet < h; feet++) {
+          const i = cx * h + feet;
+          if (!clear[i]) continue;
+          const here = offset[i];
           if (here !== 0) nonZero.set(floor, (nonZero.get(floor) ?? 0) + 1);
           for (const [nx, ny] of [
             [cx + 1, feet],
             [cx, feet + 1],
           ] as const) {
-            if (!isBodyClear(world, config, floor, nx, ny)) continue;
-            const there = index.offsetPx(nx / sub, ny / sub, floor);
+            // Neighbours past the grid edge are computed directly (a thin border).
+            const inside = nx < w && ny < h;
+            if (inside ? !clear[nx * h + ny] : !isBodyClear(world, config, floor, nx, ny)) continue;
+            pairs++;
+            const there = inside ? offset[nx * h + ny] : index.offsetPx(nx / sub, ny / sub, floor);
             if (Math.abs(there - here) > slope + 1e-9) {
               throw new Error(
                 `floor ${floor}: (${cx}, ${feet}) -> (${nx}, ${ny}) jumps ${there - here} sub-cell units`,
@@ -739,6 +761,9 @@ describe("the street's own flights (conformance)", () => {
         }
       }
     }
+    // The exhaustive scan compares exactly this many adjacent pairs. The count
+    // changes with the street fixture; re-pin it from the loop's own `pairs`.
+    expect(pairs).toBe(399359);
     for (const floor of floors) {
       expect(
         nonZero.get(floor),

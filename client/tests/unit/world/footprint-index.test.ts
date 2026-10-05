@@ -257,7 +257,10 @@ describe("FootprintIndex", () => {
     expect(entriesAtTarget(10_000)).toEqual(["999999"]);
   });
 
-  it("inv_footprint_index_matches_rebuild", () => {
+  // CI worst case under coverage: 0.59 s (run 37229489003); the property's case count is the thing under test, so the work
+  // cannot shrink. 60 s is over 10x that.
+  const PROPERTY_TIMEOUT_MS = 60_000;
+  it("inv_footprint_index_matches_rebuild", { timeout: PROPERTY_TIMEOUT_MS }, () => {
     const defs = new Map<number, FootprintSource>([
       [1, ONE_CELL],
       [2, THREE_WIDE],

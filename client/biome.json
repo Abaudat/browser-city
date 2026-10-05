@@ -10,7 +10,8 @@
       "!tests/e2e/boot-budget/bindings",
       "!dist",
       "!dist-boot-budget-decode",
-      "!node_modules"
+      "!node_modules",
+      "!.vitest-durations.json"
     ]
   },
   "formatter": {

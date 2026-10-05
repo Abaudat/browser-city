@@ -35,3 +35,6 @@ client/coverage/
 # generated on the CI image `update-visual-baselines.yml` requires.
 client/tests/e2e/**/*-snapshots/*-win32.png
 client/tests/e2e/**/*-snapshots/*-darwin.png
+
+# Per-test durations written by tests/unit/setup/duration-report.ts
+client/.vitest-durations.json
