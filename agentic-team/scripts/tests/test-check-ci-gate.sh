@@ -170,6 +170,22 @@ OUT="$(run_check "$ONE_CANCELLED" "$ALL_CHANGED" "$WF" 2>&1)"; CODE=$?
 check "exits non-zero" 1 bash -c "exit $CODE"
 
 echo
+echo "red: the e2e shard matrix (one aggregate result) failed or was cancelled"
+for R in failure cancelled; do
+  WF="$(fresh_workflow)"
+  MATRIX_RED='{
+  "changes": {"result": "success"},
+  "check": {"result": "success"},
+  "client-check": {"result": "success"},
+  "client-build": {"result": "success"},
+  "e2e": {"result": "'"$R"'"}
+}'
+  OUT="$(run_check "$MATRIX_RED" "$ALL_CHANGED" "$WF" 2>&1)"; CODE=$?
+  check "e2e matrix $R: exits non-zero" 1 bash -c "exit $CODE"
+  check "e2e matrix $R: names the job" 0 bash -c     "printf '%s' \"\$1\" | grep -qF \"'e2e' did not succeed (result: '$R')\"" _ "$OUT"
+done
+
+echo
 echo "red: needs-json is missing an entry for a job ci.yml's 'ci:' needs"
 WF="$(fresh_workflow)"
 MISSING_JOB='{

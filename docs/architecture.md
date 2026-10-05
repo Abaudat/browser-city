@@ -1735,6 +1735,16 @@ build.
 | Balance keys                       | dotted `snake_case`    | `citizen.bar_decay.rest`              |
 | Table names                        | `snake_case`, singular | `citizen_state`                       |
 
+## CI
+
+- `ci` is the only required check; it aggregates every job through
+  `scripts/ci/check-ci-gate.sh`.
+- `e2e` runs as N Playwright shards, each with its own harness and a
+  `timeout-minutes` of at most 10 (NFR49). When the slowest shard's tests
+  pass 6 minutes, N goes up and the timeout does not.
+- Perf and the deploy-smoke rehearsal run in `e2e-perf`, never behind a shard.
+- `scripts/ci/check-e2e-shards.sh` pins all three.
+
 ## Toolchain
 
 `docs/trace-matrix.md`'s `| Requirement | Status | Guard |` tables are
