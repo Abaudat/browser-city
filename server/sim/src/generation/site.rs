@@ -30,7 +30,7 @@
 use std::collections::BTreeMap;
 
 use crate::generated::defs;
-use crate::rules::{AreaId, Cell, RuleSite, TagId};
+use crate::rules::{AreaId, Cell, Parameter, RuleSite, TagId};
 use crate::world::Rect;
 
 use super::envelopes::EnvelopeMap;
@@ -130,6 +130,7 @@ pub struct SiteBuilder {
     merged: BTreeMap<(u32, u32), u32>,
     area_ids: Vec<AreaId>,
     area_index: BTreeMap<AreaId, u32>,
+    params: BTreeMap<Cell, (i32, i32)>,
 }
 
 impl SiteBuilder {
@@ -158,7 +159,15 @@ impl SiteBuilder {
             merged: BTreeMap::new(),
             area_ids: Vec::new(),
             area_index: BTreeMap::new(),
+            params: BTreeMap::new(),
         }
+    }
+
+    /// Records the neighbourhood dials `(building age, affluence)` at a
+    /// subject cell -- what a catchment row that reads a parameter
+    /// averages.
+    pub fn set_params(&mut self, x: i32, y: i32, age: i32, affluence: i32) {
+        self.params.insert(Cell::new(x, y, 0), (age, affluence));
     }
 
     /// The slot of `id`, assigned on first use.
@@ -376,6 +385,7 @@ impl SiteBuilder {
             pair_table,
             pair_off,
             pair_cells,
+            params: self.params,
         }
     }
 }
@@ -396,6 +406,9 @@ pub struct DistrictSite {
     pair_table: Vec<u32>,
     pair_off: Vec<u32>,
     pair_cells: Vec<Cell>,
+    /// `(building age, affluence)` at every subject cell: its plot's own
+    /// neighbourhood dials.
+    params: BTreeMap<Cell, (i32, i32)>,
 }
 
 impl DistrictSite {
@@ -448,6 +461,7 @@ impl DistrictSite {
             let block = builder.area(rect_seed_key(block_bounds));
             let p = builder.shared_profile(def.tags, &[block]);
             builder.merge(x, y, p);
+            builder.set_params(x, y, plot.building_age, plot.affluence);
         }
         builder.finish()
     }
@@ -501,6 +515,15 @@ impl RuleSite for DistrictSite {
                 }
             }
         }
+    }
+
+    fn parameter_at(&self, cell: Cell, parameter: Parameter) -> Option<i32> {
+        self.params
+            .get(&cell)
+            .map(|&(age, affluence)| match parameter {
+                Parameter::BuildingAge => age,
+                Parameter::Affluence => affluence,
+            })
     }
 }
 

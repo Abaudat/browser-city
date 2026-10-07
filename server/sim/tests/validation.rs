@@ -240,6 +240,7 @@ fn lighting_break_defects() -> Vec<Defect> {
         location: Location::Cell {
             cell: Cell::new(0, 0, LIGHTING_FLOOR),
             other: None,
+            catchment: None,
         },
     }]
 }
@@ -289,6 +290,7 @@ fn stairwell_break_defects() -> Vec<Defect> {
         location: Location::Cell {
             cell: Cell::new(2, 0, STAIRWELL_FLOOR),
             other: None,
+            catchment: None,
         },
     }];
     for x in 0..3 {
@@ -297,6 +299,7 @@ fn stairwell_break_defects() -> Vec<Defect> {
             location: Location::Cell {
                 cell: Cell::new(x, 0, STAIRWELL_FLOOR),
                 other: None,
+                catchment: None,
             },
         });
     }
@@ -385,6 +388,7 @@ fn sealed_ring_defects() -> Vec<Defect> {
                 location: Location::Cell {
                     cell: Cell::new(x, y, SEALED_RING_FLOOR),
                     other: None,
+                    catchment: None,
                 },
             });
         }
@@ -479,6 +483,7 @@ fn narrow_passage_defects() -> Vec<Defect> {
             location: Location::Cell {
                 cell: Cell::new(base + x, base + y, NARROW_PASSAGE_FLOOR),
                 other: None,
+                catchment: None,
             },
         });
     }
@@ -491,6 +496,7 @@ fn narrow_passage_defects() -> Vec<Defect> {
             location: Location::Cell {
                 cell: Cell::new(base + x, base + y, NARROW_PASSAGE_FLOOR),
                 other: None,
+                catchment: None,
             },
         });
     }
@@ -690,6 +696,7 @@ fn a_wall_cell_outside_any_area_is_itself_a_violation_through_requirements_own_f
             location: Location::Cell {
                 cell: Cell::new(0, 0, FALLBACK_FLOOR),
                 other: None,
+                catchment: None,
             },
         })
         .collect();
@@ -698,6 +705,7 @@ fn a_wall_cell_outside_any_area_is_itself_a_violation_through_requirements_own_f
         location: Location::Cell {
             cell: Cell::new(0, 0, FALLBACK_FLOOR),
             other: None,
+            catchment: None,
         },
     });
     expected.sort();
@@ -836,6 +844,7 @@ fn a_rule_defect_renders_the_rule_key_and_the_full_cell_location() {
         location: Location::Cell {
             cell: Cell::new(0, 0, LIGHTING_FLOOR),
             other: None,
+            catchment: None,
         },
     };
     assert_eq!(
@@ -851,6 +860,7 @@ fn a_forbid_adjacency_defect_renders_the_other_cell_too() {
         location: Location::Cell {
             cell: Cell::new(2, 0, STAIRWELL_FLOOR),
             other: Some(Cell::new(3, 0, STAIRWELL_FLOOR)),
+            catchment: None,
         },
     };
     assert_eq!(

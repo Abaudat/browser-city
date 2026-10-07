@@ -19,6 +19,7 @@ tags = ["dwelling", "form_low"]
 land_uses = ["residential"]
 density_min = 0
 density_max = 45
+affluence_min = 45
 min_interior_width_cells = 6
 min_interior_depth_cells = 6
 weight = 30
@@ -68,3 +69,19 @@ min_interior_depth_cells = 5
 weight = 8
 requires_site = ["corner"]
 professions = ["shop_clerk"]
+
+# The poor end of the sparse edge: a villa is the rich end only, so a
+# low-density neighbourhood in the bottom affluence band still has homes.
+[[building_type]]
+id = 47
+key = "cottage"
+rooms = ["living_room", "bedroom", "bathroom"]
+optional_rooms = ["kitchen", "bedroom"]
+tags = ["dwelling", "form_low"]
+land_uses = ["residential"]
+density_min = 0
+density_max = 45
+affluence_max = 55
+min_interior_width_cells = 5
+min_interior_depth_cells = 5
+weight = 30

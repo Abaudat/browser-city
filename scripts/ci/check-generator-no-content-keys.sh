@@ -32,6 +32,7 @@ else
   TARGETS=(
     "$REPO_ROOT/server/sim/src/generation"
     "$REPO_ROOT/server/bounds/src/generation_evidence.rs"
+    "$REPO_ROOT/server/bounds/src/neighbourhood_evidence.rs"
   )
 fi
 

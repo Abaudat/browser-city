@@ -84,6 +84,10 @@ pub struct Plot {
     pub front: Option<Side>,
     pub land_use: LandUse,
     pub density: i32,
+    /// The block's neighbourhood's own dials (FR113): constant across the
+    /// block, since a block never crosses an arterial.
+    pub building_age: i32,
+    pub affluence: i32,
     pub open: bool,
 }
 
@@ -491,9 +495,10 @@ pub fn run(
         let use_ = block_land_use(land_use, block.bounds);
         let sample_x = ((block.bounds.x0 + block.bounds.x1) / 2).clamp(site.x0, site.x1 - 1);
         let sample_y = ((block.bounds.y0 + block.bounds.y1) / 2).clamp(site.y0, site.y1 - 1);
-        let density = land_use
-            .at_world(sample_x, sample_y)
-            .map_or(cfg.density_min, |c| c.density);
+        let params = land_use.at_world(sample_x, sample_y);
+        let density = params.map_or(cfg.density_min, |c| c.density);
+        let building_age = params.map_or(cfg.neighbourhood.building_age_min, |c| c.building_age);
+        let affluence = params.map_or(cfg.neighbourhood.affluence_min, |c| c.affluence);
 
         let mut rng = Rng::new(seed_from_ids(pass_seed, rect_seed_key(block.bounds)));
         let sides = block_sides(block.bounds, site);
@@ -507,6 +512,8 @@ pub fn run(
                 front: None,
                 land_use: use_,
                 density,
+                building_age,
+                affluence,
                 open: true,
             });
             continue;
@@ -605,6 +612,8 @@ pub fn run(
                     front: Some(side),
                     land_use: use_,
                     density,
+                    building_age,
+                    affluence,
                     open: false,
                 });
             }
@@ -623,6 +632,8 @@ pub fn run(
                 front: None,
                 land_use: use_,
                 density,
+                building_age,
+                affluence,
                 open: true,
             });
         }
@@ -751,6 +762,8 @@ mod tests {
             front: Some(front),
             land_use: LandUse::Residential,
             density: 50,
+            building_age: 50,
+            affluence: 50,
             open: false,
         }
     }

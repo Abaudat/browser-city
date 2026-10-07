@@ -27,6 +27,10 @@ fn main() {
         write(envelopes_svg_path(svgs.seed), &svgs.envelopes);
         write(building_types_svg_path(svgs.seed), &svgs.building_types);
         write(interiors_svg_path(svgs.seed), &svgs.interiors);
+        write(
+            bounds::neighbourhood_evidence::neighbourhoods_svg_path(svgs.seed),
+            &svgs.neighbourhoods,
+        );
     }
     for (seed, svg) in build_detour_worst_svgs() {
         write(detour_worst_svg_path(seed), &svg);

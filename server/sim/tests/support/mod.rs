@@ -132,3 +132,38 @@ pub fn rule(key: &str) -> RuleDef {
 // Story 4.5: the identity tables' model, used by `invariants.rs`.
 #[allow(dead_code)]
 pub mod identity_model;
+
+/// The proptest config every property file shares: the default (so
+/// `PROPTEST_CASES` and `PROPTEST_RNG_SEED` drive the count and the draws)
+/// with failures persisted to `path` -- relative to the package root
+/// `cargo test` runs integration tests from, the file committed next to the
+/// test. Never an explicit `cases`: that would override the env var CI sets.
+#[allow(dead_code)]
+pub fn persisted(path: &'static str) -> proptest::test_runner::Config {
+    proptest::test_runner::Config {
+        failure_persistence: Some(Box::new(
+            proptest::test_runner::FileFailurePersistence::Direct(path),
+        )),
+        ..proptest::test_runner::Config::default()
+    }
+}
+
+/// Asserts the persistence [`persisted`] configures for `path` reads exactly
+/// the `cc` cases committed in that file, so it cannot silently regress to
+/// a path nothing replays from.
+#[allow(dead_code)]
+pub fn assert_persistence_reads_committed_file(path: &'static str, source: &'static str) {
+    let committed = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
+    let text = std::fs::read_to_string(&committed)
+        .unwrap_or_else(|e| panic!("{} must exist: {e}", committed.display()));
+    let cases = text.lines().filter(|l| l.starts_with("cc ")).count();
+    let config = persisted(path);
+    let persistence = config
+        .failure_persistence
+        .expect("every property persists its failures");
+    assert_eq!(
+        persistence.load_persisted_failures2(Some(source)).len(),
+        cases,
+        "the configured persistence must read the committed {path}"
+    );
+}

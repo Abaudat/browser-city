@@ -48,7 +48,12 @@ fn ac1_no_cafe_above_floor_2_renders_the_exact_rule_kind_literal() {
 /// rendered Rust text -- the shared plumbing every kind-specific test
 /// below uses.
 fn emit_rust_for(rule_toml: &str) -> String {
-    let files = vec![
+    emit_rust_with(rule_toml, "")
+}
+
+/// [`emit_rust_for`] plus one `defs/balance/` file.
+fn emit_rust_with(rule_toml: &str, balance_toml: &str) -> String {
+    let mut files = vec![
         (
             PathBuf::from("defs/tags/city.toml"),
             "[[tag]]\nid = 1\nkey = \"a\"\n\
@@ -61,6 +66,12 @@ fn emit_rust_for(rule_toml: &str) -> String {
         ),
         (PathBuf::from("defs/rules/city.toml"), rule_toml.to_string()),
     ];
+    if !balance_toml.is_empty() {
+        files.push((
+            PathBuf::from("defs/balance/generation.toml"),
+            balance_toml.to_string(),
+        ));
+    }
     let raw = defs_build::parse::parse_all(&files).expect("this tree is valid by construction");
     let defs = defs_build::validate::validate(
         &raw,
@@ -86,9 +97,78 @@ fn every_remaining_kind_renders_its_own_exact_rule_kind_literal() {
     );
     assert!(
         distribution.contains(
-            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: 3, tolerance_percent: 4, min_spacing: 5, max_distance: 6 }"
+            "kind: crate::rules::RuleKind::Distribution { subject: 1, per: 2, ratio: crate::rules::RowRatio::Fixed(3), tolerance_percent: 4, min_spacing: 5, max_distance: 6, scope: crate::rules::DistributionScope::Site }"
         ),
         "distribution literal not found:\n{distribution}"
+    );
+
+    // Story 3.7: `scope = "catchment"` copies the balance key's extent into
+    // the row (one source); an absent scope is `Site` (above).
+    let scoped = emit_rust_with(
+        "[[distribution]]
+id = 1
+key = \"d\"
+subject = \"a\"
+per = \"b\"
+ratio = 3
+tolerance_percent = 4
+min_spacing = 5
+max_distance = 6
+scope = \"catchment\"
+",
+        "[[balance]]
+key = \"generation.catchment_extent_cells\"
+value = 256
+min = 1
+max = 100000
+",
+    );
+    assert!(
+        scoped
+            .contains("scope: crate::rules::DistributionScope::Catchment { extent_cells: 256 } }"),
+        "scoped literal not found:
+{scoped}"
+    );
+
+    // A catchment row reading a parameter copies the parameter's own balance
+    // range into the row.
+    let reading = emit_rust_with(
+        "[[distribution]]
+id = 1
+key = \"d\"
+subject = \"a\"
+per = \"b\"
+tolerance_percent = 4
+min_spacing = 5
+max_distance = 6
+scope = \"catchment\"
+reads = \"affluence\"
+ratio_at_min = 30
+ratio_at_max = 90
+",
+        "[[balance]]
+key = \"generation.catchment_extent_cells\"
+value = 256
+min = 1
+max = 100000
+
+[[balance]]
+key = \"generation.neighbourhood.affluence_min\"
+value = 0
+min = 0
+max = 1000
+
+[[balance]]
+key = \"generation.neighbourhood.affluence_max\"
+value = 100
+min = 1
+max = 1000
+",
+    );
+    assert!(
+        reading.contains("ratio: crate::rules::RowRatio::Read(crate::rules::ParameterRead { parameter: crate::rules::Parameter::Affluence, ratio_at_min: 30, ratio_at_max: 90, min: 0, max: 100 }), tolerance_percent: 4, min_spacing: 5, max_distance: 6, scope: crate::rules::DistributionScope::Catchment { extent_cells: 256 } }"),
+        "reading literal not found:
+{reading}"
     );
 
     let coherence = emit_rust_for(

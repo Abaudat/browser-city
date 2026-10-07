@@ -268,6 +268,27 @@ fn a_distribution_ratio_of_zero_is_rejected() {
     );
 }
 
+/// Story 3.7: a row's number may be read against one neighbourhood
+/// parameter, per catchment only -- and is either one `ratio` or the whole
+/// two-ended triple, never a mix.
+#[test]
+fn a_parameter_read_on_a_site_row_is_refused() {
+    let err = build_err("distribution-reads-on-a-site-row");
+    assert_eq!(
+        err.to_string(),
+        "defs/rules/services.toml:3:7: distribution rule 'waste_per_seating' reads a neighbourhood parameter but is scoped site -- a read is per catchment"
+    );
+}
+
+#[test]
+fn a_ratio_mixed_with_a_parameter_read_is_refused() {
+    let err = build_err("distribution-ratio-and-reads-mixed");
+    assert_eq!(
+        err.to_string(),
+        "defs/rules/services.toml:3:7: distribution rule 'waste_per_seating' must set either `ratio`, or `reads` with both `ratio_at_min` and `ratio_at_max` -- never a mix"
+    );
+}
+
 #[test]
 fn a_distribution_tolerance_of_zero_is_rejected() {
     let err = build_err("distribution-tolerance-non-positive");
@@ -800,7 +821,19 @@ fn a_density_gap_no_weighted_building_type_covers_is_named() {
     let err = build_err("building-type-density-gap");
     assert_eq!(
         err.to_string(),
-        "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 51 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
+        "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 51 and affluence 0 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
+    );
+}
+
+/// Story 3.7: the coverage question is land use x density x affluence --
+/// a band that leaves the rich end of the dial uncovered fails the build
+/// by name, never a world that cannot be generated.
+#[test]
+fn an_affluence_gap_no_weighted_building_type_covers_is_named() {
+    let err = build_err("building-type-affluence-gap");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 0 and affluence 41 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
     );
 }
 
@@ -809,7 +842,7 @@ fn a_building_type_too_large_for_its_own_land_uses_smallest_envelope_is_named() 
     let err = build_err("building-type-interior-too-large");
     assert_eq!(
         err.to_string(),
-        "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 0 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
+        "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 0 and affluence 0 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
     );
 }
 
@@ -823,7 +856,7 @@ fn a_density_covered_only_by_a_site_restricted_building_type_is_named() {
     let err = build_err("building-type-site-restricted");
     assert_eq!(
         err.to_string(),
-        "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 0 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
+        "defs/building-types/residential.toml:3:7: no weight > 0 building type with no site-context restriction covers land use 'residential' at density 0 and affluence 0 and fits its own smallest envelope (5x5 interior) -- a defs-authoring gap the fill step would hit on a real seed"
     );
 }
 
@@ -1131,6 +1164,8 @@ fn every_known_category_has_a_fixture_directory() {
         "rule-field-belongs-to-another-kind",
         "rule-dangling-tag-reference",
         "distribution-ratio-zero",
+        "distribution-reads-on-a-site-row",
+        "distribution-ratio-and-reads-mixed",
         "distribution-tolerance-non-positive",
         "distribution-max-distance-zero",
         "placement-floor-min-above-max",
@@ -1162,6 +1197,7 @@ fn every_known_category_has_a_fixture_directory() {
         "archetype-collider-does-not-fit-object-width",
         "building-type-no-weighted-type-for-land-use",
         "building-type-density-gap",
+        "building-type-affluence-gap",
         "building-type-interior-too-large",
         "building-type-site-restricted",
         "tag-structure-part-missing",

@@ -1,7 +1,7 @@
-//! The determinism harness for stories 3.2-3.5 (FR110 passes 1-6): same
+//! The determinism harness for stories 3.2-3.4 (FR110 passes 1-5): same
 //! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
 //! all six passes for a fixed seed set and compares a readable summary
-//! plus a digest against the committed `tests/goldens/generation_v10.
+//! plus a digest against the committed `tests/goldens/generation_v11.
 //! golden`, so a diff names what moved rather than just "hash differs".
 //! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
 //! bump.sh` fails a PR that touches the golden without bumping that
@@ -19,8 +19,7 @@
 //!
 //! Story 3.4 extends the same discipline to content: [`frozen_content`]
 //! freezes a tiny building-type table under deliberately unrelated
-//! ids/keys (never `defs::BUILDING_TYPES`'), a handful of room types and
-//! structural tags (story 3.5, same unrelated ids) and a small rule set --
+//! ids/keys (never `defs::BUILDING_TYPES`') and an empty rule set --
 //! retuning `defs/building-types/*.toml` or `defs/rules/generation.toml`
 //! (also covered by `defs_version`) must never force a version bump
 //! either, and the generator producing the same shape of output against
@@ -32,6 +31,7 @@
 //! never mutates its own input).
 
 use sim::generated::defs::{BuildingTypeDef, RoomTypeDef, TagDef, TagStructure};
+use sim::generation::neighbourhoods::NeighbourhoodConfig;
 use sim::generation::streets::DETOUR_SAMPLE_MAX_NODES;
 use sim::generation::{
     GENERATION_VERSION, GenerationConfig, GenerationContent, LandUse, envelopes, land_use, plan,
@@ -41,7 +41,7 @@ use sim::rules::{CoherenceMode, RuleDef, RuleKind, RuleSet};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v10.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v11.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -57,6 +57,27 @@ fn frozen_config() -> GenerationConfig {
         land_use_max_leaf_cells: 10,
         land_use_split_jitter_pct: 30,
         land_use_max_recursion_depth: 8,
+        neighbourhood: NeighbourhoodConfig {
+            building_age_min: 0,
+            building_age_max: 100,
+            affluence_min: 0,
+            affluence_max: 100,
+            extreme_share_percent: 80,
+            legible_step: 30,
+            poor_band_max: 25,
+            min_corners: 3,
+            building_age_spread: 8,
+            state_weight_age: 40,
+            state_weight_affluence: 60,
+            desirability_state_floor: 25,
+            viewport_width_cells: 40,
+            viewport_height_cells: 22,
+            min_patch_span_viewports: 2,
+            min_home_cells: 30,
+            dwelling_tag_id: 18,
+            citizens_per_dwelling: 1,
+            citizens_per_post: 4,
+        },
         density_min: 10,
         density_max: 100,
         density_peak_offset_min_pct: 15,
@@ -124,7 +145,7 @@ fn frozen_config() -> GenerationConfig {
         workplace_target_count_per_million_cells: 1312,
         workplace_count_tolerance_percent: 30,
         workplace_mean_count_tolerance_percent: 5,
-        building_type_catchment_extent_cells: 256,
+        catchment_extent_cells: 256,
         interior_max_layout_attempts: 8,
         interior_min_enterable_count: 1,
         interior_max_rejected_percent: 5,
@@ -153,6 +174,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [true, false, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 4,
         min_interior_depth_cells: 4,
         weight: 1,
@@ -170,6 +193,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [true, false, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 4,
         min_interior_depth_cells: 4,
         weight: 1,
@@ -187,6 +212,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [false, true, false, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 6,
         min_interior_depth_cells: 6,
         weight: 1,
@@ -204,6 +231,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [false, false, true, false],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 8,
         min_interior_depth_cells: 8,
         weight: 1,
@@ -221,6 +250,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [false, false, false, true],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 8,
         min_interior_depth_cells: 8,
         weight: 1,
@@ -238,6 +269,8 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         land_uses: [false, false, false, true],
         density_min: 0,
         density_max: 100,
+        affluence_min: 0,
+        affluence_max: 100,
         min_interior_width_cells: 8,
         min_interior_depth_cells: 8,
         weight: 0,
@@ -397,10 +430,11 @@ const FROZEN_RULES: &[RuleDef] = &[
         kind: RuleKind::Distribution {
             subject: 9107,
             per: 9101,
-            ratio: 50,
+            ratio: sim::rules::RowRatio::Fixed(50),
             tolerance_percent: 20,
             min_spacing: 10,
             max_distance: 2000,
+            scope: sim::rules::DistributionScope::Site,
         },
     },
 ];
@@ -458,7 +492,7 @@ fn plan_digest(
     }
     for p in pm.plots() {
         text.push_str(&format!(
-            "plot {},{},{},{} block={} front={:?} use={:?} density={} open={}\n",
+            "plot {},{},{},{} block={} front={:?} use={:?} density={} age={} affluence={} open={}\n",
             p.bounds.x0,
             p.bounds.y0,
             p.bounds.x1,
@@ -467,6 +501,8 @@ fn plan_digest(
             p.front,
             p.land_use,
             p.density,
+            p.building_age,
+            p.affluence,
             p.open
         ));
     }
@@ -493,6 +529,13 @@ fn plan_digest(
         text.push_str(&format!(
             "type plot={} building_type={}\n",
             a.plot, a.building_type
+        ));
+    }
+    for st in bt.states() {
+        text.push_str(&format!(
+            "state plot={} age={} physical_state={}
+",
+            st.plot, st.building_age, st.physical_state
         ));
     }
     for o in io.outcomes() {
@@ -604,7 +647,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v10.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v11.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );

@@ -125,8 +125,16 @@ impl Check {
 /// rule row, or a sub-cell rect on one floor for a walkability finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Location {
-    Cell { cell: Cell, other: Option<Cell> },
-    SubcellRect { floor: i8, rect: Rect },
+    Cell {
+        cell: Cell,
+        other: Option<Cell>,
+        /// The catchment a `scope = "catchment"` row judged this in.
+        catchment: Option<(i32, i32)>,
+    },
+    SubcellRect {
+        floor: i8,
+        rect: Rect,
+    },
 }
 
 impl fmt::Display for Location {
@@ -134,14 +142,17 @@ impl fmt::Display for Location {
         match self {
             Location::Cell {
                 cell,
-                other: Some(other),
-            } => write!(
-                f,
-                "({}, {}, {}) <-> ({}, {}, {})",
-                cell.x, cell.y, cell.floor, other.x, other.y, other.floor
-            ),
-            Location::Cell { cell, other: None } => {
-                write!(f, "({}, {}, {})", cell.x, cell.y, cell.floor)
+                other,
+                catchment,
+            } => {
+                write!(f, "({}, {}, {})", cell.x, cell.y, cell.floor)?;
+                if let Some(other) = other {
+                    write!(f, " <-> ({}, {}, {})", other.x, other.y, other.floor)?;
+                }
+                if let Some((cx, cy)) = catchment {
+                    write!(f, " in catchment ({cx}, {cy})")?;
+                }
+                Ok(())
             }
             Location::SubcellRect { floor, rect } => write!(
                 f,
@@ -388,6 +399,7 @@ pub fn validate(candidate: &Candidate) -> Result<Vec<Defect>, ValidationError> {
             location: Location::Cell {
                 cell: v.subject,
                 other: v.other,
+                catchment: v.catchment,
             },
         });
     }
@@ -481,6 +493,7 @@ mod tests {
             location: Location::Cell {
                 cell: Cell::new(0, 0, 0),
                 other: None,
+                catchment: None,
             },
         };
         assert_eq!(defect.to_string(), "not_a_real_rule at (0, 0, 0)");

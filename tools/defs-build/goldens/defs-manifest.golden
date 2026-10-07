@@ -154,6 +154,7 @@ building_type 43 fire_station
 building_type 44 transit_office
 building_type 45 vacant_unit
 building_type 46 storage_yard
+building_type 47 cottage
 room_type 1 living_room
 room_type 2 kitchen
 room_type 3 bathroom

@@ -104,9 +104,76 @@ fn render(rule_set: &RuleSet<'static>, v: Violation) -> String {
         location: Location::Cell {
             cell: v.subject,
             other: v.other,
+            catchment: v.catchment,
         },
     }
     .to_string()
+}
+
+/// Story 3.7 (FR113, "no fifth mechanism"): `docs/generation.md`'s
+/// neighbourhood-parameters table has exactly four rows, one per dial --
+/// the sim-side half is `neighbourhoods.rs`'s
+/// `the_parameter_field_carries_exactly_four_dials`.
+#[test]
+fn the_documented_parameter_table_has_exactly_four_rows() {
+    let text = std::fs::read_to_string(repo_root().join("docs/generation.md"))
+        .unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
+    let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
+    assert_eq!(
+        doc.parameter_names,
+        ["Density", "Building age", "Affluence", "Land-use mix"],
+        "the four dials, and no fifth mechanism"
+    );
+}
+
+/// Story 3.7: a distribution row reads a parameter exactly when its
+/// `reads` cell in `docs/generation.md` names it -- and every other row's
+/// cell is `-`.
+#[test]
+fn every_rows_reads_cell_names_the_parameter_it_reads() {
+    let text = std::fs::read_to_string(repo_root().join("docs/generation.md"))
+        .unwrap_or_else(|e| panic!("docs/generation.md: {e}"));
+    let doc = support::generation_doc::parse(Path::new("docs/generation.md"), &text);
+    let documented: std::collections::BTreeMap<&str, (&str, Vec<String>)> = doc
+        .sections
+        .values()
+        .flatten()
+        .map(|row| (row.key.as_str(), (row.scope.as_str(), row.reads.clone())))
+        .collect();
+    for rule in defs::RULES {
+        let row = rule.as_distribution();
+        let expected_reads: Vec<String> = row
+            .and_then(|row| match row.ratio {
+                sim::rules::RowRatio::Read(read) => Some(read.parameter),
+                sim::rules::RowRatio::Fixed(_) => None,
+            })
+            .map(|p| match p {
+                sim::rules::Parameter::Affluence => "Affluence".to_string(),
+                sim::rules::Parameter::BuildingAge => "Building age".to_string(),
+            })
+            .into_iter()
+            .collect();
+        let (scope, reads) = documented
+            .get(rule.key)
+            .unwrap_or_else(|| panic!("'{}' has no row in docs/generation.md", rule.key));
+        assert_eq!(
+            reads, &expected_reads,
+            "'{}': the `reads` cell must name exactly what the row reads",
+            rule.key
+        );
+        // A distribution row's documented scope is its own `scope` data.
+        if let Some(row) = row {
+            let toml_scope = match row.scope {
+                sim::rules::DistributionScope::Site => "site",
+                sim::rules::DistributionScope::Catchment { .. } => "catchment",
+            };
+            assert_eq!(
+                *scope, toml_scope,
+                "'{}': the `scope` cell must equal the row's own scope",
+                rule.key
+            );
+        }
+    }
 }
 
 /// AC2: a rule row added to `defs/rules/*.toml` with no matching case (or

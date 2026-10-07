@@ -1129,6 +1129,8 @@ mod tests {
                 land_use: crate::generation::LandUse::Residential,
                 density: 30,
                 open: false,
+                building_age: 50,
+                affluence: 50,
             },
             Envelope {
                 plot: 0,

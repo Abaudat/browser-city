@@ -212,6 +212,8 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         land_uses: b.land_uses,
                         density_min: b.density_min,
                         density_max: b.density_max,
+                        affluence_min: b.affluence_min.unwrap_or(0),
+                        affluence_max: b.affluence_max.unwrap_or(100),
                         min_interior_width_cells: b.min_interior_width_cells,
                         min_interior_depth_cells: b.min_interior_depth_cells,
                         weight: b.weight,
@@ -391,10 +393,14 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         key: located(text, &d.key),
                         subject: located(text, &d.subject),
                         per: located(text, &d.per),
-                        ratio: located(text, &d.ratio),
+                        ratio: d.ratio.as_ref().map(|r| located(text, r)),
                         tolerance_percent: located(text, &d.tolerance_percent),
                         min_spacing: d.min_spacing,
                         max_distance: located(text, &d.max_distance),
+                        scope: d.scope.unwrap_or(RawDistributionScope::Site),
+                        reads: d.reads,
+                        ratio_at_min: d.ratio_at_min.as_ref().map(|r| located(text, r)),
+                        ratio_at_max: d.ratio_at_max.as_ref().map(|r| located(text, r)),
                     });
                 }
                 for coh in file.coherence {
