@@ -550,7 +550,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     # Story 2.4's own proptests build a real WalkabilityGrid per case and
     # run erode/enclosed_regions/narrow_passages over it -- real work, not
     # the plain arithmetic most of this suite's other proptests do.

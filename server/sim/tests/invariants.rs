@@ -6555,8 +6555,7 @@ fn pooled_once(
     idx: u64,
     body: impl FnOnce() -> Result<(), TestCaseError>,
 ) -> Result<(), TestCaseError> {
-    memo_check(name, idx, || body().map_err(|e| e.to_string()))
-        .map_err(TestCaseError::fail)
+    memo_check(name, idx, || body().map_err(|e| e.to_string())).map_err(TestCaseError::fail)
 }
 
 /// One pooled city and every whole-district verdict, computed once.
