@@ -517,6 +517,25 @@ fn main() {
     let content = GenerationContent::committed();
     let site = cfg.site();
 
+    if std::env::args().nth(1).as_deref() == Some("detour") {
+        let n = std::env::args()
+            .nth(2)
+            .map(|s| {
+                s.parse()
+                    .unwrap_or_else(|e| panic!("detour count {s:?}: {e}"))
+            })
+            .unwrap_or(DETOUR_SEED_COUNT_DEFAULT);
+        detour_sweep(&cfg, n);
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("p99") {
+        let seed: u64 = std::env::args()
+            .nth(2)
+            .map(|s| s.parse().unwrap_or_else(|e| panic!("p99 seed {s:?}: {e}")))
+            .expect("usage: measure-generation p99 <seed>");
+        p99_trace(&cfg, seed);
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("bands") {
         let n = std::env::args()
             .nth(2)
@@ -986,88 +1005,128 @@ fn main() {
                 .unwrap_or_else(|e| panic!("detour seed count argument {s:?} is not a u64: {e}"))
         })
         .unwrap_or(DETOUR_SEED_COUNT_DEFAULT);
+    detour_sweep(&cfg, detour_seed_count);
+}
+
+/// The detour-bounds sweep (passes 1-2 only), threaded over seeds: every
+/// pass-2 detour ceiling's miss count -- the max()-contract (14-node
+/// sample) and the p99 fill (64-node sample), both through `streets::`'s
+/// one comparison each -- plus the top-10 per-seed worst p99 fills and
+/// takeover-range ratios. The header carries the `GENERATION_VERSION` it
+/// ran at; `docs/generation.md`'s pasted copy must carry the same one
+/// (`bounds`'s `generation_sweep_current`).
+fn detour_sweep(cfg: &GenerationConfig, n: u64) {
+    let threads = std::thread::available_parallelism().map_or(4, |t| t.get()) as u64;
+    let takeover = cfg.detour_ratio_takeover_distance_cells();
     println!(
-        "\ndetour-bounds sweep: {detour_seed_count} seeds, passes 1-2 only (distinct from every \
-         sweep above -- a second CLI argument, `cargo run -p bounds --release --bin measure-\
-         generation -- <missing_tag_seed_count> <n>`, changes the count)"
+        "\ndetour-bounds sweep at GENERATION_VERSION={}: {n} seeds, {threads} threads, passes 1-2 \
+         only (`cargo run -p bounds --release --bin measure-generation -- detour <n>`)",
+        sim::generation::GENERATION_VERSION
     );
-
-    // One unified miss counter (Derek's direction, story 15.10): the
-    // max()-contract replaces the old separate excess/ratio-AND-
-    // threshold checks with one expression, so there is one ceiling to
-    // count misses against here, not two -- `streets::detour_bound_
-    // violation`, the same function `detour_bounds_hold` (invariants.rs)
-    // and its pinned regression call through.
-    let mut detour_bound_miss = BandMiss::new();
-    let mut p99_miss = BandMiss::new();
-    // The sampled (14-node) worst ratio's own tail among pairs at or
-    // beyond the takeover distance (Derek's direction: the only range
-    // where the ratio term binds), so it is visible the way `detour_
-    // excess_cells_sampled_14node`'s already is -- the exhaustive
-    // equivalent rides the 50,000-seed loop above instead (`detour_
-    // ratio_pct_exhaustive_at_or_beyond_takeover`), never inside this
-    // million-seed loop.
-    let mut sampled_ratio_max: (i64, u64) = (i64::MIN, 0);
-    let mut sampled_ratio_top10: Vec<(i64, u64)> = Vec::new();
-
-    let detour_sweep_start = Instant::now();
-    for i in 0..detour_seed_count {
-        let seed = mixed_detour_seed(i);
-        let lu = land_use::run(seed, cfg.site(), &cfg).expect("pass 1 is total");
-        let net = streets::run(seed, &lu, &cfg);
-        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
-
-        if streets::detour_bound_violation(&samples, &cfg).is_some() {
-            detour_bound_miss.record(seed);
-        }
-
-        let seed_worst_takeover_ratio = samples
-            .iter()
-            .filter(|s| s.manhattan >= detour_takeover_distance)
-            .map(streets::DetourSample::ratio_pct)
-            .max();
-        if let Some(ratio) = seed_worst_takeover_ratio {
-            if ratio > sampled_ratio_max.0 {
-                sampled_ratio_max = (ratio, seed);
-            }
-            sampled_ratio_top10.push((ratio, seed));
-            sampled_ratio_top10.sort_unstable();
-            if sampled_ratio_top10.len() > 10 {
-                sampled_ratio_top10.remove(0);
-            }
-        }
-
-        let p99_samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
-        let p99 = streets::p99_ratio_pct(&p99_samples);
-        if p99 > cfg.p99_detour_percent as i64 {
-            p99_miss.record(seed);
+    struct Partial {
+        max_miss: BandMiss,
+        p99_miss: BandMiss,
+        ratio_top: Vec<(i64, u64)>,
+        fill_top: Vec<(i64, u64)>,
+    }
+    fn push_top(top: &mut Vec<(i64, u64)>, entry: (i64, u64)) {
+        top.push(entry);
+        top.sort_unstable();
+        if top.len() > 10 {
+            top.remove(0);
         }
     }
-    let detour_sweep_elapsed = detour_sweep_start.elapsed();
+    let start = Instant::now();
+    let partials: Vec<Partial> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads)
+            .map(|t| {
+                scope.spawn(move || {
+                    let mut p = Partial {
+                        max_miss: BandMiss::new(),
+                        p99_miss: BandMiss::new(),
+                        ratio_top: Vec::new(),
+                        fill_top: Vec::new(),
+                    };
+                    let mut i = t;
+                    while i < n {
+                        let seed = mixed_detour_seed(i);
+                        i += threads;
+                        let lu = land_use::run(seed, cfg.site(), cfg).expect("pass 1 is total");
+                        let net = streets::run(seed, &lu, cfg);
+                        let samples = net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES);
+                        if streets::detour_bound_violation(&samples, cfg).is_some() {
+                            p.max_miss.record(seed);
+                        }
+                        if let Some(r) = samples
+                            .iter()
+                            .filter(|s| s.manhattan >= takeover)
+                            .map(streets::DetourSample::ratio_pct)
+                            .max()
+                        {
+                            push_top(&mut p.ratio_top, (r, seed));
+                        }
+                        let p99_samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
+                        push_top(
+                            &mut p.fill_top,
+                            (streets::p99_fill_pct(&p99_samples, cfg), seed),
+                        );
+                        if streets::p99_detour_violation(&p99_samples, cfg).is_some() {
+                            p.p99_miss.record(seed);
+                        }
+                    }
+                    p
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("a sweep thread panicked"))
+            .collect()
+    });
+    let elapsed = start.elapsed();
+    let (mut max_miss, mut p99_miss) = (BandMiss::new(), BandMiss::new());
+    let (mut ratio_top, mut fill_top) = (Vec::new(), Vec::new());
+    for p in partials {
+        max_miss.count += p.max_miss.count;
+        max_miss.seeds.extend(p.max_miss.seeds);
+        p99_miss.count += p.p99_miss.count;
+        p99_miss.seeds.extend(p.p99_miss.seeds);
+        for e in p.ratio_top {
+            push_top(&mut ratio_top, e);
+        }
+        for e in p.fill_top {
+            push_top(&mut fill_top, e);
+        }
+    }
+    max_miss.seeds.sort_unstable();
+    max_miss.seeds.truncate(10);
+    p99_miss.seeds.sort_unstable();
+    p99_miss.seeds.truncate(10);
 
+    print_ceiling_report("detour max()-contract (14-node sample)", &max_miss, n);
     print_ceiling_report(
-        "detour max()-contract (14-node sample)",
-        &detour_bound_miss,
-        detour_seed_count,
-    );
-    print_ceiling_report(
-        "p99_detour_percent (64-node sample)",
+        &format!(
+            "p99_detour_fill_percent = {}% (64-node sample)",
+            cfg.p99_detour_fill_percent
+        ),
         &p99_miss,
-        detour_seed_count,
+        n,
     );
+    println!("p99 detour fill, top 10 per-seed worsts (ascending):");
+    for (fill, seed) in &fill_top {
+        println!("  {fill}% at seed {seed}");
+    }
     println!(
-        "detour_ratio_pct_sampled_at_or_beyond_takeover ({detour_takeover_distance} cells) max: \
-         {}% at seed {}",
-        sampled_ratio_max.0, sampled_ratio_max.1
+        "detour_ratio_pct_sampled_at_or_beyond_takeover ({takeover} cells) top 10 per-seed \
+         worsts (ascending):"
     );
-    println!("detour_ratio_pct_sampled_at_or_beyond_takeover top 10 per-seed worsts (ascending):");
-    for (ratio, seed) in &sampled_ratio_top10 {
+    for (ratio, seed) in &ratio_top {
         println!("  {ratio}% at seed {seed}");
     }
     println!(
         "detour-bounds sweep wall-clock: {:.1}s ({:.3}ms/seed)",
-        detour_sweep_elapsed.as_secs_f64(),
-        detour_sweep_elapsed.as_secs_f64() * 1000.0 / detour_seed_count.max(1) as f64
+        elapsed.as_secs_f64(),
+        elapsed.as_secs_f64() * 1000.0 / n.max(1) as f64
     );
 }
 
@@ -1126,4 +1185,47 @@ fn print_ceiling_report(name: &str, miss: &BandMiss, n: u64) {
             bound_ci_fail_prob * 100.0
         );
     }
+}
+
+/// `p99 <seed>`: the 64-node sample's pairs at or above the p99 fill
+/// rank, with each pair's ratio, excess and fill, then the pairs over
+/// `p99_detour_fill_percent` through `streets::p99_detour_violation`.
+fn p99_trace(cfg: &GenerationConfig, seed: u64) {
+    let lu = land_use::run(seed, cfg.site(), cfg).expect("pass 1 is total");
+    let net = streets::run(seed, &lu, cfg);
+    let samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
+    let p99 = streets::p99_fill_pct(&samples, cfg);
+    println!(
+        "seed {seed}: {} sampled pairs, p99 fill {p99}% (bound {}%), p99 ratio {}%, max_detour_excess_cells {}",
+        samples.len(),
+        cfg.p99_detour_fill_percent,
+        streets::p99_ratio_pct(&samples),
+        cfg.max_detour_excess_cells
+    );
+    let mut tail: Vec<_> = samples.iter().filter(|s| s.fill_pct(cfg) >= p99).collect();
+    tail.sort_by_key(|s| (s.manhattan, s.a, s.b));
+    for s in &tail {
+        println!(
+            "  {:?}-{:?} manhattan {} network {} ratio {}% excess {} allowed {} fill {}%",
+            s.a,
+            s.b,
+            s.manhattan,
+            s.network,
+            s.ratio_pct(),
+            s.excess_cells(),
+            s.detour_allowed(cfg),
+            s.fill_pct(cfg)
+        );
+    }
+    println!(
+        "p99_detour_violation: {:?}",
+        streets::p99_detour_violation(&samples, cfg)
+    );
+    println!(
+        "pairs failing detour_bound_holds: {}",
+        samples
+            .iter()
+            .filter(|s| !s.detour_bound_holds(cfg))
+            .count()
+    );
 }

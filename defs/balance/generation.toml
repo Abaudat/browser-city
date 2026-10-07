@@ -441,23 +441,22 @@ min = 1
 max = 2048
 
 [[balance]]
-# The 99th-percentile detour ratio, over one city's own sampled pairs,
-# must not exceed this -- `max_detour_percent` alone only bounds the
-# single worst pair. Sampled separately, over more pairs than the max/
-# excess bounds (DETOUR_P99_SAMPLE_MAX_NODES): a percentile over too few
-# pairs is just the maximum under another name (Tim's direction, cycle
-# 3). Measured worst case, same scan, 10,000 seeds: 175%; 200 is that
-# plus margin. Never above max_detour_percent (`from_balance` refuses
-# that). Re-measured directly (story 15.10, `measure-generation`'s own
-# detour-bounds sweep, 1,000,000 seeds, passes 1-2 only, at the real
-# 64-node p99 sample): 0 misses against this ceiling -- see
-# `max_detour_percent`'s own comment for the rule-of-three bound that
-# implies. No re-derivation owed: a nonzero miss count would have
-# forced one (Tim's direction), zero did not.
-key = "generation.streets.p99_detour_percent"
-value = 200
-min = 100
-max = 500
+# The 99th-percentile detour fill, over one city's own sampled pairs,
+# must not exceed this percent. A pair's fill is its network distance as
+# a percent of its own allowed distance under the max()-contract
+# (`DetourSample::fill_pct`): `max_detour_percent`/
+# `max_detour_excess_cells` bound the one worst pair at 100%, this
+# bounds the journeys players walk daily well inside that ceiling.
+# Sampled over more pairs than the max/excess bounds
+# (DETOUR_P99_SAMPLE_MAX_NODES): a percentile over too few pairs is just
+# the maximum under another name. Strictly under 100 (`from_balance`
+# refuses 100 and above). Margin rule: the worst per-seed p99 fill over
+# `measure-generation detour`'s sweep, times 1.25, rounded up to a
+# multiple of 5. MEASURE_PLACEHOLDER
+key = "generation.streets.p99_detour_fill_percent"
+value = 95
+min = 1
+max = 99
 
 [[balance]]
 # The minimum number of distinct block widths (and, separately, heights)
