@@ -28,6 +28,10 @@ fn generation_evidence_is_current() {
         assert_current(streets_svg_path(svgs.seed), &svgs.streets);
         assert_current(envelopes_svg_path(svgs.seed), &svgs.envelopes);
         assert_current(building_types_svg_path(svgs.seed), &svgs.building_types);
+        assert_current(
+            bounds::neighbourhood_evidence::neighbourhoods_svg_path(svgs.seed),
+            &svgs.neighbourhoods,
+        );
     }
     for (seed, svg) in build_detour_worst_svgs() {
         assert_current(detour_worst_svg_path(seed), &svg);

@@ -411,6 +411,11 @@ jobs:
         run: |
           echo "PROPTEST_CASES=$PROPTEST_CASES PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED"
           echo "reproduce: PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED PROPTEST_CASES=$PROPTEST_CASES cargo test -p <crate> --release -- <test>" | tee -a "$GITHUB_STEP_SUMMARY"
+      # Story 3.7, Quentin's direction: the rule engine's own examples and
+      # the scoping tests are cheap -- run them before the 4096-case
+      # proptests so a broken evaluator fails in seconds.
+      - name: the rule engine's examples and scoping tests, first
+        run: cargo test -p sim --release --test rule_examples --test rule_scoping --test catchment_floor
       - name: native tests, including the property suite, in release
         run: cargo test --workspace --exclude browser_city --exclude sched_timing_spike --exclude boot_budget_spike --release
       - run: bash ../scripts/ci/check-trace-matrix.sh

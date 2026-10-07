@@ -577,6 +577,12 @@ pub struct RawBuildingType {
     pub land_uses: Vec<RawLandUse>,
     pub density_min: i32,
     pub density_max: i32,
+    /// Story 3.7: the same band shape as density, over the affluence
+    /// dial -- hard eligibility, full range by default.
+    #[serde(default)]
+    pub affluence_min: Option<i32>,
+    #[serde(default)]
+    pub affluence_max: Option<i32>,
     pub min_interior_width_cells: u32,
     pub min_interior_depth_cells: u32,
     pub weight: u32,
@@ -920,6 +926,43 @@ pub enum RawCoherenceMode {
     Forbid,
 }
 
+/// `reads = "building_age" | "affluence"` on a catchment `[[distribution]]`
+/// row (story 3.7): the one neighbourhood parameter its two-ended ratio is
+/// read against.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RawParameter {
+    BuildingAge,
+    Affluence,
+}
+
+impl RawParameter {
+    /// The balance-key segment this parameter's own range lives under
+    /// (`generation.neighbourhood.<segment>_min` / `_max`).
+    pub fn key_segment(self) -> &'static str {
+        match self {
+            RawParameter::BuildingAge => "building_age",
+            RawParameter::Affluence => "affluence",
+        }
+    }
+
+    pub fn rust_variant(self) -> &'static str {
+        match self {
+            RawParameter::BuildingAge => "BuildingAge",
+            RawParameter::Affluence => "Affluence",
+        }
+    }
+}
+
+/// `scope = "site" | "catchment"` on a `[[distribution]]` row (story
+/// 3.7); absent means `site`.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RawDistributionScope {
+    Site,
+    Catchment,
+}
+
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RawAdjacencyRelation {
@@ -957,10 +1000,20 @@ pub struct RawDistributionRule {
     pub key: Spanned<String>,
     pub subject: Spanned<String>,
     pub per: Spanned<String>,
-    pub ratio: Spanned<i32>,
+    /// Exactly one of `ratio` or the `reads` triple below.
+    #[serde(default)]
+    pub ratio: Option<Spanned<i32>>,
     pub tolerance_percent: Spanned<i32>,
     pub min_spacing: u32,
     pub max_distance: Spanned<u32>,
+    #[serde(default)]
+    pub scope: Option<RawDistributionScope>,
+    #[serde(default)]
+    pub reads: Option<RawParameter>,
+    #[serde(default)]
+    pub ratio_at_min: Option<Spanned<i32>>,
+    #[serde(default)]
+    pub ratio_at_max: Option<Spanned<i32>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1127,6 +1180,8 @@ pub struct BuildingTypeEntry {
     pub land_uses: Vec<RawLandUse>,
     pub density_min: i32,
     pub density_max: i32,
+    pub affluence_min: i32,
+    pub affluence_max: i32,
     pub min_interior_width_cells: u32,
     pub min_interior_depth_cells: u32,
     pub weight: u32,
@@ -1255,10 +1310,14 @@ pub struct DistributionEntry {
     pub key: Located<String>,
     pub subject: Located<String>,
     pub per: Located<String>,
-    pub ratio: Located<i32>,
+    pub ratio: Option<Located<i32>>,
     pub tolerance_percent: Located<i32>,
     pub min_spacing: u32,
     pub max_distance: Located<u32>,
+    pub scope: RawDistributionScope,
+    pub reads: Option<RawParameter>,
+    pub ratio_at_min: Option<Located<i32>>,
+    pub ratio_at_max: Option<Located<i32>>,
 }
 
 #[derive(Debug)]
@@ -1465,6 +1524,10 @@ pub struct BuildingTypeDef {
     pub land_uses: [bool; 4],
     pub density_min: i32,
     pub density_max: i32,
+    /// The affluence band, inclusive -- hard eligibility like the density
+    /// band; `0..=100` (the whole dial) when a row declares none.
+    pub affluence_min: i32,
+    pub affluence_max: i32,
     pub min_interior_width_cells: u32,
     pub min_interior_depth_cells: u32,
     pub weight: u32,
@@ -1604,6 +1667,25 @@ pub struct NeighbourTermDef {
     pub present: bool,
 }
 
+/// `sim::rules::ParameterRead`, resolved: the parameter's own balance range
+/// is copied into the row at build time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParameterReadDef {
+    pub parameter: RawParameter,
+    pub ratio_at_min: u32,
+    pub ratio_at_max: u32,
+    pub min: i32,
+    pub max: i32,
+}
+
+/// `sim::rules::DistributionScope`, resolved: a catchment row carries the
+/// extent `generation.catchment_extent_cells` holds at build time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DistributionScopeDef {
+    Site,
+    Catchment { extent_cells: i32 },
+}
+
 /// The validated, resolved (tag key -> id) shape of each rule kind --
 /// mirrors `sim::rules::RuleKind` variant for variant, field for field
 /// (Crew's decision: the two are hand-kept in sync, exactly like
@@ -1625,6 +1707,8 @@ pub enum RuleKindDef {
         tolerance_percent: u32,
         min_spacing: u32,
         max_distance: u32,
+        scope: DistributionScopeDef,
+        reads: Option<ParameterReadDef>,
     },
     Coherence {
         subject: u32,

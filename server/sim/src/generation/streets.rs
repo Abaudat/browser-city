@@ -1844,6 +1844,69 @@ fn merged_superblocks(
     out
 }
 
+/// The arterial lines and the one truncation pass 2 draws first from its
+/// own stream -- a pure function of `(city_seed, site, cfg)`, read by
+/// [`run`] and by [`neighbourhood_rects`] alike, so pass 1's neighbourhood
+/// plateaus and pass 2's arterials are the same lines by construction.
+struct ArterialLayout {
+    xs: Vec<i32>,
+    ys: Vec<i32>,
+    trunc: Truncation,
+}
+
+fn lay_arterials(rng: &mut Rng, site: SiteBounds, cfg: &GenerationConfig) -> ArterialLayout {
+    let count_ns = arterial_count(rng, cfg.arterial_count_ns_min, cfg.arterial_count_ns_max);
+    let count_ew = arterial_count(rng, cfg.arterial_count_ew_min, cfg.arterial_count_ew_max);
+    let xs = band_positions(
+        rng,
+        site.x0,
+        site.x1,
+        count_ns,
+        cfg.arterial_jitter_pct,
+        cfg.arterial_width_cells,
+        cfg.min_block_depth_cells,
+    );
+    let ys = band_positions(
+        rng,
+        site.y0,
+        site.y1,
+        count_ew,
+        cfg.arterial_jitter_pct,
+        cfg.arterial_width_cells,
+        cfg.min_block_depth_cells,
+    );
+    let trunc = truncate_one_arterial(rng, xs.len(), ys.len());
+    ArterialLayout { xs, ys, trunc }
+}
+
+/// The ground between arterials (or an arterial and the site edge), cut
+/// exactly at each arterial's centreline and merged across the one
+/// truncated arterial's missing far half: a partition of `site` into
+/// half-open rects, in `(y, x)` row order. A neighbourhood (FR113) is
+/// exactly one of these -- an area, never an identity -- so a dial that
+/// steps only between two of them steps only at an arterial, never
+/// through a block. Pure in `(city_seed, site, cfg)`.
+pub fn neighbourhood_rects(city_seed: u64, site: SiteBounds, cfg: &GenerationConfig) -> Vec<Rect> {
+    let mut rng = Rng::new(seed_from_ids(city_seed, PASS_ID));
+    let layout = lay_arterials(&mut rng, site, cfg);
+    let x_ranges = band_ranges(&layout.xs, site.x0, site.x1, cfg.arterial_width_cells);
+    let y_ranges = band_ranges(&layout.ys, site.y0, site.y1, cfg.arterial_width_cells);
+    let x_topo = band_ranges_topo(&layout.xs, site.x0, site.x1);
+    let y_topo = band_ranges_topo(&layout.ys, site.y0, site.y1);
+    merged_superblocks(
+        &x_ranges,
+        &y_ranges,
+        &x_topo,
+        &y_topo,
+        layout.trunc,
+        &layout.xs,
+        &layout.ys,
+    )
+    .into_iter()
+    .map(|(_, topo)| topo)
+    .collect()
+}
+
 /// Runs pass 2: seeds its own RNG stream from `(city_seed, PASS_ID)`,
 /// lays a seeded count of jittered arterials each axis (Artie's
 /// direction, cycle 2: never a fixed count), truncates at most one to a
@@ -1862,36 +1925,11 @@ pub fn run(city_seed: u64, land_use: &LandUseMap, cfg: &GenerationConfig) -> Str
 
     let mut junctions: BTreeMap<(Axis, i32), Vec<i32>> = BTreeMap::new();
 
-    let count_ns = arterial_count(
-        &mut rng,
-        cfg.arterial_count_ns_min,
-        cfg.arterial_count_ns_max,
-    );
-    let count_ew = arterial_count(
-        &mut rng,
-        cfg.arterial_count_ew_min,
-        cfg.arterial_count_ew_max,
-    );
-    let arterial_xs = band_positions(
-        &mut rng,
-        site.x0,
-        site.x1,
-        count_ns,
-        cfg.arterial_jitter_pct,
-        cfg.arterial_width_cells,
-        cfg.min_block_depth_cells,
-    );
-    let arterial_ys = band_positions(
-        &mut rng,
-        site.y0,
-        site.y1,
-        count_ew,
-        cfg.arterial_jitter_pct,
-        cfg.arterial_width_cells,
-        cfg.min_block_depth_cells,
-    );
-
-    let trunc = truncate_one_arterial(&mut rng, arterial_xs.len(), arterial_ys.len());
+    let ArterialLayout {
+        xs: arterial_xs,
+        ys: arterial_ys,
+        trunc,
+    } = lay_arterials(&mut rng, site, cfg);
 
     // Every vertical arterial's own real extent (`to`), truncated at the
     // single T if this is that one -- computed first, so every arterial-

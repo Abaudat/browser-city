@@ -5,4 +5,4 @@ legend: S=shelter
 grid:
 SS
 violations:
-shelter_present at (1, 0, 0)
+shelter_present at (1, 0, 0) in catchment (0, 0)
