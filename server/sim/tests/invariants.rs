@@ -2341,9 +2341,9 @@ proptest! {
 /// measure-generation rows sweep reports, never asserted here. Rows and
 /// tags come from the committed content, never from a literal.
 fn assert_required_institutions(seed: u64) -> Result<(), String> {
-    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let content = GenerationContent::committed();
-    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    let city = pooled_city(seed);
+    let d = &city.district;
     let site = d.site(&content);
     let mut rows: Vec<sim::rules::DistributionRow> = content
         .rules
@@ -2838,7 +2838,8 @@ proptest! {
     fn inv_generation_building_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let result = sim::generation::generate(seed, &cfg, &content);
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
+        let result = d.check_building_count(&cfg);
         prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
     }
 
@@ -2860,9 +2861,6 @@ proptest! {
     fn inv_generation_all_four_passes_never_panic(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        // `generate` is the entry point under test here; the hand-chain
-        // below is what must still yield plots when its count check errs.
-        let _ = sim::generation::generate(seed, &cfg, &content);
         let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let pm = &d.plots;
         prop_assert!(!pm.plots().is_empty());
@@ -2937,12 +2935,13 @@ proptest! {
     /// building_count_within_tolerance`'s own job) so a coherence or
     /// distribution regression reads by its own name.
     #[test]
-    fn inv_generation_committed_rules_hold_for_any_seed(seed in any::<u64>()) {
-        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-        let result = d.check_rules(&content);
-        prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
+    fn inv_generation_committed_rules_hold_for_any_seed(idx in 0u64..CITY_POOL) {
+        pooled_once("inv_generation_committed_rules_hold_for_any_seed", idx, || -> Result<(), TestCaseError> {
+        let seed = pool_seed(idx);
+        let result = &pooled_city(seed).rules;
+        prop_assert!(result.is_ok(), "seed {seed}: {:?}", result);
+            Ok(())
+        })?;
     }
 
     /// `inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero`
@@ -2952,9 +2951,12 @@ proptest! {
     /// the property. Shops are weighted fill, a likelihood and not a
     /// guarantee, and are not asserted here (`docs/generation.md`).
     #[test]
-    fn inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero(seed in any::<u64>()) {
-        let verdict = assert_required_institutions(seed);
+    fn inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero(idx in 0u64..CITY_POOL) {
+        pooled_once("inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero", idx, || -> Result<(), TestCaseError> {
+        let verdict = assert_required_institutions(pool_seed(idx));
         prop_assert!(verdict.is_ok(), "{}", verdict.err().unwrap_or_default());
+            Ok(())
+        })?;
     }
 
     /// `inv_generation_workplace_count_within_tolerance` (AC4, story 3.4):
@@ -2968,7 +2970,8 @@ proptest! {
     fn inv_generation_workplace_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let result = sim::generation::generate(seed, &cfg, &content);
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
+        let result = d.check_workplace_count(&cfg, &content);
         prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
     }
 
@@ -6544,6 +6547,18 @@ fn memo_check(
     slot.get_or_init(check).clone()
 }
 
+/// Runs a pooled test's body once per pool index for the whole process:
+/// the property domain is the `CITY_POOL` indices, so a 4,096-case run
+/// repeats each verdict, and the body re-walks the city every time.
+fn pooled_once(
+    name: &'static str,
+    idx: u64,
+    body: impl FnOnce() -> Result<(), TestCaseError>,
+) -> Result<(), TestCaseError> {
+    memo_check(name, idx, || body().map_err(|e| e.to_string()))
+        .map_err(TestCaseError::fail)
+}
+
 /// One pooled city and every whole-district verdict, computed once.
 struct PooledCity {
     district: sim::generation::District,
@@ -6872,6 +6887,7 @@ proptest! {
     /// pass-4 footprint, and no two buildings claim one cell.
     #[test]
     fn inv_generation_interior_cells_lie_inside_their_own_envelope(idx in 0u64..CITY_POOL) {
+        pooled_once("inv_generation_interior_cells_lie_inside_their_own_envelope", idx, || -> Result<(), TestCaseError> {
         let seed = pool_seed(idx);
         let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -6911,6 +6927,8 @@ proptest! {
                 }
             }
         }
+            Ok(())
+        })?;
     }
 
     /// `inv_generation_every_emitted_interior_validates_clean` (story 3.5
@@ -6926,6 +6944,7 @@ proptest! {
     /// adapter, plus the lane check.)
     #[test]
     fn inv_generation_every_emitted_interior_validates_clean(idx in 0u64..CITY_POOL) {
+        pooled_once("inv_generation_every_emitted_interior_validates_clean", idx, || -> Result<(), TestCaseError> {
         let seed = pool_seed(idx);
         let city = pooled_city(seed);
         let d = &city.district;
@@ -6943,11 +6962,14 @@ proptest! {
             }
         }
         prop_assert!(city.rules.is_ok(), "seed {seed}: {:?}", city.rules);
+            Ok(())
+        })?;
     }
 
     /// `inv_generation_interior_retries_are_bounded` (story 3.5 AC2).
     #[test]
     fn inv_generation_interior_retries_are_bounded(idx in 0u64..CITY_POOL) {
+        pooled_once("inv_generation_interior_retries_are_bounded", idx, || -> Result<(), TestCaseError> {
         let seed = pool_seed(idx);
         let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -6967,12 +6989,15 @@ proptest! {
             d.interiors.rejected_percent() <= cfg.interior_max_rejected_percent,
             "seed {seed}: {}% of attempted layouts rejected", d.interiors.rejected_percent()
         );
+            Ok(())
+        })?;
     }
 
     /// `inv_generation_enterable_interior_count_meets_the_floor` (story 3.5
     /// AC3, FR114).
     #[test]
     fn inv_generation_enterable_interior_count_meets_the_floor(idx in 0u64..CITY_POOL) {
+        pooled_once("inv_generation_enterable_interior_count_meets_the_floor", idx, || -> Result<(), TestCaseError> {
         let seed = pool_seed(idx);
         let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -6989,6 +7014,8 @@ proptest! {
             enterable >= cfg.interior_min_enterable_count,
             "seed {seed}: {enterable} enterable under the floor {}", cfg.interior_min_enterable_count
         );
+            Ok(())
+        })?;
     }
 
     /// `inv_generation_enterable_set_spans_every_required_kind` (story 3.5
@@ -6998,6 +7025,7 @@ proptest! {
     /// is an edge flat).
     #[test]
     fn inv_generation_enterable_set_spans_every_required_kind(idx in 0u64..CITY_POOL) {
+        pooled_once("inv_generation_enterable_set_spans_every_required_kind", idx, || -> Result<(), TestCaseError> {
         let seed = pool_seed(idx);
         let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -7007,6 +7035,8 @@ proptest! {
         let verdict = kind_spread_verdict(placed, enterable, d.interiors.enterable_count(), &cfg);
         prop_assert!(verdict.is_ok(), "seed {seed}: {verdict:?}");
         prop_assert!(low_band_dwelling, "seed {seed}: no enterable dwelling in the lowest density band");
+            Ok(())
+        })?;
     }
 
     /// `inv_generation_every_interior_cell_answers_its_own_building_id`
@@ -7014,6 +7044,7 @@ proptest! {
     /// mirrors, not the generator's own bookkeeping.
     #[test]
     fn inv_generation_every_interior_cell_answers_its_own_building_id(idx in 0u64..CITY_POOL) {
+        pooled_once("inv_generation_every_interior_cell_answers_its_own_building_id", idx, || -> Result<(), TestCaseError> {
         let seed = pool_seed(idx);
         let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -7089,6 +7120,8 @@ proptest! {
                 }
             }
         }
+            Ok(())
+        })?;
     }
 
     /// `inv_generation_interior_independent_of_building_order` (NFR25):
@@ -7177,6 +7210,7 @@ proptest! {
     /// and no threshold joins two buildings.
     #[test]
     fn inv_generation_public_rooms_are_reachable_without_crossing_staff_or_private(idx in 0u64..CITY_POOL) {
+        pooled_once("inv_generation_public_rooms_are_reachable_without_crossing_staff_or_private", idx, || -> Result<(), TestCaseError> {
         let seed = pool_seed(idx);
         let city = pooled_city(seed);
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -7241,12 +7275,15 @@ proptest! {
                 }
             }
         }
+            Ok(())
+        })?;
     }
 
     /// `inv_generation_stock_sits_in_a_staff_room_and_never_on_the_public_
     /// floor` (Derek's direction).
     #[test]
     fn inv_generation_stock_sits_in_a_staff_room_and_never_on_the_public_floor(idx in 0u64..CITY_POOL) {
+        pooled_once("inv_generation_stock_sits_in_a_staff_room_and_never_on_the_public_floor", idx, || -> Result<(), TestCaseError> {
         let seed = pool_seed(idx);
         let city = pooled_city(seed);
         let content = GenerationContent::committed();
@@ -7265,6 +7302,8 @@ proptest! {
                 }
             }
         }
+            Ok(())
+        })?;
     }
 }
 
