@@ -6470,3 +6470,20 @@ fn seed_13796749279512995753_keeps_the_per_city_profession_depth() {
     let depth = city_profession_depth(13796749279512995753);
     assert!(depth >= floor, "depth {depth} under the floor {floor}");
 }
+
+/// Seed `8619285945825134650` failed `inv_generation_p99_detour_ratio_
+/// bounded` with a 206% p99 against `p99_detour_percent`.
+#[test]
+fn seed_8619285945825134650_holds_the_p99_detour_ceiling() {
+    const SEED: u64 = 8619285945825134650;
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let lu = land_use::run(SEED, cfg.site(), &cfg).unwrap();
+    let net = streets::run(SEED, &lu, &cfg);
+    let samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
+    let p99 = streets::p99_ratio_pct(&samples);
+    assert!(
+        p99 <= cfg.p99_detour_percent as i64,
+        "seed {SEED}: p99 detour ratio {p99}% over {}%",
+        cfg.p99_detour_percent
+    );
+}
