@@ -35,28 +35,16 @@
 //! pseudo-random hash per envelope), never by a distance search ahead of
 //! ranking.
 //!
-//! AC3 (even spread): a row's own site-wide target (`total per-tag count
-//! / ratio`, the same figure `sim::rules::evaluate`'s own Distribution
-//! check computes) is split into a *floor* per catchment -- a fixed-
-//! extent square tiling the site (`GenerationConfig::building_type_
-//! catchment_extent_cells`) -- and a *remainder* ([`catchment_floors`]):
-//! each catchment owes exactly `floor(per-tag count in that catchment /
-//! ratio)` and nothing else, so a catchment's own share is never
-//! inflated by how many dwellings it happens to hold (Derek's direction,
-//! cycle 2: proportional remainder allocation dragged civic buildings
-//! toward the dwelling periphery, the opposite of "sited toward the
-//! peak"). The remainder -- the units the floors do not account for,
-//! plus, since story 15.9, whatever a catchment's own floor phase could
-//! not actually place against its own local land (`floor_shortfall`,
-//! never left stranded: a catchment can be owed a floor its own real
-//! geometry cannot supply, and the site-wide pool is where that owed
-//! unit still gets its chance) -- is placed site-wide, by the same
-//! ranking. Both the per-catchment floor and the site-wide remainder
-//! call the one [`place_row`], which only ever removes a candidate for a
-//! real `min_spacing` violation -- never a reason to strand a
-//! catchment's own guaranteed floor below what its own real, unused
-//! candidates could still satisfy, but also never a reason to inflate
-//! one catchment's own share at another's expense.
+//! Allocation reads the row, never a copy of it: a row's target is
+//! [`crate::rules::distribution_target`] over its `per` count -- the
+//! whole site for a `site` row, each catchment of
+//! [`crate::rules::catchment_of`] for a `catchment` row, in catchment
+//! order so an earlier catchment's subjects constrain a later one's
+//! spacing, the order the evaluator attributes a breach in. A catchment
+//! is placed from its own land only; one that cannot hold what it owes is
+//! left short and `District::check_rules` reports it, never padded from a
+//! neighbour. [`place_row`] only ever removes a candidate for a real
+//! `min_spacing` violation.
 //!
 //! Infallible, like passes 2-4: AC2/AC3's own presence/spread verdict is
 //! a property of the finished district (`District::check_rules`, via
@@ -67,15 +55,15 @@ use std::collections::BTreeMap;
 
 use crate::generated::defs;
 use crate::rng::{Rng, seed_from_ids};
-use crate::rules::TagId;
 use crate::world::Rect;
 
+use super::GenerationConfig;
 use super::envelopes::{Envelope, EnvelopeMap, row_bounds_by_block_front};
+use super::neighbourhoods;
 use super::plots::PlotMap;
 use super::rect_seed_key;
 use super::site::front_cell;
 use super::streets::{self, Side, StreetNetwork};
-use super::{GenerationConfig, SiteBounds};
 
 pub const PASS_ID: u64 = super::PASS_BUILDING_TYPE;
 
@@ -96,16 +84,45 @@ pub struct TypeAssignment {
 #[derive(Debug, Clone)]
 pub struct BuildingTypeMap {
     assignments: Vec<TypeAssignment>,
+    states: Vec<BuildingState>,
+}
+
+/// One placed building's own age and initial physical state (story 3.7,
+/// FR113): the sim's quantities the gentrification loop later reads and
+/// mutates. `age` is its neighbourhood's plus a small keyed spread;
+/// `physical_state` is 0 (worn) to 100 (kept), derived once from age and
+/// the neighbourhood's affluence -- nothing mutates it here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BuildingState {
+    pub plot: u32,
+    pub building_age: i32,
+    pub physical_state: i32,
 }
 
 impl BuildingTypeMap {
     #[cfg(any(test, feature = "test-fixtures"))]
     pub fn test_fixture(assignments: Vec<TypeAssignment>) -> Self {
-        BuildingTypeMap { assignments }
+        let states = assignments
+            .iter()
+            .map(|a| BuildingState {
+                plot: a.plot,
+                building_age: 0,
+                physical_state: 0,
+            })
+            .collect();
+        BuildingTypeMap {
+            assignments,
+            states,
+        }
     }
 
     pub fn assignments(&self) -> &[TypeAssignment] {
         &self.assignments
+    }
+
+    /// One [`BuildingState`] per assignment, in the same order.
+    pub fn states(&self) -> &[BuildingState] {
+        &self.states
     }
 
     /// Every distinct building type this district places at least once,
@@ -136,6 +153,9 @@ mod site_context_index {
 struct Context {
     land_use_idx: usize,
     density: i32,
+    /// The block's neighbourhood's dials (FR113).
+    building_age: i32,
+    affluence: i32,
     interior_width: i32,
     interior_depth: i32,
     /// `[corner, arterial, street, lane]` -- [`site_context_index`]'s
@@ -146,22 +166,6 @@ struct Context {
     site_context: [bool; 4],
     x: i32,
     y: i32,
-    catchment: (i32, i32),
-}
-
-/// The fixed-extent square [`Context::catchment`] an envelope's own
-/// front cell falls in -- integer floor division, so every cell belongs
-/// to exactly one catchment and no cell can land ambiguously on a
-/// dividing line. At the committed 512-cell site and a 256-cell extent
-/// this *is* AC3's own four quadrants; shared by the generator and
-/// `inv_generation_no_quadrant_lacks_its_required_services` so the two
-/// never compute it two different ways.
-pub fn catchment_of(x: i32, y: i32, site: SiteBounds, extent: i32) -> (i32, i32) {
-    let extent = extent.max(1);
-    (
-        (x - site.x0).div_euclid(extent),
-        (y - site.y0).div_euclid(extent),
-    )
 }
 
 /// Whether `plot_bounds`' own row-axis edge is a corner: the outer edge
@@ -251,22 +255,11 @@ fn hard_eligible(b: &defs::BuildingTypeDef, ctx: &Context) -> bool {
     b.land_uses[ctx.land_use_idx]
         && ctx.density >= b.density_min
         && ctx.density <= b.density_max
+        && ctx.affluence >= b.affluence_min
+        && ctx.affluence <= b.affluence_max
         && (b.min_interior_width_cells as i32) <= ctx.interior_width
         && (b.min_interior_depth_cells as i32) <= ctx.interior_depth
         && (0..4).all(|i| !b.requires_site[i] || ctx.site_context[i])
-}
-
-fn recompute_per_counts(
-    final_type: &[u32],
-    by_id: &BTreeMap<u32, &defs::BuildingTypeDef>,
-) -> BTreeMap<TagId, u64> {
-    let mut per_counts: BTreeMap<TagId, u64> = BTreeMap::new();
-    for &id in final_type {
-        for &t in by_id[&id].tags {
-            *per_counts.entry(t).or_insert(0) += 1;
-        }
-    }
-    per_counts
 }
 
 /// Every placed envelope's own [`Context`], computed once -- corner-ness
@@ -298,12 +291,13 @@ fn build_context(
             Context {
                 land_use_idx: plot.land_use as usize,
                 density: plot.density,
+                building_age: plot.building_age,
+                affluence: plot.affluence,
                 interior_width: (e.along_face_cells() - 2 * wall as i64) as i32,
                 interior_depth: (e.depth_cells() - 2 * wall as i64) as i32,
                 site_context: site_context_of(corner, street_class),
                 x,
                 y,
-                catchment: catchment_of(x, y, site, cfg.building_type_catchment_extent_cells),
             }
         })
         .collect()
@@ -357,27 +351,6 @@ fn weighted_fill(
     final_type
 }
 
-/// Floor-only catchment apportionment (Derek's direction, PR #317 cycle
-/// 2): every catchment owes exactly `floor(per-tag count in that
-/// catchment / ratio)`, never a remainder-inflated share. Pure and
-/// unit-tested: the sum of the returned floors, plus the returned
-/// remainder, always equals `site_target`.
-fn catchment_floors(
-    per_by_catchment: &BTreeMap<(i32, i32), u64>,
-    ratio: u64,
-    site_target: u64,
-) -> (BTreeMap<(i32, i32), u64>, u64) {
-    let mut floors: BTreeMap<(i32, i32), u64> = BTreeMap::new();
-    let mut base_sum = 0u64;
-    for (&c, &p) in per_by_catchment {
-        let f = p / ratio;
-        floors.insert(c, f);
-        base_sum += f;
-    }
-    let remainder = site_target.saturating_sub(base_sum);
-    (floors, remainder)
-}
-
 /// The bounded search's own work ceiling, in nodes visited (a candidate
 /// tried, whether kept or rejected) -- never wall-clock (Tim's
 /// direction, PR #317 cycle 4: "a node count, one named constant or
@@ -387,6 +360,11 @@ fn catchment_floors(
 /// candidates and an unreachable target), where exhaustive search is
 /// NP-hard in general and must not be allowed to run away inside a
 /// world-creation path.
+/// How many times a row re-reads what it owes after its own placements.
+const MAX_SETTLE_ROUNDS: u32 = 4;
+/// How many whole passes over the distribution rows may follow each other.
+const MAX_ROW_PASSES: u32 = 4;
+
 pub const PLACEMENT_SEARCH_NODE_BUDGET: u64 = 20_000;
 
 /// The plain first-fit-in-rank-order scan: the floor every real search
@@ -575,12 +553,13 @@ pub fn placement_search_node_budget_probe(
             ctx.push(Context {
                 land_use_idx: 0,
                 density: 50,
+                building_age: 50,
+                affluence: 50,
                 interior_width: 5,
                 interior_depth: 5,
                 site_context: [false; 4],
                 x: (c as i32) * 1000 + (i as i32 % 2),
                 y: 0,
-                catchment: (0, 0),
             });
         }
     }
@@ -634,131 +613,157 @@ pub fn run(
 
     let mut overridden: Vec<bool> = vec![false; placed.len()];
 
-    for row in &dist_rows {
-        // Recomputed fresh, immediately before this row runs: a prior
-        // row's own overrides may have changed which envelopes carry
-        // which tag, so this row's own basis is always the real count,
-        // never an assumption about the committed content's own shape.
-        let per_counts = recompute_per_counts(&final_type, &by_id);
+    // A later row's placements can move an earlier row's basis (the dwellings
+    // it stands on, or the mean it reads), so the rows run again, each only
+    // topping its scopes up, until a whole pass places nothing.
+    for _pass in 0..MAX_ROW_PASSES {
+        let mut changed = false;
+        for row in &dist_rows {
+            // `per` cells are read fresh from `final_type` as this row runs, so a
+            // prior row's own overrides are always reflected.
+            // The subject type's own siting preferences -- a property of
+            // the type, read once per row, never per candidate.
+            let subject_def = content
+                .building_types
+                .iter()
+                .find(|b| b.tags.contains(&row.subject));
+            let prefers_site = subject_def.map(|b| b.prefers_site).unwrap_or([false; 4]);
+            let affinity = subject_def.map(|b| b.density_affinity).unwrap_or(0);
 
-        let mut per_by_catchment: BTreeMap<(i32, i32), u64> = BTreeMap::new();
-        for (i, &id) in final_type.iter().enumerate() {
-            if by_id[&id].tags.contains(&row.per) {
-                *per_by_catchment.entry(ctx[i].catchment).or_insert(0) += 1;
-            }
-        }
-        let total_per = per_counts.get(&row.per).copied().unwrap_or(0);
-        let ratio = row.ratio.max(1) as u64;
-        let site_target = total_per / ratio;
-        if site_target == 0 {
-            continue;
-        }
-
-        let (floors, remainder) = catchment_floors(&per_by_catchment, ratio, site_target);
-
-        // The subject type's own siting preferences -- a property of
-        // the type, read once per row, never per candidate.
-        let subject_def = content
-            .building_types
-            .iter()
-            .find(|b| b.tags.contains(&row.subject));
-        let prefers_site = subject_def.map(|b| b.prefers_site).unwrap_or([false; 4]);
-        let affinity = subject_def.map(|b| b.density_affinity).unwrap_or(0);
-
-        let draw_key = |i: usize| -> u64 {
-            seed_from_ids(
-                seed_from_ids(pass_seed, row.id as u64),
-                rect_seed_key(placed[i].footprint),
-            )
-        };
-
-        // Best first: most `prefers_site` matches, then `density_
-        // affinity`'s own direction, then the seeded draw key -- a
-        // distance search never enters this ranking (Derek's direction:
-        // "farthest-point is a tie-break at most, never ahead of
-        // affinity"), and the draw key alone already totally orders any
-        // real candidate set, so a distance tie-break would never fire.
-        let rank_key = |i: usize| -> (i64, i64, u64) {
-            let match_count = (0..4)
-                .filter(|&k| prefers_site[k] && ctx[i].site_context[k])
-                .count() as i64;
-            let density_score = match affinity {
-                a if a > 0 => -(ctx[i].density as i64),
-                a if a < 0 => ctx[i].density as i64,
-                _ => 0,
+            let draw_key = |i: usize| -> u64 {
+                seed_from_ids(
+                    seed_from_ids(pass_seed, row.id as u64),
+                    rect_seed_key(placed[i].footprint),
+                )
             };
-            (-match_count, density_score, draw_key(i))
-        };
 
-        let eligible_for_subject = |i: usize| -> bool {
-            content
-                .building_types
-                .iter()
-                .any(|b| b.tags.contains(&row.subject) && hard_eligible(b, &ctx[i]))
-        };
+            // Best first: most `prefers_site` matches, then `density_
+            // affinity`'s own direction, then the seeded draw key -- a
+            // distance search never enters this ranking (Derek's direction:
+            // "farthest-point is a tie-break at most, never ahead of
+            // affinity"), and the draw key alone already totally orders any
+            // real candidate set, so a distance tie-break would never fire.
+            let rank_key = |i: usize| -> (i64, i64, u64) {
+                let match_count = (0..4)
+                    .filter(|&k| prefers_site[k] && ctx[i].site_context[k])
+                    .count() as i64;
+                let density_score = match affinity {
+                    a if a > 0 => -(ctx[i].density as i64),
+                    a if a < 0 => ctx[i].density as i64,
+                    _ => 0,
+                };
+                (-match_count, density_score, draw_key(i))
+            };
 
-        let resolve = |i: usize| -> u32 {
-            content
-                .building_types
-                .iter()
-                .filter(|b| b.tags.contains(&row.subject) && hard_eligible(b, &ctx[i]))
-                .min_by_key(|b| b.id)
-                .expect("candidate was pre-filtered to carry an eligible subject-tagged type")
-                .id
-        };
+            let eligible_for_subject = |i: usize| -> bool {
+                content
+                    .building_types
+                    .iter()
+                    .any(|b| b.tags.contains(&row.subject) && hard_eligible(b, &ctx[i]))
+            };
 
-        let mut chosen_cells: Vec<(i32, i32)> = Vec::new();
-        let mut catchments: Vec<(i32, i32)> = per_by_catchment.keys().copied().collect();
-        catchments.sort();
+            let resolve = |i: usize| -> u32 {
+                content
+                    .building_types
+                    .iter()
+                    .filter(|b| b.tags.contains(&row.subject) && hard_eligible(b, &ctx[i]))
+                    .min_by_key(|b| b.id)
+                    .expect("candidate was pre-filtered to carry an eligible subject-tagged type")
+                    .id
+            };
 
-        // A catchment's own floor is what it is *owed*, never a promise
-        // its own local land can actually deliver: a catchment whose
-        // eligible candidates are scarcer than its own floor (or whose
-        // ranked-and-spaced search falls short of the achievable max)
-        // still leaves real units unplaced. `floor_shortfall` is exactly
-        // that gap -- the floors summed on paper minus what this row
-        // actually placed while working through them -- folded into the
-        // site-wide remainder below so the row's own whole-site target
-        // is still pursued everywhere the floor phase could not reach
-        // it, rather than silently dropped (a catchment that could have
-        // supplied another catchment's shortfall is exactly what "site-
-        // wide remainder" already means; this only widens what counts as
-        // "the floors did not account for it" to include a floor the
-        // floor phase itself could not fill).
-        let mut floor_target_sum = 0u64;
-        let mut floor_placed_sum = 0u64;
-
-        for &c in &catchments {
-            let target = floors.get(&c).copied().unwrap_or(0);
-            if target == 0 {
-                continue;
-            }
-            floor_target_sum += target;
-            let mut pool: Vec<usize> = (0..placed.len())
-                .filter(|&i| !overridden[i] && ctx[i].catchment == c && eligible_for_subject(i))
+            // Subjects already standing (an earlier pass) keep their spacing.
+            let mut chosen_cells: Vec<(i32, i32)> = (0..placed.len())
+                .filter(|&i| by_id[&final_type[i]].tags.contains(&row.subject))
+                .map(|i| (ctx[i].x, ctx[i].y))
                 .collect();
-            pool.sort_by_key(|&i| rank_key(i));
-            let chosen = place_row(&pool, target, row.min_spacing, &ctx, &mut chosen_cells);
-            floor_placed_sum += chosen.len() as u64;
-            for &i in &chosen {
-                final_type[i] = resolve(i);
-                overridden[i] = true;
+            // What the row owes each scope, from the one function the evaluator
+            // judges by: this row's `per` cells with the parameter it reads, on
+            // the types as they stand now.
+            let read = match row.ratio {
+                crate::rules::RowRatio::Read(r) => Some(r.parameter),
+                crate::rules::RowRatio::Fixed(_) => None,
+            };
+            let owed = |final_type: &[u32]| {
+                row.targets(
+                    final_type
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, id)| by_id[id].tags.contains(&row.per))
+                        .map(|(i, _)| {
+                            let value = read.map(|p| match p {
+                                crate::rules::Parameter::BuildingAge => ctx[i].building_age,
+                                crate::rules::Parameter::Affluence => ctx[i].affluence,
+                            });
+                            (crate::rules::Cell::new(ctx[i].x, ctx[i].y, 0), value)
+                        }),
+                )
+            };
+
+            // A catchment owes what the row owes it and is placed from its own
+            // land in catchment order -- earlier catchments' subjects already
+            // constrain the spacing of later ones. A subject that replaces a
+            // `per` member changes the basis (and so the number) the verdict is
+            // judged on, so the count is re-read from the types as they now
+            // stand and topped up until it settles. A catchment whose land
+            // cannot hold what it owes is left short, never padded from
+            // elsewhere: `check_rules` reports it. A site row is placed from the
+            // whole site.
+            for scope_key in owed(&final_type).keys() {
+                let in_scope = |i: usize| match (row.scope, scope_key) {
+                    (crate::rules::DistributionScope::Catchment { extent_cells }, Some(c)) => {
+                        crate::rules::catchment_of(ctx[i].x, ctx[i].y, extent_cells) == *c
+                    }
+                    _ => true,
+                };
+                let mut placed_here = (0..placed.len())
+                    .filter(|&i| in_scope(i) && by_id[&final_type[i]].tags.contains(&row.subject))
+                    .count() as u64;
+                for _ in 0..MAX_SETTLE_ROUNDS {
+                    let Some(t) = owed(&final_type).get(scope_key).copied() else {
+                        break;
+                    };
+                    if t.expected <= placed_here {
+                        break;
+                    }
+                    let mut pool: Vec<usize> = (0..placed.len())
+                        .filter(|&i| {
+                            !overridden[i]
+                                && eligible_for_subject(i)
+                                && match (row.scope, scope_key) {
+                                    (
+                                        crate::rules::DistributionScope::Catchment { extent_cells },
+                                        Some(c),
+                                    ) => {
+                                        crate::rules::catchment_of(ctx[i].x, ctx[i].y, extent_cells)
+                                            == *c
+                                    }
+                                    _ => true,
+                                }
+                        })
+                        .collect();
+                    pool.sort_by_key(|&i| rank_key(i));
+                    let chosen = place_row(
+                        &pool,
+                        t.expected - placed_here,
+                        row.min_spacing,
+                        &ctx,
+                        &mut chosen_cells,
+                    );
+                    if chosen.is_empty() {
+                        break;
+                    }
+                    placed_here += chosen.len() as u64;
+                    changed = true;
+                    for &i in &chosen {
+                        final_type[i] = resolve(i);
+                        overridden[i] = true;
+                    }
+                }
             }
         }
-
-        let floor_shortfall = floor_target_sum.saturating_sub(floor_placed_sum);
-        let remainder = remainder + floor_shortfall;
-
-        if remainder > 0 {
-            let mut pool: Vec<usize> = (0..placed.len())
-                .filter(|&i| !overridden[i] && eligible_for_subject(i))
-                .collect();
-            pool.sort_by_key(|&i| rank_key(i));
-            let chosen = place_row(&pool, remainder, row.min_spacing, &ctx, &mut chosen_cells);
-            for &i in &chosen {
-                final_type[i] = resolve(i);
-                overridden[i] = true;
-            }
+        if !changed {
+            break;
         }
     }
 
@@ -770,7 +775,31 @@ pub fn run(
             building_type,
         })
         .collect();
-    BuildingTypeMap { assignments }
+    let states = placed
+        .iter()
+        .zip(&ctx)
+        .map(|(e, c)| {
+            let age = neighbourhoods::building_age(
+                pass_seed,
+                rect_seed_key(e.footprint),
+                c.building_age,
+                &cfg.neighbourhood,
+            );
+            BuildingState {
+                plot: e.plot,
+                building_age: age,
+                physical_state: neighbourhoods::initial_physical_state(
+                    age,
+                    c.affluence,
+                    &cfg.neighbourhood,
+                ),
+            }
+        })
+        .collect();
+    BuildingTypeMap {
+        assignments,
+        states,
+    }
 }
 
 /// A building type is a workplace iff its own `professions` list is
@@ -787,6 +816,7 @@ mod tests {
     use crate::generated::defs;
     use crate::generation::{GenerationConfig, GenerationContent, land_use, plots as plots_mod};
     use crate::generation::{envelopes, streets};
+    use crate::rules::TagId;
     use proptest::prelude::*;
 
     fn cfg() -> GenerationConfig {
@@ -938,7 +968,7 @@ mod tests {
     }
 
     #[test]
-    fn a_committed_distribution_row_never_exceeds_its_own_site_wide_target() {
+    fn a_committed_distribution_row_never_exceeds_its_own_site_wide_ceiling() {
         let (em, pm, net) = district_for(3);
         let c = cfg();
         let content = GenerationContent::committed();
@@ -960,68 +990,17 @@ mod tests {
         dist_rows.sort_by_key(|d| d.id);
         for row in &dist_rows {
             let actual = per_counts.get(&row.subject).copied().unwrap_or(0);
-            let target = per_counts.get(&row.per).copied().unwrap_or(0) / (row.ratio.max(1) as u64);
+            // The most a row can owe over the whole site: its basis over its
+            // smallest ratio (a row that reads a parameter owes by its two
+            // ends, so the smaller end bounds every catchment).
+            let target =
+                per_counts.get(&row.per).copied().unwrap_or(0) / row.ratio.smallest() as u64;
             assert!(
                 actual <= target,
-                "rule {} placed {actual} subjects, its own site-wide target is {target}",
+                "rule {} placed {actual} subjects, its own site-wide ceiling is {target}",
                 row.key
             );
         }
-    }
-
-    #[test]
-    fn catchment_of_a_512_site_at_a_256_extent_is_exactly_the_four_quadrants() {
-        let site = SiteBounds {
-            x0: 0,
-            y0: 0,
-            x1: 512,
-            y1: 512,
-        };
-        assert_eq!(catchment_of(0, 0, site, 256), (0, 0));
-        assert_eq!(catchment_of(255, 255, site, 256), (0, 0));
-        assert_eq!(catchment_of(256, 0, site, 256), (1, 0));
-        assert_eq!(catchment_of(0, 256, site, 256), (0, 1));
-        assert_eq!(catchment_of(511, 511, site, 256), (1, 1));
-    }
-
-    #[test]
-    fn catchment_floors_sum_plus_remainder_always_equals_the_site_target() {
-        let mut per_by_catchment: BTreeMap<(i32, i32), u64> = BTreeMap::new();
-        per_by_catchment.insert((0, 0), 149);
-        per_by_catchment.insert((0, 1), 172);
-        per_by_catchment.insert((1, 0), 133);
-        per_by_catchment.insert((1, 1), 156);
-        let total: u64 = per_by_catchment.values().sum();
-        let ratio = 50u64;
-        let site_target = total / ratio;
-        let (floors, remainder) = catchment_floors(&per_by_catchment, ratio, site_target);
-        let floor_sum: u64 = floors.values().sum();
-        assert_eq!(floor_sum + remainder, site_target);
-        // Every floor really is a floor -- never more than the exact
-        // division.
-        for (&c, &f) in &floors {
-            assert!(f <= per_by_catchment[&c] / ratio);
-        }
-    }
-
-    #[test]
-    fn catchment_floors_never_inflates_a_catchment_by_its_own_dwelling_share() {
-        // The largest-remainder algorithm this replaced would have
-        // handed a lopsided catchment's own entire target to it; the
-        // floor-only version never gives a catchment more than its own
-        // exact-division floor.
-        let mut per_by_catchment: BTreeMap<(i32, i32), u64> = BTreeMap::new();
-        per_by_catchment.insert((0, 0), 10); // floor(10/300) = 0
-        per_by_catchment.insert((0, 1), 290); // floor(290/300) = 0
-        let ratio = 300u64;
-        let site_target = 1u64; // (10+290)/300 = 1
-        let (floors, remainder) = catchment_floors(&per_by_catchment, ratio, site_target);
-        assert_eq!(floors[&(0, 0)], 0);
-        assert_eq!(floors[&(0, 1)], 0);
-        assert_eq!(
-            remainder, 1,
-            "the one unit is the site-wide remainder, never handed to (0,1) for holding more dwellings"
-        );
     }
 
     #[test]
@@ -1036,12 +1015,13 @@ mod tests {
             .map(|i| Context {
                 land_use_idx: 0,
                 density: 50,
+                building_age: 50,
+                affluence: 50,
                 interior_width: 5,
                 interior_depth: 5,
                 site_context: [false; 4],
                 x: footprint_at(i * 8).x0,
                 y: 100,
-                catchment: (0, 0),
             })
             .collect();
         let pool: Vec<usize> = (0..5).collect();
@@ -1072,12 +1052,13 @@ mod tests {
         let cell = |x: i32| Context {
             land_use_idx: 0,
             density: 50,
+            building_age: 50,
+            affluence: 50,
             interior_width: 5,
             interior_depth: 5,
             site_context: [false; 4],
             x,
             y: 0,
-            catchment: (0, 0),
         };
         let ctx = vec![cell(0), cell(-14), cell(14)];
         let pool: Vec<usize> = vec![0, 1, 2];
@@ -1103,12 +1084,13 @@ mod tests {
         let cell = |x: i32| Context {
             land_use_idx: 0,
             density: 50,
+            building_age: 50,
+            affluence: 50,
             interior_width: 5,
             interior_depth: 5,
             site_context: [false; 4],
             x,
             y: 0,
-            catchment: (0, 0),
         };
         let ctx = vec![cell(0), cell(5), cell(9)];
         let pool: Vec<usize> = vec![0, 1, 2];
@@ -1139,12 +1121,13 @@ mod tests {
         let cell = |x: i32| Context {
             land_use_idx: 1,
             density: 50,
+            building_age: 50,
+            affluence: 50,
             interior_width: 8,
             interior_depth: 8,
             site_context: [false; 4],
             x,
             y: 256,
-            catchment: (1, 1),
         };
         let ctx = vec![cell(270), cell(291), cell(259), cell(280), cell(302)];
         let pool: Vec<usize> = vec![0, 1, 2, 3, 4];
@@ -1175,12 +1158,13 @@ mod tests {
                 ctx.push(Context {
                     land_use_idx: 0,
                     density: 50,
+                    building_age: 50,
+                    affluence: 50,
                     interior_width: 5,
                     interior_depth: 5,
                     site_context: [false; 4],
                     x: c * 1000 + (i % 2),
                     y: 0,
-                    catchment: (0, 0),
                 });
             }
         }
@@ -1229,12 +1213,13 @@ mod tests {
                 .map(|&x| Context {
                     land_use_idx: 0,
                     density: 50,
+                    building_age: 50,
+                    affluence: 50,
                     interior_width: 5,
                     interior_depth: 5,
                     site_context: [false; 4],
                     x,
                     y: 0,
-                    catchment: (0, 0),
                 })
                 .collect();
             let pool: Vec<usize> = (0..ctx.len()).collect();

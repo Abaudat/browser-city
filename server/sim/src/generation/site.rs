@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 
 use crate::generated::defs;
-use crate::rules::{AreaId, Cell, RuleSite, TagId};
+use crate::rules::{AreaId, Cell, Parameter, RuleSite, TagId};
 
 use super::envelopes::EnvelopeMap;
 use super::plots::PlotMap;
@@ -40,6 +40,10 @@ pub fn front_cell(footprint: crate::world::Rect, front: Side) -> (i32, i32) {
 }
 
 pub struct DistrictSite {
+    /// `(building age, affluence)` at every subject cell: its plot's own
+    /// neighbourhood dials, what a catchment row that reads a parameter
+    /// averages.
+    params: BTreeMap<Cell, (i32, i32)>,
     tags: BTreeMap<Cell, Vec<TagId>>,
     areas: BTreeMap<Cell, Vec<AreaId>>,
     subjects_index: BTreeMap<(Option<AreaId>, TagId), Vec<Cell>>,
@@ -63,6 +67,7 @@ impl DistrictSite {
     ) -> Self {
         let mut tags: BTreeMap<Cell, Vec<TagId>> = BTreeMap::new();
         let mut areas: BTreeMap<Cell, Vec<AreaId>> = BTreeMap::new();
+        let mut params: BTreeMap<Cell, (i32, i32)> = BTreeMap::new();
 
         for (envelope, assignment) in envelopes.envelopes().zip(assignments) {
             debug_assert_eq!(
@@ -83,6 +88,7 @@ impl DistrictSite {
             entry.sort_unstable();
 
             let plot = &plots.plots()[envelope.plot as usize];
+            params.insert(cell, (plot.building_age, plot.affluence));
             let block_bounds = streets.blocks()[plot.block as usize].bounds;
             let area_id = rect_seed_key(block_bounds);
             let area_entry = areas.entry(cell).or_default();
@@ -111,6 +117,7 @@ impl DistrictSite {
         }
 
         DistrictSite {
+            params,
             tags,
             areas,
             subjects_index,
@@ -134,6 +141,15 @@ impl RuleSite for DistrictSite {
         self.subjects_index
             .get(&(area, tag))
             .unwrap_or(&self.empty_cells)
+    }
+
+    fn parameter_at(&self, cell: Cell, parameter: Parameter) -> Option<i32> {
+        self.params
+            .get(&cell)
+            .map(|&(age, affluence)| match parameter {
+                Parameter::BuildingAge => age,
+                Parameter::Affluence => affluence,
+            })
     }
 }
 

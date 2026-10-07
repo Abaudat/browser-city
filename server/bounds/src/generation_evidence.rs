@@ -23,8 +23,8 @@
 use sim::generated::defs;
 use sim::generation::{
     Block, BuildingTypeMap, EnvelopeMap, EnvelopeOutcome, GenerationConfig, GenerationContent,
-    LandUse, PlotMap, Side, StreetClass, StreetNetwork, block_land_use, building_types,
-    land_use::LandUseMap, streets,
+    LandUse, PlotMap, Side, StreetClass, StreetNetwork, block_land_use, land_use::LandUseMap,
+    streets,
 };
 
 /// The three fixed seeds every evidence SVG renders -- committed once,
@@ -37,7 +37,7 @@ pub const EVIDENCE_SEEDS: [u64; 3] = [1, 2, 3];
 const VIEWPORT_W: i32 = 40;
 const VIEWPORT_H: i32 = 22;
 
-fn land_use_fill(u: LandUse) -> &'static str {
+pub(crate) fn land_use_fill(u: LandUse) -> &'static str {
     match u {
         LandUse::Residential => "#bfe3bf",
         LandUse::Commercial => "#bcd9f7",
@@ -46,7 +46,7 @@ fn land_use_fill(u: LandUse) -> &'static str {
     }
 }
 
-fn land_use_label(u: LandUse) -> &'static str {
+pub(crate) fn land_use_label(u: LandUse) -> &'static str {
     match u {
         LandUse::Residential => "residential",
         LandUse::Commercial => "commercial",
@@ -55,7 +55,7 @@ fn land_use_label(u: LandUse) -> &'static str {
     }
 }
 
-fn street_fill(class: StreetClass) -> &'static str {
+pub(crate) fn street_fill(class: StreetClass) -> &'static str {
     match class {
         StreetClass::Arterial => "#2b2b2b",
         StreetClass::Street => "#6e6e6e",
@@ -452,7 +452,7 @@ fn front_edge_segment(bounds: sim::world::Rect, front: Side) -> (i32, i32, i32, 
     }
 }
 
-fn front_edge_midpoint(bounds: sim::world::Rect, front: Side) -> (i32, i32) {
+pub(crate) fn front_edge_midpoint(bounds: sim::world::Rect, front: Side) -> (i32, i32) {
     match front {
         Side::North => ((bounds.x0 + bounds.x1) / 2, bounds.y0),
         Side::South => ((bounds.x0 + bounds.x1) / 2, bounds.y1),
@@ -804,7 +804,7 @@ pub fn envelopes_svg(
 /// quadrant_lacks_its_required_services` grants) marked so a reviewer
 /// never mistakes real land scarcity for a placement bug.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum TypeClass {
+pub(crate) enum TypeClass {
     Housing,
     FormSubject,
     FormWithin,
@@ -813,7 +813,7 @@ enum TypeClass {
     VacantOrYard,
 }
 
-fn class_tint(c: TypeClass) -> &'static str {
+pub(crate) fn class_tint(c: TypeClass) -> &'static str {
     match c {
         TypeClass::Housing => "#7cb342",
         TypeClass::FormSubject => "#c0392b",
@@ -824,7 +824,7 @@ fn class_tint(c: TypeClass) -> &'static str {
     }
 }
 
-fn class_label(c: TypeClass) -> &'static str {
+pub(crate) fn class_label(c: TypeClass) -> &'static str {
     match c {
         TypeClass::Housing => "housing",
         TypeClass::FormSubject => "housing (high-rise)",
@@ -840,13 +840,13 @@ fn class_label(c: TypeClass) -> &'static str {
 /// every committed coherence row's own `subject`/`within` tags (the two
 /// form extremes), read generically through `as_distribution`/`as_
 /// coherence`, never a tag key literal.
-struct ClassTags {
+pub(crate) struct ClassTags {
     per: std::collections::BTreeSet<u32>,
     form_subject: std::collections::BTreeSet<u32>,
     form_within: std::collections::BTreeSet<u32>,
 }
 
-fn class_tags(content: &GenerationContent) -> ClassTags {
+pub(crate) fn class_tags(content: &GenerationContent) -> ClassTags {
     ClassTags {
         per: content
             .rules
@@ -874,7 +874,7 @@ fn class_tags(content: &GenerationContent) -> ClassTags {
 /// over plain housing (so a coherence-named type keeps its own distinct
 /// tint rather than reading as ordinary housing), and "none of the
 /// above" is vacant/yard.
-fn building_type_class(def: &defs::BuildingTypeDef, tags: &ClassTags) -> TypeClass {
+pub(crate) fn building_type_class(def: &defs::BuildingTypeDef, tags: &ClassTags) -> TypeClass {
     let is_housing = def.tags.iter().any(|t| tags.per.contains(t));
     let has_posts = !def.professions.is_empty();
     if is_housing && has_posts {
@@ -907,7 +907,9 @@ const MARKER_SHAPES: [&str; 6] = ["circle", "square", "triangle", "diamond", "st
 /// read their shape index from (PR #317 cycle 3: a second, `placed`-
 /// filtered list with its own independent index was the off-by-one --
 /// map and legend must draw from one list).
-fn scoped_distribution_rows(content: &GenerationContent) -> Vec<sim::rules::DistributionRow> {
+pub(crate) fn scoped_distribution_rows(
+    content: &GenerationContent,
+) -> Vec<sim::rules::DistributionRow> {
     let mut rows: Vec<sim::rules::DistributionRow> = content
         .rules
         .iter()
@@ -925,7 +927,7 @@ fn scoped_distribution_rows(content: &GenerationContent) -> Vec<sim::rules::Dist
 
 /// `None` if `def` is not the subject of any row in `rows`; otherwise
 /// the marker shape assigned to that row's own position in `rows`.
-fn marker_shape_for(
+pub(crate) fn marker_shape_for(
     rows: &[sim::rules::DistributionRow],
     def: &defs::BuildingTypeDef,
 ) -> Option<&'static str> {
@@ -937,7 +939,7 @@ fn marker_shape_for(
 /// One small SVG marker, centred on `(cx, cy)`, shaped by `shape` --
 /// distinct enough at a glance that two civic tags never read the same
 /// even before the legend is checked.
-fn marker(cx: i32, cy: i32, shape: &str, stroke: &str) -> String {
+pub(crate) fn marker(cx: i32, cy: i32, shape: &str, stroke: &str) -> String {
     let r = 5;
     match shape {
         "square" => format!(
@@ -1003,6 +1005,9 @@ struct CatchmentFigures {
     dist_rows: Vec<sim::rules::DistributionRow>,
     catchments: std::collections::BTreeSet<(i32, i32)>,
     per: std::collections::BTreeMap<(u32, i32, i32), u64>,
+    /// What each catchment owes each row -- `DistributionRow::targets`' own
+    /// figure for a catchment row, a per-catchment share for a site row.
+    owed: std::collections::BTreeMap<(u32, i32, i32), u64>,
     placed: std::collections::BTreeMap<(u32, i32, i32), u64>,
     /// Hard-eligible, unclaimed candidate count per (row, catchment) --
     /// the count-only half of the physical-shortage exemption (never
@@ -1013,14 +1018,7 @@ struct CatchmentFigures {
 
 impl CatchmentFigures {
     fn owed(&self, row_id: u32, c: (i32, i32)) -> u64 {
-        let per = self.per.get(&(row_id, c.0, c.1)).copied().unwrap_or(0);
-        let ratio = self
-            .dist_rows
-            .iter()
-            .find(|r| r.id == row_id)
-            .map(|r| r.ratio.max(1) as u64)
-            .unwrap_or(1);
-        per / ratio
+        self.owed.get(&(row_id, c.0, c.1)).copied().unwrap_or(0)
     }
 
     fn is_exempt(&self, row_id: u32, c: (i32, i32)) -> bool {
@@ -1030,7 +1028,7 @@ impl CatchmentFigures {
 }
 
 fn catchment_figures(
-    site: sim::generation::SiteBounds,
+    _site: sim::generation::SiteBounds,
     cfg: &GenerationConfig,
     content: &GenerationContent,
     by_id: &std::collections::BTreeMap<u32, &defs::BuildingTypeDef>,
@@ -1038,7 +1036,7 @@ fn catchment_figures(
     bt: &BuildingTypeMap,
     em: &EnvelopeMap,
 ) -> CatchmentFigures {
-    let extent = cfg.building_type_catchment_extent_cells.max(1);
+    let extent = cfg.catchment_extent_cells.max(1);
     let front_of_envelope: std::collections::BTreeMap<u32, (i32, i32)> = em
         .envelopes()
         .map(|e| {
@@ -1060,18 +1058,32 @@ fn catchment_figures(
     let mut catchments: std::collections::BTreeSet<(i32, i32)> = std::collections::BTreeSet::new();
     let mut per: std::collections::BTreeMap<(u32, i32, i32), u64> =
         std::collections::BTreeMap::new();
+    let mut row_cells: std::collections::BTreeMap<u32, Vec<(sim::rules::Cell, Option<i32>)>> =
+        std::collections::BTreeMap::new();
     let mut placed: std::collections::BTreeMap<(u32, i32, i32), u64> =
         std::collections::BTreeMap::new();
     for a in bt.assignments() {
         let Some(&(x, y)) = front_of_envelope.get(&a.plot) else {
             continue;
         };
-        let c = building_types::catchment_of(x, y, site, extent);
+        let c = sim::rules::catchment_of(x, y, extent);
         catchments.insert(c);
         let def = by_id[&a.building_type];
         for row in &dist_rows {
             if def.tags.contains(&row.per) {
                 *per.entry((row.id, c.0, c.1)).or_insert(0) += 1;
+                let plot = &pm.plots()[a.plot as usize];
+                let value = match row.ratio {
+                    sim::rules::RowRatio::Read(read) => Some(match read.parameter {
+                        sim::rules::Parameter::BuildingAge => plot.building_age,
+                        sim::rules::Parameter::Affluence => plot.affluence,
+                    }),
+                    sim::rules::RowRatio::Fixed(_) => None,
+                };
+                row_cells
+                    .entry(row.id)
+                    .or_default()
+                    .push((sim::rules::Cell::new(x, y, 0), value));
             }
             if def.tags.contains(&row.subject) {
                 *placed.entry((row.id, c.0, c.1)).or_insert(0) += 1;
@@ -1095,6 +1107,8 @@ fn catchment_figures(
                 b.land_uses[plot.land_use as usize]
                     && plot.density >= b.density_min
                     && plot.density <= b.density_max
+                    && plot.affluence >= b.affluence_min
+                    && plot.affluence <= b.affluence_max
                     && (b.min_interior_width_cells as i64) <= interior_w
                     && (b.min_interior_depth_cells as i64) <= interior_d
             });
@@ -1112,16 +1126,38 @@ fn catchment_figures(
             let Some(&(x, y)) = front_of_envelope.get(&e.plot) else {
                 continue;
             };
-            let c = building_types::catchment_of(x, y, site, extent);
+            let c = sim::rules::catchment_of(x, y, extent);
             catchments.insert(c);
             *eligible.entry((row.id, c.0, c.1)).or_insert(0) += 1;
         }
     }
 
+    let mut owed: std::collections::BTreeMap<(u32, i32, i32), u64> =
+        std::collections::BTreeMap::new();
+    for row in &dist_rows {
+        match row.scope {
+            sim::rules::DistributionScope::Catchment { .. } => {
+                let cells = row_cells.remove(&row.id).unwrap_or_default();
+                for (key, t) in row.targets(cells) {
+                    if let Some(c) = key {
+                        owed.insert((row.id, c.0, c.1), t.expected);
+                    }
+                }
+            }
+            sim::rules::DistributionScope::Site => {
+                for (&(id, cx, cy), &n) in &per {
+                    if id == row.id {
+                        owed.insert((id, cx, cy), n / row.ratio.smallest() as u64);
+                    }
+                }
+            }
+        }
+    }
     CatchmentFigures {
         dist_rows,
         catchments,
         per,
+        owed,
         placed,
         eligible,
     }
@@ -1377,7 +1413,7 @@ pub fn building_types_svg(
 
     body.push_str(&catchment_map_wash(
         site,
-        cfg.building_type_catchment_extent_cells,
+        cfg.catchment_extent_cells,
         &figures,
     ));
 
@@ -1399,6 +1435,9 @@ pub struct EvidenceSvgs {
     pub streets: String,
     pub envelopes: String,
     pub building_types: String,
+    /// Story 3.7: the four dials, the street network and one boundary
+    /// strip ([`crate::neighbourhood_evidence`]).
+    pub neighbourhoods: String,
 }
 
 /// Builds every evidence SVG for every seed in [`EVIDENCE_SEEDS`] from
@@ -1427,6 +1466,9 @@ pub fn build_all() -> Vec<EvidenceSvgs> {
                     &d.building_types,
                     &cfg,
                     &content,
+                ),
+                neighbourhoods: crate::neighbourhood_evidence::neighbourhoods_svg(
+                    &d, &cfg, &content,
                 ),
             }
         })
