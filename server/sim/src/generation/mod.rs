@@ -1734,7 +1734,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn from_balance_rejects_p99_detour_fill_percent_at_100() {
         let balance = with_override("generation.streets.p99_detour_fill_percent", 100);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();

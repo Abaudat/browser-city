@@ -1531,7 +1531,7 @@ excess_cells`) is set from `cargo run -p bounds --release --bin
 measure-generation`'s own output by the margin rule stated in that key's
 own `defs/` comment; a `from_balance` refusal alongside one is a
 config-consistency (loosening) guard, never a generator worst-case
-claim.
+claim. Measured generation ceilings carry the `GENERATION_VERSION` they were swept at; `bounds` fails on a mismatch.
 
 Pass 2's own junction registry enforces one specific case: where two
 *different* streets each cross the same third street (a staggered
