@@ -162,7 +162,7 @@ pub const INV_GENERATION_INTERIOR_INDEPENDENT_OF_BUILDING_ORDER: &str = "shuffli
 pub const INV_GENERATION_INTERIOR_INDEPENDENT_OF_NEIGHBOURING_BUILDINGS: &str = "perturbing one building's type never moves any other building's interior, for any seed (story 3.5, NFR25)";
 pub const INV_GENERATION_PUBLIC_ROOMS_ARE_REACHABLE_WITHOUT_CROSSING_STAFF_OR_PRIVATE: &str = "for any seed, in every interior every public room is reachable from the entrance without crossing a staff or private room, a type with a public room has one as its front room, and no threshold joins two buildings (story 3.5, Derek's direction)";
 pub const INV_GENERATION_STOCK_SITS_IN_A_STAFF_ROOM_AND_NEVER_ON_THE_PUBLIC_FLOOR: &str = "for any seed, every stock fixture sits in a staff room, and the pass places no seating or waste fixture -- those are the prop-placement pass's (story 3.5, Derek's direction)";
-pub const INV_GENERATION_ENTERABLE_SHARE_MATCHES_THE_COMMITTED_BAND: &str = "pooled over the fixed seed range 0..256, the enterable share of placed buildings sits within enterable_target_tolerance_percent of enterable_target_percent (story 3.5 AC3)";
+pub const INV_GENERATION_ENTERABLE_SHARE_MATCHES_THE_COMMITTED_BAND: &str = "pooled over the shared city pool, the enterable share of placed buildings sits within enterable_target_tolerance_percent of enterable_target_percent (story 3.5 AC3)";
 pub const INV_GENERATION_EVERY_TYPE_WITH_AN_OPTIONAL_TAIL_SHOWS_MORE_THAN_ONE_ROOM_COUNT: &str = "pooled over a fixed seed range, every type with an optional room tail that is placed often enough shows more than one distinct room count -- size buys rooms (story 3.5, Derek's direction)";
 pub const INV_SCHEDULE_PHASE_PRESERVED: &str = "sim::cadence::next_target's returned target is always congruent to the origin passed in, modulo the period, for any origin/period/now (story 4.2)";
 pub const INV_SCHEDULE_NEVER_TARGETS_PAST: &str = "sim::cadence::next_target's returned target is always strictly after now, for any reasonable-range origin/period/now (story 4.2)";
@@ -7778,13 +7778,11 @@ fn inv_generation_kind_spread_rejects_a_city_of_flats() {
 #[test]
 fn inv_generation_enterable_share_matches_the_committed_band() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    let content = GenerationContent::committed();
-    let n: i64 = 256;
     let (mut enterable, mut placed) = (0i64, 0i64);
-    for seed in 0..n as u64 {
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-        enterable += d.interiors.enterable_count();
-        placed += d.envelopes.placed_count();
+    for idx in 0..CITY_POOL {
+        let city = pooled_city(pool_seed(idx));
+        enterable += city.district.interiors.enterable_count();
+        placed += city.district.envelopes.placed_count();
     }
     let share_x1000 = enterable * 100_000 / placed;
     let lo = (cfg.interior_enterable_target_percent
@@ -7810,16 +7808,15 @@ fn inv_generation_enterable_share_matches_the_committed_band() {
 /// must be sampled enough, so the guard cannot go vacuous.
 #[test]
 fn inv_generation_every_type_with_an_optional_tail_shows_more_than_one_room_count() {
-    const SEEDS: u64 = 48;
+    const SEEDS: u64 = CITY_POOL / 2;
     const MIN_SAMPLES: usize = 12;
-    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let content = GenerationContent::committed();
     let mut counts: std::collections::BTreeMap<u32, std::collections::BTreeSet<usize>> =
         std::collections::BTreeMap::new();
     let mut samples: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
-    for seed in 0..SEEDS {
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-        for (_, ty, interior) in d.interiors.laid() {
+    for idx in 0..SEEDS {
+        let city = pooled_city(pool_seed(idx));
+        for (_, ty, interior) in city.district.interiors.laid() {
             counts.entry(ty).or_default().insert(interior.rooms.len());
             *samples.entry(ty).or_default() += 1;
         }
