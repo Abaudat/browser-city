@@ -722,6 +722,10 @@ fn main() {
     Stats::new(unplotted_percent).print("unplotted_percent");
     Stats::new(mean_width_x10).print("mean_width_cells_x10");
     Stats::new(mean_depth_x10).print("mean_depth_cells_x10");
+    println!(
+        "exhaustive detour loop{}: {SEED_COUNT} seeds",
+        bounds::generation_stamp::stamp(sim::generation::GENERATION_VERSION, defs::BALANCE)
+    );
     Stats::new(detour_excess).print("detour_excess_cells_sampled_14node");
     println!(
         "detour_excess_cells_sampled_14node worst: {} at seed {} ({:?}-{:?})",
@@ -1019,9 +1023,9 @@ fn detour_sweep(cfg: &GenerationConfig, n: u64) {
     let threads = std::thread::available_parallelism().map_or(4, |t| t.get()) as u64;
     let takeover = cfg.detour_ratio_takeover_distance_cells();
     println!(
-        "\ndetour-bounds sweep at GENERATION_VERSION={}: {n} seeds, {threads} threads, passes 1-2 \
+        "\ndetour-bounds sweep{}: {n} seeds, {threads} threads, passes 1-2 \
          only (`cargo run -p bounds --release --bin measure-generation -- detour <n>`)",
-        sim::generation::GENERATION_VERSION
+        bounds::generation_stamp::stamp(sim::generation::GENERATION_VERSION, defs::BALANCE)
     );
     struct Partial {
         max_miss: BandMiss,

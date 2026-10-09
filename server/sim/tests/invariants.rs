@@ -6491,3 +6491,49 @@ fn seed_8619285945825134650_holds_the_p99_detour_ceiling() {
     assert!(streets::p99_detour_violation(&samples, &cfg).is_none());
     assert!(streets::detour_bound_violation(&samples, &cfg).is_none());
 }
+
+/// Each `streets::PINNED_P99_FILL_SEEDS` entry's p99 fill, by equality: a
+/// pass-2 change that moves the worst seed goes red and is looked at.
+#[test]
+fn p99_fill_holds_at_pinned_worst_seeds() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    for &(seed, expected) in &streets::PINNED_P99_FILL_SEEDS {
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
+        assert_eq!(
+            streets::p99_fill_pct(&samples, &cfg),
+            expected,
+            "seed {seed}'s p99 fill moved -- re-run `measure-generation -- detour 1000000`, \
+             replace the pinned worst in streets::PINNED_P99_FILL_SEEDS and re-derive the key"
+        );
+        assert!(streets::p99_detour_violation(&samples, &cfg).is_none());
+    }
+}
+
+/// `p99_detour_fill_percent`'s margin rule, applied to the pinned worst:
+/// a perfect route at or beyond the takeover distance already fills 50%
+/// (allowed is `2 * manhattan` there), so only the share above that floor
+/// is scaled by 1.25; the floor is added back and the result rounded up
+/// to a multiple of 5. Integer arithmetic (NFR28): hundredths, then a
+/// ceiling to multiples of 500.
+#[test]
+fn p99_detour_fill_percent_matches_its_own_margin_rule() {
+    const LONG_RANGE_FLOOR: i64 = 50;
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let worst = streets::PINNED_P99_FILL_SEEDS
+        .iter()
+        .map(|&(_, fill)| fill)
+        .max()
+        .expect("PINNED_P99_FILL_SEEDS is never empty");
+    let hundredths = (worst - LONG_RANGE_FLOOR) * 125 + LONG_RANGE_FLOOR * 100;
+    let expected = (hundredths + 499) / 500 * 5;
+    assert_eq!(
+        cfg.p99_detour_fill_percent as i64, expected,
+        "p99_detour_fill_percent ({}) no longer matches its margin rule: worst pinned fill \
+         {worst}, share above {LONG_RANGE_FLOOR} times 1.25, plus {LONG_RANGE_FLOOR}, rounded \
+         up to a multiple of 5, is {expected}. At 100 or over the key cannot take it: that is \
+         the pass-2 question, not a number to fit",
+        cfg.p99_detour_fill_percent
+    );
+}

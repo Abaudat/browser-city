@@ -464,26 +464,41 @@ DetourSample::detour_allowed`, and `generation.streets.p99_detour_fill_percent`
 bounds the 99th-percentile fill over the 64-node sample, strictly under
 100 (`streets::p99_detour_violation`, the one place the comparison lives;
 the proptest, the pinned seed and the sweep all call it). The seed's p99
-fill is 71%. The sweep below puts the worst per-seed p99 fill at 84%, so
-the usual margin rule (x1.25, rounded to 5) would give 105, over the
-ceiling the key can take; 95 is committed instead, 11 points over the
-worst of a million seeds. A p99 fill in the top ten above 75% is the
-signal that pass 2 has moved and the key needs another look.
+fill is 71%.
 
-**Re-measure rule.** A measured ceiling is a claim about one
-`GENERATION_VERSION`. The detour-bounds sweep and the 50,000-seed
-exhaustive loop are re-run in the same PR as any `GENERATION_VERSION`
-bump, and every detour ceiling's measured worst and miss rate is
-re-stated at the new version. The `GENERATION_VERSION` stamp on the sweep
-header below is checked against the generator by
-`bounds/tests/generation_sweep_current.rs`.
+**Margin rule.** A perfect route at or beyond the takeover distance
+already fills 50% (allowed is `2 * manhattan` there), so only the share
+of the worst measured p99 fill above that floor can worsen: scale that
+share by 1.25, add the floor back, round up to a multiple of 5. At
+`GENERATION_VERSION` 10 the worst per-seed p99 fill is 84% (seed
+`11161877730662506814`, pinned in `streets::PINNED_P99_FILL_SEEDS`):
+(84 - 50) * 1.25 + 50 = 92.5, rounded up to 95, which is committed.
+`p99_detour_fill_percent_matches_its_own_margin_rule` derives it from the
+pinned figure and fails if the key drifts. If a future sweep's worst
+makes the rule give 100 or more, the key cannot take it, and that is the
+pass-2 question, not a number to fit.
+
+**Coverage gap.** No generated seed is known where the p99 fill bound
+fires while the max() contract holds, so the firing path on a real
+network is covered by a hand-built U corridor
+(`a_u_corridor_near_its_allowance_holds_the_max_contract_but_breaks_the_p99`)
+and the unit tests on hand-built samples, not by the proptest.
+
+**Re-measure rule.** A measured ceiling is a claim about one generator
+state. The detour-bounds sweep and the 50,000-seed exhaustive loop are
+re-run in the same PR as any change that moves a `GENERATION_VERSION` or
+a `generation.*` balance value, and every detour ceiling's measured worst
+and miss rate is re-stated. Each block below carries the
+`GENERATION_VERSION` and the FNV-1a fingerprint of every `generation.*`
+balance row it was measured under;
+`bounds/tests/generation_sweep_current.rs` fails, naming the block and
+whether the version or the fingerprint moved, when either differs.
 
 `cargo run -p bounds --release --bin measure-generation -- detour
-1000000` (threaded, 198s) at `GENERATION_VERSION` 10:
+1000000` (threaded, 203s) at `GENERATION_VERSION` 10:
 
 ```text
-
-detour-bounds sweep at GENERATION_VERSION=10: 1000000 seeds, 32 threads, passes 1-2 only
+detour-bounds sweep at GENERATION_VERSION=10 fingerprint=e97a13a8528d8e39: 1000000 seeds, 32 threads, passes 1-2 only
   detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
   p99_detour_fill_percent = 95% (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
@@ -510,7 +525,7 @@ detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worst
   171% at seed 4929245716913353663
   178% at seed 4832727318219098284
   189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 198.4s (0.198ms/seed)
+detour-bounds sweep wall-clock: 203.3s (0.203ms/seed)
 ```
 
 The exhaustive loop (`measure-generation`, 50,000 mixed seeds) at
@@ -521,6 +536,10 @@ distance 176% (seed `4595557621078204092`; 189% at the 14-node sample over
 the million seeds above), worst both-endpoints-interior excess 312.
 
 ```text
+exhaustive detour loop at GENERATION_VERSION=10 fingerprint=e97a13a8528d8e39: 50000 seeds
+detour_excess_cells_sampled_14node: min=0 p1=0 p50=0 p99=92 max=312 mean=3.4 stddev=17.2
+detour_excess_cells_sampled_14node worst: 312 at seed 4595557621078204092 ((67, 40)-(512, 38))
+detour_excess_cells_exhaustive max: 320 at seed 610140160610395379 ((486, 53)-(512, 474)) -- the number max_detour_excess_cells's own margin rule is applied to; pin the seed (with this exhaustive figure) in streets::PINNED_DETOUR_SEEDS if it moves
 detour_excess_cells_exhaustive top 10 per-seed worsts (ascending):
   294 at seed 12004126622565142029 ((139, 37)-(408, 0))
   296 at seed 116551616410019364 ((109, 512)-(460, 480))
@@ -532,6 +551,8 @@ detour_excess_cells_exhaustive top 10 per-seed worsts (ascending):
   310 at seed 6482608135473407511 ((181, 0)-(437, 26))
   316 at seed 4595557621078204092 ((159, 0)-(418, 38))
   320 at seed 610140160610395379 ((486, 53)-(512, 474))
+detour_excess_cells_exhaustive_both_endpoints_interior max: 312 at seed 4595557621078204092 ((108, 40)-(418, 38)) -- the player-felt figure: the worst pair with neither endpoint on the site boundary
+detour_ratio_pct_exhaustive_at_or_beyond_takeover (400 cells) max: 176% at seed 4595557621078204092 ((108, 40)-(512, 38)) -- the only range where the ratio term is the binding half of the max()-contract, so the only figure max_detour_percent owes margin over (story 15.10, Derek's direction)
 detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascending):
   169% at seed 8751012638812695494 ((0, 72)-(27, 464))
   170% at seed 8027958254937089344 ((85, 512)-(474, 494))
@@ -542,7 +563,6 @@ detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascend
   171% at seed 893143956151306943 ((88, 512)-(473, 494))
   173% at seed 3802514444151385145 ((85, 512)-(459, 478))
   173% at seed 12819133835454577505 ((101, 469)-(472, 512))
-  176% at seed 4595557621078204092 ((108, 40)-(512, 38))
 ```
 
 ### Plot subdivision

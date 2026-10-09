@@ -1762,7 +1762,7 @@ mod tests {
     #[test]
     fn from_balance_accepts_max_detour_percent_at_101() {
         // The boundary itself: 101 is admitted, only 100 or under is
-        // not also trip the unrelated p99 <= max_detour_percent refusal.
+        // refused (AC4's mechanical both-sides-of-the-boundary check).
         let balance = with_overrides(&[("generation.streets.max_detour_percent", 101)]);
         GenerationConfig::from_balance(&balance)
             .expect("101 must be accepted, not just values further above 100");

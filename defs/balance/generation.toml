@@ -442,13 +442,16 @@ max = 2048
 # Sampled over more pairs than the max/excess bounds
 # (DETOUR_P99_SAMPLE_MAX_NODES): a percentile over too few pairs is just
 # the maximum under another name. Strictly under 100 (`from_balance`
-# refuses 100 and above). Margin rule: the worst per-seed p99 fill over
-# `measure-generation detour`'s sweep, times 1.25, rounded up to a
-# multiple of 5 -- 84% at `GENERATION_VERSION` 10 (seed
-# `11161877730662506814`, the next nine 75-78%), which would give 105, over
-# the ceiling the key can take, so 95 is committed: 11 points over the
-# worst of 1,000,000 seeds, 0 of them over it (`docs/generation.md`'s
-# detour-bounds sweep block).
+# refuses 100 and above). Margin rule: a perfect route at or beyond the
+# takeover distance already fills 50%, so scale the worst measured p99
+# fill's share above 50 by 1.25, add 50 back, round up to a multiple of
+# 5. Worst at `GENERATION_VERSION` 10 over `measure-generation -- detour
+# 1000000`: 84% (seed `11161877730662506814`, `streets::
+# PINNED_P99_FILL_SEEDS`): (84 - 50) * 1.25 + 50 = 92.5 -> 95. If a
+# future worst makes the rule give 100 or more, the key cannot take it:
+# that is the pass-2 question, not a number to fit. Checked by
+# `p99_detour_fill_percent_matches_its_own_margin_rule`; the sweep block
+# is in `docs/generation.md`.
 key = "generation.streets.p99_detour_fill_percent"
 value = 95
 min = 1

@@ -781,6 +781,15 @@ pub const PINNED_DETOUR_SEEDS: [(u64, i64); 3] = [
     (6_482_608_135_473_407_511, 310),
 ];
 
+/// The worst p99-fill seed found so far, `(seed, p99_fill_pct)` at the
+/// `DETOUR_P99_SAMPLE_MAX_NODES` sample -- the figure
+/// `generation.streets.p99_detour_fill_percent` is derived from, pinned by
+/// equality like [`PINNED_DETOUR_SEEDS`]. The worst per-seed p99 fill of
+/// `measure-generation -- detour 1000000` at `GENERATION_VERSION` 10; a
+/// sweep that finds a new worst replaces it.
+#[cfg(any(test, feature = "test-fixtures"))]
+pub const PINNED_P99_FILL_SEEDS: [(u64, i64); 1] = [(11_161_877_730_662_506_814, 84)];
+
 /// One [`StreetNetwork::detour_samples`] entry.
 #[derive(Debug, Clone, Copy)]
 pub struct DetourSample {
@@ -2586,6 +2595,38 @@ mod tests {
             "expected the maze's own p99 fill ({p99}%) to exceed the committed p99_detour_fill_percent ({}%)",
             c.p99_detour_fill_percent
         );
+    }
+
+    /// The two detour checks are distinct claims: a U corridor whose one
+    /// long pair uses 97% of its own allowance holds the max() contract
+    /// (every pair at or under 100%) yet breaks the p99 fill bound. No
+    /// generated seed is known to do this, so the firing path of
+    /// `p99_detour_violation` on a real network is covered by this
+    /// hand-built fixture, not by the proptest.
+    #[test]
+    fn a_u_corridor_near_its_allowance_holds_the_max_contract_but_breaks_the_p99() {
+        let c = cfg();
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 500,
+            y1: 500,
+        };
+        // (100,100)-(400,100): Manhattan 300, allowed 300 + excess; the
+        // arms are sized so the route fills 97% of it.
+        let allowed = sample(300, 0).detour_allowed(&c);
+        let depth = ((allowed * 97 / 100) - 300) / 2;
+        let edges = vec![
+            vertical(100, 100, 100 + depth as i32),
+            horizontal(100 + depth as i32, 100, 400),
+            vertical(400, 100, 100 + depth as i32),
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        let samples = net.detour_samples(DETOUR_P99_SAMPLE_MAX_NODES);
+        assert!(detour_bound_violation(&samples, &c).is_none());
+        let v = p99_detour_violation(&samples, &c)
+            .expect("a 97% fill must break the committed p99 fill bound");
+        assert!(v.p99_fill_pct > c.p99_detour_fill_percent as i64 && v.p99_fill_pct <= 100);
     }
 
     /// `detour_bound_violation`'s own quiet case (Quentin's direction,
