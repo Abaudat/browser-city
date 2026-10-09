@@ -161,7 +161,7 @@ function lineIsClear(
   bx: number,
   by: number,
 ): boolean {
-  const length = Math.hypot(bx - ax, by - ay);
+  const length = Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
   const steps = Math.ceil(length / SAMPLE);
   for (let i = 1; i <= steps; i++) {
     const f = i / steps;
@@ -256,7 +256,7 @@ export function findMicroPath(
     (Math.abs(to.x - x) + Math.abs(to.y - y)) * STEP;
   const lineDx = to.x - from.x;
   const lineDy = to.y - from.y;
-  const lineLength = Math.hypot(lineDx, lineDy);
+  const lineLength = Math.sqrt(lineDx * lineDx + lineDy * lineDy);
   const offLine = (x: number, y: number): number =>
     Math.round((Math.abs((x - from.x) * lineDy - (y - from.y) * lineDx) / lineLength) * OFF_LINE);
 

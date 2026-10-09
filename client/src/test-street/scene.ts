@@ -34,7 +34,7 @@ import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
-import { CitizenBody, createCitizenFrame } from "../l3/citizen";
+import { CitizenBody } from "../l3/citizen";
 import { loadL3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import type { AppearanceTuple } from "../render/appearance/composite";
@@ -70,8 +70,13 @@ import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
 import { ASSET_URLS, type PixelRect } from "./assets";
-import { buildCommuterAppearanceTuple, buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
-import { type CitizensLayerHandle, mountCitizensLayer } from "./citizens-layer";
+import {
+  buildCommuterAppearanceTuple,
+  buildPlayerAppearanceTuple,
+  CROWD_FLOOR,
+  withStagingKerb,
+} from "./citizens";
+import { type CitizensLayerHandle, type L3BodyReport, mountCitizensLayer } from "./citizens-layer";
 import { COMMUTER_ID, COMMUTER_SPEC, COMMUTER_STABLE_ID } from "./commuter";
 import {
   buildCharacterDrawable,
@@ -99,6 +104,7 @@ import {
   type RemotePlayersLayer,
   type RemotePlayersWiring,
 } from "./remote-players-layer";
+import { lifeDialsFor, StreetLife } from "./street-life";
 import { Timetable } from "./timetable";
 
 /** A plain, single-tile interior floor swatch cropped from the same
@@ -299,18 +305,6 @@ export interface MountStreetSceneOptions {
    * fixture module. Absent (or `false`) means the crowd's own tuples
    * stay distinct, exactly as they always have. */
   readonly crowdIdenticalTuples?: boolean;
-}
-
-/** One L3 body as the debug tooling reads it. */
-export interface L3BodyReport {
-  readonly id: string;
-  readonly x: number;
-  readonly y: number;
-  readonly floor: number;
-  /** Segments walked straight for want of a path. */
-  readonly fallbacks: number;
-  /** Some segment is walked outside the walking-pace band. */
-  readonly paceOutOfBand: boolean;
 }
 
 export interface CommuterDrawn {
@@ -1354,24 +1348,36 @@ export async function mountStreetScene(
   // no pinned order or baseline moves; absent altogether while the crowd is
   // frozen for a screenshot. Posed from city time alone: no clock, no body.
   const l3Config = loadL3Config(defs);
-  const npcWalk = npcWalkability(worldIndex);
+  const npcWalk = withStagingKerb(npcWalkability(worldIndex));
   const l3Path = pathConfigOf(l3Config);
   const msPerMilliminute = l3Config.realMsPerCityMinute / 1000;
+  // Every ledger-driven citizen on the street -- the commuter and the crowd's
+  // walkers and standers -- is posed, and sidestepped, through this one object.
+  const streetLife = new StreetLife(l3Config, npcWalk);
   let updateCommuter: (cityMilli: number | undefined) => void = () => {};
   let commuterDrawn: () => CommuterDrawn | undefined = () => undefined;
   let commuterDiagnostics: () => readonly L3BodyReport[] = () => [];
   if (commuterFrames) {
-    const timetable = new Timetable(COMMUTER_SPEC, l3Config, npcWalk, l3Path);
-    const citizen = new CitizenBody(
-      npcWalk,
-      l3Path,
-      {
-        strideCells: l3Config.strideCells,
-        framesPerCycle: walkFramesPerCycle(defs, "adult"),
-      },
-      COMMUTER_ID,
-    );
-    const frame = createCitizenFrame();
+    const makeCommuter = () => ({
+      timetable: new Timetable(COMMUTER_SPEC, l3Config, npcWalk, l3Path),
+      body: new CitizenBody(
+        npcWalk,
+        l3Path,
+        {
+          strideCells: l3Config.strideCells,
+          framesPerCycle: walkFramesPerCycle(defs, "adult"),
+        },
+        COMMUTER_ID,
+        lifeDialsFor(defs, l3Config, "adult"),
+      ),
+    });
+    const commuterMember = streetLife.add({
+      id: COMMUTER_ID,
+      ...makeCommuter(),
+      remake: makeCommuter,
+    });
+    const citizen = commuterMember.body;
+    const frame = commuterMember.frame;
     const lamppostId = STREET_PROPS.find(
       (prop) => isDefStreetProp(prop) && prop.defId === LAMPPOST_DEF_ID,
     )?.id;
@@ -1416,18 +1422,22 @@ export async function mountStreetScene(
         drawn = undefined;
         return;
       }
-      citizen.frameAt(timetable.stateAt(cityMilli), cityMilli, frame);
+      // Posed by `streetLife.solve` this tick; drawn where its sidestep puts it.
+      const ox = streetLife.offsetX(commuterMember);
+      const oy = streetLife.offsetY(commuterMember);
+      const drawX = frame.x + ox;
+      const drawY = frame.y + oy;
       sprite.texture = commuterFrames.frame(frame.animation, frame.direction, frame.frameIndex);
-      updateCharacterDrawable(drawable, frame.x, frame.y, frame.floor);
+      updateCharacterDrawable(drawable, drawX, drawY, frame.floor);
       positionSprite(
         sprite,
-        frame.x,
-        frame.y,
+        drawX,
+        drawY,
         frame.floor,
         tileSizePx,
         storeyHeightPx,
         0,
-        flights.offsetPx(frame.x, frame.y, frame.floor),
+        flights.offsetPx(drawX, drawY, frame.floor),
       );
       drawn = {
         cityMilli,
@@ -1435,8 +1445,8 @@ export async function mountStreetScene(
         departAt: frame.departAt,
         arriveAt: frame.arriveAt,
         distance: frame.distance,
-        x: frame.x,
-        y: frame.y,
+        x: drawX,
+        y: drawY,
         floor: frame.floor,
         screenX: sprite.x,
         screenY: sprite.y,
@@ -1748,7 +1758,7 @@ export async function mountStreetScene(
     textureFor("sidewalk", textures),
     atlasBaseUrl,
     crowdIdenticalTuples ?? false,
-    { walk: npcWalk, config: l3Config },
+    { walk: npcWalk, config: l3Config, life: streetLife, frozen: crowdFrozen },
   );
   // Story 4.4: the other players, in the same floor-0 container, advanced
   // from the same ticker below.
@@ -1784,7 +1794,10 @@ export async function mountStreetScene(
   app.ticker.add(() => {
     if (!crowdFrozen) {
       const cityMilli = cityMilliminutes?.();
-      if (cityMilli !== undefined) citizensLayer.update(cityMilli);
+      if (cityMilli !== undefined) {
+        streetLife.solve(cityMilli);
+        citizensLayer.update();
+      }
       updateCommuter(cityMilli);
     }
     remotePlayers?.update();

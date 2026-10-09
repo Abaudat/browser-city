@@ -5,7 +5,7 @@ import { pathConfigOf, walkFramesPerCycle } from "../../../src/l3/config";
 import { COMMUTER_SPEC } from "../../../src/test-street/commuter";
 import { Timetable } from "../../../src/test-street/timetable";
 import { npcWalkability } from "../../../src/world/npc-walkable";
-import { l3Config } from "../l3/defs-config";
+import { l3Config, quietLife } from "../l3/defs-config";
 import { committedDefs, streetWorldIndex } from "./street-world";
 
 const cfg = l3Config();
@@ -34,7 +34,7 @@ describe("the commuter's committed route on the real street", () => {
 
   it("makes a real turn: the facing changes strictly inside the leg", () => {
     const f = createCitizenFrame();
-    const citizen = new CitizenBody(walk, path, gait, "commuter");
+    const citizen = new CitizenBody(walk, path, gait, "commuter", quietLife());
     const seen: string[] = [];
     for (let t = state.leg.departAt + 1; t < state.leg.arriveAt; t++) {
       citizen.frameAt(state, t, f);
@@ -45,7 +45,7 @@ describe("the commuter's committed route on the real street", () => {
 
   it("never turns its back around the lamppost: facing is the route direction there", () => {
     const f = createCitizenFrame();
-    const citizen = new CitizenBody(walk, path, gait, "commuter");
+    const citizen = new CitizenBody(walk, path, gait, "commuter", quietLife());
     for (let t = state.leg.departAt + 1; t < state.leg.arriveAt; t++) {
       citizen.frameAt(state, t, f);
       if (f.x > 6.5 && f.x < 10.5) expect(f.direction).toBe("right");
@@ -124,19 +124,19 @@ describe("the timetable", () => {
   });
 
   it("a walker that joins mid-leg draws exactly what one that was there all along draws", () => {
-    const old = new CitizenBody(walk, path, gait, "commuter");
+    const old = new CitizenBody(walk, path, gait, "commuter", quietLife());
     const a = createCitizenFrame();
     const b = createCitizenFrame();
     for (let t = 5000; t < 5000 + timetable.periodMilli; t += 37) {
       old.frameAt(timetable.stateAt(t), t, a);
-      const joiner = new CitizenBody(walk, path, gait, "commuter");
+      const joiner = new CitizenBody(walk, path, gait, "commuter", quietLife());
       joiner.frameAt(timetable.stateAt(t), t, b);
       expect(b).toEqual(a);
     }
   });
 
   it("stands facing along the shopfront before departing and the stairs on arriving", () => {
-    const body = new CitizenBody(walk, path, gait, "commuter");
+    const body = new CitizenBody(walk, path, gait, "commuter", quietLife());
     const f = createCitizenFrame();
     const state = timetable.stateAt(0);
     body.frameAt(state, state.leg.departAt - 1, f);
@@ -149,7 +149,7 @@ describe("the timetable", () => {
   });
 
   it("N frames inside one leg run one path search per segment", () => {
-    const body = new CitizenBody(walk, path, gait, "commuter");
+    const body = new CitizenBody(walk, path, gait, "commuter", quietLife());
     const f = createCitizenFrame();
     const state = timetable.stateAt(0);
     for (let t = state.leg.departAt; t < state.leg.arriveAt; t += 2) body.frameAt(state, t, f);

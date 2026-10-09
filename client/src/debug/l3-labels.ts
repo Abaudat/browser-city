@@ -6,7 +6,7 @@
 
 import { worldPointPx } from "../render/screen-position";
 import { DEBUG_STYLE } from "./debug-style";
-import type { DebugWorldView } from "./world-view";
+import type { DebugWorldView, L3BodyView } from "./world-view";
 
 export interface L3Label {
   readonly id: string;
@@ -14,6 +14,16 @@ export interface L3Label {
   readonly x: number;
   readonly y: number;
   readonly fill: string;
+}
+
+/** What a body is doing beyond its pose: a sidestep, a flavour. */
+function notes(body: L3BodyView): string {
+  let text = "";
+  if (body.avoidance && body.avoidance.offsetCells !== 0) {
+    text += ` side ${body.avoidance.offsetCells.toFixed(2)}`;
+  }
+  if (body.activity) text += ` ${body.activity}`;
+  return text;
 }
 
 export function buildL3Labels(view: DebugWorldView): L3Label[] {
@@ -24,6 +34,8 @@ export function buildL3Labels(view: DebugWorldView): L3Label[] {
     const defects: string[] = [];
     if (body.fallbacks > 0) defects.push(`straight x${body.fallbacks}`);
     if (body.paceOutOfBand) defects.push("pace");
+    if (body.avoidance?.capped) defects.push("cap");
+    if (body.avoidance?.blocked) defects.push("blocked");
     const anchor = worldPointPx(
       body.x,
       body.y,
@@ -35,7 +47,7 @@ export function buildL3Labels(view: DebugWorldView): L3Label[] {
     );
     labels.push({
       id: body.id,
-      text: `${body.id} ${defects.length === 0 ? "ok" : defects.join(" ")}`,
+      text: `${body.id} ${defects.length === 0 ? "ok" : defects.join(" ")}${notes(body)}`,
       x: anchor.x,
       y: anchor.y,
       fill: defects.length === 0 ? DEBUG_STYLE.palette.sortLabel : DEBUG_STYLE.palette.playerBody,

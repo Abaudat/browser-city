@@ -18,7 +18,7 @@ import {
   WALKER_SPECS,
 } from "../../../src/test-street/citizens";
 import { Timetable } from "../../../src/test-street/timetable";
-import { l3Config } from "../l3/defs-config";
+import { l3Config, quietLife } from "../l3/defs-config";
 import { committedDefs } from "./street-world";
 
 describe("buildCitizenFixtures", () => {
@@ -231,6 +231,7 @@ describe("crowd placement through worldPointPx", () => {
             pathDials,
             { strideCells: config.strideCells, framesPerCycle: 6 },
             WALKER_ID,
+            quietLife(),
           );
           const frame = createCitizenFrame();
           const stepMilli = (deltaMS * 1000) / config.realMsPerCityMinute;

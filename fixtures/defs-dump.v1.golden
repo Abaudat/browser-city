@@ -236,7 +236,16 @@ balance generation.streets.street_width_cells value=8 min=2 max=64
 balance generation.streets.thin_strip_long_side_percent value=150 min=100 max=400
 balance identity.link_prompt_cooloff_days value=7 min=1 max=365
 balance identity.link_prompt_min_character_age_days value=1 min=0 max=365
+balance l3.avoid_clearance_millicells value=900 min=200 max=2000
+balance l3.avoid_max_neighbours value=16 min=1 max=256
+balance l3.avoid_radius_millicells value=4000 min=500 max=8000
+balance l3.avoid_ramp_millicells value=3000 min=500 max=8000
+balance l3.avoid_tie_band_millicells value=50 min=10 max=500
 balance l3.early_arrival_bound_milliminutes value=0 min=0 max=1000
+balance l3.flavour_bucket_milliminutes value=10000 min=400 max=100000
+balance l3.flavour_glance_milliminutes value=1200 min=40 max=20000
+balance l3.flavour_glance_percent value=25 min=0 max=100
+balance l3.idle_frame_milliminutes value=80 min=4 max=2000
 balance l3.path_box_margin_cells value=6 min=1 max=64
 balance l3.path_max_cells value=65536 min=64 max=16777216
 balance l3.path_node_budget value=4096 min=64 max=1000000

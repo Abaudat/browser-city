@@ -509,5 +509,23 @@ out="$(bash "$CHECK" --client-only "$d" 2>&1)"
 check "an unknown status ('coverd') fails" 1 bash "$CHECK" --client-only "$d"
 check_contains "the failure names the bad status" "coverd" "$out"
 
+# invariant table shape: a row merged into its neighbour, a stray fragment,
+# an unknown status, a duplicate id (story 5.2)
+while IFS='~' read -r name row want; do
+  d="$(plant_clean_tree)"
+  awk -v r="$row" '{ print } /^\| `inv_widget_ok` \| placeholder/ { print r }' \
+    "$d/docs/trace-matrix.md" > "$d/docs/trace-matrix.md.new"
+  mv "$d/docs/trace-matrix.md.new" "$d/docs/trace-matrix.md"
+  git_track "$d"
+  out="$(bash "$CHECK" --client-only "$d" 2>&1)"
+  check "invariant table: $name" 1 bash "$CHECK" --client-only "$d"
+  check_contains "the failure says why ($name)" "$want" "$out"
+done <<'ROWS'
+a row with six cells (merged)~| `inv_extra` | text | covered | `inv_widget_ok` | more | 5.2 |~not 5
+a stray two-cell fragment~| `inv_extra` | 5.2 |~not 5
+an unknown status~| `inv_extra` | text | coverd | `inv_widget_ok` | 5.2 |~coverd
+a duplicate id~| `inv_widget_ok` | again | covered | `inv_widget_ok` | 5.2 |~more than one row
+ROWS
+
 summary
 exit $?
