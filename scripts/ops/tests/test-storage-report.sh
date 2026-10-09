@@ -44,6 +44,7 @@ stub_bin() {
   printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of storage_sample)" "$1" >"$d/storage.json"
   printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of table_sample)" "$2" >"$d/tables.json"
   printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of reducer_class_sample)" "${3:-[]}" >"$d/classes.json"
+  printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of cadence_liveness)" "${LIVENESS:-[]}" >"$d/liveness.json"
   cat >"$d/spacetime" <<STUB
 #!/usr/bin/env bash
 case "${4:-}" in
@@ -51,6 +52,7 @@ case "${4:-}" in
   auth) echo "Error: 401 unauthorized" >&2; exit 0 ;;
 esac
 case "\$*" in
+  *cadence_liveness*) [ "${4:-}" = "liveness-fail" ] && { echo "Error: boom" >&2; exit 1; }; cat "$d/liveness.json" ;;
   *storage_sample*) cat "$d/storage.json" ;;
   *reducer_class_sample*) cat "$d/classes.json" ;;
   *table_sample*) cat "$d/tables.json" ;;
@@ -144,6 +146,22 @@ OUT="$(NOW=$((100 + STALE + 1)) run_report '[[1,100,5000,false,false,10737418240
 check "one microsecond past three periods -> exit 1" 1 bash -c "exit $CODE"
 check_contains "says the sampler stopped" "the sampler has stopped" "$OUT"
 check_contains "stale finding has its stable title" "watcher: sampler stale$TAB" "$(cat "$FINDINGS")"
+
+echo
+echo "a stale finding carries cadence liveness, and a liveness read failure never changes the verdict"
+LIVE='[["Metrics",90,95,40,2],["Growth",190,191,300,0]]'
+OUT="$(LIVENESS="$LIVE" NOW=$((100 + STALE + 1)) run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' 2>&1)"; CODE=$?
+check "stale with liveness -> still exit 1" 1 bash -c "exit $CODE"
+check "stale finding is still one line" 0 line_count_is "$FINDINGS" 1
+FINDING="$(cat "$FINDINGS")"
+check_contains "detail carries the stale line" "the sampler has stopped" "$FINDING"
+check_contains "detail carries the METRICS row" "Metrics last_target_at=90 last_fired_at=95 fires=40 missed=2" "$FINDING"
+check_contains "detail carries every cadence" "Growth last_target_at=190 last_fired_at=191 fires=300 missed=0" "$FINDING"
+OUT="$(LIVENESS="$LIVE" NOW=$((100 + STALE + 1)) run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' '[]' liveness-fail 2>&1)"; CODE=$?
+check "liveness unreadable while stale -> still exit 1" 1 bash -c "exit $CODE"
+check_contains "says liveness was unreadable" "cadence liveness unreadable" "$(cat "$FINDINGS")"
+OUT="$(LIVENESS="$LIVE" NOW=150 run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' 2>&1)"; CODE=$?
+check "a fresh sample does not read liveness into a finding" 0 is_empty "$FINDINGS"
 
 echo
 echo "cost per reducer class is printed for the newest fire, never alerted on"

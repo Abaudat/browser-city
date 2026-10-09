@@ -117,9 +117,28 @@ finding() {
   [ -z "$FINDINGS_FILE" ] || printf '%s\t%s\n' "$1" "$2" >>"$FINDINGS_FILE"
 }
 
+# liveness_detail -- every `cadence_liveness` row on one line, so a stale
+# alert says whether the sampler alone stopped or the whole scheduler did.
+# Best effort: a failed read changes the text, never the verdict.
+liveness_detail() {
+  local out="" c t f n m
+  if ! read_liveness; then
+    printf 'cadence liveness unreadable'
+    return
+  fi
+  while IFS='|' read -r c t f n m; do
+    [ -n "$c" ] || continue
+    out="${out:+$out; }${c//\"/} last_target_at=$t last_fired_at=$f fires=$n missed=$m"
+  done < <(paste -d'|'     <(column "$TMP/liveness.json" cadence) <(column "$TMP/liveness.json" last_target_at)     <(column "$TMP/liveness.json" last_fired_at) <(column "$TMP/liveness.json" fires)     <(column "$TMP/liveness.json" missed))
+  printf 'cadence liveness: %s' "${out:-no rows}"
+}
+read_liveness() {
+  ( bc_sql_json "storage-report" "$DB" "${SERVER_ARGS[@]}" "SELECT * FROM cadence_liveness" >"$TMP/liveness.json" ) 2>/dev/null     && bc_wb row-count "$TMP/liveness.json" >/dev/null 2>&1
+}
+
 SAMPLED_MICROS="$(printf '%s' "$SAMPLED_AT" | grep -oE '[0-9]+' | tail -n1)"
 if [ -n "$SAMPLED_MICROS" ] && [ $((NOW_MICROS - SAMPLED_MICROS)) -gt "$STALE_MICROS" ]; then
-  finding "watcher: sampler stale" "STALE -- the newest sample is $(((NOW_MICROS - SAMPLED_MICROS) / 1000000))s old, over three sampler periods ($((STALE_MICROS / 1000000))s): the sampler has stopped"
+  finding "watcher: sampler stale" "STALE -- the newest sample is $(((NOW_MICROS - SAMPLED_MICROS) / 1000000))s old, over three sampler periods ($((STALE_MICROS / 1000000))s): the sampler has stopped. $(liveness_detail)"
 fi
 if [ "$OVER_WALL" = "true" ]; then
   finding "watcher: storage over wall" "estimated storage total $TOTAL bytes is past the wall of $WALL_BYTES bytes"
