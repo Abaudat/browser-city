@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/readme/process.png" width="880" alt="How a story ships. 1 Pick: the orchestrator takes the highest-priority, smallest story nothing blocks. 2 Analyze: each lead in scope writes its direction on the issue. 3 Build: Crew implements the story and opens a pull request. 4 Review: CI goes green, then every lead approves; after 8 rounds, the Product Owner is paged. Changes asked send it back to Crew. 5 Merge: merged and marked Done, the next story starts. At the end of every Sprint, Scotty opens a Demo issue, the Product Owner plays the build and comments, and Scotty turns the feedback into new epics and stories. All state lives on GitHub: the board, issues, PRs and comments.">
+  <img src="docs/readme/process.png" width="880" alt="How a story ships. 1 Pick: the orchestrator takes the highest-priority story nothing blocks, earliest milestone first. 2 Analyze: each lead in scope writes its direction on the issue. 3 Build: Crew implements the story and opens a pull request. 4 Review: CI goes green, then every lead approves; after 8 rounds, the Product Owner is paged. Changes asked send it back to Crew. 5 Merge: merged and marked Done, the next story starts. At the end of every Sprint, Scotty opens a Demo issue, the Product Owner plays the build and comments, and Scotty turns the feedback into new epics and stories. All state lives on GitHub: the board, issues, PRs and comments.">
 </p>
 
 ## Explore the repo

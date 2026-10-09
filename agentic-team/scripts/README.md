@@ -59,11 +59,13 @@ agentic-team/scripts/
   Blocker/XS, so a failure report is picked before any story (story 4.19) —
   then takes `bc-issue.sh next` — of every open
   Backlog story on the board, any epic, the one no open issue blocks with the
-  highest Priority, then the smallest Size, then the lowest number — and
+  highest Priority, then the one needed by the earliest milestone in
+  `scripts/team-dashboard/milestones.json` (a gate story or anything a gate is
+  transitively blocked by; none needed sorts last), then the lowest number — and
   `bc-sprint.sh scope-in` puts it on the sprint in play as it starts. The
   rule is a sort, so it is the orchestrator's; what it sorts on is Scotty's:
-  GitHub's native issue dependencies ("blocked by"), Priority and Size, all
-  set when a story is opened. `write-story` therefore takes the story's
+  GitHub's native issue dependencies ("blocked by") and Priority, both
+  set when a story is opened, and the milestones file. `write-story` therefore takes the story's
   blockers as a required argument. The team stops only when nothing in the
   backlog is startable — and if that is because every story left is blocked,
   the sleep reason says so, since a cycle or a blocker nobody can pick is a

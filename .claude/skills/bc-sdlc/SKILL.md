@@ -97,10 +97,12 @@ value outside those lists is exit 2, never a silently unset field.
 not exist is exit 2.
 
 Nobody plans a sprint. The orchestrator starts, from the whole backlog and in
-no epic order, the story with the highest Priority, then the smallest Size,
-that **no open issue blocks**, and puts it on the sprint as it starts it. So a
-story's blockers, priority and size are what decide when it is worked — get
-them right at creation, because a story with no blockers may be started next.
+no epic order, the story with the highest Priority, then the one needed by
+the earliest milestone on the task graph (a milestone's gate stories and all
+they are blocked by), that **no open issue blocks**, and puts it on the sprint
+as it starts it. So a story's blockers and priority are what decide when it is
+worked — get them right at creation, because a story with no blockers may be
+started next.
 
 `<bodyfile>` holds your prose only. The scripts write the `### Sprint N Demo`
 / `### Breaker` / `### Scotty's reply` / `### Task request` / `## Amendment`

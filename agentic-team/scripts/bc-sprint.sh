@@ -8,7 +8,7 @@
 # There is no sprint planning. A sprint is not a batch of work chosen up
 # front; it is the week a story happened to be started in. The backlog is one
 # pool that `bc-issue.sh next` picks from whenever the team is free -- highest
-# priority, smallest size, no open blocker, any epic -- and `scope-in` is the
+# priority, earliest milestone, no open blocker, any epic -- and `scope-in` is the
 # orchestrator putting that one pick onto the sprint in play as it starts it.
 # So a sprint fills as it goes, the team never runs dry because a plan did,
 # and the Sprint field is left meaning exactly what the demo needs it to mean:
