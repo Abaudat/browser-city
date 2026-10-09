@@ -3,7 +3,14 @@ import { buildL3Labels } from "../../../src/debug/l3-labels";
 import { conformanceView } from "./support";
 
 const body = (
-  over: Partial<{ id: string; fallbacks: number; paceOutOfBand: boolean; floor: number }>,
+  over: Partial<{
+    id: string;
+    fallbacks: number;
+    paceOutOfBand: boolean;
+    floor: number;
+    avoidance: { offsetCells: number; capped: boolean; blocked: boolean };
+    activity: string;
+  }>,
 ) => ({
   id: "b",
   x: 1.5,
@@ -22,6 +29,20 @@ describe("buildL3Labels", () => {
     };
     const labels = buildL3Labels(view);
     expect(labels.map((l) => l.text)).toEqual(["a ok", "b straight x2 pace"]);
+  });
+
+  it("shows a sidestep and a glance", () => {
+    const view = {
+      ...conformanceView(),
+      l3Bodies: () => [
+        body({ id: "a", avoidance: { offsetCells: -0.31, capped: false, blocked: false } }),
+        body({ id: "b", avoidance: { offsetCells: 0, capped: true, blocked: true } }),
+        body({ id: "c", activity: "glance" }),
+      ],
+    };
+    const labels = buildL3Labels(view);
+    expect(labels.map((l) => l.text)).toEqual(["a ok side -0.31", "b cap blocked", "c ok glance"]);
+    expect(labels[1]?.fill).not.toBe(labels[0]?.fill);
   });
 
   it("skips a body on another floor", () => {

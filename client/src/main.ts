@@ -26,6 +26,7 @@ import {
   exposeCommuterDrawnForE2e,
   exposeConnectionForE2e,
   exposeIdentityActionsForE2e,
+  exposeL3AgreementForE2e,
   exposePlayerScreenBoundsForE2e,
   exposeRegionForE2e,
   exposeRemotePlayersForE2e,
@@ -709,6 +710,7 @@ async function startStreetScene(
   recordAllBoundTextureSourcesForE2e(handle.allBoundTextureSources);
   exposePlayerScreenBoundsForE2e(handle.playerScreenBounds);
   exposeCommuterDrawnForE2e(handle.commuterDrawn);
+  exposeL3AgreementForE2e((t) => handle.citizensLayer.agreementAt(t));
 
   // Story 1.12 (FR165/FR168): the whole of the debug tooling's gate, and
   // the only import of `client/src/debug/` that exists (enforced by

@@ -33,10 +33,35 @@ export interface BodyPose {
   /** Unit direction of travel on the current edge; 0, 0 when not moving. */
   headingX: number;
   headingY: number;
+  /** Cells to the nearest end of the current edge, so the nearest corner of
+   * the walked path or end of the leg; 0 when not moving. */
+  vertexDistance: number;
+  /** Cells per milliminute walked along the current edge; 0 when not moving. */
+  speed: number;
+  /** The corner of the path, or end of the leg, nearest the body: the place it
+   * is treated as standing while it eases away from or into it. */
+  anchorX: number;
+  anchorY: number;
+  /** Half the straight run between the corners either side of the body: no
+   * ramp reaches further than its middle. */
+  edgeHalf: number;
 }
 
 export function createBodyPose(): BodyPose {
-  return { x: 0, y: 0, floor: 0, moving: false, distance: 0, headingX: 0, headingY: 0 };
+  return {
+    x: 0,
+    y: 0,
+    floor: 0,
+    moving: false,
+    distance: 0,
+    headingX: 0,
+    headingY: 0,
+    vertexDistance: 0,
+    speed: 0,
+    anchorX: 0,
+    anchorY: 0,
+    edgeHalf: 0,
+  };
 }
 
 /** The straight-line distance between two waypoints. The square root of an
@@ -81,17 +106,91 @@ interface SegmentPath {
   readonly length: number;
 }
 
+function segmentLength(dx: number, dy: number): number {
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 function buildSegment(points: Float64Array): SegmentPath {
   const along = new Float64Array(points.length / 2);
   for (let i = 1; i < along.length; i++) {
     along[i] =
       (along[i - 1] as number) +
-      Math.hypot(
+      segmentLength(
         (points[i * 2] as number) - (points[i * 2 - 2] as number),
         (points[i * 2 + 1] as number) - (points[i * 2 - 1] as number),
       );
   }
   return { points, along, length: along[along.length - 1] as number };
+}
+
+/** Where the heading changes and where the leg ends: walked distances, and
+ * their `x, y`, in order. A waypoint the path runs straight through is not a
+ * corner. */
+function findCorners(
+  segments: readonly SegmentPath[],
+  starts: readonly number[],
+  total: number,
+): { distances: Float64Array<ArrayBuffer>; xy: Float64Array<ArrayBuffer> } {
+  const found: number[] = [0];
+  const places: number[] = [];
+  const first = segments[0] as SegmentPath;
+  places.push(first.points[0] as number, first.points[1] as number);
+  let hx = 0;
+  let hy = 0;
+  let have = false;
+  let lastX = places[0] as number;
+  let lastY = places[1] as number;
+  for (let s = 0; s < segments.length; s++) {
+    const seg = segments[s] as SegmentPath;
+    const pts = seg.points;
+    for (let e = 0; e + 3 < pts.length; e += 2) {
+      const ex = (pts[e + 2] as number) - (pts[e] as number);
+      const ey = (pts[e + 3] as number) - (pts[e + 1] as number);
+      const len = Math.sqrt(ex * ex + ey * ey);
+      if (len === 0) continue;
+      const ux = ex / len;
+      const uy = ey / len;
+      if (have && hx * ux + hy * uy < 1 - 1e-9) {
+        found.push((starts[s] as number) + (seg.along[e / 2] as number));
+        places.push(pts[e] as number, pts[e + 1] as number);
+      }
+      hx = ux;
+      hy = uy;
+      have = true;
+      lastX = pts[e + 2] as number;
+      lastY = pts[e + 3] as number;
+    }
+  }
+  found.push(total);
+  places.push(lastX, lastY);
+  return { distances: new Float64Array(found), xy: new Float64Array(places) };
+}
+
+/** The length of the straight run between the corners either side of `at`. */
+function runAround(corners: Float64Array, at: number): number {
+  let lo = 0;
+  let hi = corners.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((corners[mid] as number) <= at) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo === 0 || lo >= corners.length) return 0;
+  return (corners[lo] as number) - (corners[lo - 1] as number);
+}
+
+/** The index of the corner nearest to walked distance `at` in sorted `corners`. */
+function nearestCorner(corners: Float64Array, at: number): number {
+  let lo = 0;
+  let hi = corners.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((corners[mid] as number) < at) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo >= corners.length) return corners.length - 1;
+  if (lo === 0) return 0;
+  return at - (corners[lo - 1] as number) <= (corners[lo] as number) - at ? lo - 1 : lo;
 }
 
 export class Body {
@@ -104,6 +203,10 @@ export class Body {
   #segments: SegmentPath[] = [];
   #segmentStart: number[] = [];
   #total = 0;
+  /** Walked distances of the corners of the route and its two ends. */
+  #corners: Float64Array<ArrayBuffer> = new Float64Array(0);
+  /** x, y of each corner, in the same order. */
+  #cornerXY: Float64Array<ArrayBuffer> = new Float64Array(0);
   #cursor = 0;
   #edge = 0;
   #searches = 0;
@@ -155,6 +258,8 @@ export class Body {
       const only = waypoints[0] as Cell;
       this.#segments.push(buildSegment(Float64Array.of(only.x + 0.5, only.y + 0.5)));
       this.#segmentStart.push(0);
+      this.#corners = Float64Array.of(0);
+      this.#cornerXY = Float64Array.of(only.x + 0.5, only.y + 0.5);
       return;
     }
     for (let i = 1; i < waypoints.length; i++) {
@@ -180,6 +285,9 @@ export class Body {
       this.#segments.push(segment);
       this.#total += segment.length;
     }
+    const corners = findCorners(this.#segments, this.#segmentStart, this.#total);
+    this.#corners = corners.distances;
+    this.#cornerXY = corners.xy;
   }
 
   /** Writes the pose at city time `t` (milliminutes) into `out`. */
@@ -193,6 +301,11 @@ export class Body {
     out.moving = false;
     out.headingX = 0;
     out.headingY = 0;
+    out.vertexDistance = 0;
+    out.speed = 0;
+    out.anchorX = 0;
+    out.anchorY = 0;
+    out.edgeHalf = 0;
     const first = this.#segments[0] as SegmentPath;
     if (last === 0 || t < (instants[0] as number)) {
       out.x = first.points[0] as number;
@@ -238,6 +351,12 @@ export class Body {
     out.y = (pts[e * 2 + 1] as number) + ey * f;
     out.headingX = ex / edge;
     out.headingY = ey / edge;
+    const near = nearestCorner(this.#corners, out.distance);
+    out.vertexDistance = Math.abs((this.#corners[near] as number) - out.distance);
+    out.anchorX = this.#cornerXY[near * 2] as number;
+    out.anchorY = this.#cornerXY[near * 2 + 1] as number;
+    out.edgeHalf = runAround(this.#corners, out.distance) / 2;
+    out.speed = segment.length / (b - a);
     out.moving = true;
   }
 
