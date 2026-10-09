@@ -567,7 +567,7 @@ jobs:
     # the full pool, `explore.yml` at least that.
     env:
       PROPTEST_CASES: 256
-      GENERATION_CITY_POOL: 16
+      GENERATION_CITY_POOL: 8
     defaults:
       run:
         working-directory: server

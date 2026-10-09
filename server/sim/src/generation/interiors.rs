@@ -46,7 +46,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::generated::defs;
 use crate::rng::{Rng, seed_from_ids};
-use crate::rules::{AreaId, RequirementRow, RuleSet, TagId, Violation};
+use crate::rules::{AreaId, RequirementRow, TagId};
 use crate::world::{AreaSpec, Rect, clip_rect_to_chunks};
 
 use super::building_types::BuildingTypeMap;
@@ -504,7 +504,11 @@ pub fn building_site(interior: &Interior, vocab: &Vocabulary) -> DistrictSite {
 /// of this one building, built by the same adapter `DistrictSite` uses.
 /// Empty means the layout may be emitted.
 #[cfg(any(test, feature = "test-fixtures"))]
-pub fn check_layout(interior: &Interior, vocab: &Vocabulary, rules: RuleSet<'_>) -> Vec<Violation> {
+pub fn check_layout(
+    interior: &Interior,
+    vocab: &Vocabulary,
+    rules: crate::rules::RuleSet<'_>,
+) -> Vec<crate::rules::Violation> {
     crate::rules::evaluate_local(rules, &building_site(interior, vocab))
 }
 

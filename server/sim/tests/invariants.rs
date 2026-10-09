@@ -3136,16 +3136,26 @@ fn the_three_singleton_ratios_resolve_to_about_one_across_the_measured_seed_rang
         "no committed row is >= the singleton-ratio ceiling -- the ceiling itself needs re-deriving, not a silently vacuous test"
     );
 
+    // Each city's placed types, planned once for every row.
+    let placed: Vec<Vec<u32>> = (0..256u64)
+        .map(|seed| {
+            let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
+            d.building_types
+                .assignments()
+                .iter()
+                .map(|a| a.building_type)
+                .collect()
+        })
+        .collect();
     for row in &dist_rows {
         let ratio = row.ratio.smallest() as u64;
         let mut min_actual = u64::MAX;
         let mut max_actual = 0u64;
-        for seed in 0..256u64 {
-            let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
+        for (seed, types) in placed.iter().enumerate() {
             let mut per = 0u64;
             let mut actual = 0u64;
-            for a in d.building_types.assignments() {
-                let def = by_id[&a.building_type];
+            for ty in types {
+                let def = by_id[ty];
                 if def.tags.contains(&row.per) {
                     per += 1;
                 }
@@ -6805,8 +6815,9 @@ fn interior_bounds(i: &sim::generation::Interior) -> Rect {
 /// Story 2.4's two placement checks run unchanged over one generated
 /// interior: a sub-cell `WalkabilityGrid` of its wall and fixture
 /// colliders (each a whole cell) plus any `planted` ones, over the
-/// footprint, its approach and a cell of margin, seeded at the centre of
-/// the street cell the approach starts from. `(enclosed, narrow)`.
+/// footprint and the first approach cell outside the street door, seeded
+/// in that cell. Everything past the grid's edge is the open street, so
+/// nothing more of it is needed. `(enclosed, narrow)`.
 fn body_findings(
     i: &sim::generation::Interior,
     planted: &[Rect],
@@ -6821,7 +6832,14 @@ fn body_findings(
     let mut colliders: Vec<Rect> = i.walls().into_iter().map(|(x, y)| cell(x, y)).collect();
     colliders.extend(i.fixtures.iter().map(|f| cell(f.x, f.y)));
     colliders.extend_from_slice(planted);
-    let b = interior_bounds(i);
+    let &(sx, sy) = i.approach.first().ok_or("no approach")?;
+    let fp = i.footprint;
+    let b = Rect {
+        x0: fp.x0.min(sx),
+        y0: fp.y0.min(sy),
+        x1: fp.x1.max(sx + 1),
+        y1: fp.y1.max(sy + 1),
+    };
     let grid = WalkabilityGrid::build(
         Rect {
             x0: b.x0 * s,
@@ -6831,7 +6849,6 @@ fn body_findings(
         },
         &colliders,
     )?;
-    let &(sx, sy) = i.approach.first().ok_or("no approach")?;
     let (seed_x, seed_y) = (sx * s + s / 4, sy * s + s / 4);
     let (bw, bh) = player_body_subcells(defs::BALANCE);
     let enclosed = enclosed_regions(&grid, seed_x, seed_y)?;
@@ -7435,14 +7452,9 @@ fn inv_generation_interior_independent_of_building_order() {
             let shuffled_types = sim::generation::BuildingTypeMap::test_fixture(
                 pairs.iter().map(|(_, a)| *a).collect(),
             );
-            let shuffled = sim::generation::interiors::run(
-                seed,
-                &shuffled_envelopes,
-                &shuffled_types,
-                &d.skeleton.plots,
-                &cfg,
-                &content,
-            ); // generation-entry-point: allow
+            let (envs, types, plots) = (&shuffled_envelopes, &shuffled_types, &d.skeleton.plots);
+            let pass_6 = sim::generation::interiors::run; // generation-entry-point: allow
+            let shuffled = pass_6(seed, envs, types, plots, &cfg, &content);
             let original: std::collections::BTreeMap<u32, &sim::generation::InteriorOutcome> = d
                 .interiors
                 .outcomes()
@@ -7481,14 +7493,9 @@ fn inv_generation_interior_independent_of_neighbouring_buildings() {
                 .unwrap();
             assignments[victim].building_type = other.id;
             let perturbed_types = sim::generation::BuildingTypeMap::test_fixture(assignments);
-            let perturbed = sim::generation::interiors::run(
-                seed,
-                &d.skeleton.envelopes,
-                &perturbed_types,
-                &d.skeleton.plots,
-                &cfg,
-                &content,
-            ); // generation-entry-point: allow
+            let (envs, plots) = (&d.skeleton.envelopes, &d.skeleton.plots);
+            let pass_6 = sim::generation::interiors::run; // generation-entry-point: allow
+            let perturbed = pass_6(seed, envs, &perturbed_types, plots, &cfg, &content);
             for (i, (a, b)) in d
                 .interiors
                 .outcomes()
