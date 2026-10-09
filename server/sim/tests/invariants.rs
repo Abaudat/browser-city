@@ -3078,11 +3078,12 @@ fn the_catchment_floor_bites_for_every_scoped_row_over_seeds_0_to_256() {
         .filter(|r| matches!(r.scope, sim::rules::DistributionScope::Catchment { .. }))
         .collect();
     assert!(!rows.is_empty(), "no scoped row is committed");
-    for row in &rows {
-        let (mut biting, mut pairs) = (0u64, 0u64);
-        for seed in 0..256u64 {
-            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-            let site = d.site(&content);
+    // (biting, pairs) per row; each city is planned once for every row.
+    let mut tally = vec![(0u64, 0u64); rows.len()];
+    for seed in 0..256u64 {
+        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let site = d.site(&content);
+        for (row, (biting, pairs)) in rows.iter().zip(tally.iter_mut()) {
             let read = match row.ratio {
                 sim::rules::RowRatio::Read(r) => Some(r.parameter),
                 sim::rules::RowRatio::Fixed(_) => None,
@@ -3095,10 +3096,12 @@ fn the_catchment_floor_bites_for_every_scoped_row_over_seeds_0_to_256() {
                 )
                 .values()
             {
-                pairs += 1;
-                biting += u64::from(t.lower >= 1);
+                *pairs += 1;
+                *biting += u64::from(t.lower >= 1);
             }
         }
+    }
+    for (row, &(biting, pairs)) in rows.iter().zip(&tally) {
         let share = biting * 100 / pairs.max(1);
         assert!(
             share >= threshold,
