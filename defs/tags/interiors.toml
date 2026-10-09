@@ -61,31 +61,39 @@ id = 47
 key = "making"
 
 # Anchor fixtures: a citizen acts at each of these to meet a need or hold
-# a post. `stock` is an empty container -- no item, no quantity.
+# a post. `stock` is an empty container -- no item, no quantity. Each
+# carries the placement class the layout pass stands it by.
 [[tag]]
 id = 48
 key = "stock"
+placement = "wall_backed"
 
 [[tag]]
 id = 49
 key = "bed"
+placement = "wall_backed"
 
 [[tag]]
 id = 50
 key = "cooker"
+placement = "wall_backed"
 
 [[tag]]
 id = 51
 key = "basin"
+placement = "wall_backed"
 
 [[tag]]
 id = 52
 key = "table_set"
+placement = "free_standing"
 
 [[tag]]
 id = 53
 key = "desk"
+placement = "wall_backed"
 
 [[tag]]
 id = 54
 key = "workbench"
+placement = "wall_backed"

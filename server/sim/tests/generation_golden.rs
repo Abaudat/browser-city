@@ -30,7 +30,7 @@
 //! running pass 2 twice over one pass-1 output is byte-identical (pass 2
 //! never mutates its own input).
 
-use sim::generated::defs::{BuildingTypeDef, RoomTypeDef, TagDef, TagStructure};
+use sim::generated::defs::{BuildingTypeDef, RoomTypeDef, TagDef, TagPlacement, TagStructure};
 use sim::generation::neighbourhoods::NeighbourhoodConfig;
 use sim::generation::streets::DETOUR_SAMPLE_MAX_NODES;
 use sim::generation::{
@@ -147,6 +147,7 @@ fn frozen_config() -> GenerationConfig {
         workplace_mean_count_tolerance_percent: 5,
         catchment_extent_cells: 256,
         interior_max_layout_attempts: 8,
+        interior_max_room_aspect: 3,
         interior_min_enterable_count: 1,
         interior_max_rejected_percent: 5,
         interior_enterable_target_percent: 90,
@@ -292,78 +293,91 @@ const FROZEN_TAGS: &[TagDef] = &[
         key: "frozen_solid",
         role: None,
         structure: Some(TagStructure::Wall),
+        placement: None,
     },
     TagDef {
         id: 9302,
         key: "frozen_solid_run",
         role: None,
         structure: Some(TagStructure::WallRun),
+        placement: None,
     },
     TagDef {
         id: 9303,
         key: "frozen_ground_inside",
         role: None,
         structure: Some(TagStructure::Floor),
+        placement: None,
     },
     TagDef {
         id: 9304,
         key: "frozen_gap",
         role: None,
         structure: Some(TagStructure::Threshold),
+        placement: None,
     },
     TagDef {
         id: 9305,
         key: "frozen_way_in",
         role: None,
         structure: Some(TagStructure::Entrance),
+        placement: None,
     },
     TagDef {
         id: 9306,
         key: "frozen_paving",
         role: None,
         structure: Some(TagStructure::Pavement),
+        placement: None,
     },
     TagDef {
         id: 9307,
         key: "frozen_object",
         role: None,
         structure: Some(TagStructure::Fixture),
+        placement: None,
     },
     TagDef {
         id: 9320,
         key: "frozen_room",
         role: None,
         structure: None,
+        placement: None,
     },
     TagDef {
         id: 9311,
         key: "frozen_open",
         role: None,
         structure: None,
+        placement: None,
     },
     TagDef {
         id: 9312,
         key: "frozen_cosy",
         role: None,
         structure: None,
+        placement: None,
     },
     TagDef {
         id: 9313,
         key: "frozen_back",
         role: None,
         structure: None,
+        placement: None,
     },
     TagDef {
         id: 9330,
         key: "frozen_lamp",
         role: None,
         structure: None,
+        placement: Some(TagPlacement::WallMounted),
     },
     TagDef {
         id: 9331,
         key: "frozen_crate",
         role: None,
         structure: None,
+        placement: Some(TagPlacement::WallBacked),
     },
 ];
 
@@ -372,6 +386,7 @@ const FROZEN_ROOM_TYPES: &[RoomTypeDef] = &[
         id: 9401,
         key: "frozen_hall",
         tags: &[9320, 9311],
+        access: 9311,
         min_width_cells: 3,
         min_depth_cells: 2,
         weight: 2,
@@ -380,6 +395,7 @@ const FROZEN_ROOM_TYPES: &[RoomTypeDef] = &[
         id: 9402,
         key: "frozen_den",
         tags: &[9320, 9312],
+        access: 9312,
         min_width_cells: 2,
         min_depth_cells: 2,
         weight: 1,
@@ -388,6 +404,7 @@ const FROZEN_ROOM_TYPES: &[RoomTypeDef] = &[
         id: 9403,
         key: "frozen_store",
         tags: &[9320, 9313],
+        access: 9313,
         min_width_cells: 2,
         min_depth_cells: 2,
         weight: 1,
@@ -589,14 +606,14 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     let content = frozen_content();
     let d = plan(seed, cfg, &content).expect("frozen_config's own site is always valid");
     let (lu, net, pm, em, bt, io) = (
-        &d.land_use,
-        &d.streets,
-        &d.plots,
-        &d.envelopes,
-        &d.building_types,
+        &d.skeleton.land_use,
+        &d.skeleton.streets,
+        &d.skeleton.plots,
+        &d.skeleton.envelopes,
+        &d.skeleton.building_types,
         &d.interiors,
     );
-    let count_verdict = d.check_building_count(cfg).is_ok();
+    let count_verdict = d.skeleton.check_building_count(cfg).is_ok();
 
     let regions = lu.regions();
     let count = |u: LandUse| regions.iter().filter(|r| r.use_ == u).count();

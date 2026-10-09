@@ -123,9 +123,18 @@ mod tests {
         let (rec, district) = create(&[], 7, &cfg, &content).unwrap();
         let direct = generate(7, &cfg, &content).unwrap();
         assert_eq!(rec.seed, 7);
-        assert_eq!(district.plots.plots(), direct.plots.plots());
-        assert_eq!(district.envelopes.outcomes(), direct.envelopes.outcomes());
-        assert_eq!(district.streets.blocks(), direct.streets.blocks());
+        assert_eq!(
+            district.skeleton.plots.plots(),
+            direct.skeleton.plots.plots()
+        );
+        assert_eq!(
+            district.skeleton.envelopes.outcomes(),
+            direct.skeleton.envelopes.outcomes()
+        );
+        assert_eq!(
+            district.skeleton.streets.blocks(),
+            direct.skeleton.streets.blocks()
+        );
     }
 
     #[test]

@@ -1048,7 +1048,7 @@ fn a_program_too_large_for_its_own_minimum_interior_is_named() {
     let err = build_err("building-type-program-too-large");
     assert_eq!(
         err.to_string(),
-        "defs/building-types/residential.toml:3:7: building type 'fixture_house' room program needs at least a 2x7 interior, but its own minimum interior is 5x5"
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' room program needs at least a 2x9 interior, but its own minimum interior is 5x5"
     );
 }
 
@@ -1088,6 +1088,17 @@ fn a_structural_part_two_tags_name_is_named() {
     assert_eq!(
         err.to_string(),
         "defs/tags/structure.toml:8:7: structure 'wall' is declared by both 'solid' and 'solid_too'"
+    );
+}
+
+/// Story 3.5: the layout pass stands every fixture a requirement row owes
+/// by its tag's placement class, so an owed fixture tag declares one.
+#[test]
+fn a_fixture_tag_with_no_placement_is_named() {
+    let err = build_err("tag-fixture-without-placement");
+    assert_eq!(
+        err.to_string(),
+        "defs/tags/structure.toml:42:7: tag 'lamp' is a fixture requirement row 'nook_has_a_lamp' owes but declares no placement"
     );
 }
 
@@ -1202,6 +1213,7 @@ fn every_known_category_has_a_fixture_directory() {
         "building-type-site-restricted",
         "tag-structure-part-missing",
         "tag-structure-part-declared-twice",
+        "tag-fixture-without-placement",
         "room-type-too-narrow",
         "room-type-no-access-tag",
         "room-type-two-access-tags",

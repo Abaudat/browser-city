@@ -8,6 +8,17 @@
 # row over one of its tags (`defs/rules/interiors.toml`), never a field
 # here. Access (`public`/`staff`/`private`) is exactly one tag per room.
 
+# The small dwelling's front room: where the household cooks and eats, so
+# every home sleeps, washes and cooks however small its footprint. A
+# separate kitchen and living room are what size buys.
+[[room_type]]
+id = 14
+key = "kitchen_diner"
+tags = ["room", "private", "dining", "cooking"]
+min_width_cells = 3
+min_depth_cells = 2
+weight = 3
+
 [[room_type]]
 id = 1
 key = "living_room"

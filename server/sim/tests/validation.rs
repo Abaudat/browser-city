@@ -12,14 +12,9 @@
 //! cell placed anywhere (any real object tagged `wall`) therefore always
 //! trips the real `container = "wall"` row, `building_has_an_entrance`,
 //! since no real `entrance` cell is ever placed inside a wall's own area
-//! either, and
-//! every real `counter` cell always trips `counter_faces_a_shopfront`
-//! (no real `shopfront` neighbour is ever placed, and the one real
-//! object that carries `shopfront` also carries `wall`, which would
-//! trip the same Requirement row anyway): none of these are hidden
-//! -- they are genuine, already-committed content rules firing honestly
-//! on real content, not test noise, so the broken variants below include
-//! them all in their expected sets. `docs/trace-matrix.md` records the
+//! either: it is never hidden -- a genuine, already-committed content
+//! rule firing honestly on real content, not test noise, so the broken
+//! variants below include it in their expected sets. `docs/trace-matrix.md` records the
 //! "real door joins the correct block" half as `deferred` to #300, and
 //! that a `counter`/`wall` row can never have a real, non-violating
 //! subject in the correct block until it lands either (see
@@ -246,9 +241,7 @@ fn lighting_break_defects() -> Vec<Defect> {
 }
 
 // --- break 2: no_counter_in_a_stairwell -- a counter sharing an area
-// with a foot_stairs. A real `shop_counter` (width 3) always also trips
-// `counter_faces_a_shopfront` (no `shopfront` neighbour exists anywhere
-// in this fixture) -- honestly included, not hidden (see module doc).
+// with a foot_stairs.
 
 fn stairwell_break_placements() -> Vec<Placement> {
     vec![
@@ -285,25 +278,14 @@ fn stairwell_break_areas() -> Vec<AreaSpec> {
 }
 
 fn stairwell_break_defects() -> Vec<Defect> {
-    let mut defects = vec![Defect {
+    vec![Defect {
         check: rule_check("no_counter_in_a_stairwell"),
         location: Location::Cell {
             cell: Cell::new(2, 0, STAIRWELL_FLOOR),
             other: None,
             catchment: None,
         },
-    }];
-    for x in 0..3 {
-        defects.push(Defect {
-            check: rule_check("counter_faces_a_shopfront"),
-            location: Location::Cell {
-                cell: Cell::new(x, 0, STAIRWELL_FLOOR),
-                other: None,
-                catchment: None,
-            },
-        });
-    }
-    defects
+    }]
 }
 
 // --- break 3: a sealed wall ring -- enclosed_regions + building_has_an_

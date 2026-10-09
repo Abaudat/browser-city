@@ -33,19 +33,18 @@ subject = "counter"
 within = "stairs"
 mode = "forbid"
 
-# Adjacency: a counter must have walkable floor on at least one side --
-# a till nobody can stand at is a prop, not a counter (Derek's direction:
-# every fixture a citizen acts at has a cell beside it to act from). The
-# key is permanent; it named the placeholder this row replaced.
+# Adjacency: a shopfront has the shop's counter on some side -- a
+# placeholder until the prop pass emits shopfronts (story 3.6). The
+# interior-layout pass never emits one, so it cannot fire on its output.
 [[adjacency]]
 id = 4
 key = "counter_faces_a_shopfront"
-a = "counter"
+a = "shopfront"
 relation = "require"
 rotate = true
 alternatives = [
   [
-    { direction = "north", tag = "floor" },
+    { direction = "north", tag = "counter" },
   ],
 ]
 

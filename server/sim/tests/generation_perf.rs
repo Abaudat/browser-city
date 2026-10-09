@@ -43,8 +43,8 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // structural proof that stays linear too.
     let d = generate(7, &cfg, &content)
         .unwrap_or_else(|e| panic!("the 1024 growth target must still generate: {e}"));
-    let lu = &d.land_use;
-    let net = &d.streets;
+    let lu = &d.skeleton.land_use;
+    let net = &d.skeleton.streets;
 
     // Tim's direction, cycle 1: the checkers, not just `run` -- every
     // graph query now routes through the adjacency index built once at
@@ -102,7 +102,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // the property this test exists to pin.
     assert!(!net.blocks().is_empty());
 
-    let pm = &d.plots;
+    let pm = &d.skeleton.plots;
     // Every non-`open` plot is at least `width_min * envelope_limits(use)
     // .min_depth_cells` world cells for its own land use -- `plots::run`'s
     // own `axis_rows` never hands a real row less depth than that (its
@@ -150,7 +150,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
         );
     }
 
-    let em = &d.envelopes;
+    let em = &d.skeleton.envelopes;
     // Envelopes never outnumber the plots they were sized from -- no
     // separate ceiling needed beyond `max_plots` above.
     assert!(em.outcomes().len() as u64 <= max_plots);
@@ -158,55 +158,56 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
 
     // Story 3.4: one type assignment per placed envelope, never more.
     assert_eq!(
-        d.building_types.assignments().len(),
+        d.skeleton.building_types.assignments().len(),
         em.placed_count() as usize
     );
 
     // Story 3.5: pass 6 is the first pass whose work scales with cells
     // rather than buildings, and the first to run the rule engine inside
     // a retry loop. Structural ceilings, derived from config, no
-    // stopwatch: one outcome per placed envelope; cells visited (a
-    // layout attempt touches its own footprint) at most total footprint
-    // area times the attempt cap; and every per-building verdict is
-    // windowed to its own building -- the site `check_layout` judges holds
-    // only that building's own cells (its footprint and its approach),
-    // never the district's, so no whole-district `evaluate` ever runs per
-    // building.
+    // stopwatch, against the work the pass itself counted
+    // (`LayoutWork`): one outcome per placed envelope; per building, the
+    // cells its attempts laid at most its footprint area per attempt, and
+    // the cells its verdicts judged at most its footprint and approach
+    // per attempt -- every verdict windowed to its own building, never
+    // the district.
     let io = &d.interiors;
     assert_eq!(io.outcomes().len() as i64, em.placed_count());
     let envelope_by_plot: std::collections::BTreeMap<u32, &sim::generation::envelopes::Envelope> =
         em.envelopes().map(|e| (e.plot, e)).collect();
-    let area_of = |plot: u32| {
-        let f = envelope_by_plot[&plot].footprint;
-        f.width() * f.height()
-    };
-    let total_footprint_area: i64 = em
-        .envelopes()
-        .map(|e| e.footprint.width() * e.footprint.height())
-        .sum();
-    let mut visited = 0i64;
+    let cap = cfg.interior_max_layout_attempts as u64;
     for o in io.outcomes() {
-        match o {
-            sim::generation::InteriorOutcome::Laid { plot, attempts, .. }
-            | sim::generation::InteriorOutcome::Rejected { plot, attempts, .. } => {
-                visited += area_of(*plot) * *attempts as i64;
-            }
-            sim::generation::InteriorOutcome::Shell { .. } => {}
-        }
-    }
-    let visited_ceiling = total_footprint_area * cfg.interior_max_layout_attempts as i64;
-    assert!(
-        visited <= visited_ceiling,
-        "layout attempts visited {visited} cells, past footprint area x attempt cap = {visited_ceiling}"
-    );
-    let vocab = sim::generation::interiors::Vocabulary::new(&content);
-    for (plot, _, interior) in io.laid() {
-        let cells =
-            sim::generation::interiors::building_site(interior, &vocab).occupied_cells() as i64;
+        let (plot, work) = match o {
+            sim::generation::InteriorOutcome::Laid { plot, work, .. }
+            | sim::generation::InteriorOutcome::Rejected { plot, work, .. } => (*plot, *work),
+            sim::generation::InteriorOutcome::Shell { .. } => continue,
+        };
+        let f = envelope_by_plot[&plot].footprint;
+        let area = (f.width() * f.height()) as u64;
+        let bounds = pm.plots()[plot as usize].bounds;
+        // The approach runs from the footprint's front to one cell past
+        // the plot's own edge.
+        let approach = (bounds.width().max(bounds.height()) + 1) as u64;
         assert!(
-            cells <= area_of(plot) + interior.approach.len() as i64,
-            "plot {plot}: a per-building verdict site holds {cells} cells, more than its own footprint and approach"
+            work.cells_laid <= cap * area,
+            "plot {plot}: layout attempts laid {} cells, past footprint area x attempt cap = {}",
+            work.cells_laid,
+            cap * area
         );
+        assert!(
+            work.cells_judged <= cap * (area + approach),
+            "plot {plot}: verdicts judged {} cells, past (footprint + approach) x attempt cap = {}",
+            work.cells_judged,
+            cap * (area + approach)
+        );
+    }
+    for o in io.outcomes() {
+        if let sim::generation::InteriorOutcome::Laid { interior, work, .. } = o {
+            assert!(
+                work.cells_laid >= interior.laid_cells(),
+                "the counter missed the cells of the layout it accepted"
+            );
+        }
     }
 
     // Ownership areas per chunk stay under the ceiling the world model's
@@ -268,7 +269,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
         content.building_types.iter().map(|b| (b.id, b)).collect();
     let mut tag_counts: std::collections::BTreeMap<sim::rules::TagId, u64> =
         std::collections::BTreeMap::new();
-    for a in d.building_types.assignments() {
+    for a in d.skeleton.building_types.assignments() {
         for &t in by_id[&a.building_type].tags {
             *tag_counts.entry(t).or_insert(0) += 1;
         }

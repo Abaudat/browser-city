@@ -370,6 +370,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         key: located(text, &t.key),
                         role: t.role.clone(),
                         structure: t.structure,
+                        placement: t.placement,
                     });
                 }
             }

@@ -55,19 +55,14 @@ pub fn plan_skeleton(
 }
 
 /// The one entry point production calls: [`plan`], then
-/// [`District::check_building_count`], [`District::check_rules`] and
-/// [`District::check_workplace_count`] -- a seed whose district fails any
-/// of the three is a world that fails to create.
+/// [`District::check`] -- a seed whose district fails any verdict is a
+/// world that fails to create.
 pub fn generate(
     city_seed: u64,
     cfg: &GenerationConfig,
     content: &GenerationContent,
 ) -> Result<District, GenerationError> {
     let district = plan(city_seed, cfg, content)?;
-    district.check_building_count(cfg)?;
-    district.check_rules(content)?;
-    district.check_workplace_count(cfg, content)?;
-    district.check_enterable_count(cfg)?;
-    district.check_institutions_enterable(content)?;
+    district.check(cfg, content)?;
     Ok(district)
 }

@@ -1482,12 +1482,11 @@ or plot's draws.
 
 `generation::plan(city_seed, &cfg, &content) -> Result<District,
 GenerationError>` chains every implemented pass in order with no verdict
-on the result (only pass 1's own site check can fail). A `District` is a
-`Skeleton` (passes 1-5, which it derefs to) plus the interiors; pass 6
-costs a layout and a rule verdict per building, an order of magnitude
-more than the five passes before it together, so a harness that reads
-nothing of the interiors calls `plan_skeleton`, which runs passes 1-5
-exactly as `plan` does. `content` is
+on the result (only pass 1's own site check can fail). A `District` is
+its `skeleton` (passes 1-5, a `Skeleton`) and its `interiors` (pass 6),
+each read through its own field. `plan_skeleton` runs passes 1-5 exactly
+as `plan` does. `District::check` is every verdict `generate` holds a
+plan to, in order. `content` is
 `GenerationContent { rules: RuleSet<'_>, building_types, room_types, tags }`
 -- every content table a pass reads, loaded once
 (`GenerationContent::committed()` wraps `RuleSet::committed()`,

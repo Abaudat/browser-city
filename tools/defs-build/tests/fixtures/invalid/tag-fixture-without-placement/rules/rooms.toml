@@ -1,0 +1,6 @@
+[[requirement]]
+id = 1
+key = "nook_has_a_lamp"
+container = "nook"
+requires = "lamp"
+min = 1

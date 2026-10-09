@@ -14,10 +14,12 @@ key = "seating"
 [[tag]]
 id = 3
 key = "counter"
+placement = "facing_door"
 
 [[tag]]
 id = 4
 key = "lighting"
+placement = "wall_mounted"
 
 [[tag]]
 id = 5

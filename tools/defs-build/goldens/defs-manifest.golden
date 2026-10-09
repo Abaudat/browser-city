@@ -168,6 +168,7 @@ room_type 10 ward
 room_type 11 dormitory
 room_type 12 workroom
 room_type 13 classroom
+room_type 14 kitchen_diner
 body 1 body_01
 body 2 body_02
 body 3 body_03

@@ -234,11 +234,9 @@ impl GenerationContent<'static> {
 }
 
 /// Passes 1-5 of a city plan: land use, streets, plots, envelopes and
-/// building types -- everything above the interiors. Pass 6 costs a
-/// layout and a rule verdict per building, an order of magnitude more
-/// than the five passes before it together, so a harness that reads
-/// nothing of the interiors plans only this ([`plan_skeleton`]); a
-/// [`District`] is a skeleton plus the interiors and derefs to it.
+/// building types -- everything above the interiors, what
+/// [`plan_skeleton`] returns. A [`District`] holds one as its own
+/// `skeleton` field.
 #[derive(Debug, Clone)]
 pub struct Skeleton {
     pub land_use: LandUseMap,
@@ -401,26 +399,31 @@ impl Skeleton {
     }
 }
 
-/// One finished city plan: every implemented pass's own output, in order.
-/// Never a `PlacedObject` -- still the abstract plan this module has
-/// always handed down (FR110). Derefs to its [`Skeleton`], so
-/// `district.plots` and `district.check_building_count(..)` read as they
-/// always have.
+/// One finished city plan: passes 1-5 ([`Skeleton`]) and pass 6's
+/// interiors. Never a `PlacedObject` -- still the abstract plan this
+/// module has always handed down (FR110).
 #[derive(Debug, Clone)]
 pub struct District {
     pub skeleton: Skeleton,
     pub interiors: InteriorMap,
 }
 
-impl std::ops::Deref for District {
-    type Target = Skeleton;
-
-    fn deref(&self) -> &Skeleton {
-        &self.skeleton
-    }
-}
-
 impl District {
+    /// Every verdict [`generate`] holds a finished plan to, in its order:
+    /// the building count, the rules, the workplace count, the enterable
+    /// floor, then every distributed institution enterable.
+    pub fn check(
+        &self,
+        cfg: &GenerationConfig,
+        content: &GenerationContent,
+    ) -> Result<(), GenerationError> {
+        self.skeleton.check_building_count(cfg)?;
+        self.check_rules(content)?;
+        self.skeleton.check_workplace_count(cfg, content)?;
+        self.check_enterable_count(cfg)?;
+        self.check_institutions_enterable(content)
+    }
+
     /// Builds this district's own [`DistrictSite`] -- the one adapter
     /// both this check and pass 5's own placement build from the same
     /// fields (FR112).
@@ -428,10 +431,10 @@ impl District {
         let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
             content.building_types.iter().map(|b| (b.id, b)).collect();
         DistrictSite::build(
-            &self.envelopes,
-            &self.plots,
-            &self.streets,
-            self.building_types.assignments(),
+            &self.skeleton.envelopes,
+            &self.skeleton.plots,
+            &self.skeleton.streets,
+            self.skeleton.building_types.assignments(),
             &by_id,
             &self.interiors,
             &interiors::Vocabulary::new(content),
@@ -756,6 +759,8 @@ pub struct GenerationConfig {
     /// How many times one building's layout may be rebuilt before it
     /// comes out as a typed `Rejected` outcome -- never unbounded.
     pub interior_max_layout_attempts: u32,
+    /// A room's long side is at most this many times its short side.
+    pub interior_max_room_aspect: i32,
     /// FR114's floor on the enterable count (`generate` fails below it).
     pub interior_min_enterable_count: i64,
     /// The maximum percent of attempted layouts that may be `Rejected`,
@@ -997,6 +1002,7 @@ impl GenerationConfig {
 
             interior_max_layout_attempts: get(balance, "generation.interiors.max_layout_attempts")
                 as u32,
+            interior_max_room_aspect: get(balance, "generation.interiors.max_room_aspect") as i32,
             interior_min_enterable_count: get(balance, "generation.interiors.min_enterable_count"),
             interior_max_rejected_percent: get(
                 balance,
@@ -1686,6 +1692,7 @@ mod tests {
                 100000,
             ),
             seed("generation.interiors.max_layout_attempts", 8, 1, 64),
+            seed("generation.interiors.max_room_aspect", 3, 1, 16),
             seed("generation.interiors.min_enterable_count", 100, 1, 100000),
             seed("generation.interiors.max_rejected_percent", 5, 0, 100),
             seed("generation.interiors.enterable_target_percent", 98, 1, 100),
@@ -2119,8 +2126,14 @@ mod tests {
         let content = GenerationContent::committed();
         let planned = plan(11, &cfg, &content).unwrap();
         let generated = generate(11, &cfg, &content).unwrap();
-        assert_eq!(planned.plots.plots(), generated.plots.plots());
-        assert_eq!(planned.envelopes.outcomes(), generated.envelopes.outcomes());
+        assert_eq!(
+            planned.skeleton.plots.plots(),
+            generated.skeleton.plots.plots()
+        );
+        assert_eq!(
+            planned.skeleton.envelopes.outcomes(),
+            generated.skeleton.envelopes.outcomes()
+        );
 
         let mut starved = cfg;
         starved.envelope_target_count_per_million_cells *= 100;

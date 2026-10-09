@@ -11,5 +11,5 @@ id = 2
 key = "fixture_big"
 tags = ["staff"]
 min_width_cells = 2
-min_depth_cells = 4
+min_depth_cells = 6
 weight = 1

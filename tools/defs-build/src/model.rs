@@ -934,6 +934,37 @@ pub struct RawTag {
     /// `ground`), so the part is its own field.
     #[serde(default)]
     pub structure: Option<RawStructure>,
+    /// Where the interior-layout pass stands a fixture carrying this tag
+    /// -- the closed vocabulary `sim::generation::interiors` places by.
+    #[serde(default)]
+    pub placement: Option<RawPlacement>,
+}
+
+/// The closed set of fixture placement classes [`RawTag::placement`]
+/// names.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum RawPlacement {
+    /// Backed onto a wall: the north wall first, then the side walls.
+    WallBacked,
+    /// On the open floor, away from every wall.
+    FreeStanding,
+    /// On the north wall row, centred.
+    WallMounted,
+    /// On the wall across from the room's door, facing it.
+    FacingDoor,
+}
+
+impl RawPlacement {
+    /// This variant's own name in the emitted `defs::TagPlacement` enum.
+    pub fn variant(self) -> &'static str {
+        match self {
+            RawPlacement::WallBacked => "WallBacked",
+            RawPlacement::FreeStanding => "FreeStanding",
+            RawPlacement::WallMounted => "WallMounted",
+            RawPlacement::FacingDoor => "FacingDoor",
+        }
+    }
 }
 
 /// The closed set of structural parts [`RawTag::structure`] names.
@@ -1371,6 +1402,7 @@ pub struct TagEntry {
     pub key: Located<String>,
     pub role: Option<RawRole>,
     pub structure: Option<RawStructure>,
+    pub placement: Option<RawPlacement>,
 }
 
 #[derive(Debug)]
@@ -1641,6 +1673,8 @@ pub struct RoomTypeDef {
     pub id: u32,
     pub key: String,
     pub tags: Vec<u32>,
+    /// The one access tag among `tags` (public, staff or private).
+    pub access: u32,
     pub min_width_cells: u32,
     pub min_depth_cells: u32,
     pub weight: u32,
@@ -1757,6 +1791,8 @@ pub struct TagDef {
     pub role: Option<RoleDef>,
     /// The structural part this tag names, when it names one.
     pub structure: Option<RawStructure>,
+    /// Where a fixture carrying this tag stands, when it is one.
+    pub placement: Option<RawPlacement>,
 }
 
 /// One resolved (tag key -> id) [`RawNeighbourTerm`].

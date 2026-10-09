@@ -135,6 +135,7 @@ balance generation.interiors.enterable_target_tolerance_percent value=1 min=0 ma
 balance generation.interiors.max_kind_share_percent value=85 min=1 max=100
 balance generation.interiors.max_layout_attempts value=8 min=1 max=64
 balance generation.interiors.max_rejected_percent value=5 min=0 max=100
+balance generation.interiors.max_room_aspect value=3 min=1 max=16
 balance generation.interiors.min_enterable_count value=100 min=1 max=100000
 balance generation.interiors.shop_min_enterable_percent value=90 min=0 max=100
 balance generation.land_use.coarse_cell_size_cells value=16 min=1 max=128

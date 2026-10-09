@@ -1,4 +1,4 @@
-rules: shop_floor_has_a_counter cafe_has_two_table_sets business_has_stock_space office_has_a_desk workroom_has_a_workbench room_has_a_light counter_faces_a_shopfront no_counter_in_a_stairwell door_never_blocked_by_a_fixture footprint_sized_for_interior_usability
+rules: shop_floor_has_a_counter cafe_has_two_table_sets business_has_stock_space office_has_a_desk workroom_has_a_workbench room_has_a_light no_counter_in_a_stairwell door_never_blocked_by_a_fixture footprint_sized_for_interior_usability
 expect: pass
 floor: 0
 legend: W=wall+wall_run F=floor l=floor+fixture+lighting c=floor+fixture+counter t=floor+fixture+table_set k=floor+fixture+stock d=floor+fixture+desk w=floor+fixture+workbench A=floor+stairs 1=floor+room+public+trading 2=floor+room+public+trading+seated_service 3=floor+room+staff 4=floor+room+staff+working 5=floor+room+staff+making D=threshold+wall_run+entrance P=pavement

@@ -691,10 +691,22 @@ tail, not a re-expression of the excess budget at an arbitrary distance.
   out `Rejected` is a typed error: an institution that cannot be entered
   is a missing institution. One street entrance per building.
 - **A program is a core plus a tail.** `rooms` is the required core, front
-  room first; `optional_rooms` an ordered tail taken while the footprint
-  holds it -- size buys rooms, not bigger rooms. A front band holds the
-  front room, one partition, and the remaining rooms stand side by side
-  behind it, each through its own doorway in the partition.
+  room first; `optional_rooms` an ordered tail, of which the footprint
+  takes the longest prefix some plan fits -- size buys rooms, not bigger
+  rooms. Every dwelling's core sleeps, washes and cooks: the small
+  dwelling's front room is a kitchen-diner, and a separate kitchen and
+  living room are what size buys.
+- **Three plans, every room under the aspect cap.** No room's long side
+  is more than `generation.interiors.max_room_aspect` times its short
+  side; every plan is sized under it and an attempt past it is refused.
+  *Band*: the front room across the full width, a partition, the back
+  rooms side by side behind it. *Column*: the front room a full-depth
+  column holding the entrance, the back rooms stacked front to back on
+  either side of it. *Two rows*: the front band, a first row of back
+  rooms, and a second row behind -- a second-row room reached through
+  the first-row room in front of it, only when the two share an access;
+  a first-row room with nothing behind it runs both rows' depth. Every
+  room is sized for what it owes, its doors and a lane.
 - **Access is a room-type tag:** exactly one of `public`, `staff` or
   `private` per room type -- what "back room" means (a staff room), and
   what keys, opening hours and the guard's door round read later. From
@@ -726,20 +738,33 @@ tail, not a re-expression of the excess budget at an arbitrary distance.
 | every room | a light |
 
 - **Composition (camera-driven).** The south wall retracts, so the north
-  wall is the display wall: fixtures back onto the north wall first, then
-  the side walls, then the open floor, and the south wall last. A
-  doorway's cell and the cell either side of it stay clear, and every
-  fixture keeps a lane to the entrance at least one cell wide; no room
-  is narrower than two walkable cells. The entry room of a dwelling is a
-  living room, never a bathroom; businesses put the public room on the
-  street side and staff and stock behind it.
-- **Variety** comes from the footprint-driven room split (the front
-  band's depth and each back room's width), mirrored arrangements, the
-  order of the back rooms and the choice of fixture cells, all drawn from
-  a stream seeded by the building's own bounds and the attempt index --
-  never list position, so a retry in one building never shifts its
-  neighbour. A building the rule engine refuses is rebuilt, up to
+  wall is the display wall. A doorway's cell and the cell either side of
+  it stay clear, and every fixture keeps a lane to the entrance at least
+  one cell wide; no room is narrower than two walkable cells. The entry
+  room of a dwelling is its kitchen-diner, never a bathroom; businesses
+  put the public room on the street side and staff and stock behind it.
+- **Fixture placement.** Each anchor tag carries a placement class
+  (`defs/tags/*.toml`'s `placement`), and the pass places by class, never
+  two fixtures in adjacent cells where the room allows. *Wall-backed*
+  (bed, cooker, basin, desk, workbench, stock): along the north wall,
+  then the side walls, centred first, in a corner only in a room two
+  cells wide. *Free-standing* (table set): on the open floor away from
+  every wall, nearest the centre, in a room three or more cells each way.
+  *Wall-mounted* (light): on the north wall row, centred, never in a
+  corner. *Facing the door* (counter): on the wall across from the
+  room's door -- or, when that wall is a partition, the side wall
+  nearest the door -- centred, with the cell between it and the door
+  kept walkable. The prop pass dresses around these anchors.
+- **Variety** comes from the plan (band, column or two rows), the
+  footprint-driven sizes, mirrored arrangements, the order of the back
+  rooms and the choice of fixture cells, all drawn from a stream seeded
+  by the building's own bounds and the attempt index -- never list
+  position, so a retry in one building never shifts its neighbour. A
+  building the rule engine refuses is rebuilt, up to
   `generation.interiors.max_layout_attempts`, then `Rejected`.
+- **Owed to the prop pass:** a `washing` room holds only a basin here,
+  which does not read as a bathroom at 16 px -- the prop pass places a
+  toilet or bath in every one.
 - **Ownership.** Each building's footprint is a `building_area` (walls
   included) and each room's floor plus the doorway it owns a `room_area`
   (several rects sharing one room id; never a wall), emitted through
@@ -965,7 +990,7 @@ disagree.
 ## adjacency
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| counter_faces_a_shopfront | committed | Interior layout | cell | - | a till or service counter with no walkable floor on any side -- nobody can stand at it (the key names the placeholder this row replaced) |
+| counter_faces_a_shopfront | committed | Prop placement | cell | - | **placeholder** -- a shopfront with no counter on any side of it; nothing emits a shopfront until the prop pass, so it cannot fire on an interior layout |
 | door_never_blocked_by_a_fixture | committed | Interior layout | cell | - | a fixture standing on any cell beside a threshold, inside or out -- a door a prop blocks |
 | road_never_touches_wall | committed | Building envelope | cell | - | the carriageway running straight into a building wall with no pavement between them |
 | road_never_touches_ground | committed | Building envelope | cell | - | asphalt bleeding directly into bare ground with no pavement edge |
@@ -1064,16 +1089,20 @@ smallest) by `inv_generation_envelope_size_within_its_class_band`.
 
 ## Does not fit
 
-None open.
-
 - **Room-to-room reachability cannot be a rule.** "From the entrance every
   public room is reachable without crossing a staff or private room" is a
   property of the room graph, which none of the five kinds can state
   (adjacency sees four neighbours, a requirement counts cells in an area).
   It holds by construction -- every back room is reached from the front
-  room through its own doorway -- and is checked over tags by
+  room through its own doorway, or through a room of its own access in
+  front of it -- and is checked over tags by
   `inv_generation_public_rooms_are_reachable_without_crossing_staff_or_
   private`, never a per-type branch in the pass.
+- **"Every fixture keeps a reachable walkable cell beside it" cannot be a
+  rule either,** for the same reason: a cell beside a fixture is
+  reachable only through the room graph. It holds by construction --
+  the pass keeps every fixture's lane to the doorway -- and is checked by
+  `inv_generation_every_emitted_interior_validates_clean`.
 
 A rule that cannot be expressed as one of the five kinds over tags for
 any other reason is written here too, with why -- a signal that a

@@ -335,14 +335,14 @@ band sweep: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})"
     for i in 0..n {
         let seed = mixed_band_seed(i);
         let d = sim::generation::plan(seed, cfg, content).expect("pass 1 is total");
-        let total = d.land_use.cols() as i64 * d.land_use.rows() as i64;
+        let total = d.skeleton.land_use.cols() as i64 * d.skeleton.land_use.rows() as i64;
         for (k, (u, key, _)) in uses.iter().enumerate() {
-            share_dev[k].push(d.land_use.area_cells(*u) * 1000 / total - *key as i64 * 10);
+            share_dev[k].push(d.skeleton.land_use.area_cells(*u) * 1000 / total - *key as i64 * 10);
         }
-        if d.land_use.share_band_violation(cfg).is_some() {
+        if d.skeleton.land_use.share_band_violation(cfg).is_some() {
             share_miss.record(seed);
         }
-        let placed = d.envelopes.placed_count();
+        let placed = d.skeleton.envelopes.placed_count();
         if placed < min_count.0 {
             min_count = (placed, seed);
         }
@@ -350,17 +350,18 @@ band sweep: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})"
             max_count = (placed, seed);
         }
         building_count.push(placed);
-        if d.check_building_count(cfg).is_err() {
+        if d.skeleton.check_building_count(cfg).is_err() {
             building_miss.record(seed);
         }
         workplace_count.push(
-            d.building_types
+            d.skeleton
+                .building_types
                 .assignments()
                 .iter()
                 .filter(|a| building_types::is_workplace(by_id[&a.building_type]))
                 .count() as i64,
         );
-        if d.check_workplace_count(cfg, content).is_err() {
+        if d.skeleton.check_workplace_count(cfg, content).is_err() {
             workplace_miss.record(seed);
         }
     }
@@ -793,7 +794,7 @@ fn main() {
         let mut tag_counts: BTreeMap<u32, i64> = BTreeMap::new();
         let mut workplaces = 0i64;
         let mut employers_this_city: BTreeMap<&str, u64> = BTreeMap::new();
-        for a in d.building_types.assignments() {
+        for a in d.skeleton.building_types.assignments() {
             let def = by_id[&a.building_type];
             for &t in def.tags {
                 *tag_counts.entry(t).or_insert(0) += 1;
@@ -934,7 +935,7 @@ fn main() {
         let seed = mixed_missing_tag_seed(i);
         let d = sim::generation::plan(seed, &cfg, &content).expect("pass 1 is total");
         let mut tag_counts: BTreeMap<u32, u64> = BTreeMap::new();
-        for a in d.building_types.assignments() {
+        for a in d.skeleton.building_types.assignments() {
             for &t in by_id[&a.building_type].tags {
                 *tag_counts.entry(t).or_insert(0) += 1;
             }
@@ -1157,7 +1158,7 @@ fn measure_interiors(cfg: &GenerationConfig, content: &GenerationContent) {
         enterable.push(io.enterable_count());
         shells.push(io.shell_count());
         rejected.push(io.rejected_count());
-        let placed = d.envelopes.placed_count().max(1);
+        let placed = d.skeleton.envelopes.placed_count().max(1);
         enterable_share.push(io.enterable_count() * 100 / placed);
         let (mut w, mut f, mut t, mut x) = (0i64, 0i64, 0i64, 0i64);
         for o in io.outcomes() {

@@ -53,7 +53,10 @@ over one of its tags (`defs/rules/interiors.toml`), never a field here.
 
 A `[[tag]]` row may name the structural part it is with `structure =
 "wall" | "wall_run" | "floor" | "threshold" | "entrance" | "pavement" |
-"fixture"`; once any does, exactly one tag names each.
+"fixture"`; once any does, exactly one tag names each. A tag a room
+owes as a fixture names where the layout pass stands it, with
+`placement = "wall_backed" | "free_standing" | "wall_mounted" |
+"facing_door"`.
 
 ## Items
 

@@ -1764,22 +1764,27 @@ pub fn build_all() -> Vec<EvidenceSvgs> {
                 .expect("the live committed config must generate every evidence seed");
             EvidenceSvgs {
                 seed,
-                land_use: land_use_svg(&d.land_use, &cfg),
-                streets: streets_svg(&d.land_use, &d.streets),
-                envelopes: envelopes_svg(&d.land_use, &d.streets, &d.plots, &d.envelopes),
+                land_use: land_use_svg(&d.skeleton.land_use, &cfg),
+                streets: streets_svg(&d.skeleton.land_use, &d.skeleton.streets),
+                envelopes: envelopes_svg(
+                    &d.skeleton.land_use,
+                    &d.skeleton.streets,
+                    &d.skeleton.plots,
+                    &d.skeleton.envelopes,
+                ),
                 building_types: building_types_svg(
-                    &d.land_use,
-                    &d.streets,
-                    &d.plots,
-                    &d.envelopes,
-                    &d.building_types,
+                    &d.skeleton.land_use,
+                    &d.skeleton.streets,
+                    &d.skeleton.plots,
+                    &d.skeleton.envelopes,
+                    &d.skeleton.building_types,
                     &cfg,
                     &content,
                 ),
                 interiors: interiors_svg(
-                    &d.streets,
-                    &d.envelopes,
-                    &d.building_types,
+                    &d.skeleton.streets,
+                    &d.skeleton.envelopes,
+                    &d.skeleton.building_types,
                     &d.interiors,
                     &content,
                 ),
@@ -1806,7 +1811,10 @@ pub fn build_detour_worst_svgs() -> Vec<(u64, String)> {
         .map(|&(seed, _exhaustive_excess)| {
             let d = sim::generation::plan(seed, &cfg, &content)
                 .expect("pass 1 is total over the live committed config");
-            (seed, detour_worst_svg(&d.land_use, &d.streets))
+            (
+                seed,
+                detour_worst_svg(&d.skeleton.land_use, &d.skeleton.streets),
+            )
         })
         .collect()
 }

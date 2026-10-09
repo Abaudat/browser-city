@@ -13,8 +13,8 @@
 [[building_type]]
 id = 1
 key = "villa"
-rooms = ["living_room", "bedroom", "bathroom"]
-optional_rooms = ["kitchen", "bedroom", "bedroom"]
+rooms = ["kitchen_diner", "bedroom", "bathroom"]
+optional_rooms = ["living_room", "bedroom", "kitchen", "bedroom"]
 tags = ["dwelling", "form_low"]
 land_uses = ["residential"]
 density_min = 0
@@ -27,8 +27,8 @@ weight = 30
 [[building_type]]
 id = 2
 key = "terrace_house"
-rooms = ["living_room", "bedroom", "bathroom"]
-optional_rooms = ["kitchen", "bedroom"]
+rooms = ["kitchen_diner", "bedroom", "bathroom"]
+optional_rooms = ["living_room", "bedroom", "kitchen"]
 tags = ["dwelling", "form_mid"]
 land_uses = ["residential"]
 density_min = 35
@@ -40,8 +40,8 @@ weight = 40
 [[building_type]]
 id = 3
 key = "condo_block"
-rooms = ["living_room", "bedroom", "bathroom"]
-optional_rooms = ["kitchen", "bedroom"]
+rooms = ["kitchen_diner", "bedroom", "bathroom"]
+optional_rooms = ["living_room", "bedroom", "kitchen"]
 tags = ["dwelling", "form_high"]
 land_uses = ["residential"]
 density_min = 60
@@ -58,15 +58,15 @@ weight = 25
 [[building_type]]
 id = 4
 key = "corner_shop"
-rooms = ["shop_floor", "stock_room", "bedroom"]
-optional_rooms = ["bathroom", "kitchen"]
+rooms = ["shop_floor", "stock_room", "kitchen_diner", "bedroom", "bathroom"]
+optional_rooms = ["living_room"]
 tags = ["dwelling", "shop", "form_mid"]
 land_uses = ["residential"]
 density_min = 30
 density_max = 100
-min_interior_width_cells = 5
+min_interior_width_cells = 10
 min_interior_depth_cells = 5
-weight = 8
+weight = 24
 requires_site = ["corner"]
 professions = ["shop_clerk"]
 
@@ -75,8 +75,8 @@ professions = ["shop_clerk"]
 [[building_type]]
 id = 47
 key = "cottage"
-rooms = ["living_room", "bedroom", "bathroom"]
-optional_rooms = ["kitchen", "bedroom"]
+rooms = ["kitchen_diner", "bedroom", "bathroom"]
+optional_rooms = ["living_room", "bedroom", "kitchen"]
 tags = ["dwelling", "form_low"]
 land_uses = ["residential"]
 density_min = 0

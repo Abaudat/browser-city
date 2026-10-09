@@ -442,10 +442,12 @@ fn check_room_types(
 /// is a mechanical seam between an AI-held and a player-held post); a
 /// type with a public room has one as its front room; a workplace owes a
 /// staff room in its core (what the stock-space rule hangs on); and the
-/// core must fit the type's own minimum interior in the layout the
-/// generator builds (a front band, a partition, a back band of rooms
-/// side by side), so `footprint_sized_for_interior_usability` is checked
-/// here for real. The partition thickness is read from the balance key
+/// core must fit the type's own minimum interior in one of the two plans
+/// the generator builds -- a front band with the back rooms side by side
+/// behind it, or a front column with the back rooms stacked on either
+/// side -- so `footprint_sized_for_interior_usability` is checked here
+/// for real. Room minimums only: a lower bound, never the generator's
+/// own sizing. The partition thickness is read from the balance key
 /// when present, like [`check_building_type_density_coverage`].
 fn check_building_type_programs(
     building_types: &[BuildingTypeEntry],
@@ -523,6 +525,37 @@ fn check_building_type_programs(
         if let Some(t) = thickness {
             let t = t as u32;
             let back = &core[1..];
+            let fits = |(w, d): (u32, u32)| {
+                w <= e.min_interior_width_cells && d <= e.min_interior_depth_cells
+            };
+            // The column plan: every split of the back rooms into a left
+            // and a right stack beside the front column.
+            let stack = |rooms: &[&RoomTypeEntry]| -> (u32, u32) {
+                if rooms.is_empty() {
+                    return (0, 0);
+                }
+                let w = rooms.iter().map(|r| r.min_width_cells).max().unwrap_or(0) + t;
+                let d = rooms.iter().map(|r| r.min_depth_cells).sum::<u32>()
+                    + t * (rooms.len() as u32 - 1);
+                (w, d)
+            };
+            let column_fits = !back.is_empty()
+                && back.len() <= 8
+                && (0u32..1 << back.len()).any(|mask| {
+                    let side = |on_left: bool| -> Vec<&RoomTypeEntry> {
+                        (0..back.len())
+                            .filter(|&i| (mask & (1 << i) != 0) == on_left)
+                            .map(|i| back[i])
+                            .collect()
+                    };
+                    let (left, right) = (side(true), side(false));
+                    let (lw, ld) = stack(&left);
+                    let (rw, rd) = stack(&right);
+                    fits((
+                        front.min_width_cells + lw + rw,
+                        front.min_depth_cells.max(ld).max(rd),
+                    ))
+                });
             let (need_w, need_d) = if back.is_empty() {
                 (front.min_width_cells, front.min_depth_cells)
             } else {
@@ -534,7 +567,7 @@ fn check_building_type_programs(
                     front.min_depth_cells + t + back_d,
                 )
             };
-            if need_w > e.min_interior_width_cells || need_d > e.min_interior_depth_cells {
+            if !fits((need_w, need_d)) && !column_fits {
                 return Err(DefsError::new(
                     &e.path,
                     e.key.line,
@@ -1982,6 +2015,47 @@ fn check_tag_structures(entries: &[TagEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
+/// Story 3.5: the interior-layout pass stands every fixture a room owes
+/// -- a `[[requirement]]` row whose container a room type carries, or the
+/// floor every room has -- by its tag's own placement class, never by
+/// its key. So every such tag that is not itself a structural part
+/// declares one.
+fn check_fixture_placements(
+    tags: &[TagEntry],
+    requirements: &[RequirementEntry],
+    room_types: &[RoomTypeEntry],
+) -> Result<(), DefsError> {
+    let floor = tags
+        .iter()
+        .find(|t| t.structure == Some(RawStructure::Floor))
+        .map(|t| t.key.value.as_str());
+    for r in requirements {
+        let container = r.container.value.as_str();
+        let owed_by_a_room = Some(container) == floor
+            || room_types
+                .iter()
+                .any(|room| room.tags.iter().any(|t| t == container));
+        if !owed_by_a_room {
+            continue;
+        }
+        let Some(tag) = tags.iter().find(|t| t.key.value == r.requires.value) else {
+            continue;
+        };
+        if tag.structure.is_none() && tag.placement.is_none() {
+            return Err(DefsError::new(
+                &tag.path,
+                tag.key.line,
+                tag.key.col,
+                format!(
+                    "tag '{}' is a fixture requirement row '{}' owes but declares no placement",
+                    tag.key.value, r.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// An object on a flat-pass layer (rank below `FIRST_POOL_RANK`) lies flat
 /// on the ground: it must be tagged [`UNDERFOOT_TAG_KEY`] (no vertical
 /// extent means nothing to collide with -- one direction only, an
@@ -3191,6 +3265,7 @@ pub fn validate(
     )?;
     check_tag_role_layers(&raw.tags, code_tables)?;
     check_tag_structures(&raw.tags)?;
+    check_fixture_placements(&raw.tags, &raw.requirements, &raw.room_types)?;
     check_placement_floor_range(&raw.placements)?;
     check_distribution_ranges(&raw.distributions)?;
     check_requirement_range(&raw.requirements)?;
@@ -3540,6 +3615,12 @@ pub fn validate(
             key: r.key.value.clone(),
             tags: resolve_room_type_tags(&r.path, &r.key, &r.tags, &tag_ids)
                 .expect("room tags already validated"),
+            access: r
+                .tags
+                .iter()
+                .find(|t| ACCESS_TAGS.contains(&t.as_str()))
+                .and_then(|t| tag_ids.get(t.as_str()).copied())
+                .expect("exactly one access tag already validated"),
             min_width_cells: r.min_width_cells,
             min_depth_cells: r.min_depth_cells,
             weight: r.weight,
@@ -3683,6 +3764,7 @@ pub fn validate(
                     .collect(),
             }),
             structure: t.structure,
+            placement: t.placement,
         })
         .collect();
     tags.sort_by(|a, b| a.key.cmp(&b.key));

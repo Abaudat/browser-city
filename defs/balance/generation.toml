@@ -1063,6 +1063,15 @@ min = 1
 max = 64
 
 [[balance]]
+# A room's long side is at most this many times its short side: a 2x15
+# floor is a hallway, not a room. Every layout plan is sized under it,
+# and an attempt that breaks it is refused.
+key = "generation.interiors.max_room_aspect"
+value = 3
+min = 1
+max = 16
+
+[[balance]]
 # FR114's own figure (`docs/gdd.md`'s Scale Baseline: 100+ enterable
 # interiors at MVP), never a measurement. A floor, not a cap: every type
 # with a room program is laid out, so the district clears it by a wide

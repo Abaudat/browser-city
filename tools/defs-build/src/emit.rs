@@ -229,15 +229,16 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub struct RoomTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub min_width_cells: u32,\n    pub min_depth_cells: u32,\n    pub weight: u32,\n}\n\n",
+        "pub struct RoomTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub access: u32,\n    pub min_width_cells: u32,\n    pub min_depth_cells: u32,\n    pub weight: u32,\n}\n\n",
     );
     out.push_str("pub const ROOM_TYPES: &[RoomTypeDef] = &[\n");
     for r in &defs.room_types {
         out.push_str(&format!(
-            "    RoomTypeDef {{ id: {}, key: {:?}, tags: &{}, min_width_cells: {}, min_depth_cells: {}, weight: {} }},\n",
+            "    RoomTypeDef {{ id: {}, key: {:?}, tags: &{}, access: {}, min_width_cells: {}, min_depth_cells: {}, weight: {} }},\n",
             r.id,
             r.key,
             fmt_u32_slice(&r.tags),
+            r.access,
             r.min_width_cells,
             r.min_depth_cells,
             r.weight,
@@ -402,16 +403,21 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     );
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub struct TagDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub role: Option<RoleDef>,\n    pub structure: Option<TagStructure>,\n}\n\n",
+        "pub enum TagPlacement {\n    WallBacked,\n    FreeStanding,\n    WallMounted,\n    FacingDoor,\n}\n\n",
+    );
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str(
+        "pub struct TagDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub role: Option<RoleDef>,\n    pub structure: Option<TagStructure>,\n    pub placement: Option<TagPlacement>,\n}\n\n",
     );
     out.push_str("pub const TAGS: &[TagDef] = &[\n");
     for t in &defs.tags {
         out.push_str(&format!(
-            "    TagDef {{ id: {}, key: {:?}, role: {}, structure: {} }},\n",
+            "    TagDef {{ id: {}, key: {:?}, role: {}, structure: {}, placement: {} }},\n",
             t.id,
             t.key,
             fmt_role_rust(&t.role),
-            fmt_structure_rust(t.structure)
+            fmt_structure_rust(t.structure),
+            fmt_placement_rust(t.placement)
         ));
     }
     out.push_str("];\n\n");
@@ -439,6 +445,13 @@ fn fmt_structure_rust(structure: Option<crate::model::RawStructure>) -> String {
     match structure {
         None => "None".to_string(),
         Some(s) => format!("Some(TagStructure::{})", s.variant()),
+    }
+}
+
+fn fmt_placement_rust(placement: Option<crate::model::RawPlacement>) -> String {
+    match placement {
+        None => "None".to_string(),
+        Some(p) => format!("Some(TagPlacement::{})", p.variant()),
     }
 }
 
@@ -1327,12 +1340,14 @@ mod tests {
                     key: "waste".into(),
                     role: None,
                     structure: None,
+                    placement: None,
                 },
                 TagDef {
                     id: 2,
                     key: "seating".into(),
                     role: None,
                     structure: None,
+                    placement: None,
                 },
             ],
             rules: vec![RuleDef {
@@ -1686,8 +1701,12 @@ mod tests {
     fn emit_rust_renders_the_tag_table_and_the_rules_table() {
         let out = emit_rust(&sample(), "v1");
         assert!(out.contains("pub const TAGS: &[TagDef] = &["));
-        assert!(out.contains("TagDef { id: 1, key: \"waste\", role: None, structure: None }"));
-        assert!(out.contains("TagDef { id: 2, key: \"seating\", role: None, structure: None }"));
+        assert!(out.contains(
+            "TagDef { id: 1, key: \"waste\", role: None, structure: None, placement: None }"
+        ));
+        assert!(out.contains(
+            "TagDef { id: 2, key: \"seating\", role: None, structure: None, placement: None }"
+        ));
         assert!(out.contains("pub const RULES: &[crate::rules::RuleDef] = &["));
         assert!(out.contains(
             "crate::rules::RuleDef { id: 1, key: \"no_seating_above_floor_2\", kind: crate::rules::RuleKind::Placement { subject: 2, container: None, floor_min: None, floor_max: Some(2) } }"

@@ -111,15 +111,52 @@ impl Parts {
 pub struct Vocabulary<'a> {
     pub parts: Parts,
     rooms: BTreeMap<u32, &'a defs::RoomTypeDef>,
+    placements: BTreeMap<TagId, defs::TagPlacement>,
+    /// Every room type's owed fixture count, by id.
+    owed: BTreeMap<u32, i32>,
 }
 
 impl<'a> Vocabulary<'a> {
     pub fn new(content: &GenerationContent<'a>) -> Self {
+        let parts = Parts::resolve(content.tags)
+            .expect("the committed tag table declares every structural part");
+        let rows = requirement_rows(content);
         Vocabulary {
-            parts: Parts::resolve(content.tags)
-                .expect("the committed tag table declares every structural part"),
+            parts,
+            owed: content
+                .room_types
+                .iter()
+                .map(|r| {
+                    let n: u32 = fixtures_owed(r, &rows, &parts)
+                        .iter()
+                        .map(|&(_, n)| n)
+                        .sum();
+                    (r.id, n as i32)
+                })
+                .collect(),
             rooms: content.room_types.iter().map(|r| (r.id, r)).collect(),
+            placements: content
+                .tags
+                .iter()
+                .filter_map(|t| Some((t.id, t.placement?)))
+                .collect(),
         }
+    }
+
+    /// A room's floor need in cells: what it owes, the cell inside its own
+    /// door, the cell in front of each of `doors` doors into rooms behind
+    /// it, and one cell of lane.
+    fn need(&self, room: &defs::RoomTypeDef, doors: i32) -> i32 {
+        self.owed.get(&room.id).copied().unwrap_or(0) + 2 + doors
+    }
+
+    /// How a fixture carrying `tag` is placed: its tag's own class
+    /// (`tools/defs-build` gives every owed fixture one).
+    fn placement(&self, tag: TagId) -> defs::TagPlacement {
+        self.placements
+            .get(&tag)
+            .copied()
+            .unwrap_or(defs::TagPlacement::WallBacked)
     }
 
     fn room(&self, id: u32) -> &'a defs::RoomTypeDef {
@@ -177,6 +214,17 @@ impl Interior {
         self.thresholds.iter().find(|t| t.entrance)
     }
 
+    /// The cells laying this interior out writes: every room's floor and
+    /// every threshold.
+    pub fn laid_cells(&self) -> u64 {
+        let floors: i64 = self
+            .rooms
+            .iter()
+            .map(|r| r.rect.width() * r.rect.height())
+            .sum();
+        floors as u64 + self.thresholds.len() as u64
+    }
+
     /// Every wall cell: the footprint minus every room, every threshold.
     pub fn walls(&self) -> Vec<(i32, i32)> {
         let mut out = Vec::new();
@@ -202,6 +250,16 @@ pub enum RejectReason {
     NoValidLayout,
 }
 
+/// What laying one building out cost, counted by the pass as it works:
+/// the cells every attempt laid (each sized room's floor and its door, as
+/// [`Interior::laid_cells`] counts them) and the cells every verdict
+/// handed `evaluate_local`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LayoutWork {
+    pub cells_laid: u64,
+    pub cells_judged: u64,
+}
+
 /// One placed envelope's outcome, in envelope order. "Enterable" is
 /// derived -- exactly `Laid` -- never a stored flag.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,6 +269,7 @@ pub enum InteriorOutcome {
         building_type: u32,
         interior: Interior,
         attempts: u32,
+        work: LayoutWork,
     },
     /// The type declares no room program: a solid, non-enterable
     /// building.
@@ -220,6 +279,7 @@ pub enum InteriorOutcome {
         building_type: u32,
         reason: RejectReason,
         attempts: u32,
+        work: LayoutWork,
     },
 }
 
@@ -443,6 +503,7 @@ pub fn building_site(interior: &Interior, vocab: &Vocabulary) -> DistrictSite {
 /// The accept/reject step: `crate::rules::evaluate_local` over the site
 /// of this one building, built by the same adapter `DistrictSite` uses.
 /// Empty means the layout may be emitted.
+#[cfg(any(test, feature = "test-fixtures"))]
 pub fn check_layout(interior: &Interior, vocab: &Vocabulary, rules: RuleSet<'_>) -> Vec<Violation> {
     crate::rules::evaluate_local(rules, &building_site(interior, vocab))
 }
@@ -505,52 +566,676 @@ impl Frame {
     }
 }
 
-/// The smallest `(width, depth)` interior a program lays out in: a front
-/// band holding the front room, one partition, and the remaining rooms
-/// side by side behind it.
-fn needed_extent(rooms: &[&defs::RoomTypeDef], thickness: i32) -> (i32, i32) {
-    let front = rooms[0];
-    let back = &rooms[1..];
-    if back.is_empty() {
-        return (front.min_width_cells as i32, front.min_depth_cells as i32);
-    }
-    let back_width: i32 = back.iter().map(|r| r.min_width_cells as i32).sum::<i32>()
-        + thickness * (back.len() as i32 - 1);
-    let back_depth = back
-        .iter()
-        .map(|r| r.min_depth_cells as i32)
-        .max()
-        .unwrap_or(0);
-    (
-        (front.min_width_cells as i32).max(back_width),
-        front.min_depth_cells as i32 + thickness + back_depth,
-    )
+/// A room's floor need in cells, given how many doors open into it from
+/// rooms behind: what it owes, its own door and a cell of lane each.
+type Need<'n> = &'n dyn Fn(&defs::RoomTypeDef, i32) -> i32;
+
+/// What sizing a plan reads beyond its frame: the partition thickness,
+/// the aspect cap and each room's floor need.
+#[derive(Clone, Copy)]
+struct Sizing<'n> {
+    t: i32,
+    cap: i32,
+    need: Need<'n>,
 }
 
-/// The rooms this footprint holds: the required core, then the optional
-/// tail in declared order while each still fits. `None` when even the
-/// core does not.
+/// Whether a `a x b` rect keeps its long side within `cap` times its
+/// short side.
+pub fn within_aspect(a: i32, b: i32, cap: i32) -> bool {
+    a.min(b) >= 1 && a.max(b) <= cap * a.min(b)
+}
+
+fn ceil_div(a: i32, b: i32) -> i32 {
+    (a + b - 1) / b
+}
+
+/// Spreads `total` over the slots: every slot at least its `lower`, at
+/// most its `upper`, the spare shared by `weights` (ties to the heaviest).
+/// `None` when the bounds cannot sum to `total`.
+fn spread(lower: &[i32], upper: &[i32], weights: &[u32], total: i32) -> Option<Vec<i32>> {
+    let lo: i32 = lower.iter().sum();
+    let hi: i32 = upper.iter().sum();
+    if total < lo || total > hi {
+        return None;
+    }
+    let mut out = lower.to_vec();
+    let spare = total - lo;
+    let mut left = spare;
+    let weight_sum: i64 = weights.iter().map(|&w| w.max(1) as i64).sum();
+    for i in 0..out.len() {
+        let share = (spare as i64 * weights[i].max(1) as i64 / weight_sum) as i32;
+        let add = share.min(upper[i] - out[i]).min(left);
+        out[i] += add;
+        left -= add;
+    }
+    let mut by_weight: Vec<usize> = (0..out.len()).collect();
+    by_weight.sort_by_key(|&i| std::cmp::Reverse(weights[i]));
+    while left > 0 {
+        let mut moved = false;
+        for &i in &by_weight {
+            if left > 0 && out[i] < upper[i] {
+                out[i] += 1;
+                left -= 1;
+                moved = true;
+            }
+        }
+        if !moved {
+            return None;
+        }
+    }
+    Some(out)
+}
+
+/// One room of a plan in the frame's local cells: `(u0, v0, u1, v1)`, and
+/// for every room but the front one its door -- the threshold cell, the
+/// cell outside it in the room it opens from (`parent`, an index into the
+/// plan's rooms) and the cell just inside.
+struct LocalRoom<'a> {
+    def: &'a defs::RoomTypeDef,
+    rect: (i32, i32, i32, i32),
+    door: Option<LocalDoor>,
+}
+
+#[derive(Clone, Copy)]
+struct LocalDoor {
+    cell: (i32, i32),
+    outside: (i32, i32),
+    inside: (i32, i32),
+    parent: usize,
+}
+
+/// The band plan's sizes: the back rooms' widths (spread by weight) and
+/// the front band's depth range under the aspect cap -- `None` when no
+/// depth satisfies every room.
+fn band_sizes(
+    front: &defs::RoomTypeDef,
+    back: &[&defs::RoomTypeDef],
+    w: i32,
+    d: i32,
+    z: Sizing,
+) -> Option<(Vec<i32>, i32, i32)> {
+    let Sizing { t, cap, need } = z;
+    if w < front.min_width_cells as i32 {
+        return None;
+    }
+    if back.is_empty() {
+        let ok = d >= front.min_depth_cells as i32
+            && within_aspect(w, d, cap)
+            && w * d >= need(front, 0);
+        return ok.then(|| (Vec::new(), d, d));
+    }
+    let k = back.len() as i32;
+    let lower: Vec<i32> = back.iter().map(|r| r.min_width_cells as i32).collect();
+    let upper = vec![w; back.len()];
+    let weights: Vec<u32> = back.iter().map(|r| r.weight).collect();
+    let widths = spread(&lower, &upper, &weights, w - t * (k - 1))?;
+    let db_lo = back
+        .iter()
+        .zip(&widths)
+        .map(|(r, &wi)| {
+            (r.min_depth_cells as i32)
+                .max(ceil_div(wi, cap))
+                .max(ceil_div(need(r, 0), wi))
+        })
+        .max()?;
+    let db_hi = widths.iter().map(|&wi| cap * wi).min()?;
+    let df_lo = (front.min_depth_cells as i32)
+        .max(ceil_div(w, cap))
+        .max(ceil_div(need(front, k), w));
+    let df_hi = cap * w;
+    let lo = (d - t - db_hi).max(df_lo);
+    let hi = (d - t - db_lo).min(df_hi);
+    (lo <= hi).then_some((widths, lo, hi))
+}
+
+/// The band plan: the front room across the full width, a partition,
+/// and the back rooms side by side behind it, each with its own door
+/// onto the front room.
+fn band_rooms<'a>(
+    rng: &mut Rng,
+    front: &'a defs::RoomTypeDef,
+    back: &[&'a defs::RoomTypeDef],
+    w: i32,
+    d: i32,
+    z: Sizing,
+) -> Option<Vec<LocalRoom<'a>>> {
+    let t = z.t;
+    let (widths, lo, hi) = band_sizes(front, back, w, d, z)?;
+    let df = lo + rng.below((hi - lo + 1) as u64) as i32;
+    let mut rooms = vec![LocalRoom {
+        def: front,
+        rect: (0, 0, w, df),
+        door: None,
+    }];
+    let mut cursor = 0;
+    for (room, &wi) in back.iter().zip(&widths) {
+        let (u0, u1) = (cursor, cursor + wi);
+        cursor = u1 + t;
+        let door_u = u0 + rng.below(wi as u64) as i32;
+        rooms.push(LocalRoom {
+            def: room,
+            rect: (u0, df + t, u1, d),
+            door: Some(LocalDoor {
+                cell: (door_u, df),
+                outside: (door_u, df - 1),
+                inside: (door_u, df + t),
+                parent: 0,
+            }),
+        });
+    }
+    Some(rooms)
+}
+
+/// Every zone width `0..=w` a stack of `rooms` fits, one bit each: the
+/// rooms stacked front to back along the full depth `d`, each within the
+/// aspect cap.
+fn zone_widths(rooms: &[&defs::RoomTypeDef], w: i32, d: i32, z: Sizing) -> u64 {
+    let Sizing { t, cap, need } = z;
+    let mut bits = 0u64;
+    if rooms.is_empty() {
+        return 1;
+    }
+    let n = rooms.len() as i32;
+    let avail = d - t * (n - 1);
+    let min_w = rooms
+        .iter()
+        .map(|r| r.min_width_cells as i32)
+        .max()
+        .unwrap_or(0);
+    for wz in min_w.max(1)..=w.min(63) {
+        let lo: i32 = rooms
+            .iter()
+            .map(|r| {
+                (r.min_depth_cells as i32)
+                    .max(ceil_div(wz, cap))
+                    .max(ceil_div(need(r, 0), wz))
+            })
+            .sum();
+        if lo <= avail && avail <= cap * wz * n {
+            bits |= 1 << wz;
+        }
+    }
+    bits
+}
+
+/// The column plan's options, visited in a fixed order: which back rooms
+/// stack on the left of the front column (bit `i` of the mask) and the
+/// column's own `[ua, ub)`. The column holds the entrance and runs the
+/// full depth; a side with no rooms has no zone.
+fn column_options(
+    front: &defs::RoomTypeDef,
+    back: &[&defs::RoomTypeDef],
+    w: i32,
+    d: i32,
+    z: Sizing,
+    entrance_u: i32,
+    mut visit: impl FnMut(u32, i32, i32) -> bool,
+) {
+    let Sizing { t, cap, need } = z;
+    let k = back.len();
+    if k == 0 || k > 8 || d < front.min_depth_cells as i32 {
+        return;
+    }
+    let subsets = 1u32 << k;
+    let fits: Vec<u64> = (0..subsets)
+        .map(|mask| {
+            let rooms: Vec<&defs::RoomTypeDef> = (0..k)
+                .filter(|i| mask & (1 << i) != 0)
+                .map(|i| back[i])
+                .collect();
+            zone_widths(&rooms, w, d, z)
+        })
+        .collect();
+    for mask in 0..subsets {
+        let right = (subsets - 1) & !mask;
+        for ua in 0..=entrance_u {
+            let left_ok = if mask == 0 {
+                ua == 0
+            } else {
+                ua - t >= 1 && fits[mask as usize] & (1 << (ua - t)) != 0
+            };
+            if !left_ok {
+                continue;
+            }
+            for ub in entrance_u + 1..=w {
+                let right_ok = if right == 0 {
+                    ub == w
+                } else {
+                    w - ub - t >= 1 && fits[right as usize] & (1 << (w - ub - t)) != 0
+                };
+                let wc = ub - ua;
+                if right_ok
+                    && wc >= front.min_width_cells as i32
+                    && within_aspect(wc, d, cap)
+                    && wc * d >= need(front, k as i32)
+                    && !visit(mask, ua, ub)
+                {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+/// One side zone's rooms stacked front to back, each with its door in
+/// the partition onto the front column at `door_u`.
+#[allow(clippy::too_many_arguments)]
+fn stack_zone<'a>(
+    rng: &mut Rng,
+    rooms: &[&'a defs::RoomTypeDef],
+    (z0, z1): (i32, i32),
+    door_u: i32,
+    outside_u: i32,
+    inside_u: i32,
+    d: i32,
+    z: Sizing,
+    out: &mut Vec<LocalRoom<'a>>,
+) -> Option<()> {
+    let Sizing { t, cap, need } = z;
+    if rooms.is_empty() {
+        return Some(());
+    }
+    let wz = z1 - z0;
+    let n = rooms.len() as i32;
+    let lower: Vec<i32> = rooms
+        .iter()
+        .map(|r| {
+            (r.min_depth_cells as i32)
+                .max(ceil_div(wz, cap))
+                .max(ceil_div(need(r, 0), wz))
+        })
+        .collect();
+    let upper = vec![cap * wz; rooms.len()];
+    let weights: Vec<u32> = rooms.iter().map(|r| r.weight).collect();
+    let depths = spread(&lower, &upper, &weights, d - t * (n - 1))?;
+    let mut v = 0;
+    for (room, &di) in rooms.iter().zip(&depths) {
+        let dv = v + rng.below(di as u64) as i32;
+        out.push(LocalRoom {
+            def: room,
+            rect: (z0, v, z1, v + di),
+            door: Some(LocalDoor {
+                cell: (door_u, dv),
+                outside: (outside_u, dv),
+                inside: (inside_u, dv),
+                parent: 0,
+            }),
+        });
+        v += di + t;
+    }
+    Some(())
+}
+
+/// The column plan: the front room a full-depth column holding the
+/// entrance, the back rooms stacked front to back in a zone on either
+/// side of it, each with its own door onto the column. One option is
+/// drawn uniformly from every one that fits.
+#[allow(clippy::too_many_arguments)]
+fn column_rooms<'a>(
+    rng: &mut Rng,
+    front: &'a defs::RoomTypeDef,
+    back: &[&'a defs::RoomTypeDef],
+    w: i32,
+    d: i32,
+    z: Sizing,
+    entrance_u: i32,
+) -> Option<Vec<LocalRoom<'a>>> {
+    let t = z.t;
+    let mut count = 0u64;
+    column_options(front, back, w, d, z, entrance_u, |_, _, _| {
+        count += 1;
+        true
+    });
+    if count == 0 {
+        return None;
+    }
+    let pick = rng.below(count);
+    let mut seen = 0u64;
+    let mut chosen = None;
+    column_options(front, back, w, d, z, entrance_u, |mask, ua, ub| {
+        if seen == pick {
+            chosen = Some((mask, ua, ub));
+            return false;
+        }
+        seen += 1;
+        true
+    });
+    let (mask, ua, ub) = chosen?;
+    let left: Vec<&defs::RoomTypeDef> = (0..back.len())
+        .filter(|i| mask & (1 << i) != 0)
+        .map(|i| back[i])
+        .collect();
+    let right: Vec<&defs::RoomTypeDef> = (0..back.len())
+        .filter(|i| mask & (1 << i) == 0)
+        .map(|i| back[i])
+        .collect();
+    let mut rooms = vec![LocalRoom {
+        def: front,
+        rect: (ua, 0, ub, d),
+        door: None,
+    }];
+    stack_zone(
+        rng,
+        &left,
+        (0, ua - t),
+        ua - t,
+        ua,
+        ua - t - 1,
+        d,
+        z,
+        &mut rooms,
+    )?;
+    stack_zone(
+        rng,
+        &right,
+        (ub + t, w),
+        ub,
+        ub - 1,
+        ub + t,
+        d,
+        z,
+        &mut rooms,
+    )?;
+    Some(rooms)
+}
+
+/// One two-row assignment: for each back room, `None` for the first row
+/// (a door onto the front room) or `Some(j)` for the second row behind
+/// first-row room `j` (a door through it, only between rooms of one
+/// access).
+type Rows = Vec<Option<usize>>;
+
+/// Visits every two-row assignment with at least one second-row room, in
+/// a fixed order: a room either joins the first row or stands behind an
+/// earlier first-row room of its own access.
+fn two_row_assignments(back: &[&defs::RoomTypeDef], mut visit: impl FnMut(&Rows) -> bool) {
+    fn go(
+        back: &[&defs::RoomTypeDef],
+        rows: &mut Rows,
+        visit: &mut dyn FnMut(&Rows) -> bool,
+    ) -> bool {
+        let i = rows.len();
+        if i == back.len() {
+            return !rows.iter().any(Option::is_some) || visit(rows);
+        }
+        rows.push(None);
+        if !go(back, rows, visit) {
+            return false;
+        }
+        rows.pop();
+        for j in 0..i {
+            if rows[j].is_none() && back[j].access == back[i].access {
+                rows.push(Some(j));
+                if !go(back, rows, visit) {
+                    return false;
+                }
+                rows.pop();
+            }
+        }
+        true
+    }
+    if back.len() >= 2 && back.len() <= 8 {
+        go(back, &mut Vec::new(), &mut visit);
+    }
+}
+
+/// The two-row plan's sizes for one assignment: every room's width, and
+/// the range of the two rows' summed depth -- `None` when no depths fit.
+struct TwoRowSizes {
+    widths: Vec<i32>,
+    d1: (i32, i32),
+    d2: (i32, i32),
+    sum: (i32, i32),
+}
+
+#[allow(clippy::too_many_arguments)]
+fn two_row_sizes(
+    front: &defs::RoomTypeDef,
+    back: &[&defs::RoomTypeDef],
+    rows: &Rows,
+    w: i32,
+    d: i32,
+    z: Sizing,
+) -> Option<TwoRowSizes> {
+    let Sizing { t, cap, need } = z;
+    if w < front.min_width_cells as i32 {
+        return None;
+    }
+    let first: Vec<usize> = (0..back.len()).filter(|&i| rows[i].is_none()).collect();
+    let children =
+        |j: usize| -> Vec<usize> { (0..back.len()).filter(|&i| rows[i] == Some(j)).collect() };
+    let lower: Vec<i32> = first
+        .iter()
+        .map(|&j| {
+            let kids = children(j);
+            let need: i32 = kids
+                .iter()
+                .map(|&i| back[i].min_width_cells as i32)
+                .sum::<i32>()
+                + t * (kids.len() as i32 - 1).max(0);
+            (back[j].min_width_cells as i32).max(need)
+        })
+        .collect();
+    let weights: Vec<u32> = first.iter().map(|&j| back[j].weight).collect();
+    let row_widths = spread(
+        &lower,
+        &vec![w; first.len()],
+        &weights,
+        w - t * (first.len() as i32 - 1),
+    )?;
+    let mut widths = vec![0; back.len()];
+    let (mut lo2, mut hi2) = (0, i32::MAX);
+    for (&j, &wj) in first.iter().zip(&row_widths) {
+        widths[j] = wj;
+        let kids = children(j);
+        if kids.is_empty() {
+            continue;
+        }
+        let kl: Vec<i32> = kids
+            .iter()
+            .map(|&i| back[i].min_width_cells as i32)
+            .collect();
+        let kw: Vec<u32> = kids.iter().map(|&i| back[i].weight).collect();
+        let kid_widths = spread(
+            &kl,
+            &vec![wj; kids.len()],
+            &kw,
+            wj - t * (kids.len() as i32 - 1),
+        )?;
+        for (&i, &wi) in kids.iter().zip(&kid_widths) {
+            widths[i] = wi;
+            lo2 = lo2.max(
+                (back[i].min_depth_cells as i32)
+                    .max(ceil_div(wi, cap))
+                    .max(ceil_div(need(back[i], 0), wi)),
+            );
+            hi2 = hi2.min(cap * wi);
+        }
+    }
+    // A first-row room with a room behind it is one row deep; one with
+    // nothing behind it runs the depth of both rows (`sum + t`).
+    let depth_lo = |j: usize| {
+        (back[j].min_depth_cells as i32)
+            .max(ceil_div(widths[j], cap))
+            .max(ceil_div(need(back[j], children(j).len() as i32), widths[j]))
+    };
+    let (parents, full): (Vec<usize>, Vec<usize>) =
+        first.iter().partition(|&&j| !children(j).is_empty());
+    let lo1 = parents.iter().map(|&j| depth_lo(j)).max()?;
+    let hi1 = parents.iter().map(|&j| cap * widths[j]).min()?;
+    let full_lo = full.iter().map(|&j| depth_lo(j) - t).max().unwrap_or(0);
+    let full_hi = full
+        .iter()
+        .map(|&j| cap * widths[j] - t)
+        .min()
+        .unwrap_or(i32::MAX);
+    let df_lo = (front.min_depth_cells as i32)
+        .max(ceil_div(w, cap))
+        .max(ceil_div(need(front, first.len() as i32), w));
+    let df_hi = cap * w;
+    let sum_lo = (lo1 + lo2).max(d - 2 * t - df_hi).max(full_lo);
+    let sum_hi = (hi1.saturating_add(hi2))
+        .min(d - 2 * t - df_lo)
+        .min(full_hi);
+    (lo1 <= hi1 && lo2 <= hi2 && sum_lo <= sum_hi).then_some(TwoRowSizes {
+        widths,
+        d1: (lo1, hi1),
+        d2: (lo2, hi2),
+        sum: (sum_lo, sum_hi),
+    })
+}
+
+/// The two-row plan: the front band, a first row of back rooms each
+/// opening onto it, and a second row behind -- each second-row room
+/// reached through the first-row room in front of it, which shares its
+/// access; a first-row room with nothing behind it runs the full depth.
+/// One assignment is drawn uniformly from every one that fits.
+fn two_row_rooms<'a>(
+    rng: &mut Rng,
+    front: &'a defs::RoomTypeDef,
+    back: &[&'a defs::RoomTypeDef],
+    w: i32,
+    d: i32,
+    z: Sizing,
+) -> Option<Vec<LocalRoom<'a>>> {
+    let t = z.t;
+    let mut count = 0u64;
+    two_row_assignments(back, |rows| {
+        count += two_row_sizes(front, back, rows, w, d, z).is_some() as u64;
+        true
+    });
+    if count == 0 {
+        return None;
+    }
+    let pick = rng.below(count);
+    let mut seen = 0u64;
+    let mut chosen = None;
+    two_row_assignments(back, |rows| {
+        if let Some(sizes) = two_row_sizes(front, back, rows, w, d, z) {
+            if seen == pick {
+                chosen = Some((rows.clone(), sizes));
+                return false;
+            }
+            seen += 1;
+        }
+        true
+    });
+    let (rows, sizes) = chosen?;
+    let sum = sizes.sum.0 + rng.below((sizes.sum.1 - sizes.sum.0 + 1) as u64) as i32;
+    let d1_lo = sizes.d1.0.max(sum - sizes.d2.1);
+    let d1_hi = sizes.d1.1.min(sum - sizes.d2.0);
+    let d1 = d1_lo + rng.below((d1_hi - d1_lo + 1) as u64) as i32;
+    let df = d - 2 * t - sum;
+    let v1 = df + t;
+    let v2 = v1 + d1 + t;
+
+    let mut rooms = vec![LocalRoom {
+        def: front,
+        rect: (0, 0, w, df),
+        door: None,
+    }];
+    let mut index_of = vec![0usize; back.len()];
+    let mut span = vec![(0, 0); back.len()];
+    let mut cursor = 0;
+    for j in (0..back.len()).filter(|&j| rows[j].is_none()) {
+        let (u0, u1) = (cursor, cursor + sizes.widths[j]);
+        cursor = u1 + t;
+        span[j] = (u0, u1);
+        let door_u = u0 + rng.below((u1 - u0) as u64) as i32;
+        index_of[j] = rooms.len();
+        let has_kids = rows.contains(&Some(j));
+        rooms.push(LocalRoom {
+            def: back[j],
+            rect: (u0, v1, u1, if has_kids { v1 + d1 } else { d }),
+            door: Some(LocalDoor {
+                cell: (door_u, df),
+                outside: (door_u, df - 1),
+                inside: (door_u, v1),
+                parent: 0,
+            }),
+        });
+    }
+    let mut kid_cursor: Vec<i32> = span.iter().map(|s| s.0).collect();
+    for i in 0..back.len() {
+        let Some(j) = rows[i] else {
+            continue;
+        };
+        let (u0, u1) = (kid_cursor[j], kid_cursor[j] + sizes.widths[i]);
+        kid_cursor[j] = u1 + t;
+        let door_u = u0 + rng.below((u1 - u0) as u64) as i32;
+        rooms.push(LocalRoom {
+            def: back[i],
+            rect: (u0, v2, u1, d),
+            door: Some(LocalDoor {
+                cell: (door_u, v2 - t),
+                outside: (door_u, v2 - t - 1),
+                inside: (door_u, v2),
+                parent: index_of[j],
+            }),
+        });
+    }
+    Some(rooms)
+}
+
+/// Whether some plan lays `program` out in a `w x d` frame whose
+/// entrance sits at one of `entrance_us` (the two mirrors).
+fn program_fits(
+    program: &[&defs::RoomTypeDef],
+    w: i32,
+    d: i32,
+    z: Sizing,
+    entrance_us: [i32; 2],
+) -> bool {
+    let (front, back) = (program[0], &program[1..]);
+    if band_sizes(front, back, w, d, z).is_some() {
+        return true;
+    }
+    let mut two_rows = false;
+    two_row_assignments(back, |rows| {
+        two_rows = two_row_sizes(front, back, rows, w, d, z).is_some();
+        !two_rows
+    });
+    if two_rows {
+        return true;
+    }
+    entrance_us.iter().any(|&eu| {
+        let mut any = false;
+        column_options(front, back, w, d, z, eu, |_, _, _| {
+            any = true;
+            false
+        });
+        any
+    })
+}
+
+/// The rooms this footprint holds: the required core plus the longest
+/// prefix of the optional tail, in declared order, that some plan fits
+/// (a room more can make a footprint fit, by splitting a room the aspect
+/// cap refuses). `None` when no prefix fits.
 fn select_program<'a>(
     def: &defs::BuildingTypeDef,
     vocab: &Vocabulary<'a>,
     w: i32,
     d: i32,
-    thickness: i32,
+    t: i32,
+    cap: i32,
+    entrance_us: [i32; 2],
 ) -> Option<Vec<&'a defs::RoomTypeDef>> {
     let mut rooms: Vec<&defs::RoomTypeDef> = def.rooms.iter().map(|&id| vocab.room(id)).collect();
-    let (nw, nd) = needed_extent(&rooms, thickness);
-    if nw > w || nd > d {
-        return None;
-    }
+    let need = |r: &defs::RoomTypeDef, doors: i32| vocab.need(r, doors);
+    let z = Sizing {
+        t,
+        cap,
+        need: &need,
+    };
+    let mut best = program_fits(&rooms, w, d, z, entrance_us).then(|| rooms.clone());
     for &id in def.optional_rooms {
         rooms.push(vocab.room(id));
-        let (nw, nd) = needed_extent(&rooms, thickness);
-        if nw > w || nd > d {
-            rooms.pop();
-            break;
+        if program_fits(&rooms, w, d, z, entrance_us) {
+            best = Some(rooms.clone());
         }
     }
-    Some(rooms)
+    best
 }
 
 /// The fixture tags a room owes and how many of each: every committed
@@ -612,6 +1297,10 @@ impl RoomGrid {
         (c.1 - self.y0) as usize * self.w + (c.0 - self.x0) as usize
     }
 
+    fn cell(&self, i: usize) -> (i32, i32) {
+        (self.x0 + (i % self.w) as i32, self.y0 + (i / self.w) as i32)
+    }
+
     fn neighbours(&self, i: usize) -> [Option<usize>; 4] {
         let (x, y) = (i % self.w, i / self.w);
         [
@@ -665,64 +1354,245 @@ impl RoomGrid {
             }
         }
     }
+
+    fn clear(&mut self) {
+        for i in 0..self.occupied.len() {
+            self.set(i, false);
+        }
+    }
 }
 
-/// Places `owed` on free floor cells of `rect`, backed onto the north
-/// wall first, then the side walls, the open floor and last the south
-/// wall (which retracts); never on a `reserved` cell (a door and the
-/// cell in front of it); every placement leaves a lane. A snug room the
-/// camera preference paints into a corner (the north row can be the one
-/// beside the doorway) is retried farthest-from-the-doorway first, which
-/// always leaves the doorway's own side free. `None` when the room
-/// cannot hold them either way.
+/// The order classes are placed in: the counter takes its wall first,
+/// then the light, then the wall-backed anchors, then the free-standing
+/// tables on what floor is left.
+fn class_rank(class: defs::TagPlacement) -> u8 {
+    match class {
+        defs::TagPlacement::FacingDoor => 0,
+        defs::TagPlacement::WallMounted => 1,
+        defs::TagPlacement::WallBacked => 2,
+        defs::TagPlacement::FreeStanding => 3,
+    }
+}
+
+/// Where a room's own door is, as the pass places by it: the doorway
+/// cell, the cell just inside it, and the footprint (to tell the shell
+/// from a partition).
+#[derive(Clone, Copy)]
+struct DoorView {
+    door: (i32, i32),
+    inside: (i32, i32),
+    footprint: Rect,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Wall {
+    North,
+    South,
+    West,
+    East,
+}
+
+impl DoorView {
+    /// The wall the counter stands against: the one across from the door
+    /// when it is the shell, else the side wall nearest the door.
+    fn counter_wall(&self, rect: Rect) -> Wall {
+        let (dx, dy) = (self.inside.0 - self.door.0, self.inside.1 - self.door.1);
+        let across = match (dx, dy) {
+            (0, 1) => Wall::South,
+            (0, -1) => Wall::North,
+            (1, 0) => Wall::East,
+            _ => Wall::West,
+        };
+        let fp = self.footprint;
+        let shell = match across {
+            Wall::South => rect.y1 == fp.y1 - 1,
+            Wall::North => rect.y0 - 1 == fp.y0,
+            Wall::East => rect.x1 == fp.x1 - 1,
+            Wall::West => rect.x0 - 1 == fp.x0,
+        };
+        if shell {
+            return across;
+        }
+        if dy != 0 {
+            if self.door.0 - rect.x0 <= rect.x1 - 1 - self.door.0 {
+                Wall::West
+            } else {
+                Wall::East
+            }
+        } else if self.door.1 - rect.y0 <= rect.y1 - 1 - self.door.1 {
+            Wall::North
+        } else {
+            Wall::South
+        }
+    }
+}
+
+type Score = (u32, u32, u32, u32, u64);
+
+/// One candidate cell's score for a class (lower is better) and, for the
+/// counter, the cell it is served from.
+fn score(
+    class: defs::TagPlacement,
+    rect: Rect,
+    c: (i32, i32),
+    adjacent: bool,
+    key: u64,
+    door: &DoorView,
+) -> (Score, Option<(i32, i32)>) {
+    let (x, y) = c;
+    let on_n = y == rect.y0;
+    let on_s = y == rect.y1 - 1;
+    let on_w = x == rect.x0;
+    let on_e = x == rect.x1 - 1;
+    let corner = (on_n || on_s) && (on_w || on_e);
+    let along_row = (2 * x - (rect.x0 + rect.x1 - 1)).unsigned_abs();
+    let along_col = (2 * y - (rect.y0 + rect.y1 - 1)).unsigned_abs();
+    let (side, along) = if on_n {
+        (0, along_row)
+    } else if on_w || on_e {
+        (1, along_col)
+    } else if on_s {
+        (2, along_row)
+    } else {
+        (3, along_row + along_col)
+    };
+    let narrow = rect.width().min(rect.height()) <= 2;
+    let adj = adjacent as u32;
+    let wall_backed = (adj, side, (corner && !narrow) as u32, along, key);
+    match class {
+        defs::TagPlacement::WallBacked => (wall_backed, None),
+        defs::TagPlacement::WallMounted => ((adj, side, corner as u32, along, key), None),
+        defs::TagPlacement::FreeStanding => {
+            if rect.width() >= 3 && rect.height() >= 3 {
+                let perimeter = (on_n || on_s || on_w || on_e) as u32;
+                ((adj, perimeter, along_row + along_col, 0, key), None)
+            } else {
+                (wall_backed, None)
+            }
+        }
+        defs::TagPlacement::FacingDoor => {
+            let wall = door.counter_wall(rect);
+            let (on, along, serve) = match wall {
+                Wall::North => (on_n, along_row, (x, y + 1)),
+                Wall::South => (on_s, along_row, (x, y - 1)),
+                Wall::West => (on_w, along_col, (x + 1, y)),
+                Wall::East => (on_e, along_col, (x - 1, y)),
+            };
+            if on && rect.contains(serve.0, serve.1) {
+                ((0, adj, along, 0, key), Some(serve))
+            } else {
+                ((1, wall_backed.0, wall_backed.1, wall_backed.3, key), None)
+            }
+        }
+    }
+}
+
+/// Places `owed` on free floor cells of `rect` by each tag's placement
+/// class ([`score`]): never on a `reserved` cell (a door and the cell in
+/// front of it, a counter's serving cell), never beside another fixture
+/// where the room allows, and every placement leaves a lane from the
+/// door. A room the classes paint into a corner is retried farthest-
+/// from-the-doorway first, which always leaves the doorway's own side
+/// free. `None` when the room cannot hold them either way.
+#[allow(clippy::too_many_arguments)]
 fn place_fixtures(
     rng: &mut Rng,
     rect: Rect,
     reserved: &[(i32, i32)],
-    anchor: (i32, i32),
+    door: &DoorView,
     owed: &[(TagId, u32)],
     room: usize,
+    vocab: &Vocabulary,
 ) -> Option<Vec<Fixture>> {
     let total: u32 = owed.iter().map(|&(_, n)| n).sum();
-    let cell_count = (rect.width() * rect.height()) as u32;
-    if total > cell_count {
+    let cell_count = (rect.width() * rect.height()) as usize;
+    if total as usize > cell_count {
         return None;
     }
-    let mut order: Vec<((i32, i32), u8, u64)> = Vec::new();
-    for y in rect.y0..rect.y1 {
-        for x in rect.x0..rect.x1 {
-            let score = if y == rect.y0 {
-                0
-            } else if x == rect.x0 || x == rect.x1 - 1 {
-                1
-            } else if y == rect.y1 - 1 {
-                3
-            } else {
-                2
+    let keys: Vec<u64> = (0..cell_count).map(|_| rng.below(1 << 40)).collect();
+    let mut grid = RoomGrid::new(rect);
+    let anchor = grid.index(door.inside);
+    let reserved_ix: Vec<usize> = reserved.iter().map(|&c| grid.index(c)).collect();
+    let mut by_class: Vec<(TagId, u32)> = owed.to_vec();
+    by_class.sort_by_key(|&(tag, _)| class_rank(vocab.placement(tag)));
+    if let Some(placed) = place_by_class(
+        &mut grid,
+        &reserved_ix,
+        anchor,
+        &by_class,
+        room,
+        &keys,
+        rect,
+        door,
+        vocab,
+    ) {
+        return Some(placed);
+    }
+    let mut by_lane: Vec<usize> = (0..cell_count).collect();
+    by_lane.sort_by_key(|&i| {
+        let c = grid.cell(i);
+        let dist = (c.0 - door.inside.0).abs() + (c.1 - door.inside.1).abs();
+        (std::cmp::Reverse(dist), keys[i], i)
+    });
+    fill_in_order(&mut grid, &reserved_ix, anchor, &by_class, room, &by_lane)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn place_by_class(
+    grid: &mut RoomGrid,
+    reserved: &[usize],
+    anchor: usize,
+    owed: &[(TagId, u32)],
+    room: usize,
+    keys: &[u64],
+    rect: Rect,
+    door: &DoorView,
+    vocab: &Vocabulary,
+) -> Option<Vec<Fixture>> {
+    grid.clear();
+    let mut reserved = reserved.to_vec();
+    let mut out = Vec::new();
+    let mut ranked: Vec<(Score, usize, Option<usize>)> = Vec::new();
+    for &(tag, count) in owed {
+        let class = vocab.placement(tag);
+        for _ in 0..count {
+            ranked.clear();
+            for (i, &key) in keys.iter().enumerate() {
+                if grid.occupied[i] || reserved.contains(&i) {
+                    continue;
+                }
+                let adjacent = grid
+                    .neighbours(i)
+                    .into_iter()
+                    .flatten()
+                    .any(|n| grid.occupied[n]);
+                let (s, serve) = score(class, rect, grid.cell(i), adjacent, key, door);
+                ranked.push((s, i, serve.map(|c| grid.index(c))));
+            }
+            ranked.sort_unstable();
+            let mut picked = None;
+            for &(_, i, serve) in &ranked {
+                if serve.is_some_and(|s| grid.occupied[s]) {
+                    continue;
+                }
+                grid.set(i, true);
+                if grid.lane_holds(anchor) {
+                    picked = Some((i, serve));
+                    break;
+                }
+                grid.set(i, false);
+            }
+            let Some((i, serve)) = picked else {
+                grid.clear();
+                return None;
             };
-            order.push(((x, y), score, rng.below(1 << 40)));
+            reserved.extend(serve);
+            let (x, y) = grid.cell(i);
+            out.push(Fixture { x, y, tag, room });
         }
     }
-    // Camera preference first; then (only if that leaves a room unable to
-    // hold its fixtures) farthest from the doorway.
-    let mut grid = RoomGrid::new(rect);
-    let anchor_ix = grid.index(anchor);
-    let reserved_ix: Vec<usize> = reserved.iter().map(|&c| grid.index(c)).collect();
-    let mut by_camera = order.clone();
-    by_camera.sort_by_key(|&(c, score, key)| (score, key, c));
-    if let Some(placed) = fill_in_order(&mut grid, &reserved_ix, anchor_ix, owed, room, &by_camera)
-    {
-        return Some(placed);
-    }
-    let mut by_lane = order;
-    by_lane.sort_by_key(|&(c, _, key)| {
-        let dist = (c.0 - anchor.0).abs() + (c.1 - anchor.1).abs();
-        (std::cmp::Reverse(dist), key, c)
-    });
-    if let Some(placed) = fill_in_order(&mut grid, &reserved_ix, anchor_ix, owed, room, &by_lane) {
-        return Some(placed);
-    }
-    None
+    grid.clear();
+    Some(out)
 }
 
 /// Takes the first free candidate, in order, that leaves a lane, for each
@@ -734,43 +1604,34 @@ fn fill_in_order(
     anchor: usize,
     owed: &[(TagId, u32)],
     room: usize,
-    order: &[((i32, i32), u8, u64)],
+    order: &[usize],
 ) -> Option<Vec<Fixture>> {
-    for i in 0..grid.occupied.len() {
-        grid.set(i, false);
-    }
+    grid.clear();
     let mut out = Vec::new();
     let mut ok = true;
     'owed: for &(tag, count) in owed {
         for _ in 0..count {
             let mut picked = None;
-            for &(c, _, _) in order {
-                let i = grid.index(c);
+            for &i in order {
                 if grid.occupied[i] || reserved.contains(&i) {
                     continue;
                 }
                 grid.set(i, true);
                 if grid.lane_holds(anchor) {
-                    picked = Some(c);
+                    picked = Some(i);
                     break;
                 }
                 grid.set(i, false);
             }
-            let Some(c) = picked else {
+            let Some(i) = picked else {
                 ok = false;
                 break 'owed;
             };
-            out.push(Fixture {
-                x: c.0,
-                y: c.1,
-                tag,
-                room,
-            });
+            let (x, y) = grid.cell(i);
+            out.push(Fixture { x, y, tag, room });
         }
     }
-    for i in 0..grid.occupied.len() {
-        grid.set(i, false);
-    }
+    grid.clear();
     ok.then_some(out)
 }
 
@@ -799,113 +1660,132 @@ fn approach_cells(entrance: (i32, i32), front: Side, plot: Rect) -> Vec<(i32, i3
     cells
 }
 
+/// The plans an attempt chooses between.
+#[derive(Clone, Copy)]
+enum Plan {
+    Band,
+    Column,
+    TwoRow,
+}
+
 /// One layout attempt for a chosen program, drawing every free choice
-/// (mirror, back-room order, front-band depth, door positions, fixture
-/// cells) from `rng`. `None` when a room cannot hold what it owes.
+/// (mirror, plan, back-room order, sizes, door positions, fixture cells)
+/// from `rng`; a drawn mirror or plan that cannot be sized falls back to
+/// the other. `None` when nothing fits or a room cannot hold what it
+/// owes. Every sized plan's rooms and doors count into `work`, whether or
+/// not its fixtures then fit.
+#[allow(clippy::too_many_arguments)]
 fn attempt_layout(
     rng: &mut Rng,
     envelope: &Envelope,
     plot: &Plot,
     program: &[&defs::RoomTypeDef],
     rows: &[RequirementRow],
-    parts: &Parts,
-    thickness: i32,
+    vocab: &Vocabulary,
+    t: i32,
+    cap: i32,
+    work: &mut LayoutWork,
 ) -> Option<Interior> {
     let footprint = envelope.footprint;
-    let flip = rng.below(2) == 1;
-    let frame = Frame::new(footprint, envelope.front, thickness, flip);
-    let (w, d) = (frame.w, frame.d);
+    let first_flip = rng.below(2) == 1;
+    let mut plans = [Plan::Band, Plan::Column, Plan::TwoRow];
+    for i in (1..plans.len()).rev() {
+        let j = rng.below(i as u64 + 1) as usize;
+        plans.swap(i, j);
+    }
     let front = program[0];
     let mut back: Vec<&defs::RoomTypeDef> = program[1..].to_vec();
     for i in (1..back.len()).rev() {
         let j = rng.below(i as u64 + 1) as usize;
         back.swap(i, j);
     }
-    let k = back.len() as i32;
-
-    // The front band's depth and each back room's width.
-    let (df, widths) = if k == 0 {
-        (d, Vec::new())
-    } else {
-        let back_min_depth = back.iter().map(|r| r.min_depth_cells as i32).max()?;
-        let lo = front.min_depth_cells as i32;
-        let hi = d - thickness - back_min_depth;
-        if hi < lo {
-            return None;
-        }
-        // The front band takes at most half the spare depth, so the back
-        // rooms are never squeezed to their minimum by a cavernous front.
-        let df = lo + rng.below(((hi - lo) / 2 + 1) as u64) as i32;
-        let min_total: i32 =
-            back.iter().map(|r| r.min_width_cells as i32).sum::<i32>() + thickness * (k - 1);
-        let extra = w - min_total;
-        if extra < 0 {
-            return None;
-        }
-        let weight_sum: i64 = back.iter().map(|r| r.weight as i64).sum();
-        let mut widths: Vec<i32> = back
-            .iter()
-            .map(|r| {
-                r.min_width_cells as i32 + (extra as i64 * r.weight as i64 / weight_sum) as i32
-            })
-            .collect();
-        let mut remainder = w - (widths.iter().sum::<i32>() + thickness * (k - 1));
-        let mut by_weight: Vec<usize> = (0..back.len()).collect();
-        by_weight.sort_by_key(|&i| std::cmp::Reverse(back[i].weight));
-        let mut at = 0;
-        while remainder > 0 {
-            widths[by_weight[at % by_weight.len()]] += 1;
-            remainder -= 1;
-            at += 1;
-        }
-        (df, widths)
-    };
-
-    // Rooms, front first, then the back band left to right.
-    let mut rooms = vec![Room {
-        rect: frame.rect(0, 0, w, df),
-        room_type: front.id,
-    }];
-    let mut thresholds: Vec<Threshold> = Vec::new();
     let entrance_world = front_cell(footprint, envelope.front);
-    let entrance_u = (0..w).find(|&u| frame.cell(u, -thickness) == entrance_world)?;
-    thresholds.push(Threshold {
+    let need = |r: &defs::RoomTypeDef, doors: i32| vocab.need(r, doors);
+    let z = Sizing {
+        t,
+        cap,
+        need: &need,
+    };
+    for flip in [first_flip, !first_flip] {
+        let frame = Frame::new(footprint, envelope.front, t, flip);
+        let entrance_u = (0..frame.w).find(|&u| frame.cell(u, -t) == entrance_world)?;
+        for plan in plans {
+            let local = match plan {
+                Plan::Band => band_rooms(rng, front, &back, frame.w, frame.d, z),
+                Plan::Column => column_rooms(rng, front, &back, frame.w, frame.d, z, entrance_u),
+                Plan::TwoRow => two_row_rooms(rng, front, &back, frame.w, frame.d, z),
+            };
+            if let Some(local) = local {
+                work.cells_laid += local
+                    .iter()
+                    .map(|r| ((r.rect.2 - r.rect.0) * (r.rect.3 - r.rect.1) + 1) as u64)
+                    .sum::<u64>();
+                return furnish(rng, &frame, envelope, plot, entrance_u, &local, rows, vocab);
+            }
+        }
+    }
+    None
+}
+
+/// Turns a sized plan into world rooms, thresholds and fixtures.
+#[allow(clippy::too_many_arguments)]
+fn furnish(
+    rng: &mut Rng,
+    frame: &Frame,
+    envelope: &Envelope,
+    plot: &Plot,
+    entrance_u: i32,
+    local: &[LocalRoom],
+    rows: &[RequirementRow],
+    vocab: &Vocabulary,
+) -> Option<Interior> {
+    let footprint = envelope.footprint;
+    let entrance_world = front_cell(footprint, envelope.front);
+    let rect_of = |r: (i32, i32, i32, i32)| frame.rect(r.0, r.1, r.2, r.3);
+    let rooms: Vec<Room> = local
+        .iter()
+        .map(|r| Room {
+            rect: rect_of(r.rect),
+            room_type: r.def.id,
+        })
+        .collect();
+    let mut thresholds = vec![Threshold {
         x: entrance_world.0,
         y: entrance_world.1,
         room: 0,
         entrance: true,
-    });
-    let mut reserved: Vec<Vec<(i32, i32)>> = vec![Vec::new(); 1 + back.len()];
-    reserved[0].push(frame.cell(entrance_u, 0));
-    let mut anchors: Vec<(i32, i32)> = vec![frame.cell(entrance_u, 0)];
-    let mut cursor = 0;
-    for (i, room) in back.iter().enumerate() {
-        let (u0, u1) = (cursor, cursor + widths[i]);
-        cursor = u1 + thickness;
-        let rect = frame.rect(u0, df + thickness, u1, d);
-        rooms.push(Room {
-            rect,
-            room_type: room.id,
-        });
-        let door_u = u0 + rng.below((u1 - u0) as u64) as i32;
-        let door = frame.cell(door_u, df);
+    }];
+    let front_inside = frame.cell(entrance_u, 0);
+    let mut reserved: Vec<Vec<(i32, i32)>> = vec![Vec::new(); local.len()];
+    reserved[0].push(front_inside);
+    let mut doors = vec![DoorView {
+        door: entrance_world,
+        inside: front_inside,
+        footprint,
+    }];
+    for (i, r) in local.iter().enumerate().skip(1) {
+        let door = r.door?;
+        let cell = frame.cell(door.cell.0, door.cell.1);
         thresholds.push(Threshold {
-            x: door.0,
-            y: door.1,
-            room: i + 1,
+            x: cell.0,
+            y: cell.1,
+            room: i,
             entrance: false,
         });
-        reserved[0].push(frame.cell(door_u, df - 1));
-        let inside = frame.cell(door_u, df + thickness);
-        reserved[i + 1].push(inside);
-        anchors.push(inside);
+        reserved[door.parent].push(frame.cell(door.outside.0, door.outside.1));
+        let inside = frame.cell(door.inside.0, door.inside.1);
+        reserved[i].push(inside);
+        doors.push(DoorView {
+            door: cell,
+            inside,
+            footprint,
+        });
     }
 
     let mut fixtures = Vec::new();
     for (i, room) in rooms.iter().enumerate() {
-        let def = if i == 0 { front } else { back[i - 1] };
-        let owed = fixtures_owed(def, rows, parts);
-        let placed = place_fixtures(rng, room.rect, &reserved[i], anchors[i], &owed, i)?;
+        let owed = fixtures_owed(local[i].def, rows, &vocab.parts);
+        let placed = place_fixtures(rng, room.rect, &reserved[i], &doors[i], &owed, i, vocab)?;
         fixtures.extend(placed);
     }
 
@@ -950,6 +1830,17 @@ fn requirement_rows(content: &GenerationContent) -> Vec<RequirementRow> {
     rows
 }
 
+/// The two mirrors' entrance column in a `Frame` over `footprint`.
+fn entrance_columns(footprint: Rect, front: Side, t: i32) -> Option<[i32; 2]> {
+    let entrance = front_cell(footprint, front);
+    let mut out = [0; 2];
+    for (k, flip) in [false, true].into_iter().enumerate() {
+        let frame = Frame::new(footprint, front, t, flip);
+        out[k] = (0..frame.w).find(|&u| frame.cell(u, -t) == entrance)?;
+    }
+    Some(out)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn lay_out_with(
     city_seed: u64,
@@ -968,14 +1859,18 @@ fn lay_out_with(
             building_type: def.id,
         };
     }
-    let thickness = cfg.envelope_wall_thickness_cells;
-    let probe = Frame::new(envelope.footprint, envelope.front, thickness, false);
-    let Some(program) = select_program(def, vocab, probe.w, probe.d, thickness) else {
+    let t = cfg.envelope_wall_thickness_cells;
+    let cap = cfg.interior_max_room_aspect;
+    let probe = Frame::new(envelope.footprint, envelope.front, t, false);
+    let program = entrance_columns(envelope.footprint, envelope.front, t)
+        .and_then(|eus| select_program(def, vocab, probe.w, probe.d, t, cap, eus));
+    let Some(program) = program else {
         return InteriorOutcome::Rejected {
             plot: plot_index,
             building_type: def.id,
             reason: RejectReason::ProgramDoesNotFit,
             attempts: 0,
+            work: LayoutWork::default(),
         };
     };
 
@@ -983,26 +1878,31 @@ fn lay_out_with(
         seed_from_ids(city_seed, PASS_ID),
         rect_seed_key(envelope.footprint),
     );
-    let cap = cfg.interior_max_layout_attempts;
-    for attempt in 0..cap {
+    let attempts = cfg.interior_max_layout_attempts;
+    let mut work = LayoutWork::default();
+    for attempt in 0..attempts {
         let mut rng = Rng::new(seed_from_ids(building_seed, attempt as u64));
         let Some(interior) = attempt_layout(
-            &mut rng,
-            envelope,
-            plot,
-            &program,
-            rows,
-            &vocab.parts,
-            thickness,
+            &mut rng, envelope, plot, &program, rows, vocab, t, cap, &mut work,
         ) else {
             continue;
         };
-        if check_layout(&interior, vocab, content.rules).is_empty() {
+        let in_aspect = interior
+            .rooms
+            .iter()
+            .all(|r| within_aspect(r.rect.width() as i32, r.rect.height() as i32, cap));
+        if !in_aspect {
+            continue;
+        }
+        let site = building_site(&interior, vocab);
+        work.cells_judged += site.occupied_cells() as u64;
+        if crate::rules::evaluate_local(content.rules, &site).is_empty() {
             return InteriorOutcome::Laid {
                 plot: plot_index,
                 building_type: def.id,
                 interior,
                 attempts: attempt + 1,
+                work,
             };
         }
     }
@@ -1010,7 +1910,8 @@ fn lay_out_with(
         plot: plot_index,
         building_type: def.id,
         reason: RejectReason::NoValidLayout,
-        attempts: cap,
+        attempts,
+        work,
     }
 }
 
@@ -1360,53 +2261,71 @@ mod tests {
         }
     }
 
+    /// A footprint `w x d` cells of interior, south front.
+    fn interior_footprint(w: i32, d: i32) -> Rect {
+        Rect {
+            x0: 100,
+            y0: 100,
+            x1: 100 + w + 2,
+            y1: 100 + d + 2,
+        }
+    }
+
     #[test]
     fn size_buys_rooms_not_bigger_rooms() {
-        let c = content();
-        let vocab = Vocabulary::new(&c);
         let def = defs::BUILDING_TYPES
             .iter()
             .find(|b| b.optional_rooms.len() >= 2)
             .expect("a type with an optional tail");
-        let core: Vec<&defs::RoomTypeDef> = def.rooms.iter().map(|&id| vocab.room(id)).collect();
-        let (nw, nd) = needed_extent(&core, 1);
-        let snug = Rect {
-            x0: 100,
-            y0: 100,
-            x1: 100 + nw + 2,
-            y1: 100 + nd + 2,
-        };
-        let big = Rect {
-            x0: 100,
-            y0: 100,
-            x1: 120,
-            y1: 116,
-        };
-        let (a, _, _) = laid(def, snug, 3, 5);
-        let (b, _, _) = laid(def, big, 3, 5);
-        assert_eq!(
-            a.rooms.len(),
-            def.rooms.len(),
-            "a snug footprint holds the core only"
+        let c = content();
+        let vocab = Vocabulary::new(&c);
+        let snug = interior_footprint(
+            def.min_interior_width_cells as i32,
+            def.min_interior_depth_cells as i32,
         );
+        let (plot, env) = plot_and_envelope(snug, 3);
+        let InteriorOutcome::Laid { interior: a, .. } =
+            lay_out(5, &env, &plot, def, &cfg(), &c, &vocab)
+        else {
+            panic!("the type lays out at its own minimum interior");
+        };
+        let (b, _, _) = laid(def, interior_footprint(18, 14), 3, 5);
         assert!(
             b.rooms.len() > a.rooms.len(),
             "a bigger footprint holds more of the optional tail ({} vs {})",
             b.rooms.len(),
             a.rooms.len()
         );
-        let widest = |i: &Interior| i.rooms.iter().map(|r| r.rect.height()).max().unwrap();
-        let _ = widest;
+    }
+
+    /// `tools/defs-build` holds a type's program to a lower bound on its
+    /// own minimum interior; this is the real check: every type with a
+    /// room program lays out there, under the aspect cap.
+    #[test]
+    fn every_type_lays_out_at_its_own_minimum_interior() {
+        let c = content();
+        let vocab = Vocabulary::new(&c);
+        for def in defs::BUILDING_TYPES.iter().filter(|b| !b.rooms.is_empty()) {
+            let fp = interior_footprint(
+                def.min_interior_width_cells as i32,
+                def.min_interior_depth_cells as i32,
+            );
+            let (plot, env) = plot_and_envelope(fp, 3);
+            let out = lay_out(9, &env, &plot, def, &cfg(), &c, &vocab);
+            assert!(
+                matches!(out, InteriorOutcome::Laid { .. }),
+                "{} does not lay out at its own minimum interior: {out:?}",
+                def.key
+            );
+        }
     }
 
     #[test]
-    fn layout_is_a_pure_function_of_the_building_never_of_its_neighbours() {
+    fn the_same_building_lays_out_the_same_way_twice() {
         let def = type_with_core(3);
         let (a, _, _) = laid(def, FOOTPRINT, 3, 99);
         let (b, _, _) = laid(def, FOOTPRINT, 3, 99);
         assert_eq!(a, b);
-        let (c2, _, _) = laid(def, FOOTPRINT, 3, 100);
-        let _ = c2;
     }
 
     #[test]
@@ -1425,6 +2344,7 @@ mod tests {
             building_type: 0,
             interior: interior.clone(),
             attempts: 1,
+            work: LayoutWork::default(),
         }]);
         let spec = WorldSpec {
             building_areas: map.building_areas(),
@@ -1513,6 +2433,7 @@ mod tests {
             building_type: def.id,
             reason: RejectReason::NoValidLayout,
             attempts: 8,
+            work: LayoutWork::default(),
         }]);
         assert_eq!(
             check_institutions_enterable(&map, &c),

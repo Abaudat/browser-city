@@ -84,21 +84,75 @@ fn forcing_every_attempt_to_fail_is_a_typed_counted_rejection_with_no_cells() {
     };
     let (plot, env) = plot_and_envelope();
     let out = interiors::lay_out(21, &env, &plot, def, &cfg, &forced, &vocab);
-    assert_eq!(
-        out,
-        InteriorOutcome::Rejected {
-            plot: 0,
-            building_type: def.id,
-            reason: RejectReason::NoValidLayout,
-            attempts: cfg.interior_max_layout_attempts,
-        },
-        "never a panic, never an unbounded loop, never a half-emitted room"
-    );
+    let InteriorOutcome::Rejected {
+        plot: 0,
+        building_type,
+        reason: RejectReason::NoValidLayout,
+        attempts,
+        ..
+    } = out
+    else {
+        panic!("never a panic, never an unbounded loop, never a half-emitted room: {out:?}");
+    };
+    assert_eq!(building_type, def.id);
+    assert_eq!(attempts, cfg.interior_max_layout_attempts);
     let map = InteriorMap::test_fixture(vec![out]);
     assert_eq!(map.enterable_count(), 0);
     assert_eq!(map.rejected_count(), 1);
     assert_eq!(map.rejected_percent(), 100);
     assert!(map.building_areas().is_empty() && map.room_areas().is_empty());
+}
+
+/// Quentin's direction: the pass's own work counter moves with the work.
+/// A building laid out at its first attempt, then the same building
+/// forced through every attempt by a rule placement never reads but the
+/// verdict refuses (a room owing pavement): the forced run laid and
+/// judged at least twice the cells.
+#[test]
+fn a_forced_retry_at_least_doubles_the_work_the_pass_counts() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let base = GenerationContent::committed();
+    let vocab = Vocabulary::new(&base);
+    let (plot, env) = plot_and_envelope();
+    let (def, once) = base
+        .building_types
+        .iter()
+        .filter(|b| b.rooms.len() >= 2)
+        .find_map(
+            |def| match interiors::lay_out(21, &env, &plot, def, &cfg, &base, &vocab) {
+                InteriorOutcome::Laid {
+                    attempts: 1, work, ..
+                } => Some((def, work)),
+                _ => None,
+            },
+        )
+        .expect("a committed type laid out at its first attempt");
+    assert!(once.cells_laid > 0 && once.cells_judged > 0);
+    let front = base
+        .room_types
+        .iter()
+        .find(|r| r.id == def.rooms[0])
+        .unwrap();
+    let rules = [sim::rules::testing::requirement(
+        9_997,
+        "forced_to_retry",
+        front.tags[0],
+        vocab.parts.pavement,
+        1,
+    )];
+    let forced = GenerationContent {
+        rules: RuleSet::for_test(&rules),
+        ..base
+    };
+    let InteriorOutcome::Rejected { work, .. } =
+        interiors::lay_out(21, &env, &plot, def, &cfg, &forced, &vocab)
+    else {
+        panic!("the forced building is rejected");
+    };
+    assert!(
+        work.cells_laid >= 2 * once.cells_laid && work.cells_judged >= 2 * once.cells_judged,
+        "forced retries counted {work:?}, one attempt {once:?}"
+    );
 }
 
 #[test]
