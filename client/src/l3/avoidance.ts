@@ -67,8 +67,9 @@ const OBSTACLE_FADE_IN = 0.25;
 const GAP_GRID = 10000;
 /** Of the speed, how much relative motion across the line puts a pair that
  * walks the same way in the shallow-merge regime, where lateral steps cannot
- * separate them and would pull them together: off from `MERGE_ON` to
- * `MERGE_OFF`, whole outside. About 20 to 35 degrees of convergence. */
+ * separate them and would pull them together: off from `MERGE_FROM`
+ * to `MERGE_TO`, back on from `MERGE_BACK` over `MERGE_BACK_WIDTH`, whole outside.
+ * About 20 to 35 degrees of convergence. */
 const MERGE_FROM = 0.02;
 const MERGE_TO = 0.06;
 const MERGE_BACK = 0.55;
