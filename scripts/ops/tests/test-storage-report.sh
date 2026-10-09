@@ -35,6 +35,7 @@ schema_of() {
 echo "the canned rows' columns are the schema snapshot's"
 check_contains "storage_sample columns" "sample_id,sampled_at,total_bytes_est,over_review,over_wall,review_bytes,wall_bytes" "$(columns_of storage_sample)"
 check_contains "table_sample columns" "sample_id,sampled_at,table_accessor,rows,bytes_est,alert_rows,max_rows,over_alert" "$(columns_of table_sample)"
+check_contains "cadence_liveness columns" "cadence,last_target_at,last_fired_at,fires,missed" "$(columns_of cadence_liveness)"
 check_contains "reducer_class_sample columns" "sample_id,sampled_at,class,calls_total,calls_delta" "$(columns_of reducer_class_sample)"
 
 # stub_bin <storage-rows> <table-rows> <class-rows> [fail-mode]
@@ -52,7 +53,7 @@ case "${4:-}" in
   auth) echo "Error: 401 unauthorized" >&2; exit 0 ;;
 esac
 case "\$*" in
-  *cadence_liveness*) [ "${4:-}" = "liveness-fail" ] && { echo "Error: boom" >&2; exit 1; }; cat "$d/liveness.json" ;;
+  *cadence_liveness*) echo liveness >>"$CALLS_LOG"; [ "${4:-}" = "liveness-fail" ] && { echo "Error: boom" >&2; exit 1; }; cat "$d/liveness.json" ;;
   *storage_sample*) cat "$d/storage.json" ;;
   *reducer_class_sample*) cat "$d/classes.json" ;;
   *table_sample*) cat "$d/tables.json" ;;
@@ -67,11 +68,13 @@ STUB
 # the report's output; the findings file it wrote is $FINDINGS.
 run_report() {
   local bin
+  rm -f "$CALLS_LOG"
   bin="$(stub_bin "$1" "$2" "${3:-[]}" "${4:-}")"
   ( PATH="$bin:$PATH" bash "$REPORT" my-db --server http://127.0.0.1:1 --now "${NOW:-150}" --findings "$FINDINGS" )
 }
 
 FINDINGS="$(fake_dir)/findings.tsv"
+CALLS_LOG="$(fake_dir)/calls.log"
 is_empty() { [ ! -s "$1" ]; }
 same_nonempty() { [ "$1" = "$2" ] && [ -n "$1" ]; }
 line_count_is() { [ "$(grep -c . "$1")" -eq "$2" ]; }
@@ -148,20 +151,31 @@ check_contains "says the sampler stopped" "the sampler has stopped" "$OUT"
 check_contains "stale finding has its stable title" "watcher: sampler stale$TAB" "$(cat "$FINDINGS")"
 
 echo
-echo "a stale finding carries cadence liveness, and a liveness read failure never changes the verdict"
-LIVE='[["Metrics",90,95,40,2],["Growth",190,191,300,0]]'
-OUT="$(LIVENESS="$LIVE" NOW=$((100 + STALE + 1)) run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' 2>&1)"; CODE=$?
-check "stale with liveness -> still exit 1" 1 bash -c "exit $CODE"
+echo "cadence liveness is printed on every run and carried by the stale finding"
+# Real shapes: cadence is a u32 code, the instants are Timestamps ([micros]).
+SAMPLE_AT=100
+FAR=$((SAMPLE_AT + STALE + 13321000000))
+LIVE="[[1,[$((FAR - 20000000))],[$((FAR - 19000000))],40,2],[2,[$((FAR - 13322000000))],[$((FAR - 13321000000))],187,3],[9,[1],[2],1,0]]"
+OUT="$(LIVENESS="$LIVE" NOW=$FAR run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' 2>&1)"; CODE=$?
+check "stale with liveness -> exit 1" 1 bash -c "exit $CODE"
+check_contains "prints the METRICS cadence by code with ages" "cadence 2: last fired 13321s ago, last target 13322s ago, fires=187 missed=3" "$OUT"
+check_contains "prints the other cadence" "cadence 1: last fired 19s ago, last target 20s ago" "$OUT"
+check_contains "an unknown code is printed, not dropped" "cadence 9:" "$OUT"
+check "a stale run queries cadence_liveness exactly once" 0 bash -c "[ \"\$(grep -c liveness '$CALLS_LOG')\" -eq 1 ]"
 check "stale finding is still one line" 0 line_count_is "$FINDINGS" 1
 FINDING="$(cat "$FINDINGS")"
 check_contains "detail carries the stale line" "the sampler has stopped" "$FINDING"
-check_contains "detail carries the METRICS row" "Metrics last_target_at=90 last_fired_at=95 fires=40 missed=2" "$FINDING"
-check_contains "detail carries every cadence" "Growth last_target_at=190 last_fired_at=191 fires=300 missed=0" "$FINDING"
+check_contains "detail carries the METRICS row with its age" "cadence 2: last fired 13321s ago" "$FINDING"
+check_contains "detail carries every cadence" "cadence 1: last fired" "$FINDING"
+OUT="$(LIVENESS="$LIVE" NOW=150 run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' 2>&1)"; CODE=$?
+check "a healthy run -> exit 0" 0 bash -c "exit $CODE"
+check_contains "a healthy run prints liveness too" "cadence 2:" "$OUT"
+check "and queries it exactly once" 0 bash -c "[ \"\$(grep -c liveness '$CALLS_LOG')\" -eq 1 ]"
+check "and writes no finding" 0 is_empty "$FINDINGS"
 OUT="$(LIVENESS="$LIVE" NOW=$((100 + STALE + 1)) run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' '[]' liveness-fail 2>&1)"; CODE=$?
 check "liveness unreadable while stale -> still exit 1" 1 bash -c "exit $CODE"
 check_contains "says liveness was unreadable" "cadence liveness unreadable" "$(cat "$FINDINGS")"
-OUT="$(LIVENESS="$LIVE" NOW=150 run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' 2>&1)"; CODE=$?
-check "a fresh sample does not read liveness into a finding" 0 is_empty "$FINDINGS"
+check_contains "the failed read's reason reaches the log" "boom" "$OUT"
 
 echo
 echo "cost per reducer class is printed for the newest fire, never alerted on"
