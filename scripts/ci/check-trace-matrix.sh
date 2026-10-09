@@ -173,6 +173,48 @@ done <<< "$CLIENT_INV_NAMES"
 
 FAILED=0
 
+# --- the invariant table's own shape ------------------------------------------
+# Every row of the `| Invariant id | ... |` table has exactly five cells, a
+# known status and an id no other row has: a row merged into its neighbour or
+# a stray fragment otherwise reads as valid to every check below.
+declare -A INV_ROW_SEEN
+in_inv=0
+while IFS= read -r line; do
+  line="${line%$'\r'}"
+  if [ "$line" = '| Invariant id | Description | Status | Test | Story |' ]; then
+    in_inv=1
+    continue
+  fi
+  [ "$in_inv" -eq 1 ] || continue
+  case "$line" in
+    '|'*) ;;
+    *) in_inv=0; continue ;;
+  esac
+  [[ "$line" =~ ^\|([[:space:]]*:?-+:?[[:space:]]*\|)+[[:space:]]*$ ]] && continue
+  inner="${line#|}"
+  inner="${inner%|}"
+  IFS='|' read -ra cells <<< "$inner"
+  if [ "${#cells[@]}" -ne 5 ]; then
+    echo "check-trace-matrix: FAIL -- invariant row has ${#cells[@]} cells, not 5: ${line:0:100}" >&2
+    FAILED=1
+    continue
+  fi
+  rid="${cells[0]//\`/}"; trim "$rid"; rid="$REPLY"
+  trim "${cells[2]}"; rstatus="$REPLY"
+  case "$rstatus" in
+    covered | deferred | partial | planned) ;;
+    *)
+      echo "check-trace-matrix: FAIL -- invariant row '$rid' has status '$rstatus', which is none of covered/partial/deferred/planned" >&2
+      FAILED=1
+      ;;
+  esac
+  if [ -n "${INV_ROW_SEEN[$rid]+x}" ]; then
+    echo "check-trace-matrix: FAIL -- invariant id '$rid' has more than one row" >&2
+    FAILED=1
+  fi
+  INV_ROW_SEEN["$rid"]=1
+done < "$MATRIX"
+
 # every covered row's Test column must name a real test; every deferred
 # row's id must NOT already have a test (or it should have been flipped)
 while IFS='|' read -r _ id _ status test _; do

@@ -143,6 +143,18 @@ declare global {
        * only reader; it must never be recomputed from `viewTransform`,
        * which is the thing under test. */
       playerScreenBounds?: () => { x: number; y: number; width: number; height: number };
+      /** Story 5.2: every street citizen's agreed L3 state at a given city
+       * time, computed from scratch -- never read from what was drawn. */
+      l3Agreement?: (cityMilli: number) => readonly {
+        id: string;
+        x: number;
+        y: number;
+        activity: string;
+        frameIndex: number;
+        facing: string;
+        offsetX: number;
+        offsetY: number;
+      }[];
       /** Story 5.1: the L3 commuter as last drawn -- a callable read fresh
        * each call, `undefined` while it is not on screen. */
       commuterDrawn?: () =>
@@ -396,6 +408,16 @@ export function exposePlayerScreenBoundsForE2e(
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.playerScreenBounds = getter;
+  window.__bc = bucket;
+}
+
+/** Story 5.2: the same idiom, for the L3 agreement sample. */
+export function exposeL3AgreementForE2e(
+  getter: NonNullable<NonNullable<Window["__bc"]>["l3Agreement"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.l3Agreement = getter;
   window.__bc = bucket;
 }
 

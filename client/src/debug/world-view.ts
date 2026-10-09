@@ -30,6 +30,15 @@ export interface L3BodyView {
   readonly fallbacks: number;
   /** Some segment is walked outside the walking-pace band. */
   readonly paceOutOfBand: boolean;
+  /** Story 5.2: the sidestep in cells (signed, lateral), whether the body's
+   * neighbours were cut at the cap, and whether the sidestep met a blocked tile. */
+  readonly avoidance?: {
+    readonly offsetCells: number;
+    readonly capped: boolean;
+    readonly blocked: boolean;
+  };
+  /** Story 5.2: the flavour a standing body is showing, when not nothing. */
+  readonly activity?: string;
 }
 
 export interface DebugWorldView extends CollisionGridQuery {
