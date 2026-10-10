@@ -134,18 +134,18 @@ describe("bodyRect", () => {
 describe("bodyCell", () => {
   const S = SUBCELLS_PER_CELL;
 
-  it("is a cell the body box overlaps, at every sub-cell position", () => {
+  it("is a cell holding the body box's bottom-centre sub-cell, at every sub-cell position", () => {
     for (let ySub = -3 * S; ySub <= 3 * S; ySub++) {
       for (let xSub = -S; xSub <= S; xSub++) {
         const pos = { x: xSub / S, y: ySub / S };
         const cell = bodyCell(pos);
         const box = bodyRect(pos, CONFIG);
-        const cx = (xSub / S) * S;
-        expect(cell.x, `x at ${xSub}`).toBe(Math.floor(xSub / S));
-        // The bottom-centre sub-cell is inside the cell, the box's last row.
-        expect(cell.y * S).toBeLessThanOrEqual(box.y1 - 1);
-        expect((cell.y + 1) * S).toBeGreaterThan(box.y1 - 1);
-        expect(cx).toBe(xSub);
+        const centre = (box.x0 + box.x1) / 2;
+        const lastRow = box.y1 - 1;
+        expect(cell.x * S, `x at ${xSub}`).toBeLessThanOrEqual(centre);
+        expect((cell.x + 1) * S, `x at ${xSub}`).toBeGreaterThan(centre);
+        expect(cell.y * S, `y at ${ySub}`).toBeLessThanOrEqual(lastRow);
+        expect((cell.y + 1) * S, `y at ${ySub}`).toBeGreaterThan(lastRow);
       }
     }
   });

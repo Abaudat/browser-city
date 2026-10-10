@@ -22,7 +22,20 @@ test("walking the subway flights pressed against their bottom wall reaches the o
   await page.goto("/?freezeCrowd=1");
   await page.waitForFunction(() => window.__bc?.playerFloor !== undefined);
 
-  for (const segment of streetSubwayWallWalkRoute(streetWalkInputs())) {
+  const inputs = streetWalkInputs();
+  // The posture is part of the claim: the body rests on the railing's face
+  // before each walk along it.
+  const restsAt: Readonly<Record<string, number>> = {
+    "down-the-street-flight-pressed-south": inputs.nearRailingRestY,
+    "up-the-platform-flight-pressed-south": inputs.platformWallRestY,
+  };
+  for (const segment of streetSubwayWallWalkRoute(inputs)) {
+    const rest = restsAt[segment.label];
+    if (rest !== undefined) {
+      await expect
+        .poll(() => page.evaluate(() => window.__bc?.playerPosition?.y), { timeout: 5_000 })
+        .toBeCloseTo(rest, 6);
+    }
     await walkRealSegment(page, segment);
     if (segment.label === "down-the-street-flight-pressed-south") {
       await expect

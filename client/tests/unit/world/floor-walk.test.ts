@@ -64,29 +64,47 @@ describe("stepAndTransition", () => {
     { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND },
   );
 
-  it("never reports a cell the body box does not overlap, for any sub-cell position and direction", () => {
+  it("never reports a cell the body box does not overlap, including flush against a blocker's top face", () => {
     const sub = CONFIG.subcellsPerCell;
+    // One full-cell blocker at cell (3, 10).
+    const blocker = { x0: 3 * sub, y0: 10 * sub, x1: 4 * sub, y1: 11 * sub };
+    const blocked: CollisionGridQuery = {
+      entriesInCell(_floor, x, y): readonly GridEntry[] {
+        return x === 3 && y === 10 ? [{ rect: blocker } as GridEntry] : [];
+      },
+    };
     const dirs = [
       { x: 1, y: 0 },
       { x: -1, y: 0 },
       { x: 0, y: 1 },
       { x: 0, y: -1 },
       { x: 1, y: 1 },
+      { x: -1, y: 1 },
     ];
-    for (let ySub = 8 * sub; ySub <= 9 * sub; ySub++) {
-      for (let xSub = 3 * sub; xSub <= 4 * sub; xSub += 3) {
+    let flush = 0;
+    for (let ySub = 9 * sub; ySub <= 10 * sub; ySub++) {
+      for (let xSub = 3 * sub; xSub < 4 * sub; xSub += 3) {
         for (const dir of dirs) {
           const state = initialFloorWalkState(xSub / sub, ySub / sub, 0);
-          const next = stepAndTransition(state, dir, 5, OPEN_GRID, CONFIG, transitions);
-          const box = bodyRect({ x: next.x, y: next.y }, CONFIG);
+          const next = stepAndTransition(state, dir, 100, blocked, CONFIG, transitions);
           if (next.transitioned) continue;
-          expect(next.cellX * sub).toBeLessThanOrEqual(box.x0 + CONFIG.bodyWidthSubcells / 2);
-          expect((next.cellX + 1) * sub).toBeGreaterThan(box.x0);
-          expect(next.cellY * sub).toBeLessThan(box.y1);
-          expect((next.cellY + 1) * sub).toBeGreaterThan(box.y0);
+          const box = bodyRect({ x: next.x, y: next.y }, CONFIG);
+          const centre = (box.x0 + box.x1) / 2;
+          expect(next.cellX * sub).toBeLessThanOrEqual(centre);
+          expect((next.cellX + 1) * sub).toBeGreaterThan(centre);
+          const lastRow = Math.ceil(box.y1) - 1;
+          // The cell's rows [cellY * sub, (cellY + 1) * sub) hold the box's
+          // last occupied sub-cell row.
+          expect(next.cellY * sub).toBeLessThanOrEqual(lastRow);
+          expect((next.cellY + 1) * sub).toBeGreaterThan(lastRow);
+          if (next.y === 10) {
+            flush++;
+            expect(next.cellY).toBe(9);
+          }
         }
       }
     }
+    expect(flush).toBeGreaterThan(0);
   });
 
   it("does not consult the transition index at all while the step stays inside the same cell", () => {

@@ -1504,6 +1504,9 @@ export interface StreetWalkInputs {
   /** The top face of the stairwell's near railing's own collider: where a
    * body pressed south on the tread row comes to rest. */
   readonly nearRailingRestY: number;
+  /** The top face of the platform flight's railing collider: where a body
+   * pressed south on the platform's tread row comes to rest. */
+  readonly platformWallRestY: number;
 }
 
 /** Out of shop A's door, onto the pavement and past the lamppost: the
@@ -1700,7 +1703,7 @@ export function streetSubwayWallWalkRoute(inputs: StreetWalkInputs): readonly St
     {
       label: "press-south-on-the-platform",
       key: "ArrowDown",
-      until: { kind: "y-at-least", value: PLATFORM_LANDING_Y + 0.95 },
+      until: { kind: "y-at-least", value: inputs.platformWallRestY },
     },
     {
       label: "up-the-platform-flight-pressed-south",

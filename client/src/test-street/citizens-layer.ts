@@ -248,6 +248,8 @@ export async function mountCitizensLayer(
         stand: spec
           ? undefined
           : standState(
+              // A node coordinate, not feet: a citizen that walks a flight
+              // must use `bodyCell` of its feet instead.
               { x: cellOf(fixture.gridX), y: cellOf(fixture.gridY) },
               CROWD_FLOOR,
               fixture.facing as Facing,

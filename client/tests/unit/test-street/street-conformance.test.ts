@@ -1821,30 +1821,47 @@ describe("the near-railing press route (story 15.13)", () => {
     expect(out[west]?.state.y).toBeCloseTo(inputs.nearRailingRestY, 9);
   });
 
-  // Within the measured release lag the body stays on the street floor, on
-  // the railing's face. Held further, the body is in the tread row (its
-  // occupied cell, story 15.20) and walks on into the anchor: down the stairs.
-  for (const lag of [0, 1, 8, 400]) {
-    const descends = lag >= 8;
-    it(`${descends ? "descends the stairs on" : "survives"} a west walk that overshoots by ${lag} steps`, () => {
-      const before = simulateStreetWalk(route.slice(0, west), RELEASE_LAG);
-      const start = before[before.length - 1]?.state;
-      const segment = route[west];
-      if (!start || !segment) throw new Error("no start state");
-      const end = simulateStreetWalk([segment], {
-        ...RELEASE_LAG,
-        releaseLagSteps: lag,
-        start,
-      })[0]?.state;
-      if (!end) throw new Error("no west state");
-      if (descends) {
-        expect(end.floor).toBe(SUBWAY_FLOOR);
-        return;
-      }
-      expect(end.floor).toBe(PLAYER_START.floor);
-      expect(end.y).toBeCloseTo(inputs.nearRailingRestY, 9);
-    });
-  }
+  /** The final state of the west walk when its release comes `lag` steps late. */
+  const westEnd = (lag: number) => {
+    const before = simulateStreetWalk(route.slice(0, west), RELEASE_LAG);
+    const start = before[before.length - 1]?.state;
+    const segment = route[west];
+    if (!start || !segment) throw new Error("no start state");
+    const end = simulateStreetWalk([segment], {
+      ...RELEASE_LAG,
+      releaseLagSteps: lag,
+      start,
+    })[0]?.state;
+    if (!end) throw new Error("no west state");
+    return end;
+  };
+  /** The smallest overshoot, in fully clamped steps, that walks on down the stairs. */
+  const smallestDescendingLag = () => {
+    for (let lag = 0; lag <= 400; lag++) {
+      if (westEnd(lag).floor === SUBWAY_FLOOR) return lag;
+    }
+    throw new Error("no overshoot up to 400 steps descends");
+  };
+
+  // Held late enough the body, in the tread row (its occupied cell, story
+  // 15.20), walks on into the anchor: down the stairs. The threshold is
+  // computed, and the release must stay a margin short of it so a loaded
+  // runner's frame lag cannot decide the draw-order check.
+  it("rests on the railing's face one step short of the overshoot that descends, and descends at it", () => {
+    const lag = smallestDescendingLag();
+    const below = westEnd(lag - 1);
+    expect(below.floor).toBe(PLAYER_START.floor);
+    expect(below.y).toBeCloseTo(inputs.nearRailingRestY, 9);
+    expect(westEnd(lag).floor).toBe(SUBWAY_FLOOR);
+  });
+
+  it("keeps the overshoot that descends at least four times the measured release lag away", () => {
+    expect(smallestDescendingLag()).toBeGreaterThanOrEqual(4 * RELEASE_LAG.releaseLagSteps);
+  });
+
+  it("descends however far the walk overshoots", () => {
+    expect(westEnd(400).floor).toBe(SUBWAY_FLOOR);
+  });
 });
 
 describe("the bollard approach route (NFR50)", () => {
@@ -2214,64 +2231,142 @@ describe("transitions are reachable from every standable approach (story 15.20)"
     ];
   });
 
-  it("inv_transition_reachable_from_every_standable_approach", () => {
-    expect(sides.length).toBeGreaterThanOrEqual(4);
-    let total = 0;
+  /** Every walk of one side; the failures are collected, never thrown on the first. */
+  const sweepSide = (side: Side) => {
+    const perp = { x: -side.direction.y, y: side.direction.x };
+    const clear = (cx: number, feet: number) => isBodyClear(world, config, side.floor, cx, feet);
+    // Named predicates, decided by the real grid.
+    const blockedAhead = (cx: number, feet: number) =>
+      !clear(cx + side.direction.x, feet + side.direction.y);
+    const pressed = (cx: number, feet: number, sign: number) =>
+      !clear(cx + sign * perp.x, feet + sign * perp.y);
+    const starts: { cx: number; feet: number }[] = [];
+    for (let cx = side.cell.x * s; cx < (side.cell.x + 1) * s; cx++) {
+      for (let feet = side.cell.y * s + 1; feet <= (side.cell.y + 1) * s; feet++) {
+        if (clear(cx, feet)) starts.push({ cx, feet });
+      }
+    }
+    const failures: string[] = [];
+    let walks = 0;
     let excluded = 0;
-    for (const side of sides) {
-      const perp = { x: -side.direction.y, y: side.direction.x };
-      const clear = (cx: number, feet: number) => isBodyClear(world, config, side.floor, cx, feet);
-      // Named predicates, decided by the real grid.
-      const blockedAhead = (cx: number, feet: number) =>
-        !clear(cx + side.direction.x, feet + side.direction.y);
-      const pressed = (cx: number, feet: number, sign: number) =>
-        !clear(cx + sign * perp.x, feet + sign * perp.y);
-      const starts: { cx: number; feet: number }[] = [];
-      for (let cx = side.cell.x * s; cx < (side.cell.x + 1) * s; cx++) {
-        for (let feet = side.cell.y * s + 1; feet <= (side.cell.y + 1) * s; feet++) {
-          if (clear(cx, feet)) starts.push({ cx, feet });
+    let wallPressed = 0;
+    const back = { x: -side.direction.x, y: -side.direction.y };
+    for (const { cx, feet } of starts) {
+      if (blockedAhead(cx, feet)) {
+        excluded++;
+        continue;
+      }
+      const dirs: Dir[] = [side.direction];
+      for (const sign of [1, -1]) {
+        if (pressed(cx, feet, sign)) {
+          wallPressed++;
+          dirs.push({ x: side.direction.x + sign * perp.x, y: side.direction.y + sign * perp.y });
         }
       }
-      expect(starts.length, side.name).toBeGreaterThan(s);
-      let wallPressed = 0;
-      for (const { cx, feet } of starts) {
-        if (blockedAhead(cx, feet)) {
-          excluded++;
+      for (const dir of dirs) {
+        walks++;
+        const start = initialFloorWalkState(cx / s, feet / s, side.floor);
+        const end = walkHeld({ ...start, transitioned: false }, dir);
+        const at = `start sub-cell (${cx}, ${feet}) holding (${dir.x}, ${dir.y})`;
+        if (!end.transitioned || end.floor !== side.targetFloor) {
+          failures.push(`${at} rested at (${end.x}, ${end.y}) floor ${end.floor}`);
           continue;
         }
-        const dirs: Dir[] = [side.direction];
-        for (const sign of [1, -1]) {
-          if (pressed(cx, feet, sign)) {
-            wallPressed++;
-            dirs.push({
-              x: side.direction.x + sign * perp.x,
-              y: side.direction.y + sign * perp.y,
-            });
-          }
-        }
-        for (const dir of dirs) {
-          total++;
-          const start = initialFloorWalkState(cx / s, feet / s, side.floor);
-          const end = walkHeld({ ...start, transitioned: false }, dir);
-          if (!end.transitioned || end.floor !== side.targetFloor) {
-            throw new Error(
-              `${side.name}: start sub-cell (${cx}, ${feet}) holding (${dir.x}, ${dir.y}) rested at (${end.x}, ${end.y}) floor ${end.floor} without transitioning`,
-            );
-          }
-          // Round trip: back along the same wall returns to the origin floor.
-          const back = { x: -side.direction.x, y: -side.direction.y };
-          const returned = walkHeld({ ...end, transitioned: false }, back);
-          expect(returned.transitioned, `${side.name} (${cx}, ${feet}) round trip`).toBe(true);
-          expect(returned.floor, `${side.name} (${cx}, ${feet}) round trip`).toBe(side.floor);
+        // Round trip: back along the same wall returns to the origin floor.
+        const returned = walkHeld({ ...end, transitioned: false }, back);
+        if (!returned.transitioned || returned.floor !== side.floor) {
+          failures.push(`${at}: no round trip, rested at (${returned.x}, ${returned.y})`);
         }
       }
-      // The wall-hugging extremes are in the sweep: the lowest and highest
-      // standable feet rows both have starts that were not excluded.
-      const feetRows = starts.filter((p) => !blockedAhead(p.cx, p.feet)).map((p) => p.feet);
-      expect(Math.max(...feetRows) - Math.min(...feetRows), side.name).toBeGreaterThan(0);
-      expect(wallPressed, `${side.name} has a wall-pressed start`).toBeGreaterThan(0);
     }
-    expect(total).toBeGreaterThan(1000);
-    console.log(`reachability sweep: ${total} walks, ${excluded} starts excluded (blockedAhead)`);
+    return { starts: starts.length, walks, excluded, wallPressed, failures };
+  };
+
+  it("has at least four sides, both flights of the subway among them", () => {
+    expect(sides.length).toBeGreaterThanOrEqual(4);
+    const floors = new Set(sides.map((side) => side.floor));
+    expect(floors.has(STREET_FLOOR) && floors.has(SUBWAY_FLOOR)).toBe(true);
+  });
+
+  describe("each side of every pairing: every standable start crosses, and walks back", () => {
+    for (const side of sides) {
+      it(`${side.name}: every standable start crosses, and walks back`, () => {
+        const out = sweepSide(side);
+        expect(out.starts).toBeGreaterThan(s);
+        expect(out.wallPressed, "a wall-pressed start").toBeGreaterThan(0);
+        // No standable start is left unable to advance toward the anchor.
+        expect(out.excluded).toBe(0);
+        expect(out.failures).toEqual([]);
+      });
+    }
+  });
+
+  it("inv_transition_reachable_from_every_standable_approach", () => {
+    const outs = sides.map((side) => ({ side, out: sweepSide(side) }));
+    expect(outs.reduce((total, { out }) => total + out.walks, 0)).toBeGreaterThan(1000);
+    expect(outs.flatMap(({ side, out }) => out.failures.map((f) => `${side.name}: ${f}`))).toEqual(
+      [],
+    );
+  });
+
+  it("the platform wall's rest y is the face the resolver clamps a body walking south to, and the street's likewise", () => {
+    const south = { x: 0, y: 1 };
+    const rest = (x: number, y: number, floor: number) => {
+      let pos = { x, y };
+      for (let i = 0; i < 200; i++) pos = step(pos, south, 100, world, floor, config);
+      return pos.y;
+    };
+    expect(rest(PLATFORM_LANDING_X + 0.5, PLATFORM_LANDING_Y + 0.5, SUBWAY_FLOOR)).toBeCloseTo(
+      streetWalkInputs().platformWallRestY,
+      9,
+    );
+    expect(rest(SUBWAY_ENTRANCE_X0 + 0.5, STAIRS_Y + 0.5, STREET_FLOOR)).toBeCloseTo(
+      streetWalkInputs().nearRailingRestY,
+      9,
+    );
+  });
+
+  // The viewer's (floor, buildingId) is read from the walk's own cell, which
+  // is `bodyCell`: a body pressed on a wall's top face from outside is in the
+  // street cell north of it, never the building's.
+  it("a body pressed against a building wall's top face is owned from inside and unowned from outside", () => {
+    const sub = config.subcellsPerCell;
+    const owner = (x: number, y: number) => ownership.ownershipAt(x, y, STREET_FLOOR).buildingId;
+    const fullCell = (x: number, y: number) =>
+      world
+        .entriesInCell(STREET_FLOOR, x, y)
+        .some(
+          ({ rect }) =>
+            rect.x0 <= x * sub &&
+            rect.x1 >= (x + 1) * sub &&
+            rect.y0 <= y * sub &&
+            rect.y1 >= (y + 1) * sub,
+        );
+    const transitionsHere = streetTransitionIndex();
+    let outside = 0;
+    let inside = 0;
+    for (let y = 1; y < 40; y++) {
+      for (let x = 0; x < 80; x++) {
+        if (owner(x, y) === NO_OWNER || !fullCell(x, y)) continue;
+        if (!isCellStandable(world, config, x, y - 1, STREET_FLOOR)) continue;
+        const from = initialFloorWalkState(x + 0.5, y - 0.5, STREET_FLOOR);
+        let state: FloorWalkResult = { ...from, transitioned: false };
+        for (let i = 0; i < 100; i++) {
+          state = stepAndTransition(state, { x: 0, y: 1 }, 100, world, config, transitionsHere);
+        }
+        // Resting flush on the wall's top face.
+        expect(state.y).toBe(y);
+        const here = owner(state.cellX, state.cellY);
+        if (owner(x, y - 1) === NO_OWNER) {
+          outside++;
+          expect(here, `outside the wall at (${x}, ${y})`).toBe(NO_OWNER);
+        } else {
+          inside++;
+          expect(here, `inside the wall at (${x}, ${y})`).not.toBe(NO_OWNER);
+        }
+      }
+    }
+    expect(outside).toBeGreaterThan(0);
+    expect(inside).toBeGreaterThan(0);
   });
 });
