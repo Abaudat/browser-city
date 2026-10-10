@@ -34,7 +34,7 @@ sim = { path = "../sim", features = ["test-fixtures"] }
 
 [[bin]]
 name = "measure-generation"
-path = "src/bin/measure_generation.rs"
+path = "src/bin/measure_generation/main.rs"
 
 [[bin]]
 name = "chunk-key"
