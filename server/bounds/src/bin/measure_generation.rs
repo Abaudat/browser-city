@@ -71,8 +71,11 @@
 //! max()-contract -- the same function `inv_generation_detour_ratio_
 //! bounded` and its pinned regression call through, never a second,
 //! hand-written copy of the comparison) over `detour_samples(DETOUR_
-//! SAMPLE_MAX_NODES)`, and `streets::p99_detour_violation` over `detour_samples(DETOUR_
-//! P99_SAMPLE_MAX_NODES)` (`inv_generation_p99_detour_fill_bounded`'s). `detour <n>` runs only this sweep, threaded, with a `GENERATION_VERSION` header; `p99 <seed>` traces one seed.
+//! SAMPLE_MAX_NODES)`, and `streets::p99_detour_violation` over
+//! `detour_samples(DETOUR_P99_SAMPLE_MAX_NODES)`
+//! (`inv_generation_p99_detour_fill_bounded`'s).
+//! `detour <n>` runs only this sweep, threaded, with a `GENERATION_VERSION`
+//! header; `p99 <seed>` traces one seed.
 //! For each of the two committed ceilings it prints the miss count,
 //! miss rate, up to ten offending seeds, and the failure probability a
 //! [`CI_PROPTEST_CASES`]-case CI run implies (`1 - (1 - p)^cases`); when

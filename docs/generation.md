@@ -363,15 +363,15 @@ claim.
 
 **What actually protects master.** `inv_generation_detour_ratio_bounded`
 runs on arbitrary seeds, in every CI run, but only ever samples the
-cheap 14-node width -- its own worst reading at `GENERATION_VERSION` 9
-was 312 (seed `4595557621078204092`), 8 cells under the 320-cell
-exhaustive figure the key is set from. That gap is not the margin; the
-margin is the stated 1.25 factor, nothing else, over a tail that is
-still growing: this run's own ten largest per-seed worsts, ascending,
-were 294, 296, 298, 300, 300, 302, 306, 310, 316, 320. A future
-50,000-seed run finding a new worst above 400 remains possible -- that
-is what re-measuring on a retune, and pinning what a random sweep finds,
-both exist for.
+cheap 14-node width -- its own worst reading (312, seed
+`4595557621078204092`) sits 8 cells under the 320-cell exhaustive figure
+the key is set from. That gap is not the margin; the margin is the
+stated 1.25 factor, nothing else, over a tail that is still growing: the
+ten largest per-seed worsts are in the stamped exhaustive block under
+"The detour ceilings are measured at one generator version" below. A
+future 50,000-seed run finding a new worst above 400 remains possible --
+that is what re-measuring on a retune, and pinning what a random sweep
+finds, both exist for.
 
 For scale: the worst pinned seed today (`610140160610395379`, 320
 cells exhaustive) is about eight viewport-widths of extra walking for the
@@ -478,6 +478,18 @@ pinned figure and fails if the key drifts. If a future sweep's worst
 makes the rule give 100 or more, the key cannot take it, and that is the
 pass-2 question, not a number to fit.
 
+**What the ratio p99 guarded and the fill p99 does not.** The old p99
+bound held the typical pair's detour *ratio* regardless of distance. The
+fill is measured against `max(manhattan + max_detour_excess_cells,
+manhattan * max_detour_percent / 100)`, so below the takeover distance the
+additive allowance dominates: a Manhattan-100 pair can run at 300% ratio
+(network 300) and sit at 60% fill (allowed 500). A city whose short and
+medium pairs all doubled their detour would pass both detour checks.
+Short-pair ratio regressions under the additive allowance are not guarded
+by either check; anything that relies on the Manhattan estimator for
+short and medium pairs (the pathfinding estimator, story 3.11) must not
+assume they are.
+
 **Coverage gap.** No generated seed is known where the p99 fill bound
 fires while the max() contract holds, so the firing path on a real
 network is covered by a hand-built U corridor
@@ -563,6 +575,7 @@ detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascend
   171% at seed 893143956151306943 ((88, 512)-(473, 494))
   173% at seed 3802514444151385145 ((85, 512)-(459, 478))
   173% at seed 12819133835454577505 ((101, 469)-(472, 512))
+  176% at seed 4595557621078204092 ((108, 40)-(512, 38))
 ```
 
 ### Plot subdivision

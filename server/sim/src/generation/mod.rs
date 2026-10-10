@@ -514,10 +514,12 @@ pub struct GenerationConfig {
     /// additive half of the detour contract (Quentin's direction, cycle
     /// 2).
     pub max_detour_excess_cells: i32,
-    /// The 99th-percentile detour ratio, over one city's own sampled
-    /// pairs, must not exceed this -- `max_detour_percent` alone only
-    /// bounds the single worst pair, which stays green even if the
-    /// *typical* case regressed (Tim's direction, cycle 2).
+    /// The 99th-percentile fill of the max() contract's allowance
+    /// (`DetourSample::fill_pct`), over one city's own sampled pairs,
+    /// must not exceed this -- kept strictly under 100, where the max()
+    /// contract already implies it. `max_detour_percent` and
+    /// `max_detour_excess_cells` only bound the single worst pair, which
+    /// stays green even if the *typical* case regressed.
     pub p99_detour_fill_percent: i32,
     /// The minimum number of distinct block widths (and, separately,
     /// heights) a single generated network must show -- Quentin's
