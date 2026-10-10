@@ -1,4 +1,4 @@
-rules: room_has_a_door building_has_an_entrance doorway_formed_between_walls wall_is_part_of_a_straight_run_or_a_corner walled_room_has_waste_bin entrance_opens_onto_pavement
+rules: room_has_a_door building_has_an_entrance doorway_formed_between_walls wall_is_part_of_a_straight_run_or_a_corner entrance_opens_onto_pavement
 expect: pass
 floor: 0
 legend: W=wall+wall_run F=floor U=floor+waste T=threshold+wall_run D=threshold+wall_run+entrance P=pavement

@@ -2,9 +2,10 @@
 # `sim::generation::plan` / `generate` are the only way a cross-pass
 # caller chains the generator's passes (docs/architecture.md, "Generation").
 # A hand-written `land_use::run -> streets::run -> plots::run ->
-# envelopes::run -> building_types::run` chain in a harness is a second
-# copy of the chain that every new pass then has to be added to -- so any
-# call to `plots::run(`, `envelopes::run(` or `building_types::run(`
+# envelopes::run -> building_types::run -> interiors::run` chain in a
+# harness is a second copy of the chain that every new pass then has to be
+# added to -- so any call to `plots::run(`, `envelopes::run(`,
+# `building_types::run(` or `interiors::run(`
 # under server/sim/tests/ or server/bounds/ fails this check unless the
 # line itself carries the marker
 #
@@ -17,12 +18,14 @@
 # unit tests live in the pass's own module under server/sim/src/ and are
 # out of scope here.
 set -euo pipefail
-REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+# [repo-root] defaults to the real repository root -- overridden by
+# scripts/ci/tests/test-check-generation-entry-point.sh's own fake git tree.
+REPO_ROOT="${1:-"$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"}"
 cd "$REPO_ROOT"
 
 OFFENDERS="$(
   git ls-files 'server/sim/tests/*.rs' 'server/bounds/*.rs' -z |
-    xargs -0 -r grep -nE '(plots|envelopes|building_types)::run\(' |
+    xargs -0 -r grep -nE '(plots|envelopes|building_types|interiors)::run\(' |
     grep -v 'generation-entry-point: allow' || true
 )"
 

@@ -1,0 +1,23 @@
+rules: cafe_has_two_table_sets
+expect: fail
+floor: 0
+legend: W=wall+wall_run F=floor l=floor+fixture+lighting c=floor+fixture+counter t=floor+fixture+table_set k=floor+fixture+stock d=floor+fixture+desk w=floor+fixture+workbench A=floor+stairs 1=floor+room+public+trading 2=floor+room+public+trading+seated_service 3=floor+room+staff 4=floor+room+staff+working 5=floor+room+staff+making D=threshold+wall_run+entrance P=pavement
+area: 1 0,0 21,4
+area: 2 1,1 4,3
+area: 2 2,3 3,4
+area: 3 5,1 8,3
+area: 3 6,3 7,4
+area: 4 9,1 12,3
+area: 4 10,3 11,4
+area: 5 13,1 16,3
+area: 5 14,3 15,4
+area: 6 17,1 20,3
+area: 6 18,3 19,4
+grid:
+WWWWWWWWWWWWWWWWWWWWW
+WlFcWlcFWlFkWldkWlwkW
+WF1FWt2FWF3FWF4FWF5FW
+WWDWWWDWWWDWWWDWWWDWW
+..P...P...P...P...P..
+violations:
+cafe_has_two_table_sets at (6, 2, 0)

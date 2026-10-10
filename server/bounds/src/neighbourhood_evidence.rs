@@ -67,7 +67,7 @@ fn density_fill(density: i32, cfg: &GenerationConfig) -> String {
 /// top by tier, an outline.
 fn panel(x: i64, y: i64, d: &District, fill: &dyn Fn(&sim::generation::Block) -> String) -> String {
     let mut body = format!("<g transform=\"translate({x},{y}) scale(0.5)\">\n");
-    for b in d.streets.blocks() {
+    for b in d.skeleton.streets.blocks() {
         body.push_str(&format!(
             "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
             b.bounds.x0,
@@ -77,7 +77,7 @@ fn panel(x: i64, y: i64, d: &District, fill: &dyn Fn(&sim::generation::Block) ->
             fill(b)
         ));
     }
-    for e in d.streets.edges() {
+    for e in d.skeleton.streets.edges() {
         let r = e.rect();
         body.push_str(&format!(
             "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
@@ -118,7 +118,7 @@ fn ramp_legend(y: i64, name: &str, low: &str, high: &str, fill: &dyn Fn(i32) -> 
 
 /// The window one screen across centred on `(bx, by)`, kept on the site.
 fn window_at(d: &District, cfg: &GenerationConfig, (bx, by): (i32, i32)) -> SiteBounds {
-    let site = d.land_use.site();
+    let site = d.skeleton.land_use.site();
     let n = &cfg.neighbourhood;
     let x0 = (bx - n.viewport_width_cells / 2).clamp(site.x0, site.x1 - n.viewport_width_cells);
     let y0 = (by - n.viewport_height_cells / 2).clamp(site.y0, site.y1 - n.viewport_height_cells);
@@ -142,8 +142,9 @@ fn sharpest_boundary(
     cfg: &GenerationConfig,
     content: &GenerationContent,
 ) -> Option<(Neighbourhood, Neighbourhood, (i32, i32))> {
-    let hoods = d.land_use.neighbourhoods();
+    let hoods = d.skeleton.land_use.neighbourhoods();
     let fronts: Vec<(i32, i32)> = d
+        .skeleton
         .envelopes
         .envelopes()
         .map(|e| sim::generation::site::front_cell(e.footprint, e.front))
@@ -194,7 +195,7 @@ fn sharpest_boundary(
                                 && x < window.x1
                                 && y >= window.y0
                                 && y < window.y1
-                                && d.land_use.neighbourhood_at(x, y).map(|o| o.patch)
+                                && d.skeleton.land_use.neighbourhood_at(x, y).map(|o| o.patch)
                                     == Some(h.patch)
                         })
                         .count()
@@ -215,9 +216,10 @@ fn sharpest_boundary(
 fn shuttered_in(d: &District, content: &GenerationContent, window: SiteBounds) -> bool {
     let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
-    d.envelopes
+    d.skeleton
+        .envelopes
         .envelopes()
-        .zip(d.building_types.assignments())
+        .zip(d.skeleton.building_types.assignments())
         .any(|(e, a)| {
             let f = e.footprint;
             f.x1 > window.x0
@@ -263,13 +265,15 @@ fn side_figures(
     let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
     let hoods: Vec<&Neighbourhood> = d
+        .skeleton
         .land_use
         .neighbourhoods()
         .iter()
         .filter(|h| h.patch == patch)
         .collect();
     let at = |h: &Neighbourhood| {
-        d.land_use
+        d.skeleton
+            .land_use
             .at_world(
                 (h.bounds.x0 + h.bounds.x1) / 2,
                 (h.bounds.y0 + h.bounds.y1) / 2,
@@ -280,9 +284,14 @@ fn side_figures(
     let density = hoods.iter().map(|h| at(h)).sum::<i32>() / hoods.len().max(1) as i32;
     let (mut frontage, mut vacant) = (0usize, 0usize);
     let mut shop_types = std::collections::BTreeSet::new();
-    for (e, a) in d.envelopes.envelopes().zip(d.building_types.assignments()) {
+    for (e, a) in d
+        .skeleton
+        .envelopes
+        .envelopes()
+        .zip(d.skeleton.building_types.assignments())
+    {
         let (x, y) = sim::generation::site::front_cell(e.footprint, e.front);
-        if d.land_use.neighbourhood_at(x, y).map(|h| h.patch) != Some(patch) {
+        if d.skeleton.land_use.neighbourhood_at(x, y).map(|h| h.patch) != Some(patch) {
             continue;
         }
         let def = by_id[&a.building_type];
@@ -303,7 +312,7 @@ fn side_figures(
         .sum();
     let total: u64 = hoods
         .iter()
-        .map(|h| d.supported_citizens(h.bounds, cfg, content))
+        .map(|h| d.skeleton.supported_citizens(h.bounds, cfg, content))
         .sum();
     let screen = cfg.neighbourhood.viewport_width_cells as i64
         * cfg.neighbourhood.viewport_height_cells as i64;
@@ -358,7 +367,7 @@ fn strip(
     // front row is never cut mid-building; the screen itself is the framed
     // part.
     let (mut vx0, mut vy0, mut vx1, mut vy1) = (window.x0, window.y0, window.x1, window.y1);
-    for e in d.envelopes.envelopes() {
+    for e in d.skeleton.envelopes.envelopes() {
         let f = e.footprint;
         if f.x1 > window.x0 && f.x0 < window.x1 && f.y1 > window.y0 && f.y0 < window.y1 {
             vx0 = vx0.min(f.x0);
@@ -374,17 +383,17 @@ fn strip(
         STRIP_WIDTH,
         vh * STRIP_WIDTH / vw,
     );
-    for b in d.streets.blocks() {
+    for b in d.skeleton.streets.blocks() {
         body.push_str(&format!(
             "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"0.35\"/>\n",
             b.bounds.x0,
             b.bounds.y0,
             b.bounds.width(),
             b.bounds.height(),
-            land_use_fill(block_land_use(&d.land_use, b.bounds))
+            land_use_fill(block_land_use(&d.skeleton.land_use, b.bounds))
         ));
     }
-    for e in d.streets.edges() {
+    for e in d.skeleton.streets.edges() {
         let r = e.rect();
         body.push_str(&format!(
             "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
@@ -396,17 +405,18 @@ fn strip(
         ));
     }
     for ((e, a), st) in d
+        .skeleton
         .envelopes
         .envelopes()
-        .zip(d.building_types.assignments())
-        .zip(d.building_types.states())
+        .zip(d.skeleton.building_types.assignments())
+        .zip(d.skeleton.building_types.states())
     {
         let f = e.footprint;
         if f.x1 <= window.x0 || f.x0 >= window.x1 || f.y1 <= window.y0 || f.y0 >= window.y1 {
             continue;
         }
         let def = by_id[&a.building_type];
-        let plot = &d.plots.plots()[e.plot as usize];
+        let plot = &d.skeleton.plots.plots()[e.plot as usize];
         body.push_str(&format!(
             "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"#999\" stroke-width=\"0.15\"/>\n",
             plot.bounds.x0,
@@ -472,7 +482,7 @@ pub fn neighbourhoods_svg(
             (b.bounds.x0 + b.bounds.x1) / 2,
             (b.bounds.y0 + b.bounds.y1) / 2,
         );
-        d.land_use.at_world(cx, cy)
+        d.skeleton.land_use.at_world(cx, cy)
     };
     let panels = [
         (
@@ -499,7 +509,7 @@ pub fn neighbourhoods_svg(
         (
             "land use",
             Box::new(|b: &sim::generation::Block| {
-                land_use_fill(block_land_use(&d.land_use, b.bounds)).to_string()
+                land_use_fill(block_land_use(&d.skeleton.land_use, b.bounds)).to_string()
             }),
         ),
     ];
@@ -589,7 +599,7 @@ pub fn neighbourhoods_svg(
         let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
             content.building_types.iter().map(|b| (b.id, b)).collect();
         let mut classes = std::collections::BTreeSet::new();
-        for a in d.building_types.assignments() {
+        for a in d.skeleton.building_types.assignments() {
             classes.insert(building_type_class(by_id[&a.building_type], &tags));
         }
         y += 8;

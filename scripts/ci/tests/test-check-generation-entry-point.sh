@@ -44,6 +44,17 @@ printf '%s\n' 'fn t() { plots::run(1); } // generation-entry-point: allow' > "$d
 check "the allow marker passes" 0 run "$d"
 
 d="$(repo)"
+printf '%s\n' 'fn t() { interiors::run(1); }' > "$d/server/bounds/c.rs"
+( cd "$d" && git add -A ) >/dev/null 2>&1
+check "a hand-chained pass 6 in a harness fails" 1 run "$d"
+check_contains "names the file" "c.rs" "$(run "$d" 2>&1)"
+
+d="$(repo)"
+printf '%s\n' 'fn t() { interiors::run(1); } // generation-entry-point: allow' > "$d/server/bounds/c.rs"
+( cd "$d" && git add -A ) >/dev/null 2>&1
+check "the allow marker passes pass 6 too" 0 run "$d"
+
+d="$(repo)"
 printf '%s\n' 'fn t(rng: &mut Rng) { rng.next_u64(); }' > "$d/server/sim/tests/c.rs"
 ( cd "$d" && git add -A ) >/dev/null 2>&1
 check "next_u64 outside generation/ passes" 0 run "$d"

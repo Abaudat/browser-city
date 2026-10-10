@@ -63,7 +63,7 @@ pub fn run(cfg: &GenerationConfig, content: &GenerationContent) {
 
     for i in 0..SEED_COUNT {
         let seed = mixed_seed(i);
-        let d = sim::generation::plan(seed, cfg, content).expect("pass 1 is total");
+        let d = sim::generation::plan_skeleton(seed, cfg, content).expect("pass 1 is total");
         let (net, pm, em) = (&d.streets, &d.plots, &d.envelopes);
 
         for s in net.detour_samples(streets::DETOUR_SAMPLE_MAX_NODES) {
@@ -255,7 +255,7 @@ pub fn run(cfg: &GenerationConfig, content: &GenerationContent) {
         let mut tag_counts: BTreeMap<u32, i64> = BTreeMap::new();
         let mut workplaces = 0i64;
         let mut employers_this_city: BTreeMap<&str, u64> = BTreeMap::new();
-        for a in d.building_types.assignments() {
+        for a in d.skeleton.building_types.assignments() {
             let def = by_id[&a.building_type];
             for &t in def.tags {
                 *tag_counts.entry(t).or_insert(0) += 1;
@@ -394,7 +394,7 @@ pub fn run(cfg: &GenerationConfig, content: &GenerationContent) {
 
     for i in 0..missing_tag_seed_count {
         let seed = mixed_missing_tag_seed(i);
-        let d = sim::generation::plan(seed, cfg, content).expect("pass 1 is total");
+        let d = sim::generation::plan_skeleton(seed, cfg, content).expect("pass 1 is total");
         let mut tag_counts: BTreeMap<u32, u64> = BTreeMap::new();
         for a in d.building_types.assignments() {
             for &t in by_id[&a.building_type].tags {

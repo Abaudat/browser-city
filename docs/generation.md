@@ -636,11 +636,126 @@ and the unit tests on hand-built samples, not by the proptest.
 
 ### Interior layout
 
-- **Receives:** a building's own type and envelope.
-- **Hands down:** the room grammar's own composition (walls, floor,
-  doors) and enterable status.
-- **Reads:** affluence.
-- **Evidence:** (added when the pass lands.)
+- **Receives:** every placed envelope (pass 4), its assigned building
+  type (pass 5) and its plot (pass 3, for the street edge the entrance
+  walks out to).
+- **Hands down:** one outcome per placed envelope, in envelope order --
+  a laid-out ground floor (rooms as rects, thresholds, required
+  fixtures, the entrance's approach; walls are the footprint minus
+  rooms and thresholds, never stored), a solid `Shell`, or a typed,
+  counted `Rejected` with no interior at all. All of it in world
+  coordinates on the street's own tilemap: the interior of a building at
+  `(x, y)` is found at `(x, y)`. Ground floor only: upper storeys and
+  back doors are later additions. Tags and cells, never an object or a
+  sprite -- which sprite dresses a room is the theme pass's.
+- **Reads:** the type's room program, the footprint and its own front,
+  the plot's front edge, and the committed requirement rows. Not
+  affluence: no pass has authored it on the field yet, and this one
+  neither reads nor imitates it.
+- **Enterable is a consequence, never a selection.** A building is
+  enterable exactly when it was laid out: its type has a room program
+  and its footprint held it. There is no quota and no "best hundred";
+  the district clears `generation.interiors.min_enterable_count` (FR114's
+  figure) by a wide margin, and `generate` fails below it. A building is
+  a `Shell` only when its type has neither `professions` nor the
+  `dwelling` tag (a workplace nobody can walk into is a mechanical seam
+  between an AI-held and a player-held post), enforced at defs build. A
+  building that is the subject of a committed distribution row and comes
+  out `Rejected` is a typed error: an institution that cannot be entered
+  is a missing institution. One street entrance per building.
+- **A program is a core plus a tail.** `rooms` is the required core, front
+  room first; `optional_rooms` an ordered tail, of which the footprint
+  takes the longest prefix some plan fits -- size buys rooms, not bigger
+  rooms. Every dwelling's core sleeps, washes and cooks: the small
+  dwelling's front room is a kitchen-diner, and a separate kitchen and
+  living room are what size buys.
+- **Three plans, every room under the aspect cap.** No room's long side
+  is more than `generation.interiors.max_room_aspect` times its short
+  side; every plan is sized under it and an attempt past it is refused.
+  *Band*: the front room across the full width, a partition, the back
+  rooms side by side behind it. *Column*: the front room a full-depth
+  column holding the entrance, the back rooms stacked front to back on
+  either side of it. *Two rows*: the front band, a first row of back
+  rooms, and a second row behind -- a second-row room reached through
+  the first-row room in front of it, only when the two share an access;
+  a first-row room with nothing behind it runs both rows' depth. A room
+  owing `sleeping` has nothing behind it but a bathroom, and a bathroom
+  has nothing behind it (a room type's `rear` list in
+  `defs/room-types/*.toml`), so a bedroom is never a way through. Every
+  room is sized for what it owes, its doors and a lane.
+- **Access is a room-type tag:** exactly one of `public`, `staff` or
+  `private` per room type -- what "back room" means (a staff room), and
+  what keys, opening hours and the guard's door round read later. From
+  the entrance every public room is reachable without crossing a staff or
+  private room, and a type with a public room has one as its front room.
+  Room-to-room reachability is not one of the five rule kinds; it is held
+  as an invariant over tags (see "Does not fit").
+- **What a room owes is rows.** Each room type's own tags name the
+  requirement rows it owes (`defs/rules/interiors.toml`); the pass places
+  exactly the fixtures those rows ask for and the one engine judges the
+  result (`evaluate_local`). The line between this pass and prop
+  placement is one test: a fixture a citizen will act at to meet a need
+  or hold a post belongs here; anything only looked at belongs to the
+  prop pass. `stock` is an empty container in a staff room -- no item, no
+  quantity, no cash in any till; the light has no on/off state. Every
+  fixture has a walkable cell beside it, reachable from the entrance.
+
+| Room type's function | Anchors the pass places |
+| --- | --- |
+| sleeping | a bed |
+| cooking | a cooker |
+| washing | a basin |
+| dining | a table set |
+| trading (a public floor that sells, serves or receives) | a till or service counter |
+| seated service | two table sets |
+| working | a desk |
+| making | a workbench |
+| staff (any back room) | a stock fixture |
+| every room | a light |
+
+- **Composition (camera-driven).** The south wall retracts, so the north
+  wall is the display wall. A doorway's cell and the cell either side of
+  it stay clear, and every fixture keeps a lane to the entrance at least
+  one cell wide; no room is narrower than two walkable cells. The entry
+  room of a dwelling is its kitchen-diner, never a bathroom; businesses
+  put the public room on the street side and staff and stock behind it.
+- **Fixture placement.** Each anchor tag carries a placement class
+  (`defs/tags/*.toml`'s `placement`), and the pass places by class, never
+  two fixtures in adjacent cells where the room allows. *Wall-backed*
+  (bed, cooker, basin, desk, workbench, stock): along the north wall,
+  then the side walls, centred first, in a corner only in a room two
+  cells wide. *Free-standing* (table set): on the open floor away from
+  every wall, nearest the centre, in a room three or more cells each way.
+  *Wall-mounted* (light): on the north wall row, centred, never in a
+  corner. *Facing the door* (counter): on the wall across from the
+  room's door -- or, when that wall is a partition, the side wall
+  nearest the door -- centred, with the cell between it and the door
+  kept walkable. The prop pass dresses around these anchors.
+- **Variety** comes from the plan (band, column or two rows), the
+  footprint-driven sizes, mirrored arrangements, the order of the back
+  rooms and the choice of fixture cells, all drawn from a stream seeded
+  by the building's own bounds and the attempt index -- never list
+  position, so a retry in one building never shifts its neighbour. A
+  building the rule engine refuses is rebuilt, up to
+  `generation.interiors.max_layout_attempts`, then `Rejected`.
+- **Owed to the prop pass:** a `washing` room holds only a basin here,
+  which does not read as a bathroom at 16 px -- the prop pass places a
+  toilet or bath in every one.
+- **Ownership.** Each building's footprint is a `building_area` (walls
+  included) and each room's floor plus the doorway it owns a `room_area`
+  (several rects sharing one room id; never a wall), emitted through
+  `clip_rect_to_chunks` with position-derived owner ids, so growing the
+  city next door never renumbers an existing building. Nothing in the
+  ownership data encodes building = tenancy: a later unit groups stable
+  room ids.
+- **Evidence:** [`docs/generation/interiors-seed-1.svg`](generation/interiors-seed-1.svg),
+  [`-seed-2`](generation/interiors-seed-2.svg), [`-seed-3`](generation/interiors-seed-3.svg)
+  -- the enterable set as a footprint map tinted by derived kind (housing,
+  commercial, industrial, institutional; a shell grey, a rejected
+  building red), then a contact sheet of twelve laid-out interiors per
+  kind side by side at viewport scale (rooms as rects, never one element
+  per cell), and a legend of every room type and fixture; same
+  regen-and-diff guard as the rows above.
 
 ### Prop placement
 
@@ -679,7 +794,7 @@ sweep`, `rows sweep`, `region-loss sweep`) back per-seed bounds that CI
 draws arbitrary seeds against: they carry the miss count over a million
 seeds and the implied failure probability of a 4,096-case CI run, with the
 rule-of-three bound when there are no misses. *Fixed-seed* blocks
-(`exhaustive loop`, `pooled evidence`) are deterministic facts with no miss
+(`exhaustive loop`, `pooled evidence`, `interiors sweep`) are deterministic facts with no miss
 rate. The per-seed guard figures a proptest asserts are computed by one
 function (`sim::generation::guards`) that the proptest and the sweep both
 call.
@@ -706,7 +821,7 @@ block is reproducible bar thread count and wall-clock.
 `cargo run -p bounds --release --bin measure-generation -- detour 1000000`
 
 ```text
-detour-bounds sweep at GENERATION_VERSION=10 fingerprint=dd9a878462231e2e: 1000000 seeds, 32 threads, passes 1-2 only
+detour-bounds sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 1000000 seeds, 32 threads, passes 1-2 only
   detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
   p99_detour_fill_percent = 95% (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
@@ -746,7 +861,7 @@ detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worst
   171% at seed 4929245716913353663
   178% at seed 4832727318219098284
   189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 225.1s (0.225ms/seed)
+detour-bounds sweep wall-clock: 242.6s (0.243ms/seed)
 ```
 
 ### band sweep
@@ -754,7 +869,7 @@ detour-bounds sweep wall-clock: 225.1s (0.225ms/seed)
 `cargo run -p bounds --release --bin measure-generation -- bands 1000000`
 
 ```text
-band sweep at GENERATION_VERSION=10 fingerprint=dd9a878462231e2e: 1000000 seeds, all five passes (salt 0xb0f05ee4)
+band sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 1000000 seeds, all five passes (salt 0xb0f05ee4)
 land_use_share_commercial deviation from its key (18%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.6 stddev=6.0
   5.5-sigma share tolerance implied: 3.32 percentage points
 land_use_share_industrial deviation from its key (14%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.7 stddev=5.8
@@ -768,14 +883,14 @@ building_count: min=766 p1=829 p50=889 p99=948 max=1009 mean=889.1 stddev=25.5
 building_count extremes over the band sweep: min 766 at seed 12323584470636640542, max 1009 at seed 161806487886316638 (pinned in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)
   building-count band (count_tolerance_percent): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-workplace_count: min=214 p1=288 p50=345 p99=404 max=460 mean=345.3 stddev=24.9
-  5.5-sigma workplace tolerance implied: 40.0% of the 343 target
+workplace_count: min=226 p1=284 p50=342 p99=401 max=463 mean=342.3 stddev=25.0
+  5.5-sigma workplace tolerance implied: 40.1% of the 343 target
   workplace-count band (workplace_count_tolerance_percent): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
 core_citizens_per_screen: min=19 p1=27 p50=38 p99=50 max=63 mean=37.8 stddev=5.2
   busy core (busy_screen_min_citizens = 18): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-edge_percent_of_core: min=3 p1=7 p50=18 p99=40 max=82 mean=19.1 stddev=7.1
+edge_percent_of_core: min=3 p1=7 p50=18 p99=40 max=78 mean=18.9 stddev=7.0
   quiet edge (quiet_edge_max_percent_of_core = 95%): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
 legibility_min_shop_mix_percent closest qualifying pair per seed: min=9 p1=23 p50=49 p99=65 max=85 mean=48.4 stddev=8.3
@@ -796,7 +911,7 @@ largest_institutional_pocket_share_basis_points: min=87 p1=117 p50=205 p99=234 m
 profession_depth_per_city: min=44 p1=55 p50=61 p99=67 max=67 mean=61.4 stddev=2.3
   profession_count_per_city_min = 36: 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-band sweep wall-clock: 154.1s (0.154ms/seed)
+band sweep wall-clock: 156.4s (0.156ms/seed)
 ```
 
 ### exhaustive loop
@@ -804,7 +919,7 @@ band sweep wall-clock: 154.1s (0.154ms/seed)
 `cargo run -p bounds --release --bin measure-generation`
 
 ```text
-exhaustive loop at GENERATION_VERSION=10 fingerprint=dd9a878462231e2e: 50000 seeds at 512x512 cells
+exhaustive loop at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 50000 seeds at 512x512 cells
 building_count: min=778 p1=829 p50=889 p99=949 max=990 mean=889.2 stddev=25.6
 building_count extremes: min 778 at seed 11805315485014167829, max 990 at seed 11123925265906853341 (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)
 rejected_percent: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
@@ -843,7 +958,7 @@ detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascend
   173% at seed 12819133835454577505 ((101, 469)-(472, 512))
   176% at seed 4595557621078204092 ((108, 40)-(512, 38))
 dwelling_count: min=434 p1=469 p50=548 p99=627 max=686 mean=548.9 stddev=33.5
-workplace_count: min=259 p1=290 p50=345 p99=406 max=446 mean=345.4 stddev=25.3
+workplace_count: min=245 p1=286 p50=342 p99=403 max=447 mean=342.3 stddev=25.3
 seeds (0..5000) with a real rule violation: 0
 distribution row actual/expected ratio, pooled and per-seed worst, over seeds with a nonzero expected count (0..5000):
   depot_present: pooled actual/expected 100.0% (actual sum 5000, expected sum 5000), worst single seed 100.0% at seed 257705055944448381 (committed tolerance_percent allows down to 75%)
@@ -860,15 +975,15 @@ per-tag placed count, min and pooled mean over 0..5000:
   tag 22: min=1 mean=1.00
   tag 23: min=1 mean=3.51
   tag 24: min=2 mean=5.28
-  tag 25: min=111 mean=181.28
+  tag 25: min=104 mean=178.14
   tag 26: min=8 mean=10.48
   tag 27: min=1 mean=10.20
   tag 28: min=33 mean=86.56
   tag 29: min=1 mean=2.68
   tag 30: min=1 mean=6.69
-  tag 31: min=77 mean=186.73
-  tag 32: min=168 mean=302.94
-  tag 33: min=3 mean=59.26
+  tag 31: min=75 mean=187.72
+  tag 32: min=169 mean=302.10
+  tag 33: min=4 mean=59.11
 per-profession pooled mean employer count (below 5 shown first):
   councillor: 1.00
   surgeon: 1.00
@@ -901,7 +1016,7 @@ ad hoc presence tags (never distributed) -- seeds with 0 placed:
 `cargo run -p bounds --release --bin measure-generation -- rows 1000000`
 
 ```text
-rows sweep at GENERATION_VERSION=10 fingerprint=dd9a878462231e2e: 1000000 seeds, 32 threads
+rows sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 1000000 seeds, 32 threads
   committed rules hold (inv_generation_committed_rules_hold_for_any_seed): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
   cafe_present: pooled mean placed 10.49, fewest in one district 7, owed somewhere but none placed in 0 districts
@@ -917,7 +1032,7 @@ rows sweep at GENERATION_VERSION=10 fingerprint=dd9a878462231e2e: 1000000 seeds,
 `cargo run -p bounds --release --bin measure-generation -- regions 1000000`
 
 ```text
-region-loss sweep at GENERATION_VERSION=10 fingerprint=dd9a878462231e2e: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
+region-loss sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
   seeds with any region carried by no block: 20769 of 1000000 (first: Some(11091164158115210688)) -- by design, a block takes its majority use
   every institutional region carried by no block (inv_generation_an_institutional_region_is_carried_by_a_block): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
@@ -928,7 +1043,7 @@ region-loss sweep at GENERATION_VERSION=10 fingerprint=dd9a878462231e2e: 1000000
 `cargo run -p bounds --release --bin measure-generation -- pooled`
 
 ```text
-pooled evidence at GENERATION_VERSION=10 fingerprint=dd9a878462231e2e: seeds 0..256 pooled, evidence seeds 1, 2, 3
+pooled evidence at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: seeds 0..256 pooled, evidence seeds 1, 2, 3
 pooled low-band / high-band mean block area over seeds 0..256: 289% (peripheral_pooled_min_ratio_percent = 150%)
 pooled chopped share of low-band blocks over seeds 0..256: 1886 of 5600 (33%)
 evidence seed 1: low-band / high-band mean block area 2.65x (Artie's bar 2x)
@@ -939,6 +1054,24 @@ catchment floor bite, row shelter_present: 901 of 1024 (seed, catchment) pairs (
 catchment floor bite, row welfare_office_present: 805 of 1024 (seed, catchment) pairs (78%, catchment_floor_min_bite_percent = 60)
 pooled edge over core: 18% (quiet_edge_pooled_max_percent_of_core = 50%)
 pooled core over city mean screen: 190% (busy_core_over_city_min_percent = 150%); city mean screen 19.6 citizens
+```
+
+### interiors sweep
+
+`cargo run -p bounds --release --bin measure-generation -- interiors`
+
+```text
+interiors sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: seeds 0..500
+enterable_count: min=790 p1=803 p50=867 p99=932 max=954 mean=867.1 stddev=26.9
+enterable_share_percent: min=94 p1=94 p50=97 p99=99 max=99 mean=97.0 stddev=1.2
+shell_count: min=2 p1=3 p50=21 p99=46 max=47 mean=20.9 stddev=10.4
+rejected_count: min=0 p1=0 p50=1 p99=6 max=7 mean=1.6 stddev=1.3
+rejected_percent_of_attempted: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
+wall_cells_per_city: min=40896 p1=41934 p50=46934 p99=50978 max=52320 mean=46851.2 stddev=1941.8
+floor_cells_per_city: min=49149 p1=50848 p50=57279 p99=63467 max=64820 mean=57203.6 stddev=2843.1
+threshold_cells_per_city: min=3350 p1=3417 p50=3875 p99=4245 max=4362 mean=3867.2 stddev=171.4
+fixture_cells_per_city: min=7848 p1=7961 p50=8970 p99=9751 max=10010 mean=8947.3 stddev=376.2
+layout attempts needed (u32::MAX = rejected): {1: 388573, 2: 21966, 3: 10576, 4: 5651, 5: 3188, 6: 1855, 7: 1080, 8: 664, 4294967295: 822}
 ```
 
 ## Density is per screen
@@ -1107,6 +1240,16 @@ disagree.
 | generation.building_types.min_employers_per_profession | committed | Building type | the GDD's own "5+ employers each" -- the minimum distinct placed workplaces a profession must be held by to count toward the target above; a singleton institution's own post is deliberately excluded |
 | generation.catchment_floor_min_bite_percent | committed | Building type | over the fixed seed range 0..256, at least this percent of (seed, catchment) pairs owe a scoped row a floor of at least one subject -- a retune never turns the floor back into zero |
 | generation.catchment_extent_cells | committed | Building type | the fixed-extent, world-absolute square (world cells) a `scope = "catchment"` `[[distribution]]` row is judged and allocated over -- 256 at launch, the four quadrants of a 512x512 site |
+| generation.interiors.max_layout_attempts | committed | Interior layout | how many times one building's layout may be rebuilt before it is `Rejected` -- the loop is never unbounded |
+| generation.interiors.min_enterable_count | committed | Interior layout | FR114's floor on the enterable count (`docs/gdd.md`'s Scale Baseline); `generate` fails below it |
+| generation.interiors.max_rejected_percent | committed | Interior layout | the maximum percent of attempted layouts that may be `Rejected`, asserted per city |
+| generation.interiors.enterable_target_percent | committed | Interior layout | the enterable share of placed buildings, pooled over the fixed seed range 0..256 |
+| generation.interiors.enterable_target_tolerance_percent | committed | Interior layout | the pooled band around the target above |
+| generation.interiors.dwelling_min_enterable_percent | committed | Interior layout | the minimum percent of placed dwellings that must be enterable |
+| generation.interiors.shop_min_enterable_percent | committed | Interior layout | the same minimum for shops |
+| generation.interiors.cafe_min_enterable_percent | committed | Interior layout | the same minimum for cafes |
+| generation.interiors.back_room_min_enterable_percent | committed | Interior layout | the same minimum for institutional back rooms (a staff room in a type sited on institutional land use) |
+| generation.interiors.max_kind_share_percent | committed | Interior layout | no required kind may exceed this share of the enterable set |
 
 ## placement
 | key | status | pass | scope | reads | intent |
@@ -1127,13 +1270,14 @@ disagree.
 ## coherence
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| no_counter_in_a_stairwell | committed | Interior layout | room | - | **placeholder** -- a shop till standing on a stairwell landing |
+| no_counter_in_a_stairwell | committed | Interior layout | room | - | a till or service counter sharing an area with a stairwell; the pass lays out the ground floor only, so no stairwell exists for it to fire on yet |
 | no_high_rise_within_a_low_rise_block | committed | Building type | building | - | AC1, "no skyscraper among villas": a `form_high` building never shares a block with a `form_low` one -- the form-class scale is `defs/tags/generation.toml`'s own vocabulary, never a type key |
 
 ## adjacency
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| counter_faces_a_shopfront | committed | Interior layout | cell | - | **placeholder** -- a till with its back to a blank wall, no shopfront anywhere on its own perimeter |
+| counter_faces_a_shopfront | committed | Prop placement | cell | - | **placeholder** -- a shopfront with no counter on any side of it; nothing emits a shopfront until the prop pass, so it cannot fire on an interior layout |
+| door_never_blocked_by_a_fixture | committed | Interior layout | cell | - | a fixture standing on any cell beside a threshold, inside or out -- a door a prop blocks |
 | road_never_touches_wall | committed | Building envelope | cell | - | the carriageway running straight into a building wall with no pavement between them |
 | road_never_touches_ground | committed | Building envelope | cell | - | asphalt bleeding directly into bare ground with no pavement edge |
 | floor_never_touches_bare_ground | committed | Building envelope | cell | - | an interior floor tile exposed straight to bare ground, as if the wall around it were missing |
@@ -1146,10 +1290,20 @@ disagree.
 ## requirement
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| walled_room_has_waste_bin | committed | Interior layout | room | - | **placeholder** -- stands in for a future room-completeness rule; describes nothing a real room looks like yet |
+| walled_room_has_waste_bin | committed | Prop placement | room | - | **placeholder** -- a room holding seating with no waste bin; stays on `seating`, so it cannot fire on anything the interior-layout pass emits, and the prop-placement pass makes it real |
 | room_has_a_door | committed | Interior layout | room | - | a sealed room a player can see into but never enter |
 | building_has_an_entrance | committed | Building envelope | building | - | a building with no door anywhere on its own perimeter |
-| footprint_sized_for_interior_usability | planned | Building envelope | building | - | a building whose frontage looks generous but whose interior is too cramped to hold the room grammar it needs |
+| footprint_sized_for_interior_usability | committed | Interior layout | room | - | a laid-out room too cramped to use: fewer than four floor cells, two walkable cells either way; the static half (a type whose own minimum interior cannot hold its program) is refused at defs build |
+| room_has_a_light | committed | Interior layout | room | - | a room with no light fixture in it |
+| business_has_stock_space | committed | Interior layout | room | - | a staff room -- the back room of any type with posts -- with no stock fixture: an empty container, never an item |
+| bedroom_has_a_bed | committed | Interior layout | room | - | a sleeping room with no bed |
+| kitchen_has_a_cooker | committed | Interior layout | room | - | a cooking room with no cooker |
+| bathroom_has_a_basin | committed | Interior layout | room | - | a washing room with no basin |
+| living_room_has_a_table_set | committed | Interior layout | room | - | a dining room with no table set |
+| shop_floor_has_a_counter | committed | Interior layout | room | - | a room open to the public that trades with no till or service counter in it |
+| cafe_has_two_table_sets | committed | Interior layout | room | - | a seated-service room with fewer than two table sets |
+| office_has_a_desk | committed | Interior layout | room | - | a working room with no desk |
+| workroom_has_a_workbench | committed | Interior layout | room | - | a making room with no workbench |
 
 ## Must never be seen
 
@@ -1167,12 +1321,12 @@ names; `unclaimed` otherwise -- checked mechanically, not by eye.
 | A road that dead-ends into a wall with no terminating piece | adjacency | | unclaimed |
 | A door that opens directly onto the road | adjacency | | unclaimed |
 | A door that opens onto another wall | adjacency | | unclaimed |
-| A door blocked by a prop sitting on its own threshold cell | requirement | | unclaimed |
+| A door blocked by a prop sitting on its own threshold cell | adjacency | door_never_blocked_by_a_fixture | claimed |
 | Street furniture placed on the carriageway | placement | | unclaimed |
 | Pavement furniture leaving less than one walkable cell of pavement | adjacency | | unclaimed |
 | The same facade repeated side by side with no variation, beyond what a real terrace would do | distribution | | unclaimed |
 | The same prop sprite repeated side by side with no variation | distribution | | unclaimed |
-| A shopfront with no counter behind it | requirement | | unclaimed |
+| A shopfront with no counter behind it | requirement | shop_floor_has_a_counter | claimed |
 | A building with no entrance anywhere on its own perimeter | requirement | building_has_an_entrance | claimed |
 | Interior-sheet props placed on the street | coherence | | unclaimed |
 | Exterior-sheet props placed indoors | coherence | | unclaimed |
@@ -1221,7 +1375,20 @@ smallest) by `inv_generation_envelope_size_within_its_class_band`.
 
 ## Does not fit
 
-None open.
+- **Room-to-room reachability cannot be a rule.** "From the entrance every
+  public room is reachable without crossing a staff or private room" is a
+  property of the room graph, which none of the five kinds can state
+  (adjacency sees four neighbours, a requirement counts cells in an area).
+  It holds by construction -- every back room is reached from the front
+  room through its own doorway, or through a room of its own access in
+  front of it -- and is checked over tags by
+  `inv_generation_public_rooms_are_reachable_without_crossing_staff_or_
+  private`, never a per-type branch in the pass.
+- **"Every fixture keeps a reachable walkable cell beside it" cannot be a
+  rule either,** for the same reason: a cell beside a fixture is
+  reachable only through the room graph. It holds by construction --
+  the pass keeps every fixture's lane to the doorway -- and is checked by
+  `inv_generation_every_emitted_interior_validates_clean`.
 
 A rule that cannot be expressed as one of the five kinds over tags for
 any other reason is written here too, with why -- a signal that a

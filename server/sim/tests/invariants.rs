@@ -163,14 +163,32 @@ pub const INV_GENERATION_PLOT_STATE_IS_CONSISTENT: &str = "a non-open plot alway
 pub const INV_GENERATION_BUILDING_COUNT_MEAN_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean placed-building count sits within mean_count_tolerance_percent of the Scale Baseline target scaled to the site (story 3.3 AC4, NFR14)";
 pub const INV_GENERATION_EVERY_ENVELOPE_HAS_EXACTLY_ONE_TYPE: &str = "pass 5 always produces exactly one type assignment per placed envelope, and every assigned id resolves in the committed content, for any seed (story 3.4 AC1, FR110)";
 pub const INV_GENERATION_EVERY_PLACED_TYPE_MATCHES_ITS_OWN_LAND_USE_AND_DENSITY_BAND: &str = "every placed envelope's own assigned building type carries the plot's own land use, and the plot's density falls inside that type's own [density_min, density_max] band, for any seed (story 3.4 AC1, FR116)";
-pub const INV_GENERATION_COMMITTED_RULES_HOLD_FOR_ANY_SEED: &str = "sim::rules::evaluate over the whole finished district's own DistrictSite, against the committed rule table, finds no violation, for any seed (story 3.4 AC1/AC2, FR112)";
-pub const INV_GENERATION_REQUIRED_INSTITUTIONS_ARE_PRESENT_WHEN_THEIR_OWN_TARGET_IS_NONZERO: &str = "for every committed distribution row, whenever its own basis/ratio target is at least 1, the district places at least one subject, for any seed (story 3.4 AC2)";
+pub const INV_GENERATION_COMMITTED_RULES_HOLD_FOR_ANY_SEED: &str = "sim::rules::evaluate over the whole finished district's own DistrictSite, against the committed rule table, finds no violation, in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED) (story 3.4 AC1/AC2, FR112)";
+pub const INV_GENERATION_REQUIRED_INSTITUTIONS_ARE_PRESENT_WHEN_THEIR_OWN_TARGET_IS_NONZERO: &str = "for every committed distribution row, whenever its own basis/ratio target is at least 1, the district places at least one subject, in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED) (story 3.4 AC2)";
 pub const INV_GENERATION_WORKPLACE_COUNT_WITHIN_TOLERANCE: &str = "at the committed config, generation succeeds (generate returns Ok -- District::check_workplace_count clears the per-seed band) for any seed (story 3.4 AC4)";
 pub const INV_GENERATION_WORKPLACE_COUNT_MEAN_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean workplace count sits within workplace_mean_count_tolerance_percent of the Scale Baseline target scaled to the site (story 3.4 AC4, NFR14)";
 pub const INV_GENERATION_PROFESSION_DEPTH_MATCHES_THE_SCALE_BASELINE: &str = "pooled over the fixed seed range 0..256, the mean count of professions held by at least min_employers_per_profession distinct placed workplaces sits within the committed tolerance of target_profession_count (story 3.4, GDD Scale Baseline)";
 pub const INV_GENERATION_PROFESSION_DEPTH_NEVER_COLLAPSES_IN_ONE_CITY: &str = "for any seed, the count of professions held by at least min_employers_per_profession distinct placed workplaces in that one city never falls under the committed per-city floor (story 3.4 AC4)";
 pub const INV_GENERATION_BARISTA_HAS_AT_LEAST_MIN_EMPLOYERS: &str = "for any seed, the barista profession (an FR14 launch job, posted only at cafes) is held by at least min_employers_per_profession distinct placed workplaces in that one city (story 15.9)";
 pub const INV_GENERATION_BUILDING_TYPE_INDEPENDENT_OF_ENVELOPE_ORDER: &str = "shuffling pass 4's own placed-envelope order and re-running pass 5 over the shuffled list never changes any envelope's own assigned type, for any seed (story 3.4, NFR25)";
+pub const INV_GENERATION_INTERIOR_CELLS_LIE_INSIDE_THEIR_OWN_ENVELOPE: &str = "every emitted interior cell (wall, floor, threshold, fixture) lies inside its own building's pass-4 footprint in world coordinates on the same tilemap, the interior carries the envelope's own footprint and front, the entrance is the envelope's own front cell, and no cell is claimed by two buildings, in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED) (story 3.5 AC1, FR110, FR113)";
+pub const INV_GENERATION_EVERY_EMITTED_INTERIOR_VALIDATES_CLEAN: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), every emitted interior is accepted by the committed rule set (the per-building verdict) and the finished district by the whole of it, story 2.4's enclosed_regions and narrow_passages at the player body report nothing over its wall and fixture colliders seeded at the street, a cell beside every fixture is reachable, and every room is at least two walkable cells either way (story 3.5 AC2, FR112, story 2.4 AC5)";
+pub const INV_GENERATION_DISTRICT_SITE_ANSWERS_AS_THE_REFERENCE_SITE: &str = "any sequence of set, set_rect and merge on the dense DistrictSite builder answers tags_at, areas_containing and subjects_in_area exactly as sim::rules::testing's map-backed site fed the same cells, and evaluate over the committed rules finds the same violations in both (story 3.5, Tim's direction)";
+pub const INV_GENERATION_A_BEDROOM_OPENS_ONLY_ONTO_A_BATHROOM_AND_A_BATHROOM_IS_NO_WAY_THROUGH:
+    &str = "in every city of the shared pool, a room owing sleeping has nothing behind it but a washing room, and a washing room has nothing behind it (story 3.5, Artie's direction)";
+pub const INV_GENERATION_NO_ROOM_EXCEEDS_THE_ASPECT_CAP: &str = "in every city of the shared pool, no room's long side exceeds max_room_aspect times its short side (story 3.5, Artie's direction)";
+pub const INV_GENERATION_EVERY_DWELLING_SLEEPS_WASHES_AND_COOKS: &str = "in every city of the shared pool, every enterable building whose type carries dwelling holds at least one bed, one basin and one cooker (story 3.5, Derek's direction)";
+pub const INV_GENERATION_INTERIOR_RETRIES_ARE_BOUNDED: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), no building used more than max_layout_attempts layout attempts, and the rejected share of attempted layouts never exceeds max_rejected_percent (story 3.5 AC2)";
+pub const INV_GENERATION_ENTERABLE_INTERIOR_COUNT_MEETS_THE_FLOOR: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), generation succeeds and the count of buildings whose own cells make them enterable (every room reachable from the street, every owed fixture present) is at least min_enterable_count (story 3.5 AC3, FR114)";
+pub const INV_GENERATION_ENTERABLE_SET_SPANS_EVERY_REQUIRED_KIND: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), the enterable set holds dwellings, shops, cafes and institutional back rooms, each kind enterable for at least its committed percent of what pass 5 placed of it and none over max_kind_share_percent of the enterable set, and an enterable dwelling exists in the lowest density band (story 3.5 AC3, FR114)";
+pub const INV_GENERATION_KIND_SPREAD_REJECTS_A_CITY_OF_FLATS: &str = "the kind-spread verdict refuses 97 enterable flats and one of each other kind, and accepts a balanced set (story 3.5 AC3)";
+pub const INV_GENERATION_EVERY_INTERIOR_CELL_ANSWERS_ITS_OWN_BUILDING_ID: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), the emitted areas build into a WorldSpec, and World::ownership_at answers the building's own id for every cell of its footprint (walls and doors included), a room id for every floor and doorway cell, no room for a wall, and building and room ids are unique across the district, party walls included (story 3.5 AC4, FR119)";
+pub const INV_GENERATION_INTERIOR_INDEPENDENT_OF_BUILDING_ORDER: &str = "shuffling the placed-envelope list and its aligned assignments and re-running pass 6 never changes any building's interior, in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED) (story 3.5, NFR25)";
+pub const INV_GENERATION_INTERIOR_INDEPENDENT_OF_NEIGHBOURING_BUILDINGS: &str = "perturbing one building's type never moves any other building's interior, in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED) (story 3.5, NFR25)";
+pub const INV_GENERATION_PUBLIC_ROOMS_ARE_REACHABLE_WITHOUT_CROSSING_STAFF_OR_PRIVATE: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), in every interior every public room is reachable from the entrance without crossing a staff or private room, a type with a public room has one as its front room, and no threshold joins two buildings (story 3.5, Derek's direction)";
+pub const INV_GENERATION_STOCK_SITS_IN_A_STAFF_ROOM_AND_NEVER_ON_THE_PUBLIC_FLOOR: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), every stock fixture sits in a staff room, and the pass places no seating or waste fixture -- those are the prop-placement pass's (story 3.5, Derek's direction)";
+pub const INV_GENERATION_ENTERABLE_SHARE_MATCHES_THE_COMMITTED_BAND: &str = "pooled over the shared city pool, the enterable share of placed buildings sits within enterable_target_tolerance_percent of enterable_target_percent (story 3.5 AC3)";
+pub const INV_GENERATION_EVERY_TYPE_WITH_AN_OPTIONAL_TAIL_SHOWS_MORE_THAN_ONE_ROOM_COUNT: &str = "pooled over the shared city pool, every type with an optional room tail that is placed often enough shows more than one distinct room count -- size buys rooms (story 3.5, Derek's direction)";
 pub const INV_SCHEDULE_PHASE_PRESERVED: &str = "sim::cadence::next_target's returned target is always congruent to the origin passed in, modulo the period, for any origin/period/now (story 4.2)";
 pub const INV_SCHEDULE_NEVER_TARGETS_PAST: &str = "sim::cadence::next_target's returned target is always strictly after now, for any reasonable-range origin/period/now (story 4.2)";
 pub const INV_SCHEDULE_CATCH_UP_BOUNDED: &str = "sim::cadence::next_target, called with now a simulated week past the origin, returns instantly (no loop) with missed equal to the exact arithmetic gap in periods -- catch-up is bounded to one late fire, every skipped target is never separately dispatched (story 4.2)";
@@ -1397,7 +1415,6 @@ proptest! {
                         "road_never_touches_wall",
                         "building_has_an_entrance",
                         "wall_is_part_of_a_straight_run_or_a_corner",
-                        "walled_room_has_waste_bin",
                     ],
                 )
             }
@@ -2306,6 +2323,11 @@ fn assert_required_institutions(seed: u64) -> Result<(), String> {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let content = GenerationContent::committed();
     let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    required_institutions_verdict(&d).map_err(|e| format!("seed {seed}: {e}"))
+}
+
+fn required_institutions_verdict(d: &sim::generation::District) -> Result<(), String> {
+    let content = GenerationContent::committed();
     let site = d.site(&content);
     let mut rows: Vec<sim::rules::DistributionRow> = content
         .rules
@@ -2343,19 +2365,19 @@ fn assert_required_institutions(seed: u64) -> Result<(), String> {
         // A scoped row owes at least one subject somewhere, for every seed.
         if matches!(row.scope, sim::rules::DistributionScope::Catchment { .. }) && !owes_somewhere {
             return Err(format!(
-                "seed {seed}: scoped rule {} owes nothing in any catchment",
+                "scoped rule {} owes nothing in any catchment",
                 row.key
             ));
         }
         if demanded && site.subjects_in_area(None, row.subject).is_empty() {
             return Err(format!(
-                "seed {seed}: rule {} demands a subject but placed none",
+                "rule {} demands a subject but placed none",
                 row.key
             ));
         }
     }
     d.check_rules(&content)
-        .map_err(|e| format!("seed {seed}: check_rules is no longer Ok: {e:?}"))
+        .map_err(|e| format!("check_rules is no longer Ok: {e:?}"))
 }
 
 /// The per-city mean-size band's own weak multiplier over the tight
@@ -2373,7 +2395,7 @@ proptest! {
     fn inv_generation_every_plot_fronts_a_street(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (net, pm) = (&d.streets, &d.plots);
         prop_assert!(!pm.plots().is_empty());
         let offenders = pm.landlocked_plots(net.blocks(), cfg.plot_frontage_min_cells);
@@ -2385,7 +2407,7 @@ proptest! {
     fn inv_generation_plots_tile_their_block(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (net, pm) = (&d.streets, &d.plots);
 
         for p in pm.plots() {
@@ -2424,7 +2446,7 @@ proptest! {
     fn inv_generation_open_plot_percent_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let pm = &d.plots;
         prop_assert!(
             pm.open_count_percent() <= cfg.plot_max_open_percent_by_count,
@@ -2445,7 +2467,7 @@ proptest! {
     fn inv_generation_unplotted_percent_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (net, pm) = (&d.streets, &d.plots);
         prop_assert!(
             pm.unplotted_percent(net.blocks()) <= cfg.plot_max_unplotted_percent,
@@ -2597,7 +2619,7 @@ proptest! {
     fn inv_generation_envelope_size_within_its_class_band(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (pm, em) = (&d.plots, &d.envelopes);
         for e in em.envelopes() {
             let p = pm.plots()[e.plot as usize];
@@ -2620,7 +2642,7 @@ proptest! {
     fn inv_generation_envelope_inside_its_own_plot(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (pm, em) = (&d.plots, &d.envelopes);
         for e in em.envelopes() {
             let p = pm.plots()[e.plot as usize];
@@ -2641,7 +2663,7 @@ proptest! {
     fn inv_generation_envelope_gaps_are_zero_or_at_least_two(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let (pm, em) = (&d.plots, &d.envelopes);
         // Every pair of envelopes in one block, whichever face each
         // belongs to, on both axes: the rule is about what the player
@@ -2684,7 +2706,7 @@ proptest! {
     fn inv_generation_open_plots_are_never_slivers(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         for p in d.plots.plots().iter().filter(|p| p.open) {
             let short = p.bounds.width().min(p.bounds.height());
             if short >= cfg.plot_open_min_side_cells as i64 {
@@ -2706,7 +2728,7 @@ proptest! {
         use sim::generation::Side;
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let touches = |p: Rect, block: Rect, side: Side| -> bool {
             match side {
                 Side::North => p.y0 == block.y0,
@@ -2742,7 +2764,7 @@ proptest! {
     fn inv_generation_plot_state_is_consistent(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         for p in d.plots.plots() {
             prop_assert!(p.open || p.front.is_some(), "seed {seed}: non-open plot {:?} has no front", p.bounds);
         }
@@ -2754,7 +2776,7 @@ proptest! {
     fn inv_generation_envelope_sizes_are_varied(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         let sizes: std::collections::BTreeSet<(i64, i64)> = em.envelopes().map(|e| (e.along_face_cells(), e.depth_cells())).collect();
         prop_assert!(
@@ -2771,7 +2793,7 @@ proptest! {
     fn inv_generation_envelope_mean_size_within_a_weak_per_city_band(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         let (mut sum_w, mut sum_d, mut n) = (0i64, 0i64, 0i64);
         for e in em.envelopes() {
@@ -2800,7 +2822,8 @@ proptest! {
     fn inv_generation_building_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let result = sim::generation::generate(seed, &cfg, &content);
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
+        let result = d.check_building_count(&cfg);
         prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
     }
 
@@ -2809,7 +2832,7 @@ proptest! {
     fn inv_generation_envelope_rejection_rate_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         prop_assert!(
             em.rejected_percent() <= cfg.envelope_max_rejected_plot_percent,
@@ -2822,10 +2845,7 @@ proptest! {
     fn inv_generation_all_four_passes_never_panic(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        // `generate` is the entry point under test here; the hand-chain
-        // below is what must still yield plots when its count check errs.
-        let _ = sim::generation::generate(seed, &cfg, &content);
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let pm = &d.plots;
         prop_assert!(!pm.plots().is_empty());
     }
@@ -2838,7 +2858,7 @@ proptest! {
     fn inv_generation_every_envelope_has_exactly_one_type(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         prop_assert_eq!(
             d.building_types.assignments().len(),
             d.envelopes.placed_count() as usize
@@ -2863,7 +2883,7 @@ proptest! {
     fn inv_generation_every_placed_type_matches_its_own_land_use_and_density_band(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
             content.building_types.iter().map(|b| (b.id, b)).collect();
         for a in d.building_types.assignments() {
@@ -2891,34 +2911,6 @@ proptest! {
         }
     }
 
-    /// `inv_generation_committed_rules_hold_for_any_seed` (AC1/AC2, story
-    /// 3.4, FR112): `sim::rules::evaluate` over the whole finished
-    /// district's own `DistrictSite`, against the committed rule table,
-    /// finds no violation, for any seed -- named explicitly (rather than
-    /// only inferred from `generate` returning `Ok`, `inv_generation_
-    /// building_count_within_tolerance`'s own job) so a coherence or
-    /// distribution regression reads by its own name.
-    #[test]
-    fn inv_generation_committed_rules_hold_for_any_seed(seed in any::<u64>()) {
-        let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-        let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-        let result = d.check_rules(&content);
-        prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
-    }
-
-    /// `inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero`
-    /// (AC2): every subject a committed `[[distribution]]` row demands --
-    /// read off the rows, never a key list -- is present for any seed. [`assert_required_institutions`] is the one body; the named
-    /// seed pins below call the same function, so a pin cannot drift from
-    /// the property. Shops are weighted fill, a likelihood and not a
-    /// guarantee, and are not asserted here (`docs/generation.md`).
-    #[test]
-    fn inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero(seed in any::<u64>()) {
-        let verdict = assert_required_institutions(seed);
-        prop_assert!(verdict.is_ok(), "{}", verdict.err().unwrap_or_default());
-    }
-
     /// `inv_generation_workplace_count_within_tolerance` (AC4, story 3.4):
     /// the same shape as `inv_generation_building_count_within_tolerance`
     /// -- `generate`'s own `check_workplace_count` clears the per-seed
@@ -2930,7 +2922,8 @@ proptest! {
     fn inv_generation_workplace_count_within_tolerance(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let result = sim::generation::generate(seed, &cfg, &content);
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
+        let result = d.check_workplace_count(&cfg, &content);
         prop_assert!(result.is_ok(), "seed {seed}: {:?}", result.err());
     }
 
@@ -2943,7 +2936,7 @@ proptest! {
     fn inv_generation_building_type_independent_of_envelope_order(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let original: std::collections::BTreeMap<u32, u32> = d
             .building_types
             .assignments()
@@ -3005,7 +2998,7 @@ proptest! {
             defs::BALANCE,
             "generation.building_types.min_employers_per_profession",
         ) as usize;
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let baristas = d
             .building_types
             .assignments()
@@ -3037,14 +3030,33 @@ fn the_catchment_floor_bites_for_every_scoped_row_over_seeds_0_to_256() {
         .filter(|r| matches!(r.scope, sim::rules::DistributionScope::Catchment { .. }))
         .collect();
     assert!(!rows.is_empty(), "no scoped row is committed");
-    for row in &rows {
-        let (mut biting, mut pairs) = (0u64, 0u64);
-        for seed in 0..256u64 {
-            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
-            let (b, p) = sim::generation::guards::catchment_bite(&d, &content, row);
-            biting += b;
-            pairs += p;
+    // (biting, pairs) per row; each city is planned once for every row.
+    let mut tally = vec![(0u64, 0u64); rows.len()];
+    for seed in 0..256u64 {
+        // Subjects and their dials are passes 1-5's; pass 6 adds no
+        // building tag, so every building stands as a shell here.
+        let skeleton = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
+        let shells = skeleton
+            .building_types
+            .assignments()
+            .iter()
+            .map(|a| sim::generation::InteriorOutcome::Shell {
+                plot: a.plot,
+                building_type: a.building_type,
+            })
+            .collect();
+        let d = sim::generation::District {
+            skeleton,
+            interiors: sim::generation::InteriorMap::test_fixture(shells),
+        };
+        let site = d.site(&content);
+        for (row, (biting, pairs)) in rows.iter().zip(tally.iter_mut()) {
+            let (b, p) = sim::generation::guards::catchment_bite(&site, row);
+            *biting += b;
+            *pairs += p;
         }
+    }
+    for (row, &(biting, pairs)) in rows.iter().zip(&tally) {
         let share = biting * 100 / pairs.max(1);
         assert!(
             share >= threshold,
@@ -3088,16 +3100,26 @@ fn the_three_singleton_ratios_resolve_to_about_one_across_the_measured_seed_rang
         "no committed row is >= the singleton-ratio ceiling -- the ceiling itself needs re-deriving, not a silently vacuous test"
     );
 
+    // Each city's placed types, planned once for every row.
+    let placed: Vec<Vec<u32>> = (0..256u64)
+        .map(|seed| {
+            let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
+            d.building_types
+                .assignments()
+                .iter()
+                .map(|a| a.building_type)
+                .collect()
+        })
+        .collect();
     for row in &dist_rows {
         let ratio = row.ratio.smallest() as u64;
         let mut min_actual = u64::MAX;
         let mut max_actual = 0u64;
-        for seed in 0..256u64 {
-            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        for (seed, types) in placed.iter().enumerate() {
             let mut per = 0u64;
             let mut actual = 0u64;
-            for a in d.building_types.assignments() {
-                let def = by_id[&a.building_type];
+            for ty in types {
+                let def = by_id[ty];
                 if def.tags.contains(&row.per) {
                     per += 1;
                 }
@@ -3155,7 +3177,7 @@ fn building_count_holds_at_individually_measured_extreme_seeds() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let content = GenerationContent::committed();
     for (seed, count) in PINNED_BUILDING_COUNT_SEEDS {
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         assert_eq!(
             d.envelopes.placed_count(),
             count,
@@ -3282,7 +3304,7 @@ fn inv_generation_envelope_mean_size_matches_the_committed_band() {
     let content = GenerationContent::committed();
     let (mut sum_w, mut sum_d, mut n) = (0i64, 0i64, 0i64);
     for seed in 0u64..256 {
-        let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
         let em = &d.envelopes;
         for e in em.envelopes() {
             sum_w += e.along_face_cells();
@@ -3321,7 +3343,7 @@ fn inv_generation_building_count_mean_matches_the_scale_baseline() {
     let n: i64 = 256;
     let sum: i64 = (0..n as u64)
         .map(|seed| {
-            sim::generation::plan(seed, &cfg, &content)
+            sim::generation::plan_skeleton(seed, &cfg, &content)
                 .unwrap()
                 .envelopes
                 .placed_count()
@@ -3352,7 +3374,7 @@ fn inv_generation_workplace_count_mean_matches_the_scale_baseline() {
     let n: i64 = 256;
     let sum: i64 = (0..n as u64)
         .map(|seed| {
-            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+            let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
             d.building_types
                 .assignments()
                 .iter()
@@ -3400,7 +3422,7 @@ fn inv_generation_profession_depth_matches_the_scale_baseline() {
     let n: i64 = 256;
     let sum: i64 = (0..n as u64)
         .map(|seed| {
-            let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+            let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
             let mut employers: std::collections::BTreeMap<&str, u64> =
                 std::collections::BTreeMap::new();
             for a in d.building_types.assignments() {
@@ -3548,22 +3570,33 @@ fn planted_district(
     blocks: Vec<sim::generation::Block>,
 ) -> sim::generation::District {
     sim::generation::District {
-        land_use: land_use::LandUseMap::test_fixture(
-            site,
-            512,
-            1,
-            1,
-            0,
-            0,
-            vec![land_use::LandUseCell {
-                use_: sim::generation::LandUse::Residential,
-                density: 0,
-            }],
+        skeleton: sim::generation::Skeleton {
+            land_use: land_use::LandUseMap::test_fixture(
+                site,
+                512,
+                1,
+                1,
+                0,
+                0,
+                vec![land_use::LandUseCell {
+                    use_: sim::generation::LandUse::Residential,
+                    density: 0,
+                }],
+            ),
+            streets: streets::StreetNetwork::test_fixture(site, Vec::new(), blocks),
+            plots: plots::PlotMap::test_fixture(site, plot_list),
+            envelopes: envelopes::EnvelopeMap::test_fixture(outcomes),
+            building_types: sim::generation::BuildingTypeMap::test_fixture(assignments.clone()),
+        },
+        interiors: sim::generation::InteriorMap::test_fixture(
+            assignments
+                .iter()
+                .map(|a| sim::generation::InteriorOutcome::Shell {
+                    plot: a.plot,
+                    building_type: a.building_type,
+                })
+                .collect(),
         ),
-        streets: streets::StreetNetwork::test_fixture(site, Vec::new(), blocks),
-        plots: plots::PlotMap::test_fixture(site, plot_list),
-        envelopes: envelopes::EnvelopeMap::test_fixture(outcomes),
-        building_types: sim::generation::BuildingTypeMap::test_fixture(assignments),
     }
 }
 
@@ -3794,9 +3827,10 @@ fn seed_16021368561388801292_holds_its_commercial_share_and_workplace_band() {
     let seed = 16021368561388801292u64;
     let d = sim::generation::generate(seed, &cfg, &content)
         .unwrap_or_else(|e| panic!("seed {seed}: generate is no longer Ok: {e:?}"));
-    d.check_workplace_count(&cfg, &content)
+    d.skeleton
+        .check_workplace_count(&cfg, &content)
         .unwrap_or_else(|e| panic!("seed {seed}: workplace count outside its band: {e:?}"));
-    let lu = &d.land_use;
+    let lu = &d.skeleton.land_use;
     assert_eq!(
         lu.share_band_violation(&cfg),
         None,
@@ -4076,6 +4110,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     };
     let too_big = defs::BuildingTypeDef {
         id: 9002,
@@ -4093,11 +4129,15 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     };
     let types = [fits, too_big];
     let content = GenerationContent {
         rules: sim::rules::RuleSet::for_test(&[]),
         building_types: &types,
+        room_types: &[],
+        tags: &[],
     };
 
     for seed in 0..200u64 {
@@ -4381,6 +4421,8 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     };
     // `weight = 0`, exactly like the real `cafe` building type
     // (story 15.9): only the distribution row below ever assigns
@@ -4401,6 +4443,8 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &["test_clerk"],
+        rooms: &[],
+        optional_rooms: &[],
     };
     // The ordinary fill's own baseline draw for every commercial
     // envelope -- `shop_type`'s own `weight = 0` means this is the
@@ -4424,6 +4468,8 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        rooms: &[],
+        optional_rooms: &[],
     };
     let building_types = [dwelling_type, shop_type, filler_type];
     let rules = [sim::rules::RuleDef {
@@ -4442,6 +4488,8 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
     let content = GenerationContent {
         rules: sim::rules::RuleSet::for_test(&rules),
         building_types: &building_types,
+        room_types: &[],
+        tags: &[],
     };
 
     // Catchment (0, 0): 4 dwellings, no commercial land at all --
@@ -6410,7 +6458,7 @@ fn city_profession_depth(seed: u64) -> i64 {
         defs::BALANCE,
         "generation.building_types.min_employers_per_profession",
     ) as u64;
-    let d = sim::generation::plan(seed, &cfg, &content).unwrap();
+    let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
     sim::generation::guards::profession_depth(&d, &content, min_employers)
 }
 
@@ -6430,6 +6478,1517 @@ fn seed_13796749279512995753_keeps_the_per_city_profession_depth() {
     );
     let depth = city_profession_depth(13796749279512995753);
     assert!(depth >= floor, "depth {depth} under the floor {floor}");
+}
+
+/// How many cities the pooled invariants judge: `GENERATION_CITY_POOL`
+/// when set, else 96. Planning a city and judging it whole costs more
+/// than every other invariant's case together, so every pooled invariant
+/// below is a plain loop over one shared pool -- a deterministic sweep,
+/// never a property test pretending to draw fresh worlds. The coverage
+/// job sets a small pool: it measures which lines run, not the input
+/// space.
+fn city_pool_size() -> u64 {
+    std::env::var("GENERATION_CITY_POOL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(96)
+}
+
+/// Judge every `n`th laid interior with story 2.4's sub-cell body check:
+/// `GENERATION_BODY_CHECK_STRIDE` when set, else every one. Its grids are
+/// 256 sub-cells a cell, so an instrumented build spends minutes on them;
+/// the coverage job measures which lines run, not how many interiors are
+/// judged.
+fn body_check_stride() -> usize {
+    std::env::var("GENERATION_BODY_CHECK_STRIDE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or(1)
+}
+
+/// The salt the pool's world seeds are drawn under: the run's own
+/// `PROPTEST_RNG_SEED` when set -- `ci.yml`'s fixed one keeps the gate
+/// deterministic, `explore.yml`'s fresh one judges new cities every run
+/// -- else a constant.
+fn pool_salt() -> u64 {
+    std::env::var("PROPTEST_RNG_SEED")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0xC17F_0005)
+}
+
+fn pool_seed(i: u64) -> u64 {
+    seed_from_ids(i, pool_salt())
+}
+
+/// One pooled city: its world seed, its plan and every whole-district
+/// verdict, computed once.
+struct PooledCity {
+    seed: u64,
+    district: sim::generation::District,
+    /// `District::check_rules`.
+    rules: Result<(), String>,
+    /// `District::check`, the chain `generate` runs.
+    generated: Result<(), String>,
+}
+
+fn pooled_city(seed: u64) -> PooledCity {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let district = sim::generation::plan(seed, &cfg, &content).unwrap();
+    let rules = district.check_rules(&content).map_err(|e| format!("{e:?}"));
+    let generated = district.check(&cfg, &content).map_err(|e| format!("{e:?}"));
+    PooledCity {
+        seed,
+        district,
+        rules,
+        generated,
+    }
+}
+
+/// The shared pool, planned once per process across every core.
+fn city_pool() -> &'static [PooledCity] {
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static POOL: OnceLock<Vec<PooledCity>> = OnceLock::new();
+    POOL.get_or_init(|| {
+        let n = city_pool_size();
+        let threads = std::thread::available_parallelism()
+            .map_or(4, |p| p.get())
+            .min(n.max(1) as usize);
+        let next = AtomicU64::new(0);
+        let mut cities: Vec<(u64, PooledCity)> = std::thread::scope(|s| {
+            let workers: Vec<_> = (0..threads)
+                .map(|_| {
+                    s.spawn(|| {
+                        let mut got = Vec::new();
+                        loop {
+                            let i = next.fetch_add(1, Ordering::Relaxed);
+                            if i >= n {
+                                break;
+                            }
+                            got.push((i, pooled_city(pool_seed(i))));
+                        }
+                        got
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .flat_map(|w| w.join().expect("a pool worker panicked"))
+                .collect()
+        });
+        cities.sort_by_key(|(i, _)| *i);
+        cities.into_iter().map(|(_, c)| c).collect()
+    })
+}
+
+/// Runs `check` over every pooled city, across every core, and fails
+/// naming every failing world seed, not only the first -- each one pins
+/// as a plain `#[test]`.
+fn over_pool(name: &str, check: impl Fn(&PooledCity) -> Result<(), String> + Sync) {
+    let pool = city_pool();
+    let threads = std::thread::available_parallelism().map_or(4, |p| p.get());
+    let chunk = pool.len().div_ceil(threads).max(1);
+    let failures: Vec<String> = std::thread::scope(|s| {
+        let workers: Vec<_> = pool
+            .chunks(chunk)
+            .map(|cities| {
+                let check = &check;
+                s.spawn(move || {
+                    cities
+                        .iter()
+                        .filter_map(|c| check(c).err().map(|e| format!("  seed {}: {e}", c.seed)))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|w| w.join().expect("a pooled check panicked"))
+            .collect()
+    });
+    assert!(
+        failures.is_empty(),
+        "{name}: {} of {} pooled cities fail:\n{}",
+        failures.len(),
+        pool.len(),
+        failures.join("\n")
+    );
+}
+
+/// `return Err(..)` unless `cond` holds -- the pooled checks' assert.
+macro_rules! ensure {
+    ($cond:expr, $($fmt:tt)+) => {
+        if !$cond {
+            return Err(format!($($fmt)+));
+        }
+    };
+}
+
+/// `inv_generation_committed_rules_hold_for_any_seed` (AC1/AC2, story
+/// 3.4, FR112): `sim::rules::evaluate` over the whole finished district's
+/// own `DistrictSite`, against the committed rule table, finds no
+/// violation, for every pooled city -- named explicitly (rather than only
+/// inferred from `generate` returning `Ok`) so a coherence or
+/// distribution regression reads by its own name.
+#[test]
+fn inv_generation_committed_rules_hold_for_any_seed() {
+    over_pool("inv_generation_committed_rules_hold_for_any_seed", |c| {
+        c.rules.clone()
+    });
+}
+
+/// `inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero`
+/// (AC2): every subject a committed `[[distribution]]` row demands --
+/// read off the rows, never a key list -- is present in every pooled
+/// city. [`required_institutions_verdict`] is the one body; the named
+/// seed pins call the same function, so a pin cannot drift from the
+/// sweep. Shops are weighted fill, a likelihood and not a guarantee, and
+/// are not asserted here (`docs/generation.md`).
+#[test]
+fn inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero() {
+    over_pool(
+        "inv_generation_required_institutions_are_present_when_their_own_target_is_nonzero",
+        |c| required_institutions_verdict(&c.district),
+    );
+}
+
+// --- story 3.5: pass 6, the interior layout --------------------------------
+
+/// Every cell an interior occupies, floor 0 -- walls, room floors and
+/// thresholds (a fixture stands on a floor cell, so it adds none).
+fn interior_footprint_cells(i: &sim::generation::Interior) -> Vec<(i32, i32)> {
+    let mut out = i.walls();
+    for r in &i.rooms {
+        for y in r.rect.y0..r.rect.y1 {
+            for x in r.rect.x0..r.rect.x1 {
+                out.push((x, y));
+            }
+        }
+    }
+    for t in &i.thresholds {
+        out.push((t.x, t.y));
+    }
+    out
+}
+
+/// The cells a body can stand on -- room floor not holding a fixture,
+/// every threshold and every approach cell -- as a dense grid over the
+/// footprint and its approach, and a flood fill from the street. Only
+/// what the sub-cell walkability check cannot say: whether a fixture has
+/// a cell beside it to act from.
+struct Walk {
+    x0: i32,
+    y0: i32,
+    w: usize,
+    h: usize,
+    walkable: Vec<bool>,
+    reached: Vec<bool>,
+}
+
+impl Walk {
+    fn of(i: &sim::generation::Interior) -> Walk {
+        let b = interior_bounds(i);
+        let (w, h) = (b.width() as usize, b.height() as usize);
+        let mut walk = Walk {
+            x0: b.x0,
+            y0: b.y0,
+            w,
+            h,
+            walkable: vec![false; w * h],
+            reached: vec![false; w * h],
+        };
+        for r in &i.rooms {
+            for y in r.rect.y0..r.rect.y1 {
+                for x in r.rect.x0..r.rect.x1 {
+                    let ix = walk.ix(x, y).unwrap();
+                    walk.walkable[ix] = true;
+                }
+            }
+        }
+        for f in &i.fixtures {
+            let ix = walk.ix(f.x, f.y).unwrap();
+            walk.walkable[ix] = false;
+        }
+        for t in &i.thresholds {
+            let ix = walk.ix(t.x, t.y).unwrap();
+            walk.walkable[ix] = true;
+        }
+        for &(x, y) in &i.approach {
+            let ix = walk.ix(x, y).unwrap();
+            walk.walkable[ix] = true;
+        }
+        if let Some(&(sx, sy)) = i.approach.first() {
+            walk.flood(sx, sy);
+        }
+        walk
+    }
+
+    fn ix(&self, x: i32, y: i32) -> Option<usize> {
+        let (dx, dy) = (x - self.x0, y - self.y0);
+        (dx >= 0 && dy >= 0 && (dx as usize) < self.w && (dy as usize) < self.h)
+            .then(|| dy as usize * self.w + dx as usize)
+    }
+
+    fn flood(&mut self, sx: i32, sy: i32) {
+        let Some(start) = self.ix(sx, sy) else {
+            return;
+        };
+        if !self.walkable[start] {
+            return;
+        }
+        let mut stack = vec![start];
+        self.reached[start] = true;
+        while let Some(i) = stack.pop() {
+            let (x, y) = (self.x0 + (i % self.w) as i32, self.y0 + (i / self.w) as i32);
+            for (nx, ny) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
+                if let Some(n) = self.ix(nx, ny)
+                    && self.walkable[n]
+                    && !self.reached[n]
+                {
+                    self.reached[n] = true;
+                    stack.push(n);
+                }
+            }
+        }
+    }
+
+    /// Whether a body walking from the street reaches `(x, y)`.
+    fn reaches(&self, x: i32, y: i32) -> bool {
+        self.ix(x, y).is_some_and(|i| self.reached[i])
+    }
+
+    /// Whether `(x, y)` has a reachable walkable cell beside it.
+    fn reachable_beside(&self, x: i32, y: i32) -> bool {
+        [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+            .iter()
+            .any(|&(nx, ny)| self.reaches(nx, ny))
+    }
+
+    fn reaches_any_of(&self, r: Rect) -> bool {
+        (r.y0..r.y1).any(|y| (r.x0..r.x1).any(|x| self.reaches(x, y)))
+    }
+}
+
+/// The footprint and its approach, plus one cell of margin.
+fn interior_bounds(i: &sim::generation::Interior) -> Rect {
+    let mut b = i.footprint;
+    for &(x, y) in &i.approach {
+        b.x0 = b.x0.min(x);
+        b.y0 = b.y0.min(y);
+        b.x1 = b.x1.max(x + 1);
+        b.y1 = b.y1.max(y + 1);
+    }
+    Rect {
+        x0: b.x0 - 1,
+        y0: b.y0 - 1,
+        x1: b.x1 + 1,
+        y1: b.y1 + 1,
+    }
+}
+
+/// Story 2.4's two placement checks run unchanged over one generated
+/// interior: a sub-cell `WalkabilityGrid` of its wall and fixture
+/// colliders (each a whole cell) plus any `planted` ones, over the
+/// footprint and the first approach cell outside the street door, seeded
+/// in that cell. Everything past the grid's edge is the open street, so
+/// nothing more of it is needed. `(enclosed, narrow)`.
+fn body_findings(
+    i: &sim::generation::Interior,
+    planted: &[Rect],
+) -> Result<(usize, usize), String> {
+    let s = defs::COLLIDER_SUBCELLS_PER_CELL;
+    let cell = |x: i32, y: i32| Rect {
+        x0: x * s,
+        y0: y * s,
+        x1: (x + 1) * s,
+        y1: (y + 1) * s,
+    };
+    let mut colliders: Vec<Rect> = i.walls().into_iter().map(|(x, y)| cell(x, y)).collect();
+    colliders.extend(i.fixtures.iter().map(|f| cell(f.x, f.y)));
+    colliders.extend_from_slice(planted);
+    let &(sx, sy) = i.approach.first().ok_or("no approach")?;
+    let fp = i.footprint;
+    let b = Rect {
+        x0: fp.x0.min(sx),
+        y0: fp.y0.min(sy),
+        x1: fp.x1.max(sx + 1),
+        y1: fp.y1.max(sy + 1),
+    };
+    let grid = WalkabilityGrid::build(
+        Rect {
+            x0: b.x0 * s,
+            y0: b.y0 * s,
+            x1: b.x1 * s,
+            y1: b.y1 * s,
+        },
+        &colliders,
+    )?;
+    let (seed_x, seed_y) = (sx * s + s / 4, sy * s + s / 4);
+    let (bw, bh) = player_body_subcells(defs::BALANCE);
+    let enclosed = enclosed_regions(&grid, seed_x, seed_y)?;
+    let narrow = narrow_passages(&grid, seed_x, seed_y, bw, bh)?;
+    Ok((enclosed.len(), narrow.len()))
+}
+
+fn tag_id(key: &str) -> TagId {
+    defs::TAGS.iter().find(|t| t.key == key).unwrap().id
+}
+
+/// The test's own enterable predicate, computed from emitted cells and
+/// never from a flag the generator sets on itself: a body can walk from
+/// the pavement cell outside the entrance to a floor cell of every room,
+/// beside every fixture, and every fixture a room owes is present.
+fn is_enterable(
+    i: &sim::generation::Interior,
+    content: &GenerationContent,
+    vocab: &sim::generation::interiors::Vocabulary,
+) -> bool {
+    let walk = Walk::of(i);
+    if i.approach.is_empty() {
+        return false;
+    }
+    for r in &i.rooms {
+        if !walk.reaches_any_of(r.rect) {
+            return false;
+        }
+    }
+    for f in &i.fixtures {
+        if !walk.reachable_beside(f.x, f.y) {
+            return false;
+        }
+    }
+    let parts = vocab.parts;
+    let structural = [
+        parts.wall,
+        parts.wall_run,
+        parts.floor,
+        parts.threshold,
+        parts.entrance,
+        parts.pavement,
+        parts.fixture,
+    ];
+    for (idx, r) in i.rooms.iter().enumerate() {
+        let room_def = content
+            .room_types
+            .iter()
+            .find(|d| d.id == r.room_type)
+            .unwrap();
+        for row in content.rules.iter().filter_map(|r| r.as_requirement()) {
+            let carried = room_def.tags.contains(&row.container) || row.container == parts.floor;
+            if !carried || structural.contains(&row.requires) {
+                continue;
+            }
+            let have = i
+                .fixtures
+                .iter()
+                .filter(|f| f.room == idx && f.tag == row.requires)
+                .count() as u32;
+            if have < row.min {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// AC3's kind-spread verdict over counts the caller computed from emitted
+/// output: kind order dwelling, shop, cafe, back room. Per kind: how many
+/// pass 5 placed, how many are enterable. A pure function so the negative
+/// case ("97 flats and one of each other kind") is exercised without a
+/// city.
+fn kind_spread_verdict(
+    placed: [i64; 4],
+    enterable: [i64; 4],
+    total_enterable: i64,
+    cfg: &GenerationConfig,
+) -> Result<(), String> {
+    let names = ["dwelling", "shop", "cafe", "back room"];
+    for k in 0..4 {
+        if enterable[k] < 1 {
+            return Err(format!("no enterable {}", names[k]));
+        }
+        if enterable[k] * 100 < placed[k] * cfg.interior_kind_min_enterable_percent[k] {
+            return Err(format!(
+                "only {} of {} {}s are enterable, under {}%",
+                enterable[k], placed[k], names[k], cfg.interior_kind_min_enterable_percent[k]
+            ));
+        }
+        if enterable[k] * 100 > total_enterable * cfg.interior_max_kind_share_percent {
+            return Err(format!(
+                "{} is {} of {} enterable, over the {}% share ceiling",
+                names[k], enterable[k], total_enterable, cfg.interior_max_kind_share_percent
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Per kind: (placed, enterable) over one district, plus whether any
+/// enterable dwelling sits in the lowest density band.
+fn kind_counts(
+    d: &sim::generation::District,
+    content: &GenerationContent,
+    cfg: &GenerationConfig,
+) -> ([i64; 4], [i64; 4], bool) {
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let (dwelling, shop, cafe, staff) = (
+        tag_id("dwelling"),
+        tag_id("shop"),
+        tag_id("cafe"),
+        tag_id("staff"),
+    );
+    let room_tags: std::collections::BTreeMap<u32, &[TagId]> =
+        content.room_types.iter().map(|r| (r.id, r.tags)).collect();
+    let span = (cfg.density_max - cfg.density_min).max(1);
+    let low_max = cfg.density_min + span / 3;
+    let enterable_plots: std::collections::BTreeMap<u32, &sim::generation::Interior> =
+        d.interiors.laid().map(|(plot, _, i)| (plot, i)).collect();
+    let (mut placed, mut enterable) = ([0i64; 4], [0i64; 4]);
+    let mut low_band_dwelling = false;
+    for a in d.skeleton.building_types.assignments() {
+        let def = by_id[&a.building_type];
+        // A type with no room program is a deliberate Shell (a vacant
+        // unit carries the shop tag and no posts): it is nobody's
+        // enterable kind, so it is not "placed" for the share either.
+        if def.rooms.is_empty() {
+            continue;
+        }
+        let interior = enterable_plots.get(&a.plot);
+        let kinds = [
+            def.tags.contains(&dwelling),
+            def.tags.contains(&shop),
+            def.tags.contains(&cafe),
+            // An institutional back room: a staff room in a type sited on
+            // institutional land use.
+            def.land_uses[3]
+                && interior.is_some_and(|i| {
+                    i.rooms
+                        .iter()
+                        .any(|r| room_tags[&r.room_type].contains(&staff))
+                }),
+        ];
+        let sited_institutional = def.land_uses[3];
+        for k in 0..4 {
+            if kinds[k] {
+                placed[k] += 1;
+                if interior.is_some() {
+                    enterable[k] += 1;
+                }
+            } else if k == 3 && sited_institutional {
+                // A rejected or shell institutional-land type still counts
+                // as placed for the back-room share.
+                placed[3] += 1;
+            }
+        }
+        if kinds[0]
+            && interior.is_some()
+            && d.skeleton.plots.plots()[a.plot as usize].density <= low_max
+        {
+            low_band_dwelling = true;
+        }
+    }
+    (placed, enterable, low_band_dwelling)
+}
+
+/// `inv_generation_interior_cells_lie_inside_their_own_envelope` (story
+/// 3.5 AC1): "no separate space" asserted structurally -- every emitted
+/// cell is a world coordinate inside the building's own pass-4 footprint,
+/// and no two buildings claim one cell.
+#[test]
+fn inv_generation_interior_cells_lie_inside_their_own_envelope() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    over_pool(
+        "inv_generation_interior_cells_lie_inside_their_own_envelope",
+        |c| {
+            let d = &c.district;
+            let by_plot: std::collections::BTreeMap<u32, &envelopes::Envelope> = d
+                .skeleton
+                .envelopes
+                .envelopes()
+                .map(|e| (e.plot, e))
+                .collect();
+            let site = cfg.site();
+            let width = site.width() as usize;
+            let mut claimed = vec![false; width * site.height() as usize];
+            for (plot, _, interior) in d.interiors.laid() {
+                let env = by_plot[&plot];
+                ensure!(
+                    interior.footprint == env.footprint,
+                    "plot {plot}: footprint moved"
+                );
+                ensure!(interior.front == env.front, "plot {plot}: front moved");
+                let entrance = interior
+                    .entrance()
+                    .ok_or("a laid interior with no entrance")?;
+                ensure!(
+                    (entrance.x, entrance.y)
+                        == sim::generation::site::front_cell(env.footprint, env.front),
+                    "plot {plot}: the entrance is not the envelope's front cell"
+                );
+                for room in &interior.rooms {
+                    ensure!(
+                        room.rect.x0 > env.footprint.x0
+                            && room.rect.x1 < env.footprint.x1
+                            && room.rect.y0 > env.footprint.y0
+                            && room.rect.y1 < env.footprint.y1,
+                        "plot {plot}: a room touches or leaves its shell"
+                    );
+                }
+                for (x, y) in interior_footprint_cells(interior) {
+                    ensure!(
+                        env.footprint.contains(x, y),
+                        "plot {plot}: cell ({x}, {y}) outside its footprint"
+                    );
+                }
+                for f in &interior.fixtures {
+                    ensure!(
+                        env.footprint.contains(f.x, f.y),
+                        "plot {plot}: a fixture outside its footprint"
+                    );
+                }
+                for y in env.footprint.y0..env.footprint.y1 {
+                    for x in env.footprint.x0..env.footprint.x1 {
+                        let i = y as usize * width + x as usize;
+                        ensure!(!claimed[i], "cell ({x}, {y}) claimed by two buildings");
+                        claimed[i] = true;
+                    }
+                }
+            }
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_every_emitted_interior_validates_clean` (story 3.5
+/// AC2, FR112): the committed rule set is the one source --
+/// `District::check_rules` accepts the whole district -- and story 2.4's
+/// own walkability checks (`enclosed_regions`, `narrow_passages` at the
+/// player body) run unchanged over every interior's wall and fixture
+/// colliders from the street and report nothing; the cell-level walk
+/// adds what they cannot say: a cell beside every fixture, and rooms at
+/// least two cells either way.
+#[test]
+fn inv_generation_every_emitted_interior_validates_clean() {
+    over_pool(
+        "inv_generation_every_emitted_interior_validates_clean",
+        |c| {
+            let d = &c.district;
+            let stride = body_check_stride();
+            for (n, (plot, _, interior)) in d.interiors.laid().enumerate() {
+                let (enclosed, narrow) = if n % stride == 0 {
+                    body_findings(interior, &[])?
+                } else {
+                    (0, 0)
+                };
+                ensure!(
+                    enclosed == 0,
+                    "plot {plot}: {enclosed} walkable regions have no way in"
+                );
+                ensure!(
+                    narrow == 0,
+                    "plot {plot}: {narrow} regions are past a passage the body cannot fit"
+                );
+                let walk = Walk::of(interior);
+                for r in &interior.rooms {
+                    ensure!(
+                        r.rect.width() >= 2 && r.rect.height() >= 2,
+                        "plot {plot}: a room under two cells"
+                    );
+                }
+                for f in &interior.fixtures {
+                    ensure!(
+                        walk.reachable_beside(f.x, f.y),
+                        "plot {plot}: nobody can stand at a fixture"
+                    );
+                }
+            }
+            c.rules.clone()
+        },
+    );
+}
+
+/// Proves [`body_findings`] has teeth: a generated interior whose inner
+/// doorway is narrowed below the player body, by two planted colliders
+/// either side of it, is reported by `narrow_passages` -- and the same
+/// interior untouched reports nothing.
+#[test]
+fn the_body_check_reports_a_generated_doorway_narrowed_below_the_body() {
+    let s = defs::COLLIDER_SUBCELLS_PER_CELL;
+    let (bw, bh) = player_body_subcells(defs::BALANCE);
+    let pool = city_pool();
+    let (interior, door) = pool
+        .iter()
+        .flat_map(|c| c.district.interiors.laid().map(|(_, _, i)| i))
+        .find_map(|i| i.thresholds.iter().find(|t| !t.entrance).map(|t| (i, *t)))
+        .expect("a pooled interior with an inner door");
+    assert_eq!(body_findings(interior, &[]).unwrap(), (0, 0));
+    let (x, y) = (door.x * s, door.y * s);
+    let in_a_column = interior
+        .rooms
+        .iter()
+        .any(|r| r.rect.contains(door.x, door.y + 1) || r.rect.contains(door.x, door.y - 1));
+    // Leave a gap one sub-cell under the body across the passage.
+    let planted = if in_a_column {
+        let gap = bw - 1;
+        let side = (s - gap) / 2;
+        [
+            Rect {
+                x0: x,
+                y0: y,
+                x1: x + side,
+                y1: y + s,
+            },
+            Rect {
+                x0: x + side + gap,
+                y0: y,
+                x1: x + s,
+                y1: y + s,
+            },
+        ]
+    } else {
+        let gap = bh - 1;
+        let side = (s - gap) / 2;
+        [
+            Rect {
+                x0: x,
+                y0: y,
+                x1: x + s,
+                y1: y + side,
+            },
+            Rect {
+                x0: x,
+                y0: y + side + gap,
+                x1: x + s,
+                y1: y + s,
+            },
+        ]
+    };
+    let (enclosed, narrow) = body_findings(interior, &planted).unwrap();
+    assert_eq!(
+        enclosed, 0,
+        "the narrowed doorway still lets a point through"
+    );
+    assert!(
+        narrow >= 1,
+        "a doorway under the body's own width must be reported"
+    );
+}
+
+/// `inv_generation_interior_retries_are_bounded` (story 3.5 AC2).
+#[test]
+fn inv_generation_interior_retries_are_bounded() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    over_pool("inv_generation_interior_retries_are_bounded", |c| {
+        let d = &c.district;
+        for o in d.interiors.outcomes() {
+            match o {
+                sim::generation::InteriorOutcome::Laid { attempts, .. } => {
+                    ensure!(
+                        *attempts >= 1 && *attempts <= cfg.interior_max_layout_attempts,
+                        "a building laid out after {attempts} attempts"
+                    );
+                }
+                sim::generation::InteriorOutcome::Rejected { attempts, .. } => {
+                    ensure!(
+                        *attempts <= cfg.interior_max_layout_attempts,
+                        "a building rejected after {attempts} attempts"
+                    );
+                }
+                sim::generation::InteriorOutcome::Shell { .. } => {}
+            }
+        }
+        ensure!(
+            d.interiors.rejected_percent() <= cfg.interior_max_rejected_percent,
+            "{}% of attempted layouts rejected",
+            d.interiors.rejected_percent()
+        );
+        Ok(())
+    });
+}
+
+/// `inv_generation_no_room_exceeds_the_aspect_cap` (story 3.5, Artie's
+/// direction): a 2x15 floor is a hallway, not a room.
+#[test]
+fn inv_generation_no_room_exceeds_the_aspect_cap() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let cap = cfg.interior_max_room_aspect as i64;
+    over_pool("inv_generation_no_room_exceeds_the_aspect_cap", |c| {
+        for (plot, _, interior) in c.district.interiors.laid() {
+            for r in &interior.rooms {
+                let (w, h) = (r.rect.width(), r.rect.height());
+                ensure!(
+                    w.max(h) <= cap * w.min(h),
+                    "plot {plot}: a {w}x{h} room is past {cap}:1"
+                );
+            }
+        }
+        Ok(())
+    });
+}
+
+/// `inv_generation_every_dwelling_sleeps_washes_and_cooks` (story 3.5,
+/// Derek's direction): however small the footprint, a home holds a bed, a
+/// basin and a cooker.
+#[test]
+fn inv_generation_every_dwelling_sleeps_washes_and_cooks() {
+    let content = GenerationContent::committed();
+    let dwelling = tag_id("dwelling");
+    let owed = [tag_id("bed"), tag_id("basin"), tag_id("cooker")];
+    over_pool(
+        "inv_generation_every_dwelling_sleeps_washes_and_cooks",
+        |c| {
+            for (plot, ty, interior) in c.district.interiors.laid() {
+                let def = content.building_types.iter().find(|b| b.id == ty).unwrap();
+                if !def.tags.contains(&dwelling) {
+                    continue;
+                }
+                for tag in owed {
+                    ensure!(
+                        interior.fixtures.iter().any(|f| f.tag == tag),
+                        "plot {plot}: a {} with no {}",
+                        def.key,
+                        defs::TAGS.iter().find(|t| t.id == tag).unwrap().key
+                    );
+                }
+            }
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_enterable_interior_count_meets_the_floor` (story 3.5
+/// AC3, FR114).
+#[test]
+fn inv_generation_enterable_interior_count_meets_the_floor() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let vocab = sim::generation::interiors::Vocabulary::new(&content);
+    over_pool(
+        "inv_generation_enterable_interior_count_meets_the_floor",
+        |c| {
+            c.generated.clone()?;
+            let enterable = c
+                .district
+                .interiors
+                .laid()
+                .filter(|(_, _, i)| is_enterable(i, &content, &vocab))
+                .count() as i64;
+            ensure!(
+                enterable >= cfg.interior_min_enterable_count,
+                "{enterable} enterable under the floor {}",
+                cfg.interior_min_enterable_count
+            );
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_enterable_set_spans_every_required_kind` (story 3.5
+/// AC3): dwellings, shops, cafes and institutional back rooms, each by a
+/// committed percent of what pass 5 placed of it, none dominant, and an
+/// enterable dwelling in the lowest density band (the starting flat is an
+/// edge flat).
+#[test]
+fn inv_generation_enterable_set_spans_every_required_kind() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    over_pool(
+        "inv_generation_enterable_set_spans_every_required_kind",
+        |c| {
+            let d = &c.district;
+            let (placed, enterable, low_band_dwelling) = kind_counts(d, &content, &cfg);
+            kind_spread_verdict(placed, enterable, d.interiors.enterable_count(), &cfg)?;
+            ensure!(
+                low_band_dwelling,
+                "no enterable dwelling in the lowest density band"
+            );
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_every_interior_cell_answers_its_own_building_id`
+/// (story 3.5 AC4, FR119): through the function the client port mirrors,
+/// not the generator's own bookkeeping.
+#[test]
+fn inv_generation_every_interior_cell_answers_its_own_building_id() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    over_pool(
+        "inv_generation_every_interior_cell_answers_its_own_building_id",
+        |c| {
+            let d = &c.district;
+            let spec = WorldSpec {
+                building_areas: d.interiors.building_areas(),
+                room_areas: d.interiors.room_areas(),
+                ..WorldSpec::default()
+            };
+            let world = spec.build()?;
+            let mut building_ids = std::collections::BTreeSet::new();
+            let mut room_ids = std::collections::BTreeSet::new();
+            // Who owns each cell, by footprint, over the site with a margin --
+            // the expected answer for a cell just outside a shell (a
+            // neighbour's id at a party wall, nobody's otherwise).
+            let site = cfg.site();
+            let margin = 2;
+            let width = (site.width() + 2 * margin as i64) as usize;
+            let height = (site.height() + 2 * margin as i64) as usize;
+            let mut owner_by_cell = vec![NO_OWNER; width * height];
+            let cell_ix = |x: i32, y: i32| ((y + margin) as usize) * width + (x + margin) as usize;
+            for (_, _, interior) in d.interiors.laid() {
+                let bid = sim::generation::rect_seed_key(interior.footprint);
+                for y in interior.footprint.y0..interior.footprint.y1 {
+                    for x in interior.footprint.x0..interior.footprint.x1 {
+                        owner_by_cell[cell_ix(x, y)] = bid;
+                    }
+                }
+            }
+            for (_, _, interior) in d.interiors.laid() {
+                let fp = interior.footprint;
+                let bid = sim::generation::rect_seed_key(fp);
+                ensure!(building_ids.insert(bid), "building id {bid} is not unique");
+                // The room each footprint cell must answer: a room's floor and
+                // the doorway it owns answer its id, a wall answers none.
+                let (fw, fh) = (fp.width() as usize, fp.height() as usize);
+                let local = |x: i32, y: i32| ((y - fp.y0) as usize) * fw + (x - fp.x0) as usize;
+                let mut want_room = vec![NO_OWNER; fw * fh];
+                let mut rids = Vec::new();
+                for room in &interior.rooms {
+                    let rid = sim::generation::rect_seed_key(room.rect);
+                    ensure!(
+                        room_ids.insert(rid),
+                        "room id {rid} is not unique across the district"
+                    );
+                    rids.push(rid);
+                    for y in room.rect.y0..room.rect.y1 {
+                        for x in room.rect.x0..room.rect.x1 {
+                            want_room[local(x, y)] = rid;
+                        }
+                    }
+                }
+                for t in &interior.thresholds {
+                    want_room[local(t.x, t.y)] = rids[t.room];
+                }
+                for y in fp.y0..fp.y1 {
+                    for x in fp.x0..fp.x1 {
+                        let own = world.ownership_at(x, y, 0);
+                        ensure!(
+                            own.building_id == bid,
+                            "({x}, {y}) answers building {}",
+                            own.building_id
+                        );
+                        ensure!(
+                            own.room_id == want_room[local(x, y)],
+                            "({x}, {y}) answers room {}",
+                            own.room_id
+                        );
+                    }
+                }
+                for x in fp.x0..fp.x1 {
+                    for y in [fp.y0 - 1, fp.y1] {
+                        let got = world.ownership_at(x, y, 0).building_id;
+                        ensure!(
+                            got == owner_by_cell[cell_ix(x, y)] && got != bid,
+                            "({x}, {y}) just outside answers {got}"
+                        );
+                    }
+                }
+            }
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_interior_independent_of_building_order` (NFR25): each
+/// building's streams are seeded from its own bounds plus the attempt
+/// index, never its place in pass 5's list.
+#[test]
+fn inv_generation_interior_independent_of_building_order() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    over_pool(
+        "inv_generation_interior_independent_of_building_order",
+        |c| {
+            let (seed, d) = (c.seed, &c.district);
+            let mut pairs: Vec<(envelopes::Envelope, sim::generation::TypeAssignment)> = d
+                .skeleton
+                .envelopes
+                .envelopes()
+                .copied()
+                .zip(d.skeleton.building_types.assignments().iter().copied())
+                .collect();
+            let mut shuffle_rng = Rng::new(seed_from_ids(seed, 0x1A7E_5100));
+            for i in (1..pairs.len()).rev() {
+                let j = (shuffle_rng.next_u64() % (i as u64 + 1)) as usize;
+                pairs.swap(i, j);
+            }
+            let shuffled_envelopes = envelopes::EnvelopeMap::test_fixture(
+                pairs
+                    .iter()
+                    .map(|(e, _)| envelopes::EnvelopeOutcome::Placed(*e))
+                    .collect(),
+            );
+            let shuffled_types = sim::generation::BuildingTypeMap::test_fixture(
+                pairs.iter().map(|(_, a)| *a).collect(),
+            );
+            let (envs, types, plots) = (&shuffled_envelopes, &shuffled_types, &d.skeleton.plots);
+            let pass_6 = sim::generation::interiors::run; // generation-entry-point: allow
+            let shuffled = pass_6(seed, envs, types, plots, &cfg, &content);
+            let original: std::collections::BTreeMap<u32, &sim::generation::InteriorOutcome> = d
+                .interiors
+                .outcomes()
+                .iter()
+                .map(|o| (outcome_plot(o), o))
+                .collect();
+            for o in shuffled.outcomes() {
+                ensure!(
+                    Some(&o) == original.get(&outcome_plot(o)),
+                    "plot {}'s interior moved when only list order changed",
+                    outcome_plot(o)
+                );
+            }
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_interior_independent_of_neighbouring_buildings`
+/// (NFR25): a retry in one building never shifts its neighbour's stream
+/// -- perturbing one building's type moves no other interior.
+#[test]
+fn inv_generation_interior_independent_of_neighbouring_buildings() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    over_pool(
+        "inv_generation_interior_independent_of_neighbouring_buildings",
+        |c| {
+            let (seed, d) = (c.seed, &c.district);
+            let mut assignments = d.skeleton.building_types.assignments().to_vec();
+            let victim = (seed % assignments.len() as u64) as usize;
+            let other = content
+                .building_types
+                .iter()
+                .find(|b| b.id != assignments[victim].building_type && !b.rooms.is_empty())
+                .unwrap();
+            assignments[victim].building_type = other.id;
+            let perturbed_types = sim::generation::BuildingTypeMap::test_fixture(assignments);
+            let (envs, plots) = (&d.skeleton.envelopes, &d.skeleton.plots);
+            let pass_6 = sim::generation::interiors::run; // generation-entry-point: allow
+            let perturbed = pass_6(seed, envs, &perturbed_types, plots, &cfg, &content);
+            for (i, (a, b)) in d
+                .interiors
+                .outcomes()
+                .iter()
+                .zip(perturbed.outcomes())
+                .enumerate()
+            {
+                ensure!(
+                    i == victim || a == b,
+                    "building {i} moved when building {victim} changed type"
+                );
+            }
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_public_rooms_are_reachable_without_crossing_staff_or_private`
+/// (Derek's direction): access is one tag per room type; from the
+/// entrance every public room is reachable through public rooms only, a
+/// type with a public room has one as its front room, and no threshold
+/// joins two buildings.
+#[test]
+fn inv_generation_public_rooms_are_reachable_without_crossing_staff_or_private() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    let public = tag_id("public");
+    let room_tags: std::collections::BTreeMap<u32, &[TagId]> =
+        content.room_types.iter().map(|r| (r.id, r.tags)).collect();
+    over_pool(
+        "inv_generation_public_rooms_are_reachable_without_crossing_staff_or_private",
+        |c| {
+            let d = &c.district;
+            let site = cfg.site();
+            let width = site.width() as usize;
+            let mut floor_owner = vec![u32::MAX; width * site.height() as usize];
+            for (plot, _, interior) in d.interiors.laid() {
+                for r in &interior.rooms {
+                    for y in r.rect.y0..r.rect.y1 {
+                        for x in r.rect.x0..r.rect.x1 {
+                            floor_owner[y as usize * width + x as usize] = plot;
+                        }
+                    }
+                }
+            }
+            for (plot, _, interior) in d.interiors.laid() {
+                let is_public =
+                    |idx: usize| room_tags[&interior.rooms[idx].room_type].contains(&public);
+                let room_of =
+                    |x: i32, y: i32| interior.rooms.iter().position(|r| r.rect.contains(x, y));
+                if (0..interior.rooms.len()).any(is_public) {
+                    ensure!(
+                        is_public(0),
+                        "plot {plot}: a type with a public room fronts a non-public one"
+                    );
+                }
+                // Room graph through thresholds: a threshold joins the rooms
+                // on its two sides.
+                let mut reached = std::collections::BTreeSet::from([0usize]);
+                let mut changed = true;
+                while changed {
+                    changed = false;
+                    for t in &interior.thresholds {
+                        let sides: Vec<usize> = [
+                            (t.x + 1, t.y),
+                            (t.x - 1, t.y),
+                            (t.x, t.y + 1),
+                            (t.x, t.y - 1),
+                        ]
+                        .iter()
+                        .filter_map(|&(x, y)| room_of(x, y))
+                        .collect();
+                        for &a in &sides {
+                            for &b in &sides {
+                                if reached.contains(&a) && is_public(a) && !reached.contains(&b) {
+                                    reached.insert(b);
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                for idx in 0..interior.rooms.len() {
+                    ensure!(
+                        !is_public(idx) || reached.contains(&idx),
+                        "plot {plot}: a public room is behind a staff or private one"
+                    );
+                }
+                for t in &interior.thresholds {
+                    for &(x, y) in &[
+                        (t.x + 1, t.y),
+                        (t.x - 1, t.y),
+                        (t.x, t.y + 1),
+                        (t.x, t.y - 1),
+                    ] {
+                        if x >= 0 && y >= 0 && (x as usize) < width {
+                            let other = floor_owner
+                                .get(y as usize * width + x as usize)
+                                .copied()
+                                .unwrap_or(u32::MAX);
+                            ensure!(
+                                other == u32::MAX || other == plot,
+                                "plot {plot}'s doorway opens onto plot {other}'s floor"
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_a_bedroom_opens_only_onto_a_bathroom_and_a_bathroom_is_no_way_through`
+/// (Artie's direction): the room a room is reached through is its parent
+/// -- the room across its own doorway. A room owing `sleeping` has
+/// nothing behind it but a `washing` room, and a `washing` room has
+/// nothing behind it at all.
+#[test]
+fn inv_generation_a_bedroom_opens_only_onto_a_bathroom_and_a_bathroom_is_no_way_through() {
+    let content = GenerationContent::committed();
+    let (sleeping, washing) = (tag_id("sleeping"), tag_id("washing"));
+    let room_tags: std::collections::BTreeMap<u32, &[TagId]> =
+        content.room_types.iter().map(|r| (r.id, r.tags)).collect();
+    over_pool(
+        "inv_generation_a_bedroom_opens_only_onto_a_bathroom_and_a_bathroom_is_no_way_through",
+        |c| {
+            for (plot, _, interior) in c.district.interiors.laid() {
+                let tags = |i: usize| room_tags[&interior.rooms[i].room_type];
+                let room_of =
+                    |x: i32, y: i32| interior.rooms.iter().position(|r| r.rect.contains(x, y));
+                for (idx, _) in interior.rooms.iter().enumerate() {
+                    let Some(door) = interior
+                        .thresholds
+                        .iter()
+                        .find(|t| t.room == idx && !t.entrance)
+                    else {
+                        continue;
+                    };
+                    let parent = [
+                        (door.x + 1, door.y),
+                        (door.x - 1, door.y),
+                        (door.x, door.y + 1),
+                        (door.x, door.y - 1),
+                    ]
+                    .into_iter()
+                    .filter_map(|(x, y)| room_of(x, y))
+                    .find(|&r| r != idx)
+                    .ok_or("a doorway with no room on its far side")?;
+                    ensure!(
+                        !tags(parent).contains(&washing),
+                        "plot {plot}: a room is reached only through a washing room"
+                    );
+                    ensure!(
+                        !tags(parent).contains(&sleeping) || tags(idx).contains(&washing),
+                        "plot {plot}: a room other than a washing room is reached only through a sleeping one"
+                    );
+                }
+            }
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_stock_sits_in_a_staff_room_and_never_on_the_public_floor`
+/// (Derek's direction).
+#[test]
+fn inv_generation_stock_sits_in_a_staff_room_and_never_on_the_public_floor() {
+    let content = GenerationContent::committed();
+    let (stock, staff, seating, waste) = (
+        tag_id("stock"),
+        tag_id("staff"),
+        tag_id("seating"),
+        tag_id("waste"),
+    );
+    let room_tags: std::collections::BTreeMap<u32, &[TagId]> =
+        content.room_types.iter().map(|r| (r.id, r.tags)).collect();
+    over_pool(
+        "inv_generation_stock_sits_in_a_staff_room_and_never_on_the_public_floor",
+        |c| {
+            for (plot, _, interior) in c.district.interiors.laid() {
+                for f in &interior.fixtures {
+                    ensure!(
+                        f.tag != seating && f.tag != waste,
+                        "plot {plot}: the layout pass placed a prop-placement fixture"
+                    );
+                    ensure!(
+                        f.tag != stock
+                            || room_tags[&interior.rooms[f.room].room_type].contains(&staff),
+                        "plot {plot}: stock outside a staff room"
+                    );
+                }
+            }
+            Ok(())
+        },
+    );
+}
+
+fn outcome_plot(o: &sim::generation::InteriorOutcome) -> u32 {
+    match o {
+        sim::generation::InteriorOutcome::Laid { plot, .. }
+        | sim::generation::InteriorOutcome::Shell { plot, .. }
+        | sim::generation::InteriorOutcome::Rejected { plot, .. } => *plot,
+    }
+}
+
+/// `inv_generation_kind_spread_rejects_a_city_of_flats` (story 3.5 AC3):
+/// "97 flats and one of each other kind must fail".
+#[test]
+fn inv_generation_kind_spread_rejects_a_city_of_flats() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    assert!(
+        kind_spread_verdict([97, 1, 1, 1], [97, 1, 1, 1], 100, &cfg).is_err(),
+        "97 flats and one of each other kind must fail"
+    );
+    assert!(
+        kind_spread_verdict([50, 30, 10, 10], [50, 30, 10, 10], 100, &cfg).is_ok(),
+        "a balanced set passes"
+    );
+    assert!(
+        kind_spread_verdict([50, 30, 10, 10], [50, 30, 10, 0], 90, &cfg).is_err(),
+        "a missing kind fails"
+    );
+    assert!(
+        kind_spread_verdict([50, 30, 10, 10], [50, 30, 10, 5], 95, &cfg).is_err(),
+        "a kind laid out for half of what was placed fails"
+    );
+}
+
+/// `inv_generation_enterable_share_matches_the_committed_band` (story 3.5
+/// AC3): pooled over 0..256 so the count cannot drift to "100, barely".
+#[test]
+fn inv_generation_enterable_share_matches_the_committed_band() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let (mut enterable, mut placed) = (0i64, 0i64);
+    for city in city_pool() {
+        enterable += city.district.interiors.enterable_count();
+        placed += city.district.skeleton.envelopes.placed_count();
+    }
+    let share_x1000 = enterable * 100_000 / placed;
+    let lo = (cfg.interior_enterable_target_percent
+        - cfg.interior_enterable_target_tolerance_percent)
+        * 1000;
+    let hi = (cfg.interior_enterable_target_percent
+        + cfg.interior_enterable_target_tolerance_percent)
+        * 1000;
+    assert!(
+        share_x1000 >= lo && share_x1000 <= hi,
+        "pooled enterable share {}.{:03}% is outside [{}, {}]%",
+        share_x1000 / 1000,
+        share_x1000 % 1000,
+        lo / 1000,
+        hi / 1000
+    );
+}
+
+/// `inv_generation_every_type_with_an_optional_tail_shows_more_than_one_
+/// room_count` (Derek's direction): size buys rooms. Pooled over a fixed
+/// seed range; a type placed fewer than `MIN_SAMPLES` times in it is too
+/// rare to judge and is left out -- but at least half of the tailed types
+/// must be sampled enough, so the guard cannot go vacuous.
+#[test]
+fn inv_generation_every_type_with_an_optional_tail_shows_more_than_one_room_count() {
+    const MIN_SAMPLES: usize = 12;
+    let content = GenerationContent::committed();
+    let mut counts: std::collections::BTreeMap<u32, std::collections::BTreeSet<usize>> =
+        std::collections::BTreeMap::new();
+    let mut samples: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
+    for city in city_pool() {
+        for (_, ty, interior) in city.district.interiors.laid() {
+            counts.entry(ty).or_default().insert(interior.rooms.len());
+            *samples.entry(ty).or_default() += 1;
+        }
+    }
+    let tailed: Vec<&defs::BuildingTypeDef> = content
+        .building_types
+        .iter()
+        .filter(|b| !b.optional_rooms.is_empty())
+        .collect();
+    let judged: Vec<&&defs::BuildingTypeDef> = tailed
+        .iter()
+        .filter(|b| samples.get(&b.id).copied().unwrap_or(0) >= MIN_SAMPLES)
+        .collect();
+    assert!(
+        judged.len() * 2 >= tailed.len(),
+        "only {} of {} tailed types were sampled {MIN_SAMPLES}+ times",
+        judged.len(),
+        tailed.len()
+    );
+    let flat: Vec<String> = judged
+        .iter()
+        .filter(|b| counts[&b.id].len() < 2)
+        .map(|b| {
+            format!(
+                "{} ({} placements) always lays out {:?} rooms",
+                b.key, samples[&b.id], counts[&b.id]
+            )
+        })
+        .collect();
+    assert!(flat.is_empty(), "size must buy rooms: {flat:?}");
+}
+
+// --- story 3.5: the dense `DistrictSite` against a reference site ----------
+
+/// One write the dense site builder takes: `set` replaces a cell's
+/// profile, `set_rect` every cell of a rect, `merge` unions into a cell.
+/// A profile is a tag mask over [`SITE_REF_TAGS`] and an area mask over
+/// [`SITE_REF_AREAS`]; `shared` picks the interned constructor.
+#[derive(Debug, Clone)]
+enum SiteOp {
+    Set {
+        x: i32,
+        y: i32,
+        tags: u8,
+        areas: u8,
+        shared: bool,
+    },
+    SetRect {
+        x0: i32,
+        y0: i32,
+        w: i32,
+        h: i32,
+        tags: u8,
+        areas: u8,
+        shared: bool,
+    },
+    Merge {
+        x: i32,
+        y: i32,
+        tags: u8,
+        areas: u8,
+        shared: bool,
+    },
+}
+
+/// Committed tags the rules read (walls, floors, rooms, doors, fixtures),
+/// so `evaluate` over the two sites has real rows to disagree on.
+const SITE_REF_TAGS: [&str; 8] = [
+    "wall",
+    "wall_run",
+    "floor",
+    "room",
+    "threshold",
+    "entrance",
+    "lighting",
+    "counter",
+];
+const SITE_REF_AREAS: [AreaId; 3] = [101, 202, 303];
+/// The builder's bounds: small, and off the origin on both axes.
+const SITE_REF_BOUNDS: Rect = Rect {
+    x0: -2,
+    y0: -1,
+    x1: 5,
+    y1: 6,
+};
+
+fn site_op() -> impl Strategy<Value = SiteOp> {
+    let b = SITE_REF_BOUNDS;
+    let x = (b.x0 - 1)..(b.x1 + 1);
+    let y = (b.y0 - 1)..(b.y1 + 1);
+    prop_oneof![
+        (x.clone(), y.clone(), any::<u8>(), 0u8..8, any::<bool>()).prop_map(
+            |(x, y, tags, areas, shared)| SiteOp::Set {
+                x,
+                y,
+                tags,
+                areas,
+                shared
+            }
+        ),
+        (
+            x.clone(),
+            y.clone(),
+            0i32..5,
+            0i32..5,
+            any::<u8>(),
+            0u8..8,
+            any::<bool>()
+        )
+            .prop_map(|(x0, y0, w, h, tags, areas, shared)| SiteOp::SetRect {
+                x0,
+                y0,
+                w,
+                h,
+                tags,
+                areas,
+                shared
+            }),
+        (x, y, any::<u8>(), 0u8..8, any::<bool>()).prop_map(|(x, y, tags, areas, shared)| {
+            SiteOp::Merge {
+                x,
+                y,
+                tags,
+                areas,
+                shared,
+            }
+        }),
+    ]
+}
+
+fn masked<T: Copy>(mask: u8, items: &[T]) -> Vec<T> {
+    items
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| mask & (1 << i) != 0)
+        .map(|(_, &t)| t)
+        .collect()
+}
+
+proptest! {
+    #![proptest_config(persisted())]
+
+    /// `inv_generation_district_site_answers_as_the_reference_site` (story
+    /// 3.5, Tim's direction): every rule verdict over a district trusts
+    /// the dense `DistrictSite` index, so any sequence of `set`,
+    /// `set_rect` and `merge` over a small grid answers `tags_at`,
+    /// `areas_containing` and `subjects_in_area` (site-wide and per area)
+    /// exactly as `sim::rules::testing`'s map-backed site fed the same
+    /// cells, and `evaluate` over the committed rules finds the same
+    /// violations in both.
+    #[test]
+    fn inv_generation_district_site_answers_as_the_reference_site(
+        ops in prop::collection::vec(site_op(), 0..40)
+    ) {
+        use std::collections::{BTreeMap, BTreeSet};
+        let tag_ids: Vec<TagId> = SITE_REF_TAGS.iter().map(|k| tag_id(k)).collect();
+        let b = SITE_REF_BOUNDS;
+        let inside = |x: i32, y: i32| b.contains(x, y);
+        let mut dense = sim::generation::site::SiteBuilder::new(b);
+        let mut model: BTreeMap<(i32, i32), (BTreeSet<TagId>, BTreeSet<AreaId>)> = BTreeMap::new();
+        let profile = |dense: &mut sim::generation::site::SiteBuilder, tags: u8, areas: u8, shared: bool| {
+            let t = masked(tags, &tag_ids);
+            let slots: Vec<_> = masked(areas, &SITE_REF_AREAS).into_iter().map(|a| dense.area(a)).collect();
+            if shared { dense.shared_profile(&t, &slots) } else { dense.profile(&t, &slots) }
+        };
+        let entry = |tags: u8, areas: u8| {
+            (
+                masked(tags, &tag_ids).into_iter().collect::<BTreeSet<_>>(),
+                masked(areas, &SITE_REF_AREAS).into_iter().collect::<BTreeSet<_>>(),
+            )
+        };
+        for op in &ops {
+            match *op {
+                SiteOp::Set { x, y, tags, areas, shared } => {
+                    let p = profile(&mut dense, tags, areas, shared);
+                    dense.set(x, y, p);
+                    if inside(x, y) {
+                        model.insert((x, y), entry(tags, areas));
+                    }
+                }
+                SiteOp::SetRect { x0, y0, w, h, tags, areas, shared } => {
+                    let p = profile(&mut dense, tags, areas, shared);
+                    dense.set_rect(Rect { x0, y0, x1: x0 + w, y1: y0 + h }, p);
+                    for x in x0..x0 + w {
+                        for y in y0..y0 + h {
+                            if inside(x, y) {
+                                model.insert((x, y), entry(tags, areas));
+                            }
+                        }
+                    }
+                }
+                SiteOp::Merge { x, y, tags, areas, shared } => {
+                    let p = profile(&mut dense, tags, areas, shared);
+                    dense.merge(x, y, p);
+                    if inside(x, y) {
+                        let (t, a) = entry(tags, areas);
+                        let e = model.entry((x, y)).or_default();
+                        e.0.extend(t);
+                        e.1.extend(a);
+                    }
+                }
+            }
+        }
+        let dense = dense.finish();
+        let mut reference = SiteBuilder::new();
+        for (&(x, y), (tags, areas)) in &model {
+            let cell = Cell::new(x, y, 0);
+            reference = reference.cell(cell, &tags.iter().copied().collect::<Vec<_>>());
+            for &a in areas {
+                reference = reference.area(cell, a);
+            }
+        }
+        let reference = reference.build();
+
+        for x in b.x0 - 1..b.x1 + 1 {
+            for y in b.y0 - 1..b.y1 + 1 {
+                for floor in [0i8, 1] {
+                    let cell = Cell::new(x, y, floor);
+                    prop_assert_eq!(dense.tags_at(cell), reference.tags_at(cell), "tags at {:?}", cell);
+                    prop_assert_eq!(dense.areas_containing(cell), reference.areas_containing(cell), "areas at {:?}", cell);
+                }
+            }
+        }
+        let unused_tag: TagId = 999_999;
+        for &tag in tag_ids.iter().chain([&unused_tag]) {
+            prop_assert_eq!(dense.subjects_in_area(None, tag), reference.subjects_in_area(None, tag), "subjects of {}", tag);
+            for area in SITE_REF_AREAS.into_iter().chain([404]) {
+                prop_assert_eq!(
+                    dense.subjects_in_area(Some(area), tag),
+                    reference.subjects_in_area(Some(area), tag),
+                    "subjects of {} in {}", tag, area
+                );
+            }
+        }
+        let rules = sim::rules::RuleSet::committed();
+        let mut a = sim::rules::evaluate(rules, &dense);
+        let mut r = sim::rules::evaluate(rules, &reference);
+        a.sort();
+        r.sort();
+        prop_assert_eq!(a, r);
+    }
 }
 
 /// Seed `8619285945825134650` has a 206% p99 detour *ratio* (the old

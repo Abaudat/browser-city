@@ -3,7 +3,7 @@ expect: fail
 floor: 0
 legend: C=counter S=shopfront
 grid:
+.S
 C.
-..
 violations:
-counter_faces_a_shopfront at (0, 0, 0)
+counter_faces_a_shopfront at (1, 0, 0)

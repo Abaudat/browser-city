@@ -104,3 +104,26 @@ impl RuleSite for Site {
             .unwrap_or(&self.empty_cells)
     }
 }
+
+/// A hand-built `[[requirement]]` row for a test that must plant one
+/// rule the committed set does not carry (story 3.5: a requirement no
+/// layout can meet, to force the reject path) without matching on
+/// `RuleKind` itself outside this module.
+pub fn requirement(
+    id: u32,
+    key: &'static str,
+    container: TagId,
+    requires: TagId,
+    min: u32,
+) -> super::RuleDef {
+    super::RuleDef {
+        id,
+        key,
+        kind: super::RuleKind::Requirement {
+            container,
+            requires,
+            min,
+            max: None,
+        },
+    }
+}

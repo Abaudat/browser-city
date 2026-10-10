@@ -61,7 +61,7 @@ fn assert_one_source(key: &str, divisor: u32, seed: u64) {
     let changed_rules = rules_scaled(key, 1, divisor);
     let changed = GenerationContent {
         rules: RuleSet::for_test(&changed_rules),
-        building_types: committed.building_types,
+        ..committed
     };
     let after = plan(seed, &cfg, &changed).unwrap();
 

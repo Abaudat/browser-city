@@ -77,7 +77,7 @@ pub fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
     let start = Instant::now();
     let records = par_map_in_seed_order(n, threads(), |i| {
         let seed = mixed_band_seed(i);
-        let d = sim::generation::plan(seed, cfg, content).expect("pass 1 is total");
+        let d = sim::generation::plan_skeleton(seed, cfg, content).expect("pass 1 is total");
         let total = d.land_use.cols() as i64 * d.land_use.rows() as i64;
         let mut dev = [0i64; 3];
         for (k, (u, key, _)) in uses.iter().enumerate() {

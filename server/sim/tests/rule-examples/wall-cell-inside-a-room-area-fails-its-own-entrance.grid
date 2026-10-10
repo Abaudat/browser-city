@@ -1,4 +1,4 @@
-rules: building_has_an_entrance walled_room_has_waste_bin
+rules: building_has_an_entrance
 expect: fail
 floor: 0
 legend: W=wall+wall_run F=floor U=floor+waste T=threshold+wall_run D=threshold+wall_run+entrance P=pavement
@@ -14,4 +14,3 @@ WDWWWWW
 .P.....
 violations:
 building_has_an_entrance at (4, 2, 0)
-walled_room_has_waste_bin at (4, 2, 0)

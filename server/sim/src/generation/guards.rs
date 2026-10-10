@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use super::land_use::{LandUse, LandUseMap};
 use super::neighbourhoods::{Dials, corner};
-use super::{District, GenerationConfig, GenerationContent, site};
+use super::{DistrictSite, GenerationConfig, GenerationContent, Skeleton, site};
 use crate::rules::RuleSite as _;
 use crate::world::Rect;
 
@@ -19,7 +19,7 @@ fn adjacent(a: Rect, b: Rect) -> bool {
 }
 
 /// Distinct patches with their dials, in patch order.
-pub fn patches(d: &District) -> Vec<(usize, Dials, Vec<Rect>)> {
+pub fn patches(d: &Skeleton) -> Vec<(usize, Dials, Vec<Rect>)> {
     let mut by: BTreeMap<usize, (Dials, Vec<Rect>)> = BTreeMap::new();
     for h in d.land_use.neighbourhoods() {
         by.entry(h.patch)
@@ -54,7 +54,7 @@ pub struct CharacterParams {
 /// on each dial, enough corners, enough patches pairwise a legible step
 /// apart), `None` when it shows all of it.
 pub fn character_violation(
-    d: &District,
+    d: &Skeleton,
     cfg: &GenerationConfig,
     content: &GenerationContent,
     p: &CharacterParams,
@@ -168,7 +168,7 @@ fn keep_min(slot: &mut Option<(i64, usize, usize)>, v: i64, p: usize, q: usize) 
 /// carriers only when both patches hold at least `min_shops` commercial
 /// frontages.
 pub fn legibility(
-    d: &District,
+    d: &Skeleton,
     cfg: &GenerationConfig,
     content: &GenerationContent,
     step: i32,
@@ -235,7 +235,7 @@ pub fn legibility(
 /// The citizens one screen supports at the district's commercial core (the
 /// top density third) and at its residential edge (the bottom third).
 pub fn core_and_edge(
-    d: &District,
+    d: &Skeleton,
     cfg: &GenerationConfig,
     content: &GenerationContent,
 ) -> (u64, u64) {
@@ -325,7 +325,7 @@ pub fn institutional_pockets(lu: &LandUseMap) -> Pockets {
 
 /// The number of professions held by at least `min_employers` distinct
 /// placed workplaces in one city.
-pub fn profession_depth(d: &District, content: &GenerationContent, min_employers: u64) -> i64 {
+pub fn profession_depth(d: &Skeleton, content: &GenerationContent, min_employers: u64) -> i64 {
     let by_id: BTreeMap<u32, &crate::generated::defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
     let mut employers: BTreeMap<&str, u64> = BTreeMap::new();
@@ -351,7 +351,7 @@ pub struct Shuttered {
 impl Shuttered {
     /// Adds `d`'s commercial frontage; a frontage carrying no post is
     /// shuttered.
-    pub fn add(&mut self, d: &District, cfg: &GenerationConfig, content: &GenerationContent) {
+    pub fn add(&mut self, d: &Skeleton, cfg: &GenerationConfig, content: &GenerationContent) {
         let nc = cfg.neighbourhood;
         let by_id: BTreeMap<u32, &crate::generated::defs::BuildingTypeDef> =
             content.building_types.iter().map(|b| (b.id, b)).collect();
@@ -376,13 +376,8 @@ impl Shuttered {
 }
 
 /// `(biting, pairs)` over the (catchment, subject) targets `row` owes in
-/// `d`: how many have a lower bound of at least one.
-pub fn catchment_bite(
-    d: &District,
-    content: &GenerationContent,
-    row: &crate::rules::DistributionRow,
-) -> (u64, u64) {
-    let site = d.site(content);
+/// `site`: how many have a lower bound of at least one.
+pub fn catchment_bite(site: &DistrictSite, row: &crate::rules::DistributionRow) -> (u64, u64) {
     let read = match row.ratio {
         crate::rules::RowRatio::Read(r) => Some(r.parameter),
         crate::rules::RowRatio::Fixed(_) => None,
@@ -407,7 +402,7 @@ mod tests {
     use super::*;
     use crate::generated::defs;
     use crate::generation::land_use::{LandUseCell, LandUseMap};
-    use crate::generation::plan;
+    use crate::generation::{plan, plan_skeleton};
 
     fn setup() -> (GenerationConfig, GenerationContent<'static>) {
         (
@@ -432,7 +427,7 @@ mod tests {
     #[test]
     fn character_violation_is_none_at_the_committed_params_and_names_each_impossible_demand() {
         let (cfg, content) = setup();
-        let d = plan(1, &cfg, &content).unwrap();
+        let d = plan_skeleton(1, &cfg, &content).unwrap();
         let p = committed_params();
         assert_eq!(character_violation(&d, &cfg, &content, &p), None);
         let corners = character_violation(
@@ -483,7 +478,7 @@ mod tests {
         let (step, shops) = (n("legible_step") as i32, n("legibility_min_shops") as u64);
         let mut shop = Vec::new();
         for seed in 1..=3u64 {
-            let d = plan(seed, &cfg, &content).unwrap();
+            let d = plan_skeleton(seed, &cfg, &content).unwrap();
             let l = legibility(&d, &cfg, &content, step, shops);
             if let Some((v, _, _)) = l.affluence_shop_mix {
                 shop.push(v);
@@ -496,7 +491,7 @@ mod tests {
         // threshold of 101 would be missed and one of 0 never.
         assert!(shop.iter().any(|&v| v < 100), "{shop:?}");
         // No pair qualifies once the legible step is out of range.
-        let d = plan(1, &cfg, &content).unwrap();
+        let d = plan_skeleton(1, &cfg, &content).unwrap();
         let none = legibility(&d, &cfg, &content, 10_000, shops);
         assert_eq!(none.affluence_shop_mix, None);
         assert_eq!(none.age_distance, None);
@@ -506,7 +501,7 @@ mod tests {
     fn core_and_edge_are_busy_and_quieter_on_the_evidence_seeds() {
         let (cfg, content) = setup();
         for seed in 1..=3u64 {
-            let d = plan(seed, &cfg, &content).unwrap();
+            let d = plan_skeleton(seed, &cfg, &content).unwrap();
             let (core, edge) = core_and_edge(&d, &cfg, &content);
             assert!(core > 0, "seed {seed}");
             assert!(edge < core, "seed {seed}: edge {edge} core {core}");
@@ -547,7 +542,7 @@ mod tests {
     #[test]
     fn institutional_pockets_sees_no_touch_on_a_committed_seed() {
         let (cfg, content) = setup();
-        let d = plan(1, &cfg, &content).unwrap();
+        let d = plan_skeleton(1, &cfg, &content).unwrap();
         let p = institutional_pockets(&d.land_use);
         assert!(p.touching.is_none());
         assert!(p.count as i64 >= cfg.institutional_min_pockets);
@@ -556,7 +551,7 @@ mod tests {
     #[test]
     fn profession_depth_counts_professions_held_by_enough_workplaces() {
         let (cfg, content) = setup();
-        let d = plan(1, &cfg, &content).unwrap();
+        let d = plan_skeleton(1, &cfg, &content).unwrap();
         assert_eq!(profession_depth(&d, &content, 1_000_000), 0);
         let at_one = profession_depth(&d, &content, 1);
         let at_committed = profession_depth(
@@ -581,7 +576,7 @@ mod tests {
             .filter_map(|r| r.as_distribution())
             .find(|r| matches!(r.scope, crate::rules::DistributionScope::Catchment { .. }))
             .expect("a scoped row");
-        let (biting, pairs) = catchment_bite(&d, &content, &row);
+        let (biting, pairs) = catchment_bite(&d.site(&content), &row);
         assert!(pairs > 0 && biting <= pairs);
         assert_eq!((biting, pairs), (4, 4));
     }

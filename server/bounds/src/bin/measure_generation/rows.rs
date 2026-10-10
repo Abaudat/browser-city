@@ -20,8 +20,9 @@ struct Record {
 }
 
 /// The `[[distribution]]` rows over `n` seeds: the seeds `check_rules`
-/// rejects (the any-seed property `inv_generation_committed_rules_hold_for_
-/// any_seed`) and, per row, the pooled mean placed count.
+/// rejects (the property `inv_generation_committed_rules_hold_for_any_seed`
+/// holds over the shared city pool; this is the same verdict over `n`
+/// fresh seeds) and, per row, the pooled mean placed count.
 pub fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
     use sim::rules::RuleSite;
     let rows: Vec<sim::rules::DistributionRow> = content
@@ -37,8 +38,25 @@ pub fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
         .collect();
     let records = par_map_in_seed_order(n, threads(), |i| {
         let seed = seed_from_ids(MEASURE_ROWS_SEED_SALT, i);
-        let d = sim::generation::plan(seed, cfg, content)
+        // Subjects and their dials are passes 1-5's and pass 6 adds no
+        // building tag, so every building stands as a shell here: the
+        // rows are judged exactly as `check_rules` judges them, without
+        // laying out every interior of a million cities.
+        let skeleton = sim::generation::plan_skeleton(seed, cfg, content)
             .expect("the committed config plans every seed");
+        let shells = skeleton
+            .building_types
+            .assignments()
+            .iter()
+            .map(|a| sim::generation::InteriorOutcome::Shell {
+                plot: a.plot,
+                building_type: a.building_type,
+            })
+            .collect();
+        let d = sim::generation::District {
+            skeleton,
+            interiors: sim::generation::InteriorMap::test_fixture(shells),
+        };
         let site = d.site(content);
         let failing = d.check_rules(content).err().map(|e| e.to_string());
         let placed = rows

@@ -29,14 +29,15 @@ mod bands;
 mod common;
 mod detour;
 mod exhaustive;
+mod interiors;
 mod pooled;
 mod regions;
 mod rows;
 mod trace;
 
 use bounds::generation_stamp::{
-    BAND_SWEEP, DETOUR_SWEEP, EXHAUSTIVE_LOOP, MeasuredBlock, POOLED_EVIDENCE, REGION_LOSS_SWEEP,
-    ROWS_SWEEP,
+    BAND_SWEEP, DETOUR_SWEEP, EXHAUSTIVE_LOOP, INTERIORS_SWEEP, MeasuredBlock, POOLED_EVIDENCE,
+    REGION_LOSS_SWEEP, ROWS_SWEEP,
 };
 use common::*;
 use sim::generated::defs;
@@ -51,17 +52,19 @@ enum Sweep {
     Rows,
     Regions,
     Pooled,
+    Interiors,
 }
 
 /// Each registered block and the sweep that prints it: the one table
 /// `main` dispatches through.
-const SWEEPS: [(&MeasuredBlock, Sweep); 6] = [
+const SWEEPS: [(&MeasuredBlock, Sweep); 7] = [
     (&EXHAUSTIVE_LOOP, Sweep::Exhaustive),
     (&DETOUR_SWEEP, Sweep::Detour),
     (&BAND_SWEEP, Sweep::Bands),
     (&ROWS_SWEEP, Sweep::Rows),
     (&REGION_LOSS_SWEEP, Sweep::Regions),
     (&POOLED_EVIDENCE, Sweep::Pooled),
+    (&INTERIORS_SWEEP, Sweep::Interiors),
 ];
 
 fn sweep_for(subcommand: &str) -> Option<Sweep> {
@@ -99,6 +102,7 @@ fn main() {
         Sweep::Bands => bands::band_sweep(&cfg, &content, count(BAND_SEED_COUNT_DEFAULT)),
         Sweep::Rows => rows::rows_sweep(&cfg, &content, count(rows::ROWS_SEED_COUNT_DEFAULT)),
         Sweep::Pooled => pooled::pooled_sweep(&cfg),
+        Sweep::Interiors => interiors::interiors_sweep(&cfg, &content),
         Sweep::Regions => {
             regions::region_loss_sweep(&cfg, count(regions::REGION_SEED_COUNT_DEFAULT))
         }

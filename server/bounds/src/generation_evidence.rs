@@ -1426,6 +1426,314 @@ pub fn building_types_svg(
     )
 }
 
+// --- pass 6: the interior layout -------------------------------------------
+
+/// Pixels per world cell in the contact-sheet insets: a room is
+/// unreadable at the 512-cell overview's one pixel per cell (Quentin's/
+/// Artie's direction), readable at this.
+const INTERIOR_CELL_PX: i64 = 9;
+/// The widest footprint the envelope pass allows, in cells, on each axis
+/// (a front on a side street turns a 20x16 footprint on its side) -- the
+/// size of one contact-sheet slot.
+const SHEET_SLOT_CELLS: (i64, i64) = (20, 20);
+const SHEET_COLUMNS: i64 = 6;
+const SHEET_PER_KIND: usize = 12;
+/// Horizontal pitch of the legend columns, in pixels.
+const LEGEND_PITCH: i64 = 190;
+
+/// The contact sheet's own four panels, a derived structural kind each --
+/// whether the type is a dwelling (the `per` basis of a distribution
+/// row, the same derivation the building-type sheet's classes use) and,
+/// for everything else, which land use it is sited on (the `land_uses`
+/// mask, never a key).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum SheetKind {
+    Housing,
+    Commercial,
+    Industrial,
+    Institutional,
+}
+
+impl SheetKind {
+    const ALL: [SheetKind; 4] = [
+        SheetKind::Housing,
+        SheetKind::Commercial,
+        SheetKind::Industrial,
+        SheetKind::Institutional,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            SheetKind::Housing => "housing (and mixed use)",
+            SheetKind::Commercial => "commercial workplaces",
+            SheetKind::Industrial => "industrial workplaces",
+            SheetKind::Institutional => "institutional workplaces",
+        }
+    }
+
+    fn tint(self) -> &'static str {
+        match self {
+            SheetKind::Housing => "#7cb342",
+            SheetKind::Commercial => "#3498db",
+            SheetKind::Industrial => "#e67e22",
+            SheetKind::Institutional => "#8e44ad",
+        }
+    }
+}
+
+fn sheet_kind(def: &defs::BuildingTypeDef, tags: &ClassTags) -> SheetKind {
+    if def.tags.iter().any(|t| tags.per.contains(t)) {
+        SheetKind::Housing
+    } else if def.land_uses[3] {
+        SheetKind::Institutional
+    } else if def.land_uses[2] {
+        SheetKind::Industrial
+    } else {
+        SheetKind::Commercial
+    }
+}
+
+const ROOM_PALETTE: [&str; 16] = [
+    "#ffe0b2", "#ffccbc", "#d7ccc8", "#f8bbd0", "#bbdefb", "#b3e5fc", "#cfd8dc", "#c8e6c9",
+    "#e1bee7", "#fff9c4", "#b2dfdb", "#dcedc8", "#f0f4c3", "#ffab91", "#80cbc4", "#ce93d8",
+];
+const FIXTURE_PALETTE: [&str; 12] = [
+    "#d32f2f", "#1976d2", "#388e3c", "#f57c00", "#7b1fa2", "#0097a7", "#5d4037", "#c2185b",
+    "#455a64", "#afb42b", "#512da8", "#00796b",
+];
+
+/// One interior drawn at `(ox, oy)` in a slot: the footprint as the dark
+/// shell, each room a pale rect (tinted by its room type's position in
+/// the committed table), each doorway white, the street door yellow with
+/// a heavy stroke, each fixture a small square tinted by its tag.
+fn interior_inset(
+    interior: &sim::generation::Interior,
+    content: &GenerationContent,
+    fixture_tags: &[u32],
+    ox: i64,
+    oy: i64,
+) -> String {
+    let px = INTERIOR_CELL_PX;
+    let fp = interior.footprint;
+    let at = |x: i32, y: i32| (ox + (x - fp.x0) as i64 * px, oy + (y - fp.y0) as i64 * px);
+    let mut s = String::new();
+    s.push_str(&format!(
+        "<rect x=\"{ox}\" y=\"{oy}\" width=\"{}\" height=\"{}\" fill=\"#37474f\"/>\n",
+        fp.width() * px,
+        fp.height() * px
+    ));
+    for r in &interior.rooms {
+        let (x, y) = at(r.rect.x0, r.rect.y0);
+        let idx = content
+            .room_types
+            .iter()
+            .position(|t| t.id == r.room_type)
+            .unwrap_or(0);
+        s.push_str(&format!(
+            "<rect x=\"{x}\" y=\"{y}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
+            r.rect.width() * px,
+            r.rect.height() * px,
+            ROOM_PALETTE[idx % ROOM_PALETTE.len()]
+        ));
+    }
+    for t in &interior.thresholds {
+        let (x, y) = at(t.x, t.y);
+        let fill = if t.entrance { "#ffeb3b" } else { "#ffffff" };
+        s.push_str(&format!(
+            "<rect x=\"{x}\" y=\"{y}\" width=\"{px}\" height=\"{px}\" fill=\"{fill}\" stroke=\"#d81b60\" stroke-width=\"{}\"/>\n",
+            if t.entrance { 2 } else { 1 }
+        ));
+    }
+    for f in &interior.fixtures {
+        let (x, y) = at(f.x, f.y);
+        let idx = fixture_tags.iter().position(|&t| t == f.tag).unwrap_or(0);
+        s.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" stroke=\"#000\" stroke-width=\"0.5\"/>\n",
+            x + 1,
+            y + 1,
+            px - 2,
+            px - 2,
+            FIXTURE_PALETTE[idx % FIXTURE_PALETTE.len()]
+        ));
+    }
+    s
+}
+
+/// Pass 6's evidence (`docs/generation.md`'s Interior layout section):
+/// the enterable set by kind as a footprint map (a shell grey, a
+/// rejected building red -- none at the committed config), then a contact
+/// sheet of [`SHEET_PER_KIND`] interiors per kind side by side at
+/// viewport scale, so "a hundred places, not a hundred boxes" is judged
+/// by eye, and a legend of every room type and fixture tag the sheet
+/// shows. Rooms as rects, never one element per cell.
+pub fn interiors_svg(
+    net: &StreetNetwork,
+    em: &EnvelopeMap,
+    bt: &BuildingTypeMap,
+    io: &sim::generation::InteriorMap,
+    content: &GenerationContent,
+) -> String {
+    let site = net.site();
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let tags = class_tags(content);
+    let kind_of_plot: std::collections::BTreeMap<u32, SheetKind> = bt
+        .assignments()
+        .iter()
+        .map(|a| (a.plot, sheet_kind(by_id[&a.building_type], &tags)))
+        .collect();
+    let outcome_of_plot: std::collections::BTreeMap<u32, &sim::generation::InteriorOutcome> = io
+        .outcomes()
+        .iter()
+        .map(|o| {
+            let plot = match o {
+                sim::generation::InteriorOutcome::Laid { plot, .. }
+                | sim::generation::InteriorOutcome::Shell { plot, .. }
+                | sim::generation::InteriorOutcome::Rejected { plot, .. } => *plot,
+            };
+            (plot, o)
+        })
+        .collect();
+
+    // Every fixture tag the layouts actually placed, as the fixture
+    // palette order -- read off the output, never a tag key.
+    let mut fixture_tags: Vec<u32> = io
+        .laid()
+        .flat_map(|(_, _, i)| i.fixtures.iter().map(|f| f.tag))
+        .collect();
+    fixture_tags.sort_unstable();
+    fixture_tags.dedup();
+
+    let slot_w = SHEET_SLOT_CELLS.0 * INTERIOR_CELL_PX + 12;
+    let slot_h = SHEET_SLOT_CELLS.1 * INTERIOR_CELL_PX + 22;
+    let w = (SHEET_COLUMNS * slot_w + 16).max(site.width());
+
+    // The overview: one rect per placed envelope, tinted by derived kind.
+    let mut overview = String::new();
+    for e in em.envelopes() {
+        let fill = match outcome_of_plot.get(&e.plot) {
+            Some(sim::generation::InteriorOutcome::Laid { .. }) => kind_of_plot[&e.plot].tint(),
+            Some(sim::generation::InteriorOutcome::Rejected { .. }) => "#c0392b",
+            _ => "#bdbdbd",
+        };
+        overview.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{fill}\"/>\n",
+            e.footprint.x0,
+            e.footprint.y0,
+            e.footprint.width(),
+            e.footprint.height()
+        ));
+    }
+
+    let mut y = site.height() + 24;
+    let mut legend = String::new();
+    for (i, kind) in SheetKind::ALL.iter().enumerate() {
+        legend.push_str(&format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"12\" height=\"12\" fill=\"{}\"/><text x=\"{}\" y=\"{y}\" font-family=\"sans-serif\" font-size=\"11\">{}</text>\n",
+            8 + i as i64 * LEGEND_PITCH,
+            y - 11,
+            kind.tint(),
+            24 + i as i64 * LEGEND_PITCH,
+            kind.label()
+        ));
+    }
+    legend.push_str(&format!(
+        "<rect x=\"{}\" y=\"{}\" width=\"12\" height=\"12\" fill=\"#bdbdbd\"/><text x=\"{}\" y=\"{y}\" font-family=\"sans-serif\" font-size=\"11\">solid shell (no room program)</text>\n",
+        8 + 4 * LEGEND_PITCH,
+        y - 11,
+        24 + 4 * LEGEND_PITCH
+    ));
+    y += 28;
+
+    // The contact sheets.
+    let mut sheets = String::new();
+    for kind in SheetKind::ALL {
+        let all: Vec<(u32, u32, &sim::generation::Interior)> = io
+            .laid()
+            .filter(|(plot, _, _)| kind_of_plot[plot] == kind)
+            .collect();
+        sheets.push_str(&format!(
+            "<text x=\"8\" y=\"{y}\" font-family=\"sans-serif\" font-size=\"13\" font-weight=\"bold\">{}: {} of {} enterable</text>\n",
+            kind.label(),
+            SHEET_PER_KIND.min(all.len()),
+            all.len()
+        ));
+        let stride = (all.len() / SHEET_PER_KIND).max(1);
+        let picks: Vec<_> = all.iter().step_by(stride).take(SHEET_PER_KIND).collect();
+        for (i, (_, ty, interior)) in picks.iter().enumerate() {
+            let col = i as i64 % SHEET_COLUMNS;
+            let row = i as i64 / SHEET_COLUMNS;
+            let (ox, oy) = (8 + col * slot_w, y + 22 + row * slot_h);
+            sheets.push_str(&format!(
+                "<text x=\"{ox}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"9\">{} {}x{} r{}</text>\n",
+                oy - 3,
+                by_id[ty].key,
+                interior.footprint.width(),
+                interior.footprint.height(),
+                interior.rooms.len()
+            ));
+            sheets.push_str(&interior_inset(interior, content, &fixture_tags, ox, oy));
+        }
+        let rows = (picks.len() as i64 + SHEET_COLUMNS - 1) / SHEET_COLUMNS;
+        y += 22 + rows * slot_h + 12;
+    }
+
+    // The room-type and fixture legend, derived from the committed tables.
+    let mut key = String::new();
+    key.push_str(&format!(
+        "<text x=\"8\" y=\"{y}\" font-family=\"sans-serif\" font-size=\"12\" font-weight=\"bold\">rooms (shell dark, doorway white, street door yellow with a pink stroke) and fixtures</text>\n"
+    ));
+    y += 8;
+    for (i, r) in content.room_types.iter().enumerate() {
+        let (cx, cy) = (
+            8 + (i as i64 % 6) * LEGEND_PITCH,
+            y + 14 + (i as i64 / 6) * 18,
+        );
+        key.push_str(&format!(
+            "<rect x=\"{cx}\" y=\"{}\" width=\"12\" height=\"12\" fill=\"{}\" stroke=\"#777\" stroke-width=\"0.5\"/><text x=\"{}\" y=\"{cy}\" font-family=\"sans-serif\" font-size=\"11\">{}</text>\n",
+            cy - 11,
+            ROOM_PALETTE[i % ROOM_PALETTE.len()],
+            cx + 16,
+            r.key
+        ));
+    }
+    y += 14 + ((content.room_types.len() as i64 + 5) / 6) * 18 + 6;
+    for (i, &tag) in fixture_tags.iter().enumerate() {
+        let name = content
+            .tags
+            .iter()
+            .find(|t| t.id == tag)
+            .map_or("?", |t| t.key);
+        let (cx, cy) = (
+            8 + (i as i64 % 6) * LEGEND_PITCH,
+            y + 14 + (i as i64 / 6) * 18,
+        );
+        key.push_str(&format!(
+            "<rect x=\"{cx}\" y=\"{}\" width=\"12\" height=\"12\" fill=\"{}\" stroke=\"#000\" stroke-width=\"0.5\"/><text x=\"{}\" y=\"{cy}\" font-family=\"sans-serif\" font-size=\"11\">{name}</text>\n",
+            cy - 11,
+            FIXTURE_PALETTE[i % FIXTURE_PALETTE.len()],
+            cx + 16
+        ));
+    }
+    y += 14 + ((fixture_tags.len() as i64 + 5) / 6) * 18 + 10;
+
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{y}\" viewBox=\"0 0 {w} {y}\">\n\
+         <rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{y}\" fill=\"#ffffff\"/>\n\
+         <rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" fill=\"#f5f5f5\"/>\n\
+         {overview}{legend}{sheets}{key}</svg>\n",
+        site.width(),
+        site.height()
+    )
+}
+
+pub fn interiors_svg_path(seed: u64) -> std::path::PathBuf {
+    crate::world_fixture::repo_root_dir()
+        .join("docs")
+        .join("generation")
+        .join(format!("interiors-seed-{seed}.svg"))
+}
+
 /// Every evidence document [`EVIDENCE_SEEDS`] commits, for one seed.
 /// `envelopes` serves both the plot-subdivision and building-envelope
 /// Evidence rows in `docs/generation.md` -- one file for both passes.
@@ -1435,6 +1743,7 @@ pub struct EvidenceSvgs {
     pub streets: String,
     pub envelopes: String,
     pub building_types: String,
+    pub interiors: String,
     /// Story 3.7: the four dials, the street network and one boundary
     /// strip ([`crate::neighbourhood_evidence`]).
     pub neighbourhoods: String,
@@ -1455,16 +1764,28 @@ pub fn build_all() -> Vec<EvidenceSvgs> {
                 .expect("the live committed config must generate every evidence seed");
             EvidenceSvgs {
                 seed,
-                land_use: land_use_svg(&d.land_use, &cfg),
-                streets: streets_svg(&d.land_use, &d.streets),
-                envelopes: envelopes_svg(&d.land_use, &d.streets, &d.plots, &d.envelopes),
+                land_use: land_use_svg(&d.skeleton.land_use, &cfg),
+                streets: streets_svg(&d.skeleton.land_use, &d.skeleton.streets),
+                envelopes: envelopes_svg(
+                    &d.skeleton.land_use,
+                    &d.skeleton.streets,
+                    &d.skeleton.plots,
+                    &d.skeleton.envelopes,
+                ),
                 building_types: building_types_svg(
-                    &d.land_use,
-                    &d.streets,
-                    &d.plots,
-                    &d.envelopes,
-                    &d.building_types,
+                    &d.skeleton.land_use,
+                    &d.skeleton.streets,
+                    &d.skeleton.plots,
+                    &d.skeleton.envelopes,
+                    &d.skeleton.building_types,
                     &cfg,
+                    &content,
+                ),
+                interiors: interiors_svg(
+                    &d.skeleton.streets,
+                    &d.skeleton.envelopes,
+                    &d.skeleton.building_types,
+                    &d.interiors,
                     &content,
                 ),
                 neighbourhoods: crate::neighbourhood_evidence::neighbourhoods_svg(
@@ -1490,7 +1811,10 @@ pub fn build_detour_worst_svgs() -> Vec<(u64, String)> {
         .map(|&(seed, _exhaustive_excess)| {
             let d = sim::generation::plan(seed, &cfg, &content)
                 .expect("pass 1 is total over the live committed config");
-            (seed, detour_worst_svg(&d.land_use, &d.streets))
+            (
+                seed,
+                detour_worst_svg(&d.skeleton.land_use, &d.skeleton.streets),
+            )
         })
         .collect()
 }

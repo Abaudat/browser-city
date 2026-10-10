@@ -8,7 +8,9 @@
 //! prints each header through [`stamp`], and [`check_doc`] holds
 //! `docs/generation.md` to the registry.
 
-use sim::generated::defs::{BalanceSeed, BuildingTypeDef};
+use sim::generated::defs::{
+    BalanceSeed, BuildingTypeDef, RoomTypeDef, TagDef, TagPlacement, TagStructure,
+};
 use sim::generation::GenerationContent;
 use sim::rules::RuleDef;
 
@@ -159,6 +161,19 @@ pub const POOLED_EVIDENCE: MeasuredBlock = MeasuredBlock {
     ],
 };
 
+pub const INTERIORS_SWEEP: MeasuredBlock = MeasuredBlock {
+    label: "interiors sweep",
+    subcommand: "interiors",
+    rerun_args: "",
+    kind: BlockKind::FixedSeed,
+    ceilings: &[
+        "generation.interiors.min_enterable_count",
+        "generation.interiors.max_rejected_percent",
+        "generation.interiors.enterable_target_percent",
+        "generation.interiors.enterable_target_tolerance_percent",
+    ],
+};
+
 /// Every block `docs/generation.md` carries a stamped copy of.
 pub const MEASURED_BLOCKS: &[MeasuredBlock] = &[
     DETOUR_SWEEP,
@@ -167,6 +182,7 @@ pub const MEASURED_BLOCKS: &[MeasuredBlock] = &[
     ROWS_SWEEP,
     REGION_LOSS_SWEEP,
     POOLED_EVIDENCE,
+    INTERIORS_SWEEP,
 ];
 
 const AUTHORED: &str = "authored input, not a measured ceiling";
@@ -178,6 +194,19 @@ const ASSERTED: &str =
 /// the reason it is not a measured ceiling. A new generation key is in
 /// exactly one of the two places or the build is red.
 pub const NOT_MEASURED: &[(&str, &str)] = &[
+    ("generation.interiors.max_layout_attempts", AUTHORED),
+    ("generation.interiors.max_room_aspect", AUTHORED),
+    (
+        "generation.interiors.dwelling_min_enterable_percent",
+        ASSERTED,
+    ),
+    ("generation.interiors.shop_min_enterable_percent", ASSERTED),
+    ("generation.interiors.cafe_min_enterable_percent", ASSERTED),
+    (
+        "generation.interiors.back_room_min_enterable_percent",
+        ASSERTED,
+    ),
+    ("generation.interiors.max_kind_share_percent", ASSERTED),
     (
         "generation.envelopes.commercial_min_interior_depth_cells",
         AUTHORED,
@@ -325,6 +354,8 @@ fn building_type_line(t: &BuildingTypeDef) -> String {
         prefers_site,
         density_affinity,
         professions,
+        rooms,
+        optional_rooms,
     } = *t;
     fn join<T: ToString>(items: &[T]) -> String {
         items
@@ -341,13 +372,78 @@ fn building_type_line(t: &BuildingTypeDef) -> String {
             .join("")
     }
     format!(
-        "building_type.{id}:{key}:tags={}:land_uses={}:density={density_min}..{density_max}:affluence={affluence_min}..{affluence_max}:min_interior={min_interior_width_cells}x{min_interior_depth_cells}:weight={weight}:requires_site={}:prefers_site={}:density_affinity={density_affinity}:professions={}\n",
+        "building_type.{id}:{key}:tags={}:land_uses={}:density={density_min}..{density_max}:affluence={affluence_min}..{affluence_max}:min_interior={min_interior_width_cells}x{min_interior_depth_cells}:weight={weight}:requires_site={}:prefers_site={}:density_affinity={density_affinity}:professions={}:rooms={}:optional_rooms={}\n",
         join(tags),
         flags(&land_uses),
         flags(&requires_site),
         flags(&prefers_site),
         join(professions),
+        join(rooms),
+        join(optional_rooms),
     )
+}
+
+/// One canonical line per `RoomTypeDef`, destructured exhaustively.
+fn room_type_line(t: &RoomTypeDef) -> String {
+    let RoomTypeDef {
+        id,
+        key,
+        tags,
+        access,
+        rear,
+        min_width_cells,
+        min_depth_cells,
+        weight,
+    } = *t;
+    let tags = tags
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    let rear = rear.map_or_else(
+        || "-".to_string(),
+        |r| r.iter().map(u32::to_string).collect::<Vec<_>>().join(","),
+    );
+    format!(
+        "room_type.{id}:{key}:tags={tags}:access={access}:rear={rear}:min={min_width_cells}x{min_depth_cells}:weight={weight}\n"
+    )
+}
+
+/// One canonical line per `TagDef`, destructured exhaustively.
+fn tag_line(t: &TagDef) -> String {
+    let TagDef {
+        id,
+        key,
+        role,
+        structure,
+        placement,
+    } = *t;
+    let role = role.map_or_else(
+        || "-".to_string(),
+        |r| {
+            r.layers
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        },
+    );
+    let structure = structure.map_or("-", |s| match s {
+        TagStructure::Wall => "wall",
+        TagStructure::WallRun => "wall_run",
+        TagStructure::Floor => "floor",
+        TagStructure::Threshold => "threshold",
+        TagStructure::Entrance => "entrance",
+        TagStructure::Pavement => "pavement",
+        TagStructure::Fixture => "fixture",
+    });
+    let placement = placement.map_or("-", |p| match p {
+        TagPlacement::WallBacked => "wall_backed",
+        TagPlacement::FreeStanding => "free_standing",
+        TagPlacement::WallMounted => "wall_mounted",
+        TagPlacement::FacingDoor => "facing_door",
+    });
+    format!("tag.{id}:{key}:role={role}:structure={structure}:placement={placement}\n")
 }
 
 /// FNV-1a (64-bit) over the sorted canonical lines of every input the
@@ -356,13 +452,21 @@ fn building_type_line(t: &BuildingTypeDef) -> String {
 /// non-`generation.` balance rows do not matter.
 pub fn inputs_fingerprint(balance: &[BalanceSeed], content: &GenerationContent) -> u64 {
     let rule_lines: Vec<String> = content.rules.iter().map(RuleDef::canonical_line).collect();
-    fingerprint_of(balance, &rule_lines, content.building_types)
+    fingerprint_of(
+        balance,
+        &rule_lines,
+        content.building_types,
+        content.room_types,
+        content.tags,
+    )
 }
 
 fn fingerprint_of(
     balance: &[BalanceSeed],
     rule_lines: &[String],
     building_types: &[BuildingTypeDef],
+    room_types: &[RoomTypeDef],
+    tags: &[TagDef],
 ) -> u64 {
     let mut lines: Vec<String> = balance
         .iter()
@@ -371,6 +475,8 @@ fn fingerprint_of(
         .collect();
     lines.extend(rule_lines.iter().map(|l| format!("rule.{l}\n")));
     lines.extend(building_types.iter().map(building_type_line));
+    lines.extend(room_types.iter().map(room_type_line));
+    lines.extend(tags.iter().map(tag_line));
     lines.sort_unstable();
     let mut hash = FNV_OFFSET;
     for byte in lines.iter().flat_map(|l| l.bytes()) {
@@ -757,12 +863,12 @@ mod tests {
         let mut changed = lines.clone();
         changed[0].push('!');
         assert_ne!(
-            fingerprint_of(&rows(), &lines, c.building_types),
-            fingerprint_of(&rows(), &changed, c.building_types)
+            fingerprint_of(&rows(), &lines, c.building_types, c.room_types, c.tags),
+            fingerprint_of(&rows(), &changed, c.building_types, c.room_types, c.tags)
         );
         assert_eq!(
             fp(&rows(), &c),
-            fingerprint_of(&rows(), &lines, c.building_types)
+            fingerprint_of(&rows(), &lines, c.building_types, c.room_types, c.tags)
         );
     }
 
@@ -774,6 +880,8 @@ mod tests {
         let changed = GenerationContent {
             rules: base.rules,
             building_types: &types,
+            room_types: base.room_types,
+            tags: base.tags,
         };
         assert_ne!(fp(&rows(), &base), fp(&rows(), &changed));
     }
@@ -1118,6 +1226,20 @@ mod tests {
                     ..t
                 },
             ),
+            (
+                "rooms",
+                BuildingTypeDef {
+                    rooms: &OTHER_TAGS,
+                    ..t
+                },
+            ),
+            (
+                "optional_rooms",
+                BuildingTypeDef {
+                    optional_rooms: &OTHER_TAGS,
+                    ..t
+                },
+            ),
         ];
         for (field, m) in mutants {
             assert_ne!(
@@ -1125,6 +1247,95 @@ mod tests {
                 building_type_line(&m),
                 "field `{field}` is not hashed"
             );
+        }
+    }
+
+    #[test]
+    fn changes_with_every_field_of_a_room_type_and_a_tag() {
+        let base = GenerationContent::committed();
+        let r = base.room_types[0];
+        let line = room_type_line(&r);
+        static OTHER: [u32; 2] = [1, 2];
+        let mutants: Vec<(&str, RoomTypeDef)> = vec![
+            ("id", RoomTypeDef { id: r.id + 1, ..r }),
+            ("key", RoomTypeDef { key: "zzz", ..r }),
+            ("tags", RoomTypeDef { tags: &OTHER, ..r }),
+            (
+                "access",
+                RoomTypeDef {
+                    access: r.access + 1,
+                    ..r
+                },
+            ),
+            (
+                "rear",
+                RoomTypeDef {
+                    rear: if r.rear.is_some() { None } else { Some(&OTHER) },
+                    ..r
+                },
+            ),
+            (
+                "min_width_cells",
+                RoomTypeDef {
+                    min_width_cells: r.min_width_cells + 1,
+                    ..r
+                },
+            ),
+            (
+                "min_depth_cells",
+                RoomTypeDef {
+                    min_depth_cells: r.min_depth_cells + 1,
+                    ..r
+                },
+            ),
+            (
+                "weight",
+                RoomTypeDef {
+                    weight: r.weight + 1,
+                    ..r
+                },
+            ),
+        ];
+        for (field, m) in mutants {
+            assert_ne!(
+                line,
+                room_type_line(&m),
+                "room type field `{field}` is not hashed"
+            );
+        }
+        let t = *base
+            .tags
+            .iter()
+            .find(|t| t.placement.is_some())
+            .expect("a placed tag");
+        let line = tag_line(&t);
+        let mutants: Vec<(&str, TagDef)> = vec![
+            ("id", TagDef { id: t.id + 1, ..t }),
+            ("key", TagDef { key: "zzz", ..t }),
+            (
+                "role",
+                TagDef {
+                    role: Some(sim::generated::defs::RoleDef { layers: &OTHER }),
+                    ..t
+                },
+            ),
+            (
+                "structure",
+                TagDef {
+                    structure: Some(TagStructure::Wall),
+                    ..t
+                },
+            ),
+            (
+                "placement",
+                TagDef {
+                    placement: None,
+                    ..t
+                },
+            ),
+        ];
+        for (field, m) in mutants {
+            assert_ne!(line, tag_line(&m), "tag field `{field}` is not hashed");
         }
     }
 

@@ -344,6 +344,258 @@ fn check_building_type_profession_refs(
     Ok(())
 }
 
+/// Story 3.5: resolves one room type's own `tags` against the declared
+/// tag set -- the same shape [`resolve_building_type_tags`] has.
+fn resolve_room_type_tags(
+    path: &std::path::Path,
+    key: &Located<String>,
+    tags: &[String],
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<Vec<u32>, DefsError> {
+    let mut ids = Vec::with_capacity(tags.len());
+    for name in tags {
+        match tag_ids.get(name.as_str()) {
+            Some(&id) => ids.push(id),
+            None => {
+                let accepted: Vec<&str> = tag_ids.keys().copied().collect();
+                return Err(DefsError::new(
+                    path,
+                    key.line,
+                    key.col,
+                    format!(
+                        "room type '{}' names unknown tag '{}' -- accepted tags are [{}]",
+                        key.value,
+                        name,
+                        accepted.join(", ")
+                    ),
+                ));
+            }
+        }
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
+}
+
+/// The three access tags a room type carries exactly one of (Derek's
+/// direction): what "back room" means (a staff room), what a key or an
+/// opening-hours rule reads later.
+const ACCESS_TAGS: [&str; 3] = ["public", "staff", "private"];
+
+/// Story 3.5: a room is at least two walkable cells on both axes ("no
+/// room narrower than two walkable cells", Artie's direction), has a
+/// positive weight, and carries exactly one access tag.
+fn check_room_types(
+    entries: &[RoomTypeEntry],
+    tag_ids: &BTreeMap<&str, u32>,
+) -> Result<(), DefsError> {
+    for e in entries {
+        for k in e.rear.iter().flatten() {
+            if !entries.iter().any(|o| &o.key.value == k) {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "room type '{}' names unknown room type '{k}' in rear",
+                        e.key.value
+                    ),
+                ));
+            }
+        }
+        resolve_room_type_tags(&e.path, &e.key, &e.tags, tag_ids)?;
+        for (axis, v) in [
+            ("min_width_cells", e.min_width_cells),
+            ("min_depth_cells", e.min_depth_cells),
+        ] {
+            if v < 2 {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "room type '{}' has {axis} {v} -- no room may be narrower than two walkable cells",
+                        e.key.value
+                    ),
+                ));
+            }
+        }
+        if e.weight == 0 {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!("room type '{}' has weight 0", e.key.value),
+            ));
+        }
+        let access = e
+            .tags
+            .iter()
+            .filter(|t| ACCESS_TAGS.contains(&t.as_str()))
+            .count();
+        if access != 1 {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "room type '{}' carries {access} access tags -- exactly one of public, staff or private",
+                    e.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Story 3.5: every room a building type's program names exists, and the
+/// program is one the type can actually hold -- the cross-kind checks a
+/// single file cannot make. A type with a `professions` list or the
+/// `dwelling` tag may not be a `Shell` (a workplace nobody can walk into
+/// is a mechanical seam between an AI-held and a player-held post); a
+/// type with a public room has one as its front room; a workplace owes a
+/// staff room in its core (what the stock-space rule hangs on); and the
+/// core must fit the type's own minimum interior in one of the two plans
+/// the generator builds -- a front band with the back rooms side by side
+/// behind it, or a front column with the back rooms stacked on either
+/// side -- so `footprint_sized_for_interior_usability` is checked here
+/// for real. Room minimums only: a lower bound, never the generator's
+/// own sizing. The partition thickness is read from the balance key
+/// when present, like [`check_building_type_density_coverage`].
+fn check_building_type_programs(
+    building_types: &[BuildingTypeEntry],
+    room_types: &[RoomTypeEntry],
+    balance: &[BalanceEntry],
+) -> Result<(), DefsError> {
+    let by_key: BTreeMap<&str, &RoomTypeEntry> = room_types
+        .iter()
+        .map(|r| (r.key.value.as_str(), r))
+        .collect();
+    let thickness = balance
+        .iter()
+        .find(|b| b.key.value == "generation.envelopes.wall_thickness_cells")
+        .map(|b| b.value.value);
+    let has = |r: &RoomTypeEntry, access: &str| r.tags.iter().any(|t| t == access);
+    for e in building_types {
+        let resolve = |names: &[String], field: &str| -> Result<Vec<&RoomTypeEntry>, DefsError> {
+            names
+                .iter()
+                .map(|n| {
+                    by_key.get(n.as_str()).copied().ok_or_else(|| {
+                        DefsError::new(
+                            &e.path,
+                            e.key.line,
+                            e.key.col,
+                            format!(
+                                "building type '{}' names unknown room type '{n}' in {field}",
+                                e.key.value
+                            ),
+                        )
+                    })
+                })
+                .collect()
+        };
+        let core = resolve(&e.rooms, "rooms")?;
+        let tail = resolve(&e.optional_rooms, "optional_rooms")?;
+        let must_have_rooms = !e.professions.is_empty() || e.tags.iter().any(|t| t == "dwelling");
+        if core.is_empty() {
+            if must_have_rooms || !tail.is_empty() {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "building type '{}' is a dwelling or a workplace with no rooms -- only a type with neither may be a solid Shell",
+                        e.key.value
+                    ),
+                ));
+            }
+            continue;
+        }
+        let front = core[0];
+        if core.iter().chain(tail.iter()).any(|r| has(r, "public")) && !has(front, "public") {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "building type '{}' has a public room but its front room '{}' is not public",
+                    e.key.value, front.key.value
+                ),
+            ));
+        }
+        if !e.professions.is_empty() && !core.iter().any(|r| has(r, "staff")) {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                e.key.col,
+                format!(
+                    "building type '{}' is a workplace but its core rooms include no staff room",
+                    e.key.value
+                ),
+            ));
+        }
+        if let Some(t) = thickness {
+            let t = t as u32;
+            let back = &core[1..];
+            let fits = |(w, d): (u32, u32)| {
+                w <= e.min_interior_width_cells && d <= e.min_interior_depth_cells
+            };
+            // The column plan: every split of the back rooms into a left
+            // and a right stack beside the front column.
+            let stack = |rooms: &[&RoomTypeEntry]| -> (u32, u32) {
+                if rooms.is_empty() {
+                    return (0, 0);
+                }
+                let w = rooms.iter().map(|r| r.min_width_cells).max().unwrap_or(0) + t;
+                let d = rooms.iter().map(|r| r.min_depth_cells).sum::<u32>()
+                    + t * (rooms.len() as u32 - 1);
+                (w, d)
+            };
+            let column_fits = !back.is_empty()
+                && back.len() <= 8
+                && (0u32..1 << back.len()).any(|mask| {
+                    let side = |on_left: bool| -> Vec<&RoomTypeEntry> {
+                        (0..back.len())
+                            .filter(|&i| (mask & (1 << i) != 0) == on_left)
+                            .map(|i| back[i])
+                            .collect()
+                    };
+                    let (left, right) = (side(true), side(false));
+                    let (lw, ld) = stack(&left);
+                    let (rw, rd) = stack(&right);
+                    fits((
+                        front.min_width_cells + lw + rw,
+                        front.min_depth_cells.max(ld).max(rd),
+                    ))
+                });
+            let (need_w, need_d) = if back.is_empty() {
+                (front.min_width_cells, front.min_depth_cells)
+            } else {
+                let back_w: u32 = back.iter().map(|r| r.min_width_cells).sum::<u32>()
+                    + t * (back.len() as u32 - 1);
+                let back_d = back.iter().map(|r| r.min_depth_cells).max().unwrap_or(0);
+                (
+                    front.min_width_cells.max(back_w),
+                    front.min_depth_cells + t + back_d,
+                )
+            };
+            if !fits((need_w, need_d)) && !column_fits {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "building type '{}' room program needs at least a {need_w}x{need_d} interior, but its own minimum interior is {}x{}",
+                        e.key.value, e.min_interior_width_cells, e.min_interior_depth_cells
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Every cross-key range a single field's own declared range cannot
 /// express (story 3.4): `density_min <= density_max`, at least one
 /// `land_uses` entry (an unplaceable type is a defs-authoring bug, never
@@ -1712,6 +1964,110 @@ fn check_object_walkability_tag(entries: &[LoweredObjectEntry]) -> Result<(), De
     }
     Ok(())
 }
+/// Story 3.5: the generator reads each structural part through exactly
+/// one tag (`defs::TagDef::structure`), never a quoted key. So once any
+/// tag names a part every part must be named, and by one tag only -- a
+/// no-op when no tag names any (a fixture tree with no generation
+/// vocabulary).
+fn check_tag_structures(entries: &[TagEntry]) -> Result<(), DefsError> {
+    const ALL: [RawStructure; 7] = [
+        RawStructure::Wall,
+        RawStructure::WallRun,
+        RawStructure::Floor,
+        RawStructure::Threshold,
+        RawStructure::Entrance,
+        RawStructure::Pavement,
+        RawStructure::Fixture,
+    ];
+    let declared: Vec<&TagEntry> = entries.iter().filter(|t| t.structure.is_some()).collect();
+    let Some(first) = declared.first() else {
+        return Ok(());
+    };
+    let snake = |s: RawStructure| match s {
+        RawStructure::Wall => "wall",
+        RawStructure::WallRun => "wall_run",
+        RawStructure::Floor => "floor",
+        RawStructure::Threshold => "threshold",
+        RawStructure::Entrance => "entrance",
+        RawStructure::Pavement => "pavement",
+        RawStructure::Fixture => "fixture",
+    };
+    for part in ALL {
+        let namers: Vec<&&TagEntry> = declared
+            .iter()
+            .filter(|t| t.structure == Some(part))
+            .collect();
+        match namers.as_slice() {
+            [] => {
+                return Err(DefsError::new(
+                    &first.path,
+                    first.key.line,
+                    first.key.col,
+                    format!(
+                        "structure '{}' is declared by no tag -- once any tag names a structural part, exactly one tag must name each",
+                        snake(part)
+                    ),
+                ));
+            }
+            [_] => {}
+            [a, b, ..] => {
+                return Err(DefsError::new(
+                    &b.path,
+                    b.key.line,
+                    b.key.col,
+                    format!(
+                        "structure '{}' is declared by both '{}' and '{}'",
+                        snake(part),
+                        a.key.value,
+                        b.key.value
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Story 3.5: the interior-layout pass stands every fixture a room owes
+/// -- a `[[requirement]]` row whose container a room type carries, or the
+/// floor every room has -- by its tag's own placement class, never by
+/// its key. So every such tag that is not itself a structural part
+/// declares one.
+fn check_fixture_placements(
+    tags: &[TagEntry],
+    requirements: &[RequirementEntry],
+    room_types: &[RoomTypeEntry],
+) -> Result<(), DefsError> {
+    let floor = tags
+        .iter()
+        .find(|t| t.structure == Some(RawStructure::Floor))
+        .map(|t| t.key.value.as_str());
+    for r in requirements {
+        let container = r.container.value.as_str();
+        let owed_by_a_room = Some(container) == floor
+            || room_types
+                .iter()
+                .any(|room| room.tags.iter().any(|t| t == container));
+        if !owed_by_a_room {
+            continue;
+        }
+        let Some(tag) = tags.iter().find(|t| t.key.value == r.requires.value) else {
+            continue;
+        };
+        if tag.structure.is_none() && tag.placement.is_none() {
+            return Err(DefsError::new(
+                &tag.path,
+                tag.key.line,
+                tag.key.col,
+                format!(
+                    "tag '{}' is a fixture requirement row '{}' owes but declares no placement",
+                    tag.key.value, r.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
 
 /// An object on a flat-pass layer (rank below `FIRST_POOL_RANK`) lies flat
 /// on the ground: it must be tagged [`UNDERFOOT_TAG_KEY`] (no vertical
@@ -2840,6 +3196,7 @@ pub fn validate(
     check_key_format(&raw.professions, "profession")?;
     check_key_format(&raw.chains, "chain")?;
     check_key_format(&raw.building_types, "building_type")?;
+    check_key_format(&raw.room_types, "room_type")?;
     check_balance_key_format(&raw.balance)?;
     check_key_format(&raw.bodies, "body")?;
     check_key_format(&raw.eyes, "eyes")?;
@@ -2863,6 +3220,7 @@ pub fn validate(
     check_id_key_dupes(&raw.professions, "profession")?;
     check_id_key_dupes(&raw.chains, "chain")?;
     check_id_key_dupes(&raw.building_types, "building_type")?;
+    check_id_key_dupes(&raw.room_types, "room_type")?;
     check_balance_key_dupes(&raw.balance)?;
     check_id_key_dupes(&raw.bodies, "body")?;
     check_id_key_dupes(&raw.eyes, "eyes")?;
@@ -2910,6 +3268,8 @@ pub fn validate(
     check_object_tags(&raw.objects, &tag_ids)?;
     check_building_type_tags(&raw.building_types, &tag_ids)?;
     check_building_type_ranges(&raw.building_types)?;
+    check_room_types(&raw.room_types, &tag_ids)?;
+    check_building_type_programs(&raw.building_types, &raw.room_types, &raw.balance)?;
     check_building_type_density_coverage(&raw.building_types, &raw.balance)?;
     check_distribution_subject_fits_its_own_land_use(
         &raw.building_types,
@@ -2917,6 +3277,8 @@ pub fn validate(
         &raw.balance,
     )?;
     check_tag_role_layers(&raw.tags, code_tables)?;
+    check_tag_structures(&raw.tags)?;
+    check_fixture_placements(&raw.tags, &raw.requirements, &raw.room_types)?;
     check_placement_floor_range(&raw.placements)?;
     check_distribution_ranges(&raw.distributions)?;
     check_requirement_range(&raw.requirements)?;
@@ -3218,6 +3580,11 @@ pub fn validate(
         .collect();
     chains.sort_by(|a, b| a.key.cmp(&b.key));
 
+    let room_ids: BTreeMap<&str, u32> = raw
+        .room_types
+        .iter()
+        .map(|r| (r.key.value.as_str(), r.id.value))
+        .collect();
     let mut building_types: Vec<BuildingTypeDef> = raw
         .building_types
         .iter()
@@ -3243,9 +3610,50 @@ pub fn validate(
                 v.dedup();
                 v
             },
+            rooms: b.rooms.iter().map(|n| room_ids[n.as_str()]).collect(),
+            optional_rooms: b
+                .optional_rooms
+                .iter()
+                .map(|n| room_ids[n.as_str()])
+                .collect(),
         })
         .collect();
     building_types.sort_by(|a, b| a.key.cmp(&b.key));
+
+    let mut room_types: Vec<RoomTypeDef> = raw
+        .room_types
+        .iter()
+        .map(|r| RoomTypeDef {
+            id: r.id.value,
+            key: r.key.value.clone(),
+            tags: resolve_room_type_tags(&r.path, &r.key, &r.tags, &tag_ids)
+                .expect("room tags already validated"),
+            access: r
+                .tags
+                .iter()
+                .find(|t| ACCESS_TAGS.contains(&t.as_str()))
+                .and_then(|t| tag_ids.get(t.as_str()).copied())
+                .expect("exactly one access tag already validated"),
+            rear: r.rear.as_ref().map(|keys| {
+                let mut ids: Vec<u32> = keys
+                    .iter()
+                    .map(|k| {
+                        raw.room_types
+                            .iter()
+                            .find(|o| &o.key.value == k)
+                            .map(|o| o.id.value)
+                            .expect("rear room type already validated")
+                    })
+                    .collect();
+                ids.sort_unstable();
+                ids
+            }),
+            min_width_cells: r.min_width_cells,
+            min_depth_cells: r.min_depth_cells,
+            weight: r.weight,
+        })
+        .collect();
+    room_types.sort_by(|a, b| a.key.cmp(&b.key));
 
     let mut balance: Vec<BalanceDef> = raw
         .balance
@@ -3382,6 +3790,8 @@ pub fn validate(
                     })
                     .collect(),
             }),
+            structure: t.structure,
+            placement: t.placement,
         })
         .collect();
     tags.sort_by(|a, b| a.key.cmp(&b.key));
@@ -3404,6 +3814,7 @@ pub fn validate(
         professions,
         chains,
         building_types,
+        room_types,
         balance,
         bodies,
         eyes,

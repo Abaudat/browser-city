@@ -127,6 +127,17 @@ balance generation.envelopes.side_gap_periphery_cells value=2 min=0 max=16
 balance generation.envelopes.size_trim_max_cells value=2 min=0 max=16
 balance generation.envelopes.target_count_per_million_cells value=3410 min=1 max=1000000
 balance generation.envelopes.wall_thickness_cells value=1 min=1 max=4
+balance generation.interiors.back_room_min_enterable_percent value=90 min=0 max=100
+balance generation.interiors.cafe_min_enterable_percent value=90 min=0 max=100
+balance generation.interiors.dwelling_min_enterable_percent value=90 min=0 max=100
+balance generation.interiors.enterable_target_percent value=98 min=1 max=100
+balance generation.interiors.enterable_target_tolerance_percent value=1 min=0 max=100
+balance generation.interiors.max_kind_share_percent value=85 min=1 max=100
+balance generation.interiors.max_layout_attempts value=8 min=1 max=64
+balance generation.interiors.max_rejected_percent value=5 min=0 max=100
+balance generation.interiors.max_room_aspect value=3 min=1 max=16
+balance generation.interiors.min_enterable_count value=100 min=1 max=100000
+balance generation.interiors.shop_min_enterable_percent value=90 min=0 max=100
 balance generation.land_use.coarse_cell_size_cells value=16 min=1 max=128
 balance generation.land_use.density_max value=100 min=0 max=1000
 balance generation.land_use.density_min value=10 min=0 max=1000
@@ -768,11 +779,17 @@ profession usher id=30
 profession warehouse_worker id=40
 profession yard_worker id=48
 recipe bottle_recycling id=1 inputs=[bottle] outputs=[recycled_glass]
+tag basin id=51 role=none
+tag bed id=49 role=none
 tag bridge id=7 role=none
 tag cafe id=26 role=none
+tag cooker id=50 role=none
+tag cooking id=41 role=none
 tag council id=21 role=none
 tag counter id=3 role=none
 tag depot id=20 role=none
+tag desk id=53 role=none
+tag dining id=43 role=none
 tag dwelling id=18 role=none
 tag entrance id=17 role=none
 tag fixture id=15 role=[2,3,7]
@@ -783,24 +800,37 @@ tag form_mid id=32 role=none
 tag ground id=10 role=[0]
 tag hospital id=22 role=none
 tag lighting id=4 role=none
+tag making id=47 role=none
 tag market id=30 role=none
 tag municipal_service id=19 role=none
 tag office id=27 role=none
 tag pavement id=11 role=[0]
+tag private id=38 role=none
+tag public id=36 role=none
 tag registry_post id=35 role=none
 tag road id=12 role=[0]
+tag room id=39 role=none
+tag seated_service id=45 role=none
 tag seating id=2 role=none
 tag shelter id=24 role=none
 tag shop id=25 role=none
 tag shopfront id=5 role=none
+tag sleeping id=40 role=none
+tag staff id=37 role=none
 tag stairs id=8 role=none
+tag stock id=48 role=none
+tag table_set id=52 role=none
 tag threshold id=14 role=[4]
+tag trading id=44 role=none
 tag underfoot id=9 role=none
 tag upright id=34 role=none
 tag wall id=6 role=[4]
 tag wall_run id=16 role=none
 tag warehouse id=29 role=none
+tag washing id=42 role=none
 tag waste id=1 role=none
 tag welfare_office id=23 role=none
+tag workbench id=54 role=none
+tag working id=46 role=none
 tag workshop id=28 role=none
 uniform sanitation_worker_uniform id=1 profession=sanitation_worker outfit=none accessory=addon_accessory_21_worker_jacket

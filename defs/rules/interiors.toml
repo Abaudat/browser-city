@@ -1,0 +1,116 @@
+# Story 3.5 (FR110/FR112): the interior-layout pass's own committed rule
+# rows, evaluated by the one `sim::rules::evaluate` -- the generator
+# (`sim::generation::interiors`) places each room's required fixtures by
+# reading these rows (`RuleDef::as_requirement`) and then asks the same
+# engine whether the layout holds, so a layout that breaks one is
+# refused, never emitted. A room's own tags (`defs/room-types/*.toml`)
+# are what a row's `container` names; a fixture tag is what `requires`
+# names. The row says what a room owes; which sprite pays it is the theme
+# pass's.
+
+# Every room has a light: a wall or ceiling light in the room itself,
+# never a flag.
+[[requirement]]
+id = 27
+key = "room_has_a_light"
+container = "room"
+requires = "lighting"
+min = 1
+
+# Every business has stock space (Derek's direction: "business" is any
+# type with posts, derived, never tagged). A staff room is the back room
+# of a business -- a stock room, an office, a workroom -- and holds a
+# stock fixture: an empty container, no item and no quantity.
+[[requirement]]
+id = 28
+key = "business_has_stock_space"
+container = "staff"
+requires = "stock"
+min = 1
+
+# The anchor props that identify a room by its furniture, not by a label
+# (Artie's direction): a citizen acts at each to meet a need or hold a
+# post.
+[[requirement]]
+id = 29
+key = "bedroom_has_a_bed"
+container = "sleeping"
+requires = "bed"
+min = 1
+
+[[requirement]]
+id = 30
+key = "kitchen_has_a_cooker"
+container = "cooking"
+requires = "cooker"
+min = 1
+
+[[requirement]]
+id = 31
+key = "bathroom_has_a_basin"
+container = "washing"
+requires = "basin"
+min = 1
+
+[[requirement]]
+id = 32
+key = "living_room_has_a_table_set"
+container = "dining"
+requires = "table_set"
+min = 1
+
+# A room open to the public that trades has its till or service counter.
+[[requirement]]
+id = 33
+key = "shop_floor_has_a_counter"
+container = "trading"
+requires = "counter"
+min = 1
+
+# A cafe floor seats customers: at least two table sets beside its
+# counter.
+[[requirement]]
+id = 34
+key = "cafe_has_two_table_sets"
+container = "seated_service"
+requires = "table_set"
+min = 2
+
+[[requirement]]
+id = 35
+key = "office_has_a_desk"
+container = "working"
+requires = "desk"
+min = 1
+
+[[requirement]]
+id = 36
+key = "workroom_has_a_workbench"
+container = "making"
+requires = "workbench"
+min = 1
+
+# A door is never blocked: no fixture sits on any cell beside a
+# threshold, inside or out. (A fixture on the threshold's own cell is
+# refused too: the cell then no longer reads as a doorway --
+# `doorway_formed_between_walls`.)
+[[adjacency]]
+id = 37
+key = "door_never_blocked_by_a_fixture"
+a = "threshold"
+b = "fixture"
+relation = "forbid"
+
+# Interior usability: a room has at least four floor cells -- two
+# walkable cells either way, the room grammar's own floor
+# (`defs/room-types/*.toml`). The key predates the pass: it named a
+# building whose frontage looks generous but whose interior is too
+# cramped to hold the room grammar it needs; `tools/defs-build` refuses
+# a type whose own minimum interior cannot hold its program, and this
+# row holds the laid-out rooms to the same floor.
+[[requirement]]
+id = 38
+key = "footprint_sized_for_interior_usability"
+container = "room"
+requires = "floor"
+min = 4

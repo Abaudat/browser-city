@@ -52,6 +52,7 @@ enum Kind {
     Professions,
     Chains,
     BuildingTypes,
+    RoomTypes,
     Balance,
     PageGroups,
     Appearance,
@@ -81,6 +82,7 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
         "professions" => Ok(Kind::Professions),
         "chains" => Ok(Kind::Chains),
         "building-types" => Ok(Kind::BuildingTypes),
+        "room-types" => Ok(Kind::RoomTypes),
         "balance" => Ok(Kind::Balance),
         "atlas" => Ok(Kind::PageGroups),
         "appearance" => Ok(Kind::Appearance),
@@ -92,7 +94,7 @@ fn kind_of(path: &Path) -> Result<Kind, DefsError> {
             1,
             1,
             format!(
-                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/denominations/recipes/professions/chains/building-types/balance/atlas/appearance/tags/rules/archetypes"
+                "not under a known defs/ kind directory (found '{other}') -- expected one of objects/items/denominations/recipes/professions/chains/building-types/room-types/balance/atlas/appearance/tags/rules/archetypes"
             ),
         )),
     }
@@ -219,6 +221,23 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         prefers_site: b.prefers_site,
                         density_affinity: b.density_affinity,
                         professions: b.professions,
+                        rooms: b.rooms,
+                        optional_rooms: b.optional_rooms,
+                    });
+                }
+            }
+            Kind::RoomTypes => {
+                let file: RoomTypeFile = parse_toml(path, text)?;
+                for r in file.room_type {
+                    raw.room_types.push(RoomTypeEntry {
+                        path: path.clone(),
+                        id: located(text, &r.id),
+                        key: located(text, &r.key),
+                        tags: r.tags,
+                        rear: r.rear,
+                        min_width_cells: r.min_width_cells,
+                        min_depth_cells: r.min_depth_cells,
+                        weight: r.weight,
                     });
                 }
             }
@@ -351,6 +370,8 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         id: located(text, &t.id),
                         key: located(text, &t.key),
                         role: t.role.clone(),
+                        structure: t.structure,
+                        placement: t.placement,
                     });
                 }
             }

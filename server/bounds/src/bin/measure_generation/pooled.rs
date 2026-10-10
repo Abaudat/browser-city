@@ -43,14 +43,16 @@ pub fn pooled_sweep(cfg: &GenerationConfig) {
     let site = cfg.site();
     let records = par_map_in_seed_order(256, threads(), |seed| {
         let d = sim::generation::plan(seed, cfg, &content).expect("committed config generates");
-        let (low, high) = d
+        let sk = &d.skeleton;
+        let (low, high) = sk
             .streets
-            .mean_area_by_density_band(&d.land_use, cfg)
+            .mean_area_by_density_band(&sk.land_use, cfg)
             .unwrap_or((0, 0));
-        let (chopped, total) = d.streets.low_band_chopped_blocks(&d.land_use, cfg);
-        let (core, edge) = guards::core_and_edge(&d, cfg, &content);
+        let (chopped, total) = sk.streets.low_band_chopped_blocks(&sk.land_use, cfg);
+        let (core, edge) = guards::core_and_edge(sk, cfg, &content);
         let mut shuttered = guards::Shuttered::default();
-        shuttered.add(&d, cfg, &content);
+        shuttered.add(sk, cfg, &content);
+        let site_view = d.site(&content);
         Record {
             low,
             high,
@@ -58,12 +60,12 @@ pub fn pooled_sweep(cfg: &GenerationConfig) {
             total,
             core,
             edge,
-            city_tenths: d.supported_citizens(site, cfg, &content) * screen * 10
+            city_tenths: sk.supported_citizens(site, cfg, &content) * screen * 10
                 / (site.width() * site.height()) as u64,
             shuttered,
             bite: scoped
                 .iter()
-                .map(|row| guards::catchment_bite(&d, &content, row))
+                .map(|row| guards::catchment_bite(&site_view, row))
                 .collect(),
         }
     });
@@ -101,8 +103,9 @@ pub fn pooled_sweep(cfg: &GenerationConfig) {
     for seed in [1u64, 2, 3] {
         let d = sim::generation::plan(seed, cfg, &content).expect("committed config generates");
         let (low, high) = d
+            .skeleton
             .streets
-            .mean_area_by_density_band(&d.land_use, cfg)
+            .mean_area_by_density_band(&d.skeleton.land_use, cfg)
             .expect("the evidence seeds populate both density bands");
         println!(
             "evidence seed {seed}: low-band / high-band mean block area {}.{:02}x (Artie's bar 2x)",

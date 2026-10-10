@@ -144,6 +144,46 @@ fn negative_coords_building_rect() -> Rect {
     }
 }
 
+/// Story 3.5: the ownership shape the interior-layout pass emits and no
+/// hand-built case above holds -- a room whose area is *two* rects sharing
+/// one owner id (its floor, and the one-cell doorway it owns), inside a
+/// building whose own area covers the walls too. The generator
+/// (`sim::generation::interiors::InteriorMap::room_areas`) emits exactly
+/// this for every room, so the TypeScript port is checked against it.
+pub const GENERATED_SHAPE_BUILDING_ID: u64 = 7;
+pub const GENERATED_SHAPE_ROOM_ID: u64 = 7;
+
+fn generated_shape_building() -> Rect {
+    Rect {
+        x0: 36,
+        y0: 5,
+        x1: 40,
+        y1: 10,
+    }
+}
+
+/// The room's floor: one ring in on three sides, with the shell's own
+/// south wall row left below it.
+fn generated_shape_room_floor() -> Rect {
+    Rect {
+        x0: 37,
+        y0: 6,
+        x1: 39,
+        y1: 8,
+    }
+}
+
+/// The doorway the room owns: a second rect of the same room id, in the
+/// wall row below the floor.
+fn generated_shape_room_door() -> Rect {
+    Rect {
+        x0: 38,
+        y0: 8,
+        x1: 39,
+        y1: 9,
+    }
+}
+
 /// Shared extent for every floor -- generous enough to hold the whole
 /// layout below with room either side.
 fn floor_bounds() -> Rect {
@@ -289,6 +329,11 @@ pub fn canonical_world_spec() -> WorldSpec {
                     STREET,
                     negative_coords_building_rect(),
                 ),
+                area(
+                    GENERATED_SHAPE_BUILDING_ID,
+                    STREET,
+                    generated_shape_building(),
+                ),
             ];
             areas.extend(clipped_area(
                 CHUNK_BOUNDARY_BUILDING_ID,
@@ -301,6 +346,12 @@ pub fn canonical_world_spec() -> WorldSpec {
             area(FIXTURE_ROOM_ID, STREET, room_interior()),
             area(TERRACE_ROOM_A_ID, STREET, terrace_room_a()),
             area(TERRACE_ROOM_B_ID, STREET, terrace_room_b()),
+            area(
+                GENERATED_SHAPE_ROOM_ID,
+                STREET,
+                generated_shape_room_floor(),
+            ),
+            area(GENERATED_SHAPE_ROOM_ID, STREET, generated_shape_room_door()),
         ],
     }
 }
@@ -609,6 +660,57 @@ pub fn conformance_cases() -> Vec<ConformanceCase> {
         ConformanceCase {
             x: -10,
             y: -2,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: NO_OWNER,
+            expect_room_id: NO_OWNER,
+        },
+        // Story 3.5: a room owned by two rects sharing one id -- its floor
+        // and its own doorway -- inside a building that also owns the
+        // walls around both.
+        ConformanceCase {
+            x: 37,
+            y: 6,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: GENERATED_SHAPE_BUILDING_ID,
+            expect_room_id: GENERATED_SHAPE_ROOM_ID,
+        },
+        ConformanceCase {
+            x: 38,
+            y: 8,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: GENERATED_SHAPE_BUILDING_ID,
+            expect_room_id: GENERATED_SHAPE_ROOM_ID,
+        },
+        // The wall beside the doorway and the shell's corner: in the
+        // building, in no room.
+        ConformanceCase {
+            x: 37,
+            y: 8,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: GENERATED_SHAPE_BUILDING_ID,
+            expect_room_id: NO_OWNER,
+        },
+        ConformanceCase {
+            x: 36,
+            y: 5,
+            floor: STREET,
+            expect_blocked: false,
+            expect_transition: None,
+            expect_building_id: GENERATED_SHAPE_BUILDING_ID,
+            expect_room_id: NO_OWNER,
+        },
+        // Just outside the shell: nobody's.
+        ConformanceCase {
+            x: 35,
+            y: 6,
             floor: STREET,
             expect_blocked: false,
             expect_transition: None,

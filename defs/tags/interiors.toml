@@ -1,0 +1,99 @@
+# Story 3.5 (FR110/FR112): the interior-layout pass's own vocabulary.
+# Every tag here is a plain tag the rule engine already speaks -- none is
+# an object, none names a sprite (which sprite dresses a room is the
+# theme pass's, 3.7). A room type carries `room`, exactly one access tag
+# and the one function tag its anchors hang on; an anchor tag is what a
+# `[[requirement]]` row in `defs/rules/interiors.toml` demands of a room
+# carrying that function tag.
+
+# Access: exactly one per room type (`tools/defs-build` enforces it).
+# `staff` is what "back room" means; keys, opening hours and the guard's
+# door round read these later.
+[[tag]]
+id = 36
+key = "public"
+
+[[tag]]
+id = 37
+key = "staff"
+
+[[tag]]
+id = 38
+key = "private"
+
+# Carried by every room type: the container "every room has a light"
+# is stated over.
+[[tag]]
+id = 39
+key = "room"
+
+# Function tags: what a room is for, hence which anchors it owes.
+[[tag]]
+id = 40
+key = "sleeping"
+
+[[tag]]
+id = 41
+key = "cooking"
+
+[[tag]]
+id = 42
+key = "washing"
+
+[[tag]]
+id = 43
+key = "dining"
+
+[[tag]]
+id = 44
+key = "trading"
+
+[[tag]]
+id = 45
+key = "seated_service"
+
+[[tag]]
+id = 46
+key = "working"
+
+[[tag]]
+id = 47
+key = "making"
+
+# Anchor fixtures: a citizen acts at each of these to meet a need or hold
+# a post. `stock` is an empty container -- no item, no quantity. Each
+# carries the placement class the layout pass stands it by.
+[[tag]]
+id = 48
+key = "stock"
+placement = "wall_backed"
+
+[[tag]]
+id = 49
+key = "bed"
+placement = "wall_backed"
+
+[[tag]]
+id = 50
+key = "cooker"
+placement = "wall_backed"
+
+[[tag]]
+id = 51
+key = "basin"
+placement = "wall_backed"
+
+[[tag]]
+id = 52
+key = "table_set"
+placement = "free_standing"
+
+[[tag]]
+id = 53
+key = "desk"
+placement = "wall_backed"
+
+[[tag]]
+id = 54
+key = "workbench"
+placement = "wall_backed"

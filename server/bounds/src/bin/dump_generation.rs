@@ -7,7 +7,7 @@
 
 use bounds::generation_evidence::{
     build_all, build_detour_worst_svgs, building_types_svg_path, detour_worst_svg_path,
-    envelopes_svg_path, land_use_svg_path, streets_svg_path,
+    envelopes_svg_path, interiors_svg_path, land_use_svg_path, streets_svg_path,
 };
 
 fn write(path: std::path::PathBuf, content: &str) {
@@ -26,6 +26,7 @@ fn main() {
         write(streets_svg_path(svgs.seed), &svgs.streets);
         write(envelopes_svg_path(svgs.seed), &svgs.envelopes);
         write(building_types_svg_path(svgs.seed), &svgs.building_types);
+        write(interiors_svg_path(svgs.seed), &svgs.interiors);
         write(
             bounds::neighbourhood_evidence::neighbourhoods_svg_path(svgs.seed),
             &svgs.neighbourhoods,
