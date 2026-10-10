@@ -193,6 +193,21 @@ WATCH_CODE=$?
 grep -qF "estimated total" "$WATCH_LOG" && grep -qF "class scheduled calls_total=" "$WATCH_LOG"   || fail "storage-report.sh did not print the storage total and the scheduled class's figures" "$WATCH_LOG"
 grep -q "BREACH" "$WATCH_LOG" && fail "storage-report.sh reported a breach on a fresh world" "$WATCH_LOG"
 ok "the watcher's reader exits 0 with no breach against the live instance and prints the per-class calls"
+grep -qE "cadence 2: last fired -?[0-9]+s ago" "$WATCH_LOG" || fail "storage-report.sh did not print the METRICS cadence's liveness" "$WATCH_LOG"
+
+# The stale branch against the real schema: --now four sampler periods past
+# the newest sample (the only live proof of the liveness query shape).
+NEWEST_AT="$(sql_json "SELECT * FROM storage_sample" >"$DATA_DIR/newest.json"; bc_wb column-values "$DATA_DIR/newest.json" sampled_at | grep -oE '[0-9]+' | sort -n | tail -n1)"
+[ -n "$NEWEST_AT" ] || fail "no storage_sample row to age"
+STALE_FINDINGS="$DATA_DIR/stale-findings.tsv"
+STALE_LOG="$DATA_DIR/watch-stale.log"
+bash "$REPO_ROOT/scripts/ops/storage-report.sh" "$DB_NAME" "${SERVER_ARGS[@]}" --now $((NEWEST_AT + 4 * 3600 * 1000000)) --findings "$STALE_FINDINGS" >"$STALE_LOG" 2>&1
+STALE_CODE=$?
+[ "$STALE_CODE" -eq 1 ] || fail "storage-report.sh exited $STALE_CODE on a sample four periods old, expected 1" "$STALE_LOG"
+[ "$(grep -c '^watcher: sampler stale' "$STALE_FINDINGS")" -eq 1 ] || fail "expected exactly one 'watcher: sampler stale' finding" "$STALE_FINDINGS"
+grep -qF "cadence 2: last fired" "$STALE_FINDINGS" || fail "the stale finding carries no liveness entry for cadence 2 (METRICS)" "$STALE_FINDINGS"
+grep -qF "cadence liveness unreadable" "$STALE_FINDINGS" && fail "the stale finding's liveness read failed against the live instance" "$STALE_LOG"
+ok "a stale sample files one finding carrying the live cadence liveness"
 
 echo "check-metrics-sampler: the sampler fires, samples every table exactly once per fire, and cannot be called directly" >&2
 exit 0
