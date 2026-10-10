@@ -1679,6 +1679,37 @@ export function streetNearRailingPressRoute(
   ];
 }
 
+/** Story 15.20: the street flight walked pressed against its bottom
+ * railing (down), then the platform flight pressed against its bottom wall
+ * (back up). Ends on the street floor. */
+export function streetSubwayWallWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
+  const approach = streetSubwayApproachRoute(inputs);
+  const onTreads = approach.findIndex((s) => s.label === "onto-the-subway-treads-row");
+  return [
+    ...approach.slice(0, onTreads + 1),
+    {
+      label: "press-south",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.nearRailingRestY },
+    },
+    {
+      label: "down-the-street-flight-pressed-south",
+      key: "ArrowLeft",
+      until: { kind: "floor", value: SUBWAY_FLOOR },
+    },
+    {
+      label: "press-south-on-the-platform",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: PLATFORM_LANDING_Y + 0.95 },
+    },
+    {
+      label: "up-the-platform-flight-pressed-south",
+      key: "ArrowRight",
+      until: { kind: "floor", value: STREET_FLOOR },
+    },
+  ];
+}
+
 /**
  * The bollard west of the shopfront (`id: 121`), approached to rest on its
  * south, west and east faces in turn. Every `into-the-*` segment ends

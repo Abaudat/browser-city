@@ -45,6 +45,7 @@ import {
   streetNearRailingPressRoute,
   streetPlacedRows,
   streetSubwayApproachRoute,
+  streetSubwayWallWalkRoute,
   streetWalkRoute,
   streetWalkUntilMet,
   TRASH_BIN_DEF_ID,
@@ -613,6 +614,7 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     { name: "street-walk", segments: streetWalkRoute(inputs), start: fresh },
     { name: "subway-approach", segments: streetSubwayApproachRoute(inputs), start: fresh },
     { name: "near-railing-press", segments: streetNearRailingPressRoute(inputs), start: fresh },
+    { name: "subway-wall-walk", segments: streetSubwayWallWalkRoute(inputs), start: fresh },
     {
       name: "bollard",
       segments: streetBollardRoute(inputs, streetMovementConfig()),
