@@ -12,6 +12,7 @@ pub mod city_clock_fixture;
 #[cfg(test)]
 mod float_scan;
 pub mod generation_evidence;
+pub mod generation_stamp;
 pub mod neighbourhood_evidence;
 pub mod schema;
 pub mod world_fixture;
