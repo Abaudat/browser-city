@@ -1,118 +1,29 @@
-//! Re-measures every statistically-derived key in `generation.plots.*`,
-//! `generation.envelopes.*` and `generation.streets.*`
-//! (`max_open_percent_by_count/area`, `max_unplotted_percent`,
-//! `max_rejected_plot_percent`, `target_count_per_million_cells`,
-//! `count_tolerance_percent`, `mean_width/depth_cells`, `max_detour_
-//! excess_cells`) over 50,000 seeds at the committed `defs::BALANCE`. A
-//! binary, not a test: too slow for every CI run, and `scripts/ci/check-
-//! trace-matrix.sh` refuses a skipped test.
+//! Re-measures the generator's statistically-derived ceilings at the
+//! committed `defs::BALANCE`, one stamped block per subcommand (the
+//! registry is `bounds::generation_stamp::MEASURED_BLOCKS`; every figure
+//! lives in `docs/generation.md`, pasted verbatim). A binary, not a test:
+//! too slow for every CI run.
 //!
 //! ```text
-//! cargo run -p bounds --release --bin measure-generation
+//! cargo run -p bounds --release --bin measure-generation [-- <subcommand> [n]]
 //! ```
 //!
-//! The 50,000 seeds are never `0..50_000` sequentially -- a genuinely
-//! random sweep has twice found a worse case than a sequential scan ever
-//! did (PR #317 cycle 5's own 276-vs-296 gap). Each seed is instead
-//! derived from its own loop index through `sim::rng::seed_from_ids`
-//! (NFR25's own pinned splitmix64-based mixer, the same one every pass
-//! seeds its own RNG stream from -- never a second, ad hoc mixer, and
-//! never a crate RNG), so the 50,000 draws are spread across the full
-//! `u64` space, fully deterministic and reproducible by anyone running
-//! this binary (story 3.18's own direction).
+//! - *(none)*: `exhaustive loop` -- envelope, detour-excess, building-type
+//!   and missing-tag statistics over 50,000 / 5,000 mixed seeds.
+//! - `detour <n>`: `detour-bounds sweep` -- the detour max()-contract, the
+//!   p99 fill and the per-city periphery floor over `n` seeds, passes 1-2.
+//! - `bands <n>`: `band sweep` -- the land-use share, building-count and
+//!   workplace-count bands over `n` seeds, all five passes.
+//! - `rows <n>`: `rows sweep` -- the `[[distribution]]` rows over `n` seeds.
+//! - `regions <n>`: `region-loss sweep` -- regions carried by no block.
+//! - `pooled`: `pooled evidence` -- seeds 0..256 pooled ratio and chopped
+//!   share, and the evidence seeds' own ratios.
+//! - `p99 <seed>`: traces one seed's p99 detour fill (no stamped block).
 //!
-//! Prints min/p1/p50/p99/max, mean and standard deviation for building
-//! count, rejection percent, open-plot percent (by count and by area),
-//! unplotted percent, per-city mean envelope width/depth (x10) and
-//! street-network detour excess sampled at `streets::DETOUR_SAMPLE_
-//! MAX_NODES` (one entry per sampled pair, every seed) -- the last
-//! re-derives `generation.streets.max_detour_excess_cells`'s own comment
-//! (PR #317 cycle 5: "put the worst-excess statistic in measure-
-//! generation", never a temporary, uncommitted property). Separately,
-//! `detour_excess_cells_exhaustive` measures the same statistic over
-//! *every* non-both-boundary node pair (`streets::detour_samples(usize::
-//! MAX)`), the population `max_detour_excess_cells` is actually keyed
-//! against (Tim's direction: 91 sampled pairs is not a contract for an
-//! estimator 3.11 runs between any two nodes) -- its own max, argmax
-//! seed/pair, and the ten largest per-seed worsts, so the tail is
-//! visible rather than only its single maximum. `detour_excess_cells_
-//! exhaustive_both_endpoints_interior` is the same exhaustive scan
-//! restricted to pairs with neither endpoint on the site boundary --
-//! the player-felt figure (Artie's direction), since every worst pair
-//! measured so far has one foot on the boundary, where the city stops
-//! and almost nobody stands.
-//!
-//! Story 15.9 (the missing-cafe flake, Quentin's direction): a separate
-//! `missing_tag_seed_count` sweep, over its own seed range (an optional
-//! CLI argument, `cargo run -p bounds --release --bin measure-generation
-//! -- 1000000`; defaults to [`MISSING_TAG_SEED_COUNT_DEFAULT`] when not
-//! given), counts, for every committed `[[distribution]]` row this pass
-//! actually feeds and for every tag `inv_generation_required_
-//! institutions_are_present_when_their_own_target_is_nonzero`'s own
-//! hand-named list still names (`shop`, never distributed), the seeds
-//! where the basis/ratio target is at least 1 but nothing of that
-//! subject was actually placed -- printing the miss count and up to ten
-//! offending seeds per row/tag. Seeds are drawn the same way as every
-//! other sweep in this binary: `seed_from_ids` on the loop index, spread
-//! over the full `u64` space, never a sequential `0..N` scan -- the same
-//! distribution `any::<u64>()` draws from in the proptest invariant this
-//! sweep is standing in for at a much larger sample size.
-//!
-//! Story 15.10 (the detour-ratio flake, Tim's/Quentin's/Derek's
-//! direction): a fourth sweep, `detour_seed_count` (a second optional
-//! CLI argument, `cargo run -p bounds --release --bin measure-
-//! generation -- <missing_tag_seed_count> <detour_seed_count>`;
-//! defaults to [`DETOUR_SEED_COUNT_DEFAULT`] when not given, run at
-//! 1,000,000 for this story), its own salt, running only passes 1-2
-//! (land use, the street network -- never the full five-pass `plan`, a
-//! million runs of which is hours this one pass-2 statistic does not
-//! need). Per seed it computes exactly what CI asserts and nothing
-//! looser, both through `streets::detour_bound_violation` (Derek's
-//! max()-contract -- the same function `inv_generation_detour_ratio_
-//! bounded` and its pinned regression call through, never a second,
-//! hand-written copy of the comparison) over `detour_samples(DETOUR_
-//! SAMPLE_MAX_NODES)`, and `streets::p99_detour_violation` over
-//! `detour_samples(DETOUR_P99_SAMPLE_MAX_NODES)`
-//! (`inv_generation_p99_detour_fill_bounded`'s).
-//! `detour <n>` runs only this sweep, threaded, with a `GENERATION_VERSION`
-//! header; `p99 <seed>` traces one seed.
-//! For each of the two committed ceilings it prints the miss count,
-//! miss rate, up to ten offending seeds, and the failure probability a
-//! [`CI_PROPTEST_CASES`]-case CI run implies (`1 - (1 - p)^cases`); when
-//! the miss count is zero, the rule-of-three upper bound (`3 / N` per
-//! seed) instead, since zero observed misses over N seeds is a bound,
-//! not a zero rate. Also prints the sampled worst ratio's own max and
-//! ten largest per-seed values among pairs at or beyond `GenerationConfig
-//! ::detour_ratio_takeover_distance_cells` (Derek's direction: that is
-//! the only range where the ratio is the binding bound, so it is the
-//! only figure `max_detour_percent` owes margin over), so its tail is
-//! visible the way `detour_excess_cells_sampled_14node`'s already is.
-//! The *exhaustive* version of that same figure (every non-both-
-//! boundary pair, not the cheap 14-node sample) is measured in the
-//! existing 50,000-seed loop above instead, alongside the exhaustive
-//! excess figures it already prints -- an exhaustive pairing inside a
-//! million-seed loop is what would make this sweep slow, not what a
-//! ratio statistic needs. Prints this sweep's own wall-clock too.
-
-//! Story 3.7: a rows sweep (`-- rows <n>` runs only it) over the committed
-//! `[[distribution]]` rows -- the seeds `check_rules` rejects and each row's
-//! pooled mean placed count, the two figures a retune of `defs/rules/
-//! generation.toml` must hold (zero failing seeds; means within 10% of the
-//! previous figures).
-//!
-//! Story 4.21 (the workplace-band flake): a band sweep over its own seed
-//! range and salt (`cargo run -p bounds --release --bin measure-generation
-//! -- bands <n>` runs only it; the full run does it first, at
-//! [`BAND_SEED_COUNT_DEFAULT`]). Per seed it runs the full five-pass
-//! `plan` and prints, for the three per-seed bands CI gates on -- land-use
-//! area share (`land_use.share_tolerance_pct`), building count
-//! (`envelopes.count_tolerance_percent`) and workplace count
-//! (`building_types.workplace_count_tolerance_percent`) -- the statistic's
-//! min/p1/p50/p99/max/mean/stddev, the 5.5-sigma tolerance those imply,
-//! the band's miss count and the failure probability a
-//! [`CI_PROPTEST_CASES`]-case run implies (the rule-of-three bound when
-//! there are no misses). Those figures, with the seed count and date, are
-//! what the three invariants' doc comments and the keys' comments quote.
+//! Every seed is drawn through `sim::rng::seed_from_ids` with a salt of the
+//! sweep's own and the loop index, spread over the full `u64` space, and
+//! threaded sweeps reduce in seed-index order: a block is byte-identical
+//! for a given version and fingerprint, bar thread count and wall-clock.
 
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -172,7 +83,8 @@ const MEASURE_DETOUR_SEED_SALT: u64 = 0xB0F0_5EE3;
 /// above -- there is no build-time way to read the workflow file itself,
 /// so a named mirror is the right level, not a literal. Update this
 /// alongside that key if it ever moves.
-const CI_PROPTEST_CASES: u32 = 4096;
+#[allow(dead_code)]
+const CI_PROPTEST_CASES: u32 = bounds::generation_stamp::CI_PROPTEST_CASES;
 
 /// The band sweep's own default seed count when no `bands <n>` argument is
 /// given.
@@ -216,7 +128,8 @@ const MEASURE_REGION_SEED_SALT: u64 = 0xB0F0_5EE5;
 fn region_loss_sweep(cfg: &GenerationConfig, n: u64) {
     println!(
         "
-region-loss sweep: {n} seeds, passes 1-2 only (salt {MEASURE_REGION_SEED_SALT:#x})"
+{}: {n} seeds, passes 1-2 only (salt {MEASURE_REGION_SEED_SALT:#x})",
+        bounds::generation_stamp::stamp(&bounds::generation_stamp::REGION_LOSS_SWEEP)
     );
     let (mut any_lost, mut all_inst_lost) = (0u64, 0u64);
     let mut first_any: Option<u64> = None;
@@ -312,7 +225,8 @@ impl Stats {
 fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
     println!(
         "
-band sweep: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})"
+{}: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})",
+        bounds::generation_stamp::stamp(&bounds::generation_stamp::BAND_SWEEP)
     );
     let uses = [
         (LandUse::Commercial, cfg.share_commercial_pct, "commercial"),
@@ -332,36 +246,84 @@ band sweep: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})"
         content.building_types.iter().map(|b| (b.id, b)).collect();
     let (mut min_count, mut max_count) = ((i64::MAX, 0u64), (i64::MIN, 0u64));
     let start = Instant::now();
-    for i in 0..n {
-        let seed = mixed_band_seed(i);
-        let d = sim::generation::plan(seed, cfg, content).expect("pass 1 is total");
-        let total = d.land_use.cols() as i64 * d.land_use.rows() as i64;
-        for (k, (u, key, _)) in uses.iter().enumerate() {
-            share_dev[k].push(d.land_use.area_cells(*u) * 1000 / total - *key as i64 * 10);
+    // One record per seed index, computed on threads and reduced in
+    // index order, so the printed block does not depend on thread count.
+    struct Record {
+        seed: u64,
+        share_dev: [i64; 3],
+        share_miss: bool,
+        placed: i64,
+        building_miss: bool,
+        workplaces: i64,
+        workplace_miss: bool,
+    }
+    let threads = std::thread::available_parallelism().map_or(4, |t| t.get()) as u64;
+    let mut records: Vec<(u64, Record)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads)
+            .map(|t| {
+                let (uses, by_id) = (&uses, &by_id);
+                scope.spawn(move || {
+                    let mut out = Vec::new();
+                    let mut i = t;
+                    while i < n {
+                        let seed = mixed_band_seed(i);
+                        let d = sim::generation::plan(seed, cfg, content).expect("pass 1 is total");
+                        let total = d.land_use.cols() as i64 * d.land_use.rows() as i64;
+                        let mut dev = [0i64; 3];
+                        for (k, (u, key, _)) in uses.iter().enumerate() {
+                            dev[k] = d.land_use.area_cells(*u) * 1000 / total - *key as i64 * 10;
+                        }
+                        out.push((
+                            i,
+                            Record {
+                                seed,
+                                share_dev: dev,
+                                share_miss: d.land_use.share_band_violation(cfg).is_some(),
+                                placed: d.envelopes.placed_count(),
+                                building_miss: d.check_building_count(cfg).is_err(),
+                                workplaces: d
+                                    .building_types
+                                    .assignments()
+                                    .iter()
+                                    .filter(|a| {
+                                        building_types::is_workplace(by_id[&a.building_type])
+                                    })
+                                    .count() as i64,
+                                workplace_miss: d.check_workplace_count(cfg, content).is_err(),
+                            },
+                        ));
+                        i += threads;
+                    }
+                    out
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("a sweep thread panicked"))
+            .collect()
+    });
+    records.sort_unstable_by_key(|r| r.0);
+    for (_, r) in records {
+        for (k, dev) in r.share_dev.iter().enumerate() {
+            share_dev[k].push(*dev);
         }
-        if d.land_use.share_band_violation(cfg).is_some() {
-            share_miss.record(seed);
+        if r.share_miss {
+            share_miss.record(r.seed);
         }
-        let placed = d.envelopes.placed_count();
-        if placed < min_count.0 {
-            min_count = (placed, seed);
+        if r.placed < min_count.0 {
+            min_count = (r.placed, r.seed);
         }
-        if placed > max_count.0 {
-            max_count = (placed, seed);
+        if r.placed > max_count.0 {
+            max_count = (r.placed, r.seed);
         }
-        building_count.push(placed);
-        if d.check_building_count(cfg).is_err() {
-            building_miss.record(seed);
+        building_count.push(r.placed);
+        if r.building_miss {
+            building_miss.record(r.seed);
         }
-        workplace_count.push(
-            d.building_types
-                .assignments()
-                .iter()
-                .filter(|a| building_types::is_workplace(by_id[&a.building_type]))
-                .count() as i64,
-        );
-        if d.check_workplace_count(cfg, content).is_err() {
-            workplace_miss.record(seed);
+        workplace_count.push(r.workplaces);
+        if r.workplace_miss {
+            workplace_miss.record(r.seed);
         }
     }
     for (k, (_, key, name)) in uses.iter().enumerate() {
@@ -496,7 +458,8 @@ fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
     failing.sort();
     println!(
         "
-rows sweep: {n} seeds, {threads} threads"
+{}: {n} seeds, {threads} threads",
+        bounds::generation_stamp::stamp(&bounds::generation_stamp::ROWS_SWEEP)
     );
     println!("  seeds failing check_rules: {}", failing.len());
     for (seed, why) in failing.iter().take(10) {
@@ -515,56 +478,82 @@ rows sweep: {n} seeds, {threads} threads"
     }
 }
 
+/// The fixed-seed figures: the seeds `0..256` pooled low/high band mean
+/// block area and chopped share, and the evidence seeds' own ratios.
+/// Deterministic -- no miss rate.
+fn pooled_sweep(cfg: &GenerationConfig) {
+    println!(
+        "{}: seeds 0..256 pooled, evidence seeds 1, 2, 3",
+        bounds::generation_stamp::stamp(&bounds::generation_stamp::POOLED_EVIDENCE)
+    );
+    let (mut low_sum, mut high_sum) = (0i64, 0i64);
+    let (mut chopped_sum, mut total_sum) = (0usize, 0usize);
+    for seed in 0u64..256 {
+        let lu = land_use::run(seed, cfg.site(), cfg).expect("committed config generates");
+        let net = streets::run(seed, &lu, cfg);
+        if let Some((low, high)) = net.mean_area_by_density_band(&lu, cfg) {
+            low_sum += low;
+            high_sum += high;
+        }
+        let (chopped, total) = net.low_band_chopped_blocks(&lu, cfg);
+        chopped_sum += chopped;
+        total_sum += total;
+    }
+    println!(
+        "pooled low-band / high-band mean block area over seeds 0..256: {}% (peripheral_pooled_min_ratio_percent = {}%)",
+        low_sum * 100 / high_sum.max(1),
+        cfg.peripheral_pooled_min_ratio_percent
+    );
+    println!(
+        "pooled chopped share of low-band blocks over seeds 0..256: {chopped_sum} of {total_sum} ({}%)",
+        chopped_sum * 100 / total_sum.max(1)
+    );
+    for seed in [1u64, 2, 3] {
+        let lu = land_use::run(seed, cfg.site(), cfg).expect("committed config generates");
+        let net = streets::run(seed, &lu, cfg);
+        let (low, high) = net
+            .mean_area_by_density_band(&lu, cfg)
+            .expect("the evidence seeds populate both density bands");
+        println!(
+            "evidence seed {seed}: low-band / high-band mean block area {}.{:02}x (Artie's bar 2x)",
+            low / high.max(1),
+            low * 100 / high.max(1) % 100
+        );
+    }
+}
+
 fn main() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).expect("committed balance is valid");
     let content = GenerationContent::committed();
     let site = cfg.site();
 
-    if std::env::args().nth(1).as_deref() == Some("detour") {
-        let n = std::env::args()
-            .nth(2)
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let count = |default: u64| -> u64 {
+        args.get(1)
             .map(|s| {
                 s.parse()
-                    .unwrap_or_else(|e| panic!("detour count {s:?}: {e}"))
+                    .unwrap_or_else(|e| panic!("{} count {s:?}: {e}", args[0]))
             })
-            .unwrap_or(DETOUR_SEED_COUNT_DEFAULT);
-        detour_sweep(&cfg, n);
-        return;
+            .unwrap_or(default)
+    };
+    match args.first().map(String::as_str) {
+        Some("detour") => return detour_sweep(&cfg, count(DETOUR_SEED_COUNT_DEFAULT)),
+        Some("bands") => return band_sweep(&cfg, &content, count(BAND_SEED_COUNT_DEFAULT)),
+        Some("rows") => return rows_sweep(&cfg, &content, count(ROWS_SEED_COUNT_DEFAULT)),
+        Some("pooled") => return pooled_sweep(&cfg),
+        Some("regions") => return region_loss_sweep(&cfg, count(REGION_SEED_COUNT_DEFAULT)),
+        Some("p99") => {
+            let seed = args
+                .get(1)
+                .map(|s| s.parse().unwrap_or_else(|e| panic!("p99 seed {s:?}: {e}")))
+                .expect("usage: measure-generation p99 <seed>");
+            return p99_trace(&cfg, seed);
+        }
+        _ => {}
     }
-    if std::env::args().nth(1).as_deref() == Some("p99") {
-        let seed: u64 = std::env::args()
-            .nth(2)
-            .map(|s| s.parse().unwrap_or_else(|e| panic!("p99 seed {s:?}: {e}")))
-            .expect("usage: measure-generation p99 <seed>");
-        p99_trace(&cfg, seed);
-        return;
-    }
-    if std::env::args().nth(1).as_deref() == Some("bands") {
-        let n = std::env::args()
-            .nth(2)
-            .map(|s| {
-                s.parse()
-                    .unwrap_or_else(|e| panic!("bands count {s:?}: {e}"))
-            })
-            .unwrap_or(BAND_SEED_COUNT_DEFAULT);
-        band_sweep(&cfg, &content, n);
-        return;
-    }
-    if std::env::args().nth(1).as_deref() == Some("rows") {
-        let n = std::env::args()
-            .nth(2)
-            .map(|s| {
-                s.parse()
-                    .unwrap_or_else(|e| panic!("rows count {s:?}: {e}"))
-            })
-            .unwrap_or(ROWS_SEED_COUNT_DEFAULT);
-        rows_sweep(&cfg, &content, n);
-        return;
-    }
-    band_sweep(&cfg, &content, BAND_SEED_COUNT_DEFAULT);
-    region_loss_sweep(&cfg, REGION_SEED_COUNT_DEFAULT);
     println!(
-        "measure-generation: {SEED_COUNT} seeds at {}x{} cells",
+        "{}: {SEED_COUNT} seeds at {}x{} cells",
+        bounds::generation_stamp::stamp(&bounds::generation_stamp::EXHAUSTIVE_LOOP),
         site.width(),
         site.height()
     );
@@ -725,10 +714,6 @@ fn main() {
     Stats::new(unplotted_percent).print("unplotted_percent");
     Stats::new(mean_width_x10).print("mean_width_cells_x10");
     Stats::new(mean_depth_x10).print("mean_depth_cells_x10");
-    println!(
-        "exhaustive detour loop{}: {SEED_COUNT} seeds",
-        bounds::generation_stamp::stamp(sim::generation::GENERATION_VERSION, defs::BALANCE)
-    );
     Stats::new(detour_excess).print("detour_excess_cells_sampled_14node");
     println!(
         "detour_excess_cells_sampled_14node worst: {} at seed {} ({:?}-{:?})",
@@ -1005,14 +990,6 @@ fn main() {
     }
 
     // -- story 15.10: the detour-ratio flake, generalised -----------------
-    let detour_seed_count: u64 = std::env::args()
-        .nth(2)
-        .map(|s| {
-            s.parse()
-                .unwrap_or_else(|e| panic!("detour seed count argument {s:?} is not a u64: {e}"))
-        })
-        .unwrap_or(DETOUR_SEED_COUNT_DEFAULT);
-    detour_sweep(&cfg, detour_seed_count);
 }
 
 /// The detour-bounds sweep (passes 1-2 only), threaded over seeds: every
@@ -1026,15 +1003,26 @@ fn detour_sweep(cfg: &GenerationConfig, n: u64) {
     let threads = std::thread::available_parallelism().map_or(4, |t| t.get()) as u64;
     let takeover = cfg.detour_ratio_takeover_distance_cells();
     println!(
-        "\ndetour-bounds sweep{}: {n} seeds, {threads} threads, passes 1-2 \
-         only (`cargo run -p bounds --release --bin measure-generation -- detour <n>`)",
-        bounds::generation_stamp::stamp(sim::generation::GENERATION_VERSION, defs::BALANCE)
+        "
+{}: {n} seeds, {threads} threads, passes 1-2 only",
+        bounds::generation_stamp::stamp(&bounds::generation_stamp::DETOUR_SWEEP)
     );
     struct Partial {
         max_miss: BandMiss,
         p99_miss: BandMiss,
+        floor_miss: BandMiss,
         ratio_top: Vec<(i64, u64)>,
         fill_top: Vec<(i64, u64)>,
+        /// Lowest per-city low/high band mean-area ratios, in tenths of
+        /// a percent (descending, so the 10 lowest are kept).
+        floor_low: Vec<(i64, u64)>,
+    }
+    fn push_low(low: &mut Vec<(i64, u64)>, entry: (i64, u64)) {
+        low.push(entry);
+        low.sort_unstable_by(|a, b| b.cmp(a));
+        if low.len() > 10 {
+            low.remove(0);
+        }
     }
     fn push_top(top: &mut Vec<(i64, u64)>, entry: (i64, u64)) {
         top.push(entry);
@@ -1051,8 +1039,10 @@ fn detour_sweep(cfg: &GenerationConfig, n: u64) {
                     let mut p = Partial {
                         max_miss: BandMiss::new(),
                         p99_miss: BandMiss::new(),
+                        floor_miss: BandMiss::new(),
                         ratio_top: Vec::new(),
                         fill_top: Vec::new(),
+                        floor_low: Vec::new(),
                     };
                     let mut i = t;
                     while i < n {
@@ -1080,6 +1070,12 @@ fn detour_sweep(cfg: &GenerationConfig, n: u64) {
                         if streets::p99_detour_violation(&p99_samples, cfg).is_some() {
                             p.p99_miss.record(seed);
                         }
+                        if let Some((low, high)) = net.mean_area_by_density_band(&lu, cfg) {
+                            if low * 100 < high * cfg.peripheral_low_band_floor_percent as i64 {
+                                p.floor_miss.record(seed);
+                            }
+                            push_low(&mut p.floor_low, (low * 1000 / high.max(1), seed));
+                        }
                     }
                     p
                 })
@@ -1091,9 +1087,17 @@ fn detour_sweep(cfg: &GenerationConfig, n: u64) {
             .collect()
     });
     let elapsed = start.elapsed();
-    let (mut max_miss, mut p99_miss) = (BandMiss::new(), BandMiss::new());
-    let (mut ratio_top, mut fill_top) = (Vec::new(), Vec::new());
+    let (mut max_miss, mut p99_miss, mut floor_miss) =
+        (BandMiss::new(), BandMiss::new(), BandMiss::new());
+    let mut ratio_top: Vec<(i64, u64)> = Vec::new();
+    let mut fill_top: Vec<(i64, u64)> = Vec::new();
+    let mut floor_low: Vec<(i64, u64)> = Vec::new();
     for p in partials {
+        floor_miss.count += p.floor_miss.count;
+        floor_miss.seeds.extend(p.floor_miss.seeds);
+        for e in p.floor_low {
+            push_low(&mut floor_low, e);
+        }
         max_miss.count += p.max_miss.count;
         max_miss.seeds.extend(p.max_miss.seeds);
         p99_miss.count += p.p99_miss.count;
@@ -1105,11 +1109,6 @@ fn detour_sweep(cfg: &GenerationConfig, n: u64) {
             push_top(&mut fill_top, e);
         }
     }
-    max_miss.seeds.sort_unstable();
-    max_miss.seeds.truncate(10);
-    p99_miss.seeds.sort_unstable();
-    p99_miss.seeds.truncate(10);
-
     print_ceiling_report("detour max()-contract (14-node sample)", &max_miss, n);
     print_ceiling_report(
         &format!(
@@ -1119,6 +1118,18 @@ fn detour_sweep(cfg: &GenerationConfig, n: u64) {
         &p99_miss,
         n,
     );
+    print_ceiling_report(
+        &format!(
+            "peripheral_low_band_floor_percent = {}% (per-city low/high band mean block area)",
+            cfg.peripheral_low_band_floor_percent
+        ),
+        &floor_miss,
+        n,
+    );
+    println!("peripheral low/high band mean block area, 10 lowest per-seed ratios (ascending):");
+    for (permille, seed) in floor_low.iter().rev() {
+        println!("  {}.{}% at seed {seed}", permille / 10, permille % 10);
+    }
     println!("p99 detour fill, top 10 per-seed worsts (ascending):");
     for (fill, seed) in &fill_top {
         println!("  {fill}% at seed {seed}");
@@ -1138,9 +1149,8 @@ fn detour_sweep(cfg: &GenerationConfig, n: u64) {
 }
 
 /// One committed ceiling's own miss tally over the detour-bounds sweep --
-/// count and up to ten offending seeds, never every offending seed (the
-/// same shape as the missing-tag sweep's own `dist_misses`/`ad_hoc_
-/// misses` above).
+/// count and every offending seed; the report prints the ten smallest, so
+/// the output does not depend on thread count.
 struct BandMiss {
     count: u64,
     seeds: Vec<u64>,
@@ -1156,42 +1166,20 @@ impl BandMiss {
 
     fn record(&mut self, seed: u64) {
         self.count += 1;
-        if self.seeds.len() < 10 {
-            self.seeds.push(seed);
-        }
+        self.seeds.push(seed);
     }
 }
 
-/// Prints one ceiling's own miss count, rate and the failure probability
-/// a [`CI_PROPTEST_CASES`]-case CI run implies (`1 - (1 - p)^cases`) --
-/// and, when the miss count is zero, the rule-of-three upper bound on
-/// the per-seed miss probability (`3 / n`) instead, since zero observed
-/// misses over `n` seeds is a bound, never a zero rate (Quentin's
-/// direction, story 15.10: the doc comment and toml comment that read
-/// this output must state the observed count, `n` and the bound, never
-/// the word "zero" alone).
+/// Prints one ceiling through the one shared report
+/// (`bounds::generation_stamp::ceiling_report`).
 fn print_ceiling_report(name: &str, miss: &BandMiss, n: u64) {
-    let rate = miss.count as f64 / n as f64;
-    let ci_fail_prob = 1.0 - (1.0 - rate).powi(CI_PROPTEST_CASES as i32);
+    let mut seeds = miss.seeds.clone();
+    seeds.sort_unstable();
+    seeds.truncate(10);
     println!(
-        "  {name}: {} of {n} misses (rate {:.6}%), implied {CI_PROPTEST_CASES}-case CI failure \
-         probability {:.6}%, offending seeds: {:?}",
-        miss.count,
-        rate * 100.0,
-        ci_fail_prob * 100.0,
-        miss.seeds
+        "{}",
+        bounds::generation_stamp::ceiling_report(name, miss.count, &seeds, n)
     );
-    if miss.count == 0 {
-        let rule_of_three_bound = 3.0 / n as f64;
-        let bound_ci_fail_prob = 1.0 - (1.0 - rule_of_three_bound).powi(CI_PROPTEST_CASES as i32);
-        println!(
-            "    zero observed misses over {n} seeds is a bound, not a zero rate -- rule-of-\
-             three upper bound on the per-seed miss probability: {:.6}% (implied \
-             {CI_PROPTEST_CASES}-case CI failure probability <= {:.4}%)",
-            rule_of_three_bound * 100.0,
-            bound_ci_fail_prob * 100.0
-        );
-    }
 }
 
 /// `p99 <seed>`: the 64-node sample's pairs at or above the p99 fill

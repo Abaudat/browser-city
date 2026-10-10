@@ -1533,10 +1533,13 @@ own `defs/` comment; a `from_balance` refusal alongside one is a
 config-consistency (loosening) guard, never a generator worst-case
 claim.
 
-The detour-bounds sweep and the exhaustive detour loop pasted into
-`docs/generation.md` carry the `GENERATION_VERSION` and the fingerprint of
-the `generation.*` balance rows they were measured under; `bounds` fails
-on a mismatch of either.
+Every measured generation figure lives only in a stamped block of
+`docs/generation.md` whose label is in
+`bounds::generation_stamp::MEASURED_BLOCKS`. The stamp carries the
+`GENERATION_VERSION` and a fingerprint of the generation balance rows, the
+rules and the building types. Three gates: a pass change without a
+version bump fails the goldens, a version bump fails the stamps, a retune
+fails the fingerprint.
 
 Pass 2's own junction registry enforces one specific case: where two
 *different* streets each cross the same third street (a staggered

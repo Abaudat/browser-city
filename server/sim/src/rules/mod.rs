@@ -507,6 +507,118 @@ pub struct CoherenceRow {
 }
 
 impl RuleDef {
+    /// One stable text line carrying every field of this row, for the
+    /// generation-inputs fingerprint (`bounds::generation_stamp`). Every
+    /// struct and enum is destructured exhaustively (no `..`), so a new
+    /// field or kind fails to compile until it is decided whether it is
+    /// hashed -- and the text never depends on `Debug`'s format.
+    pub fn canonical_line(&self) -> String {
+        let RuleDef { id, key, kind } = *self;
+        let body = match kind {
+            RuleKind::Placement {
+                subject,
+                container,
+                floor_min,
+                floor_max,
+            } => format!(
+                "placement subject={subject} container={container:?} floor_min={floor_min:?} floor_max={floor_max:?}"
+            ),
+            RuleKind::Distribution {
+                subject,
+                per,
+                ratio,
+                tolerance_percent,
+                min_spacing,
+                max_distance,
+                scope,
+            } => {
+                let ratio = match ratio {
+                    RowRatio::Fixed(n) => format!("fixed({n})"),
+                    RowRatio::Read(ParameterRead {
+                        parameter,
+                        ratio_at_min,
+                        ratio_at_max,
+                        min,
+                        max,
+                    }) => {
+                        let parameter = match parameter {
+                            Parameter::BuildingAge => "building_age",
+                            Parameter::Affluence => "affluence",
+                        };
+                        format!("read({parameter},{ratio_at_min},{ratio_at_max},{min},{max})")
+                    }
+                };
+                let scope = match scope {
+                    DistributionScope::Site => "site".to_string(),
+                    DistributionScope::Catchment { extent_cells } => {
+                        format!("catchment({extent_cells})")
+                    }
+                };
+                format!(
+                    "distribution subject={subject} per={per} ratio={ratio} tolerance_percent={tolerance_percent} min_spacing={min_spacing} max_distance={max_distance} scope={scope}"
+                )
+            }
+            RuleKind::Coherence {
+                subject,
+                within,
+                mode,
+            } => {
+                let mode = match mode {
+                    CoherenceMode::Allow => "allow",
+                    CoherenceMode::Forbid => "forbid",
+                };
+                format!("coherence subject={subject} within={within} mode={mode}")
+            }
+            RuleKind::Adjacency {
+                a,
+                relation,
+                alternatives,
+            } => {
+                let relation = match relation {
+                    AdjacencyRelation::Forbid => "forbid",
+                    AdjacencyRelation::Require => "require",
+                };
+                let alternatives: Vec<String> = alternatives
+                    .iter()
+                    .map(|terms| {
+                        terms
+                            .iter()
+                            .map(
+                                |&NeighbourTerm {
+                                     direction,
+                                     tag,
+                                     present,
+                                 }| {
+                                    let direction = match direction {
+                                        Direction::North => "n",
+                                        Direction::East => "e",
+                                        Direction::South => "s",
+                                        Direction::West => "w",
+                                    };
+                                    format!("{direction}{}{tag}", if present { "+" } else { "-" })
+                                },
+                            )
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    })
+                    .collect();
+                format!(
+                    "adjacency a={a} relation={relation} alternatives=[{}]",
+                    alternatives.join("|")
+                )
+            }
+            RuleKind::Requirement {
+                container,
+                requires,
+                min,
+                max,
+            } => format!(
+                "requirement container={container} requires={requires} min={min} max={max:?}"
+            ),
+        };
+        format!("{id}:{key}:{body}")
+    }
+
     /// `Some` iff this row is a `Distribution` row; `None` for every
     /// other kind. The one place outside `evaluate` itself that reads
     /// into `RuleKind`.
@@ -979,6 +1091,124 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
 mod tests {
     use super::testing::SiteBuilder;
     use super::*;
+
+    fn line(kind: RuleKind) -> String {
+        RuleDef {
+            id: 1,
+            key: "r",
+            kind,
+        }
+        .canonical_line()
+    }
+
+    #[test]
+    fn canonical_line_changes_with_every_field_of_a_placement_row() {
+        let base = |c, a, b| RuleKind::Placement {
+            subject: 1,
+            container: c,
+            floor_min: a,
+            floor_max: b,
+        };
+        let l = line(base(None, None, None));
+        assert_ne!(l, line(base(Some(2), None, None)));
+        assert_ne!(l, line(base(None, Some(0), None)));
+        assert_ne!(l, line(base(None, None, Some(3))));
+    }
+
+    fn dist(
+        ratio: RowRatio,
+        tolerance_percent: u32,
+        min_spacing: u32,
+        max_distance: u32,
+        scope: DistributionScope,
+    ) -> RuleKind {
+        RuleKind::Distribution {
+            subject: 1,
+            per: 2,
+            ratio,
+            tolerance_percent,
+            min_spacing,
+            max_distance,
+            scope,
+        }
+    }
+
+    #[test]
+    fn canonical_line_changes_with_every_field_of_a_distribution_row() {
+        let site = DistributionScope::Site;
+        let l = line(dist(RowRatio::Fixed(10), 25, 0, 0, site));
+        let read = |max| {
+            RowRatio::Read(ParameterRead {
+                parameter: Parameter::Affluence,
+                ratio_at_min: 5,
+                ratio_at_max: 10,
+                min: 0,
+                max,
+            })
+        };
+        for other in [
+            dist(RowRatio::Fixed(11), 25, 0, 0, site),
+            dist(RowRatio::Fixed(10), 26, 0, 0, site),
+            dist(RowRatio::Fixed(10), 25, 1, 0, site),
+            dist(RowRatio::Fixed(10), 25, 0, 1, site),
+            dist(
+                RowRatio::Fixed(10),
+                25,
+                0,
+                0,
+                DistributionScope::Catchment { extent_cells: 8 },
+            ),
+            dist(read(100), 25, 0, 0, site),
+        ] {
+            assert_ne!(l, line(other));
+        }
+        assert_ne!(
+            line(dist(read(100), 25, 0, 0, site)),
+            line(dist(read(101), 25, 0, 0, site))
+        );
+    }
+
+    #[test]
+    fn canonical_line_changes_with_every_field_of_the_other_kinds() {
+        let coherence = |mode| RuleKind::Coherence {
+            subject: 1,
+            within: 2,
+            mode,
+        };
+        assert_ne!(
+            line(coherence(CoherenceMode::Allow)),
+            line(coherence(CoherenceMode::Forbid))
+        );
+        static TERMS: [NeighbourTerm; 1] = [NeighbourTerm {
+            direction: Direction::North,
+            tag: 3,
+            present: true,
+        }];
+        static OTHER: [NeighbourTerm; 1] = [NeighbourTerm {
+            direction: Direction::North,
+            tag: 3,
+            present: false,
+        }];
+        static ALTS: [&[NeighbourTerm]; 1] = [&TERMS];
+        static OTHER_ALTS: [&[NeighbourTerm]; 1] = [&OTHER];
+        let adjacency = |relation, alternatives| RuleKind::Adjacency {
+            a: 1,
+            relation,
+            alternatives,
+        };
+        let l = line(adjacency(AdjacencyRelation::Forbid, &ALTS));
+        assert_ne!(l, line(adjacency(AdjacencyRelation::Require, &ALTS)));
+        assert_ne!(l, line(adjacency(AdjacencyRelation::Forbid, &OTHER_ALTS)));
+        let requirement = |min, max| RuleKind::Requirement {
+            container: 1,
+            requires: 2,
+            min,
+            max,
+        };
+        let l = line(requirement(1, None));
+        assert_ne!(l, line(requirement(2, None)));
+        assert_ne!(l, line(requirement(1, Some(3))));
+    }
 
     const CAFE: TagId = 1;
     const SEATING: TagId = 3;

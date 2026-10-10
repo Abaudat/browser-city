@@ -2047,9 +2047,9 @@ proptest! {
     /// direction, cycle 1; cycle 3: switched from a median-distance
     /// split to `StreetNetwork::mean_area_by_density_band`, density
     /// bands rather than a proxy for density -- Tim's direction, cycle
-    /// 3). Measured at `GENERATION_VERSION` 9 over 1,000,000 uniformly
-    /// drawn seeds: none below the committed 60%; the worst is 80.4% --
-    /// real split-jitter noise rather than an inversion
+    /// 3). The miss rate and the lowest ratios over 1,000,000 drawn seeds
+    /// are in the `detour-bounds sweep` block of `docs/generation.md`: the
+    /// worst is real split-jitter noise rather than an inversion
     /// (`peripheral_floor_clears_the_lowest_known_ratio_seeds` pins it).
     /// This per-city floor alone cannot tell a healthy city from a
     /// density-blind one, though: a uniform grid pools to parity (1.0x),
@@ -3174,8 +3174,7 @@ fn block_edge_touches_street(block: Rect, street: Rect, side: sim::generation::S
     }
 }
 
-/// The argmin and argmax seeds of the building-count distribution at
-/// `GENERATION_VERSION` 9: the band sweep's (`measure-generation`, 50,000
+/// The argmin and argmax seeds of the building-count distribution: the band sweep's (`measure-generation`, 50,000
 /// seeds: min 768 / max 1,002) and the plot/envelope scan's (min 778 / max
 /// 990), copied from the harness's output, never hunted for, and
 /// re-taken whenever the generator moves. A generator change that shifts
@@ -4151,8 +4150,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
 /// (deterministic -- never flaky, unlike a fresh `any::<u64>()` draw each
 /// CI run), summed low-band mean area over summed high-band mean area
 /// must clear `peripheral_pooled_min_ratio_percent` -- a density-blind
-/// generator pools to ~100%, this one to ~289% at `GENERATION_VERSION` 9
-/// (Quentin's direction,
+/// generator pools to ~100%, this one to the ratio in the `pooled evidence`
+/// block of `docs/generation.md` (Quentin's direction,
 /// cycle 4: "the only test that goes red if `subdivide` stops reading
 /// density is a three-seed test tuned to one seed").
 #[test]
@@ -4174,7 +4173,7 @@ fn peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor() {
     );
 }
 
-/// The lowest per-city ratios known at `GENERATION_VERSION` 9, pinned so
+/// The lowest per-city ratios known, pinned so
 /// raising `peripheral_low_band_floor_percent` above them fails every run
 /// rather than one in N. Low-band mean over high-band mean, the three
 /// lowest of 1,000,000 seeds drawn through `seed_from_ids(0x5ca9, i)`
@@ -4208,10 +4207,10 @@ fn peripheral_floor_clears_the_lowest_known_ratio_seeds() {
 /// may have an area at or under a quarter of their own local
 /// `target_block_size` squared. A ratio cannot tell "periphery is small"
 /// from "periphery is chopped"; this can. Measured with this same
-/// counting rule pooled over 0..256: `GENERATION_VERSION` 8 (master at
-/// `f6ad0570`, region-spanning rule) 7,458 of 9,761 blocks, 76%;
-/// `GENERATION_VERSION` 9 1,886 of 5,600, 33%. 55 is midway between the
-/// two, so the bound separates the generators rather than fitting the
+/// counting rule pooled over 0..256: the region-spanning rule (master at
+/// `f6ad0570`) 7,458 of 9,761 blocks, 76%; the current rule's share is
+/// the `pooled evidence` block of `docs/generation.md`. 55 is midway
+/// between the two, so the bound separates the generators rather than fitting the
 /// newer one. Pooled rather than per city because the per-city share is
 /// too wide to separate them (1,000,000 seeds at 9: median 33%, p99 67%,
 /// max 88%). Not a balance key: only this test reads it.

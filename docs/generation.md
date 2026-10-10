@@ -308,8 +308,8 @@ The earlier rule split on any rect
 covering two regions; pass-1 leaves are 3-6 coarse cells, so peripheral
 blocks were chopped to region size whatever the density said.
 `StreetNetwork::low_band_chopped_blocks` counts low-band blocks at or
-under a quarter of their local target's area (76% pooled over seeds
-0..256 at `GENERATION_VERSION` 8, 33% at 9) and
+under a quarter of their local target's area (the pooled share over
+seeds 0..256 is in the `pooled evidence` block below) and
 `peripheral_blocks_pooled_chopped_share_stays_bounded` bounds it, so a
 ratio that looks fine cannot hide a chopped periphery.
 `block_size_max_cells`/`max_block_depth_max_cells` are tuned with it to
@@ -321,8 +321,8 @@ evidence seeds (1, 2, 3), which do not change to fit a measurement. It
 is 2x because a 1.5x area is a 1.22x side, invisible on a 40x22-cell
 viewport, while 2x is a 1.41x side: the floor at which a player walking
 outward sees one fewer street crossing per screen, so leaving the core
-reads by looking, not by a HUD. Measured at `GENERATION_VERSION` 9: 2.65x,
-2.24x, 2.56x.
+reads by looking, not by a HUD. The three ratios are in the `pooled
+evidence` block below.
 
 ### The detour-excess bound (story 3.18)
 
@@ -367,8 +367,8 @@ cheap 14-node width -- its own worst reading (312, seed
 `4595557621078204092`) sits 8 cells under the 320-cell exhaustive figure
 the key is set from. That gap is not the margin; the margin is the
 stated 1.25 factor, nothing else, over a tail that is still growing: the
-ten largest per-seed worsts are in the stamped exhaustive block under
-"The detour ceilings are measured at one generator version" below. A
+ten largest per-seed worsts are in the `exhaustive loop` block under
+"Measured ceilings" below. A
 future 50,000-seed run finding a new worst above 400 remains possible --
 that is what re-measuring on a retune, and pinning what a random sweep
 finds, both exist for.
@@ -444,7 +444,7 @@ exists -- story 4.21's area-share land use moved every pass-2 network --
 so the pin no longer asserts that pair's figures; the seam itself is held
 by the max() contract's own definition.
 
-### The detour ceilings are measured at one generator version
+### The p99 detour bound is a fill of the max() contract
 
 Seed `8619285945825134650` has a 206% p99 detour *ratio* against the old
 `p99_detour_percent` (200). `measure-generation p99 8619285945825134650`
@@ -458,7 +458,7 @@ short pass-2 crossing to a stricter contract than the one the worst pair
 is held to.
 
 **The choice.** No `streets.rs` change; goldens and evidence are
-byte-identical, `GENERATION_VERSION` stays 10. The p99 bound moves onto
+byte-identical. The p99 bound moves onto
 the committed contract: a pair's *fill* is `network * 100 /
 DetourSample::detour_allowed`, and `generation.streets.p99_detour_fill_percent`
 bounds the 99th-percentile fill over the 64-node sample, strictly under
@@ -469,8 +469,8 @@ fill is 71%.
 **Margin rule.** A perfect route at or beyond the takeover distance
 already fills 50% (allowed is `2 * manhattan` there), so only the share
 of the worst measured p99 fill above that floor can worsen: scale that
-share by 1.25, add the floor back, round up to a multiple of 5. At
-`GENERATION_VERSION` 10 the worst per-seed p99 fill is 84% (seed
+share by 1.25, add the floor back, round up to a multiple of 5. The
+worst per-seed p99 fill (the `detour-bounds sweep` block) is 84% (seed
 `11161877730662506814`, pinned in `streets::PINNED_P99_FILL_SEEDS`):
 (84 - 50) * 1.25 + 50 = 92.5, rounded up to 95, which is committed.
 `p99_detour_fill_percent_matches_its_own_margin_rule` derives it from the
@@ -495,88 +495,6 @@ fires while the max() contract holds, so the firing path on a real
 network is covered by a hand-built U corridor
 (`a_u_corridor_near_its_allowance_holds_the_max_contract_but_breaks_the_p99`)
 and the unit tests on hand-built samples, not by the proptest.
-
-**Re-measure rule.** A measured ceiling is a claim about one generator
-state. The detour-bounds sweep and the 50,000-seed exhaustive loop are
-re-run in the same PR as any change that moves a `GENERATION_VERSION` or
-a `generation.*` balance value, and every detour ceiling's measured worst
-and miss rate is re-stated. Each block below carries the
-`GENERATION_VERSION` and the FNV-1a fingerprint of every `generation.*`
-balance row it was measured under;
-`bounds/tests/generation_sweep_current.rs` fails, naming the block and
-whether the version or the fingerprint moved, when either differs.
-
-`cargo run -p bounds --release --bin measure-generation -- detour
-1000000` (threaded, 203s) at `GENERATION_VERSION` 10:
-
-```text
-detour-bounds sweep at GENERATION_VERSION=10 fingerprint=e97a13a8528d8e39: 1000000 seeds, 32 threads, passes 1-2 only
-  detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
-    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-  p99_detour_fill_percent = 95% (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
-    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-p99 detour fill, top 10 per-seed worsts (ascending):
-  75% at seed 5988837546137498753
-  75% at seed 8972464458946417216
-  75% at seed 11439090712527978101
-  75% at seed 13505970753572999287
-  75% at seed 13776647893606566841
-  75% at seed 14403150150629229023
-  76% at seed 1328008260854036307
-  76% at seed 3051248002231336362
-  78% at seed 12074391603333713495
-  84% at seed 11161877730662506814
-detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worsts (ascending):
-  169% at seed 15136973595406656132
-  169% at seed 15419962683491853639
-  169% at seed 18310960759582978189
-  170% at seed 5244034360721249388
-  170% at seed 7463611480761118332
-  170% at seed 9172990292326436060
-  170% at seed 9925152223027798400
-  171% at seed 4929245716913353663
-  178% at seed 4832727318219098284
-  189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 203.3s (0.203ms/seed)
-```
-
-The exhaustive loop (`measure-generation`, 50,000 mixed seeds) at
-`GENERATION_VERSION` 10: worst exhaustive excess 320 (seed
-`610140160610395379`, unchanged, so `max_detour_excess_cells` and its
-pinned seeds hold), worst exhaustive ratio at or beyond the takeover
-distance 176% (seed `4595557621078204092`; 189% at the 14-node sample over
-the million seeds above), worst both-endpoints-interior excess 312.
-
-```text
-exhaustive detour loop at GENERATION_VERSION=10 fingerprint=e97a13a8528d8e39: 50000 seeds
-detour_excess_cells_sampled_14node: min=0 p1=0 p50=0 p99=92 max=312 mean=3.4 stddev=17.2
-detour_excess_cells_sampled_14node worst: 312 at seed 4595557621078204092 ((67, 40)-(512, 38))
-detour_excess_cells_exhaustive max: 320 at seed 610140160610395379 ((486, 53)-(512, 474)) -- the number max_detour_excess_cells's own margin rule is applied to; pin the seed (with this exhaustive figure) in streets::PINNED_DETOUR_SEEDS if it moves
-detour_excess_cells_exhaustive top 10 per-seed worsts (ascending):
-  294 at seed 12004126622565142029 ((139, 37)-(408, 0))
-  296 at seed 116551616410019364 ((109, 512)-(460, 480))
-  298 at seed 14239178388419496175 ((123, 463)-(421, 512))
-  300 at seed 2513967929251121005 ((97, 33)-(448, 0))
-  300 at seed 3802514444151385145 ((253, 512)-(479, 478))
-  302 at seed 16760756817975736266 ((76, 512)-(489, 486))
-  306 at seed 12819133835454577505 ((263, 469)-(472, 512))
-  310 at seed 6482608135473407511 ((181, 0)-(437, 26))
-  316 at seed 4595557621078204092 ((159, 0)-(418, 38))
-  320 at seed 610140160610395379 ((486, 53)-(512, 474))
-detour_excess_cells_exhaustive_both_endpoints_interior max: 312 at seed 4595557621078204092 ((108, 40)-(418, 38)) -- the player-felt figure: the worst pair with neither endpoint on the site boundary
-detour_ratio_pct_exhaustive_at_or_beyond_takeover (400 cells) max: 176% at seed 4595557621078204092 ((108, 40)-(512, 38)) -- the only range where the ratio term is the binding half of the max()-contract, so the only figure max_detour_percent owes margin over (story 15.10, Derek's direction)
-detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascending):
-  169% at seed 8751012638812695494 ((0, 72)-(27, 464))
-  170% at seed 8027958254937089344 ((85, 512)-(474, 494))
-  171% at seed 15639043849596958433 ((77, 481)-(450, 512))
-  171% at seed 3224251154164115518 ((483, 429)-(512, 52))
-  171% at seed 11335347611331606093 ((76, 23)-(458, 0))
-  171% at seed 610140160610395379 ((486, 53)-(512, 474))
-  171% at seed 893143956151306943 ((88, 512)-(473, 494))
-  173% at seed 3802514444151385145 ((85, 512)-(459, 478))
-  173% at seed 12819133835454577505 ((101, 469)-(472, 512))
-  176% at seed 4595557621078204092 ((108, 40)-(512, 38))
-```
 
 ### Plot subdivision
 
@@ -736,6 +654,259 @@ detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascend
 - **Hands down:** the placed props a player actually walks past.
 - **Reads:** density, affluence, building age.
 - **Evidence:** (added when the pass lands.)
+
+## Measured ceilings
+
+Every measured figure lives only in a stamped block below, whose label is
+in `bounds::generation_stamp::MEASURED_BLOCKS`. A block is raw
+`measure-generation` output pasted inside a fenced code block, headed by
+`<label> at GENERATION_VERSION=<n> fingerprint=<hex>`. The fingerprint
+(FNV-1a) covers every generator input: the `generation.*` balance rows,
+the rule rows and the building types.
+`bounds/tests/generation_sweep_current.rs` fails, naming the block and its
+re-run command, for a block that is missing, unregistered, stamped twice
+with different stamps, stale in version or fingerprint, stamped outside a
+fence, or lacking its `implied 4096-case` line when it is proptest-gated;
+and for any line of this file, `defs/balance/generation.toml`,
+`server/sim/src/generation/` or `server/sim/tests/invariants.rs` that
+quotes a number against `GENERATION_VERSION`. Comments point at a block
+label, never restate its figures.
+
+Three gates, none to be loosened: a pass-code change without a version
+bump turns the goldens red; a version bump turns the stamps red; a retune
+turns the fingerprint red. A red stamp means re-run the block's command
+and re-state every ceiling it backs in the same PR.
+
+Two kinds of block. *Proptest-gated* blocks (`detour-bounds sweep`, `band
+sweep`) back per-seed bounds that CI draws arbitrary seeds against: they
+carry the miss count over a million seeds and the implied failure
+probability of a 4,096-case CI run, with the rule-of-three bound when
+there are no misses. *Fixed-seed* blocks are deterministic facts with no
+miss rate.
+
+**Margin rule.** A design target (a `target_*` count, the 2x bar, the
+land-use shares) is never re-centred on a measurement; only the guard
+around it is measured. A bound on an emergent quantity is the worst
+observed over the sweep, scaled by 1.25 on the side that can worsen,
+rounded away from the pass direction to a round step. The 5.5-sigma form
+(mean plus 5.5 standard deviations) is kept only for building count,
+workplace count and profession count. A bound that a sweep finds
+violated is a pass defect, fixed in the pass, not by widening the bound;
+a retune carries the pinned worst seed, as a fixed-seed regression test,
+before the fix lands.
+
+Seeds are drawn through `seed_from_ids` with each sweep's own salt over
+the full `u64` space, and threaded sweeps reduce in seed-index order, so a
+block is reproducible bar thread count and wall-clock.
+
+### detour-bounds sweep
+
+`cargo run -p bounds --release --bin measure-generation -- detour 1000000`
+
+```text
+detour-bounds sweep at GENERATION_VERSION=10 fingerprint=82569cdf90f6a484: 1000000 seeds, 32 threads, passes 1-2 only
+  detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+  p99_detour_fill_percent = 95% (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+  peripheral_low_band_floor_percent = 60% (per-city low/high band mean block area): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+peripheral low/high band mean block area, 10 lowest per-seed ratios (ascending):
+  82.1% at seed 16892314924458794616
+  86.0% at seed 6608802717960552687
+  90.6% at seed 14325606440077469114
+  94.0% at seed 6501764767737910739
+  94.0% at seed 11873867015526339073
+  94.7% at seed 12817518641139574010
+  94.9% at seed 3904633251627043261
+  96.2% at seed 18346756138553029793
+  98.3% at seed 5988394195923993529
+  98.6% at seed 5909227263422883727
+p99 detour fill, top 10 per-seed worsts (ascending):
+  75% at seed 5988837546137498753
+  75% at seed 8972464458946417216
+  75% at seed 11439090712527978101
+  75% at seed 13505970753572999287
+  75% at seed 13776647893606566841
+  75% at seed 14403150150629229023
+  76% at seed 1328008260854036307
+  76% at seed 3051248002231336362
+  78% at seed 12074391603333713495
+  84% at seed 11161877730662506814
+detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worsts (ascending):
+  169% at seed 15136973595406656132
+  169% at seed 15419962683491853639
+  169% at seed 18310960759582978189
+  170% at seed 5244034360721249388
+  170% at seed 7463611480761118332
+  170% at seed 9172990292326436060
+  170% at seed 9925152223027798400
+  171% at seed 4929245716913353663
+  178% at seed 4832727318219098284
+  189% at seed 4059475806152703678
+detour-bounds sweep wall-clock: 220.6s (0.221ms/seed)
+```
+
+### band sweep
+
+`cargo run -p bounds --release --bin measure-generation -- bands 1000000`
+
+```text
+band sweep at GENERATION_VERSION=10 fingerprint=82569cdf90f6a484: 1000000 seeds, all five passes (salt 0xb0f05ee4)
+land_use_share_commercial deviation from its key (18%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.6 stddev=6.0
+  5.5-sigma share tolerance implied: 3.32 percentage points
+land_use_share_industrial deviation from its key (14%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.7 stddev=5.8
+  5.5-sigma share tolerance implied: 3.21 percentage points
+land_use_share_institutional deviation from its key (7%), permille of the site: min=-44 p1=-29 p50=0 p99=6 max=6 mean=-1.2 stddev=6.5
+  5.5-sigma share tolerance implied: 3.55 percentage points
+  land-use share band (share_tolerance_pct): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+building_count: min=766 p1=829 p50=889 p99=948 max=1009 mean=889.1 stddev=25.5
+  5.5-sigma building tolerance implied: 15.7% of the 893 target
+building_count extremes over the band sweep: min 766 at seed 12323584470636640542, max 1009 at seed 161806487886316638 (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)
+  building-count band (count_tolerance_percent): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+workplace_count: min=214 p1=288 p50=345 p99=404 max=460 mean=345.3 stddev=24.9
+  5.5-sigma workplace tolerance implied: 40.0% of the 343 target
+  workplace-count band (workplace_count_tolerance_percent): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+band sweep wall-clock: 140.5s (0.141ms/seed)
+```
+
+### exhaustive loop
+
+`cargo run -p bounds --release --bin measure-generation`
+
+```text
+exhaustive loop at GENERATION_VERSION=10 fingerprint=82569cdf90f6a484: 50000 seeds at 512x512 cells
+building_count: min=778 p1=829 p50=889 p99=949 max=990 mean=889.2 stddev=25.6
+building_count extremes: min 778 at seed 11805315485014167829, max 990 at seed 11123925265906853341 (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)
+rejected_percent: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
+rejections by reason: too_narrow=0 too_shallow=0
+open plots with a short side under open_min_side_cells: 0 (0 of them whole sliver blocks from pass 2)
+open_percent_by_count: min=0 p1=0 p50=1 p99=3 max=4 mean=1.5 stddev=0.6
+open_percent_by_area: min=1 p1=7 p50=17 p99=29 max=38 mean=17.4 stddev=4.9
+unplotted_percent: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
+mean_width_cells_x10: min=103 p1=106 p50=110 p99=114 max=117 mean=110.1 stddev=1.9
+mean_depth_cells_x10: min=101 p1=105 p50=112 p99=118 max=124 mean=111.6 stddev=2.8
+detour_excess_cells_sampled_14node: min=0 p1=0 p50=0 p99=92 max=312 mean=3.4 stddev=17.2
+detour_excess_cells_sampled_14node worst: 312 at seed 4595557621078204092 ((67, 40)-(512, 38))
+detour_excess_cells_exhaustive max: 320 at seed 610140160610395379 ((486, 53)-(512, 474)) -- the number max_detour_excess_cells's own margin rule is applied to; pin the seed (with this exhaustive figure) in streets::PINNED_DETOUR_SEEDS if it moves
+detour_excess_cells_exhaustive top 10 per-seed worsts (ascending):
+  294 at seed 12004126622565142029 ((139, 37)-(408, 0))
+  296 at seed 116551616410019364 ((109, 512)-(460, 480))
+  298 at seed 14239178388419496175 ((123, 463)-(421, 512))
+  300 at seed 2513967929251121005 ((97, 33)-(448, 0))
+  300 at seed 3802514444151385145 ((253, 512)-(479, 478))
+  302 at seed 16760756817975736266 ((76, 512)-(489, 486))
+  306 at seed 12819133835454577505 ((263, 469)-(472, 512))
+  310 at seed 6482608135473407511 ((181, 0)-(437, 26))
+  316 at seed 4595557621078204092 ((159, 0)-(418, 38))
+  320 at seed 610140160610395379 ((486, 53)-(512, 474))
+detour_excess_cells_exhaustive_both_endpoints_interior max: 312 at seed 4595557621078204092 ((108, 40)-(418, 38)) -- the player-felt figure: the worst pair with neither endpoint on the site boundary
+detour_ratio_pct_exhaustive_at_or_beyond_takeover (400 cells) max: 176% at seed 4595557621078204092 ((108, 40)-(512, 38)) -- the only range where the ratio term is the binding half of the max()-contract, so the only figure max_detour_percent owes margin over (story 15.10, Derek's direction)
+detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascending):
+  169% at seed 8751012638812695494 ((0, 72)-(27, 464))
+  170% at seed 8027958254937089344 ((85, 512)-(474, 494))
+  171% at seed 15639043849596958433 ((77, 481)-(450, 512))
+  171% at seed 3224251154164115518 ((483, 429)-(512, 52))
+  171% at seed 11335347611331606093 ((76, 23)-(458, 0))
+  171% at seed 610140160610395379 ((486, 53)-(512, 474))
+  171% at seed 893143956151306943 ((88, 512)-(473, 494))
+  173% at seed 3802514444151385145 ((85, 512)-(459, 478))
+  173% at seed 12819133835454577505 ((101, 469)-(472, 512))
+  176% at seed 4595557621078204092 ((108, 40)-(512, 38))
+dwelling_count: min=434 p1=469 p50=548 p99=627 max=686 mean=548.9 stddev=33.5
+workplace_count: min=259 p1=290 p50=345 p99=406 max=446 mean=345.4 stddev=25.3
+seeds (0..5000) with a real rule violation: 0
+distribution row actual/expected ratio, pooled and per-seed worst, over seeds with a nonzero expected count (0..5000):
+  depot_present: pooled actual/expected 100.0% (actual sum 5000, expected sum 5000), worst single seed 100.0% at seed 257705055944448381 (committed tolerance_percent allows down to 75%)
+  council_present: pooled actual/expected 100.0% (actual sum 5000, expected sum 5000), worst single seed 100.0% at seed 257705055944448381 (committed tolerance_percent allows down to 75%)
+  hospital_present: pooled actual/expected 100.0% (actual sum 5000, expected sum 5000), worst single seed 100.0% at seed 257705055944448381 (committed tolerance_percent allows down to 75%)
+  welfare_office_present: pooled actual/expected 58.8% (actual sum 17544, expected sum 29855), worst single seed 20.0% at seed 17533667317742863027 (committed tolerance_percent allows down to 75%)
+  shelter_present: pooled actual/expected 45.1% (actual sum 26400, expected sum 58552), worst single seed 18.2% at seed 10430750330835762333 (committed tolerance_percent allows down to 75%)
+  cafe_present: pooled actual/expected 100.0% (actual sum 52423, expected sum 52423), worst single seed 100.0% at seed 257705055944448381 (committed tolerance_percent allows down to 80%)
+per-tag placed count, min and pooled mean over 0..5000:
+  tag 18: min=434 mean=548.93
+  tag 19: min=6 mean=11.79
+  tag 20: min=1 mean=1.00
+  tag 21: min=1 mean=1.00
+  tag 22: min=1 mean=1.00
+  tag 23: min=1 mean=3.51
+  tag 24: min=2 mean=5.28
+  tag 25: min=111 mean=181.28
+  tag 26: min=8 mean=10.48
+  tag 27: min=1 mean=10.20
+  tag 28: min=33 mean=86.56
+  tag 29: min=1 mean=2.68
+  tag 30: min=1 mean=6.69
+  tag 31: min=77 mean=186.73
+  tag 32: min=168 mean=302.94
+  tag 33: min=3 mean=59.26
+per-profession pooled mean employer count (below 5 shown first):
+  councillor: 1.00
+  surgeon: 1.00
+  trainer: 3.84
+  bookseller: 4.60
+  bank_teller: 4.61
+  loan_officer: 4.61
+  concierge: 4.82
+  tailor: 5.42
+  bartender: 6.04
+  market_porter: 6.69
+  market_vendor: 6.69
+barista_employers_per_city: min=8 p1=9 p50=10 p99=12 max=13 mean=10.5 stddev=0.7
+professions_employed_by_5_plus_workplaces_per_city (Scale Baseline target ~69): min=49 p1=55 p50=61 p99=66 max=67 mean=61.4 stddev=2.3
+
+missing-tag sweep: 5000 seeds (distinct from every sweep above -- `cargo run -p bounds --release --bin measure-generation -- <n>` to change the count)
+distribution rows -- seeds with target >= 1 but 0 actually placed:
+  depot_present: 0 of 5000 (rate 0.000000%), offending seeds: []
+  council_present: 0 of 5000 (rate 0.000000%), offending seeds: []
+  hospital_present: 0 of 5000 (rate 0.000000%), offending seeds: []
+  welfare_office_present: 0 of 5000 (rate 0.000000%), offending seeds: []
+  shelter_present: 0 of 5000 (rate 0.000000%), offending seeds: []
+  cafe_present: 0 of 5000 (rate 0.000000%), offending seeds: []
+ad hoc presence tags (never distributed) -- seeds with 0 placed:
+  shop: 0 of 5000 (rate 0.000000%), offending seeds: []
+```
+
+### rows sweep
+
+`cargo run -p bounds --release --bin measure-generation -- rows 20000`
+
+```text
+rows sweep at GENERATION_VERSION=10 fingerprint=82569cdf90f6a484: 20000 seeds, 32 threads
+  seeds failing check_rules: 0
+  cafe_present: pooled mean placed 10.49, fewest in one district 8, owed somewhere but none placed in 0 districts
+  council_present: pooled mean placed 1.00, fewest in one district 1, owed somewhere but none placed in 0 districts
+  depot_present: pooled mean placed 1.00, fewest in one district 1, owed somewhere but none placed in 0 districts
+  hospital_present: pooled mean placed 1.00, fewest in one district 1, owed somewhere but none placed in 0 districts
+  shelter_present: pooled mean placed 5.29, fewest in one district 2, owed somewhere but none placed in 0 districts
+  welfare_office_present: pooled mean placed 3.51, fewest in one district 1, owed somewhere but none placed in 0 districts
+```
+
+### region-loss sweep
+
+`cargo run -p bounds --release --bin measure-generation -- regions 100000`
+
+```text
+region-loss sweep at GENERATION_VERSION=10 fingerprint=82569cdf90f6a484: 100000 seeds, passes 1-2 only (salt 0xb0f05ee5)
+  seeds with any region carried by no block: 2079 of 100000 (first: Some(11091164158115210688)) -- by design, a block takes its majority use
+  seeds losing every institutional region: 0 of 100000 (rate 0.000000%), offending seeds: []
+```
+
+### pooled evidence
+
+`cargo run -p bounds --release --bin measure-generation -- pooled`
+
+```text
+pooled evidence at GENERATION_VERSION=10 fingerprint=82569cdf90f6a484: seeds 0..256 pooled, evidence seeds 1, 2, 3
+pooled low-band / high-band mean block area over seeds 0..256: 289% (peripheral_pooled_min_ratio_percent = 150%)
+pooled chopped share of low-band blocks over seeds 0..256: 1886 of 5600 (33%)
+evidence seed 1: low-band / high-band mean block area 2.65x (Artie's bar 2x)
+evidence seed 2: low-band / high-band mean block area 2.24x (Artie's bar 2x)
+evidence seed 3: low-band / high-band mean block area 2.56x (Artie's bar 2x)
+```
 
 ## Density is per screen
 
