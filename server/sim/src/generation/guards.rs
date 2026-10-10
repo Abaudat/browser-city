@@ -401,3 +401,188 @@ pub fn catchment_bite(
     }
     (biting, pairs)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::generated::defs;
+    use crate::generation::land_use::{LandUseCell, LandUseMap};
+    use crate::generation::plan;
+
+    fn setup() -> (GenerationConfig, GenerationContent<'static>) {
+        (
+            GenerationConfig::from_balance(defs::BALANCE).unwrap(),
+            GenerationContent::committed(),
+        )
+    }
+
+    fn n(name: &str) -> i64 {
+        crate::balance::value(defs::BALANCE, &format!("generation.neighbourhood.{name}"))
+    }
+
+    fn committed_params() -> CharacterParams {
+        CharacterParams {
+            legible_step: n("legible_step") as i32,
+            min_corners: n("min_corners") as usize,
+            min_apart_neighbourhoods: n("min_apart_neighbourhoods") as usize,
+            poor_band_max: n("poor_band_max") as i32,
+        }
+    }
+
+    #[test]
+    fn character_violation_is_none_at_the_committed_params_and_names_each_impossible_demand() {
+        let (cfg, content) = setup();
+        let d = plan(1, &cfg, &content).unwrap();
+        let p = committed_params();
+        assert_eq!(character_violation(&d, &cfg, &content, &p), None);
+        let corners = character_violation(
+            &d,
+            &cfg,
+            &content,
+            &CharacterParams {
+                min_corners: 5,
+                ..p
+            },
+        );
+        assert!(corners.unwrap().contains("corners"));
+        let apart = character_violation(
+            &d,
+            &cfg,
+            &content,
+            &CharacterParams {
+                min_apart_neighbourhoods: 99,
+                ..p
+            },
+        );
+        assert!(apart.unwrap().contains("legible step apart"));
+        let step = character_violation(
+            &d,
+            &cfg,
+            &content,
+            &CharacterParams {
+                legible_step: 10_000,
+                ..p
+            },
+        );
+        assert!(step.unwrap().contains("age"));
+        let poor = character_violation(
+            &d,
+            &cfg,
+            &content,
+            &CharacterParams {
+                poor_band_max: i32::MIN,
+                ..p
+            },
+        );
+        assert!(poor.unwrap().contains("bottom affluence band"));
+    }
+
+    #[test]
+    fn legibility_reports_figures_a_threshold_can_fall_under() {
+        let (cfg, content) = setup();
+        let (step, shops) = (n("legible_step") as i32, n("legibility_min_shops") as u64);
+        let mut shop = Vec::new();
+        for seed in 1..=3u64 {
+            let d = plan(seed, &cfg, &content).unwrap();
+            let l = legibility(&d, &cfg, &content, step, shops);
+            if let Some((v, _, _)) = l.affluence_shop_mix {
+                shop.push(v);
+            }
+            let (age, _, _) = l.age_distance.expect("a pair a legible step apart on age");
+            assert!((0..=100).contains(&age));
+        }
+        assert!(!shop.is_empty(), "no seed had a qualifying shop-mix pair");
+        // The figure is a real distance: under 100 for some pair, so a
+        // threshold of 101 would be missed and one of 0 never.
+        assert!(shop.iter().any(|&v| v < 100), "{shop:?}");
+        // No pair qualifies once the legible step is out of range.
+        let d = plan(1, &cfg, &content).unwrap();
+        let none = legibility(&d, &cfg, &content, 10_000, shops);
+        assert_eq!(none.affluence_shop_mix, None);
+        assert_eq!(none.age_distance, None);
+    }
+
+    #[test]
+    fn core_and_edge_are_busy_and_quieter_on_the_evidence_seeds() {
+        let (cfg, content) = setup();
+        for seed in 1..=3u64 {
+            let d = plan(seed, &cfg, &content).unwrap();
+            let (core, edge) = core_and_edge(&d, &cfg, &content);
+            assert!(core > 0, "seed {seed}");
+            assert!(edge < core, "seed {seed}: edge {edge} core {core}");
+        }
+    }
+
+    fn pocket_map() -> LandUseMap {
+        let (mut cfg, _) = setup();
+        cfg.site_extent_cells = 50 * 4;
+        cfg.coarse_cell_size_cells = 50;
+        let u = LandUse::Institutional;
+        let r = LandUse::Residential;
+        // 4 x 3: A at (0,0) touches B at (1,1) by a corner; C is the
+        // whole right column.
+        #[rustfmt::skip]
+        let uses = [
+            u, r, r, u,
+            r, u, r, u,
+            r, r, r, u,
+        ];
+        let cells = uses
+            .iter()
+            .map(|&use_| LandUseCell { use_, density: 50 })
+            .collect();
+        LandUseMap::test_fixture(cfg.site(), 50, 4, 3, 0, 0, cells)
+    }
+
+    #[test]
+    fn institutional_pockets_reports_the_touch_the_count_and_the_largest_share() {
+        let p = institutional_pockets(&pocket_map());
+        assert_eq!(p.count, 3);
+        assert_eq!(p.largest_cells, 3);
+        assert_eq!(p.total_cells, 12);
+        assert_eq!(p.largest_share_basis_points(), 2500);
+        assert_eq!(p.touching, Some(((0, 0), (1, 1))));
+    }
+
+    #[test]
+    fn institutional_pockets_sees_no_touch_on_a_committed_seed() {
+        let (cfg, content) = setup();
+        let d = plan(1, &cfg, &content).unwrap();
+        let p = institutional_pockets(&d.land_use);
+        assert!(p.touching.is_none());
+        assert!(p.count as i64 >= cfg.institutional_min_pockets);
+    }
+
+    #[test]
+    fn profession_depth_counts_professions_held_by_enough_workplaces() {
+        let (cfg, content) = setup();
+        let d = plan(1, &cfg, &content).unwrap();
+        assert_eq!(profession_depth(&d, &content, 1_000_000), 0);
+        let at_one = profession_depth(&d, &content, 1);
+        let at_committed = profession_depth(
+            &d,
+            &content,
+            crate::balance::value(
+                defs::BALANCE,
+                "generation.building_types.min_employers_per_profession",
+            ) as u64,
+        );
+        assert!(at_one >= at_committed && at_committed > 0);
+        assert_eq!((at_one, at_committed), (67, 60));
+    }
+
+    #[test]
+    fn catchment_bite_is_a_known_count_on_one_row_of_one_seed() {
+        let (cfg, content) = setup();
+        let d = plan(1, &cfg, &content).unwrap();
+        let row = content
+            .rules
+            .iter()
+            .filter_map(|r| r.as_distribution())
+            .find(|r| matches!(r.scope, crate::rules::DistributionScope::Catchment { .. }))
+            .expect("a scoped row");
+        let (biting, pairs) = catchment_bite(&d, &content, &row);
+        assert!(pairs > 0 && biting <= pairs);
+        assert_eq!((biting, pairs), (4, 4));
+    }
+}
