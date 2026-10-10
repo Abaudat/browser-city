@@ -1554,6 +1554,11 @@ own `defs/` comment; a `from_balance` refusal alongside one is a
 config-consistency (loosening) guard, never a generator worst-case
 claim.
 
+The detour-bounds sweep and the exhaustive detour loop pasted into
+`docs/generation.md` carry the `GENERATION_VERSION` and the fingerprint of
+the `generation.*` balance rows they were measured under; `bounds` fails
+on a mismatch of either.
+
 Pass 2's own junction registry enforces one specific case: where two
 *different* streets each cross the same third street (a staggered
 crossing), their own crossing points are either coincident (a true

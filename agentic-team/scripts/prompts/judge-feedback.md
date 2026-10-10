@@ -52,8 +52,8 @@ Then open each story under its epic:
 - `<blocked-by-csv>` is the issue numbers of the open stories that must be
   merged before this one can be built or verified, e.g. `97,132`, or `-` for
   none. Think before writing `-`: the team starts, from the whole backlog and
-  in no epic order, whichever story has the highest priority and smallest size
-  **and no open blocker** — so a story with no blockers may be started next,
+  in no epic order, whichever story has the highest priority, then is needed by
+  the earliest milestone, **and has no open blocker** — so a story with no blockers may be started next,
   before anything you merely assumed would come first. Name the specific
   stories whose systems, tables or decisions this one uses, in any epic; do
   not name an epic, and do not list a story just because its number is lower.

@@ -363,15 +363,15 @@ claim.
 
 **What actually protects master.** `inv_generation_detour_ratio_bounded`
 runs on arbitrary seeds, in every CI run, but only ever samples the
-cheap 14-node width -- its own worst reading at `GENERATION_VERSION` 9
-was 312 (seed `4595557621078204092`), 8 cells under the 320-cell
-exhaustive figure the key is set from. That gap is not the margin; the
-margin is the stated 1.25 factor, nothing else, over a tail that is
-still growing: this run's own ten largest per-seed worsts, ascending,
-were 294, 296, 298, 300, 300, 302, 306, 310, 316, 320. A future
-50,000-seed run finding a new worst above 400 remains possible -- that
-is what re-measuring on a retune, and pinning what a random sweep finds,
-both exist for.
+cheap 14-node width -- its own worst reading (312, seed
+`4595557621078204092`) sits 8 cells under the 320-cell exhaustive figure
+the key is set from. That gap is not the margin; the margin is the
+stated 1.25 factor, nothing else, over a tail that is still growing: the
+ten largest per-seed worsts are in the stamped exhaustive block under
+"The detour ceilings are measured at one generator version" below. A
+future 50,000-seed run finding a new worst above 400 remains possible --
+that is what re-measuring on a retune, and pinning what a random sweep
+finds, both exist for.
 
 For scale: the worst pinned seed today (`610140160610395379`, 320
 cells exhaustive) is about eight viewport-widths of extra walking for the
@@ -444,78 +444,139 @@ exists -- story 4.21's area-share land use moved every pass-2 network --
 so the pin no longer asserts that pair's figures; the seam itself is held
 by the max() contract's own definition.
 
-`server/bounds/src/bin/measure_generation.rs`'s own detour-bounds sweep
-(its own CLI-configurable seed count) measures the max()-contract's own
-miss rate directly, together with `p99_detour_percent`'s (unrelated to
-this story's mechanism, and unchanged by it), and prints the worst
-sampled ratio among pairs at or beyond the takeover distance -- the only
-range where the ratio term is the binding half, so the only figure
-`max_detour_percent` owes margin over. Run at 1,000,000 seeds (the
-excess-only sweep this deduction rests on, story 15.10's first cycle;
-wall-clock 4854.4s, 4.854ms/seed, passes 1-2 only):
+### The detour ceilings are measured at one generator version
+
+Seed `8619285945825134650` has a 206% p99 detour *ratio* against the old
+`p99_detour_percent` (200). `measure-generation p99 8619285945825134650`
+lists the 64-node sample's pairs at the p99 rank: every one of them is a
+long peripheral crossing ending on the site boundary (Manhattan 126-436
+cells, 150-300% ratio, at most 250 cells of excess, at most 80% of its own
+max()-contract allowance), the large-peripheral-block mechanism
+`max_detour_excess_cells` already accepts; none fails `detour_bound_holds`.
+The generator is not defective -- the statistic was: a bare ratio holds a
+short pass-2 crossing to a stricter contract than the one the worst pair
+is held to.
+
+**The choice.** No `streets.rs` change; goldens and evidence are
+byte-identical, `GENERATION_VERSION` stays 10. The p99 bound moves onto
+the committed contract: a pair's *fill* is `network * 100 /
+DetourSample::detour_allowed`, and `generation.streets.p99_detour_fill_percent`
+bounds the 99th-percentile fill over the 64-node sample, strictly under
+100 (`streets::p99_detour_violation`, the one place the comparison lives;
+the proptest, the pinned seed and the sweep all call it). The seed's p99
+fill is 71%.
+
+**Margin rule.** A perfect route at or beyond the takeover distance
+already fills 50% (allowed is `2 * manhattan` there), so only the share
+of the worst measured p99 fill above that floor can worsen: scale that
+share by 1.25, add the floor back, round up to a multiple of 5. At
+`GENERATION_VERSION` 10 the worst per-seed p99 fill is 84% (seed
+`11161877730662506814`, pinned in `streets::PINNED_P99_FILL_SEEDS`):
+(84 - 50) * 1.25 + 50 = 92.5, rounded up to 95, which is committed.
+`p99_detour_fill_percent_matches_its_own_margin_rule` derives it from the
+pinned figure and fails if the key drifts. If a future sweep's worst
+makes the rule give 100 or more, the key cannot take it, and that is the
+pass-2 question, not a number to fit.
+
+**What the ratio p99 guarded and the fill p99 does not.** The old p99
+bound held the typical pair's detour *ratio* regardless of distance. The
+fill is measured against `max(manhattan + max_detour_excess_cells,
+manhattan * max_detour_percent / 100)`, so below the takeover distance the
+additive allowance dominates: a Manhattan-100 pair can run at 300% ratio
+(network 300) and sit at 60% fill (allowed 500). A city whose short and
+medium pairs all doubled their detour would pass both detour checks.
+Short-pair ratio regressions under the additive allowance are not guarded
+by either check; anything that relies on the Manhattan estimator for
+short and medium pairs (the pathfinding estimator, story 3.11) must not
+assume they are.
+
+**Coverage gap.** No generated seed is known where the p99 fill bound
+fires while the max() contract holds, so the firing path on a real
+network is covered by a hand-built U corridor
+(`a_u_corridor_near_its_allowance_holds_the_max_contract_but_breaks_the_p99`)
+and the unit tests on hand-built samples, not by the proptest.
+
+**Re-measure rule.** A measured ceiling is a claim about one generator
+state. The detour-bounds sweep and the 50,000-seed exhaustive loop are
+re-run in the same PR as any change that moves a `GENERATION_VERSION` or
+a `generation.*` balance value, and every detour ceiling's measured worst
+and miss rate is re-stated. Each block below carries the
+`GENERATION_VERSION` and the FNV-1a fingerprint of every `generation.*`
+balance row it was measured under;
+`bounds/tests/generation_sweep_current.rs` fails, naming the block and
+whether the version or the fingerprint moved, when either differs.
+
+`cargo run -p bounds --release --bin measure-generation -- detour
+1000000` (threaded, 225s) at `GENERATION_VERSION` 11:
 
 ```text
-detour-bounds sweep: 1000000 seeds, passes 1-2 only
-  max_detour_excess_cells (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+detour-bounds sweep at GENERATION_VERSION=11 fingerprint=e0d4aff0b3fda0b7: 1000000 seeds, 32 threads, passes 1-2 only
+  detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-  p99_detour_percent (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
+  p99_detour_fill_percent = 95% (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+p99 detour fill, top 10 per-seed worsts (ascending):
+  75% at seed 5988837546137498753
+  75% at seed 8972464458946417216
+  75% at seed 11439090712527978101
+  75% at seed 13505970753572999287
+  75% at seed 13776647893606566841
+  75% at seed 14403150150629229023
+  76% at seed 1328008260854036307
+  76% at seed 3051248002231336362
+  78% at seed 12074391603333713495
+  84% at seed 11161877730662506814
+detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worsts (ascending):
+  169% at seed 15136973595406656132
+  169% at seed 15419962683491853639
+  169% at seed 18310960759582978189
+  170% at seed 5244034360721249388
+  170% at seed 7463611480761118332
+  170% at seed 9172990292326436060
+  170% at seed 9925152223027798400
+  171% at seed 4929245716913353663
+  178% at seed 4832727318219098284
+  189% at seed 4059475806152703678
+detour-bounds sweep wall-clock: 224.8s (0.225ms/seed)
 ```
 
-The max()-contract's own miss count over that same million seeds is not
-separately re-run: exceeding the max() of two terms means exceeding
-both, so a max()-contract violation is always also an excess-alone
-violation, and the excess ceiling's own miss count above (0 of
-1,000,000, unconditional, every pair) already proves the max()-
-contract's own miss count is 0 too (Derek's direction, cycle 2). A
-second, smaller run over the *current* code (the max()-contract and the
-takeover-distance stat did not exist at the million-seed run's own
-commit) confirms it at 5,000 seeds. This block is a smoke confirmation
-only, not the story's own result -- the derivation above, resting on the
-million-seed excess-only run, is:
+The exhaustive loop (`measure-generation`, 50,000 mixed seeds) at
+`GENERATION_VERSION` 11: worst exhaustive excess 320 (seed
+`610140160610395379`, unchanged, so `max_detour_excess_cells` and its
+pinned seeds hold), worst exhaustive ratio at or beyond the takeover
+distance 176% (seed `4595557621078204092`; 189% at the 14-node sample over
+the million seeds above), worst both-endpoints-interior excess 312.
 
 ```text
-detour-bounds sweep: 5000 seeds, passes 1-2 only
-  detour max()-contract (14-node sample): 0 of 5000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
-    zero observed misses over 5000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.060000% (implied 4096-case CI failure probability <= 91.4423%)
-  p99_detour_percent (64-node sample): 0 of 5000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
-    zero observed misses over 5000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.060000% (implied 4096-case CI failure probability <= 91.4423%)
-detour_ratio_pct_sampled_at_or_beyond_takeover (416 cells) max: 161% at seed 3218297219535693363
-detour_ratio_pct_sampled_at_or_beyond_takeover top 10 per-seed worsts (ascending):
-  138% at seed 13484935046058371417
-  139% at seed 10851253929785274785
-  139% at seed 13953932552307513190
-  142% at seed 4317090597060016208
-  142% at seed 11584629443515575442
-  142% at seed 12779145144319015470
-  144% at seed 17004798694150435907
-  145% at seed 12948431575908203078
-  147% at seed 7693797974521656301
-  161% at seed 3218297219535693363
-detour-bounds sweep wall-clock: 24.8s (4.956ms/seed)
-```
-
-And the existing 50,000-seed exhaustive loop, re-run with the new
-takeover-distance filter in place of the old `detour_long_pair_cells`
-one:
-
-```text
-detour_ratio_pct_exhaustive_at_or_beyond_takeover (416 cells) max: 166% at seed 4798925340619191980 ((484, 69)-(512, 457))
+exhaustive detour loop at GENERATION_VERSION=11 fingerprint=e0d4aff0b3fda0b7: 50000 seeds
+detour_excess_cells_sampled_14node: min=0 p1=0 p50=0 p99=92 max=312 mean=3.4 stddev=17.2
+detour_excess_cells_sampled_14node worst: 312 at seed 4595557621078204092 ((67, 40)-(512, 38))
+detour_excess_cells_exhaustive max: 320 at seed 610140160610395379 ((486, 53)-(512, 474)) -- the number max_detour_excess_cells's own margin rule is applied to; pin the seed (with this exhaustive figure) in streets::PINNED_DETOUR_SEEDS if it moves
+detour_excess_cells_exhaustive top 10 per-seed worsts (ascending):
+  294 at seed 12004126622565142029 ((139, 37)-(408, 0))
+  296 at seed 116551616410019364 ((109, 512)-(460, 480))
+  298 at seed 14239178388419496175 ((123, 463)-(421, 512))
+  300 at seed 2513967929251121005 ((97, 33)-(448, 0))
+  300 at seed 3802514444151385145 ((253, 512)-(479, 478))
+  302 at seed 16760756817975736266 ((76, 512)-(489, 486))
+  306 at seed 12819133835454577505 ((263, 469)-(472, 512))
+  310 at seed 6482608135473407511 ((181, 0)-(437, 26))
+  316 at seed 4595557621078204092 ((159, 0)-(418, 38))
+  320 at seed 610140160610395379 ((486, 53)-(512, 474))
+detour_excess_cells_exhaustive_both_endpoints_interior max: 312 at seed 4595557621078204092 ((108, 40)-(418, 38)) -- the player-felt figure: the worst pair with neither endpoint on the site boundary
+detour_ratio_pct_exhaustive_at_or_beyond_takeover (400 cells) max: 176% at seed 4595557621078204092 ((108, 40)-(512, 38)) -- the only range where the ratio term is the binding half of the max()-contract, so the only figure max_detour_percent owes margin over (story 15.10, Derek's direction)
 detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascending):
-  160% at seed 4154807055081904333 ((489, 32)-(512, 426))
-  161% at seed 293547434567801483 ((494, 478)-(512, 67))
-  161% at seed 8784580503613071542 ((46, 493)-(444, 512))
-  161% at seed 15335357752681438835 ((494, 487)-(512, 76))
-  161% at seed 11179447352395363997 ((90, 0)-(482, 36))
-  161% at seed 12181295007339816141 ((62, 512)-(463, 483))
-  162% at seed 4948530257853819072 ((32, 512)-(446, 487))
-  163% at seed 8438006389594291483 ((27, 24)-(432, 0))
-  165% at seed 9637747922394485167 ((48, 0)-(450, 21))
-  166% at seed 4798925340619191980 ((484, 69)-(512, 457))
+  169% at seed 8751012638812695494 ((0, 72)-(27, 464))
+  170% at seed 8027958254937089344 ((85, 512)-(474, 494))
+  171% at seed 15639043849596958433 ((77, 481)-(450, 512))
+  171% at seed 3224251154164115518 ((483, 429)-(512, 52))
+  171% at seed 11335347611331606093 ((76, 23)-(458, 0))
+  171% at seed 610140160610395379 ((486, 53)-(512, 474))
+  171% at seed 893143956151306943 ((88, 512)-(473, 494))
+  173% at seed 3802514444151385145 ((85, 512)-(459, 478))
+  173% at seed 12819133835454577505 ((101, 469)-(472, 512))
+  176% at seed 4595557621078204092 ((108, 40)-(512, 38))
 ```
-
-166% exhaustive, 200 committed: real margin over the real long-range
-tail, not a re-expression of the excess budget at an arbitrary distance.
 
 ### Plot subdivision
 
@@ -901,7 +962,7 @@ disagree.
 | generation.streets.min_distinct_block_sizes | committed | Street network | the minimum number of distinct block widths, and separately heights, a city must show ("not a perfect grid") |
 | generation.streets.max_detour_percent | committed | Street network | the site-scale-free long-range detour claim 3.11's pathfinding estimator relies on: `network <= max(manhattan + max_detour_excess_cells, manhattan * max_detour_percent / 100)`, for every sampled pair, no distance threshold of its own |
 | generation.streets.max_detour_excess_cells | committed | Street network | the additive Manhattan-fitness ceiling (world cells), applied to every sampled pair regardless of distance |
-| generation.streets.p99_detour_percent | committed | Street network | the 99th-percentile detour ratio, over one city's own sampled pairs, must not exceed this -- `max_detour_percent` alone only bounds the single worst pair |
+| generation.streets.p99_detour_fill_percent | committed | Street network | the 99th-percentile detour fill (a pair's network distance as a percent of its own max()-contract allowance), over one city's own sampled pairs, must not exceed this -- `max_detour_percent`/`max_detour_excess_cells` bound the single worst pair at 100%; under 100 |
 | generation.streets.peripheral_low_band_floor_percent | committed | Street network | per-city anti-inversion floor: the low-density (periphery) mean block area must be at least this percent of the high-density (core) mean |
 | generation.streets.peripheral_pooled_min_ratio_percent | committed | Street network | pooled over a fixed seed range, summed low-band mean area over summed high-band mean area must be at least this percent -- the guard that actually fails a density-blind generator |
 | generation.streets.thin_strip_long_side_percent | committed | Street network | how far a thin strip (short side under half the local target block size) may run along its long side before it is cut, as a percent of that target -- a boundary strip splits into halves near the target, never into pieces shorter than it |

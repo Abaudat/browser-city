@@ -591,11 +591,13 @@ pub struct GenerationConfig {
     /// additive half of the detour contract (Quentin's direction, cycle
     /// 2).
     pub max_detour_excess_cells: i32,
-    /// The 99th-percentile detour ratio, over one city's own sampled
-    /// pairs, must not exceed this -- `max_detour_percent` alone only
-    /// bounds the single worst pair, which stays green even if the
-    /// *typical* case regressed (Tim's direction, cycle 2).
-    pub p99_detour_percent: i32,
+    /// The 99th-percentile fill of the max() contract's allowance
+    /// (`DetourSample::fill_pct`), over one city's own sampled pairs,
+    /// must not exceed this -- kept strictly under 100, where the max()
+    /// contract already implies it. `max_detour_percent` and
+    /// `max_detour_excess_cells` only bound the single worst pair, which
+    /// stays green even if the *typical* case regressed.
+    pub p99_detour_fill_percent: i32,
     /// The minimum number of distinct block widths (and, separately,
     /// heights) a single generated network must show -- Quentin's
     /// direction, cycle 1: "not a perfect grid" as a number, asserted
@@ -893,7 +895,8 @@ impl GenerationConfig {
             max_detour_percent: get(balance, "generation.streets.max_detour_percent") as i32,
             max_detour_excess_cells: get(balance, "generation.streets.max_detour_excess_cells")
                 as i32,
-            p99_detour_percent: get(balance, "generation.streets.p99_detour_percent") as i32,
+            p99_detour_fill_percent: get(balance, "generation.streets.p99_detour_fill_percent")
+                as i32,
             min_distinct_block_sizes: get(balance, "generation.streets.min_distinct_block_sizes"),
             peripheral_low_band_floor_percent: get(
                 balance,
@@ -1107,10 +1110,10 @@ impl GenerationConfig {
                 cfg.max_detour_excess_cells
             )));
         }
-        if cfg.p99_detour_percent > cfg.max_detour_percent {
+        if cfg.p99_detour_fill_percent >= 100 {
             return Err(GenerationError::InvalidConfig(format!(
-                "GenerationConfig: p99_detour_percent ({}) is greater than max_detour_percent ({}) -- the typical case cannot be worse than the tail ceiling",
-                cfg.p99_detour_percent, cfg.max_detour_percent
+                "GenerationConfig: p99_detour_fill_percent ({}) must be under 100 -- at 100 the max() detour contract already implies it",
+                cfg.p99_detour_fill_percent
             )));
         }
         // Tim's/Quentin's direction, story 15.10 cycle 2:
@@ -1537,7 +1540,7 @@ mod tests {
             ),
             seed("generation.streets.max_detour_percent", 200, 101, 500),
             seed("generation.streets.max_detour_excess_cells", 80, 1, 2048),
-            seed("generation.streets.p99_detour_percent", 160, 100, 500),
+            seed("generation.streets.p99_detour_fill_percent", 90, 1, 99),
             seed("generation.streets.min_distinct_block_sizes", 3, 1, 16),
             seed(
                 "generation.streets.peripheral_low_band_floor_percent",
@@ -1908,10 +1911,16 @@ mod tests {
     }
 
     #[test]
-    fn from_balance_rejects_p99_detour_percent_over_max_detour_percent() {
-        let balance = with_override("generation.streets.p99_detour_percent", 500);
+    fn from_balance_rejects_p99_detour_fill_percent_at_100() {
+        let balance = with_override("generation.streets.p99_detour_fill_percent", 100);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
-        assert!(err.to_string().contains("p99_detour_percent"));
+        assert!(err.to_string().contains("p99_detour_fill_percent"));
+    }
+
+    #[test]
+    fn from_balance_accepts_p99_detour_fill_percent_at_99() {
+        let balance = with_override("generation.streets.p99_detour_fill_percent", 99);
+        GenerationConfig::from_balance(&balance).expect("99 is under 100");
     }
 
     /// Tim's/Quentin's direction, story 15.10 cycle 2:
@@ -1921,14 +1930,7 @@ mod tests {
     /// reaches it.
     #[test]
     fn from_balance_rejects_max_detour_percent_at_100() {
-        // p99_detour_percent lowered alongside it so this fixture fails
-        // only the refusal under test, never the unrelated p99 <=
-        // max_detour_percent one (p99's own default, 160, would trip
-        // that one first and mask this test's own target).
-        let balance = with_overrides(&[
-            ("generation.streets.max_detour_percent", 100),
-            ("generation.streets.p99_detour_percent", 100),
-        ]);
+        let balance = with_overrides(&[("generation.streets.max_detour_percent", 100)]);
         let err = GenerationConfig::from_balance(&balance).unwrap_err();
         assert!(err.to_string().contains("max_detour_percent"));
         assert!(err.to_string().contains("ratio term"));
@@ -1938,12 +1940,7 @@ mod tests {
     fn from_balance_accepts_max_detour_percent_at_101() {
         // The boundary itself: 101 is admitted, only 100 or under is
         // refused (AC4's mechanical both-sides-of-the-boundary check).
-        // p99_detour_percent lowered alongside it so this fixture does
-        // not also trip the unrelated p99 <= max_detour_percent refusal.
-        let balance = with_overrides(&[
-            ("generation.streets.max_detour_percent", 101),
-            ("generation.streets.p99_detour_percent", 100),
-        ]);
+        let balance = with_overrides(&[("generation.streets.max_detour_percent", 101)]);
         GenerationConfig::from_balance(&balance)
             .expect("101 must be accepted, not just values further above 100");
     }
@@ -1996,7 +1993,6 @@ mod tests {
             ("generation.streets.block_size_max_cells", 100),
             ("generation.streets.max_detour_excess_cells", 416),
             ("generation.streets.max_detour_percent", 150),
-            ("generation.streets.p99_detour_percent", 100),
         ]);
         let cfg = GenerationConfig::from_balance(&balance).unwrap();
         assert_eq!(cfg.detour_ratio_takeover_distance_cells(), 832);

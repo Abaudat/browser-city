@@ -229,7 +229,7 @@ balance generation.streets.max_recursion_depth value=12 min=1 max=64
 balance generation.streets.max_street_splits_per_superblock value=1 min=0 max=16
 balance generation.streets.min_block_depth_cells value=16 min=2 max=256
 balance generation.streets.min_distinct_block_sizes value=3 min=1 max=16
-balance generation.streets.p99_detour_percent value=200 min=100 max=500
+balance generation.streets.p99_detour_fill_percent value=95 min=1 max=99
 balance generation.streets.peripheral_low_band_floor_percent value=60 min=1 max=100
 balance generation.streets.peripheral_pooled_min_ratio_percent value=150 min=100 max=1000
 balance generation.streets.split_jitter_pct value=25 min=0 max=45

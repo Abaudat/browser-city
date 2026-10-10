@@ -781,6 +781,15 @@ pub const PINNED_DETOUR_SEEDS: [(u64, i64); 3] = [
     (6_482_608_135_473_407_511, 310),
 ];
 
+/// The worst p99-fill seed found so far, `(seed, p99_fill_pct)` at the
+/// `DETOUR_P99_SAMPLE_MAX_NODES` sample -- the figure
+/// `generation.streets.p99_detour_fill_percent` is derived from, pinned by
+/// equality like [`PINNED_DETOUR_SEEDS`]. The worst per-seed p99 fill of
+/// `measure-generation -- detour 1000000` at `GENERATION_VERSION` 10; a
+/// sweep that finds a new worst replaces it.
+#[cfg(any(test, feature = "test-fixtures"))]
+pub const PINNED_P99_FILL_SEEDS: [(u64, i64); 1] = [(11_161_877_730_662_506_814, 84)];
+
 /// One [`StreetNetwork::detour_samples`] entry.
 #[derive(Debug, Clone, Copy)]
 pub struct DetourSample {
@@ -818,6 +827,13 @@ impl DetourSample {
             .max(self.manhattan * cfg.max_detour_percent as i64 / 100)
     }
 
+    /// This pair's network distance as a percent of
+    /// [`Self::detour_allowed`] -- 100 sits exactly on the committed
+    /// contract, over 100 breaks it.
+    pub fn fill_pct(&self, cfg: &GenerationConfig) -> i64 {
+        self.network * 100 / self.detour_allowed(cfg)
+    }
+
     /// Whether this pair's own BFS network distance clears
     /// [`Self::detour_allowed`].
     pub fn detour_bound_holds(&self, cfg: &GenerationConfig) -> bool {
@@ -847,13 +863,53 @@ pub fn detour_bound_violation(
 /// `ceil(0.99 * len) - 1`, so a single-sample slice's own p99 is that
 /// sample itself.
 pub fn p99_ratio_pct(samples: &[DetourSample]) -> i64 {
-    if samples.is_empty() {
+    nearest_rank_p99(samples.iter().map(DetourSample::ratio_pct).collect())
+}
+
+/// The 99th-percentile [`DetourSample::fill_pct`] over `samples` -- `0`
+/// for an empty slice, nearest-rank like [`p99_ratio_pct`].
+pub fn p99_fill_pct(samples: &[DetourSample], cfg: &GenerationConfig) -> i64 {
+    nearest_rank_p99(samples.iter().map(|s| s.fill_pct(cfg)).collect())
+}
+
+fn nearest_rank_p99(mut values: Vec<i64>) -> i64 {
+    if values.is_empty() {
         return 0;
     }
-    let mut ratios: Vec<i64> = samples.iter().map(DetourSample::ratio_pct).collect();
-    ratios.sort_unstable();
-    let rank = (((ratios.len() as i64 * 99) + 99) / 100).max(1) as usize - 1;
-    ratios[rank.min(ratios.len() - 1)]
+    values.sort_unstable();
+    let rank = (((values.len() as i64 * 99) + 99) / 100).max(1) as usize - 1;
+    values[rank.min(values.len() - 1)]
+}
+
+/// A p99 over `generation.streets.p99_detour_fill_percent`: the figure,
+/// and every sampled pair whose own fill sits at it.
+#[derive(Debug, Clone)]
+pub struct P99Violation {
+    pub p99_fill_pct: i64,
+    pub pairs: Vec<DetourSample>,
+}
+
+/// `Some` when [`p99_fill_pct`] of `samples` exceeds `cfg.p99_detour_fill_
+/// percent` -- the one place that comparison lives. `inv_generation_p99_
+/// detour_fill_bounded`, the pinned seed and `measure_generation.rs`'s
+/// sweep all call through it, as they do [`detour_bound_violation`].
+pub fn p99_detour_violation(
+    samples: &[DetourSample],
+    cfg: &GenerationConfig,
+) -> Option<P99Violation> {
+    let p99 = p99_fill_pct(samples, cfg);
+    if p99 <= cfg.p99_detour_fill_percent as i64 {
+        return None;
+    }
+    let pairs = samples
+        .iter()
+        .copied()
+        .filter(|s| s.fill_pct(cfg) == p99)
+        .collect();
+    Some(P99Violation {
+        p99_fill_pct: p99,
+        pairs,
+    })
 }
 
 fn rects_touch(a: Rect, b: Rect) -> bool {
@@ -2497,7 +2553,7 @@ mod tests {
         // generation_detour_ratio_bounded` and the sweep both call
         // through -- the finding function itself proven to fire here,
         // as every other checker in this file is) and separately
-        // against `p99_detour_percent`.
+        // against `p99_detour_fill_percent`.
         let c = cfg();
         let site = SiteBounds {
             x0: 0,
@@ -2533,12 +2589,44 @@ mod tests {
         );
 
         let p99_samples = net.detour_samples(DETOUR_P99_SAMPLE_MAX_NODES);
-        let p99 = p99_ratio_pct(&p99_samples);
+        let p99 = p99_fill_pct(&p99_samples, &c);
         assert!(
-            p99 > c.p99_detour_percent as i64,
-            "expected the maze's own p99 ratio ({p99}%) to exceed the committed p99_detour_percent ({}%)",
-            c.p99_detour_percent
+            p99 > c.p99_detour_fill_percent as i64,
+            "expected the maze's own p99 fill ({p99}%) to exceed the committed p99_detour_fill_percent ({}%)",
+            c.p99_detour_fill_percent
         );
+    }
+
+    /// The two detour checks are distinct claims: a U corridor whose one
+    /// long pair uses 97% of its own allowance holds the max() contract
+    /// (every pair at or under 100%) yet breaks the p99 fill bound. No
+    /// generated seed is known to do this, so the firing path of
+    /// `p99_detour_violation` on a real network is covered by this
+    /// hand-built fixture, not by the proptest.
+    #[test]
+    fn a_u_corridor_near_its_allowance_holds_the_max_contract_but_breaks_the_p99() {
+        let c = cfg();
+        let site = SiteBounds {
+            x0: 0,
+            y0: 0,
+            x1: 500,
+            y1: 500,
+        };
+        // (100,100)-(400,100): Manhattan 300, allowed 300 + excess; the
+        // arms are sized so the route fills 97% of it.
+        let allowed = sample(300, 0).detour_allowed(&c);
+        let depth = ((allowed * 97 / 100) - 300) / 2;
+        let edges = vec![
+            vertical(100, 100, 100 + depth as i32),
+            horizontal(100 + depth as i32, 100, 400),
+            vertical(400, 100, 100 + depth as i32),
+        ];
+        let net = StreetNetwork::test_fixture(site, edges, Vec::new());
+        let samples = net.detour_samples(DETOUR_P99_SAMPLE_MAX_NODES);
+        assert!(detour_bound_violation(&samples, &c).is_none());
+        let v = p99_detour_violation(&samples, &c)
+            .expect("a 97% fill must break the committed p99 fill bound");
+        assert!(v.p99_fill_pct > c.p99_detour_fill_percent as i64 && v.p99_fill_pct <= 100);
     }
 
     /// `detour_bound_violation`'s own quiet case (Quentin's direction,
@@ -3122,6 +3210,81 @@ mod tests {
         // maximum.
         let samples: Vec<DetourSample> = (100..201).map(sample_with_ratio).collect();
         assert_eq!(p99_ratio_pct(&samples), 199);
+    }
+
+    // `p99_fill_pct`/`p99_detour_violation` on hand-built samples: a
+    // Manhattan-100 pair whose network distance is sized so its fill
+    // under the committed config is exactly `f`.
+
+    fn sample_with_fill(f: i64) -> DetourSample {
+        let allowed = sample(100, 0).detour_allowed(&cfg());
+        DetourSample {
+            a: (0, 0),
+            b: (100, 0),
+            network: (f * allowed + 99) / 100,
+            manhattan: 100,
+        }
+    }
+
+    #[test]
+    fn fill_pct_is_network_over_the_allowed_distance() {
+        let c = cfg();
+        let allowed = sample(100, 0).detour_allowed(&c);
+        assert_eq!(sample(100, allowed).fill_pct(&c), 100);
+        assert_eq!(sample(100, allowed / 2).fill_pct(&c), 50);
+        assert_eq!(sample_with_fill(55).fill_pct(&c), 55);
+    }
+
+    #[test]
+    fn p99_fill_pct_of_an_empty_slice_is_zero() {
+        assert_eq!(p99_fill_pct(&[], &cfg()), 0);
+    }
+
+    #[test]
+    fn p99_fill_pct_of_one_sample_is_that_sample() {
+        assert_eq!(p99_fill_pct(&[sample_with_fill(37)], &cfg()), 37);
+    }
+
+    #[test]
+    fn p99_fill_pct_of_exactly_100_samples_is_the_99th() {
+        // Fills 1..=100: index ceil(100*0.99)-1 = 98 -> 99, not the max.
+        let samples: Vec<DetourSample> = (1..=100).map(sample_with_fill).collect();
+        assert_eq!(p99_fill_pct(&samples, &cfg()), 99);
+    }
+
+    #[test]
+    fn p99_fill_pct_of_101_samples_is_the_100th() {
+        // Fills 1..=101: index ceil(101*0.99)-1 = 99 -> 100, one under the max.
+        let samples: Vec<DetourSample> = (1..=101).map(sample_with_fill).collect();
+        assert_eq!(p99_fill_pct(&samples, &cfg()), 100);
+    }
+
+    #[test]
+    fn p99_detour_violation_passes_exactly_at_the_bound() {
+        let c = cfg();
+        let at = c.p99_detour_fill_percent as i64;
+        assert!(p99_detour_violation(&[sample_with_fill(at)], &c).is_none());
+    }
+
+    #[test]
+    fn p99_detour_violation_fails_one_over_and_names_the_pair_at_the_percentile() {
+        let c = cfg();
+        let over = c.p99_detour_fill_percent as i64 + 1;
+        let worst = sample_with_fill(over);
+        let v = p99_detour_violation(&[sample_with_fill(10), worst], &c)
+            .expect("one over the bound must fail");
+        assert_eq!(v.p99_fill_pct, over);
+        assert_eq!(v.pairs.len(), 1);
+        assert_eq!(v.pairs[0].network, worst.network);
+    }
+
+    #[test]
+    fn p99_detour_violation_ignores_a_tail_beyond_the_percentile() {
+        // 101 samples: the single worst one sits above the p99 rank.
+        let c = cfg();
+        let mut samples: Vec<DetourSample> = (0..100).map(|_| sample_with_fill(50)).collect();
+        samples.push(sample_with_fill(150));
+        assert!(p99_detour_violation(&samples, &c).is_none());
     }
 
     // --- story 3.3: `block_sides` (pass 3's own frontage knowledge) ------

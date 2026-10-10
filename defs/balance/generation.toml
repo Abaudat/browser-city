@@ -383,19 +383,13 @@ max = 256
 # PR #349). Re-measured with real margin at the real (unmeasured, since
 # 3.11) long range: over the harness's own 50,000-seed exhaustive loop,
 # the worst ratio among pairs at or beyond the takeover distance was
-# 176% at `GENERATION_VERSION` 9 (seed `4595557621078204092`); 200 is
-# that plus real margin --
-# re-measure by running `cargo run -p bounds --release --bin measure-
-# generation`'s own detour-bounds sweep whenever the street algorithm
-# changes, never "re-run the invariants at a high PROPTEST_CASES" (a
-# proptest run only ever samples the cheap 14-node width). Zero misses
-# against the max()-contract over
-# 1,000,000 seeds follows from `max_detour_excess_cells`'s own sweep
-# (below): exceeding the max() of two terms means exceeding both, so a
-# contract violation is always also an excess-alone violation, and that
-# ceiling's own miss count is already 0 (`inv_generation_detour_ratio_
-# bounded`'s own doc comment carries the proof; `docs/generation.md`'s
-# street-network pass carries the full sweep output). `min` is 101, not
+# 176% at `GENERATION_VERSION` 10 (seed `4595557621078204092`; 189% at
+# the 14-node sample over 1,000,000 seeds); 200 is that plus real margin.
+# Miss rate and worst figures are in `docs/generation.md`'s detour-bounds
+# sweep block, stamped with the `GENERATION_VERSION` it ran at: 0 of
+# 1,000,000 misses against the max()-contract at version 10. Re-run it
+# (`cargo run -p bounds --release --bin measure-generation -- detour
+# 1000000`) whenever `GENERATION_VERSION` changes. `min` is 101, not
 # 100 (Tim's/Quentin's direction, story 15.10 cycle 2): at or under 100
 # the ratio term (`manhattan * max_detour_percent / 100`) is never
 # looser than the excess term, so `detour_ratio_takeover_distance_cells`'s
@@ -421,7 +415,7 @@ max = 500
 # boundary node pair, not the cheap `DETOUR_SAMPLE_MAX_NODES` sample
 # the required property above checks) over the harness's own 50,000
 # mixed seeds, times 1.25, rounded up to a multiple of 8. Measured at
-# `GENERATION_VERSION` 9 (story 4.22): exhaustive max 320, at seed
+# `GENERATION_VERSION` 10: exhaustive max 320, at seed
 # `610140160610395379` -- 320 * 1.25 = 400 (already a multiple of 8).
 # `from_balance` separately refuses a value
 # over `4 * block_size_max_cells + 2 * arterial_width_cells` (504 at
@@ -430,34 +424,38 @@ max = 500
 # `610140160610395379`, `4595557621078204092` and
 # `6482608135473407511` are pinned, each against its own exhaustive
 # excess, in `streets::PINNED_DETOUR_SEEDS` (`invariants.rs`'s own
-# `detour_excess_holds_at_pinned_boundary_exit_seeds`). Miss rate
-# measured directly (story 15.10, `measure-generation`'s own detour-
-# bounds sweep, 1,000,000 seeds, passes 1-2 only): 0 misses against
-# this ceiling at the cheap 14-node sample -- see `max_detour_percent`'s
-# own comment for the rule-of-three bound that figure implies.
+# `detour_excess_holds_at_pinned_boundary_exit_seeds`). Miss rate at
+# `GENERATION_VERSION` 10: 0 of 1,000,000 at the cheap 14-node sample --
+# `docs/generation.md`'s detour-bounds sweep block.
 key = "generation.streets.max_detour_excess_cells"
 value = 400
 min = 1
 max = 2048
 
 [[balance]]
-# The 99th-percentile detour ratio, over one city's own sampled pairs,
-# must not exceed this -- `max_detour_percent` alone only bounds the
-# single worst pair. Sampled separately, over more pairs than the max/
-# excess bounds (DETOUR_P99_SAMPLE_MAX_NODES): a percentile over too few
-# pairs is just the maximum under another name (Tim's direction, cycle
-# 3). Measured worst case, same scan, 10,000 seeds: 175%; 200 is that
-# plus margin. Never above max_detour_percent (`from_balance` refuses
-# that). Re-measured directly (story 15.10, `measure-generation`'s own
-# detour-bounds sweep, 1,000,000 seeds, passes 1-2 only, at the real
-# 64-node p99 sample): 0 misses against this ceiling -- see
-# `max_detour_percent`'s own comment for the rule-of-three bound that
-# implies. No re-derivation owed: a nonzero miss count would have
-# forced one (Tim's direction), zero did not.
-key = "generation.streets.p99_detour_percent"
-value = 200
-min = 100
-max = 500
+# The 99th-percentile detour fill, over one city's own sampled pairs,
+# must not exceed this percent. A pair's fill is its network distance as
+# a percent of its own allowed distance under the max()-contract
+# (`DetourSample::fill_pct`): `max_detour_percent`/
+# `max_detour_excess_cells` bound the one worst pair at 100%, this
+# bounds the journeys players walk daily well inside that ceiling.
+# Sampled over more pairs than the max/excess bounds
+# (DETOUR_P99_SAMPLE_MAX_NODES): a percentile over too few pairs is just
+# the maximum under another name. Strictly under 100 (`from_balance`
+# refuses 100 and above). Margin rule: a perfect route at or beyond the
+# takeover distance already fills 50%, so scale the worst measured p99
+# fill's share above 50 by 1.25, add 50 back, round up to a multiple of
+# 5. Worst at `GENERATION_VERSION` 10 over `measure-generation -- detour
+# 1000000`: 84% (seed `11161877730662506814`, `streets::
+# PINNED_P99_FILL_SEEDS`): (84 - 50) * 1.25 + 50 = 92.5 -> 95. If a
+# future worst makes the rule give 100 or more, the key cannot take it:
+# that is the pass-2 question, not a number to fit. Checked by
+# `p99_detour_fill_percent_matches_its_own_margin_rule`; the sweep block
+# is in `docs/generation.md`.
+key = "generation.streets.p99_detour_fill_percent"
+value = 95
+min = 1
+max = 99
 
 [[balance]]
 # The minimum number of distinct block widths (and, separately, heights)

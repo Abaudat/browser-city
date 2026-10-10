@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fixture-driven coverage for scripts/bc-issue.sh: adopt-alerts' off-board/
 # already-adopted cases (story 4.19), next's whole-backlog pick
-# (no open blocker, then priority, size, number) and its Backlog/open gates,
+# (no open blocker, then priority, earliest milestone, number) and its Backlog/open gates,
 # write-story's and write-blockers' dependencies, active's 0/1/many-active cases, transition
 # (including the epic that closes with its last story),
 # scope's lead-label handling, backlog's unscoped read, create-demo's call
@@ -18,6 +18,12 @@ BC_ISSUE="$SCRIPTS_DIR/bc-issue.sh"
 # shellcheck source=lib/config.sh
 . "$SCRIPTS_DIR/lib/config.sh"
 bc_init
+
+# `next` ranks by the milestones file; every test reads an empty one unless it
+# says otherwise, so the real milestones.json never decides a fixture's pick.
+NO_MILESTONES="$(fake_dir)/milestones.json"
+echo '[]' > "$NO_MILESTONES"
+export BC_MILESTONES_FILE="$NO_MILESTONES"
 
 run() { # <fakedir> <now-or-empty> <args...>
   local fake="$1" now="$2"; shift 2
@@ -181,7 +187,7 @@ check_out "next: the adopted alert wins over a free Critical/XS story, scoped qu
   run "$FAKE_AA5" "" next
 
 echo
-echo "next: the whole backlog's startable stories, by priority then size -- sprints and epics never enter into it:"
+echo "next: the whole backlog's startable stories, by priority then earliest milestone -- sprints and epics never enter into it:"
 
 FAKE_N1="$(fake_dir)"
 cat > "$FAKE_N1/project_items.json" <<'JSON'
@@ -223,19 +229,43 @@ check "next: BC_ONLY_ISSUE naming a blocked story starts nothing else" 1 \
 FAKE_N2="$(fake_dir)"
 cat > "$FAKE_N2/project_items.json" <<'JSON'
 [
-  {"number":401,"title":"Standard, tiny","state":"OPEN","status":"Backlog","priority":"Standard","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
-  {"number":402,"title":"Blocker, L, lowest number","state":"OPEN","status":"Backlog","priority":"Blocker","size":"L","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
-  {"number":403,"title":"Blocker, size unset","state":"OPEN","status":"Backlog","priority":"Blocker","size":null,"sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
-  {"number":404,"title":"Blocker, S, higher number","state":"OPEN","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":500},
-  {"number":405,"title":"Blocker, S, higher number still","state":"OPEN","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":500}
+  {"number":401,"title":"Standard, gate of the FIRST milestone","state":"OPEN","status":"Backlog","priority":"Standard","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
+  {"number":402,"title":"Blocker, XS, lowest number, needed by no milestone","state":"OPEN","status":"Backlog","priority":"Blocker","size":"XS","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
+  {"number":403,"title":"Blocker, gate of the second milestone","state":"OPEN","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":400},
+  {"number":404,"title":"Blocker, XL, blocks the in-flight 406","state":"OPEN","status":"Backlog","priority":"Blocker","size":"XL","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":500},
+  {"number":405,"title":"Blocker, XL, also blocks 406","state":"OPEN","status":"Backlog","priority":"Blocker","size":"XL","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":500},
+  {"number":406,"title":"In flight, blocks the first milestone's gate","state":"OPEN","status":"In progress","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":500,"blockedBy":[404,405]},
+  {"number":407,"title":"Gate of the first milestone, blocked by 406","state":"OPEN","status":"Backlog","priority":"Blocker","size":"S","sprintId":null,"sprintTitle":null,"labels":[],"isParent":false,"parent":500,"blockedBy":[406]}
 ]
 JSON
 echo '[]' > "$FAKE_N2/gh_issue_labels.json"
+cat > "$FAKE_N2/milestones.json" <<'JSON'
+[
+  {"name":"First","gates":[407,401]},
+  {"name":"Second","gates":[403]}
+]
+JSON
 
-# Priority first (401's XS does not beat a Blocker), then size (404's S beats
-# 402's L and 403's unset, which sorts last), then number (404 before 405).
-# These fixtures carry no blockedBy key at all: absent reads as unblocked.
-check_out "next: within the top priority the smallest story goes first, lowest number on a tie" 0   '{"number":404,"parent":500,"scope":"quentin"}'   run "$FAKE_N2" "" next
+# Priority first (401's first milestone does not beat a Blocker), then the
+# earliest milestone: 404/405 are XL and only reach the first milestone
+# through the in-flight 406 and the still-blocked gate 407, and they still
+# beat 403 (the second milestone's own gate) and 402 (no milestone, XS, the
+# lowest number). Then number on a tie: 404 before 405. These fixtures carry
+# no blockedBy key on most stories: absent reads as unblocked.
+check_out "next: within the top priority the earliest milestone's work goes first, through in-flight blockers, lowest number on a tie" 0   '{"number":404,"parent":500,"scope":"quentin"}'   env BC_MILESTONES_FILE="$FAKE_N2/milestones.json" BC_FAKE="$FAKE_N2" bash "$BC_ISSUE" next
+
+# Once the first milestone's Blockers are gone, the second milestone's gate
+# beats the story no milestone needs, whatever its size or number.
+FAKE_N2B="$(fake_dir)"
+"$JQ" -c 'map(select(.number != 404 and .number != 405))' "$FAKE_N2/project_items.json" > "$FAKE_N2B/project_items.json"
+echo '[]' > "$FAKE_N2B/gh_issue_labels.json"
+check_out "next: a later milestone's story beats one no milestone needs" 0   '{"number":403,"parent":400,"scope":"quentin"}'   env BC_MILESTONES_FILE="$FAKE_N2/milestones.json" BC_FAKE="$FAKE_N2B" bash "$BC_ISSUE" next
+
+# The milestones decide the order, so losing them is a fault, never a quiet
+# fall back to issue order.
+check "next: a missing milestones file -> exit 2" 2   env BC_MILESTONES_FILE="$FAKE_N2/nope.json" BC_FAKE="$FAKE_N2" bash "$BC_ISSUE" next
+echo '{"gates":[1]}' > "$FAKE_N2/bad-milestones.json"
+check "next: a milestones file that is not a list -> exit 2" 2   env BC_MILESTONES_FILE="$FAKE_N2/bad-milestones.json" BC_FAKE="$FAKE_N2" bash "$BC_ISSUE" next
 
 # A story that hangs off no epic is ordinary work and starts like any other;
 # its parent comes back as null rather than the pick being skipped.

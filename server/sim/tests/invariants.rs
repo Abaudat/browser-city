@@ -134,7 +134,7 @@ pub const INV_GENERATION_INDUSTRIAL_NEVER_TOUCHES_COMMERCIAL: &str =
     "no industrial coarse cell is ever adjacent to a commercial one, for any seed (FR110)";
 pub const INV_GENERATION_RESIDENTIAL_IS_THE_LARGEST_LAND_USE_BY_AREA: &str = "residential has more coarse cells than any other single land use, for any seed -- field-driven assignment (commercial at the peak, industrial one contiguous group, institutional the smallest leaves) structurally favours it over a blind weighted draw, but that only holds if something keeps checking it (FR110, Quentin's direction)";
 pub const INV_GENERATION_LAND_USE_AREA_SHARE_WITHIN_TOLERANCE: &str = "each non-residential land use's area share of the site sits within share_tolerance_pct percentage points of its own share_*_pct key, for any seed -- the pass-1 guard for what the share keys mean (story 4.21, FR110)";
-pub const INV_GENERATION_P99_DETOUR_RATIO_BOUNDED: &str = "the 99th-percentile BFS-network-vs-Manhattan detour ratio, over one city's own sampled pairs, never exceeds p99_detour_percent, for any seed (FR110, Tim's direction)";
+pub const INV_GENERATION_P99_DETOUR_FILL_BOUNDED: &str = "the 99th-percentile detour fill (network distance as a percent of the pair's own max()-contract allowance), over one city's own sampled pairs, never exceeds p99_detour_fill_percent, for any seed (FR110)";
 pub const INV_GENERATION_NO_STAGGERED_JUNCTIONS: &str = "no two junctions on the same street sit under junction_min_separation_cells apart unless they coincide, for any seed -- asserted at zero, a refused split rather than a measured ceiling (FR110, Tim's direction)";
 pub const INV_GENERATION_MIN_BLOCK_DEPTH_IS_RESPECTED: &str =
     "every block is at least min_block_depth_cells on both axes, for any seed (FR110)";
@@ -1938,25 +1938,27 @@ proptest! {
         }
     }
 
-    /// `inv_generation_p99_detour_ratio_bounded` (Tim's direction, cycle
-    /// 2): `max_detour_percent` alone only bounds one city's own single
-    /// worst pair, which stays green even if the *typical* case
-    /// regressed -- the 99th percentile of this same sample is pinned
-    /// separately. Measured directly (story 15.10, `measure-generation`'s
-    /// own detour-bounds sweep, 1,000,000 seeds, passes 1-2 only, at this
-    /// exact 64-node sample): 0 misses -- <= 0.000300% per seed (rule of
-    /// three), a 4,096-case CI run failing at most 1.2213% of the time.
+    /// `inv_generation_p99_detour_fill_bounded`: `max_detour_percent`/
+    /// `max_detour_excess_cells` only bound one city's single worst pair,
+    /// which stays green even if the *typical* case regressed -- the 99th
+    /// percentile of each pair's fill of its own allowance is bounded
+    /// separately, through `streets::p99_detour_violation` (the one
+    /// function this, the pinned seed and the sweep call). Its measured
+    /// miss rate is `docs/generation.md`'s street-network pass's sweep
+    /// block, stamped with the `GENERATION_VERSION` it ran at.
     #[test]
-    fn inv_generation_p99_detour_ratio_bounded(seed in any::<u64>()) {
+    fn inv_generation_p99_detour_fill_bounded(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
-        let p99 = streets::p99_ratio_pct(&samples);
-        prop_assert!(
-            p99 <= cfg.p99_detour_percent as i64,
-            "seed {seed}: p99 detour ratio {p99}% over {}%", cfg.p99_detour_percent
-        );
+        if let Some(v) = streets::p99_detour_violation(&samples, &cfg) {
+            prop_assert!(
+                false,
+                "seed {seed}: p99 detour fill {}% over {}% (pairs at the percentile: {:?})",
+                v.p99_fill_pct, cfg.p99_detour_fill_percent, v.pairs
+            );
+        }
     }
 
     /// `inv_generation_manhattan_beats_euclidean` (FR131, AC2): over real
@@ -8009,4 +8011,69 @@ proptest! {
         r.sort();
         prop_assert_eq!(a, r);
     }
+}
+
+/// Seed `8619285945825134650` has a 206% p99 detour *ratio* (the old
+/// statistic, bound 200%) while every pair sits inside the committed
+/// max() contract: its long pairs run 150-300% ratio on 220-250 cells of
+/// excess, the peripheral-block mechanism `max_detour_excess_cells`
+/// already accepts. Its p99 fill is the figure pinned below, by equality,
+/// so a pass-2 change that moves this seed goes red and is looked at.
+#[test]
+fn seed_8619285945825134650_holds_the_p99_detour_ceiling() {
+    const SEED: u64 = 8619285945825134650;
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let lu = land_use::run(SEED, cfg.site(), &cfg).unwrap();
+    let net = streets::run(SEED, &lu, &cfg);
+    let samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
+    assert_eq!(streets::p99_ratio_pct(&samples), 206);
+    assert_eq!(streets::p99_fill_pct(&samples, &cfg), 71);
+    assert!(streets::p99_detour_violation(&samples, &cfg).is_none());
+    assert!(streets::detour_bound_violation(&samples, &cfg).is_none());
+}
+
+/// Each `streets::PINNED_P99_FILL_SEEDS` entry's p99 fill, by equality: a
+/// pass-2 change that moves the worst seed goes red and is looked at.
+#[test]
+fn p99_fill_holds_at_pinned_worst_seeds() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    for &(seed, expected) in &streets::PINNED_P99_FILL_SEEDS {
+        let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
+        let net = streets::run(seed, &lu, &cfg);
+        let samples = net.detour_samples(streets::DETOUR_P99_SAMPLE_MAX_NODES);
+        assert_eq!(
+            streets::p99_fill_pct(&samples, &cfg),
+            expected,
+            "seed {seed}'s p99 fill moved -- re-run `measure-generation -- detour 1000000`, \
+             replace the pinned worst in streets::PINNED_P99_FILL_SEEDS and re-derive the key"
+        );
+        assert!(streets::p99_detour_violation(&samples, &cfg).is_none());
+    }
+}
+
+/// `p99_detour_fill_percent`'s margin rule, applied to the pinned worst:
+/// a perfect route at or beyond the takeover distance already fills 50%
+/// (allowed is `2 * manhattan` there), so only the share above that floor
+/// is scaled by 1.25; the floor is added back and the result rounded up
+/// to a multiple of 5. Integer arithmetic (NFR28): hundredths, then a
+/// ceiling to multiples of 500.
+#[test]
+fn p99_detour_fill_percent_matches_its_own_margin_rule() {
+    const LONG_RANGE_FLOOR: i64 = 50;
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let worst = streets::PINNED_P99_FILL_SEEDS
+        .iter()
+        .map(|&(_, fill)| fill)
+        .max()
+        .expect("PINNED_P99_FILL_SEEDS is never empty");
+    let hundredths = (worst - LONG_RANGE_FLOOR) * 125 + LONG_RANGE_FLOOR * 100;
+    let expected = (hundredths + 499) / 500 * 5;
+    assert_eq!(
+        cfg.p99_detour_fill_percent as i64, expected,
+        "p99_detour_fill_percent ({}) no longer matches its margin rule: worst pinned fill \
+         {worst}, share above {LONG_RANGE_FLOOR} times 1.25, plus {LONG_RANGE_FLOOR}, rounded \
+         up to a multiple of 5, is {expected}. At 100 or over the key cannot take it: that is \
+         the pass-2 question, not a number to fit",
+        cfg.p99_detour_fill_percent
+    );
 }

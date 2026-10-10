@@ -216,6 +216,7 @@ fi
 if [ "$demo_rc" -eq 0 ]; then
   dnum="$(printf '%s' "$demo_json" | "$JQ" -r '.number')"
   dstatus="$(printf '%s' "$demo_json" | "$JQ" -r '.status')"
+  dsprint="$(printf '%s' "$demo_json" | "$JQ" -r '.sprint // empty' | tr -d '\r')"
   case "$dstatus" in
     "In progress")
       if bc_issue demo-commented "$dnum" >/dev/null 2>&1; then
@@ -230,9 +231,9 @@ if [ "$demo_rc" -eq 0 ]; then
       fi
       ;;
     "Reviewed")
-      bc_sprint close >/dev/null 2>&1; close_rc=$?
+      close_err="$(bc_sprint close ${dsprint:+"$dsprint"} 2>&1 >/dev/null)"; close_rc=$?
       if [ "$close_rc" -ne 0 ]; then
-        finish 2 "closing-sprint" "broken" "sprint close failed for demo #$dnum"
+        finish 2 "closing-sprint" "broken" "sprint close failed for demo #$dnum: ${close_err:-no output}"
       fi
       finish 0 "closing-sprint" "closed the sprint" "after demo #$dnum"
       ;;
@@ -276,7 +277,7 @@ start_dev_cycle() {
   # =========================================================================
   # starting-dev-cycle -- fewer lanes open than $BC_MAX_ACTIVE: start a new
   # dev cycle beside them. The pick comes from the whole backlog, any epic --
-  # the highest-priority, smallest story no open issue blocks -- and is scoped onto the sprint in
+  # the highest-priority story no open issue blocks, earliest milestone first -- and is scoped onto the sprint in
   # play here, as it starts: this is the only way work ever reaches a sprint,
   # so the team stops only when the backlog has nothing startable, never
   # because a plan ran out. Status is transitioned BEFORE any side effect it

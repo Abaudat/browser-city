@@ -257,6 +257,20 @@ check "closing-sprint: never called Scotty" 1 log_has "$F_SPRINT_ROLLOVER/calls.
 check "closing-sprint: closed the demo issue (Status Done)" 0 log_has "$F_SPRINT_ROLLOVER/calls.log" '^project_set_single 42 Status Done$'
 check "closing-sprint: closed the demo issue on GitHub" 0 log_has "$F_SPRINT_ROLLOVER/calls.log" '^gh_issue_close 42$'
 
+# The demo is reviewed after midnight: today is already Sprint 2's first day,
+# but the sprint to close is the demo's own, Sprint 1.
+echo
+echo "closing-sprint: demo Reviewed after the sprint ended -> closes the demo's sprint, not today's"
+F_SPRINT_LATE="$(fake_dir)"
+write_iterations "$F_SPRINT_LATE"
+"$JQ" -n -c '[
+  {number:42,title:"Sprint 1 Demo",state:"OPEN",status:"Reviewed",priority:null,sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["demo"],isParent:false,parent:null},
+  {number:60,title:"Story under review",state:"OPEN",status:"Leads review",priority:"Blocker",size:"S",sprintId:"cd18e696",sprintTitle:"Sprint 1",labels:["story"],isParent:false,parent:null,blockedBy:[]}
+]' > "$F_SPRINT_LATE/project_items.json"
+check_out "closing-sprint (late): closed, exit 0" 0 "closing-sprint closed the sprint after demo #42"   run "$F_SPRINT_LATE" "2026-09-05T08:00:00Z"
+check "closing-sprint (late): closed the demo issue on GitHub" 0 log_has "$F_SPRINT_LATE/calls.log" '^gh_issue_close 42$'
+check "closing-sprint (late): carried the story into Sprint 2" 0 log_has "$F_SPRINT_LATE/calls.log" '^project_set_iteration 60 3834dfe6$'
+
 # =============================================================================
 echo
 echo "sprint-over/creating-demo-issue: sprint over, no demo yet -> create one"

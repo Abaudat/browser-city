@@ -142,6 +142,21 @@ check "close unscoped the second Backlog task" 0 log_has "$FAKE_CL3/calls.log" '
 check "close rewrote no Status at all"         1 log_has "$FAKE_CL3/calls.log" '^project_set_single'
 
 echo
+echo "close <n>: the demo is reviewed after midnight, today is already Sprint 2 -> still closes Sprint 1:"
+FAKE_CL4="$(fake_dir)"
+write_iterations "$FAKE_CL4"
+cat > "$FAKE_CL4/project_items.json" <<'JSON'
+[
+  {"number":82,"title":"Task, Reviewed","state":"OPEN","status":"Reviewed","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":[],"isParent":false,"parent":null},
+  {"number":99,"title":"Sprint 1 Demo","state":"OPEN","status":"Reviewed","priority":null,"sprintId":"cd18e696","sprintTitle":"Sprint 1","labels":["demo"],"isParent":false,"parent":null}
+]
+JSON
+check_out "close 1 on Sprint 2's first day: carries into Sprint 2, closes the demo" 0 '{"carried":[82],"cleared":[],"demo":99}'   run "$FAKE_CL4" 2026-09-05T08:00:00Z close 1
+check "close 1 moved the task to Sprint 2, not Sprint 3" 0 log_has "$FAKE_CL4/calls.log" '^project_set_iteration 82 sp2$'
+check "close 1 closed the demo issue"                    0 log_has "$FAKE_CL4/calls.log" '^gh_issue_close 99$'
+check "close with an unknown sprint number exits 2"      2 run "$FAKE_CL4" 2026-09-05T08:00:00Z close 42
+
+echo
 echo "close: no current sprint for today -> exit 2, nothing written:"
 FAKE_CL2="$(fake_dir)"
 write_iterations "$FAKE_CL2"

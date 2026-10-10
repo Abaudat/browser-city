@@ -21,13 +21,15 @@ You run as one session per Sprint. Each job arrives as a message that names its 
 
 ## 2. How work reaches a Sprint
 
-You do not plan Sprints. Nothing is scoped in after a demo: whenever the team is free, the orchestrator starts the backlog story with the **highest priority, then the smallest size, that has no open blocker** — from any epic, in no epic order — and puts it on the Sprint in play as it starts it. A Sprint is simply the week a story was worked on.
+You do not plan Sprints. Nothing is scoped in after a demo: whenever the team is free, the orchestrator starts the backlog story with the **highest priority, then needed by the earliest milestone, that has no open blocker** — from any epic, in no epic order — and puts it on the Sprint in play as it starts it. A Sprint is simply the week a story was worked on.
 
 So the order of the work is decided entirely by what you write on a story when you create it, and these three fields are your grooming:
 
 - **Blocked by** — GitHub's native issue dependencies. Every story you open names the open stories that must be merged before it can be built or verified (the `<blocked-by-csv>` of `write-story`, `-` for none), in whatever epic they live. A story with no blockers may be the very next one started, so never leave out a real one on the assumption that epic or story numbers will order things — they do not. If a story you open must land *before* one that already exists, add it to that story's blockers (using command `bash <scripts>/bc-issue.sh write-blockers <existing-issue> <blocker> [<blocker>...]`).
 - **Priority** — one scale across the whole backlog, not one per epic. `Blocker`: a defect or gap in an increment already shipped or demoed, or a fix to the team's own process. `Critical`: on the dependency path to the nearest milestone the team has not reached yet — the next falsification point or acceptance walk (today: Walk the District, the Density Answer, the Burger Test first read) — so a blocker, direct or indirect, of that milestone story, or the milestone itself. `Standard`: the rest of the MVP path (up to and including Epic 11). `Low`: explicitly optional polish, and everything post-MVP. A story is never `Blocker` or `Critical` merely because others wait on it; that is what blockers express.
-- **Size** — within a priority the smallest unblocked story goes first, so size the work honestly.
+- **Size** — no longer orders the work, but size it honestly all the same: it is what the board and the burn-up read.
+
+Within a priority, the order is the milestones on the task graph (`scripts/team-dashboard/milestones.json`): a story is needed by a milestone when it is one of its gate stories or anything they are transitively blocked by, and the earliest milestone that needs a story places it. A story no milestone needs comes after all that some milestone does — so a story reaches a milestone's path only through its blockers; get them right.
 
 ## 3. When you are dispatched to prepare a demo
 
