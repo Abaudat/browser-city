@@ -159,12 +159,12 @@ impl BandMiss {
 
 /// Prints one ceiling through the one shared report
 /// (`bounds::generation_stamp::ceiling_report`).
-pub fn print_ceiling_report(name: &str, miss: &BandMiss, n: u64) {
+pub fn print_ceiling_report(name: &str, miss: &BandMiss, n: u64, cases: u32) {
     let mut seeds = miss.seeds.clone();
     seeds.sort_unstable();
     seeds.truncate(10);
     println!(
         "{}",
-        bounds::generation_stamp::ceiling_report(name, miss.count, &seeds, n)
+        bounds::generation_stamp::ceiling_report(name, miss.count, &seeds, n, cases)
     );
 }

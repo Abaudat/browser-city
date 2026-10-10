@@ -127,7 +127,22 @@ describe("the timetable", () => {
     const old = new CitizenBody(walk, path, gait, "commuter", quietLife());
     const a = createCitizenFrame();
     const b = createCitizenFrame();
-    for (let t = 5000; t < 5000 + timetable.periodMilli; t += 149) {
+    // A coarse stride over one period, plus every transition instant of
+    // both legs of two cycles (depart, arrive and the half-period flip, each
+    // +-1), so the boundaries are covered by construction, not by the stride.
+    const instants: number[] = [];
+    for (let t = 5000; t < 5000 + timetable.periodMilli; t += 149) instants.push(t);
+    for (let cycle = 0; cycle < 2; cycle++) {
+      for (let half = 0; half < 2; half++) {
+        const base = cycle * timetable.periodMilli + half * timetable.halfMilli;
+        const depart = base + timetable.dwellMilli;
+        const arrive = depart + timetable.walkMilli;
+        for (const edge of [depart, arrive, base + timetable.halfMilli]) {
+          instants.push(edge - 1, edge, edge + 1);
+        }
+      }
+    }
+    for (const t of instants) {
       old.frameAt(timetable.stateAt(t), t, a);
       const joiner = new CitizenBody(walk, path, gait, "commuter", quietLife());
       joiner.frameAt(timetable.stateAt(t), t, b);

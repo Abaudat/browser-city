@@ -53,9 +53,19 @@ pub fn region_loss_sweep(cfg: &GenerationConfig, n: u64) {
     println!(
         "  seeds with any region carried by no block: {any_lost} of {n} (first: {first_any:?}) -- by design, a block takes its majority use"
     );
-    print_ceiling_report(
+    report(
         "every institutional region carried by no block (inv_generation_an_institutional_region_is_carried_by_a_block)",
         &all_inst_lost,
         n,
+    );
+}
+
+/// This block's ceilings, reported for its own CI case count.
+fn report(name: &str, miss: &BandMiss, n: u64) {
+    print_ceiling_report(
+        name,
+        miss,
+        n,
+        bounds::generation_stamp::REGION_LOSS_SWEEP.ci_cases,
     );
 }

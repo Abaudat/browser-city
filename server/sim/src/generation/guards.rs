@@ -5,9 +5,10 @@
 
 use std::collections::BTreeMap;
 
+use super::interiors::{Interior, Vocabulary};
 use super::land_use::{LandUse, LandUseMap};
 use super::neighbourhoods::{Dials, corner};
-use super::{DistrictSite, GenerationConfig, GenerationContent, Skeleton, site};
+use super::{District, DistrictSite, GenerationConfig, GenerationContent, Skeleton, site};
 use crate::rules::RuleSite as _;
 use crate::world::Rect;
 
@@ -397,6 +398,339 @@ pub fn catchment_bite(site: &DistrictSite, row: &crate::rules::DistributionRow) 
     (biting, pairs)
 }
 
+// --- pass 6 (story 3.5): the per-city interior guards -----------------
+
+fn tag_id(content: &GenerationContent, key: &str) -> u32 {
+    content.tags.iter().find(|t| t.key == key).unwrap().id
+}
+
+/// The cells a body can stand on -- room floor not holding a fixture,
+/// every threshold and every approach cell -- as a dense grid over the
+/// footprint and its approach, and a flood fill from the street. Only
+/// what the sub-cell walkability check cannot say: whether a fixture has
+/// a cell beside it to act from.
+pub struct Walk {
+    pub x0: i32,
+    y0: i32,
+    w: usize,
+    h: usize,
+    walkable: Vec<bool>,
+    reached: Vec<bool>,
+}
+
+impl Walk {
+    pub fn of(i: &Interior) -> Walk {
+        let b = interior_bounds(i);
+        let (w, h) = (b.width() as usize, b.height() as usize);
+        let mut walk = Walk {
+            x0: b.x0,
+            y0: b.y0,
+            w,
+            h,
+            walkable: vec![false; w * h],
+            reached: vec![false; w * h],
+        };
+        for r in &i.rooms {
+            for y in r.rect.y0..r.rect.y1 {
+                for x in r.rect.x0..r.rect.x1 {
+                    let ix = walk.ix(x, y).unwrap();
+                    walk.walkable[ix] = true;
+                }
+            }
+        }
+        for f in &i.fixtures {
+            let ix = walk.ix(f.x, f.y).unwrap();
+            walk.walkable[ix] = false;
+        }
+        for t in &i.thresholds {
+            let ix = walk.ix(t.x, t.y).unwrap();
+            walk.walkable[ix] = true;
+        }
+        for &(x, y) in &i.approach {
+            let ix = walk.ix(x, y).unwrap();
+            walk.walkable[ix] = true;
+        }
+        if let Some(&(sx, sy)) = i.approach.first() {
+            walk.flood(sx, sy);
+        }
+        walk
+    }
+
+    fn ix(&self, x: i32, y: i32) -> Option<usize> {
+        let (dx, dy) = (x - self.x0, y - self.y0);
+        (dx >= 0 && dy >= 0 && (dx as usize) < self.w && (dy as usize) < self.h)
+            .then(|| dy as usize * self.w + dx as usize)
+    }
+
+    fn flood(&mut self, sx: i32, sy: i32) {
+        let Some(start) = self.ix(sx, sy) else {
+            return;
+        };
+        if !self.walkable[start] {
+            return;
+        }
+        let mut stack = vec![start];
+        self.reached[start] = true;
+        while let Some(i) = stack.pop() {
+            let (x, y) = (self.x0 + (i % self.w) as i32, self.y0 + (i / self.w) as i32);
+            for (nx, ny) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
+                if let Some(n) = self.ix(nx, ny)
+                    && self.walkable[n]
+                    && !self.reached[n]
+                {
+                    self.reached[n] = true;
+                    stack.push(n);
+                }
+            }
+        }
+    }
+
+    /// Whether a body walking from the street reaches `(x, y)`.
+    pub fn reaches(&self, x: i32, y: i32) -> bool {
+        self.ix(x, y).is_some_and(|i| self.reached[i])
+    }
+
+    /// Whether `(x, y)` has a reachable walkable cell beside it.
+    pub fn reachable_beside(&self, x: i32, y: i32) -> bool {
+        [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+            .iter()
+            .any(|&(nx, ny)| self.reaches(nx, ny))
+    }
+
+    pub fn reaches_any_of(&self, r: Rect) -> bool {
+        (r.y0..r.y1).any(|y| (r.x0..r.x1).any(|x| self.reaches(x, y)))
+    }
+}
+
+/// The footprint and its approach, plus one cell of margin.
+pub fn interior_bounds(i: &Interior) -> Rect {
+    let mut b = i.footprint;
+    for &(x, y) in &i.approach {
+        b.x0 = b.x0.min(x);
+        b.y0 = b.y0.min(y);
+        b.x1 = b.x1.max(x + 1);
+        b.y1 = b.y1.max(y + 1);
+    }
+    Rect {
+        x0: b.x0 - 1,
+        y0: b.y0 - 1,
+        x1: b.x1 + 1,
+        y1: b.y1 + 1,
+    }
+}
+
+/// The test's own enterable predicate, computed from emitted cells and
+/// never from a flag the generator sets on itself: a body can walk from
+/// the pavement cell outside the entrance to a floor cell of every room,
+/// beside every fixture, and every fixture a room owes is present.
+pub fn is_enterable(i: &Interior, content: &GenerationContent, vocab: &Vocabulary) -> bool {
+    let walk = Walk::of(i);
+    if i.approach.is_empty() {
+        return false;
+    }
+    for r in &i.rooms {
+        if !walk.reaches_any_of(r.rect) {
+            return false;
+        }
+    }
+    for f in &i.fixtures {
+        if !walk.reachable_beside(f.x, f.y) {
+            return false;
+        }
+    }
+    let parts = vocab.parts;
+    let structural = [
+        parts.wall,
+        parts.wall_run,
+        parts.floor,
+        parts.threshold,
+        parts.entrance,
+        parts.pavement,
+        parts.fixture,
+    ];
+    for (idx, r) in i.rooms.iter().enumerate() {
+        let room_def = content
+            .room_types
+            .iter()
+            .find(|d| d.id == r.room_type)
+            .unwrap();
+        for row in content.rules.iter().filter_map(|r| r.as_requirement()) {
+            let carried = room_def.tags.contains(&row.container) || row.container == parts.floor;
+            if !carried || structural.contains(&row.requires) {
+                continue;
+            }
+            let have = i
+                .fixtures
+                .iter()
+                .filter(|f| f.room == idx && f.tag == row.requires)
+                .count() as u32;
+            if have < row.min {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// AC3's kind-spread verdict over counts the caller computed from emitted
+/// output: kind order dwelling, shop, cafe, back room. Per kind: how many
+/// pass 5 placed, how many are enterable. A pure function so the negative
+/// case ("97 flats and one of each other kind") is exercised without a
+/// city.
+pub fn kind_spread_verdict(
+    placed: [i64; 4],
+    enterable: [i64; 4],
+    total_enterable: i64,
+    cfg: &GenerationConfig,
+) -> Result<(), String> {
+    let names = ["dwelling", "shop", "cafe", "back room"];
+    for k in 0..4 {
+        if enterable[k] < 1 {
+            return Err(format!("no enterable {}", names[k]));
+        }
+        if enterable[k] * 100 < placed[k] * cfg.interior_kind_min_enterable_percent[k] {
+            return Err(format!(
+                "only {} of {} {}s are enterable, under {}%",
+                enterable[k], placed[k], names[k], cfg.interior_kind_min_enterable_percent[k]
+            ));
+        }
+        if enterable[k] * 100 > total_enterable * cfg.interior_max_kind_share_percent {
+            return Err(format!(
+                "{} is {} of {} enterable, over the {}% share ceiling",
+                names[k], enterable[k], total_enterable, cfg.interior_max_kind_share_percent
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Per kind: (placed, enterable) over one district, plus whether any
+/// enterable dwelling sits in the lowest density band.
+pub fn kind_counts(
+    d: &District,
+    content: &GenerationContent,
+    cfg: &GenerationConfig,
+) -> ([i64; 4], [i64; 4], bool) {
+    let by_id: std::collections::BTreeMap<u32, &crate::generated::defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let (dwelling, shop, cafe, staff) = (
+        tag_id(content, "dwelling"),
+        tag_id(content, "shop"),
+        tag_id(content, "cafe"),
+        tag_id(content, "staff"),
+    );
+    let room_tags: std::collections::BTreeMap<u32, &[u32]> =
+        content.room_types.iter().map(|r| (r.id, r.tags)).collect();
+    let span = (cfg.density_max - cfg.density_min).max(1);
+    let low_max = cfg.density_min + span / 3;
+    let enterable_plots: std::collections::BTreeMap<u32, &Interior> =
+        d.interiors.laid().map(|(plot, _, i)| (plot, i)).collect();
+    let (mut placed, mut enterable) = ([0i64; 4], [0i64; 4]);
+    let mut low_band_dwelling = false;
+    for a in d.skeleton.building_types.assignments() {
+        let def = by_id[&a.building_type];
+        // A type with no room program is a deliberate Shell (a vacant
+        // unit carries the shop tag and no posts): it is nobody's
+        // enterable kind, so it is not "placed" for the share either.
+        if def.rooms.is_empty() {
+            continue;
+        }
+        let interior = enterable_plots.get(&a.plot);
+        let kinds = [
+            def.tags.contains(&dwelling),
+            def.tags.contains(&shop),
+            def.tags.contains(&cafe),
+            // An institutional back room: a staff room in a type sited on
+            // institutional land use.
+            def.land_uses[3]
+                && interior.is_some_and(|i| {
+                    i.rooms
+                        .iter()
+                        .any(|r| room_tags[&r.room_type].contains(&staff))
+                }),
+        ];
+        let sited_institutional = def.land_uses[3];
+        for k in 0..4 {
+            if kinds[k] {
+                placed[k] += 1;
+                if interior.is_some() {
+                    enterable[k] += 1;
+                }
+            } else if k == 3 && sited_institutional {
+                // A rejected or shell institutional-land type still counts
+                // as placed for the back-room share.
+                placed[3] += 1;
+            }
+        }
+        if kinds[0]
+            && interior.is_some()
+            && d.skeleton.plots.plots()[a.plot as usize].density <= low_max
+        {
+            low_band_dwelling = true;
+        }
+    }
+    (placed, enterable, low_band_dwelling)
+}
+
+/// Every figure the per-city interior invariants judge, for one district.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InteriorFigures {
+    /// Most layout attempts any building used.
+    pub max_attempts: u32,
+    /// The rejected share of attempted layouts, percent.
+    pub rejected_percent: i64,
+    /// Interiors that are enterable by their own cells.
+    pub enterable: i64,
+    /// Per kind (dwelling, shop, cafe, back room): placed and enterable.
+    pub placed: [i64; 4],
+    pub kind_enterable: [i64; 4],
+    /// Interiors laid out (the set the share ceiling is a share of).
+    pub laid: i64,
+    pub low_band_dwelling: bool,
+    /// The largest room aspect, `long * 100 / short`.
+    pub max_room_aspect_x100: i64,
+}
+
+/// Measures `d` for every per-city interior key.
+pub fn interior_figures(
+    d: &District,
+    content: &GenerationContent,
+    cfg: &GenerationConfig,
+) -> InteriorFigures {
+    let vocab = Vocabulary::new(content);
+    let mut max_attempts = 0u32;
+    for o in d.interiors.outcomes() {
+        if let super::interiors::InteriorOutcome::Laid { attempts, .. }
+        | super::interiors::InteriorOutcome::Rejected { attempts, .. } = o
+        {
+            max_attempts = max_attempts.max(*attempts);
+        }
+    }
+    let enterable = d
+        .interiors
+        .laid()
+        .filter(|(_, _, i)| is_enterable(i, content, &vocab))
+        .count() as i64;
+    let (placed, kind_enterable, low_band_dwelling) = kind_counts(d, content, cfg);
+    let mut max_room_aspect_x100 = 0i64;
+    for (_, _, i) in d.interiors.laid() {
+        for r in &i.rooms {
+            let (w, h) = (r.rect.width(), r.rect.height());
+            max_room_aspect_x100 = max_room_aspect_x100.max(w.max(h) * 100 / w.min(h).max(1));
+        }
+    }
+    InteriorFigures {
+        max_attempts,
+        rejected_percent: d.interiors.rejected_percent(),
+        enterable,
+        placed,
+        kind_enterable,
+        laid: d.interiors.enterable_count(),
+        low_band_dwelling,
+        max_room_aspect_x100,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -579,5 +913,70 @@ mod tests {
         let (biting, pairs) = catchment_bite(&d.site(&content), &row);
         assert!(pairs > 0 && biting <= pairs);
         assert_eq!((biting, pairs), (4, 4));
+    }
+
+    #[test]
+    fn is_enterable_reads_the_emitted_cells_and_fails_on_a_broken_interior() {
+        let (cfg, content) = setup();
+        let d = plan(1, &cfg, &content).unwrap();
+        let vocab = Vocabulary::new(&content);
+        let laid: Vec<_> = d.interiors.laid().collect();
+        assert!(!laid.is_empty());
+        assert!(
+            laid.iter()
+                .all(|(_, _, i)| is_enterable(i, &content, &vocab)),
+            "every laid interior of a committed seed is enterable"
+        );
+        let (_, _, i) = laid[0];
+        let mut no_approach = i.clone();
+        no_approach.approach.clear();
+        assert!(!is_enterable(&no_approach, &content, &vocab));
+        let mut no_fixtures = i.clone();
+        no_fixtures.fixtures.clear();
+        assert!(
+            !is_enterable(&no_fixtures, &content, &vocab),
+            "a room owing a fixture without it is not enterable"
+        );
+    }
+
+    #[test]
+    fn interior_figures_measure_a_committed_city() {
+        let (cfg, content) = setup();
+        let d = plan(1, &cfg, &content).unwrap();
+        let f = interior_figures(&d, &content, &cfg);
+        assert_eq!(f.laid, d.interiors.enterable_count());
+        assert_eq!(f.enterable, f.laid, "every laid interior is enterable");
+        assert!(f.laid >= cfg.interior_min_enterable_count);
+        assert!(f.max_attempts >= 1 && f.max_attempts <= cfg.interior_max_layout_attempts);
+        assert!(f.rejected_percent <= cfg.interior_max_rejected_percent);
+        assert!(f.placed.iter().all(|&p| p > 0), "{:?}", f.placed);
+        assert!(
+            f.kind_enterable
+                .iter()
+                .zip(f.placed)
+                .all(|(&e, p)| e >= 1 && e <= p)
+        );
+        assert!(f.low_band_dwelling);
+        assert!(
+            f.max_room_aspect_x100 >= 100
+                && f.max_room_aspect_x100 <= cfg.interior_max_room_aspect as i64 * 100
+        );
+        assert_eq!(
+            kind_spread_verdict(f.placed, f.kind_enterable, f.laid, &cfg),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn kind_spread_verdict_names_each_way_a_city_fails() {
+        let (cfg, _) = setup();
+        let ok = kind_spread_verdict([50, 30, 10, 10], [50, 30, 10, 10], 100, &cfg);
+        assert_eq!(ok, Ok(()));
+        let missing = kind_spread_verdict([50, 30, 10, 10], [50, 30, 10, 0], 90, &cfg);
+        assert!(missing.unwrap_err().contains("no enterable back room"));
+        let thin = kind_spread_verdict([50, 30, 10, 10], [50, 30, 10, 5], 95, &cfg);
+        assert!(thin.unwrap_err().contains("under"));
+        let dominant = kind_spread_verdict([97, 1, 1, 1], [97, 1, 1, 1], 100, &cfg);
+        assert!(dominant.unwrap_err().contains("share ceiling"));
     }
 }

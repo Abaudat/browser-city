@@ -737,7 +737,11 @@ and the unit tests on hand-built samples, not by the proptest.
   by the building's own bounds and the attempt index -- never list
   position, so a retry in one building never shifts its neighbour. A
   building the rule engine refuses is rebuilt, up to
-  `generation.interiors.max_layout_attempts`, then `Rejected`.
+  `generation.interiors.max_layout_attempts`, then `Rejected`. Every
+  attempt builds the longest program the footprint fits; the last also
+  falls back through the shorter programs, down to the required core, so
+  a footprint whose longest program no randomised plan realises still
+  gets its core rather than a missing institution.
 - **Owed to the prop pass:** a `washing` room holds only a basin here,
   which does not read as a bathroom at 16 px -- the prop pass places a
   toilet or bath in every one.
@@ -790,12 +794,19 @@ turns the fingerprint red. A red stamp means re-run the block's command
 and re-state every ceiling it backs in the same PR.
 
 Two kinds of block. *Proptest-gated* blocks (`detour-bounds sweep`, `band
-sweep`, `rows sweep`, `region-loss sweep`) back per-seed bounds that CI
-draws arbitrary seeds against: they carry the miss count over a million
-seeds and the implied failure probability of a 4,096-case CI run, with the
-rule-of-three bound when there are no misses. *Fixed-seed* blocks
-(`exhaustive loop`, `pooled evidence`, `interiors sweep`) are deterministic facts with no miss
-rate. The per-seed guard figures a proptest asserts are computed by one
+sweep`, `rows sweep`, `region-loss sweep`, `interiors sweep`) back
+per-seed bounds that CI judges on arbitrary cities: they carry the miss
+count over `seed_from_ids` seeds and the failure probability implied for
+the block's own CI case count -- 4,096 proptest cases, or the 96-city
+shared pool the pass-6 and whole-district invariants judge
+(`MeasuredBlock::ci_cases`, the marker `implied <n>-case`) -- with the
+rule-of-three bound when there are no misses. A sweep over `n` cities
+bounds the per-city rate by `3 / n`, so a 96-city CI run fails with
+probability at most `1 - (1 - 3/n)^96`: `n >= 24,000` keeps it at about
+1.2%, and the `interiors sweep` runs 30,000. The pooled enterable-share
+band is a statistic over one pool, so that block reports it over
+consecutive 96-city pools. *Fixed-seed* blocks (`exhaustive loop`,
+`pooled evidence`) are deterministic facts with no miss rate. The per-seed guard figures a proptest asserts are computed by one
 function (`sim::generation::guards`) that the proptest and the sweep both
 call.
 
@@ -821,7 +832,7 @@ block is reproducible bar thread count and wall-clock.
 `cargo run -p bounds --release --bin measure-generation -- detour 1000000`
 
 ```text
-detour-bounds sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 1000000 seeds, 32 threads, passes 1-2 only
+detour-bounds sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, 32 threads, passes 1-2 only
   detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
   p99_detour_fill_percent = 95% (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
@@ -861,7 +872,7 @@ detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worst
   171% at seed 4929245716913353663
   178% at seed 4832727318219098284
   189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 242.6s (0.243ms/seed)
+detour-bounds sweep wall-clock: 226.0s (0.226ms/seed)
 ```
 
 ### band sweep
@@ -869,7 +880,7 @@ detour-bounds sweep wall-clock: 242.6s (0.243ms/seed)
 `cargo run -p bounds --release --bin measure-generation -- bands 1000000`
 
 ```text
-band sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 1000000 seeds, all five passes (salt 0xb0f05ee4)
+band sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, all five passes (salt 0xb0f05ee4)
 land_use_share_commercial deviation from its key (18%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.6 stddev=6.0
   5.5-sigma share tolerance implied: 3.32 percentage points
 land_use_share_industrial deviation from its key (14%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.7 stddev=5.8
@@ -911,7 +922,7 @@ largest_institutional_pocket_share_basis_points: min=87 p1=117 p50=205 p99=234 m
 profession_depth_per_city: min=44 p1=55 p50=61 p99=67 max=67 mean=61.4 stddev=2.3
   profession_count_per_city_min = 36: 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-band sweep wall-clock: 156.4s (0.156ms/seed)
+band sweep wall-clock: 154.7s (0.155ms/seed)
 ```
 
 ### exhaustive loop
@@ -919,7 +930,7 @@ band sweep wall-clock: 156.4s (0.156ms/seed)
 `cargo run -p bounds --release --bin measure-generation`
 
 ```text
-exhaustive loop at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 50000 seeds at 512x512 cells
+exhaustive loop at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 50000 seeds at 512x512 cells
 building_count: min=778 p1=829 p50=889 p99=949 max=990 mean=889.2 stddev=25.6
 building_count extremes: min 778 at seed 11805315485014167829, max 990 at seed 11123925265906853341 (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)
 rejected_percent: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
@@ -1016,9 +1027,9 @@ ad hoc presence tags (never distributed) -- seeds with 0 placed:
 `cargo run -p bounds --release --bin measure-generation -- rows 1000000`
 
 ```text
-rows sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 1000000 seeds, 32 threads
-  committed rules hold (inv_generation_committed_rules_hold_for_any_seed): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
-    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
+rows sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, 32 threads
+  committed rules hold (inv_generation_committed_rules_hold_for_any_seed): 0 of 1000000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 96-case CI failure probability <= 0.0288%)
   cafe_present: pooled mean placed 10.49, fewest in one district 7, owed somewhere but none placed in 0 districts
   council_present: pooled mean placed 1.00, fewest in one district 1, owed somewhere but none placed in 0 districts
   depot_present: pooled mean placed 1.00, fewest in one district 1, owed somewhere but none placed in 0 districts
@@ -1032,7 +1043,7 @@ rows sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 1000000 seeds,
 `cargo run -p bounds --release --bin measure-generation -- regions 1000000`
 
 ```text
-region-loss sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
+region-loss sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
   seeds with any region carried by no block: 20769 of 1000000 (first: Some(11091164158115210688)) -- by design, a block takes its majority use
   every institutional region carried by no block (inv_generation_an_institutional_region_is_carried_by_a_block): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
@@ -1043,7 +1054,7 @@ region-loss sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: 1000000
 `cargo run -p bounds --release --bin measure-generation -- pooled`
 
 ```text
-pooled evidence at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: seeds 0..256 pooled, evidence seeds 1, 2, 3
+pooled evidence at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: seeds 0..256 pooled, evidence seeds 1, 2, 3
 pooled low-band / high-band mean block area over seeds 0..256: 289% (peripheral_pooled_min_ratio_percent = 150%)
 pooled chopped share of low-band blocks over seeds 0..256: 1886 of 5600 (33%)
 evidence seed 1: low-band / high-band mean block area 2.65x (Artie's bar 2x)
@@ -1061,17 +1072,44 @@ pooled core over city mean screen: 190% (busy_core_over_city_min_percent = 150%)
 `cargo run -p bounds --release --bin measure-generation -- interiors`
 
 ```text
-interiors sweep at GENERATION_VERSION=11 fingerprint=ca764a5f05098cbc: seeds 0..500
-enterable_count: min=790 p1=803 p50=867 p99=932 max=954 mean=867.1 stddev=26.9
-enterable_share_percent: min=94 p1=94 p50=97 p99=99 max=99 mean=97.0 stddev=1.2
-shell_count: min=2 p1=3 p50=21 p99=46 max=47 mean=20.9 stddev=10.4
-rejected_count: min=0 p1=0 p50=1 p99=6 max=7 mean=1.6 stddev=1.3
+interiors sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 30000 seeds, 32 threads (salt 0xb0f05ee7)
+enterable_count: min=766 p1=805 p50=868 p99=932 max=973 mean=868.5 stddev=27.3
+enterable_share_percent: min=92 p1=95 p50=97 p99=99 max=100 mean=97.2 stddev=1.2
+shell_count: min=0 p1=3 p50=20 p99=44 max=61 mean=20.6 stddev=10.4
+rejected_count: min=0 p1=0 p50=0 p99=0 max=1 mean=0.0 stddev=0.0
 rejected_percent_of_attempted: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
-wall_cells_per_city: min=40896 p1=41934 p50=46934 p99=50978 max=52320 mean=46851.2 stddev=1941.8
-floor_cells_per_city: min=49149 p1=50848 p50=57279 p99=63467 max=64820 mean=57203.6 stddev=2843.1
-threshold_cells_per_city: min=3350 p1=3417 p50=3875 p99=4245 max=4362 mean=3867.2 stddev=171.4
-fixture_cells_per_city: min=7848 p1=7961 p50=8970 p99=9751 max=10010 mean=8947.3 stddev=376.2
-layout attempts needed (u32::MAX = rejected): {1: 388573, 2: 21966, 3: 10576, 4: 5651, 5: 3188, 6: 1855, 7: 1080, 8: 664, 4294967295: 822}
+max_layout_attempts_used: min=4 p1=7 p50=8 p99=8 max=8 mean=7.9 stddev=0.3
+max_room_aspect_x100: min=300 p1=300 p50=300 p99=300 max=300 mean=300.0 stddev=0.0
+dwelling_enterable_percent_of_placed: min=99 p1=100 p50=100 p99=100 max=100 mean=100.0 stddev=0.0
+dwelling_percent_of_enterable_set: min=50 p1=56 p50=63 p99=70 max=75 mean=62.7 stddev=2.9
+shop_enterable_percent_of_placed: min=99 p1=100 p50=100 p99=100 max=100 mean=100.0 stddev=0.0
+shop_percent_of_enterable_set: min=9 p1=13 p50=18 p99=24 max=28 mean=18.3 stddev=2.4
+cafe_enterable_percent_of_placed: min=100 p1=100 p50=100 p99=100 max=100 mean=100.0 stddev=0.0
+cafe_percent_of_enterable_set: min=0 p1=1 p50=1 p99=1 max=1 mean=1.0 stddev=0.0
+back_room_enterable_percent_of_placed: min=100 p1=100 p50=100 p99=100 max=100 mean=100.0 stddev=0.0
+back_room_percent_of_enterable_set: min=2 p1=4 p50=7 p99=10 max=13 mean=7.3 stddev=1.4
+wall_cells_per_city: min=39144 p1=42391 p50=47093 p99=51266 max=53815 mean=47038.2 stddev=1905.1
+floor_cells_per_city: min=45646 p1=50713 p50=57593 p99=63693 max=67587 mean=57506.0 stddev=2811.5
+threshold_cells_per_city: min=3201 p1=3473 p50=3886 p99=4251 max=4504 mean=3880.6 stddev=167.4
+fixture_cells_per_city: min=7502 p1=8088 p50=8987 p99=9797 max=10355 mean=8978.0 stddev=366.9
+layout attempts needed (u32::MAX = rejected): {1: 23292358, 2: 1334735, 3: 628107, 4: 341075, 5: 192792, 6: 112084, 7: 64379, 8: 90167, 4294967295: 2}
+check-chain failures by verdict: {}
+  generate succeeds (check chain): 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
+  layout attempts at most max_layout_attempts = 8: 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
+  rejected share at most max_rejected_percent = 5%: 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
+  enterable count at least min_enterable_count = 100: 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
+  no room past max_room_aspect = 3:1: 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
+  required kinds spread (min enterable percent per kind [90, 90, 90, 90], max_kind_share_percent = 85%): 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
+  an enterable dwelling in the lowest density band: 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
+  pooled enterable share within enterable_target_percent = 98% +- 1% (96-city pools): 0 of 312 misses (rate 0.000000%), implied 1-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 312 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.961538% (implied 1-case CI failure probability <= 0.9615%)
 ```
 
 ## Density is per screen

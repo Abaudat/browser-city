@@ -109,7 +109,7 @@ pub fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
             totals[k].2 += u64::from(*owed_none);
         }
     }
-    print_ceiling_report(
+    report(
         "committed rules hold (inv_generation_committed_rules_hold_for_any_seed)",
         &failing,
         n,
@@ -126,4 +126,9 @@ pub fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
             total * 100 / n % 100
         );
     }
+}
+
+/// This block's ceilings, reported for its own CI case count.
+fn report(name: &str, miss: &BandMiss, n: u64) {
+    print_ceiling_report(name, miss, n, bounds::generation_stamp::ROWS_SWEEP.ci_cases);
 }

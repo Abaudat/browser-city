@@ -102,7 +102,11 @@ fn main() {
         Sweep::Bands => bands::band_sweep(&cfg, &content, count(BAND_SEED_COUNT_DEFAULT)),
         Sweep::Rows => rows::rows_sweep(&cfg, &content, count(rows::ROWS_SEED_COUNT_DEFAULT)),
         Sweep::Pooled => pooled::pooled_sweep(&cfg),
-        Sweep::Interiors => interiors::interiors_sweep(&cfg, &content),
+        Sweep::Interiors => interiors::interiors_sweep(
+            &cfg,
+            &content,
+            count(interiors::INTERIOR_SEED_COUNT_DEFAULT),
+        ),
         Sweep::Regions => {
             regions::region_loss_sweep(&cfg, count(regions::REGION_SEED_COUNT_DEFAULT))
         }

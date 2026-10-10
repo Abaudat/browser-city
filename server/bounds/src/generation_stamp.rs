@@ -20,7 +20,15 @@ pub const CI_PROPTEST_CASES: u32 = 4096;
 
 /// The text every proptest-gated ceiling's report carries; a `Proptest`
 /// block's pasted output must contain it.
-pub const IMPLIED_CASES_MARKER: &str = "implied 4096-case";
+/// The cities the pool-based invariants judge per CI run (pinned to
+/// `invariants.rs`'s default pool size by a test).
+pub const CITY_POOL_SIZE: u32 = 96;
+
+/// The text every proptest-gated ceiling's report carries, for the block's
+/// own CI case count; a `Proptest` block's pasted output must contain it.
+pub fn implied_marker(cases: u32) -> String {
+    format!("implied {cases}-case")
+}
 
 /// Which kind of figure a block backs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +51,9 @@ pub struct MeasuredBlock {
     /// The arguments the pasted block was run with (a seed count).
     pub rerun_args: &'static str,
     pub kind: BlockKind,
+    /// How many cases (or pooled cities) one CI run judges the block's
+    /// per-seed ceilings over.
+    pub ci_cases: u32,
     /// The `defs::BALANCE` keys the block's figures bound.
     pub ceilings: &'static [&'static str],
 }
@@ -68,6 +79,7 @@ pub const DETOUR_SWEEP: MeasuredBlock = MeasuredBlock {
     subcommand: "detour",
     rerun_args: "1000000",
     kind: BlockKind::Proptest,
+    ci_cases: CI_PROPTEST_CASES,
     ceilings: &[
         "generation.streets.max_detour_percent",
         "generation.streets.max_detour_excess_cells",
@@ -81,6 +93,7 @@ pub const BAND_SWEEP: MeasuredBlock = MeasuredBlock {
     subcommand: "bands",
     rerun_args: "1000000",
     kind: BlockKind::Proptest,
+    ci_cases: CI_PROPTEST_CASES,
     ceilings: &[
         "generation.land_use.share_tolerance_pct",
         "generation.envelopes.count_tolerance_percent",
@@ -108,6 +121,7 @@ pub const EXHAUSTIVE_LOOP: MeasuredBlock = MeasuredBlock {
     subcommand: "",
     rerun_args: "",
     kind: BlockKind::FixedSeed,
+    ci_cases: CI_PROPTEST_CASES,
     ceilings: &[
         "generation.streets.max_detour_excess_cells",
         "generation.plots.max_open_percent_by_count",
@@ -133,6 +147,7 @@ pub const REGION_LOSS_SWEEP: MeasuredBlock = MeasuredBlock {
     subcommand: "regions",
     rerun_args: "1000000",
     kind: BlockKind::Proptest,
+    ci_cases: CI_PROPTEST_CASES,
     ceilings: &[],
 };
 
@@ -141,6 +156,7 @@ pub const ROWS_SWEEP: MeasuredBlock = MeasuredBlock {
     subcommand: "rows",
     rerun_args: "1000000",
     kind: BlockKind::Proptest,
+    ci_cases: CITY_POOL_SIZE,
     ceilings: &[],
 };
 
@@ -149,6 +165,7 @@ pub const POOLED_EVIDENCE: MeasuredBlock = MeasuredBlock {
     subcommand: "pooled",
     rerun_args: "",
     kind: BlockKind::FixedSeed,
+    ci_cases: CI_PROPTEST_CASES,
     ceilings: &[
         "generation.streets.peripheral_pooled_min_ratio_percent",
         "generation.catchment_floor_min_bite_percent",
@@ -164,13 +181,21 @@ pub const POOLED_EVIDENCE: MeasuredBlock = MeasuredBlock {
 pub const INTERIORS_SWEEP: MeasuredBlock = MeasuredBlock {
     label: "interiors sweep",
     subcommand: "interiors",
-    rerun_args: "",
-    kind: BlockKind::FixedSeed,
+    rerun_args: "30000",
+    kind: BlockKind::Proptest,
+    ci_cases: CITY_POOL_SIZE,
     ceilings: &[
+        "generation.interiors.max_layout_attempts",
+        "generation.interiors.max_room_aspect",
         "generation.interiors.min_enterable_count",
         "generation.interiors.max_rejected_percent",
         "generation.interiors.enterable_target_percent",
         "generation.interiors.enterable_target_tolerance_percent",
+        "generation.interiors.dwelling_min_enterable_percent",
+        "generation.interiors.shop_min_enterable_percent",
+        "generation.interiors.cafe_min_enterable_percent",
+        "generation.interiors.back_room_min_enterable_percent",
+        "generation.interiors.max_kind_share_percent",
     ],
 };
 
@@ -194,19 +219,6 @@ const ASSERTED: &str =
 /// the reason it is not a measured ceiling. A new generation key is in
 /// exactly one of the two places or the build is red.
 pub const NOT_MEASURED: &[(&str, &str)] = &[
-    ("generation.interiors.max_layout_attempts", AUTHORED),
-    ("generation.interiors.max_room_aspect", AUTHORED),
-    (
-        "generation.interiors.dwelling_min_enterable_percent",
-        ASSERTED,
-    ),
-    ("generation.interiors.shop_min_enterable_percent", ASSERTED),
-    ("generation.interiors.cafe_min_enterable_percent", ASSERTED),
-    (
-        "generation.interiors.back_room_min_enterable_percent",
-        ASSERTED,
-    ),
-    ("generation.interiors.max_kind_share_percent", ASSERTED),
     (
         "generation.envelopes.commercial_min_interior_depth_cells",
         AUTHORED,
@@ -525,24 +537,26 @@ pub fn parse_stamp(line: &str) -> Option<(&str, u32, &str)> {
 }
 
 /// One proptest ceiling's miss count, rate and the failure probability a
-/// [`CI_PROPTEST_CASES`]-case run implies (`1 - (1 - p)^cases`); with zero
+/// `cases`-case run implies (`1 - (1 - p)^cases`); with zero
 /// misses, the rule-of-three bound (`3 / n` per seed) as well, since zero
 /// observed misses is a bound, not a zero rate. Every proptest sweep
 /// prints its ceilings through this one function.
-pub fn ceiling_report(name: &str, count: u64, seeds: &[u64], n: u64) -> String {
+pub fn ceiling_report(name: &str, count: u64, seeds: &[u64], n: u64, cases: u32) -> String {
     let rate = count as f64 / n as f64;
-    let implied = 1.0 - (1.0 - rate).powi(CI_PROPTEST_CASES as i32);
+    let implied = 1.0 - (1.0 - rate).powi(cases as i32);
     let mut out = format!(
-        "  {name}: {count} of {n} misses (rate {:.6}%), {IMPLIED_CASES_MARKER} CI failure probability {:.6}%, offending seeds: {seeds:?}",
+        "  {name}: {count} of {n} misses (rate {:.6}%), {} CI failure probability {:.6}%, offending seeds: {seeds:?}",
         rate * 100.0,
+        implied_marker(cases),
         implied * 100.0
     );
     if count == 0 {
         let bound = 3.0 / n as f64;
-        let implied_bound = 1.0 - (1.0 - bound).powi(CI_PROPTEST_CASES as i32);
+        let implied_bound = 1.0 - (1.0 - bound).powi(cases as i32);
         out.push_str(&format!(
-            "\n    zero observed misses over {n} seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: {:.6}% ({IMPLIED_CASES_MARKER} CI failure probability <= {:.4}%)",
+            "\n    zero observed misses over {n} seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: {:.6}% ({} CI failure probability <= {:.4}%)",
             bound * 100.0,
+            implied_marker(cases),
             implied_bound * 100.0
         ));
     }
@@ -755,12 +769,13 @@ pub fn check_doc(
                 ),
             });
         }
-        if block.kind == BlockKind::Proptest && !body.contains(IMPLIED_CASES_MARKER) {
+        if block.kind == BlockKind::Proptest && !body.contains(&implied_marker(block.ci_cases)) {
             out.push(Violation {
                 kind: ViolationKind::MissingCeilingReport,
                 block: label.clone(),
                 message: format!(
-                    "`{label}` is a proptest-gated block and its pasted output has no `{IMPLIED_CASES_MARKER}` line -- paste `{rerun}` verbatim"
+                    "`{label}` is a proptest-gated block and its pasted output has no `{}` line -- paste `{rerun}` verbatim",
+                    implied_marker(block.ci_cases)
                 ),
             });
         }
@@ -912,7 +927,10 @@ mod tests {
 
     fn stamped(block: &MeasuredBlock, v: u32, fingerprint: u64) -> String {
         let report = if block.kind == BlockKind::Proptest {
-            format!("\n  x: 0 of 5 misses, {IMPLIED_CASES_MARKER} CI failure probability 0%")
+            format!(
+                "\n  x: 0 of 5 misses, {} CI failure probability 0%",
+                implied_marker(block.ci_cases)
+            )
         } else {
             String::new()
         };
@@ -1047,7 +1065,9 @@ mod tests {
 
     #[test]
     fn a_proptest_block_without_its_implied_case_line_is_named() {
-        let doc = doc_of(MEASURED_BLOCKS).replace(IMPLIED_CASES_MARKER, "elided");
+        let doc = doc_of(MEASURED_BLOCKS)
+            .replace(&implied_marker(CI_PROPTEST_CASES), "elided")
+            .replace(&implied_marker(CITY_POOL_SIZE), "elided");
         let vs = check_doc(&doc, MEASURED_BLOCKS, V, F);
         assert!(
             vs.iter()
@@ -1064,11 +1084,11 @@ mod tests {
 
     #[test]
     fn the_ceiling_report_prints_the_implied_line_and_the_zero_miss_bound() {
-        let zero = ceiling_report("x", 0, &[], 1_000_000);
-        assert!(zero.contains(IMPLIED_CASES_MARKER));
+        let zero = ceiling_report("x", 0, &[], 1_000_000, 96);
+        assert!(zero.contains(&implied_marker(96)));
         assert!(zero.contains("rule-of-three"));
-        let some = ceiling_report("x", 2, &[1, 2], 1_000_000);
-        assert!(some.contains(IMPLIED_CASES_MARKER));
+        let some = ceiling_report("x", 2, &[1, 2], 1_000_000, 4096);
+        assert!(some.contains(&implied_marker(4096)));
         assert!(!some.contains("rule-of-three"));
     }
 
@@ -1087,7 +1107,14 @@ mod tests {
 
     #[test]
     fn the_implied_marker_names_the_ci_case_count() {
-        assert!(IMPLIED_CASES_MARKER.contains(&CI_PROPTEST_CASES.to_string()));
+        assert_eq!(implied_marker(CI_PROPTEST_CASES), "implied 4096-case");
+        for block in MEASURED_BLOCKS {
+            assert!(
+                block.ci_cases == CI_PROPTEST_CASES || block.ci_cases == CITY_POOL_SIZE,
+                "{}",
+                block.label
+            );
+        }
     }
 
     #[test]

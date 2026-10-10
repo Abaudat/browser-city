@@ -88,8 +88,8 @@ pub fn detour_sweep(cfg: &GenerationConfig, n: u64) {
         }
     }
 
-    print_ceiling_report("detour max()-contract (14-node sample)", &max_miss, n);
-    print_ceiling_report(
+    report("detour max()-contract (14-node sample)", &max_miss, n);
+    report(
         &format!(
             "p99_detour_fill_percent = {}% (64-node sample)",
             cfg.p99_detour_fill_percent
@@ -97,7 +97,7 @@ pub fn detour_sweep(cfg: &GenerationConfig, n: u64) {
         &p99_miss,
         n,
     );
-    print_ceiling_report(
+    report(
         &format!(
             "peripheral_low_band_floor_percent = {}% (per-city low/high band mean block area)",
             cfg.peripheral_low_band_floor_percent
@@ -125,5 +125,15 @@ pub fn detour_sweep(cfg: &GenerationConfig, n: u64) {
         "detour-bounds sweep wall-clock: {:.1}s ({:.3}ms/seed)",
         elapsed.as_secs_f64(),
         elapsed.as_secs_f64() * 1000.0 / n.max(1) as f64
+    );
+}
+
+/// This block's ceilings, reported for its own CI case count.
+fn report(name: &str, miss: &BandMiss, n: u64) {
+    print_ceiling_report(
+        name,
+        miss,
+        n,
+        bounds::generation_stamp::DETOUR_SWEEP.ci_cases,
     );
 }

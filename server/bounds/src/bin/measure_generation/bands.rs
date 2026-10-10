@@ -200,7 +200,7 @@ pub fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
             5.5 * st.stddev() / 10.0
         );
     }
-    print_ceiling_report("land-use share band (share_tolerance_pct)", &share_miss, n);
+    report("land-use share band (share_tolerance_pct)", &share_miss, n);
     let target_b = cfg.building_count_target(cfg.site().width() * cfg.site().height());
     let st = Stats::new(building_count);
     st.print("building_count");
@@ -212,7 +212,7 @@ pub fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
         "building_count extremes over the band sweep: min {} at seed {}, max {} at seed {} (pinned in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)",
         min_count.0, min_count.1, max_count.0, max_count.1
     );
-    print_ceiling_report(
+    report(
         "building-count band (count_tolerance_percent)",
         &building_miss,
         n,
@@ -224,20 +224,20 @@ pub fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
         "  5.5-sigma workplace tolerance implied: {:.1}% of the {target_w} target",
         5.5 * st.stddev() * 100.0 / target_w as f64
     );
-    print_ceiling_report(
+    report(
         "workplace-count band (workplace_count_tolerance_percent)",
         &workplace_miss,
         n,
     );
 
     Stats::new(cores).print("core_citizens_per_screen");
-    print_ceiling_report(
+    report(
         &format!("busy core (busy_screen_min_citizens = {busy_min})"),
         &busy_miss,
         n,
     );
     Stats::new(quiet_pct).print("edge_percent_of_core");
-    print_ceiling_report(
+    report(
         &format!("quiet edge (quiet_edge_max_percent_of_core = {quiet_max}%)"),
         &quiet_miss,
         n,
@@ -263,9 +263,9 @@ pub fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
         ),
     ] {
         Stats::new(values).print(&format!("{name} closest qualifying pair per seed"));
-        print_ceiling_report(&format!("{name} = {threshold}%"), miss, n);
+        report(&format!("{name} = {threshold}%"), miss, n);
     }
-    print_ceiling_report(
+    report(
         &format!(
             "district character (min_corners, min_apart_neighbourhoods, legible_step, min_home_cells via poor_band_max = {})",
             character.poor_band_max
@@ -275,7 +275,7 @@ pub fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
     );
     Stats::new(pocket_counts).print("institutional_pockets");
     Stats::new(pocket_shares).print("largest_institutional_pocket_share_basis_points");
-    print_ceiling_report(
+    report(
         &format!(
             "institutional pockets (institutional_min_pockets = {pocket_min}, institutional_max_pocket_share_percent = {pocket_max_pct}%, no two touching)"
         ),
@@ -283,7 +283,7 @@ pub fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
         n,
     );
     Stats::new(depths).print("profession_depth_per_city");
-    print_ceiling_report(
+    report(
         &format!("profession_count_per_city_min = {depth_min}"),
         &depth_miss,
         n,
@@ -293,4 +293,9 @@ pub fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
         start.elapsed().as_secs_f64(),
         start.elapsed().as_secs_f64() * 1000.0 / n.max(1) as f64
     );
+}
+
+/// This block's ceilings, reported for its own CI case count.
+fn report(name: &str, miss: &BandMiss, n: u64) {
+    print_ceiling_report(name, miss, n, bounds::generation_stamp::BAND_SWEEP.ci_cases);
 }
