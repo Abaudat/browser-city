@@ -1249,9 +1249,9 @@ export async function mountStreetScene(
   // Story 1.7: the visibility adapter, gated on the viewer's own
   // (floor, buildingId) tuple actually changing (Tim's direction) --
   // computed from the player's own cell (`bodyCell`, through the walk
-  // state), never every frame. Applied to the pool and every flat-pass group (ground,
-  // ground objects, the crowd) together, in one call, so nothing is ever
-  // culled halfway.
+  // state), never every frame. Applied to the pool and every flat-pass
+  // group (ground, ground objects, the crowd) together, in one call, so
+  // nothing is ever culled halfway.
   const visibilityApplier = new VisibilityApplier();
   // By value: the renderer's own colour object is overwritten below.
   const originalBackground = app.renderer.background.color.toNumber();

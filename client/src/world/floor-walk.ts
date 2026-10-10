@@ -8,10 +8,11 @@
 // A transition is edge-triggered, entered by walking, never level-
 // triggered by a key still held: it is only ever checked against the cell
 // a step just *walked into* -- the cell `bodyCell` resolves the position to
-// changing from the previous tick's is what "walked into" means here. Landing on a cell via a transition never itself counts as
-// walking into it: the check that produced the landing is not re-run
-// against its own result, and the very next call only re-checks once the
-// position leaves that landing cell. That is what makes two transitions
+// changing from the previous tick's is what "walked into" means here.
+// Landing on a cell via a transition never itself counts as walking into
+// it: the check that produced the landing is not re-run against its own
+// result, and the very next call only re-checks once the position leaves
+// that landing cell. That is what makes two transitions
 // that happen to target each other's own anchor impossible to bounce
 // between forever just because a direction key is still held (`sim::
 // world::WorldSpec::build` does not reject that shape of data itself, so

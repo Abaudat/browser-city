@@ -1836,9 +1836,11 @@ describe("the near-railing press route (story 15.13)", () => {
     return end;
   };
   /** The smallest overshoot, in fully clamped steps, that walks on down the stairs. */
+  let descendingLag: number | undefined;
   const smallestDescendingLag = () => {
+    if (descendingLag !== undefined) return descendingLag;
     for (let lag = 0; lag <= 400; lag++) {
-      if (westEnd(lag).floor === SUBWAY_FLOOR) return lag;
+      if (westEnd(lag).floor === SUBWAY_FLOOR) return (descendingLag = lag);
     }
     throw new Error("no overshoot up to 400 steps descends");
   };
@@ -2233,6 +2235,14 @@ describe("transitions are reachable from every standable approach (story 15.20)"
 
   /** Every walk of one side; the failures are collected, never thrown on the first. */
   const sweepSide = (side: Side) => {
+    const known = sweepCache.get(side);
+    if (known) return known;
+    const out = sweepSideUncached(side);
+    sweepCache.set(side, out);
+    return out;
+  };
+  const sweepCache = new Map<Side, ReturnType<typeof sweepSideUncached>>();
+  function sweepSideUncached(side: Side) {
     const perp = { x: -side.direction.y, y: side.direction.x };
     const clear = (cx: number, feet: number) => isBodyClear(world, config, side.floor, cx, feet);
     // Named predicates, decided by the real grid.
@@ -2280,7 +2290,7 @@ describe("transitions are reachable from every standable approach (story 15.20)"
       }
     }
     return { starts: starts.length, walks, excluded, wallPressed, failures };
-  };
+  }
 
   it("has at least four sides, both flights of the subway among them", () => {
     expect(sides.length).toBeGreaterThanOrEqual(4);

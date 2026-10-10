@@ -105,11 +105,12 @@ export class OwnershipIndex {
   }
 }
 
-/** Turns a continuous world *point* into the cell containing it (chunk keys,
- * bounds iteration, a pick, a graph node) -- never an actor's cell: a body's
- * cell is `bodyCell` (`movement.ts`), since a body whose feet rest on a
- * cell's face from outside is not in that cell. `Math.floor`, never `Math.trunc`/truncation, so a negative position like
- * `x = -0.5` resolves to cell `-1`, matching the server's own
+/** Turns a continuous world *point* into the cell containing it (chunk
+ * keys, bounds iteration, a pick, a graph node) -- never an actor's cell: a
+ * body's cell is `bodyCell` (`movement.ts`), since a body whose feet rest
+ * on a cell's face from outside is not in that cell. `Math.floor`, never
+ * `Math.trunc`/truncation, so a negative position like `x = -0.5` resolves
+ * to cell `-1`, matching the server's own
  * `div_euclid`-flavoured cell semantics (Quentin's direction: this is the
  * exact bug a `Math.trunc` port would silently reintroduce -- it resolves
  * `-0.5` to cell `0` instead). */
