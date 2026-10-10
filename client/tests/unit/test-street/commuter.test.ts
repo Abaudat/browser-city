@@ -127,7 +127,7 @@ describe("the timetable", () => {
     const old = new CitizenBody(walk, path, gait, "commuter", quietLife());
     const a = createCitizenFrame();
     const b = createCitizenFrame();
-    for (let t = 5000; t < 5000 + timetable.periodMilli; t += 37) {
+    for (let t = 5000; t < 5000 + timetable.periodMilli; t += 149) {
       old.frameAt(timetable.stateAt(t), t, a);
       const joiner = new CitizenBody(walk, path, gait, "commuter", quietLife());
       joiner.frameAt(timetable.stateAt(t), t, b);

@@ -763,12 +763,12 @@ pub const DETOUR_P99_SAMPLE_MAX_NODES: usize = 64;
 /// actually keyed against, never the cheap `DETOUR_SAMPLE_MAX_NODES`
 /// sample -- asserted by equality, not just an upper bound, so a moved
 /// figure (pass 2 or a streets key changed) is a red test, not a stale
-/// comment (Quentin's direction, story 3.18 cycle 1). Re-taken at
-/// `GENERATION_VERSION` 9 (story 4.22: the enclosure rule moved every
+/// comment (Quentin's direction, story 3.18 cycle 1). Re-taken in
+/// story 4.22 (the enclosure rule moved every
 /// pass-2 network, so the earlier three seeds -- `11_179_447_352_395_363_
 /// 997`, `1_060_828_608_797_003_656`, `11_859_616_019_877_610_932` --
 /// stopped being worst cases): the ten largest per-seed exhaustive worsts
-/// of `measure-generation`'s 50,000 mixed seeds, the top three taken, the
+/// of the `exhaustive loop` block's mixed seeds, the top three taken, the
 /// mixed-seed harness's own deterministic search, not luck. Every one of
 /// these still ends its own worst pair on a boundary exit (degree 1, on
 /// the site boundary) -- see `detour_excess_holds_at_pinned_boundary_
@@ -785,8 +785,8 @@ pub const PINNED_DETOUR_SEEDS: [(u64, i64); 3] = [
 /// `DETOUR_P99_SAMPLE_MAX_NODES` sample -- the figure
 /// `generation.streets.p99_detour_fill_percent` is derived from, pinned by
 /// equality like [`PINNED_DETOUR_SEEDS`]. The worst per-seed p99 fill of
-/// `measure-generation -- detour 1000000` at `GENERATION_VERSION` 10; a
-/// sweep that finds a new worst replaces it.
+/// `measure-generation -- detour 1000000` (the `detour-bounds sweep` block
+/// of `docs/generation.md`); a sweep that finds a new worst replaces it.
 #[cfg(any(test, feature = "test-fixtures"))]
 pub const PINNED_P99_FILL_SEEDS: [(u64, i64); 1] = [(11_161_877_730_662_506_814, 84)];
 
@@ -1406,11 +1406,12 @@ impl Regions {
 /// A rect swallows a region once it holds at least `1 / this` of the
 /// region's coarse cells while taking another land use. Half left small
 /// regions fragmented across several blocks with none holding their use
-/// (0.004% of cities lost every institutional region, and with it the
+/// (some cities lost every institutional region, and with it the
 /// council); a quarter confines the extra splits to blocks over small
-/// regions. Without the rule 0.57% of 3,000,000 seeds lose every
-/// institutional region; `institutional_regions_survive_on_seeds_that_lose_them_without_the_swallow_rule`
-/// pins three of them.
+/// regions. `institutional_regions_survive_on_seeds_that_lose_them_without_the_swallow_rule`
+/// pins three seeds that lose every institutional region without the
+/// rule; the `region-loss sweep` block of `docs/generation.md` holds the
+/// current rate.
 const SWALLOW_MIN_REGION_SHARE_DENOM: usize = 4;
 
 /// Whether `phys` (world-cell rect) must be split for a region's sake
@@ -2122,9 +2123,9 @@ mod tests {
     /// commits SVGs for (kept as a literal here: `sim` cannot depend on
     /// `bounds`; if `bounds`'s own list changes, this one is updated by
     /// hand). Judged on the images Artie reviews, not asserted over
-    /// arbitrary seeds. Measured at `GENERATION_VERSION` 9 (density-band
-    /// split, `mean_area_by_density_band`): 2.65x, 2.24x and 2.56x, at least
-    /// 0.24x over the 2x bar.
+    /// arbitrary seeds. The ratios (density-band split,
+    /// `mean_area_by_density_band`) are in the `pooled evidence` block of
+    /// `docs/generation.md`.
     #[test]
     fn peripheral_blocks_are_at_least_2x_central_ones_on_the_evidence_seeds() {
         let c = cfg();
@@ -2229,8 +2230,7 @@ mod tests {
     }
 
     /// Seeds that lose every institutional region under the bare enclosure
-    /// rule (`SWALLOW_MIN_REGION_SHARE_DENOM` 0: 0.57% of 3,000,000 seeds
-    /// drawn through `seed_from_ids(0x5ca9, i)`, and with them the council
+    /// rule (`SWALLOW_MIN_REGION_SHARE_DENOM` 0, and with them the council
     /// and hospital). With the swallow rule at least one institutional
     /// region is carried by a block on each; removing the rule turns this
     /// red.

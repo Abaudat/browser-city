@@ -1924,10 +1924,10 @@ proptest! {
     /// non-redundant and coherent. Since exceeding the max() of two
     /// terms means exceeding both, a violation here is always also a
     /// violation of the additive-excess-alone check every sampled pair
-    /// was already held to -- so the existing sweep's own 0 misses
-    /// against `max_detour_excess_cells` (unconditional, every pair,
-    /// 1,000,000 seeds, passes 1-2 only) already proves this contract's
-    /// own miss count is 0 too, without a second million-seed run. See
+    /// was already held to -- so the `detour-bounds sweep` block's own
+    /// misses against `max_detour_excess_cells` (unconditional, every
+    /// pair, passes 1-2 only) already prove this contract's own miss
+    /// count too, without a second run. See
     /// `defs/balance/generation.toml`'s `max_detour_percent` comment and
     /// `docs/generation.md`'s street-network pass for the full sweep.
     #[test]
@@ -2064,9 +2064,9 @@ proptest! {
     /// direction, cycle 1; cycle 3: switched from a median-distance
     /// split to `StreetNetwork::mean_area_by_density_band`, density
     /// bands rather than a proxy for density -- Tim's direction, cycle
-    /// 3). Measured at `GENERATION_VERSION` 9 over 1,000,000 uniformly
-    /// drawn seeds: none below the committed 60%; the worst is 80.4% --
-    /// real split-jitter noise rather than an inversion
+    /// 3). The miss rate and the lowest ratios over arbitrary seeds
+    /// are in the `detour-bounds sweep` block of `docs/generation.md`: the
+    /// worst is real split-jitter noise rather than an inversion
     /// (`peripheral_floor_clears_the_lowest_known_ratio_seeds` pins it).
     /// This per-city floor alone cannot tell a healthy city from a
     /// density-blind one, though: a uniform grid pools to parity (1.0x),
@@ -2194,13 +2194,13 @@ proptest! {
     /// `institutional_max_pocket_share_percent` of the site's own
     /// coarse-cell count. The pocket-count half is a hard, zero-
     /// tolerance floor (`assign_institutional`'s own fallback pass
-    /// guarantees it whenever any eligible leaf remains, verified at
-    /// 15,000 arbitrary seeds); the area half carries a wider margin
+    /// guarantees it whenever any eligible leaf remains, held over
+    /// arbitrary seeds by the `band sweep` block); the area half carries a wider margin
     /// (6%, not the ~2.5% a single leaf cap alone would suggest) because
     /// that same fallback -- relaxing the small-leaf cap only when the
     /// strict pass alone could not reach the pocket-count floor --
     /// occasionally has to take a larger leaf than the strict cap would
-    /// allow (measured worst case 2.34% over the same 15,000 seeds, well
+    /// allow (the worst share is in the `band sweep` block, well
     /// under the 6% ceiling's own margin). The pocket-count floor is the
     /// harder, more frequently re-raised requirement of the two; when
     /// they are ever in tension, the AC's own floor wins.
@@ -2208,48 +2208,20 @@ proptest! {
     fn inv_generation_institutional_pockets_are_small(seed in any::<u64>()) {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
-        let total_coarse_cells = (lu.cols() as i64) * (lu.rows() as i64);
-        let (regions, labels) = lu.labeled_regions();
-        let inst_count = regions.iter().filter(|r| r.use_ == land_use::LandUse::Institutional).count();
+        let pockets = sim::generation::guards::institutional_pockets(&lu);
 
         prop_assert!(
-            inst_count as i64 >= cfg.institutional_min_pockets,
-            "seed {seed}: only {inst_count} institutional components, expected at least {}", cfg.institutional_min_pockets
+            pockets.count as i64 >= cfg.institutional_min_pockets,
+            "seed {seed}: only {} institutional components, expected at least {}", pockets.count, cfg.institutional_min_pockets
         );
-        for r in regions.iter().filter(|r| r.use_ == land_use::LandUse::Institutional) {
-            prop_assert!(
-                r.cell_count as i64 * 100 <= total_coarse_cells * cfg.institutional_max_pocket_share_percent,
-                "seed {seed}: institutional component {:?} is {} of {} coarse cells (over {}%)", r.bounds, r.cell_count, total_coarse_cells, cfg.institutional_max_pocket_share_percent
-            );
-        }
-        // Real per-cell diagonal adjacency, not a bounding-box
-        // approximation: two institutional leaves forming an L-shaped
-        // pocket can have a bounding box that overlaps a neighbour's
-        // without either pocket's own real cells ever touching it.
-        for cy in 0..lu.rows() {
-            for cx in 0..lu.cols() {
-                let label = labels[(cy * lu.cols() + cx) as usize];
-                if regions[label as usize].use_ != land_use::LandUse::Institutional {
-                    continue;
-                }
-                for (nx, ny) in [
-                    (cx - 1, cy - 1), (cx, cy - 1), (cx + 1, cy - 1),
-                    (cx - 1, cy), (cx + 1, cy),
-                    (cx - 1, cy + 1), (cx, cy + 1), (cx + 1, cy + 1),
-                ] {
-                    if nx < 0 || ny < 0 || nx >= lu.cols() || ny >= lu.rows() {
-                        continue;
-                    }
-                    let other_label = labels[(ny * lu.cols() + nx) as usize];
-                    if other_label != label && regions[other_label as usize].use_ == land_use::LandUse::Institutional {
-                        prop_assert!(
-                            false,
-                            "seed {seed}: institutional cells ({cx},{cy}) and ({nx},{ny}) from different components touch"
-                        );
-                    }
-                }
-            }
-        }
+        prop_assert!(
+            pockets.largest_cells * 100 <= pockets.total_cells * cfg.institutional_max_pocket_share_percent,
+            "seed {seed}: the largest institutional component is {} of {} coarse cells (over {}%)", pockets.largest_cells, pockets.total_cells, cfg.institutional_max_pocket_share_percent
+        );
+        prop_assert!(
+            pockets.touching.is_none(),
+            "seed {seed}: institutional cells {:?} from different components touch", pockets.touching
+        );
     }
 
     /// `inv_generation_industrial_never_touches_commercial` (Artie's
@@ -2411,7 +2383,7 @@ fn required_institutions_verdict(d: &sim::generation::District) -> Result<(), St
 /// The per-city mean-size band's own weak multiplier over the tight
 /// pooled tolerance (`inv_generation_envelope_mean_size_matches_the_
 /// committed_band` below): one city's own sample is noisier than the
-/// pooled 256-seed one, so this property only ever catches a gross
+/// pooled fixed-seed one, so this property only ever catches a gross
 /// regression (the mean collapsing toward the class minimum), never
 /// tunes the mean itself -- an algorithm shape, not tunable content.
 const MEAN_SIZE_WEAK_TOLERANCE_MULTIPLIER: i32 = 4;
@@ -3079,21 +3051,9 @@ fn the_catchment_floor_bites_for_every_scoped_row_over_seeds_0_to_256() {
         };
         let site = d.site(&content);
         for (row, (biting, pairs)) in rows.iter().zip(tally.iter_mut()) {
-            let read = match row.ratio {
-                sim::rules::RowRatio::Read(r) => Some(r.parameter),
-                sim::rules::RowRatio::Fixed(_) => None,
-            };
-            for t in row
-                .targets(
-                    site.subjects_in_area(None, row.per)
-                        .iter()
-                        .map(|&c| (c, read.and_then(|p| site.parameter_at(c, p)))),
-                )
-                .values()
-            {
-                *pairs += 1;
-                *biting += u64::from(t.lower >= 1);
-            }
+            let (b, p) = sim::generation::guards::catchment_bite(&site, row);
+            *biting += b;
+            *pairs += p;
         }
     }
     for (row, &(biting, pairs)) in rows.iter().zip(&tally) {
@@ -3195,17 +3155,17 @@ fn block_edge_touches_street(block: Rect, street: Rect, side: sim::generation::S
     }
 }
 
-/// The argmin and argmax seeds of the building-count distribution at
-/// `GENERATION_VERSION` 9: the band sweep's (`measure-generation`, 50,000
-/// seeds: min 768 / max 1,002) and the plot/envelope scan's (min 778 / max
-/// 990), copied from the harness's output, never hunted for, and
-/// re-taken whenever the generator moves. A generator change that shifts
-/// the distribution fails deterministically, every run.
-const PINNED_BUILDING_COUNT_SEEDS: [u64; 4] = [
-    18_227_589_722_137_138_881,
-    6_786_936_242_335_454_667,
-    11_805_315_485_014_167_829,
-    11_123_925_265_906_853_341,
+/// The argmin and argmax seeds of the building-count distribution with
+/// their placed counts: the `band sweep` block's extremes and the `exhaustive
+/// loop` block's, copied from the harness's output, never hunted for, and
+/// re-taken whenever a block is re-measured. Each count is asserted by
+/// equality, so a sweep that finds a new extreme, or a generator change
+/// that shifts the distribution, fails deterministically, every run.
+const PINNED_BUILDING_COUNT_SEEDS: [(u64, i64); 4] = [
+    (12_323_584_470_636_640_542, 766),
+    (161_806_487_886_316_638, 1009),
+    (11_805_315_485_014_167_829, 778),
+    (11_123_925_265_906_853_341, 990),
 ];
 
 /// A handful of individually-measured seeds, pinned as fixed-seed tests
@@ -3216,7 +3176,13 @@ const PINNED_BUILDING_COUNT_SEEDS: [u64; 4] = [
 fn building_count_holds_at_individually_measured_extreme_seeds() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let content = GenerationContent::committed();
-    for seed in PINNED_BUILDING_COUNT_SEEDS {
+    for (seed, count) in PINNED_BUILDING_COUNT_SEEDS {
+        let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
+        assert_eq!(
+            d.envelopes.placed_count(),
+            count,
+            "pinned seed {seed}: its placed count moved -- re-take the pin from the re-measured block"
+        );
         sim::generation::generate(seed, &cfg, &content)
             .unwrap_or_else(|e| panic!("pinned seed {seed} unexpectedly failed tolerance: {e}"));
     }
@@ -4190,8 +4156,8 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
 /// (deterministic -- never flaky, unlike a fresh `any::<u64>()` draw each
 /// CI run), summed low-band mean area over summed high-band mean area
 /// must clear `peripheral_pooled_min_ratio_percent` -- a density-blind
-/// generator pools to ~100%, this one to ~289% at `GENERATION_VERSION` 9
-/// (Quentin's direction,
+/// generator pools to ~100%, this one to the ratio in the `pooled evidence`
+/// block of `docs/generation.md` (Quentin's direction,
 /// cycle 4: "the only test that goes red if `subdivide` stops reading
 /// density is a three-seed test tuned to one seed").
 #[test]
@@ -4213,26 +4179,31 @@ fn peripheral_blocks_pooled_ratio_exceeds_a_density_blind_floor() {
     );
 }
 
-/// The lowest per-city ratios known at `GENERATION_VERSION` 9, pinned so
+/// The lowest per-city ratios known, pinned so
 /// raising `peripheral_low_band_floor_percent` above them fails every run
-/// rather than one in N. Low-band mean over high-band mean, the three
-/// lowest of 1,000,000 seeds drawn through `seed_from_ids(0x5ca9, i)`
-/// (per-city p1 167%, p5 195%, median 276%): seed 5955473505560313928,
-/// 3086 / 3840 (80.4%); seed 12341508193973285094, 2347 / 2477 (94.7%);
-/// seed 16477458686111781630, 2163 / 2272 (95.2%).
+/// rather than one in N. Low-band mean over high-band mean: the three
+/// lowest per-seed ratios of the `detour-bounds sweep` block of
+/// `docs/generation.md`, each asserted by equality below so a sweep that
+/// finds a lower one fails here rather than leaving a stale pin.
 #[test]
 fn peripheral_floor_clears_the_lowest_known_ratio_seeds() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
-    for seed in [
-        5955473505560313928u64,
-        12341508193973285094,
-        16477458686111781630,
+    // (seed, low / high mean block area in tenths of a percent)
+    for (seed, permille) in [
+        (16892314924458794616u64, 821i64),
+        (6608802717960552687, 860),
+        (14325606440077469114, 906),
     ] {
         let lu = land_use::run(seed, cfg.site(), &cfg).unwrap();
         let net = streets::run(seed, &lu, &cfg);
         let (low, high) = net
             .mean_area_by_density_band(&lu, &cfg)
             .expect("both density bands are populated for this seed");
+        assert_eq!(
+            low * 1000 / high,
+            permille,
+            "seed {seed}: its ratio moved -- re-take the pin from the re-measured block"
+        );
         assert!(
             low * 100 >= high * cfg.peripheral_low_band_floor_percent as i64,
             "seed {seed}: low-band mean {low} is under {}% of high-band mean {high}",
@@ -4247,13 +4218,13 @@ fn peripheral_floor_clears_the_lowest_known_ratio_seeds() {
 /// may have an area at or under a quarter of their own local
 /// `target_block_size` squared. A ratio cannot tell "periphery is small"
 /// from "periphery is chopped"; this can. Measured with this same
-/// counting rule pooled over 0..256: `GENERATION_VERSION` 8 (master at
-/// `f6ad0570`, region-spanning rule) 7,458 of 9,761 blocks, 76%;
-/// `GENERATION_VERSION` 9 1,886 of 5,600, 33%. 55 is midway between the
-/// two, so the bound separates the generators rather than fitting the
+/// counting rule pooled over 0..256: the region-spanning rule (master at
+/// `f6ad0570`) 7,458 of 9,761 blocks, 76%; the current rule's share is
+/// the `pooled evidence` block of `docs/generation.md`. 55 is midway
+/// between the two, so the bound separates the generators rather than fitting the
 /// newer one. Pooled rather than per city because the per-city share is
-/// too wide to separate them (1,000,000 seeds at 9: median 33%, p99 67%,
-/// max 88%). Not a balance key: only this test reads it.
+/// too wide to separate them. Not a balance key: only this test reads
+/// it.
 #[test]
 fn peripheral_blocks_pooled_chopped_share_stays_bounded() {
     const MAX_POOLED_CHOPPED_PERCENT: usize = 55;
@@ -6483,23 +6454,12 @@ fn player_position_walk_across_chunk_edges_and_floors_updates_and_crosses() {
 fn city_profession_depth(seed: u64) -> i64 {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let content = GenerationContent::committed();
-    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
-        content.building_types.iter().map(|b| (b.id, b)).collect();
     let min_employers = sim::balance::value(
         defs::BALANCE,
         "generation.building_types.min_employers_per_profession",
     ) as u64;
     let d = sim::generation::plan_skeleton(seed, &cfg, &content).unwrap();
-    let mut employers: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
-    for a in d.building_types.assignments() {
-        let def = by_id[&a.building_type];
-        if sim::generation::building_types::is_workplace(def) {
-            for &p in def.professions {
-                *employers.entry(p).or_insert(0) += 1;
-            }
-        }
-    }
-    employers.values().filter(|&&c| c >= min_employers).count() as i64
+    sim::generation::guards::profession_depth(&d, &content, min_employers)
 }
 
 /// Pinned by name, as a `cc` line is not a stable pin. This city holds its
