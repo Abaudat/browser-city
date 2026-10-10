@@ -174,6 +174,8 @@ pub const INV_GENERATION_BUILDING_TYPE_INDEPENDENT_OF_ENVELOPE_ORDER: &str = "sh
 pub const INV_GENERATION_INTERIOR_CELLS_LIE_INSIDE_THEIR_OWN_ENVELOPE: &str = "every emitted interior cell (wall, floor, threshold, fixture) lies inside its own building's pass-4 footprint in world coordinates on the same tilemap, the interior carries the envelope's own footprint and front, the entrance is the envelope's own front cell, and no cell is claimed by two buildings, in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED) (story 3.5 AC1, FR110, FR113)";
 pub const INV_GENERATION_EVERY_EMITTED_INTERIOR_VALIDATES_CLEAN: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), every emitted interior is accepted by the committed rule set (the per-building verdict) and the finished district by the whole of it, story 2.4's enclosed_regions and narrow_passages at the player body report nothing over its wall and fixture colliders seeded at the street, a cell beside every fixture is reachable, and every room is at least two walkable cells either way (story 3.5 AC2, FR112, story 2.4 AC5)";
 pub const INV_GENERATION_DISTRICT_SITE_ANSWERS_AS_THE_REFERENCE_SITE: &str = "any sequence of set, set_rect and merge on the dense DistrictSite builder answers tags_at, areas_containing and subjects_in_area exactly as sim::rules::testing's map-backed site fed the same cells, and evaluate over the committed rules finds the same violations in both (story 3.5, Tim's direction)";
+pub const INV_GENERATION_A_BEDROOM_OPENS_ONLY_ONTO_A_BATHROOM_AND_A_BATHROOM_IS_NO_WAY_THROUGH:
+    &str = "in every city of the shared pool, a room owing sleeping has nothing behind it but a washing room, and a washing room has nothing behind it (story 3.5, Artie's direction)";
 pub const INV_GENERATION_NO_ROOM_EXCEEDS_THE_ASPECT_CAP: &str = "in every city of the shared pool, no room's long side exceeds max_room_aspect times its short side (story 3.5, Artie's direction)";
 pub const INV_GENERATION_EVERY_DWELLING_SLEEPS_WASHES_AND_COOKS: &str = "in every city of the shared pool, every enterable building whose type carries dwelling holds at least one bed, one basin and one cooker (story 3.5, Derek's direction)";
 pub const INV_GENERATION_INTERIOR_RETRIES_ARE_BOUNDED: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), no building used more than max_layout_attempts layout attempts, and the rejected share of attempted layouts never exceeds max_rejected_percent (story 3.5 AC2)";
@@ -7602,6 +7604,57 @@ fn inv_generation_public_rooms_are_reachable_without_crossing_staff_or_private()
                             );
                         }
                     }
+                }
+            }
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_a_bedroom_opens_only_onto_a_bathroom_and_a_bathroom_is_no_way_through`
+/// (Artie's direction): the room a room is reached through is its parent
+/// -- the room across its own doorway. A room owing `sleeping` has
+/// nothing behind it but a `washing` room, and a `washing` room has
+/// nothing behind it at all.
+#[test]
+fn inv_generation_a_bedroom_opens_only_onto_a_bathroom_and_a_bathroom_is_no_way_through() {
+    let content = GenerationContent::committed();
+    let (sleeping, washing) = (tag_id("sleeping"), tag_id("washing"));
+    let room_tags: std::collections::BTreeMap<u32, &[TagId]> =
+        content.room_types.iter().map(|r| (r.id, r.tags)).collect();
+    over_pool(
+        "inv_generation_a_bedroom_opens_only_onto_a_bathroom_and_a_bathroom_is_no_way_through",
+        |c| {
+            for (plot, _, interior) in c.district.interiors.laid() {
+                let tags = |i: usize| room_tags[&interior.rooms[i].room_type];
+                let room_of =
+                    |x: i32, y: i32| interior.rooms.iter().position(|r| r.rect.contains(x, y));
+                for (idx, _) in interior.rooms.iter().enumerate() {
+                    let Some(door) = interior
+                        .thresholds
+                        .iter()
+                        .find(|t| t.room == idx && !t.entrance)
+                    else {
+                        continue;
+                    };
+                    let parent = [
+                        (door.x + 1, door.y),
+                        (door.x - 1, door.y),
+                        (door.x, door.y + 1),
+                        (door.x, door.y - 1),
+                    ]
+                    .into_iter()
+                    .filter_map(|(x, y)| room_of(x, y))
+                    .find(|&r| r != idx)
+                    .ok_or("a doorway with no room on its far side")?;
+                    ensure!(
+                        !tags(parent).contains(&washing),
+                        "plot {plot}: a room is reached only through a washing room"
+                    );
+                    ensure!(
+                        !tags(parent).contains(&sleeping) || tags(idx).contains(&washing),
+                        "plot {plot}: a room other than a washing room is reached only through a sleeping one"
+                    );
                 }
             }
             Ok(())

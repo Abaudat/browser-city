@@ -4,6 +4,10 @@
 # type. A row is its tags, the smallest floor it may be laid out on (two
 # walkable cells either way: no room narrower than that) and a weight
 # (its share of the spare width beside its neighbours) -- nothing else.
+# `rear` narrows what may stand behind a room, reached only through it:
+# absent, any room of the same access; a list, only those types (empty,
+# nothing). A bedroom opens only onto its own bathroom, never another
+# bedroom, and a bathroom is never a way through.
 # What a room owes (a light, a bed, a stock shelf) is a `[[requirement]]`
 # row over one of its tags (`defs/rules/interiors.toml`), never a field
 # here. Access (`public`/`staff`/`private`) is exactly one tag per room.
@@ -39,6 +43,7 @@ weight = 2
 id = 3
 key = "bathroom"
 tags = ["room", "private", "washing"]
+rear = []
 min_width_cells = 2
 min_depth_cells = 2
 weight = 1
@@ -47,6 +52,7 @@ weight = 1
 id = 4
 key = "bedroom"
 tags = ["room", "private", "sleeping"]
+rear = ["bathroom"]
 min_width_cells = 2
 min_depth_cells = 2
 weight = 2
@@ -95,6 +101,7 @@ weight = 3
 id = 10
 key = "ward"
 tags = ["room", "public", "sleeping"]
+rear = ["bathroom"]
 min_width_cells = 3
 min_depth_cells = 2
 weight = 2
@@ -103,6 +110,7 @@ weight = 2
 id = 11
 key = "dormitory"
 tags = ["room", "public", "sleeping"]
+rear = ["bathroom"]
 min_width_cells = 3
 min_depth_cells = 2
 weight = 2

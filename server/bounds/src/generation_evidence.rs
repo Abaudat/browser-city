@@ -1493,9 +1493,9 @@ fn sheet_kind(def: &defs::BuildingTypeDef, tags: &ClassTags) -> SheetKind {
     }
 }
 
-const ROOM_PALETTE: [&str; 13] = [
+const ROOM_PALETTE: [&str; 16] = [
     "#ffe0b2", "#ffccbc", "#d7ccc8", "#f8bbd0", "#bbdefb", "#b3e5fc", "#cfd8dc", "#c8e6c9",
-    "#e1bee7", "#fff9c4", "#b2dfdb", "#dcedc8", "#f0f4c3",
+    "#e1bee7", "#fff9c4", "#b2dfdb", "#dcedc8", "#f0f4c3", "#ffab91", "#80cbc4", "#ce93d8",
 ];
 const FIXTURE_PALETTE: [&str; 12] = [
     "#d32f2f", "#1976d2", "#388e3c", "#f57c00", "#7b1fa2", "#0097a7", "#5d4037", "#c2185b",

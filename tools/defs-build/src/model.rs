@@ -632,6 +632,10 @@ pub struct RawRoomType {
     pub key: Spanned<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// The room types allowed to stand behind this one, reached only
+    /// through it; absent, any room of the same access may.
+    #[serde(default)]
+    pub rear: Option<Vec<String>>,
     pub min_width_cells: u32,
     pub min_depth_cells: u32,
     pub weight: u32,
@@ -1297,6 +1301,7 @@ pub struct RoomTypeEntry {
     pub id: Located<u32>,
     pub key: Located<String>,
     pub tags: Vec<String>,
+    pub rear: Option<Vec<String>>,
     pub min_width_cells: u32,
     pub min_depth_cells: u32,
     pub weight: u32,
@@ -1675,6 +1680,9 @@ pub struct RoomTypeDef {
     pub tags: Vec<u32>,
     /// The one access tag among `tags` (public, staff or private).
     pub access: u32,
+    /// Room type ids allowed behind this one; `None` means any room of
+    /// the same access.
+    pub rear: Option<Vec<u32>>,
     pub min_width_cells: u32,
     pub min_depth_cells: u32,
     pub weight: u32,

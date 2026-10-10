@@ -229,16 +229,20 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub struct RoomTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub access: u32,\n    pub min_width_cells: u32,\n    pub min_depth_cells: u32,\n    pub weight: u32,\n}\n\n",
+        "pub struct RoomTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub access: u32,\n    pub rear: Option<&'static [u32]>,\n    pub min_width_cells: u32,\n    pub min_depth_cells: u32,\n    pub weight: u32,\n}\n\n",
     );
     out.push_str("pub const ROOM_TYPES: &[RoomTypeDef] = &[\n");
     for r in &defs.room_types {
         out.push_str(&format!(
-            "    RoomTypeDef {{ id: {}, key: {:?}, tags: &{}, access: {}, min_width_cells: {}, min_depth_cells: {}, weight: {} }},\n",
+            "    RoomTypeDef {{ id: {}, key: {:?}, tags: &{}, access: {}, rear: {}, min_width_cells: {}, min_depth_cells: {}, weight: {} }},\n",
             r.id,
             r.key,
             fmt_u32_slice(&r.tags),
             r.access,
+            match &r.rear {
+                None => "None".to_string(),
+                Some(ids) => format!("Some(&{})", fmt_u32_slice(ids)),
+            },
             r.min_width_cells,
             r.min_depth_cells,
             r.weight,

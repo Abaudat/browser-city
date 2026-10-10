@@ -705,7 +705,10 @@ tail, not a re-expression of the excess budget at an arbitrary distance.
   either side of it. *Two rows*: the front band, a first row of back
   rooms, and a second row behind -- a second-row room reached through
   the first-row room in front of it, only when the two share an access;
-  a first-row room with nothing behind it runs both rows' depth. Every
+  a first-row room with nothing behind it runs both rows' depth. A room
+  owing `sleeping` has nothing behind it but a bathroom, and a bathroom
+  has nothing behind it (a room type's `rear` list in
+  `defs/room-types/*.toml`), so a bedroom is never a way through. Every
   room is sized for what it owes, its doors and a lane.
 - **Access is a room-type tag:** exactly one of `public`, `staff` or
   `private` per room type -- what "back room" means (a staff room), and

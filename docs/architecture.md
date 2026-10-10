@@ -1362,7 +1362,11 @@ A tag's own `[[tag]]` row may also carry `structure = "<part>"`, one of
 wall, wall_run, floor, threshold, entrance, pavement, fixture -- the
 closed vocabulary `sim::generation::interiors` builds from, resolved to
 `defs::TagDef::structure`; once any tag names a part, exactly one tag
-names each. `sim::rules::evaluate_local` is `evaluate` over every kind
+names each. A tag a room owes as a fixture carries `placement =
+"<class>"`, one of wall_backed, free_standing, wall_mounted,
+facing_door -- the closed vocabulary the layout pass stands fixtures by,
+resolved to `defs::TagDef::placement`; the build refuses an owed fixture
+tag without one. `sim::rules::evaluate_local` is `evaluate` over every kind
 except Distribution (whole-site by construction), the verdict one
 building's own site can be given; `RuleDef::as_requirement` reads a
 `[[requirement]]` row's fields without matching on the kind enum.
@@ -1669,7 +1673,8 @@ street's first cell, presented as pavement); walls are the footprint
 minus rooms and thresholds, never stored. The entrance is the
 envelope's own `front_cell`. A room type (`defs/room-types/*.toml`) is
 `tags` (exactly one of the three access tags, a `room` tag, a function
-tag), a minimum width and depth of two cells or more, and a weight;
+tag), a minimum width and depth of two cells or more, a weight and an
+optional `rear` list (the room types that may stand behind it);
 `BuildingTypeDef` gains `rooms` (the required core, front room first)
 and `optional_rooms` (taken while the footprint holds them). What a room
 owes is a `[[requirement]]` row over one of its tags
@@ -1678,7 +1683,9 @@ owes is a `[[requirement]]` row over one of its tags
 (every kind except Distribution, over one building's own site); a
 violation refuses the attempt, a fresh stream seeded from the
 building's bounds plus the attempt index tries again, up to
-`generation.interiors.max_layout_attempts`. The structural parts the
+`generation.interiors.max_layout_attempts`; no room's long side exceeds
+`generation.interiors.max_room_aspect` times its short side. The
+structural parts the
 pass builds from (wall, wall run, floor, threshold, entrance, pavement,
 fixture) are tags carrying a `structure` field
 (`defs::TagDef::structure`), never a quoted key.

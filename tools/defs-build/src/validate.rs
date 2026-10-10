@@ -390,6 +390,19 @@ fn check_room_types(
     tag_ids: &BTreeMap<&str, u32>,
 ) -> Result<(), DefsError> {
     for e in entries {
+        for k in e.rear.iter().flatten() {
+            if !entries.iter().any(|o| &o.key.value == k) {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    e.key.col,
+                    format!(
+                        "room type '{}' names unknown room type '{k}' in rear",
+                        e.key.value
+                    ),
+                ));
+            }
+        }
         resolve_room_type_tags(&e.path, &e.key, &e.tags, tag_ids)?;
         for (axis, v) in [
             ("min_width_cells", e.min_width_cells),
@@ -3621,6 +3634,20 @@ pub fn validate(
                 .find(|t| ACCESS_TAGS.contains(&t.as_str()))
                 .and_then(|t| tag_ids.get(t.as_str()).copied())
                 .expect("exactly one access tag already validated"),
+            rear: r.rear.as_ref().map(|keys| {
+                let mut ids: Vec<u32> = keys
+                    .iter()
+                    .map(|k| {
+                        raw.room_types
+                            .iter()
+                            .find(|o| &o.key.value == k)
+                            .map(|o| o.id.value)
+                            .expect("rear room type already validated")
+                    })
+                    .collect();
+                ids.sort_unstable();
+                ids
+            }),
             min_width_cells: r.min_width_cells,
             min_depth_cells: r.min_depth_cells,
             weight: r.weight,

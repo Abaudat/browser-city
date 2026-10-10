@@ -156,7 +156,7 @@ impl<'a> Vocabulary<'a> {
         self.placements
             .get(&tag)
             .copied()
-            .unwrap_or(defs::TagPlacement::WallBacked)
+            .expect("an owed fixture tag declares its placement class")
     }
 
     fn room(&self, id: u32) -> &'a defs::RoomTypeDef {
@@ -968,7 +968,11 @@ fn two_row_assignments(back: &[&defs::RoomTypeDef], mut visit: impl FnMut(&Rows)
         }
         rows.pop();
         for j in 0..i {
-            if rows[j].is_none() && back[j].access == back[i].access {
+            let allowed = match back[j].rear {
+                Some(rear) => rear.contains(&back[i].id),
+                None => back[j].access == back[i].access,
+            };
+            if rows[j].is_none() && allowed {
                 rows.push(Some(j));
                 if !go(back, rows, visit) {
                     return false;

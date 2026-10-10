@@ -234,6 +234,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         id: located(text, &r.id),
                         key: located(text, &r.key),
                         tags: r.tags,
+                        rear: r.rear,
                         min_width_cells: r.min_width_cells,
                         min_depth_cells: r.min_depth_cells,
                         weight: r.weight,
