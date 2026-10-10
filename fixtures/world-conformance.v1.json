@@ -210,6 +210,17 @@
       "chunk_key": 72057594037927680
     },
     {
+      "owner_id": 7,
+      "floor": 0,
+      "rect": {
+        "x0": 36,
+        "y0": 5,
+        "x1": 40,
+        "y1": 10
+      },
+      "chunk_key": 4294967296
+    },
+    {
       "owner_id": 4,
       "floor": 0,
       "rect": {
@@ -265,6 +276,28 @@
         "y1": 5
       },
       "chunk_key": 0
+    },
+    {
+      "owner_id": 7,
+      "floor": 0,
+      "rect": {
+        "x0": 37,
+        "y0": 6,
+        "x1": 39,
+        "y1": 8
+      },
+      "chunk_key": 4294967296
+    },
+    {
+      "owner_id": 7,
+      "floor": 0,
+      "rect": {
+        "x0": 38,
+        "y0": 8,
+        "x1": 39,
+        "y1": 9
+      },
+      "chunk_key": 4294967296
     }
   ],
   "cases": [
@@ -504,6 +537,51 @@
     {
       "x": -10,
       "y": -2,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 0,
+      "expect_room_id": 0
+    },
+    {
+      "x": 37,
+      "y": 6,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 7,
+      "expect_room_id": 7
+    },
+    {
+      "x": 38,
+      "y": 8,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 7,
+      "expect_room_id": 7
+    },
+    {
+      "x": 37,
+      "y": 8,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 7,
+      "expect_room_id": 0
+    },
+    {
+      "x": 36,
+      "y": 5,
+      "floor": 0,
+      "expect_blocked": false,
+      "expect_transition": null,
+      "expect_building_id": 7,
+      "expect_room_id": 0
+    },
+    {
+      "x": 35,
+      "y": 6,
       "floor": 0,
       "expect_blocked": false,
       "expect_transition": null,

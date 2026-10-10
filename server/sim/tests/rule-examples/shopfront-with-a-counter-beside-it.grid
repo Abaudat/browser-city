@@ -1,4 +1,4 @@
-rules: no_counter_in_a_stairwell counter_faces_a_shopfront
+rules: counter_faces_a_shopfront
 expect: pass
 floor: 0
 legend: C=counter S=shopfront

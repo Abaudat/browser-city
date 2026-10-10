@@ -36,6 +36,28 @@ override, never fill"); `professions` (`{ profession = "<key>", headcount
 (`municipal_service`, `dwelling`) or from `professions` being non-empty
 -- never a stored category.
 
+## Room types
+
+`defs/room-types/*.toml` (story 3.5, FR110): the room grammar's shared
+vocabulary -- `sim::generation::interiors` reads this kind, never a Rust
+enum. A row: permanent `id`/`key`; `tags` (exactly one access tag --
+`public`, `staff` or `private` -- plus `room` and the function tag its
+anchors hang on); `min_width_cells`/`min_depth_cells` (two or more: no
+room narrower than two walkable cells); `weight` (its share of spare
+width). A building type names its program in `rooms` (the required core,
+front room first) and `optional_rooms` (the ordered tail, taken while
+the footprint holds it); an empty `rooms` is a solid `Shell`, legal only
+for a type with neither `professions` nor the `dwelling` tag. What a
+room owes (a light, a bed, a stock shelf) is a `[[requirement]]` row
+over one of its tags (`defs/rules/interiors.toml`), never a field here.
+
+A `[[tag]]` row may name the structural part it is with `structure =
+"wall" | "wall_run" | "floor" | "threshold" | "entrance" | "pavement" |
+"fixture"`; once any does, exactly one tag names each. A tag a room
+owes as a fixture names where the layout pass stands it, with
+`placement = "wall_backed" | "free_standing" | "wall_mounted" |
+"facing_door"`.
+
 ## Items
 
 `defs/items/*.toml` (story 6.1, FR86): a new item is a row, never code. A

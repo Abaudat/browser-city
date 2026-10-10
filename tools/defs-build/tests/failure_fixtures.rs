@@ -987,6 +987,131 @@ fn no_pre_existing_invalid_category_fails_on_the_pixel_rule() {
     assert_eq!(checked, total - PIXEL_CATEGORIES.len());
 }
 
+/// Story 3.5: the room-type kind and the room program a building type
+/// names -- each way the data can be wrong has its own fixture.
+#[test]
+fn a_room_narrower_than_two_cells_is_named() {
+    let err = build_err("room-type-too-narrow");
+    assert_eq!(
+        err.to_string(),
+        "defs/room-types/rooms.toml:3:7: room type 'fixture_hall' has min_width_cells 1 -- no room may be narrower than two walkable cells"
+    );
+}
+
+#[test]
+fn a_room_type_with_no_access_tag_is_named() {
+    let err = build_err("room-type-no-access-tag");
+    assert_eq!(
+        err.to_string(),
+        "defs/room-types/rooms.toml:3:7: room type 'fixture_hall' carries 0 access tags -- exactly one of public, staff or private"
+    );
+}
+
+#[test]
+fn a_room_type_with_two_access_tags_is_named() {
+    let err = build_err("room-type-two-access-tags");
+    assert_eq!(
+        err.to_string(),
+        "defs/room-types/rooms.toml:3:7: room type 'fixture_hall' carries 2 access tags -- exactly one of public, staff or private"
+    );
+}
+
+#[test]
+fn a_program_naming_an_unknown_room_type_is_named() {
+    let err = build_err("building-type-unknown-room");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' names unknown room type 'no_such_room' in rooms"
+    );
+}
+
+#[test]
+fn a_dwelling_that_is_a_shell_is_named() {
+    let err = build_err("building-type-dwelling-is-a-shell");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' is a dwelling or a workplace with no rooms -- only a type with neither may be a solid Shell"
+    );
+}
+
+#[test]
+fn a_workplace_that_is_a_shell_is_named() {
+    let err = build_err("building-type-workplace-is-a-shell");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' is a dwelling or a workplace with no rooms -- only a type with neither may be a solid Shell"
+    );
+}
+
+#[test]
+fn a_program_too_large_for_its_own_minimum_interior_is_named() {
+    let err = build_err("building-type-program-too-large");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' room program needs at least a 2x9 interior, but its own minimum interior is 5x5"
+    );
+}
+
+#[test]
+fn a_public_room_behind_a_private_front_room_is_named() {
+    let err = build_err("building-type-front-room-not-public");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' has a public room but its front room 'fixture_den' is not public"
+    );
+}
+
+#[test]
+fn a_workplace_with_no_staff_room_is_named() {
+    let err = build_err("building-type-workplace-without-staff-room");
+    assert_eq!(
+        err.to_string(),
+        "defs/building-types/residential.toml:3:7: building type 'fixture_house' is a workplace but its core rooms include no staff room"
+    );
+}
+
+/// Story 3.5: a room type's `rear` list names room types that exist.
+#[test]
+fn a_rear_list_naming_an_unknown_room_type_is_named() {
+    let err = build_err("room-type-rear-names-unknown-room");
+    assert_eq!(
+        err.to_string(),
+        "defs/room-types/rooms.toml:3:7: room type 'fixture_hall' names unknown room type 'no_such_room' in rear"
+    );
+}
+
+/// Story 3.5: a tag naming a structural part is only half a vocabulary --
+/// the generator reads each part through exactly one tag, so once any tag
+/// names one every part must be named, once.
+#[test]
+fn a_structural_part_no_tag_names_is_named() {
+    let err = build_err("tag-structure-part-missing");
+    assert_eq!(
+        err.to_string(),
+        "defs/tags/structure.toml:3:7: structure 'wall_run' is declared by no tag -- once any tag names a structural part, exactly one tag must name each"
+    );
+}
+
+#[test]
+fn a_structural_part_two_tags_name_is_named() {
+    let err = build_err("tag-structure-part-declared-twice");
+    assert_eq!(
+        err.to_string(),
+        "defs/tags/structure.toml:8:7: structure 'wall' is declared by both 'solid' and 'solid_too'"
+    );
+}
+
+/// Story 3.5: the layout pass stands every fixture a requirement row owes
+/// by its tag's placement class, so an owed fixture tag declares one.
+#[test]
+fn a_fixture_tag_with_no_placement_is_named() {
+    let err = build_err("tag-fixture-without-placement");
+    assert_eq!(
+        err.to_string(),
+        "defs/tags/structure.toml:42:7: tag 'lamp' is a fixture requirement row 'nook_has_a_lamp' owes but declares no placement"
+    );
+}
+
 /// Every category this module lists above has its own fixture directory
 /// under `tests/fixtures/invalid/` -- so a category added to one and not
 /// the other is a hard failure here, not a silent gap. `non-integer-id`
@@ -1096,6 +1221,19 @@ fn every_known_category_has_a_fixture_directory() {
         "building-type-affluence-gap",
         "building-type-interior-too-large",
         "building-type-site-restricted",
+        "tag-structure-part-missing",
+        "tag-structure-part-declared-twice",
+        "tag-fixture-without-placement",
+        "room-type-rear-names-unknown-room",
+        "room-type-too-narrow",
+        "room-type-no-access-tag",
+        "room-type-two-access-tags",
+        "building-type-unknown-room",
+        "building-type-dwelling-is-a-shell",
+        "building-type-workplace-is-a-shell",
+        "building-type-program-too-large",
+        "building-type-front-room-not-public",
+        "building-type-workplace-without-staff-room",
         "foot-archetype-without-inset",
         "upright-without-foot-archetype",
         "upright-without-collider",

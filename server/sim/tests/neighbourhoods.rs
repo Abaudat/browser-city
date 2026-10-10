@@ -15,7 +15,7 @@ use sim::generation::neighbourhoods::{
     Dials, corner, desirability_of, initial_physical_state, raw_dials,
 };
 use sim::generation::{
-    District, GenerationConfig, GenerationContent, LandUse, NeighbourhoodParams, plan,
+    GenerationConfig, GenerationContent, LandUse, NeighbourhoodParams, Skeleton, plan_skeleton,
 };
 use sim::rng::seed_from_ids;
 use sim::world::Rect;
@@ -50,9 +50,9 @@ fn setup() -> (GenerationConfig, GenerationContent<'static>) {
 /// The three evidence seeds `bounds::generation_evidence` renders.
 const EVIDENCE_SEEDS: [u64; 3] = [1, 2, 3];
 
-fn district(seed: u64) -> District {
+fn district(seed: u64) -> Skeleton {
     let (cfg, content) = setup();
-    plan(seed, &cfg, &content).unwrap()
+    plan_skeleton(seed, &cfg, &content).unwrap()
 }
 
 fn adjacent(a: Rect, b: Rect) -> bool {
@@ -63,7 +63,7 @@ fn adjacent(a: Rect, b: Rect) -> bool {
 }
 
 /// Distinct patches with their dials, in patch order.
-fn patches(d: &District) -> Vec<(usize, Dials, Vec<Rect>)> {
+fn patches(d: &Skeleton) -> Vec<(usize, Dials, Vec<Rect>)> {
     let mut by: BTreeMap<usize, (Dials, Vec<Rect>)> = BTreeMap::new();
     for h in d.land_use.neighbourhoods() {
         by.entry(h.patch)
@@ -107,7 +107,7 @@ fn the_parameter_field_carries_exactly_four_dials() {
 /// The district-level guarantees, shared with the named pin.
 fn district_shows_its_guaranteed_character(seed: u64) -> Result<(), TestCaseError> {
     let (cfg, content) = setup();
-    let d = plan(seed, &cfg, &content).unwrap();
+    let d = plan_skeleton(seed, &cfg, &content).unwrap();
     let nc = cfg.neighbourhood;
     let ps = patches(&d);
 
@@ -285,7 +285,7 @@ fn age_and_affluence_each_occur_at_both_the_dense_and_the_sparse_end() {
     // (dense?, label) seen
     let mut seen: std::collections::BTreeSet<(bool, &str)> = Default::default();
     for seed in 0..256u64 {
-        let d = plan(seed, &cfg, &content).unwrap();
+        let d = plan_skeleton(seed, &cfg, &content).unwrap();
         for h in d.land_use.neighbourhoods() {
             let cx = (h.bounds.x0 + h.bounds.x1) / 2;
             let cy = (h.bounds.y0 + h.bounds.y1) / 2;
@@ -392,7 +392,7 @@ fn each_dial_reads_back_at_known_points_of_a_fixed_seed_field() {
 #[test]
 fn physical_state_is_per_building_and_old_and_poor_is_worn() {
     let (cfg, content) = setup();
-    let d = plan(1, &cfg, &content).unwrap();
+    let d = plan_skeleton(1, &cfg, &content).unwrap();
     let nc = cfg.neighbourhood;
     for (e, s) in d.envelopes.envelopes().zip(d.building_types.states()) {
         let (x, y) = sim::generation::site::front_cell(e.footprint, e.front);
@@ -420,7 +420,7 @@ fn physical_state_is_per_building_and_old_and_poor_is_worn() {
 #[test]
 fn desirability_is_a_pure_function_of_block_mean_physical_state() {
     let (cfg, content) = setup();
-    let d = plan(2, &cfg, &content).unwrap();
+    let d = plan_skeleton(2, &cfg, &content).unwrap();
     let nc = cfg.neighbourhood;
     let mut seen = 0;
     for block in 0..d.streets.blocks().len() as u32 {
@@ -482,7 +482,7 @@ type Histograms = BTreeMap<usize, BTreeMap<i64, u64>>;
 /// The body of the legibility property, shared with the named pins.
 fn legible_steps_differ_in_a_drawn_carrier(seed: u64) -> Result<(), TestCaseError> {
     let (cfg, content) = setup();
-    let d = plan(seed, &cfg, &content).unwrap();
+    let d = plan_skeleton(seed, &cfg, &content).unwrap();
     let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
     let (mut frontage, mut ages): (Histograms, Histograms) = Default::default();
@@ -627,7 +627,7 @@ fn shuttered_frontage_swings_from_plainly_present_to_absent_with_affluence() {
         content.building_types.iter().map(|b| (b.id, b)).collect();
     let (mut poor, mut rich) = ((0u64, 0u64), (0u64, 0u64)); // (shuttered, frontage)
     for seed in 0..256u64 {
-        let d = plan(seed, &cfg, &content).unwrap();
+        let d = plan_skeleton(seed, &cfg, &content).unwrap();
         for (e, a) in d.envelopes.envelopes().zip(d.building_types.assignments()) {
             let def = by_id[&a.building_type];
             if !def.land_uses[LandUse::Commercial as usize] {
@@ -672,7 +672,7 @@ fn identical_dials_hold_the_same_buildings_wherever_they_sit() {
     let mut pooled: BTreeMap<(i32, i32, usize), [BTreeMap<i64, u64>; 2]> = BTreeMap::new();
     for i in 0..200u64 {
         let seed = seed_from_ids(0x7137, i);
-        let d = plan(seed, &cfg, &content).unwrap();
+        let d = plan_skeleton(seed, &cfg, &content).unwrap();
         for (e, a) in d.envelopes.envelopes().zip(d.building_types.assignments()) {
             let (x, y) = sim::generation::site::front_cell(e.footprint, e.front);
             let p = d.land_use.at_world(x, y).unwrap();
@@ -711,7 +711,7 @@ fn identical_dials_hold_the_same_buildings_wherever_they_sit() {
 /// buildings, never stored.
 fn core_and_edge(seed: u64) -> (u64, u64) {
     let (cfg, content) = setup();
-    let d = plan(seed, &cfg, &content).unwrap();
+    let d = plan_skeleton(seed, &cfg, &content).unwrap();
     let span = cfg.density_max - cfg.density_min;
     let core = d
         .citizens_per_screen(
@@ -808,7 +808,7 @@ fn pooled_over_seeds_the_edge_is_far_quieter_than_the_core_and_a_screen_matches_
         let (core, edge) = core_and_edge(seed);
         core_sum += core;
         edge_sum += edge;
-        let d = plan(seed, &cfg, &content).unwrap();
+        let d = plan_skeleton(seed, &cfg, &content).unwrap();
         city_sum += d.supported_citizens(site, &cfg, &content) * screen * 10
             / (site.width() * site.height()) as u64;
     }
@@ -843,7 +843,7 @@ fn banded_types_appear_only_inside_their_affluence_band() {
     let by_id: BTreeMap<u32, &defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
     for seed in 0..32u64 {
-        let d = plan(seed, &cfg, &content).unwrap();
+        let d = plan_skeleton(seed, &cfg, &content).unwrap();
         for (e, a) in d.envelopes.envelopes().zip(d.building_types.assignments()) {
             let (x, y) = sim::generation::site::front_cell(e.footprint, e.front);
             let affluence = d.land_use.at_world(x, y).unwrap().affluence;
@@ -901,7 +901,7 @@ fn welfare_offices_and_shelters_are_placed_on_every_land_use() {
         content.building_types.iter().map(|b| (b.id, b)).collect();
     let mut seen: BTreeMap<(&str, usize), u32> = BTreeMap::new();
     for seed in 0..256u64 {
-        let d = plan(seed, &cfg, &content).unwrap();
+        let d = plan_skeleton(seed, &cfg, &content).unwrap();
         for (e, a) in d.envelopes.envelopes().zip(d.building_types.assignments()) {
             let def = by_id[&a.building_type];
             if def.key != "welfare_office" && def.key != "shelter" {

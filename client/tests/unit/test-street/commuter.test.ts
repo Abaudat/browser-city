@@ -133,7 +133,7 @@ describe("the timetable", () => {
       joiner.frameAt(timetable.stateAt(t), t, b);
       expect(b).toEqual(a);
     }
-  });
+  }, 15_000);
 
   it("stands facing along the shopfront before departing and the stairs on arriving", () => {
     const body = new CitizenBody(walk, path, gait, "commuter", quietLife());

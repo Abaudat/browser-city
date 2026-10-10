@@ -507,10 +507,10 @@ balance row it was measured under;
 whether the version or the fingerprint moved, when either differs.
 
 `cargo run -p bounds --release --bin measure-generation -- detour
-1000000` (threaded, 203s) at `GENERATION_VERSION` 10:
+1000000` (threaded, 225s) at `GENERATION_VERSION` 11:
 
 ```text
-detour-bounds sweep at GENERATION_VERSION=10 fingerprint=e97a13a8528d8e39: 1000000 seeds, 32 threads, passes 1-2 only
+detour-bounds sweep at GENERATION_VERSION=11 fingerprint=e0d4aff0b3fda0b7: 1000000 seeds, 32 threads, passes 1-2 only
   detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
   p99_detour_fill_percent = 95% (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
@@ -537,18 +537,18 @@ detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worst
   171% at seed 4929245716913353663
   178% at seed 4832727318219098284
   189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 203.3s (0.203ms/seed)
+detour-bounds sweep wall-clock: 224.8s (0.225ms/seed)
 ```
 
 The exhaustive loop (`measure-generation`, 50,000 mixed seeds) at
-`GENERATION_VERSION` 10: worst exhaustive excess 320 (seed
+`GENERATION_VERSION` 11: worst exhaustive excess 320 (seed
 `610140160610395379`, unchanged, so `max_detour_excess_cells` and its
 pinned seeds hold), worst exhaustive ratio at or beyond the takeover
 distance 176% (seed `4595557621078204092`; 189% at the 14-node sample over
 the million seeds above), worst both-endpoints-interior excess 312.
 
 ```text
-exhaustive detour loop at GENERATION_VERSION=10 fingerprint=e97a13a8528d8e39: 50000 seeds
+exhaustive detour loop at GENERATION_VERSION=11 fingerprint=e0d4aff0b3fda0b7: 50000 seeds
 detour_excess_cells_sampled_14node: min=0 p1=0 p50=0 p99=92 max=312 mean=3.4 stddev=17.2
 detour_excess_cells_sampled_14node worst: 312 at seed 4595557621078204092 ((67, 40)-(512, 38))
 detour_excess_cells_exhaustive max: 320 at seed 610140160610395379 ((486, 53)-(512, 474)) -- the number max_detour_excess_cells's own margin rule is applied to; pin the seed (with this exhaustive figure) in streets::PINNED_DETOUR_SEEDS if it moves
@@ -724,11 +724,126 @@ detour_ratio_pct_exhaustive_at_or_beyond_takeover top 10 per-seed worsts (ascend
 
 ### Interior layout
 
-- **Receives:** a building's own type and envelope.
-- **Hands down:** the room grammar's own composition (walls, floor,
-  doors) and enterable status.
-- **Reads:** affluence.
-- **Evidence:** (added when the pass lands.)
+- **Receives:** every placed envelope (pass 4), its assigned building
+  type (pass 5) and its plot (pass 3, for the street edge the entrance
+  walks out to).
+- **Hands down:** one outcome per placed envelope, in envelope order --
+  a laid-out ground floor (rooms as rects, thresholds, required
+  fixtures, the entrance's approach; walls are the footprint minus
+  rooms and thresholds, never stored), a solid `Shell`, or a typed,
+  counted `Rejected` with no interior at all. All of it in world
+  coordinates on the street's own tilemap: the interior of a building at
+  `(x, y)` is found at `(x, y)`. Ground floor only: upper storeys and
+  back doors are later additions. Tags and cells, never an object or a
+  sprite -- which sprite dresses a room is the theme pass's.
+- **Reads:** the type's room program, the footprint and its own front,
+  the plot's front edge, and the committed requirement rows. Not
+  affluence: no pass has authored it on the field yet, and this one
+  neither reads nor imitates it.
+- **Enterable is a consequence, never a selection.** A building is
+  enterable exactly when it was laid out: its type has a room program
+  and its footprint held it. There is no quota and no "best hundred";
+  the district clears `generation.interiors.min_enterable_count` (FR114's
+  figure) by a wide margin, and `generate` fails below it. A building is
+  a `Shell` only when its type has neither `professions` nor the
+  `dwelling` tag (a workplace nobody can walk into is a mechanical seam
+  between an AI-held and a player-held post), enforced at defs build. A
+  building that is the subject of a committed distribution row and comes
+  out `Rejected` is a typed error: an institution that cannot be entered
+  is a missing institution. One street entrance per building.
+- **A program is a core plus a tail.** `rooms` is the required core, front
+  room first; `optional_rooms` an ordered tail, of which the footprint
+  takes the longest prefix some plan fits -- size buys rooms, not bigger
+  rooms. Every dwelling's core sleeps, washes and cooks: the small
+  dwelling's front room is a kitchen-diner, and a separate kitchen and
+  living room are what size buys.
+- **Three plans, every room under the aspect cap.** No room's long side
+  is more than `generation.interiors.max_room_aspect` times its short
+  side; every plan is sized under it and an attempt past it is refused.
+  *Band*: the front room across the full width, a partition, the back
+  rooms side by side behind it. *Column*: the front room a full-depth
+  column holding the entrance, the back rooms stacked front to back on
+  either side of it. *Two rows*: the front band, a first row of back
+  rooms, and a second row behind -- a second-row room reached through
+  the first-row room in front of it, only when the two share an access;
+  a first-row room with nothing behind it runs both rows' depth. A room
+  owing `sleeping` has nothing behind it but a bathroom, and a bathroom
+  has nothing behind it (a room type's `rear` list in
+  `defs/room-types/*.toml`), so a bedroom is never a way through. Every
+  room is sized for what it owes, its doors and a lane.
+- **Access is a room-type tag:** exactly one of `public`, `staff` or
+  `private` per room type -- what "back room" means (a staff room), and
+  what keys, opening hours and the guard's door round read later. From
+  the entrance every public room is reachable without crossing a staff or
+  private room, and a type with a public room has one as its front room.
+  Room-to-room reachability is not one of the five rule kinds; it is held
+  as an invariant over tags (see "Does not fit").
+- **What a room owes is rows.** Each room type's own tags name the
+  requirement rows it owes (`defs/rules/interiors.toml`); the pass places
+  exactly the fixtures those rows ask for and the one engine judges the
+  result (`evaluate_local`). The line between this pass and prop
+  placement is one test: a fixture a citizen will act at to meet a need
+  or hold a post belongs here; anything only looked at belongs to the
+  prop pass. `stock` is an empty container in a staff room -- no item, no
+  quantity, no cash in any till; the light has no on/off state. Every
+  fixture has a walkable cell beside it, reachable from the entrance.
+
+| Room type's function | Anchors the pass places |
+| --- | --- |
+| sleeping | a bed |
+| cooking | a cooker |
+| washing | a basin |
+| dining | a table set |
+| trading (a public floor that sells, serves or receives) | a till or service counter |
+| seated service | two table sets |
+| working | a desk |
+| making | a workbench |
+| staff (any back room) | a stock fixture |
+| every room | a light |
+
+- **Composition (camera-driven).** The south wall retracts, so the north
+  wall is the display wall. A doorway's cell and the cell either side of
+  it stay clear, and every fixture keeps a lane to the entrance at least
+  one cell wide; no room is narrower than two walkable cells. The entry
+  room of a dwelling is its kitchen-diner, never a bathroom; businesses
+  put the public room on the street side and staff and stock behind it.
+- **Fixture placement.** Each anchor tag carries a placement class
+  (`defs/tags/*.toml`'s `placement`), and the pass places by class, never
+  two fixtures in adjacent cells where the room allows. *Wall-backed*
+  (bed, cooker, basin, desk, workbench, stock): along the north wall,
+  then the side walls, centred first, in a corner only in a room two
+  cells wide. *Free-standing* (table set): on the open floor away from
+  every wall, nearest the centre, in a room three or more cells each way.
+  *Wall-mounted* (light): on the north wall row, centred, never in a
+  corner. *Facing the door* (counter): on the wall across from the
+  room's door -- or, when that wall is a partition, the side wall
+  nearest the door -- centred, with the cell between it and the door
+  kept walkable. The prop pass dresses around these anchors.
+- **Variety** comes from the plan (band, column or two rows), the
+  footprint-driven sizes, mirrored arrangements, the order of the back
+  rooms and the choice of fixture cells, all drawn from a stream seeded
+  by the building's own bounds and the attempt index -- never list
+  position, so a retry in one building never shifts its neighbour. A
+  building the rule engine refuses is rebuilt, up to
+  `generation.interiors.max_layout_attempts`, then `Rejected`.
+- **Owed to the prop pass:** a `washing` room holds only a basin here,
+  which does not read as a bathroom at 16 px -- the prop pass places a
+  toilet or bath in every one.
+- **Ownership.** Each building's footprint is a `building_area` (walls
+  included) and each room's floor plus the doorway it owns a `room_area`
+  (several rects sharing one room id; never a wall), emitted through
+  `clip_rect_to_chunks` with position-derived owner ids, so growing the
+  city next door never renumbers an existing building. Nothing in the
+  ownership data encodes building = tenancy: a later unit groups stable
+  room ids.
+- **Evidence:** [`docs/generation/interiors-seed-1.svg`](generation/interiors-seed-1.svg),
+  [`-seed-2`](generation/interiors-seed-2.svg), [`-seed-3`](generation/interiors-seed-3.svg)
+  -- the enterable set as a footprint map tinted by derived kind (housing,
+  commercial, industrial, institutional; a shell grey, a rejected
+  building red), then a contact sheet of twelve laid-out interiors per
+  kind side by side at viewport scale (rooms as rects, never one element
+  per cell), and a legend of every room type and fixture; same
+  regen-and-diff guard as the rows above.
 
 ### Prop placement
 
@@ -903,6 +1018,16 @@ disagree.
 | generation.building_types.min_employers_per_profession | committed | Building type | the GDD's own "5+ employers each" -- the minimum distinct placed workplaces a profession must be held by to count toward the target above; a singleton institution's own post is deliberately excluded |
 | generation.catchment_floor_min_bite_percent | committed | Building type | over the fixed seed range 0..256, at least this percent of (seed, catchment) pairs owe a scoped row a floor of at least one subject -- a retune never turns the floor back into zero |
 | generation.catchment_extent_cells | committed | Building type | the fixed-extent, world-absolute square (world cells) a `scope = "catchment"` `[[distribution]]` row is judged and allocated over -- 256 at launch, the four quadrants of a 512x512 site |
+| generation.interiors.max_layout_attempts | committed | Interior layout | how many times one building's layout may be rebuilt before it is `Rejected` -- the loop is never unbounded |
+| generation.interiors.min_enterable_count | committed | Interior layout | FR114's floor on the enterable count (`docs/gdd.md`'s Scale Baseline); `generate` fails below it |
+| generation.interiors.max_rejected_percent | committed | Interior layout | the maximum percent of attempted layouts that may be `Rejected`, asserted per city |
+| generation.interiors.enterable_target_percent | committed | Interior layout | the enterable share of placed buildings, pooled over the fixed seed range 0..256 |
+| generation.interiors.enterable_target_tolerance_percent | committed | Interior layout | the pooled band around the target above |
+| generation.interiors.dwelling_min_enterable_percent | committed | Interior layout | the minimum percent of placed dwellings that must be enterable |
+| generation.interiors.shop_min_enterable_percent | committed | Interior layout | the same minimum for shops |
+| generation.interiors.cafe_min_enterable_percent | committed | Interior layout | the same minimum for cafes |
+| generation.interiors.back_room_min_enterable_percent | committed | Interior layout | the same minimum for institutional back rooms (a staff room in a type sited on institutional land use) |
+| generation.interiors.max_kind_share_percent | committed | Interior layout | no required kind may exceed this share of the enterable set |
 
 ## placement
 | key | status | pass | scope | reads | intent |
@@ -923,13 +1048,14 @@ disagree.
 ## coherence
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| no_counter_in_a_stairwell | committed | Interior layout | room | - | **placeholder** -- a shop till standing on a stairwell landing |
+| no_counter_in_a_stairwell | committed | Interior layout | room | - | a till or service counter sharing an area with a stairwell; the pass lays out the ground floor only, so no stairwell exists for it to fire on yet |
 | no_high_rise_within_a_low_rise_block | committed | Building type | building | - | AC1, "no skyscraper among villas": a `form_high` building never shares a block with a `form_low` one -- the form-class scale is `defs/tags/generation.toml`'s own vocabulary, never a type key |
 
 ## adjacency
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| counter_faces_a_shopfront | committed | Interior layout | cell | - | **placeholder** -- a till with its back to a blank wall, no shopfront anywhere on its own perimeter |
+| counter_faces_a_shopfront | committed | Prop placement | cell | - | **placeholder** -- a shopfront with no counter on any side of it; nothing emits a shopfront until the prop pass, so it cannot fire on an interior layout |
+| door_never_blocked_by_a_fixture | committed | Interior layout | cell | - | a fixture standing on any cell beside a threshold, inside or out -- a door a prop blocks |
 | road_never_touches_wall | committed | Building envelope | cell | - | the carriageway running straight into a building wall with no pavement between them |
 | road_never_touches_ground | committed | Building envelope | cell | - | asphalt bleeding directly into bare ground with no pavement edge |
 | floor_never_touches_bare_ground | committed | Building envelope | cell | - | an interior floor tile exposed straight to bare ground, as if the wall around it were missing |
@@ -942,10 +1068,20 @@ disagree.
 ## requirement
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| walled_room_has_waste_bin | committed | Interior layout | room | - | **placeholder** -- stands in for a future room-completeness rule; describes nothing a real room looks like yet |
+| walled_room_has_waste_bin | committed | Prop placement | room | - | **placeholder** -- a room holding seating with no waste bin; stays on `seating`, so it cannot fire on anything the interior-layout pass emits, and the prop-placement pass makes it real |
 | room_has_a_door | committed | Interior layout | room | - | a sealed room a player can see into but never enter |
 | building_has_an_entrance | committed | Building envelope | building | - | a building with no door anywhere on its own perimeter |
-| footprint_sized_for_interior_usability | planned | Building envelope | building | - | a building whose frontage looks generous but whose interior is too cramped to hold the room grammar it needs |
+| footprint_sized_for_interior_usability | committed | Interior layout | room | - | a laid-out room too cramped to use: fewer than four floor cells, two walkable cells either way; the static half (a type whose own minimum interior cannot hold its program) is refused at defs build |
+| room_has_a_light | committed | Interior layout | room | - | a room with no light fixture in it |
+| business_has_stock_space | committed | Interior layout | room | - | a staff room -- the back room of any type with posts -- with no stock fixture: an empty container, never an item |
+| bedroom_has_a_bed | committed | Interior layout | room | - | a sleeping room with no bed |
+| kitchen_has_a_cooker | committed | Interior layout | room | - | a cooking room with no cooker |
+| bathroom_has_a_basin | committed | Interior layout | room | - | a washing room with no basin |
+| living_room_has_a_table_set | committed | Interior layout | room | - | a dining room with no table set |
+| shop_floor_has_a_counter | committed | Interior layout | room | - | a room open to the public that trades with no till or service counter in it |
+| cafe_has_two_table_sets | committed | Interior layout | room | - | a seated-service room with fewer than two table sets |
+| office_has_a_desk | committed | Interior layout | room | - | a working room with no desk |
+| workroom_has_a_workbench | committed | Interior layout | room | - | a making room with no workbench |
 
 ## Must never be seen
 
@@ -963,12 +1099,12 @@ names; `unclaimed` otherwise -- checked mechanically, not by eye.
 | A road that dead-ends into a wall with no terminating piece | adjacency | | unclaimed |
 | A door that opens directly onto the road | adjacency | | unclaimed |
 | A door that opens onto another wall | adjacency | | unclaimed |
-| A door blocked by a prop sitting on its own threshold cell | requirement | | unclaimed |
+| A door blocked by a prop sitting on its own threshold cell | adjacency | door_never_blocked_by_a_fixture | claimed |
 | Street furniture placed on the carriageway | placement | | unclaimed |
 | Pavement furniture leaving less than one walkable cell of pavement | adjacency | | unclaimed |
 | The same facade repeated side by side with no variation, beyond what a real terrace would do | distribution | | unclaimed |
 | The same prop sprite repeated side by side with no variation | distribution | | unclaimed |
-| A shopfront with no counter behind it | requirement | | unclaimed |
+| A shopfront with no counter behind it | requirement | shop_floor_has_a_counter | claimed |
 | A building with no entrance anywhere on its own perimeter | requirement | building_has_an_entrance | claimed |
 | Interior-sheet props placed on the street | coherence | | unclaimed |
 | Exterior-sheet props placed indoors | coherence | | unclaimed |
@@ -1017,7 +1153,20 @@ smallest) by `inv_generation_envelope_size_within_its_class_band`.
 
 ## Does not fit
 
-None open.
+- **Room-to-room reachability cannot be a rule.** "From the entrance every
+  public room is reachable without crossing a staff or private room" is a
+  property of the room graph, which none of the five kinds can state
+  (adjacency sees four neighbours, a requirement counts cells in an area).
+  It holds by construction -- every back room is reached from the front
+  room through its own doorway, or through a room of its own access in
+  front of it -- and is checked over tags by
+  `inv_generation_public_rooms_are_reachable_without_crossing_staff_or_
+  private`, never a per-type branch in the pass.
+- **"Every fixture keeps a reachable walkable cell beside it" cannot be a
+  rule either,** for the same reason: a cell beside a fixture is
+  reachable only through the room graph. It holds by construction --
+  the pass keeps every fixture's lane to the doorway -- and is checked by
+  `inv_generation_every_emitted_interior_validates_clean`.
 
 A rule that cannot be expressed as one of the five kinds over tags for
 any other reason is written here too, with why -- a signal that a

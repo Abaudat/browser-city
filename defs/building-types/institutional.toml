@@ -33,6 +33,8 @@
 [[building_type]]
 id = 35
 key = "council"
+rooms = ["front_hall", "office"]
+optional_rooms = ["office", "office", "stock_room"]
 tags = ["municipal_service", "council"]
 land_uses = ["institutional"]
 density_min = 0
@@ -47,6 +49,8 @@ professions = ["clerk", "administrator", "councillor", "receptionist"]
 [[building_type]]
 id = 36
 key = "hospital"
+rooms = ["front_hall", "ward", "office"]
+optional_rooms = ["ward", "ward", "office"]
 tags = ["municipal_service", "hospital"]
 land_uses = ["institutional"]
 density_min = 0
@@ -65,6 +69,8 @@ professions = ["nurse", "orderly", "receptionist", "surgeon", "paramedic", "doct
 [[building_type]]
 id = 37
 key = "welfare_office"
+rooms = ["front_hall", "office"]
+optional_rooms = ["office", "stock_room"]
 tags = ["municipal_service", "welfare_office"]
 land_uses = ["institutional", "commercial", "residential"]
 density_min = 0
@@ -78,6 +84,8 @@ professions = ["caseworker", "clerk", "counsellor", "support_worker"]
 [[building_type]]
 id = 38
 key = "shelter"
+rooms = ["front_hall", "dormitory", "office"]
+optional_rooms = ["dormitory", "stock_room"]
 tags = ["municipal_service", "shelter"]
 land_uses = ["institutional", "commercial", "residential"]
 density_min = 0
@@ -91,42 +99,50 @@ professions = ["attendant", "cook", "support_worker", "caseworker", "counsellor"
 [[building_type]]
 id = 39
 key = "school"
+rooms = ["front_hall", "classroom", "office"]
+optional_rooms = ["classroom", "classroom"]
 tags = []
 land_uses = ["institutional"]
 density_min = 0
 density_max = 100
-min_interior_width_cells = 6
-min_interior_depth_cells = 6
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
 weight = 20
 professions = ["teacher", "teaching_assistant", "administrator", "cleaner", "librarian", "custodian", "nurse", "cook"]
 
 [[building_type]]
 id = 40
 key = "clinic"
+rooms = ["front_hall", "ward", "office"]
+optional_rooms = ["ward", "office"]
 tags = []
 land_uses = ["institutional"]
 density_min = 0
 density_max = 100
-min_interior_width_cells = 7
-min_interior_depth_cells = 7
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
 weight = 20
 professions = ["nurse", "receptionist", "doctor", "pharmacist", "orderly", "administrator"]
 
 [[building_type]]
 id = 41
 key = "library"
+rooms = ["front_hall", "classroom", "office"]
+optional_rooms = ["classroom", "stock_room"]
 tags = []
 land_uses = ["institutional"]
 density_min = 0
 density_max = 100
-min_interior_width_cells = 7
-min_interior_depth_cells = 7
+min_interior_width_cells = 8
+min_interior_depth_cells = 8
 weight = 20
 professions = ["librarian", "clerk", "archivist", "custodian", "receptionist"]
 
 [[building_type]]
 id = 42
 key = "police_station"
+rooms = ["front_hall", "office"]
+optional_rooms = ["office", "stock_room", "office", "office"]
 tags = []
 land_uses = ["institutional"]
 density_min = 0
@@ -139,6 +155,8 @@ professions = ["officer", "administrator", "detective", "dispatcher", "reception
 [[building_type]]
 id = 43
 key = "fire_station"
+rooms = ["front_hall", "workroom"]
+optional_rooms = ["office", "stock_room", "workroom", "office"]
 tags = []
 land_uses = ["institutional"]
 density_min = 0
@@ -151,6 +169,8 @@ professions = ["firefighter", "administrator", "paramedic", "dispatcher", "recep
 [[building_type]]
 id = 44
 key = "transit_office"
+rooms = ["front_hall", "office"]
+optional_rooms = ["office", "stock_room", "office", "office"]
 tags = []
 land_uses = ["institutional"]
 density_min = 0

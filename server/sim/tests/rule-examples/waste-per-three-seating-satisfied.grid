@@ -1,6 +1,7 @@
-rules: waste_per_three_seating
+rules: waste_per_three_seating walled_room_has_waste_bin
 expect: pass
 floor: 0
 legend: S=seating M=seating+waste
+area: 1 0,0 3,1
 grid:
 SMS

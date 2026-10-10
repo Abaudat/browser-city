@@ -1,0 +1,15 @@
+rules: footprint_sized_for_interior_usability
+expect: fail
+floor: 0
+legend: W=wall+wall_run F=floor l=floor+fixture+lighting 1=floor+room+private D=threshold+wall_run+entrance P=pavement
+area: 1 0,0 4,4
+area: 2 1,1 3,3
+area: 2 2,3 3,4
+grid:
+WWWW
+WlFW
+WW1W
+WWDW
+..P.
+violations:
+footprint_sized_for_interior_usability at (2, 2, 0)

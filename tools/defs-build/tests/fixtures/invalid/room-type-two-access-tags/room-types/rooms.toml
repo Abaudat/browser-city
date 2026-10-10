@@ -1,0 +1,7 @@
+[[room_type]]
+id = 1
+key = "fixture_hall"
+tags = ["public", "staff"]
+min_width_cells = 2
+min_depth_cells = 2
+weight = 2

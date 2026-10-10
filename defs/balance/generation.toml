@@ -1050,6 +1050,108 @@ min = 1
 max = 100000
 
 [[balance]]
+# Story 3.5: how many times one building's layout may be rebuilt (a fresh
+# stream per attempt, seeded from the building's own bounds plus the
+# attempt index) before the building comes out as a typed, counted
+# `Rejected` outcome with no interior at all -- the loop is never
+# unbounded.
+key = "generation.interiors.max_layout_attempts"
+value = 8
+min = 1
+max = 64
+
+[[balance]]
+# A room's long side is at most this many times its short side: a 2x15
+# floor is a hallway, not a room. Every layout plan is sized under it,
+# and an attempt that breaks it is refused.
+key = "generation.interiors.max_room_aspect"
+value = 3
+min = 1
+max = 16
+
+[[balance]]
+# FR114's own figure (`docs/gdd.md`'s Scale Baseline: 100+ enterable
+# interiors at MVP), never a measurement. A floor, not a cap: every type
+# with a room program is laid out, so the district clears it by a wide
+# margin; `generate` fails below it.
+key = "generation.interiors.min_enterable_count"
+value = 100
+min = 1
+max = 100000
+
+[[balance]]
+# The maximum percent of buildings with a room program (attempted
+# layouts) that may come out `Rejected`, asserted per city -- without it
+# a generator that rejects everything hard would pass AC2 by starving
+# AC3. Measured at 0 on every seed; 5 leaves room for a hand-tuned type
+# that is occasionally tight, never for a quiet regression.
+key = "generation.interiors.max_rejected_percent"
+value = 5
+min = 0
+max = 100
+
+[[balance]]
+# AC3's pooled band: the enterable share of placed buildings, pooled over
+# the fixed seed range 0..256, must sit within the tolerance below of
+# this -- so the count cannot drift to "100, barely". Only a vacant unit
+# or a storage yard is a Shell, so the share sits near the top: measured
+# over 500 seeds (`measure-generation --interiors-only`) mean 97.9,
+# standard deviation 0.5, min 96; the pooled mean of 256 seeds has a
+# standard error under 0.05, so a 1-point band is 20 standard errors.
+key = "generation.interiors.enterable_target_percent"
+value = 98
+min = 1
+max = 100
+
+[[balance]]
+key = "generation.interiors.enterable_target_tolerance_percent"
+value = 1
+min = 0
+max = 100
+
+[[balance]]
+# The required kinds the enterable set must span (AC3), each resolved by
+# tag in the test that reads these: the minimum percent of what pass 5
+# placed of that kind which must be enterable -- a share, never an
+# absolute count, so it survives Epic 14 growing the site. "Dwelling" is
+# a type carrying the dwelling tag, "shop" the shop tag, "cafe" the cafe
+# tag, and "back room" a staff room in a type sited on institutional
+# land use.
+key = "generation.interiors.dwelling_min_enterable_percent"
+value = 90
+min = 0
+max = 100
+
+[[balance]]
+key = "generation.interiors.shop_min_enterable_percent"
+value = 90
+min = 0
+max = 100
+
+[[balance]]
+key = "generation.interiors.cafe_min_enterable_percent"
+value = 90
+min = 0
+max = 100
+
+[[balance]]
+key = "generation.interiors.back_room_min_enterable_percent"
+value = 90
+min = 0
+max = 100
+
+[[balance]]
+# No required kind may exceed this share of the enterable set -- 97 flats
+# and one of each other kind must fail. Dwellings are the largest kind by
+# far: over 1,500 seeds their share of placed buildings has mean 64.1% and
+# maximum 74.7%, and a random `proptest` seed found 75.3% -- so 85, never
+# "the measured maximum plus margin".
+key = "generation.interiors.max_kind_share_percent"
+value = 85
+min = 1
+max = 100
+
+[[balance]]
 # The building-age dial runs from newer (this) to older (the max) -- an integer, never a year.
 key = "generation.neighbourhood.building_age_min"
 value = 0

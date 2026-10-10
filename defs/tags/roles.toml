@@ -17,6 +17,7 @@ role = { layers = ["ground"] }
 [[tag]]
 id = 11
 key = "pavement"
+structure = "pavement"
 role = { layers = ["ground"] }
 
 [[tag]]
@@ -27,6 +28,7 @@ role = { layers = ["ground"] }
 [[tag]]
 id = 13
 key = "floor"
+structure = "floor"
 role = { layers = ["ground"] }
 
 # A threshold interrupts a wall run (the arched-entryway art sits at the
@@ -35,6 +37,7 @@ role = { layers = ["ground"] }
 [[tag]]
 id = 14
 key = "threshold"
+structure = "threshold"
 role = { layers = ["walls"] }
 
 # A fixture is a discrete object placed atop a surface (furniture or a
@@ -43,4 +46,5 @@ role = { layers = ["walls"] }
 [[tag]]
 id = 15
 key = "fixture"
+structure = "fixture"
 role = { layers = ["furniture", "objects", "ground_objects"] }

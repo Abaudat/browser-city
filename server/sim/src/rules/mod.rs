@@ -506,6 +506,22 @@ pub struct CoherenceRow {
     pub mode: CoherenceMode,
 }
 
+/// A `Requirement` row's own fields, read-only (story 3.5) -- the same
+/// seam [`DistributionRow`]/[`CoherenceRow`] give: `sim::generation::
+/// interiors` places a room's required fixtures constructively by
+/// reading which tag each requirement row asks a container to hold,
+/// then hands the result back to [`evaluate_local`] for the verdict --
+/// it never matches on `RuleKind` itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RequirementRow {
+    pub id: u32,
+    pub key: &'static str,
+    pub container: TagId,
+    pub requires: TagId,
+    pub min: u32,
+    pub max: Option<u32>,
+}
+
 impl RuleDef {
     /// `Some` iff this row is a `Distribution` row; `None` for every
     /// other kind. The one place outside `evaluate` itself that reads
@@ -535,6 +551,30 @@ impl RuleDef {
             | RuleKind::Coherence { .. }
             | RuleKind::Adjacency { .. }
             | RuleKind::Requirement { .. } => None,
+        }
+    }
+
+    /// `Some` iff this row is a `Requirement` row; `None` for every other
+    /// kind -- [`RequirementRow`]'s own doc comment.
+    pub fn as_requirement(&self) -> Option<RequirementRow> {
+        match self.kind {
+            RuleKind::Requirement {
+                container,
+                requires,
+                min,
+                max,
+            } => Some(RequirementRow {
+                id: self.id,
+                key: self.key,
+                container,
+                requires,
+                min,
+                max,
+            }),
+            RuleKind::Placement { .. }
+            | RuleKind::Distribution { .. }
+            | RuleKind::Coherence { .. }
+            | RuleKind::Adjacency { .. } => None,
         }
     }
 
@@ -779,6 +819,22 @@ fn distribution_judge(
 /// to build one are [`RuleSet::committed`] and, under test,
 /// [`RuleSet::for_test`].
 pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
+    evaluate_rows(rules, site, true)
+}
+
+/// [`evaluate`] over every kind except Distribution -- the only kind that
+/// is whole-site by construction (a ratio over the whole site's `per`
+/// cells, a spacing and a coverage that read every subject on it), so the
+/// only one a single building's own site cannot judge. Story 3.5: the
+/// interior-layout pass verifies each candidate building against exactly
+/// this, in its retry loop; `District::check_rules` still runs the full
+/// [`evaluate`] over the finished district. Same rows, same code, same
+/// order -- never a second interpreter.
+pub fn evaluate_local(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
+    evaluate_rows(rules, site, false)
+}
+
+fn evaluate_rows(rules: RuleSet<'_>, site: &impl RuleSite, whole_site: bool) -> Vec<Violation> {
     let mut violations = Vec::new();
     for rule in rules.rules() {
         match rule.kind {
@@ -817,6 +873,9 @@ pub fn evaluate(rules: RuleSet<'_>, site: &impl RuleSite) -> Vec<Violation> {
                 scope,
                 ..
             } => {
+                if !whole_site {
+                    continue;
+                }
                 let row = rule
                     .as_distribution()
                     .expect("a Distribution rule is a distribution row");
@@ -1986,5 +2045,81 @@ mod tests {
                 },
             ]
         );
+    }
+
+    // --- evaluate_local / as_requirement (story 3.5) -----------------------
+
+    fn two_cafes_one_waste_requirement() -> Vec<RuleDef> {
+        vec![
+            RuleDef {
+                id: 1,
+                key: "needs_waste",
+                kind: RuleKind::Requirement {
+                    container: ROOM,
+                    requires: WASTE,
+                    min: 1,
+                    max: None,
+                },
+            },
+            RuleDef {
+                id: 2,
+                key: "one_waste_per_seating",
+                kind: RuleKind::Distribution {
+                    subject: WASTE,
+                    per: SEATING,
+                    ratio: RowRatio::Fixed(1),
+                    tolerance_percent: 0,
+                    min_spacing: 0,
+                    max_distance: 1,
+                    scope: DistributionScope::Site,
+                },
+            },
+        ]
+    }
+
+    #[test]
+    fn evaluate_local_skips_every_distribution_row_and_judges_the_rest_like_evaluate() {
+        let rules = two_cafes_one_waste_requirement();
+        // A room with no waste (requirement fails) and a seating cell with
+        // no waste anywhere (distribution fails).
+        let site = SiteBuilder::new()
+            .cell(c(0, 0, 0), &[ROOM])
+            .area(c(0, 0, 0), BUILDING_A)
+            .cell(c(3, 0, 0), &[SEATING])
+            .build();
+        let whole = evaluate(RuleSet::for_test(&rules), &site);
+        let local = evaluate_local(RuleSet::for_test(&rules), &site);
+        assert!(
+            whole.iter().any(|v| v.rule_id == 2),
+            "the whole-site pass sees the distribution row"
+        );
+        assert_eq!(
+            local,
+            whole
+                .into_iter()
+                .filter(|v| v.rule_id != 2)
+                .collect::<Vec<_>>(),
+            "evaluate_local is evaluate minus the Distribution kind, nothing else"
+        );
+        assert_eq!(local.len(), 1);
+    }
+
+    #[test]
+    fn as_requirement_narrows_to_requirement_rows_only() {
+        let rules = two_cafes_one_waste_requirement();
+        let req = rules[0].as_requirement().expect("a requirement row");
+        assert_eq!(
+            (
+                req.id,
+                req.key,
+                req.container,
+                req.requires,
+                req.min,
+                req.max
+            ),
+            (1, "needs_waste", ROOM, WASTE, 1, None)
+        );
+        assert!(rules[1].as_requirement().is_none());
+        assert!(no_cafe_above_floor_2().as_requirement().is_none());
     }
 }

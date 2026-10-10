@@ -1,0 +1,19 @@
+# Story 3.5: the three access tags a room type carries exactly one of,
+# and the `dwelling` tag a Shell may not carry. Ids start at 101: see
+# `roles.toml`'s own note on why this file never collides with an
+# invalid overlay's own tags.
+[[tag]]
+id = 101
+key = "public"
+
+[[tag]]
+id = 102
+key = "staff"
+
+[[tag]]
+id = 103
+key = "private"
+
+[[tag]]
+id = 104
+key = "dwelling"

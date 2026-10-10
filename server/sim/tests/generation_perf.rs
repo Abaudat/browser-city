@@ -16,7 +16,10 @@
 //! for `open` plots (never more than a handful per block, whatever their
 //! own size), still linear, and neither pass carries an `O(n^2)` risk of
 //! its own (plots cuts a fixed `FACE_PRIORITY` strip set per block;
-//! envelopes sizes one plot at a time).
+//! envelopes sizes one plot at a time). Story 3.5 adds pass 6's: cells
+//! visited linear in footprint area times the retry cap, verdicts
+//! windowed to their own building, ownership areas per chunk under a
+//! derived ceiling.
 
 use sim::generated::defs;
 use sim::generation::{GenerationConfig, GenerationContent, LandUse, generate, land_use, streets};
@@ -40,8 +43,8 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // structural proof that stays linear too.
     let d = generate(7, &cfg, &content)
         .unwrap_or_else(|e| panic!("the 1024 growth target must still generate: {e}"));
-    let lu = &d.land_use;
-    let net = &d.streets;
+    let lu = &d.skeleton.land_use;
+    let net = &d.skeleton.streets;
 
     // Tim's direction, cycle 1: the checkers, not just `run` -- every
     // graph query now routes through the adjacency index built once at
@@ -99,7 +102,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // the property this test exists to pin.
     assert!(!net.blocks().is_empty());
 
-    let pm = &d.plots;
+    let pm = &d.skeleton.plots;
     // Every non-`open` plot is at least `width_min * envelope_limits(use)
     // .min_depth_cells` world cells for its own land use -- `plots::run`'s
     // own `axis_rows` never hands a real row less depth than that (its
@@ -147,7 +150,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
         );
     }
 
-    let em = &d.envelopes;
+    let em = &d.skeleton.envelopes;
     // Envelopes never outnumber the plots they were sized from -- no
     // separate ceiling needed beyond `max_plots` above.
     assert!(em.outcomes().len() as u64 <= max_plots);
@@ -155,9 +158,100 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
 
     // Story 3.4: one type assignment per placed envelope, never more.
     assert_eq!(
-        d.building_types.assignments().len(),
+        d.skeleton.building_types.assignments().len(),
         em.placed_count() as usize
     );
+
+    // Story 3.5: pass 6 is the first pass whose work scales with cells
+    // rather than buildings, and the first to run the rule engine inside
+    // a retry loop. Structural ceilings, derived from config, no
+    // stopwatch, against the work the pass itself counted
+    // (`LayoutWork`): one outcome per placed envelope; per building, the
+    // cells its attempts laid at most its footprint area per attempt, and
+    // the cells its verdicts judged at most its footprint and approach
+    // per attempt -- every verdict windowed to its own building, never
+    // the district.
+    let io = &d.interiors;
+    assert_eq!(io.outcomes().len() as i64, em.placed_count());
+    let envelope_by_plot: std::collections::BTreeMap<u32, &sim::generation::envelopes::Envelope> =
+        em.envelopes().map(|e| (e.plot, e)).collect();
+    let cap = cfg.interior_max_layout_attempts as u64;
+    for o in io.outcomes() {
+        let (plot, work) = match o {
+            sim::generation::InteriorOutcome::Laid { plot, work, .. }
+            | sim::generation::InteriorOutcome::Rejected { plot, work, .. } => (*plot, *work),
+            sim::generation::InteriorOutcome::Shell { .. } => continue,
+        };
+        let f = envelope_by_plot[&plot].footprint;
+        let area = (f.width() * f.height()) as u64;
+        let bounds = pm.plots()[plot as usize].bounds;
+        // The approach runs from the footprint's front to one cell past
+        // the plot's own edge.
+        let approach = (bounds.width().max(bounds.height()) + 1) as u64;
+        assert!(
+            work.cells_laid <= cap * area,
+            "plot {plot}: layout attempts laid {} cells, past footprint area x attempt cap = {}",
+            work.cells_laid,
+            cap * area
+        );
+        assert!(
+            work.cells_judged <= cap * (area + approach),
+            "plot {plot}: verdicts judged {} cells, past (footprint + approach) x attempt cap = {}",
+            work.cells_judged,
+            cap * (area + approach)
+        );
+    }
+    for o in io.outcomes() {
+        if let sim::generation::InteriorOutcome::Laid { interior, work, .. } = o {
+            assert!(
+                work.cells_laid >= interior.laid_cells(),
+                "the counter missed the cells of the layout it accepted"
+            );
+        }
+    }
+
+    // Ownership areas per chunk stay under the ceiling the world model's
+    // own bucketing defends: a chunk holds at most chunk-area over the
+    // smallest placed footprint's area, plus four corner clips, building
+    // areas, and each room contributes at most two rects (floor and
+    // doorway) -- so a query still scans one small bucket.
+    let spec = sim::world::WorldSpec {
+        building_areas: io.building_areas(),
+        room_areas: io.room_areas(),
+        ..sim::world::WorldSpec::default()
+    };
+    let world = spec.build().expect("the 1024 city's ownership areas build");
+    let min_footprint_area = em
+        .envelopes()
+        .map(|e| e.footprint.width() * e.footprint.height())
+        .min()
+        .unwrap_or(1)
+        .max(1);
+    let chunk_area = (sim::world::CHUNK_SIZE as i64) * (sim::world::CHUNK_SIZE as i64);
+    let max_rooms = content
+        .building_types
+        .iter()
+        .map(|b| b.rooms.len() + b.optional_rooms.len())
+        .max()
+        .unwrap_or(1) as i64;
+    let building_ceiling = chunk_area / min_footprint_area + 4;
+    let room_ceiling = building_ceiling * max_rooms * 2;
+    let chunks = cfg.site_extent_cells / sim::world::CHUNK_SIZE;
+    for cy in 0..chunks {
+        for cx in 0..chunks {
+            let (x, y) = (cx * sim::world::CHUNK_SIZE, cy * sim::world::CHUNK_SIZE);
+            let b = world.building_areas_in_chunk_of(x, y, 0) as i64;
+            let r = world.room_areas_in_chunk_of(x, y, 0) as i64;
+            assert!(
+                b <= building_ceiling,
+                "chunk ({cx}, {cy}) holds {b} building areas, past {building_ceiling}"
+            );
+            assert!(
+                r <= room_ceiling,
+                "chunk ({cx}, {cy}) holds {r} room areas, past {room_ceiling}"
+            );
+        }
+    }
 
     // Pass 5's own distribution-override scan (Quentin's direction, PR
     // #317 cycle 2): each row's own farthest-point selection re-scans its
@@ -175,7 +269,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
         content.building_types.iter().map(|b| (b.id, b)).collect();
     let mut tag_counts: std::collections::BTreeMap<sim::rules::TagId, u64> =
         std::collections::BTreeMap::new();
-    for a in d.building_types.assignments() {
+    for a in d.skeleton.building_types.assignments() {
         for &t in by_id[&a.building_type].tags {
             *tag_counts.entry(t).or_insert(0) += 1;
         }
