@@ -36,7 +36,7 @@ usage: bc-sprint.sh <command> [args]
   next                  -- the iteration after current (or after today if none)
   over                  -- yes/no: is it past BC_DEMO_HOUR on current's last day
   items <n> [<status>]  -- the issues scoped into Sprint n, optionally one Status
-  close                 -- close the current sprint, carry active work, close the demo
+  close [<n>]           -- close Sprint n (default: today's), carry active work, close the demo
   scope-in <story>      -- starting-dev-cycle: put the picked story on the sprint in play
 EOF
 }
@@ -146,10 +146,18 @@ items)
   ;;
 
 close)
-  cur="$(project_iteration_for_date)"
-  if [ -z "$cur" ]; then
-    echo "bc-sprint close: no current sprint for today" >&2
-    exit 2
+  # The sprint to close is the demo's, not today's: the demo is reviewed
+  # whenever the feedback lands, often after midnight on the sprint's last
+  # day, by which time today's sprint is already the next one. Closing that
+  # one would carry nothing, leave the demo open, and re-run every tick.
+  if [ -n "${1:-}" ]; then
+    cur="$(_bc_sprint_by_number "$1" close)" || exit 2
+  else
+    cur="$(project_iteration_for_date)"
+    if [ -z "$cur" ]; then
+      echo "bc-sprint close: no current sprint for today" >&2
+      exit 2
+    fi
   fi
   curid="$(printf '%s' "$cur" | "$JQ" -r '.id')"
   nxt="$(_bc_sprint_next_after "$cur")"
