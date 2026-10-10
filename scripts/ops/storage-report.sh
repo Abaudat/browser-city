@@ -121,8 +121,14 @@ age_of() { # <timestamp> -- seconds before NOW_MICROS, or "?"
 }
 LIVENESS_LINES=""
 LIVENESS_ERR=""
-if ( bc_sql_json "storage-report" "$DB" "${SERVER_ARGS[@]}" "SELECT * FROM cadence_liveness" >"$TMP/liveness.json" ) 2>"$TMP/liveness-error.log"   && bc_wb row-count "$TMP/liveness.json" >/dev/null 2>&1; then
-  paste -d'|'     <(column "$TMP/liveness.json" cadence)     <(column "$TMP/liveness.json" last_target_at)     <(column "$TMP/liveness.json" last_fired_at)     <(column "$TMP/liveness.json" fires)     <(column "$TMP/liveness.json" missed) >"$TMP/liveness.rows"
+if ( bc_sql_json "storage-report" "$DB" "${SERVER_ARGS[@]}" "SELECT * FROM cadence_liveness" >"$TMP/liveness.json" ) 2>"$TMP/liveness-error.log" \
+  && bc_wb row-count "$TMP/liveness.json" >/dev/null 2>&1; then
+  paste -d'|' \
+    <(column "$TMP/liveness.json" cadence) \
+    <(column "$TMP/liveness.json" last_target_at) \
+    <(column "$TMP/liveness.json" last_fired_at) \
+    <(column "$TMP/liveness.json" fires) \
+    <(column "$TMP/liveness.json" missed) >"$TMP/liveness.rows"
   while IFS='|' read -r c t f n m; do
     [ -n "$c" ] || continue
     LIVENESS_LINES="${LIVENESS_LINES:+$LIVENESS_LINES; }cadence $c: last fired $(age_of "$f") ago, last target $(age_of "$t") ago, fires=$n missed=$m"

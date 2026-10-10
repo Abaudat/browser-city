@@ -176,6 +176,10 @@ OUT="$(LIVENESS="$LIVE" NOW=$((100 + STALE + 1)) run_report '[[1,100,5000,false,
 check "liveness unreadable while stale -> still exit 1" 1 bash -c "exit $CODE"
 check_contains "says liveness was unreadable" "cadence liveness unreadable" "$(cat "$FINDINGS")"
 check_contains "the failed read's reason reaches the log" "boom" "$OUT"
+OUT="$(LIVENESS="$LIVE" NOW=150 run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' '[]' liveness-fail 2>&1)"; CODE=$?
+check "liveness unreadable on a healthy run -> exit 0, never 1 or 2" 0 bash -c "exit $CODE"
+check "and writes no finding" 0 is_empty "$FINDINGS"
+check_contains "and says liveness was unreadable" "cadence liveness unreadable" "$OUT"
 
 echo
 echo "cost per reducer class is printed for the newest fire, never alerted on"
