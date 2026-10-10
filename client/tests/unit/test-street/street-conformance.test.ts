@@ -1840,7 +1840,10 @@ describe("the near-railing press route (story 15.13)", () => {
   const smallestDescendingLag = () => {
     if (descendingLag !== undefined) return descendingLag;
     for (let lag = 0; lag <= 400; lag++) {
-      if (westEnd(lag).floor === SUBWAY_FLOOR) return (descendingLag = lag);
+      if (westEnd(lag).floor === SUBWAY_FLOOR) {
+        descendingLag = lag;
+        return lag;
+      }
     }
     throw new Error("no overshoot up to 400 steps descends");
   };
