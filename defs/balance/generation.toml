@@ -130,9 +130,9 @@ max = 100
 # `GenerationConfig::from_balance`, not trusted from authoring. Story
 # 4.21 retuned residential/institutional 58/10 -> 61/7 with the move to
 # area shares: institutional grows from the smallest leaves, so its
-# realised area is below its key (mean -0.12 points at 7), and at 10 the
-# extra fully-workplace land put the pooled workplace mean at 365 against
-# the 344 target; at 61/7 the 1,000,000-seed mean is 350.3 (+2.1%).
+# realised area is below its key, and at 10 the extra fully-workplace
+# land put the pooled workplace mean over the target; the `band sweep`
+# block of `docs/generation.md` carries the workplace mean at 7.
 key = "generation.land_use.share_institutional_pct"
 value = 7
 min = 0
@@ -148,13 +148,12 @@ max = 100
 # retune outgrows the key), and measured commercial and industrial land
 # exactly inside it (+-1.7 points). The binding side is institutional's
 # shortfall (it grows from the smallest non-adjacent leaves and can run
-# out of them; no structural bound): over 1,000,000 seeds (`cargo run -p
-# bounds --release --bin measure-generation -- bands 1000000`,
-# 2026-09-29, `max_recursion_depth` 20) its extreme is -4.4 points,
-# stddev 0.65 points (5.5 sigma = 3.6). 6 covers the measured extreme
-# with margin (6 / 4.4 = 1.36) and the half-leaf bound. The seed that
-# motivated it (16021368561388801292) had commercial at 33.3% against
-# 18, 15 points out.
+# out of them; no structural bound). A Kind B bound: its worst deviation
+# (the institutional line of the `band sweep` block) scaled by 1.25 by
+# the margin rule in `docs/generation.md` is 5.5, rounded away from the
+# pass direction to 6, which also covers the half-leaf bound. The seed
+# that motivated it (16021368561388801292) had commercial at 33.3%
+# against 18, 15 points out.
 key = "generation.land_use.share_tolerance_pct"
 value = 6
 min = 0
@@ -165,7 +164,8 @@ max = 100
 # pass guarantees whenever any eligible leaf remains: "a school, a
 # clinic and a town hall do not share a campus" (Artie's direction,
 # cycle 3) needs several pockets, not just one non-degenerate one.
-# Verified at 15,000 arbitrary seeds: zero seeds land under this floor.
+# Held over arbitrary seeds by the `institutional pockets` line of the
+# `band sweep` block of `docs/generation.md`.
 # Moved off a bare `INSTITUTIONAL_MIN_POCKETS` constant onto this key
 # (Quentin's direction, cycle 4: a threshold literal in a test is a
 # reject) -- the generator's own fallback loop reads it too, so there is
@@ -180,12 +180,12 @@ max = 16
 # percent of the site's own coarse-cell count. Not read by the generator
 # itself -- `assign_institutional`'s own per-leaf area cap
 # (`institutional_max_leaf_area`) is what actually keeps a pocket small;
-# this key is the outcome-side assertion. Measured worst case, this
-# generator's other committed values, over 15,000 seeds: 2.34% (the
-# relaxed fallback pass, which only ever runs when the strict pass alone
-# could not reach `institutional_min_pockets`, occasionally has to take
-# a larger leaf than the strict per-pocket cap would allow). 6% is that
-# plus real margin.
+# this key is the outcome-side assertion. The largest pocket's share is
+# in the `band sweep` block of `docs/generation.md` (the relaxed fallback
+# pass, which only ever runs when the strict pass alone could not reach
+# `institutional_min_pockets`, occasionally has to take a larger leaf
+# than the strict per-pocket cap would allow). 6% is that worst times
+# the margin rule's 1.25, rounded up.
 key = "generation.land_use.institutional_max_pocket_share_percent"
 value = 6
 min = 1
@@ -381,10 +381,10 @@ max = 256
 # suddenly allowed *less* excess than a pair a few cells short of it --
 # the seam seed `8872365549107643721` walked into, CI run 36388555866,
 # PR #349). Re-measured with real margin at the real (unmeasured, since
-# 3.11) long range: over the harness's own 50,000-seed exhaustive loop,
-# the worst ratio among pairs at or beyond the takeover distance was
-# 176% (seed `4595557621078204092`; 189% at the 14-node sample over
-# 1,000,000 seeds); 200 is that plus real margin. Miss rate and worst
+# 3.11) long range: the worst ratio among pairs at or beyond the
+# takeover distance in the `exhaustive loop` block (seed
+# `4595557621078204092`, also the sampled worst of the `detour-bounds
+# sweep` block); 200 is that plus real margin. Miss rate and worst
 # figures are in `docs/generation.md`'s `detour-bounds sweep` block,
 # stamped with the `GENERATION_VERSION` it ran at. Re-run it
 # (`cargo run -p bounds --release --bin measure-generation -- detour
@@ -471,7 +471,7 @@ max = 16
 # band`'s own low-density (periphery) mean block area must be at least
 # this percent of the high-density (core) mean -- a noise margin, not the
 # density guard. The per-seed lowest ratios and the miss rate over
-# 1,000,000 seeds (passes 1-2) are in the `detour-bounds sweep` block of
+# arbitrary seeds (passes 1-2) are in the `detour-bounds sweep` block of
 # `docs/generation.md`. The three lowest known are pinned by
 # `peripheral_floor_clears_the_lowest_known_ratio_seeds`. This key alone
 # cannot tell a healthy city from a density-blind one (a uniform grid
@@ -659,11 +659,10 @@ max = 64
 # The maximum percent of a district's own plots that may be `open`, by
 # count -- an unbounded escape hatch otherwise (a generator could mark
 # every awkward plot open and still pass every other AC1 property).
-# Measured over 50,000 seeds at this generator's other committed values
-# (`cargo run -p bounds --release --bin measure-generation`): max 4%,
-# p99 2%, p50 1% -- an open plot is only ever a block's own leftover core
-# past the density-interpolated `max_core_depth_*` ceiling. 5 is that
-# plus margin.
+# The `open_percent_by_count` line of the `exhaustive loop` block of
+# `docs/generation.md` carries its max, p99 and p50 -- an open plot is
+# only ever a block's own leftover core past the density-interpolated
+# `max_core_depth_*` ceiling. 5 is that plus margin.
 key = "generation.plots.max_open_percent_by_count"
 value = 5
 min = 0
@@ -795,8 +794,8 @@ max = 16
 # `mean_width_tolerance_cells` of this (`server/sim/tests/invariants.rs`'s
 # `inv_generation_envelope_mean_size_matches_the_committed_band`), and
 # every single city's own mean within a weak band four times as wide.
-# Measured over 50,000 seeds (`cargo run -p bounds --release --bin
-# measure-generation`): per-city mean width 11.3, min 10.5, max 12.2.
+# The per-city mean width is the `mean_width_cells_x10` line of the
+# `exhaustive loop` block of `docs/generation.md`.
 key = "generation.envelopes.mean_width_cells"
 value = 12
 min = 4
@@ -809,8 +808,8 @@ min = 0
 max = 32
 
 [[balance]]
-# AC3's own "around 12x11", depth half. Same 50,000-seed scan: per-city
-# mean depth 11.0, min 10.0, max 12.2.
+# AC3's own "around 12x11", depth half. The per-city mean depth is the
+# `mean_depth_cells_x10` line of the same block.
 key = "generation.envelopes.mean_depth_cells"
 value = 11
 min = 4
@@ -851,12 +850,11 @@ max = 1000000
 # narrative: at least 5.5 standard deviations from the target, so an
 # arbitrary-seed failure is a roughly four-in-a-hundred-million event
 # (two-sided) rather than a number tuned to the observed sample's own
-# min/max. Measured over 50,000 seeds (`cargo run -p bounds --release
-# --bin measure-generation`, story 4.22):
-# mean 889.1, standard deviation 25.5, min 768, max 1,002. 5.5 * 25.5 /
-# 893 = 15.7%; 21 clears it, and covers the measured min (893-768=125,
-# 14.0%) and max (1002-893=109, 12.2%). Re-derived from the harness's
-# own sigma after every retune.
+# min/max. The building-count line of the `band sweep` block of
+# `docs/generation.md` carries the mean, standard deviation, min and max,
+# and the 5.5-sigma tolerance it implies; 21 clears that and covers the
+# measured min and max. Re-derived from the harness's own sigma after
+# every retune.
 key = "generation.envelopes.count_tolerance_percent"
 value = 21
 min = 1
@@ -876,8 +874,9 @@ max = 100
 [[balance]]
 # Rejection rate gets its own key, asserted per city -- without it a
 # generator that rejects half the district still passes every other
-# property until AC4 catches it for the wrong reason. Measured over the
-# same 50,000-seed scan: zero rejections in 50,000 cities -- `plots::run`
+# property until AC4 catches it for the wrong reason. The
+# `rejected_percent` line of the `exhaustive loop` block is zero --
+# `plots::run`
 # never hands pass 4 a plot it cannot build (row depth clears the class
 # minimum plus setback; a corner plot is cut wider by the inset its
 # corner edge carries), so `Rejected` is reachable only from a hand-built
@@ -906,11 +905,10 @@ max = 1000000
 # `generation.envelopes.count_tolerance_percent`. Wider than the
 # building-count guard's own 21%: workplace count is a *derived*
 # quantity (every placed type whose own `professions` list is non-empty),
-# not a placement pass 4 tunes directly. Measured over 50,000 seeds
-# (`cargo run -p bounds --release --bin measure-generation`, story
-# 4.22): mean 344.5, stddev 24.2, min 230,
-# max 446. 5.5 * 24.2 / 343 = 38.9%; 40% covers the measured min
-# (343-230=113, 32.9%) and max (446-343=103, 30.0%), the same sigma rule
+# not a placement pass 4 tunes directly. The workplace-count line of the
+# `band sweep` block of `docs/generation.md` carries the mean, standard
+# deviation, min and max; 40% covers the 5.5-sigma tolerance it implies
+# and the measured min and max, the same sigma rule
 # `generation.envelopes.count_tolerance_percent` states. Re-derive after
 # every retune; an outlier is diagnosed to its pass and pinned, never
 # absorbed by re-measuring this value.
@@ -982,10 +980,9 @@ max = 1000
 # station (already a depot's/transit office's); `driver` at depot and
 # post office (already at warehouse/builders yard/food plant);
 # `mechanic` at transit office (already at vehicle repair garage).
-# Measured, `cargo run -p bounds --release --bin measure-generation`:
-# mean 61.2, stddev 3.4 over 5,000 seeds (re-measured story 15.9, after
-# cafes moved onto `cafe_present` and the two `building_types` placement
-# fixes) -- 11% short of 69, a real,
+# The `professions_employed_by_5_plus_workplaces_per_city` line of the
+# `exhaustive loop` block of `docs/generation.md` carries the mean and
+# standard deviation -- short of 69, a real,
 # disclosed content-depth gap (institutional land is a small, fixed
 # share of the site, and several trades genuinely belong to only one or
 # two building types) that closes as job stories add building types,
@@ -1012,17 +1009,15 @@ max = 1000
 # count_mean_tolerance_percent` above lacks entirely -- the pooled mean
 # alone lets a single unlucky city sit far below it and nothing notices.
 # A weak any-seed floor, the same sigma-margin rule `generation.
-# envelopes.count_tolerance_percent` states. Re-measured after
-# the cafe move and placement fixes (story 15.9, `measure-generation`,
-# 5,000 genuinely random seeds): mean 61.2, stddev 3.4; mean -
-# 5.5*stddev = 42.5, and the real measured min over that same run is
-# 44 -- above it. 40 leaves real margin under both. Re-derive after
-# every retune. Story 3.7 derivation (affluence bands in place): the
-# unbanded sigma floor is 42 (mean 61.2 less 5.5 sigma of 3.4); trades
-# hosted only by end-banded types may be absent from a district whose
-# commercial land lies wholly at the other end, at most
-# `generation.neighbourhood.max_end_stranded_professions` (6) of them, so
-# the floor is 42 - 6 = 36. Over 600,000 seeds the minimum is 43.
+# envelopes.count_tolerance_percent` states: the mean less 5.5 standard
+# deviations of the `exhaustive loop` block's profession count, and the
+# `profession_depth_per_city` minimum of the `band sweep` block, both sit
+# above the floor. Re-derive after every retune. Story 3.7 derivation
+# (affluence bands in place): trades hosted only by end-banded types may
+# be absent from a district whose commercial land lies wholly at the
+# other end, at most `generation.neighbourhood.max_end_stranded_
+# professions` of them, so the floor is the unbanded sigma floor less
+# that.
 key = "generation.building_types.profession_count_per_city_min"
 value = 36
 min = 1
@@ -1144,7 +1139,7 @@ min = 1
 max = 10
 
 [[balance]]
-# A bottom-band neighbourhood counts as somewhere affordable to begin only if it holds at least this many residential coarse cells (30 left a patch of 32 with no home built in it; 80 holds over 100,000 seeds).
+# A bottom-band neighbourhood counts as somewhere affordable to begin only if it holds at least this many residential coarse cells (a lower floor left a patch with no home built in it; the `district character` line of the `band sweep` block of `docs/generation.md` holds this key over arbitrary seeds).
 key = "generation.neighbourhood.min_home_cells"
 value = 80
 min = 0
@@ -1172,21 +1167,21 @@ min = 1
 max = 100000
 
 [[balance]]
-# A term of the street-crowding proxy, not an occupancy or a headcount: the crowding one dwelling adds to a screen. The citizen-seeding story replaces the proxy with real citizens. With the post weight below, a whole screen averages 19.7 over seeds 0..256 against NFR15a's 17.6 (one citizen per 52.4 cells).
+# A term of the street-crowding proxy, not an occupancy or a headcount: the crowding one dwelling adds to a screen. The citizen-seeding story replaces the proxy with real citizens. With the post weight below, a whole screen averages within `nfr15a_tolerance_percent` of NFR15a's target (one citizen per 52.4 cells); the mean is in the `pooled evidence` block of `docs/generation.md`.
 key = "generation.neighbourhood.citizens_per_dwelling"
 value = 1
 min = 1
 max = 1000
 
 [[balance]]
-# A term of the street-crowding proxy, not a headcount: the crowding one workplace post adds to a screen -- a commercial core is busy by its posts, a residential edge quiet by its few dwellings. Pooled over seeds 0..256 a core screen is 37.8, an edge screen 7.0 and a whole screen 19.7.
+# A term of the street-crowding proxy, not a headcount: the crowding one workplace post adds to a screen -- a commercial core is busy by its posts, a residential edge quiet by its few dwellings. The pooled core, edge and whole-screen means are in the `pooled evidence` block of `docs/generation.md`.
 key = "generation.neighbourhood.citizens_per_post"
 value = 4
 min = 0
 max = 1000
 
 [[balance]]
-# Per-seed guard: a commercial core at the top of the density range supports at least this many crowding units on one screen, above NFR15a's 17.6 average (measured minimum 19 over 100,000 seeds); the real bound is the pooled margin below.
+# Per-seed guard: a commercial core at the top of the density range supports at least this many crowding units on one screen, above NFR15a's average (the `core_citizens_per_screen` minimum is in the `band sweep` block of `docs/generation.md`); the real bound is the pooled margin below.
 key = "generation.neighbourhood.busy_screen_min_citizens"
 value = 18
 min = 0
@@ -1200,14 +1195,14 @@ min = 0
 max = 1000
 
 [[balance]]
-# Pooled over seeds 0..256, a commercial core screen is at least this percent of a whole-city screen (measured 192: 37.8 against 19.7).
+# Pooled over the fixed seeds of the `pooled evidence` block, a commercial core screen is at least this percent of a whole-city screen (the pooled ratio is in the `pooled evidence` block of `docs/generation.md`).
 key = "generation.neighbourhood.busy_core_over_city_min_percent"
 value = 150
 min = 101
 max = 10000
 
 [[balance]]
-# Per-seed wild-deviation guard: a residential edge supports at most this percent of the same district's commercial core (measured maximum 88); the real bound is the pooled key below.
+# Per-seed wild-deviation guard: a residential edge supports at most this percent of the same district's commercial core (the `edge_percent_of_core` maximum is in the `band sweep` block of `docs/generation.md`); the real bound is the pooled key below.
 key = "generation.neighbourhood.quiet_edge_max_percent_of_core"
 value = 95
 min = 1
@@ -1228,21 +1223,21 @@ min = 1
 max = 100000
 
 [[balance]]
-# Two neighbourhoods a legible step apart on affluence differ in the mix of their commercial-frontage types by at least this total-variation percent (measured minimum 11 over 4096 seeds).
+# Two neighbourhoods a legible step apart on affluence differ in the mix of their commercial-frontage types by at least this total-variation percent (the closest pair per seed is in the `band sweep` block of `docs/generation.md`).
 key = "generation.neighbourhood.legibility_min_shop_mix_percent"
 value = 8
 min = 1
 max = 100
 
 [[balance]]
-# Two neighbourhoods in opposite end thirds of affluence differ in the mix of their realised commercial-frontage types by at least this total-variation percent (measured minimum 34 over 8192 seeds).
+# Two neighbourhoods in opposite end thirds of affluence differ in the mix of their realised commercial-frontage types by at least this total-variation percent (the closest pair per seed is in the `band sweep` block of `docs/generation.md`).
 key = "generation.neighbourhood.legibility_pole_shop_mix_percent"
 value = 25
 min = 1
 max = 100
 
 [[balance]]
-# Over seeds 0..256, at least this percent of the bottom affluence third's commercial frontage is shuttered (no post; measured 14%, about one in seven); the top third has none.
+# Pooled over the fixed seeds of the `pooled evidence` block of `docs/generation.md`, at least this percent of the bottom affluence third's commercial frontage is shuttered (no post); the top third has none.
 key = "generation.neighbourhood.shuttered_bottom_third_min_percent"
 value = 12
 min = 1
@@ -1256,7 +1251,7 @@ min = 1
 max = 100
 
 [[balance]]
-# Pooled over seeds 0..256, a residential edge supports at most this percent of the commercial core.
+# Pooled over the fixed seeds of the `pooled evidence` block of `docs/generation.md`, a residential edge supports at most this percent of the commercial core.
 key = "generation.neighbourhood.quiet_edge_pooled_max_percent_of_core"
 value = 50
 min = 1

@@ -514,6 +514,9 @@ impl RuleDef {
     /// hashed -- and the text never depends on `Debug`'s format.
     pub fn canonical_line(&self) -> String {
         let RuleDef { id, key, kind } = *self;
+        fn opt<T: ToString>(v: Option<T>) -> String {
+            v.map_or_else(|| "-".to_string(), |v| v.to_string())
+        }
         let body = match kind {
             RuleKind::Placement {
                 subject,
@@ -521,7 +524,10 @@ impl RuleDef {
                 floor_min,
                 floor_max,
             } => format!(
-                "placement subject={subject} container={container:?} floor_min={floor_min:?} floor_max={floor_max:?}"
+                "placement subject={subject} container={} floor_min={} floor_max={}",
+                opt(container),
+                opt(floor_min),
+                opt(floor_max)
             ),
             RuleKind::Distribution {
                 subject,
@@ -613,7 +619,8 @@ impl RuleDef {
                 min,
                 max,
             } => format!(
-                "requirement container={container} requires={requires} min={min} max={max:?}"
+                "requirement container={container} requires={requires} min={min} max={}",
+                opt(max)
             ),
         };
         format!("{id}:{key}:{body}")

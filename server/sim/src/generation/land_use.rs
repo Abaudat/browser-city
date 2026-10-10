@@ -806,7 +806,7 @@ const INSTITUTIONAL_POCKET_MAX_LEAVES: usize = 2;
 /// this is the structural bound that makes the 2.5% component cap hold
 /// regardless of which leaves happen to still be unassigned by the time
 /// institutional's own turn comes. `min * (min + 1)`, not `min * min`:
-/// measured at 3,000 seeds, the exact-minimum square left too few
+/// measured over a sweep of seeds, the exact-minimum square left too few
 /// eligible leaves (19.7% of seeds under three pockets); one step
 /// looser keeps 99%+ of seeds at three or more while the worst measured
 /// component still lands under 2.5% (2.3%).

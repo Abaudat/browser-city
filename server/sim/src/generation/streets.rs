@@ -768,7 +768,7 @@ pub const DETOUR_P99_SAMPLE_MAX_NODES: usize = 64;
 /// pass-2 network, so the earlier three seeds -- `11_179_447_352_395_363_
 /// 997`, `1_060_828_608_797_003_656`, `11_859_616_019_877_610_932` --
 /// stopped being worst cases): the ten largest per-seed exhaustive worsts
-/// of `measure-generation`'s 50,000 mixed seeds, the top three taken, the
+/// of the `exhaustive loop` block's mixed seeds, the top three taken, the
 /// mixed-seed harness's own deterministic search, not luck. Every one of
 /// these still ends its own worst pair on a boundary exit (degree 1, on
 /// the site boundary) -- see `detour_excess_holds_at_pinned_boundary_
@@ -1406,11 +1406,12 @@ impl Regions {
 /// A rect swallows a region once it holds at least `1 / this` of the
 /// region's coarse cells while taking another land use. Half left small
 /// regions fragmented across several blocks with none holding their use
-/// (0.004% of cities lost every institutional region, and with it the
+/// (some cities lost every institutional region, and with it the
 /// council); a quarter confines the extra splits to blocks over small
-/// regions. Without the rule 0.57% of 3,000,000 seeds lose every
-/// institutional region; `institutional_regions_survive_on_seeds_that_lose_them_without_the_swallow_rule`
-/// pins three of them.
+/// regions. `institutional_regions_survive_on_seeds_that_lose_them_without_the_swallow_rule`
+/// pins three seeds that lose every institutional region without the
+/// rule; the `region-loss sweep` block of `docs/generation.md` holds the
+/// current rate.
 const SWALLOW_MIN_REGION_SHARE_DENOM: usize = 4;
 
 /// Whether `phys` (world-cell rect) must be split for a region's sake
@@ -2229,8 +2230,7 @@ mod tests {
     }
 
     /// Seeds that lose every institutional region under the bare enclosure
-    /// rule (`SWALLOW_MIN_REGION_SHARE_DENOM` 0: 0.57% of 3,000,000 seeds
-    /// drawn through `seed_from_ids(0x5ca9, i)`, and with them the council
+    /// rule (`SWALLOW_MIN_REGION_SHARE_DENOM` 0, and with them the council
     /// and hospital). With the swallow rule at least one institutional
     /// region is carried by a block on each; removing the rule turns this
     /// red.

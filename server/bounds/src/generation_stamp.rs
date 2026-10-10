@@ -83,6 +83,21 @@ pub const BAND_SWEEP: MeasuredBlock = MeasuredBlock {
         "generation.land_use.share_tolerance_pct",
         "generation.envelopes.count_tolerance_percent",
         "generation.building_types.workplace_count_tolerance_percent",
+        "generation.neighbourhood.busy_screen_min_citizens",
+        "generation.neighbourhood.quiet_edge_max_percent_of_core",
+        "generation.neighbourhood.legibility_min_shop_mix_percent",
+        "generation.neighbourhood.legibility_pole_shop_mix_percent",
+        "generation.neighbourhood.legibility_min_distance_percent",
+        "generation.neighbourhood.legible_step",
+        "generation.neighbourhood.min_corners",
+        "generation.neighbourhood.min_apart_neighbourhoods",
+        "generation.neighbourhood.min_home_cells",
+        "generation.land_use.institutional_min_pockets",
+        "generation.land_use.institutional_max_pocket_share_percent",
+        "generation.building_types.profession_count_per_city_min",
+        "generation.land_use.share_commercial_pct",
+        "generation.land_use.share_industrial_pct",
+        "generation.land_use.share_institutional_pct",
     ],
 };
 
@@ -97,22 +112,33 @@ pub const EXHAUSTIVE_LOOP: MeasuredBlock = MeasuredBlock {
         "generation.plots.max_open_percent_by_area",
         "generation.plots.max_unplotted_percent",
         "generation.envelopes.max_rejected_plot_percent",
+        "generation.envelopes.target_count_per_million_cells",
+        "generation.envelopes.mean_count_tolerance_percent",
+        "generation.envelopes.mean_width_cells",
+        "generation.envelopes.mean_width_tolerance_cells",
+        "generation.envelopes.mean_depth_cells",
+        "generation.envelopes.mean_depth_tolerance_cells",
+        "generation.building_types.target_workplaces_per_million_cells",
+        "generation.building_types.workplace_mean_count_tolerance_percent",
+        "generation.building_types.target_profession_count",
+        "generation.building_types.profession_count_mean_tolerance_percent",
+        "generation.building_types.min_employers_per_profession",
     ],
 };
 
 pub const REGION_LOSS_SWEEP: MeasuredBlock = MeasuredBlock {
     label: "region-loss sweep",
     subcommand: "regions",
-    rerun_args: "100000",
-    kind: BlockKind::FixedSeed,
+    rerun_args: "1000000",
+    kind: BlockKind::Proptest,
     ceilings: &[],
 };
 
 pub const ROWS_SWEEP: MeasuredBlock = MeasuredBlock {
     label: "rows sweep",
     subcommand: "rows",
-    rerun_args: "20000",
-    kind: BlockKind::FixedSeed,
+    rerun_args: "1000000",
+    kind: BlockKind::Proptest,
     ceilings: &[],
 };
 
@@ -121,7 +147,16 @@ pub const POOLED_EVIDENCE: MeasuredBlock = MeasuredBlock {
     subcommand: "pooled",
     rerun_args: "",
     kind: BlockKind::FixedSeed,
-    ceilings: &["generation.streets.peripheral_pooled_min_ratio_percent"],
+    ceilings: &[
+        "generation.streets.peripheral_pooled_min_ratio_percent",
+        "generation.catchment_floor_min_bite_percent",
+        "generation.neighbourhood.shuttered_bottom_third_min_percent",
+        "generation.neighbourhood.quiet_edge_pooled_max_percent_of_core",
+        "generation.neighbourhood.busy_core_over_city_min_percent",
+        "generation.neighbourhood.nfr15a_screen_citizens_tenths",
+        "generation.neighbourhood.nfr15a_tolerance_percent",
+        "generation.streets.thin_strip_long_side_percent",
+    ],
 };
 
 /// Every block `docs/generation.md` carries a stamped copy of.
@@ -132,6 +167,139 @@ pub const MEASURED_BLOCKS: &[MeasuredBlock] = &[
     ROWS_SWEEP,
     REGION_LOSS_SWEEP,
     POOLED_EVIDENCE,
+];
+
+const AUTHORED: &str = "authored input, not a measured ceiling";
+const TUNED: &str = "authored knob tuned against a figure in a stamped block, not itself a ceiling";
+const ASSERTED: &str =
+    "asserted directly by a deterministic fixed-seed or content test on every run";
+
+/// Every `generation.*` balance key that is in no block's `ceilings`, with
+/// the reason it is not a measured ceiling. A new generation key is in
+/// exactly one of the two places or the build is red.
+pub const NOT_MEASURED: &[(&str, &str)] = &[
+    (
+        "generation.envelopes.commercial_min_interior_depth_cells",
+        AUTHORED,
+    ),
+    (
+        "generation.envelopes.commercial_min_interior_width_cells",
+        AUTHORED,
+    ),
+    (
+        "generation.envelopes.industrial_min_interior_depth_cells",
+        AUTHORED,
+    ),
+    (
+        "generation.envelopes.industrial_min_interior_width_cells",
+        AUTHORED,
+    ),
+    (
+        "generation.envelopes.institutional_min_interior_depth_cells",
+        AUTHORED,
+    ),
+    (
+        "generation.envelopes.institutional_min_interior_width_cells",
+        AUTHORED,
+    ),
+    (
+        "generation.envelopes.residential_min_interior_depth_cells",
+        AUTHORED,
+    ),
+    (
+        "generation.envelopes.residential_min_interior_width_cells",
+        AUTHORED,
+    ),
+    ("generation.land_use.min_leaf_cells", AUTHORED),
+    (
+        "generation.neighbourhood.desirability_state_floor",
+        AUTHORED,
+    ),
+    (
+        "generation.neighbourhood.max_end_stranded_professions",
+        ASSERTED,
+    ),
+    (
+        "generation.neighbourhood.min_patch_span_viewports",
+        AUTHORED,
+    ),
+    (
+        "generation.neighbourhood.position_independence_max_distance_percent",
+        ASSERTED,
+    ),
+    (
+        "generation.streets.max_street_splits_per_superblock",
+        AUTHORED,
+    ),
+    ("generation.catchment_extent_cells", AUTHORED),
+    ("generation.envelopes.max_depth_cells", AUTHORED),
+    ("generation.envelopes.max_width_cells", AUTHORED),
+    ("generation.envelopes.min_distinct_sizes", TUNED),
+    ("generation.envelopes.side_gap_periphery_cells", AUTHORED),
+    ("generation.envelopes.size_trim_max_cells", AUTHORED),
+    ("generation.envelopes.wall_thickness_cells", AUTHORED),
+    ("generation.land_use.coarse_cell_size_cells", AUTHORED),
+    ("generation.land_use.density_max", AUTHORED),
+    ("generation.land_use.density_min", AUTHORED),
+    ("generation.land_use.density_peak_offset_max_pct", AUTHORED),
+    ("generation.land_use.density_peak_offset_min_pct", AUTHORED),
+    ("generation.land_use.max_leaf_cells", AUTHORED),
+    ("generation.land_use.max_recursion_depth", AUTHORED),
+    ("generation.land_use.share_residential_pct", AUTHORED),
+    ("generation.land_use.split_jitter_pct", AUTHORED),
+    ("generation.neighbourhood.affluence_max", AUTHORED),
+    ("generation.neighbourhood.affluence_min", AUTHORED),
+    ("generation.neighbourhood.building_age_max", AUTHORED),
+    ("generation.neighbourhood.building_age_min", AUTHORED),
+    ("generation.neighbourhood.building_age_spread", AUTHORED),
+    ("generation.neighbourhood.citizens_per_dwelling", AUTHORED),
+    ("generation.neighbourhood.citizens_per_post", AUTHORED),
+    ("generation.neighbourhood.dwelling_tag_id", AUTHORED),
+    ("generation.neighbourhood.extreme_share_percent", AUTHORED),
+    ("generation.neighbourhood.legibility_min_shops", AUTHORED),
+    ("generation.neighbourhood.pole_min_share_percent", ASSERTED),
+    ("generation.neighbourhood.poor_band_max", AUTHORED),
+    ("generation.neighbourhood.state_weight_affluence", AUTHORED),
+    ("generation.neighbourhood.state_weight_age", AUTHORED),
+    ("generation.neighbourhood.viewport_height_cells", AUTHORED),
+    ("generation.neighbourhood.viewport_width_cells", AUTHORED),
+    ("generation.plots.commercial_row_depth_cells", AUTHORED),
+    ("generation.plots.commercial_width_max_cells", AUTHORED),
+    ("generation.plots.commercial_width_min_cells", AUTHORED),
+    ("generation.plots.frontage_min_cells", AUTHORED),
+    ("generation.plots.high_density_threshold", AUTHORED),
+    ("generation.plots.industrial_row_depth_cells", AUTHORED),
+    ("generation.plots.industrial_width_max_cells", AUTHORED),
+    ("generation.plots.industrial_width_min_cells", AUTHORED),
+    ("generation.plots.institutional_row_depth_cells", AUTHORED),
+    ("generation.plots.institutional_width_max_cells", AUTHORED),
+    ("generation.plots.institutional_width_min_cells", AUTHORED),
+    ("generation.plots.max_core_depth_cells", AUTHORED),
+    ("generation.plots.max_core_depth_periphery_cells", AUTHORED),
+    ("generation.plots.open_min_side_cells", AUTHORED),
+    ("generation.plots.residential_row_depth_cells", AUTHORED),
+    ("generation.plots.residential_width_max_cells", AUTHORED),
+    ("generation.plots.residential_width_min_cells", AUTHORED),
+    ("generation.plots.setback_periphery_cells", AUTHORED),
+    ("generation.site_extent_cells", AUTHORED),
+    ("generation.streets.arterial_count_ew_max", AUTHORED),
+    ("generation.streets.arterial_count_ew_min", AUTHORED),
+    ("generation.streets.arterial_count_ns_max", AUTHORED),
+    ("generation.streets.arterial_count_ns_min", AUTHORED),
+    ("generation.streets.arterial_jitter_pct", AUTHORED),
+    ("generation.streets.arterial_width_cells", AUTHORED),
+    ("generation.streets.block_size_max_cells", TUNED),
+    ("generation.streets.block_size_min_cells", TUNED),
+    ("generation.streets.junction_min_separation_cells", AUTHORED),
+    ("generation.streets.lane_width_cells", AUTHORED),
+    ("generation.streets.max_block_depth_max_cells", TUNED),
+    ("generation.streets.max_block_depth_min_cells", TUNED),
+    ("generation.streets.max_lane_splits", AUTHORED),
+    ("generation.streets.max_recursion_depth", AUTHORED),
+    ("generation.streets.min_block_depth_cells", TUNED),
+    ("generation.streets.min_distinct_block_sizes", TUNED),
+    ("generation.streets.split_jitter_pct", AUTHORED),
+    ("generation.streets.street_width_cells", AUTHORED),
 ];
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
@@ -158,8 +326,27 @@ fn building_type_line(t: &BuildingTypeDef) -> String {
         density_affinity,
         professions,
     } = *t;
+    fn join<T: ToString>(items: &[T]) -> String {
+        items
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+    fn flags(items: &[bool]) -> String {
+        items
+            .iter()
+            .map(|&b| if b { "1" } else { "0" })
+            .collect::<Vec<_>>()
+            .join("")
+    }
     format!(
-        "building_type.{id}:{key}:tags={tags:?}:land_uses={land_uses:?}:density={density_min}..{density_max}:affluence={affluence_min}..{affluence_max}:min_interior={min_interior_width_cells}x{min_interior_depth_cells}:weight={weight}:requires_site={requires_site:?}:prefers_site={prefers_site:?}:density_affinity={density_affinity}:professions={professions:?}\n"
+        "building_type.{id}:{key}:tags={}:land_uses={}:density={density_min}..{density_max}:affluence={affluence_min}..{affluence_max}:min_interior={min_interior_width_cells}x{min_interior_depth_cells}:weight={weight}:requires_site={}:prefers_site={}:density_affinity={density_affinity}:professions={}\n",
+        join(tags),
+        flags(&land_uses),
+        flags(&requires_site),
+        flags(&prefers_site),
+        join(professions),
     )
 }
 
@@ -180,20 +367,9 @@ fn fingerprint_of(
     let mut lines: Vec<String> = balance
         .iter()
         .filter(|r| r.key.starts_with("generation."))
-        .map(|r| {
-            format!(
-                "balance.{}={}
-",
-                r.key, r.value
-            )
-        })
+        .map(|r| format!("balance.{}={}\n", r.key, r.value))
         .collect();
-    lines.extend(rule_lines.iter().map(|l| {
-        format!(
-            "rule.{l}
-"
-        )
-    }));
+    lines.extend(rule_lines.iter().map(|l| format!("rule.{l}\n")));
     lines.extend(building_types.iter().map(building_type_line));
     lines.sort_unstable();
     let mut hash = FNV_OFFSET;
@@ -299,6 +475,78 @@ pub fn quotes_a_version(line: &str) -> bool {
         rest = &rest[at + NEEDLE.len()..];
         let after = rest.trim_start_matches(['`', ' ', '=']);
         if after.starts_with(|c: char| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether a comment line (`//`, `///`, `//!` or `#`) restates a
+/// measurement: a seed count (`1,000,000 seeds`, `15,000 arbitrary seeds`,
+/// `50,000-seed`, `of 3,000 seeds`, `seeds 0..256`) or a
+/// `measured minimum|maximum|min|max <n>` figure. Figures live only in
+/// stamped blocks; a comment names the block.
+pub fn comment_restates_a_measurement(line: &str) -> bool {
+    let t = line.trim_start();
+    let comment = if let Some(at) = t.find("//") {
+        &t[at..]
+    } else if t.starts_with('#') {
+        t
+    } else {
+        return false;
+    };
+    let words: Vec<&str> = comment.split_whitespace().collect();
+    let trim = |w: &str| -> String { w.trim_matches(|c: char| "()`.;:,".contains(c)).to_string() };
+    let numeric = |w: &str| trim(w).starts_with(|c: char| c.is_ascii_digit());
+    // A seed count: digits, commas and underscores only, at least 100.
+    let count = |w: &str| {
+        let t = trim(w);
+        let t = t.strip_suffix("-seed").unwrap_or(&t);
+        !t.is_empty()
+            && t.chars()
+                .all(|c| c.is_ascii_digit() || c == ',' || c == '_')
+            && t.replace([',', '_'], "")
+                .parse::<u64>()
+                .is_ok_and(|n| n >= 100)
+    };
+    const ADJECTIVES: [&str; 6] = [
+        "mixed",
+        "arbitrary",
+        "random",
+        "drawn",
+        "uniformly",
+        "genuinely",
+    ];
+    for (i, w) in words.iter().enumerate() {
+        let bare = trim(w);
+        // `50,000-seed`, `1,000,000-seed`
+        if bare.ends_with("-seed") && count(&bare) {
+            return true;
+        }
+        if bare == "seeds" {
+            // `<n> [adjectives] seeds`
+            let mut j = i;
+            while j > 0 && ADJECTIVES.contains(&trim(words[j - 1]).as_str()) {
+                j -= 1;
+            }
+            if j > 0 && count(words[j - 1]) {
+                return true;
+            }
+            // `seeds 0..256`, `seeds 0..=255`
+            if words
+                .get(i + 1)
+                .is_some_and(|n| numeric(n) && n.contains(".."))
+            {
+                return true;
+            }
+        }
+        // `measured minimum 19`, `measured max 88`
+        if bare == "measured"
+            && words.get(i + 1).is_some_and(|m| {
+                ["minimum", "maximum", "min", "max", "worst"].contains(&trim(m).as_str())
+            })
+            && words.get(i + 2).is_some_and(|n| numeric(n))
+        {
             return true;
         }
     }
@@ -698,7 +946,12 @@ mod tests {
                 .all(|v| v.kind == ViolationKind::MissingCeilingReport)
         );
         let names: Vec<&str> = vs.iter().map(|v| v.block.as_str()).collect();
-        assert_eq!(names, vec!["detour-bounds sweep", "band sweep"]);
+        let expected: Vec<&str> = MEASURED_BLOCKS
+            .iter()
+            .filter(|b| b.kind == BlockKind::Proptest)
+            .map(|b| b.label)
+            .collect();
+        assert_eq!(names, expected);
     }
 
     #[test]
@@ -721,6 +974,186 @@ mod tests {
                     block.label
                 );
             }
+        }
+    }
+
+    #[test]
+    fn the_implied_marker_names_the_ci_case_count() {
+        assert!(IMPLIED_CASES_MARKER.contains(&CI_PROPTEST_CASES.to_string()));
+    }
+
+    #[test]
+    fn every_generation_key_is_a_measured_ceiling_or_listed_as_not_measured() {
+        for r in sim::generated::defs::BALANCE
+            .iter()
+            .filter(|r| r.key.starts_with("generation."))
+        {
+            let measured = MEASURED_BLOCKS
+                .iter()
+                .filter(|b| b.ceilings.contains(&r.key))
+                .count();
+            let listed = NOT_MEASURED.iter().filter(|(k, _)| *k == r.key).count();
+            assert!(
+                (measured >= 1) != (listed >= 1) && listed <= 1,
+                "`{}` must be in a block's `ceilings` or in NOT_MEASURED, not both and not neither (found {measured} blocks + {listed} listings)",
+                r.key
+            );
+        }
+    }
+
+    #[test]
+    fn not_measured_names_only_real_generation_keys_with_a_reason() {
+        for (key, reason) in NOT_MEASURED {
+            assert!(
+                sim::generated::defs::BALANCE.iter().any(|r| r.key == *key),
+                "NOT_MEASURED lists `{key}`, which is not a balance key"
+            );
+            assert!(!reason.is_empty(), "`{key}` has no reason");
+        }
+    }
+
+    #[test]
+    fn changes_with_every_field_of_a_building_type() {
+        let base = GenerationContent::committed();
+        let t = *base
+            .building_types
+            .iter()
+            .find(|t| !t.tags.is_empty() && !t.professions.is_empty())
+            .expect("a type with tags and professions");
+        let line = building_type_line(&t);
+        static OTHER_TAGS: [u32; 2] = [1, 2];
+        static OTHER_PROFESSIONS: [&str; 1] = ["zzz"];
+        let flip = |a: [bool; 4]| [!a[0], a[1], a[2], a[3]];
+        let mutants: Vec<(&str, BuildingTypeDef)> = vec![
+            ("id", BuildingTypeDef { id: t.id + 1, ..t }),
+            ("key", BuildingTypeDef { key: "zzz", ..t }),
+            (
+                "tags",
+                BuildingTypeDef {
+                    tags: &OTHER_TAGS,
+                    ..t
+                },
+            ),
+            (
+                "land_uses",
+                BuildingTypeDef {
+                    land_uses: flip(t.land_uses),
+                    ..t
+                },
+            ),
+            (
+                "density_min",
+                BuildingTypeDef {
+                    density_min: t.density_min + 1,
+                    ..t
+                },
+            ),
+            (
+                "density_max",
+                BuildingTypeDef {
+                    density_max: t.density_max + 1,
+                    ..t
+                },
+            ),
+            (
+                "affluence_min",
+                BuildingTypeDef {
+                    affluence_min: t.affluence_min + 1,
+                    ..t
+                },
+            ),
+            (
+                "affluence_max",
+                BuildingTypeDef {
+                    affluence_max: t.affluence_max + 1,
+                    ..t
+                },
+            ),
+            (
+                "min_interior_width_cells",
+                BuildingTypeDef {
+                    min_interior_width_cells: t.min_interior_width_cells + 1,
+                    ..t
+                },
+            ),
+            (
+                "min_interior_depth_cells",
+                BuildingTypeDef {
+                    min_interior_depth_cells: t.min_interior_depth_cells + 1,
+                    ..t
+                },
+            ),
+            (
+                "weight",
+                BuildingTypeDef {
+                    weight: t.weight + 1,
+                    ..t
+                },
+            ),
+            (
+                "requires_site",
+                BuildingTypeDef {
+                    requires_site: flip(t.requires_site),
+                    ..t
+                },
+            ),
+            (
+                "prefers_site",
+                BuildingTypeDef {
+                    prefers_site: flip(t.prefers_site),
+                    ..t
+                },
+            ),
+            (
+                "density_affinity",
+                BuildingTypeDef {
+                    density_affinity: t.density_affinity + 1,
+                    ..t
+                },
+            ),
+            (
+                "professions",
+                BuildingTypeDef {
+                    professions: &OTHER_PROFESSIONS,
+                    ..t
+                },
+            ),
+        ];
+        for (field, m) in mutants {
+            assert_ne!(
+                line,
+                building_type_line(&m),
+                "field `{field}` is not hashed"
+            );
+        }
+    }
+
+    #[test]
+    fn a_comment_restating_a_seed_count_or_a_measured_extreme_is_flagged() {
+        for line in [
+            "# Verified at 15,000 arbitrary seeds: zero seeds land under this floor.",
+            "    /// measured worst case 2.34% over the same 15,000 seeds, well",
+            "/// of the harness 50,000 mixed seeds, the top three",
+            "# the 1,000,000-seed mean is 350.3 (+2.1%).",
+            "// Over 600,000 seeds the minimum is 43.",
+            "# Pooled over seeds 0..256, a commercial core screen",
+            "# differ by at least this percent (measured minimum 11 over 4096 seeds).",
+            "# above the average (measured min 19 for a core).",
+        ] {
+            assert!(comment_restates_a_measurement(line), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_comment_without_a_figure_or_a_non_comment_line_is_not_flagged() {
+        for line in [
+            "# Figures are in the `band sweep` block of `docs/generation.md`.",
+            "// seeds are drawn through seed_from_ids",
+            "    let seeds = 1_000_000;",
+            "        \"over 1,000,000 seeds\"",
+            "/// The lowest ratio is measured per seed.",
+        ] {
+            assert!(!comment_restates_a_measurement(line), "{line}");
         }
     }
 

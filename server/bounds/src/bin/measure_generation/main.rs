@@ -34,9 +34,42 @@ mod regions;
 mod rows;
 mod trace;
 
+use bounds::generation_stamp::{
+    BAND_SWEEP, DETOUR_SWEEP, EXHAUSTIVE_LOOP, MeasuredBlock, POOLED_EVIDENCE, REGION_LOSS_SWEEP,
+    ROWS_SWEEP,
+};
 use common::*;
 use sim::generated::defs;
 use sim::generation::{GenerationConfig, GenerationContent};
+
+/// The sweeps a registered block's subcommand reaches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sweep {
+    Exhaustive,
+    Detour,
+    Bands,
+    Rows,
+    Regions,
+    Pooled,
+}
+
+/// Each registered block and the sweep that prints it: the one table
+/// `main` dispatches through.
+const SWEEPS: [(&MeasuredBlock, Sweep); 6] = [
+    (&EXHAUSTIVE_LOOP, Sweep::Exhaustive),
+    (&DETOUR_SWEEP, Sweep::Detour),
+    (&BAND_SWEEP, Sweep::Bands),
+    (&ROWS_SWEEP, Sweep::Rows),
+    (&REGION_LOSS_SWEEP, Sweep::Regions),
+    (&POOLED_EVIDENCE, Sweep::Pooled),
+];
+
+fn sweep_for(subcommand: &str) -> Option<Sweep> {
+    SWEEPS
+        .iter()
+        .find(|(block, _)| block.subcommand == subcommand)
+        .map(|(_, sweep)| *sweep)
+}
 
 fn main() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).expect("committed balance is valid");
@@ -51,21 +84,51 @@ fn main() {
             })
             .unwrap_or(default)
     };
-    match args.first().map(String::as_str) {
-        Some("detour") => detour::detour_sweep(&cfg, count(DETOUR_SEED_COUNT_DEFAULT)),
-        Some("bands") => bands::band_sweep(&cfg, &content, count(BAND_SEED_COUNT_DEFAULT)),
-        Some("rows") => rows::rows_sweep(&cfg, &content, count(rows::ROWS_SEED_COUNT_DEFAULT)),
-        Some("pooled") => pooled::pooled_sweep(&cfg),
-        Some("regions") => {
+    let first = args.first().map(String::as_str).unwrap_or("");
+    if first == "p99" {
+        let seed = args
+            .get(1)
+            .map(|s| s.parse().unwrap_or_else(|e| panic!("p99 seed {s:?}: {e}")))
+            .expect("usage: measure-generation p99 <seed>");
+        return trace::p99_trace(&cfg, seed);
+    }
+    // A bare number is the exhaustive loop's missing-tag seed count.
+    let sweep = sweep_for(first).unwrap_or(Sweep::Exhaustive);
+    match sweep {
+        Sweep::Detour => detour::detour_sweep(&cfg, count(DETOUR_SEED_COUNT_DEFAULT)),
+        Sweep::Bands => bands::band_sweep(&cfg, &content, count(BAND_SEED_COUNT_DEFAULT)),
+        Sweep::Rows => rows::rows_sweep(&cfg, &content, count(rows::ROWS_SEED_COUNT_DEFAULT)),
+        Sweep::Pooled => pooled::pooled_sweep(&cfg),
+        Sweep::Regions => {
             regions::region_loss_sweep(&cfg, count(regions::REGION_SEED_COUNT_DEFAULT))
         }
-        Some("p99") => {
-            let seed = args
-                .get(1)
-                .map(|s| s.parse().unwrap_or_else(|e| panic!("p99 seed {s:?}: {e}")))
-                .expect("usage: measure-generation p99 <seed>");
-            trace::p99_trace(&cfg, seed)
+        Sweep::Exhaustive => exhaustive::run(&cfg, &content),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bounds::generation_stamp::MEASURED_BLOCKS;
+
+    #[test]
+    fn every_registered_subcommand_reaches_its_sweep() {
+        for block in MEASURED_BLOCKS {
+            let reached = sweep_for(block.subcommand)
+                .unwrap_or_else(|| panic!("`{}` is not dispatched", block.label));
+            let (listed, sweep) = SWEEPS
+                .iter()
+                .find(|(b, _)| b.label == block.label)
+                .unwrap_or_else(|| panic!("`{}` has no sweep", block.label));
+            assert_eq!(listed.subcommand, block.subcommand);
+            assert_eq!(reached, *sweep, "{}", block.label);
         }
-        _ => exhaustive::run(&cfg, &content),
+        assert_eq!(SWEEPS.len(), MEASURED_BLOCKS.len());
+    }
+
+    #[test]
+    fn the_default_run_is_the_empty_subcommand() {
+        assert_eq!(sweep_for(""), Some(Sweep::Exhaustive));
+        assert_eq!(sweep_for("no-such-sweep"), None);
     }
 }

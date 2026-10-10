@@ -43,6 +43,8 @@ pub mod envelopes;
 #[cfg(not(feature = "test-fixtures"))]
 mod envelopes;
 #[cfg(feature = "test-fixtures")]
+pub mod guards;
+#[cfg(feature = "test-fixtures")]
 pub mod land_use;
 // Their harness-only helpers are public API under `test-fixtures`.
 #[cfg(not(feature = "test-fixtures"))]
