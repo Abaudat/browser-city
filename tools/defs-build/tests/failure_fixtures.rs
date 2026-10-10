@@ -1070,6 +1070,16 @@ fn a_workplace_with_no_staff_room_is_named() {
     );
 }
 
+/// Story 3.5: a room type's `rear` list names room types that exist.
+#[test]
+fn a_rear_list_naming_an_unknown_room_type_is_named() {
+    let err = build_err("room-type-rear-names-unknown-room");
+    assert_eq!(
+        err.to_string(),
+        "defs/room-types/rooms.toml:3:7: room type 'fixture_hall' names unknown room type 'no_such_room' in rear"
+    );
+}
+
 /// Story 3.5: a tag naming a structural part is only half a vocabulary --
 /// the generator reads each part through exactly one tag, so once any tag
 /// names one every part must be named, once.
@@ -1214,6 +1224,7 @@ fn every_known_category_has_a_fixture_directory() {
         "tag-structure-part-missing",
         "tag-structure-part-declared-twice",
         "tag-fixture-without-placement",
+        "room-type-rear-names-unknown-room",
         "room-type-too-narrow",
         "room-type-no-access-tag",
         "room-type-two-access-tags",

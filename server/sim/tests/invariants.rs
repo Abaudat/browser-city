@@ -6534,10 +6534,6 @@ fn city_pool_size() -> u64 {
         .unwrap_or(96)
 }
 
-/// The salt the pool's world seeds are drawn under: the run's own
-/// `PROPTEST_RNG_SEED` when set -- `ci.yml`'s fixed one keeps the gate
-/// deterministic, `explore.yml`'s fresh one judges new cities every run
-/// -- else a constant.
 /// Judge every `n`th laid interior with story 2.4's sub-cell body check:
 /// `GENERATION_BODY_CHECK_STRIDE` when set, else every one. Its grids are
 /// 256 sub-cells a cell, so an instrumented build spends minutes on them;
@@ -6551,6 +6547,10 @@ fn body_check_stride() -> usize {
         .unwrap_or(1)
 }
 
+/// The salt the pool's world seeds are drawn under: the run's own
+/// `PROPTEST_RNG_SEED` when set -- `ci.yml`'s fixed one keeps the gate
+/// deterministic, `explore.yml`'s fresh one judges new cities every run
+/// -- else a constant.
 fn pool_salt() -> u64 {
     std::env::var("PROPTEST_RNG_SEED")
         .ok()
