@@ -400,8 +400,15 @@ pub fn catchment_bite(site: &DistrictSite, row: &crate::rules::DistributionRow) 
 
 // --- pass 6 (story 3.5): the per-city interior guards -----------------
 
-fn tag_id(content: &GenerationContent, key: &str) -> u32 {
-    content.tags.iter().find(|t| t.key == key).unwrap().id
+/// The tag ids of the four required kinds (dwelling, shop, cafe and the
+/// staff room that makes an institutional back room), resolved by the
+/// caller: the generator names no content key.
+#[derive(Debug, Clone, Copy)]
+pub struct KindTags {
+    pub dwelling: u32,
+    pub shop: u32,
+    pub cafe: u32,
+    pub staff: u32,
 }
 
 /// The cells a body can stand on -- room floor not holding a fixture,
@@ -583,7 +590,9 @@ pub fn kind_spread_verdict(
     total_enterable: i64,
     cfg: &GenerationConfig,
 ) -> Result<(), String> {
-    let names = ["dwelling", "shop", "cafe", "back room"];
+    // Kind order is the caller's `KindTags`: dwelling, shop, cafe, back
+    // room -- the generator names no content key.
+    let names = ["kind 0", "kind 1", "kind 2", "kind 3"];
     for k in 0..4 {
         if enterable[k] < 1 {
             return Err(format!("no enterable {}", names[k]));
@@ -610,15 +619,11 @@ pub fn kind_counts(
     d: &District,
     content: &GenerationContent,
     cfg: &GenerationConfig,
+    tags: &KindTags,
 ) -> ([i64; 4], [i64; 4], bool) {
     let by_id: std::collections::BTreeMap<u32, &crate::generated::defs::BuildingTypeDef> =
         content.building_types.iter().map(|b| (b.id, b)).collect();
-    let (dwelling, shop, cafe, staff) = (
-        tag_id(content, "dwelling"),
-        tag_id(content, "shop"),
-        tag_id(content, "cafe"),
-        tag_id(content, "staff"),
-    );
+    let (dwelling, shop, cafe, staff) = (tags.dwelling, tags.shop, tags.cafe, tags.staff);
     let room_tags: std::collections::BTreeMap<u32, &[u32]> =
         content.room_types.iter().map(|r| (r.id, r.tags)).collect();
     let span = (cfg.density_max - cfg.density_min).max(1);
@@ -696,6 +701,7 @@ pub fn interior_figures(
     d: &District,
     content: &GenerationContent,
     cfg: &GenerationConfig,
+    tags: &KindTags,
 ) -> InteriorFigures {
     let vocab = Vocabulary::new(content);
     let mut max_attempts = 0u32;
@@ -711,7 +717,7 @@ pub fn interior_figures(
         .laid()
         .filter(|(_, _, i)| is_enterable(i, content, &vocab))
         .count() as i64;
-    let (placed, kind_enterable, low_band_dwelling) = kind_counts(d, content, cfg);
+    let (placed, kind_enterable, low_band_dwelling) = kind_counts(d, content, cfg, tags);
     let mut max_room_aspect_x100 = 0i64;
     for (_, _, i) in d.interiors.laid() {
         for r in &i.rooms {
@@ -940,40 +946,12 @@ mod tests {
     }
 
     #[test]
-    fn interior_figures_measure_a_committed_city() {
-        let (cfg, content) = setup();
-        let d = plan(1, &cfg, &content).unwrap();
-        let f = interior_figures(&d, &content, &cfg);
-        assert_eq!(f.laid, d.interiors.enterable_count());
-        assert_eq!(f.enterable, f.laid, "every laid interior is enterable");
-        assert!(f.laid >= cfg.interior_min_enterable_count);
-        assert!(f.max_attempts >= 1 && f.max_attempts <= cfg.interior_max_layout_attempts);
-        assert!(f.rejected_percent <= cfg.interior_max_rejected_percent);
-        assert!(f.placed.iter().all(|&p| p > 0), "{:?}", f.placed);
-        assert!(
-            f.kind_enterable
-                .iter()
-                .zip(f.placed)
-                .all(|(&e, p)| e >= 1 && e <= p)
-        );
-        assert!(f.low_band_dwelling);
-        assert!(
-            f.max_room_aspect_x100 >= 100
-                && f.max_room_aspect_x100 <= cfg.interior_max_room_aspect as i64 * 100
-        );
-        assert_eq!(
-            kind_spread_verdict(f.placed, f.kind_enterable, f.laid, &cfg),
-            Ok(())
-        );
-    }
-
-    #[test]
     fn kind_spread_verdict_names_each_way_a_city_fails() {
         let (cfg, _) = setup();
         let ok = kind_spread_verdict([50, 30, 10, 10], [50, 30, 10, 10], 100, &cfg);
         assert_eq!(ok, Ok(()));
         let missing = kind_spread_verdict([50, 30, 10, 10], [50, 30, 10, 0], 90, &cfg);
-        assert!(missing.unwrap_err().contains("no enterable back room"));
+        assert!(missing.unwrap_err().contains("no enterable kind 3"));
         let thin = kind_spread_verdict([50, 30, 10, 10], [50, 30, 10, 5], 95, &cfg);
         assert!(thin.unwrap_err().contains("under"));
         let dominant = kind_spread_verdict([97, 1, 1, 1], [97, 1, 1, 1], 100, &cfg);

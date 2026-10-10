@@ -49,10 +49,17 @@ pub fn interiors_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u
         threads()
     );
     let cases = INTERIORS_SWEEP.ci_cases;
+    let id = |k: &str| content.tags.iter().find(|t| t.key == k).unwrap().id;
+    let kind_tags = guards::KindTags {
+        dwelling: id("dwelling"),
+        shop: id("shop"),
+        cafe: id("cafe"),
+        staff: id("staff"),
+    };
     let records = par_map_in_seed_order(n, threads(), |i| {
         let seed = seed_from_ids(MEASURE_INTERIORS_SEED_SALT, i);
         let d = sim::generation::plan(seed, cfg, content).expect("pass 1 is total");
-        let figures = guards::interior_figures(&d, content, cfg);
+        let figures = guards::interior_figures(&d, content, cfg, &kind_tags);
         let (mut walls, mut floors, mut thresholds, mut fixtures) = (0i64, 0i64, 0i64, 0i64);
         let mut attempts = Vec::new();
         for o in d.interiors.outcomes() {

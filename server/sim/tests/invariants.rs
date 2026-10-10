@@ -7029,7 +7029,17 @@ fn inv_generation_enterable_set_spans_every_required_kind() {
         "inv_generation_enterable_set_spans_every_required_kind",
         |c| {
             let d = &c.district;
-            let (placed, enterable, low_band_dwelling) = kind_counts(d, &content, &cfg);
+            let (placed, enterable, low_band_dwelling) = kind_counts(
+                d,
+                &content,
+                &cfg,
+                &sim::generation::guards::KindTags {
+                    dwelling: tag_id("dwelling"),
+                    shop: tag_id("shop"),
+                    cafe: tag_id("cafe"),
+                    staff: tag_id("staff"),
+                },
+            );
             kind_spread_verdict(placed, enterable, d.interiors.enterable_count(), &cfg)?;
             ensure!(
                 low_band_dwelling,
