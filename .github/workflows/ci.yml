@@ -568,6 +568,7 @@ jobs:
     env:
       PROPTEST_CASES: 256
       GENERATION_CITY_POOL: 8
+      GENERATION_BODY_CHECK_STRIDE: 16
     defaults:
       run:
         working-directory: server

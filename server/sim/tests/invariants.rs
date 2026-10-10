@@ -6538,6 +6538,19 @@ fn city_pool_size() -> u64 {
 /// `PROPTEST_RNG_SEED` when set -- `ci.yml`'s fixed one keeps the gate
 /// deterministic, `explore.yml`'s fresh one judges new cities every run
 /// -- else a constant.
+/// Judge every `n`th laid interior with story 2.4's sub-cell body check:
+/// `GENERATION_BODY_CHECK_STRIDE` when set, else every one. Its grids are
+/// 256 sub-cells a cell, so an instrumented build spends minutes on them;
+/// the coverage job measures which lines run, not how many interiors are
+/// judged.
+fn body_check_stride() -> usize {
+    std::env::var("GENERATION_BODY_CHECK_STRIDE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or(1)
+}
+
 fn pool_salt() -> u64 {
     std::env::var("PROPTEST_RNG_SEED")
         .ok()
@@ -7104,8 +7117,13 @@ fn inv_generation_every_emitted_interior_validates_clean() {
         "inv_generation_every_emitted_interior_validates_clean",
         |c| {
             let d = &c.district;
-            for (plot, _, interior) in d.interiors.laid() {
-                let (enclosed, narrow) = body_findings(interior, &[])?;
+            let stride = body_check_stride();
+            for (n, (plot, _, interior)) in d.interiors.laid().enumerate() {
+                let (enclosed, narrow) = if n % stride == 0 {
+                    body_findings(interior, &[])?
+                } else {
+                    (0, 0)
+                };
                 ensure!(
                     enclosed == 0,
                     "plot {plot}: {enclosed} walkable regions have no way in"
