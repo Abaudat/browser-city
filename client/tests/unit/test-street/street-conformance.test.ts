@@ -86,7 +86,12 @@ import { footprintCells, footprintOrigin } from "../../../src/world/footprint";
 import { bodyRect, MAX_DELTA_MS, step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
 import { isBodyClear, isCellStandable } from "../../../src/world/standable";
-import { blockedNeighborsOf } from "../../../src/world/transitions";
+import {
+  blockedNeighborsOf,
+  forwardOpenNeighbor,
+  pairTransitions,
+  reverseOpenNeighbor,
+} from "../../../src/world/transitions";
 import { checkWorldSpec } from "../../../src/world/world-spec";
 import {
   type Cell,
@@ -2148,5 +2153,114 @@ describe("the stairs-tagged defs and the stairwell groups are pinned (story 15.1
         ]);
       }
     }
+  });
+});
+
+// Story 15.20 (Quentin's direction): a transition is reachable from every
+// standable approach. Real `STREET_TRANSITIONS`, real collision grid, real
+// `stepAndTransition` -- no hand-built grid and no exemption list.
+describe("transitions are reachable from every standable approach (story 15.20)", () => {
+  const transitions = streetTransitionIndex();
+  const s = config.subcellsPerCell;
+  const { pairings } = pairTransitions(STREET_TRANSITIONS);
+
+  const walkHeld = (start: FloorWalkResult, dir: { x: number; y: number }) => {
+    let state: FloorWalkResult = { ...start, transitioned: false };
+    for (let i = 0; i < 400; i++) {
+      const next = stepAndTransition(state, dir, 16, world, config, transitions);
+      if (next.transitioned) return next;
+      if (next.x === state.x && next.y === state.y) return next;
+      state = next;
+    }
+    throw new Error("walkHeld: never rested");
+  };
+
+  it("replays the demo: pressed against the subway flight's bottom wall, holding the flight's direction, reaches the subway", () => {
+    const start = initialFloorWalkState(
+      SUBWAY_ENTRANCE_X0 + 0.5,
+      STAIRS_Y + 1,
+      STREET_FLOOR,
+    );
+    const end = walkHeld({ ...start, transitioned: false }, STAIRS_ENTRY_DIRECTION);
+    expect(end.floor).toBe(SUBWAY_FLOOR);
+  });
+
+  type Dir = { x: number; y: number };
+  interface Side {
+    readonly name: string;
+    readonly floor: number;
+    readonly cell: { readonly x: number; readonly y: number };
+    readonly direction: Dir;
+    readonly targetFloor: number;
+  }
+  const sides: Side[] = pairings.flatMap((p) => {
+    const f = forwardOpenNeighbor(p);
+    const r = reverseOpenNeighbor(p);
+    const tag = `(${p.forward.x},${p.forward.y})<->(${p.reverse.x},${p.reverse.y})`;
+    return [
+      { name: `${tag} down`, floor: p.forward.floor, cell: f.cell, direction: f.direction, targetFloor: p.forward.targetFloor },
+      { name: `${tag} up`, floor: p.reverse.floor, cell: r.cell, direction: r.direction, targetFloor: p.reverse.targetFloor },
+    ];
+  });
+
+  it("inv_transition_reachable_from_every_standable_approach", () => {
+    expect(sides.length).toBeGreaterThanOrEqual(4);
+    let total = 0;
+    let excluded = 0;
+    for (const side of sides) {
+      const perp = { x: -side.direction.y, y: side.direction.x };
+      const clear = (cx: number, feet: number) => isBodyClear(world, config, side.floor, cx, feet);
+      // Named predicates, decided by the real grid.
+      const blockedAhead = (cx: number, feet: number) =>
+        !clear(cx + side.direction.x, feet + side.direction.y);
+      const pressed = (cx: number, feet: number, sign: number) =>
+        !clear(cx + sign * perp.x, feet + sign * perp.y);
+      const starts: { cx: number; feet: number }[] = [];
+      for (let cx = side.cell.x * s; cx < (side.cell.x + 1) * s; cx++) {
+        for (let feet = side.cell.y * s + 1; feet <= (side.cell.y + 1) * s; feet++) {
+          if (clear(cx, feet)) starts.push({ cx, feet });
+        }
+      }
+      expect(starts.length, side.name).toBeGreaterThan(s);
+      let wallPressed = 0;
+      for (const { cx, feet } of starts) {
+        if (blockedAhead(cx, feet)) {
+          excluded++;
+          continue;
+        }
+        const dirs: Dir[] = [side.direction];
+        for (const sign of [1, -1]) {
+          if (pressed(cx, feet, sign)) {
+            wallPressed++;
+            dirs.push({
+              x: side.direction.x + sign * perp.x,
+              y: side.direction.y + sign * perp.y,
+            });
+          }
+        }
+        for (const dir of dirs) {
+          total++;
+          const start = initialFloorWalkState(cx / s, feet / s, side.floor);
+          const end = walkHeld({ ...start, transitioned: false }, dir);
+          if (!end.transitioned || end.floor !== side.targetFloor) {
+            throw new Error(
+              `${side.name}: start sub-cell (${cx}, ${feet}) holding (${dir.x}, ${dir.y}) rested at (${end.x}, ${end.y}) floor ${end.floor} without transitioning`,
+            );
+          }
+          // Round trip: back along the same wall returns to the origin floor.
+          const back = { x: -side.direction.x, y: -side.direction.y };
+          const returned = walkHeld({ ...end, transitioned: false }, back);
+          expect(returned.transitioned, `${side.name} (${cx}, ${feet}) round trip`).toBe(true);
+          expect(returned.floor, `${side.name} (${cx}, ${feet}) round trip`).toBe(side.floor);
+        }
+      }
+      // The wall-hugging extremes are in the sweep: the lowest and highest
+      // standable feet rows both have starts that were not excluded.
+      const feetRows = starts.filter((p) => !blockedAhead(p.cx, p.feet)).map((p) => p.feet);
+      expect(Math.max(...feetRows) - Math.min(...feetRows), side.name).toBeGreaterThan(0);
+      expect(wallPressed, `${side.name} has a wall-pressed start`).toBeGreaterThan(0);
+    }
+    expect(total).toBeGreaterThan(1000);
+    console.log(`reachability sweep: ${total} walks, ${excluded} starts excluded (blockedAhead)`);
   });
 });
