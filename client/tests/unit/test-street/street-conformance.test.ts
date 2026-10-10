@@ -52,7 +52,6 @@ import {
   STAIRS_Y,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_TOP_RAILING_DEF_ID,
-  STAIRWELL_X0,
   STREET_BOUNDARY,
   STREET_BUILDING_AREAS,
   STREET_EXIT_X,
@@ -1822,11 +1821,12 @@ describe("the near-railing press route (story 15.13)", () => {
     expect(out[west]?.state.y).toBeCloseTo(inputs.nearRailingRestY, 9);
   });
 
-  // However far the west walk overshoots -- all the way to the west
-  // boundary -- the body stays on the street floor (it is on the row south
-  // of the anchor's) and on the railing's face.
+  // Within the measured release lag the body stays on the street floor, on
+  // the railing's face. Held further, the body is in the tread row (its
+  // occupied cell, story 15.20) and walks on into the anchor: down the stairs.
   for (const lag of [0, 1, 8, 400]) {
-    it(`survives a west walk that overshoots by ${lag} steps`, () => {
+    const descends = lag >= 8;
+    it(`${descends ? "descends the stairs on" : "survives"} a west walk that overshoots by ${lag} steps`, () => {
       const before = simulateStreetWalk(route.slice(0, west), RELEASE_LAG);
       const start = before[before.length - 1]?.state;
       const segment = route[west];
@@ -1837,9 +1837,12 @@ describe("the near-railing press route (story 15.13)", () => {
         start,
       })[0]?.state;
       if (!end) throw new Error("no west state");
+      if (descends) {
+        expect(end.floor).toBe(SUBWAY_FLOOR);
+        return;
+      }
       expect(end.floor).toBe(PLAYER_START.floor);
       expect(end.y).toBeCloseTo(inputs.nearRailingRestY, 9);
-      if (lag === 400) expect(end.x).toBeLessThan(STAIRWELL_X0 + 0.5); // against the west wall
     });
   }
 });
@@ -2176,11 +2179,7 @@ describe("transitions are reachable from every standable approach (story 15.20)"
   };
 
   it("replays the demo: pressed against the subway flight's bottom wall, holding the flight's direction, reaches the subway", () => {
-    const start = initialFloorWalkState(
-      SUBWAY_ENTRANCE_X0 + 0.5,
-      STAIRS_Y + 1,
-      STREET_FLOOR,
-    );
+    const start = initialFloorWalkState(SUBWAY_ENTRANCE_X0 + 0.5, STAIRS_Y + 1, STREET_FLOOR);
     const end = walkHeld({ ...start, transitioned: false }, STAIRS_ENTRY_DIRECTION);
     expect(end.floor).toBe(SUBWAY_FLOOR);
   });
@@ -2198,8 +2197,20 @@ describe("transitions are reachable from every standable approach (story 15.20)"
     const r = reverseOpenNeighbor(p);
     const tag = `(${p.forward.x},${p.forward.y})<->(${p.reverse.x},${p.reverse.y})`;
     return [
-      { name: `${tag} down`, floor: p.forward.floor, cell: f.cell, direction: f.direction, targetFloor: p.forward.targetFloor },
-      { name: `${tag} up`, floor: p.reverse.floor, cell: r.cell, direction: r.direction, targetFloor: p.reverse.targetFloor },
+      {
+        name: `${tag} down`,
+        floor: p.forward.floor,
+        cell: f.cell,
+        direction: f.direction,
+        targetFloor: p.forward.targetFloor,
+      },
+      {
+        name: `${tag} up`,
+        floor: p.reverse.floor,
+        cell: r.cell,
+        direction: r.direction,
+        targetFloor: p.reverse.targetFloor,
+      },
     ];
   });
 

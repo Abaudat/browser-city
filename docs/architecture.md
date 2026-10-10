@@ -461,6 +461,9 @@ always derived from placed content, never stored per cell.
   names) must each refuse a step into it -- real colliders on the drawn
   railings, never a rule that only checks the pairing shape and stops
   there.
+  An actor's cell is the cell holding its body box's bottom-centre, half-open
+  like the box (`bodyCell`); never `floor` of its feet. A transition is entered
+  when the body's cell becomes the anchor's.
   An entity lands at the centre of its transition's target cell, except for
   a transition whose target is its own anchor cell (a stair stacked on
   itself, one floor up): that keeps the entity's position and changes only

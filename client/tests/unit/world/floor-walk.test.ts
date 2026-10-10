@@ -12,6 +12,7 @@ import {
   stepAndTransition,
 } from "../../../src/world/floor-walk";
 import type { MovementConfig } from "../../../src/world/movement";
+import { bodyRect } from "../../../src/world/movement";
 import { TransitionIndex } from "../../../src/world/transitions";
 import { sizeProbe } from "../setup/size-probe";
 import { OPEN_ENTRY_BAND } from "./entry-band";
@@ -41,7 +42,7 @@ const FAST_CONFIG: MovementConfig = { ...CONFIG, walkSpeedCellsPerMs: 0.01 };
 const BIG_DELTA_MS = 100;
 
 describe("initialFloorWalkState", () => {
-  it("derives cellX/cellY with Math.floor, matching a negative position correctly", () => {
+  it("derives cellX/cellY by bodyCell, matching a negative position correctly", () => {
     expect(initialFloorWalkState(-0.5, 3.2, 0)).toEqual({
       x: -0.5,
       y: 3.2,
@@ -62,6 +63,31 @@ describe("stepAndTransition", () => {
     [{ x: 5, y: 0, floor: 0, targetX: 5, targetY: 0, targetFloor: -1 }],
     { skipPairSymmetry: true, entryBand: OPEN_ENTRY_BAND },
   );
+
+  it("never reports a cell the body box does not overlap, for any sub-cell position and direction", () => {
+    const sub = CONFIG.subcellsPerCell;
+    const dirs = [
+      { x: 1, y: 0 },
+      { x: -1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: -1 },
+      { x: 1, y: 1 },
+    ];
+    for (let ySub = 8 * sub; ySub <= 9 * sub; ySub++) {
+      for (let xSub = 3 * sub; xSub <= 4 * sub; xSub += 3) {
+        for (const dir of dirs) {
+          const state = initialFloorWalkState(xSub / sub, ySub / sub, 0);
+          const next = stepAndTransition(state, dir, 5, OPEN_GRID, CONFIG, transitions);
+          const box = bodyRect({ x: next.x, y: next.y }, CONFIG);
+          if (next.transitioned) continue;
+          expect(next.cellX * sub).toBeLessThanOrEqual(box.x0 + CONFIG.bodyWidthSubcells / 2);
+          expect((next.cellX + 1) * sub).toBeGreaterThan(box.x0);
+          expect(next.cellY * sub).toBeLessThan(box.y1);
+          expect((next.cellY + 1) * sub).toBeGreaterThan(box.y0);
+        }
+      }
+    }
+  });
 
   it("does not consult the transition index at all while the step stays inside the same cell", () => {
     const state: FloorWalkState = { x: 4.5, y: 0.5, floor: 0, cellX: 4, cellY: 0 };

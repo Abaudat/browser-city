@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ColliderSource, GridEntry } from "../../../src/world/collision-grid";
 import { CollisionGrid } from "../../../src/world/collision-grid";
 import type { MovementConfig, Vec2 } from "../../../src/world/movement";
-import { bodyRect, step } from "../../../src/world/movement";
+import { bodyCell, bodyRect, step } from "../../../src/world/movement";
 import { sizeProbe } from "../setup/size-probe";
 
 const SUBCELLS_PER_CELL = 16;
@@ -128,6 +128,50 @@ describe("bodyRect", () => {
   it("scales with the width/height balance keys, never a literal here", () => {
     const wider: MovementConfig = { ...CONFIG, bodyWidthSubcells: 16, bodyHeightSubcells: 8 };
     expect(bodyRect({ x: 0, y: 0 }, wider)).toEqual({ x0: -8, x1: 8, y0: -8, y1: 0 });
+  });
+});
+
+describe("bodyCell", () => {
+  const S = SUBCELLS_PER_CELL;
+
+  it("is a cell the body box overlaps, at every sub-cell position", () => {
+    for (let ySub = -3 * S; ySub <= 3 * S; ySub++) {
+      for (let xSub = -S; xSub <= S; xSub++) {
+        const pos = { x: xSub / S, y: ySub / S };
+        const cell = bodyCell(pos);
+        const box = bodyRect(pos, CONFIG);
+        const cx = (xSub / S) * S;
+        expect(cell.x, `x at ${xSub}`).toBe(Math.floor(xSub / S));
+        // The bottom-centre sub-cell is inside the cell, the box's last row.
+        expect(cell.y * S).toBeLessThanOrEqual(box.y1 - 1);
+        expect((cell.y + 1) * S).toBeGreaterThan(box.y1 - 1);
+        expect(cx).toBe(xSub);
+      }
+    }
+  });
+
+  it("is never the collider's cell for a body clamped flush against its top face", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: -8, max: 8 }),
+        fc.integer({ min: -8, max: 8 }),
+        fc.integer({ min: 0, max: S - 1 }),
+        (cellX, cellY, offsetX) => {
+          // A full-cell blocker; the body comes from the north.
+          const grid = buildGrid([
+            { x0: cellX * S, y0: cellY * S, x1: (cellX + 1) * S, y1: (cellY + 1) * S },
+          ]);
+          const start = { x: cellX + offsetX / S, y: cellY - 2 };
+          let pos: Vec2 = start;
+          for (let i = 0; i < 200; i++) {
+            pos = step(pos, { x: 0, y: 1 }, 100, grid, 0, CONFIG);
+          }
+          expect(pos.y).toBe(cellY);
+          expect(bodyCell(pos).y).toBe(cellY - 1);
+        },
+      ),
+      { numRuns: 100 },
+    );
   });
 });
 

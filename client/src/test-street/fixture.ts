@@ -34,8 +34,8 @@
 import type { PlacedObject } from "../net/bindings/types";
 import { layerCodeByName } from "../render/layer-table";
 import type { ColliderSource } from "../world/collision-grid";
-import { MAX_DELTA_MS } from "../world/movement";
-import { cellOf, type OwnershipArea } from "../world/ownership";
+import { bodyCell, MAX_DELTA_MS } from "../world/movement";
+import type { OwnershipArea } from "../world/ownership";
 import type { TransitionSpec } from "../world/transitions";
 
 /** The layers a street prop can be on (FR123): the five pool layers plus
@@ -1459,8 +1459,10 @@ export function streetWalkUntilMet(
       return y <= until.value;
     case "floor":
       return floor === until.value;
-    case "cell":
-      return cellOf(x) === until.x && cellOf(y) === until.y;
+    case "cell": {
+      const cell = bodyCell({ x, y });
+      return cell.x === until.x && cell.y === until.y;
+    }
   }
 }
 
@@ -1653,10 +1655,10 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
  * order is seen from the demo's posture, FR123's worst case. South first,
  * in the entrance: the body rests on the boundary below the entrance cells,
  * level with the near railing's top face (`press-south`). West along that
- * face to the east tread (`west-along-the-near-railing`): the feet are off
- * the anchor's row there, so however far the release overshoots the body
- * ends against the west boundary and no transition can fire. Where that
- * walk ends in `x` depends on the overshoot; the rest in `y` does not. */
+ * face to the east tread (`west-along-the-near-railing`): the body is in
+ * the tread row there, so the release must come within the measured lag or
+ * the walk goes on down the stairs. Where that walk ends in `x` depends on
+ * the overshoot; the rest in `y` does not. */
 export function streetNearRailingPressRoute(
   inputs: StreetWalkInputs,
 ): readonly StreetWalkSegment[] {
