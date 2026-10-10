@@ -52,7 +52,6 @@ import {
   STAIRS_Y,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
   STAIRWELL_TOP_RAILING_DEF_ID,
-  STAIRWELL_X0,
   STREET_BOUNDARY,
   STREET_BUILDING_AREAS,
   STREET_EXIT_X,
@@ -86,7 +85,12 @@ import { footprintCells, footprintOrigin } from "../../../src/world/footprint";
 import { bodyRect, MAX_DELTA_MS, step } from "../../../src/world/movement";
 import { cellOf, NO_OWNER } from "../../../src/world/ownership";
 import { isBodyClear, isCellStandable } from "../../../src/world/standable";
-import { blockedNeighborsOf } from "../../../src/world/transitions";
+import {
+  blockedNeighborsOf,
+  forwardOpenNeighbor,
+  pairTransitions,
+  reverseOpenNeighbor,
+} from "../../../src/world/transitions";
 import { checkWorldSpec } from "../../../src/world/world-spec";
 import {
   type Cell,
@@ -1817,26 +1821,47 @@ describe("the near-railing press route (story 15.13)", () => {
     expect(out[west]?.state.y).toBeCloseTo(inputs.nearRailingRestY, 9);
   });
 
-  // However far the west walk overshoots -- all the way to the west
-  // boundary -- the body stays on the street floor (it is on the row south
-  // of the anchor's) and on the railing's face.
-  for (const lag of [0, 1, 8, 400]) {
-    it(`survives a west walk that overshoots by ${lag} steps`, () => {
-      const before = simulateStreetWalk(route.slice(0, west), RELEASE_LAG);
-      const start = before[before.length - 1]?.state;
-      const segment = route[west];
-      if (!start || !segment) throw new Error("no start state");
-      const end = simulateStreetWalk([segment], {
-        ...RELEASE_LAG,
-        releaseLagSteps: lag,
-        start,
-      })[0]?.state;
-      if (!end) throw new Error("no west state");
-      expect(end.floor).toBe(PLAYER_START.floor);
-      expect(end.y).toBeCloseTo(inputs.nearRailingRestY, 9);
-      if (lag === 400) expect(end.x).toBeLessThan(STAIRWELL_X0 + 0.5); // against the west wall
-    });
-  }
+  /** The final state of the west walk when its release comes `lag` steps late. */
+  const westEnd = (lag: number) => {
+    const before = simulateStreetWalk(route.slice(0, west), RELEASE_LAG);
+    const start = before[before.length - 1]?.state;
+    const segment = route[west];
+    if (!start || !segment) throw new Error("no start state");
+    const end = simulateStreetWalk([segment], {
+      ...RELEASE_LAG,
+      releaseLagSteps: lag,
+      start,
+    })[0]?.state;
+    if (!end) throw new Error("no west state");
+    return end;
+  };
+  /** The smallest overshoot, in fully clamped steps, that walks on down the stairs. */
+  const smallestDescendingLag = () => {
+    for (let lag = 0; lag <= 400; lag++) {
+      if (westEnd(lag).floor === SUBWAY_FLOOR) return lag;
+    }
+    throw new Error("no overshoot up to 400 steps descends");
+  };
+
+  // Held late enough the body, in the tread row (its occupied cell, story
+  // 15.20), walks on into the anchor: down the stairs. The threshold is
+  // computed, and the release must stay a margin short of it so a loaded
+  // runner's frame lag cannot decide the draw-order check.
+  it("rests on the railing's face one step short of the overshoot that descends, and descends at it", () => {
+    const lag = smallestDescendingLag();
+    const below = westEnd(lag - 1);
+    expect(below.floor).toBe(PLAYER_START.floor);
+    expect(below.y).toBeCloseTo(inputs.nearRailingRestY, 9);
+    expect(westEnd(lag).floor).toBe(SUBWAY_FLOOR);
+  });
+
+  it("keeps the overshoot that descends at least four times the measured release lag away", () => {
+    expect(smallestDescendingLag()).toBeGreaterThanOrEqual(4 * RELEASE_LAG.releaseLagSteps);
+  });
+
+  it("descends however far the walk overshoots", () => {
+    expect(westEnd(400).floor).toBe(SUBWAY_FLOOR);
+  });
 });
 
 describe("the bollard approach route (NFR50)", () => {
@@ -2148,5 +2173,200 @@ describe("the stairs-tagged defs and the stairwell groups are pinned (story 15.1
         ]);
       }
     }
+  });
+});
+
+// Story 15.20 (Quentin's direction): a transition is reachable from every
+// standable approach. Real `STREET_TRANSITIONS`, real collision grid, real
+// `stepAndTransition` -- no hand-built grid and no exemption list.
+describe("transitions are reachable from every standable approach (story 15.20)", () => {
+  const transitions = streetTransitionIndex();
+  const s = config.subcellsPerCell;
+  const { pairings } = pairTransitions(STREET_TRANSITIONS);
+
+  const walkHeld = (start: FloorWalkResult, dir: { x: number; y: number }) => {
+    let state: FloorWalkResult = { ...start, transitioned: false };
+    for (let i = 0; i < 400; i++) {
+      const next = stepAndTransition(state, dir, 16, world, config, transitions);
+      if (next.transitioned) return next;
+      if (next.x === state.x && next.y === state.y) return next;
+      state = next;
+    }
+    throw new Error("walkHeld: never rested");
+  };
+
+  it("replays the demo: pressed against the subway flight's bottom wall, holding the flight's direction, reaches the subway", () => {
+    const start = initialFloorWalkState(SUBWAY_ENTRANCE_X0 + 0.5, STAIRS_Y + 1, STREET_FLOOR);
+    const end = walkHeld({ ...start, transitioned: false }, STAIRS_ENTRY_DIRECTION);
+    expect(end.floor).toBe(SUBWAY_FLOOR);
+  });
+
+  type Dir = { x: number; y: number };
+  interface Side {
+    readonly name: string;
+    readonly floor: number;
+    readonly cell: { readonly x: number; readonly y: number };
+    readonly direction: Dir;
+    readonly targetFloor: number;
+  }
+  const sides: Side[] = pairings.flatMap((p) => {
+    const f = forwardOpenNeighbor(p);
+    const r = reverseOpenNeighbor(p);
+    const tag = `(${p.forward.x},${p.forward.y})<->(${p.reverse.x},${p.reverse.y})`;
+    return [
+      {
+        name: `${tag} down`,
+        floor: p.forward.floor,
+        cell: f.cell,
+        direction: f.direction,
+        targetFloor: p.forward.targetFloor,
+      },
+      {
+        name: `${tag} up`,
+        floor: p.reverse.floor,
+        cell: r.cell,
+        direction: r.direction,
+        targetFloor: p.reverse.targetFloor,
+      },
+    ];
+  });
+
+  /** Every walk of one side; the failures are collected, never thrown on the first. */
+  const sweepSide = (side: Side) => {
+    const perp = { x: -side.direction.y, y: side.direction.x };
+    const clear = (cx: number, feet: number) => isBodyClear(world, config, side.floor, cx, feet);
+    // Named predicates, decided by the real grid.
+    const blockedAhead = (cx: number, feet: number) =>
+      !clear(cx + side.direction.x, feet + side.direction.y);
+    const pressed = (cx: number, feet: number, sign: number) =>
+      !clear(cx + sign * perp.x, feet + sign * perp.y);
+    const starts: { cx: number; feet: number }[] = [];
+    for (let cx = side.cell.x * s; cx < (side.cell.x + 1) * s; cx++) {
+      for (let feet = side.cell.y * s + 1; feet <= (side.cell.y + 1) * s; feet++) {
+        if (clear(cx, feet)) starts.push({ cx, feet });
+      }
+    }
+    const failures: string[] = [];
+    let walks = 0;
+    let excluded = 0;
+    let wallPressed = 0;
+    const back = { x: -side.direction.x, y: -side.direction.y };
+    for (const { cx, feet } of starts) {
+      if (blockedAhead(cx, feet)) {
+        excluded++;
+        continue;
+      }
+      const dirs: Dir[] = [side.direction];
+      for (const sign of [1, -1]) {
+        if (pressed(cx, feet, sign)) {
+          wallPressed++;
+          dirs.push({ x: side.direction.x + sign * perp.x, y: side.direction.y + sign * perp.y });
+        }
+      }
+      for (const dir of dirs) {
+        walks++;
+        const start = initialFloorWalkState(cx / s, feet / s, side.floor);
+        const end = walkHeld({ ...start, transitioned: false }, dir);
+        const at = `start sub-cell (${cx}, ${feet}) holding (${dir.x}, ${dir.y})`;
+        if (!end.transitioned || end.floor !== side.targetFloor) {
+          failures.push(`${at} rested at (${end.x}, ${end.y}) floor ${end.floor}`);
+          continue;
+        }
+        // Round trip: back along the same wall returns to the origin floor.
+        const returned = walkHeld({ ...end, transitioned: false }, back);
+        if (!returned.transitioned || returned.floor !== side.floor) {
+          failures.push(`${at}: no round trip, rested at (${returned.x}, ${returned.y})`);
+        }
+      }
+    }
+    return { starts: starts.length, walks, excluded, wallPressed, failures };
+  };
+
+  it("has at least four sides, both flights of the subway among them", () => {
+    expect(sides.length).toBeGreaterThanOrEqual(4);
+    const floors = new Set(sides.map((side) => side.floor));
+    expect(floors.has(STREET_FLOOR) && floors.has(SUBWAY_FLOOR)).toBe(true);
+  });
+
+  describe("each side of every pairing: every standable start crosses, and walks back", () => {
+    for (const side of sides) {
+      it(`${side.name}: every standable start crosses, and walks back`, () => {
+        const out = sweepSide(side);
+        expect(out.starts).toBeGreaterThan(s);
+        expect(out.wallPressed, "a wall-pressed start").toBeGreaterThan(0);
+        // No standable start is left unable to advance toward the anchor.
+        expect(out.excluded).toBe(0);
+        expect(out.failures).toEqual([]);
+      });
+    }
+  });
+
+  it("inv_transition_reachable_from_every_standable_approach", () => {
+    const outs = sides.map((side) => ({ side, out: sweepSide(side) }));
+    expect(outs.reduce((total, { out }) => total + out.walks, 0)).toBeGreaterThan(1000);
+    expect(outs.flatMap(({ side, out }) => out.failures.map((f) => `${side.name}: ${f}`))).toEqual(
+      [],
+    );
+  });
+
+  it("the platform wall's rest y is the face the resolver clamps a body walking south to, and the street's likewise", () => {
+    const south = { x: 0, y: 1 };
+    const rest = (x: number, y: number, floor: number) => {
+      let pos = { x, y };
+      for (let i = 0; i < 200; i++) pos = step(pos, south, 100, world, floor, config);
+      return pos.y;
+    };
+    expect(rest(PLATFORM_LANDING_X + 0.5, PLATFORM_LANDING_Y + 0.5, SUBWAY_FLOOR)).toBeCloseTo(
+      streetWalkInputs().platformWallRestY,
+      9,
+    );
+    expect(rest(SUBWAY_ENTRANCE_X0 + 0.5, STAIRS_Y + 0.5, STREET_FLOOR)).toBeCloseTo(
+      streetWalkInputs().nearRailingRestY,
+      9,
+    );
+  });
+
+  // The viewer's (floor, buildingId) is read from the walk's own cell, which
+  // is `bodyCell`: a body pressed on a wall's top face from outside is in the
+  // street cell north of it, never the building's.
+  it("a body pressed against a building wall's top face is owned from inside and unowned from outside", () => {
+    const sub = config.subcellsPerCell;
+    const owner = (x: number, y: number) => ownership.ownershipAt(x, y, STREET_FLOOR).buildingId;
+    const fullCell = (x: number, y: number) =>
+      world
+        .entriesInCell(STREET_FLOOR, x, y)
+        .some(
+          ({ rect }) =>
+            rect.x0 <= x * sub &&
+            rect.x1 >= (x + 1) * sub &&
+            rect.y0 <= y * sub &&
+            rect.y1 >= (y + 1) * sub,
+        );
+    const transitionsHere = streetTransitionIndex();
+    let outside = 0;
+    let inside = 0;
+    for (let y = 1; y < 40; y++) {
+      for (let x = 0; x < 80; x++) {
+        if (owner(x, y) === NO_OWNER || !fullCell(x, y)) continue;
+        if (!isCellStandable(world, config, x, y - 1, STREET_FLOOR)) continue;
+        const from = initialFloorWalkState(x + 0.5, y - 0.5, STREET_FLOOR);
+        let state: FloorWalkResult = { ...from, transitioned: false };
+        for (let i = 0; i < 100; i++) {
+          state = stepAndTransition(state, { x: 0, y: 1 }, 100, world, config, transitionsHere);
+        }
+        // Resting flush on the wall's top face.
+        expect(state.y).toBe(y);
+        const here = owner(state.cellX, state.cellY);
+        if (owner(x, y - 1) === NO_OWNER) {
+          outside++;
+          expect(here, `outside the wall at (${x}, ${y})`).toBe(NO_OWNER);
+        } else {
+          inside++;
+          expect(here, `inside the wall at (${x}, ${y})`).not.toBe(NO_OWNER);
+        }
+      }
+    }
+    expect(outside).toBeGreaterThan(0);
+    expect(inside).toBeGreaterThan(0);
   });
 });

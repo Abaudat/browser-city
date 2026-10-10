@@ -461,6 +461,13 @@ always derived from placed content, never stored per cell.
   names) must each refuse a step into it -- real colliders on the drawn
   railings, never a rule that only checks the pairing shape and stops
   there.
+  An actor's cell for transitions and visibility is the cell holding its body
+  box's bottom-centre, half-open like the box (`bodyCell`): a body whose feet
+  rest on a cell's face from outside is not in that cell, the same rule
+  collision uses. A transition is entered when the body's cell becomes the
+  anchor's. The wire and chunk cell (`position-codec.ts`) is storage and stays
+  `floor`. Any server code that resolves a transition for an actor must use
+  the same half-open rule.
   An entity lands at the centre of its transition's target cell, except for
   a transition whose target is its own anchor cell (a stair stacked on
   itself, one floor up): that keeps the entity's position and changes only

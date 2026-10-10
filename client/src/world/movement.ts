@@ -144,6 +144,17 @@ export function bodyRect(position: Vec2, config: MovementConfig): ColliderRectSu
 }
 
 /**
+ * The cell an actor is in (FR117): the cell holding its body's bottom-centre
+ * under [`bodyRect`]'s own half-open convention -- x is the cell of the
+ * body's centre, y the cell whose half-open range `(c, c + 1]` holds the
+ * feet. A body whose feet rest on a cell's face from outside is not in that
+ * cell. Never `floor` of the feet.
+ */
+export function bodyCell(position: Vec2): { x: number; y: number } {
+  return { x: Math.floor(position.x), y: Math.ceil(position.y) - 1 };
+}
+
+/**
  * One movement step (FR137): `inputDir` need not be unit length (a
  * diagonal is normalised here, so diagonal speed never exceeds axis
  * speed); `position` and the return value are continuous world-cell
