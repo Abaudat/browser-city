@@ -34,6 +34,7 @@ import {
   recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
   recordCharacterForE2e,
+  recordCitizenBodiesForE2e,
   recordDistinctBoundAtlasPagesForE2e,
   recordDoorwaysForE2e,
   recordFrameWorkForE2e,
@@ -45,6 +46,7 @@ import {
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerAppearanceForE2e,
+  recordPlayerBodyForE2e,
   recordPlayerPositionForE2e,
   recordPlayerStepForE2e,
   recordRegionRowForE2e,
@@ -105,6 +107,8 @@ interface PlayersWiring {
    * or none when this page draws no remote players. */
   readonly setUp: (defs: Defs) => RemotePlayersSource | undefined;
   readonly onPlayerMove: (x: number, y: number, floor: number) => void;
+  /** The local character's id, once it exists. */
+  readonly characterId: () => string | undefined;
   readonly onMounted: () => void;
 }
 
@@ -387,6 +391,7 @@ async function main(): Promise<void> {
             onFrame: import.meta.env.DEV ? recordRemotePlayersForE2e : undefined,
           };
         },
+        characterId: () => latestCharacter?.characterId.toString(),
         onPlayerMove: (x, y, floor) => {
           playerPosition = { x, y, floor };
         },
@@ -649,6 +654,9 @@ async function startStreetScene(
       debugOverlays?.redraw();
     },
     remotePlayers,
+    playerCharacterId: players.characterId,
+    onPlayerBody: import.meta.env.DEV ? recordPlayerBodyForE2e : undefined,
+    onCitizenBodies: import.meta.env.DEV ? recordCitizenBodiesForE2e : undefined,
     onPlayerMove: (x, y, floor) => {
       recordPlayerPositionForE2e(x, y, floor);
       players.onPlayerMove(x, y, floor);

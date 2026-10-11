@@ -39,28 +39,34 @@ const standing = Object.keys(AVOIDANCE_STANDERS);
 const period = new Timetable(AVOIDANCE_SPECS[CROSSER_EAST_ID] as never, cfg, walk, path)
   .periodMilli;
 
+/** What it takes to add citizen `id` to the street's life, fresh. */
+function recipe(id: string) {
+  const spec = AVOIDANCE_SPECS[id];
+  if (spec) {
+    const make = () => ({
+      timetable: new Timetable(spec as never, cfg, walk, path),
+      body: new CitizenBody(walk, path, gait, id, life),
+    });
+    return { id, ...make(), look: id, remake: make };
+  }
+  const cell = AVOIDANCE_STANDERS[id] as { x: number; y: number };
+  const make = () => ({ body: new CitizenBody(walk, path, gait, id, life) });
+  return {
+    id,
+    ...make(),
+    look: id,
+    stand: standState(cell, 0, "down"),
+    standAt: { x: cell.x + 0.5, y: cell.y + 0.5 },
+    remake: make,
+  };
+}
+
 /** The staging as the street's life holds it, without the citizens named. */
 function build(without: readonly string[] = []) {
   const street = new StreetLife(cfg, walk);
-  for (const id of walking) {
+  for (const id of [...walking, ...standing]) {
     if (without.includes(id)) continue;
-    const make = () => ({
-      timetable: new Timetable(AVOIDANCE_SPECS[id] as never, cfg, walk, path),
-      body: new CitizenBody(walk, path, gait, id, life),
-    });
-    street.add({ id, ...make(), remake: make });
-  }
-  for (const id of standing) {
-    if (without.includes(id)) continue;
-    const cell = AVOIDANCE_STANDERS[id] as { x: number; y: number };
-    const make = () => ({ body: new CitizenBody(walk, path, gait, id, life) });
-    street.add({
-      id,
-      ...make(),
-      stand: standState(cell, 0, "down"),
-      standAt: { x: cell.x + 0.5, y: cell.y + 0.5 },
-      remake: make,
-    });
+    street.add(recipe(id));
   }
   return street;
 }
@@ -278,5 +284,52 @@ describe("the avoidance staging on the test street (story 5.2)", () => {
         expect(s.frameIndex).toBe(m.frame.frameIndex);
       }
     }
+  });
+});
+
+describe("a body respawned through the street's life", () => {
+  const KEYS = ["x", "y", "floor", "animation", "direction", "frameIndex", "flavour"] as const;
+
+  it("leaves every member's offset and frame identical to a street that never despawned it", () => {
+    const everyone = [...walking, ...standing];
+    for (const id of everyone) {
+      const kept = build();
+      const respawned = build();
+      const t1 = Math.floor(period * 0.31);
+      const t2 = Math.floor(period * 0.57);
+      kept.solve(t1);
+      respawned.solve(t1);
+      // Despawned at t1: out of the solve, then rebuilt fresh at t2.
+      const gone = respawned.members.find((m) => m.id === id) as never;
+      respawned.remove(gone);
+      respawned.solve(t1 + 1);
+      respawned.add(recipe(id));
+      kept.solve(t2);
+      respawned.solve(t2);
+      for (const m of kept.members) {
+        const o = respawned.members.find((q) => q.id === m.id);
+        expect(o, `${m.id} present`).toBeDefined();
+        if (!o) continue;
+        for (const k of KEYS)
+          expect(Object.is(m.frame[k], o.frame[k]), `${id}/${m.id} ${k}`).toBe(true);
+        expect(Object.is(kept.offsetX(m), respawned.offsetX(o)), `${id}/${m.id} offsetX`).toBe(
+          true,
+        );
+        expect(Object.is(kept.offsetY(m), respawned.offsetY(o)), `${id}/${m.id} offsetY`).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it("a body posed alone at its spawn instant stands where its ledger says it is", () => {
+    const street = build([...walking, ...standing]);
+    const t = Math.floor(period * 0.4);
+    const member = street.add(recipe(PASSER_ID));
+    street.pose(member, t);
+    const alone = member.frame.x;
+    street.solve(t);
+    // Avoidance moves only the drawn offset, never the ledger frame.
+    expect(Object.is(member.frame.x, alone)).toBe(true);
   });
 });

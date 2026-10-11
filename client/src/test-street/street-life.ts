@@ -39,10 +39,20 @@ export interface LifeMember {
   readonly stand?: AtState;
   /** Where a standing citizen is drawn, when not on its tile's centre. */
   readonly standAt?: { readonly x: number; readonly y: number };
+  /** The composite-cache key of the citizen's look: its five stored indices
+   * and the uniform override. Never re-derived from the id. */
+  readonly look: string;
   /** Builds a fresh body and ledger for the agreement sample. */
   readonly remake: () => { body: CitizenBody; timetable?: LedgerSource };
   index: number;
 }
+
+/** What agreement needs of a citizen whether or not it has a body: its id,
+ * its ledger and how to build a fresh body. */
+export type LifeDeclared = Pick<
+  LifeMember,
+  "id" | "remake" | "timetable" | "stand" | "standAt" | "look"
+>;
 
 export interface LifeSample {
   readonly id: string;
@@ -53,6 +63,8 @@ export interface LifeSample {
   readonly facing: string;
   readonly offsetX: number;
   readonly offsetY: number;
+  /** The look: what must be identical on every client and every respawn. */
+  readonly look: string;
 }
 
 export function standState(node: { x: number; y: number }, floor: number, facing: Facing): AtState {
@@ -62,7 +74,11 @@ export function standState(node: { x: number; y: number }, floor: number, facing
 export class StreetLife {
   readonly #dials: AvoidDials;
   readonly #walk: Walkability;
+  /** Citizens with a body: what `solve` poses and sidesteps. */
   readonly #members: LifeMember[] = [];
+  /** Every citizen of the street, with a body or not: what `agreementAt`
+   * samples, so it never depends on who is near a viewport. */
+  readonly #declared = new Map<string, LifeDeclared>();
   readonly #field = new AvoidanceField();
   #scratch: { members: LifeMember[]; field: AvoidanceField } | undefined;
 
@@ -78,12 +94,38 @@ export class StreetLife {
     };
   }
 
-  /** Registers a citizen; returns it. */
+  /** Registers a citizen with a body; returns it. It is also declared. */
   add(member: Omit<LifeMember, "index" | "frame">): LifeMember {
     const full: LifeMember = { ...member, frame: createCitizenFrame(), index: -1 };
     this.#members.push(full);
-    this.#scratch = undefined;
+    this.declare(full);
     return full;
+  }
+
+  /** Declares a citizen that may never have a body: it is sampled for
+   * agreement only. */
+  declare(entry: LifeDeclared): void {
+    this.#declared.set(entry.id, {
+      id: entry.id,
+      remake: entry.remake,
+      timetable: entry.timetable,
+      stand: entry.stand,
+      standAt: entry.standAt,
+      look: entry.look,
+    });
+    this.#scratch = undefined;
+  }
+
+  /** Poses one body alone at `t` (its ledger frame, no sidestep), so a body
+   * is built at the position its ledger says it has at its spawn instant. */
+  pose(member: LifeMember, t: number): void {
+    poseMember(member, t);
+  }
+
+  /** Drops a body: it stops being posed and sidestepped; it stays declared. */
+  remove(member: LifeMember): void {
+    const i = this.#members.indexOf(member);
+    if (i >= 0) this.#members.splice(i, 1);
   }
 
   get members(): readonly LifeMember[] {
@@ -114,7 +156,7 @@ export class StreetLife {
   agreementAt(t: number): readonly LifeSample[] {
     if (!this.#scratch) {
       this.#scratch = {
-        members: this.#members.map((m) => ({
+        members: [...this.#declared.values()].map((m) => ({
           ...m,
           ...m.remake(),
           frame: createCitizenFrame(),
@@ -136,7 +178,23 @@ export class StreetLife {
         facing: m.frame.direction,
         offsetX: field.offsetX(m.index),
         offsetY: field.offsetY(m.index),
+        look: m.look,
       }));
+  }
+}
+
+function poseMember(m: LifeMember, t: number): void {
+  const f = m.frame;
+  if (m.timetable) {
+    m.body.frameAt(m.timetable.stateAt(t), t, f);
+  } else {
+    m.body.frameAt(m.stand as AtState, t, f);
+    if (m.standAt) {
+      f.x = m.standAt.x;
+      f.y = m.standAt.y;
+      f.anchorX = f.x;
+      f.anchorY = f.y;
+    }
   }
 }
 
@@ -149,18 +207,8 @@ function solveAll(
 ): void {
   field.reset();
   for (const m of members) {
+    poseMember(m, t);
     const f = m.frame;
-    if (m.timetable) {
-      m.body.frameAt(m.timetable.stateAt(t), t, f);
-    } else {
-      m.body.frameAt(m.stand as AtState, t, f);
-      if (m.standAt) {
-        f.x = m.standAt.x;
-        f.y = m.standAt.y;
-        f.anchorX = f.x;
-        f.anchorY = f.y;
-      }
-    }
     m.index = field.add(
       m.id,
       f.x,

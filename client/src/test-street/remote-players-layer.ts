@@ -9,14 +9,21 @@
 // Excluded from `client/vitest.config.ts`'s coverage gate alongside the
 // other real-Pixi adapters.
 
-import { Container, Sprite } from "pixi.js";
+import { Container, type Sprite } from "pixi.js";
 import type { Defs } from "../defs/types";
-import { loadL3Config, walkFramesPerCycle } from "../l3/config";
-import { advanceSurfaceGait, type Facing, phaseOffsetFor, walkFrame } from "../l3/gait";
+import {
+  type BodyDials,
+  type BodyFrame,
+  type BodyMotion,
+  createBodyMotion,
+  poseBody,
+} from "../l3/body-pose";
+import { framesByAnimation, loadL3Config, walkFramesPerCycle } from "../l3/config";
 import type {
   AppearanceTextureCache,
   CompositeFrames,
 } from "../render/appearance/appearance-texture";
+import { newBodySprite, setBodyFrame } from "../render/body-sprite";
 import { worldPointPx } from "../render/screen-position";
 import type { RemoteMotion, RemotePose } from "../world/remote-motion";
 import { buildPlayerAppearanceTuple, CROWD_FLOOR } from "./citizens";
@@ -27,6 +34,8 @@ export interface RemotePlayersWiring {
   readonly serverNowMs: () => number | undefined;
   /** The caller's own character id, never drawn here. */
   readonly skip: () => string | undefined;
+  /** City time in milliminutes, for the idle row; 0 when none. */
+  readonly cityMilliminutes?: () => number | undefined;
   /** The drawn-surface distance, in cells, of a ground move from a position
    * (story 15.21): the walk frame is fed it, so legs keep walking cadence on
    * a flight. Required: a wiring that forgets it would slide feet on stairs. */
@@ -46,11 +55,10 @@ export interface RemotePlayersLayer {
 
 interface Drawn {
   readonly sprite: Sprite;
+  readonly motion: BodyMotion;
+  readonly frame: BodyFrame;
   x: number;
   y: number;
-  facing: Facing;
-  /** Cells walked while moving; the walk frame follows it (l3/gait). */
-  walked: number;
 }
 
 export async function mountRemotePlayersLayer(
@@ -62,8 +70,13 @@ export async function mountRemotePlayersLayer(
   zoom: number,
   wiring: RemotePlayersWiring,
 ): Promise<RemotePlayersLayer> {
-  const strideCells = loadL3Config(defs).strideCells;
-  const framesPerCycle = walkFramesPerCycle(defs, "adult");
+  const l3 = loadL3Config(defs);
+  const dials: BodyDials = {
+    strideCells: l3.strideCells,
+    walkFrames: walkFramesPerCycle(defs, "adult"),
+    idleFrames: framesByAnimation(defs, "adult").idle ?? 1,
+    idleFrameMilliminutes: l3.idleFrameMilliminutes,
+  };
   const frames: CompositeFrames = await cache.acquire(buildPlayerAppearanceTuple(defs));
   const layer = new Container();
   layer.sortableChildren = true;
@@ -90,21 +103,24 @@ export async function mountRemotePlayersLayer(
       if (poses) poses[id] = pose;
       let d = drawn.get(id);
       if (!d) {
-        const sprite = new Sprite(frames.frame("idle", "down", 0));
-        sprite.anchor.set(0.5, 1);
+        const frame: BodyFrame = { animation: "idle", direction: "down", frameIndex: 0 };
+        const sprite = newBodySprite(frames, frame);
         layer.addChild(sprite);
-        d = { sprite, x: pose.x, y: pose.y, facing: "down", walked: 0 };
+        d = { sprite, motion: createBodyMotion(), frame, x: pose.x, y: pose.y };
         drawn.set(id, d);
       }
       const stepX = pose.x - d.x;
       const stepY = pose.y - d.y;
-      const moving = advanceSurfaceGait(
-        d,
+      poseBody(
+        id,
+        d.motion,
         stepX,
         stepY,
         wiring.drawnDistance(d.x, d.y, pose.floor, stepX, stepY),
+        wiring.cityMilliminutes?.() ?? 0,
+        dials,
+        d.frame,
       );
-      const facing = d.facing;
       d.x = pose.x;
       d.y = pose.y;
       const px = worldPointPx(pose.x, pose.y, pose.floor, tileSizePx, storeyHeightPx, zoom, 0);
@@ -112,13 +128,7 @@ export async function mountRemotePlayersLayer(
       d.sprite.y = px.y;
       d.sprite.zIndex = pose.y;
       d.sprite.visible = pose.floor === CROWD_FLOOR;
-      d.sprite.texture = moving
-        ? frames.frame(
-            "walk",
-            facing,
-            walkFrame(d.walked, strideCells, phaseOffsetFor(id), framesPerCycle),
-          )
-        : frames.frame("idle", facing, 0);
+      setBodyFrame(d.sprite, frames, d.frame);
     }
     if (poses) wiring.onFrame?.(poses);
   }

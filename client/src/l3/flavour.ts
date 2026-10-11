@@ -72,6 +72,18 @@ export function flavourKindOf(id: string, bucket: number, dials: FlavourDials): 
   return NO_FLAVOUR;
 }
 
+/** The idle-row frame of body `id` at city time `t`: on city time, shifted by
+ * a phase seeded from the id. One rule for citizens and players. */
+export function idleFrameAt(
+  id: string,
+  t: number,
+  idleFrames: number,
+  idleFrameMilliminutes: number,
+): number {
+  const phase = seedOf(id, SALTS.idlePhase) % (idleFrames * idleFrameMilliminutes);
+  return Math.floor((t + phase) / idleFrameMilliminutes) % idleFrames;
+}
+
 /** Writes the frame a citizen standing at `t` shows. `until` is the instant
  * its next leg departs: a flavour that would not end before it is not drawn. */
 export function flavourAt(
@@ -82,10 +94,8 @@ export function flavourAt(
   until: number,
   out: FlavourFrame,
 ): void {
-  const idleFrames = dials.frames.idle ?? 1;
-  const phase = seedOf(id, SALTS.idlePhase) % (idleFrames * dials.idleFrameMilliminutes);
   out.animation = "idle";
-  out.frameIndex = Math.floor((t + phase) / dials.idleFrameMilliminutes) % idleFrames;
+  out.frameIndex = idleFrameAt(id, t, dials.frames.idle ?? 1, dials.idleFrameMilliminutes);
   out.direction = rest;
   out.flavour = NO_FLAVOUR;
 

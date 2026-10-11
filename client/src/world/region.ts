@@ -21,7 +21,7 @@ export const REGION_LEAVE_RADIUS_CHUNKS = REGION_RADIUS_CHUNKS + REGION_HYSTERES
 /** Cells of region beyond the viewport so a walk across a boundary finds
  * the next columns already applied: at the canonical walk speed this is
  * well over `REGION_LATENCY_BUDGET_MS` of walking. */
-export const REGION_BODY_MARGIN_CELLS = 8;
+export const REGION_BODY_MARGIN_CELLS = 12;
 
 /** The round trip a crossing is budgeted: request to applied. Arithmetic
  * only -- no test reads a clock against it. */
@@ -126,3 +126,8 @@ export function planRegion(held: Iterable<HandleKey>, centre: RegionCentre): Reg
   );
   return { subscribe, release };
 }
+
+/** Cells beyond the spawn rect a body is kept before it despawns. Spatial
+ * only: there is no timer. `region.test.ts` and `body-zone.test.ts` hold
+ * spawn margin + this + the footprint inside the held region. */
+export const BODY_DESPAWN_HYSTERESIS_CELLS = 4;

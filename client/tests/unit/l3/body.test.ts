@@ -1,6 +1,12 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { Body, createBodyPose, type Leg, legInstants } from "../../../src/l3/body";
+import {
+  Body,
+  createBodyPose,
+  type Leg,
+  legInstants,
+  MAX_SEGMENT_CELLS,
+} from "../../../src/l3/body";
 import { sizeProbe } from "../setup/size-probe";
 import { l3Config } from "./defs-config";
 import { CFG, TestGrid } from "./support";
@@ -244,6 +250,22 @@ describe("Body pose", () => {
     const body = new Body(straight, new TestGrid(), CFG);
     expect(poseOf(body, straight.arriveAt).distance).toBe(10);
     expect(poseOf(body, 999).distance).toBe(0);
+  });
+
+  it("a segment past the exactness bound has the instants of one at the bound", () => {
+    const at = (x: number) =>
+      legInstants(
+        leg(
+          [
+            [0, 0],
+            [x, 0],
+            [x, 1],
+          ],
+          0,
+          1000,
+        ),
+      );
+    expect(at(MAX_SEGMENT_CELLS + 5)[1]).toBe(at(MAX_SEGMENT_CELLS)[1]);
   });
 
   it("a far-apart pair of waypoints is walked straight, never thrown on", () => {
@@ -601,5 +623,31 @@ describe("properties", () => {
         },
       ),
     );
+  });
+});
+
+describe("legInstants against the shared fixture", () => {
+  it("matches fixtures/leg-instants.v1.json, the server's rule", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const { legInstants } = await import("../../../src/l3/body");
+    const doc = JSON.parse(
+      readFileSync(
+        fileURLToPath(new URL("../../../../fixtures/leg-instants.v1.json", import.meta.url)),
+        "utf-8",
+      ),
+    ) as {
+      cases: { route: number[][]; departAt: number; arriveAt: number; instants: number[] }[];
+    };
+    for (const c of doc.cases) {
+      const waypoints = c.route.map(([x, y, floor]) => ({
+        x: x as number,
+        y: y as number,
+        floor: floor as number,
+      }));
+      expect(legInstants({ waypoints, departAt: c.departAt, arriveAt: c.arriveAt })).toEqual(
+        c.instants,
+      );
+    }
   });
 });

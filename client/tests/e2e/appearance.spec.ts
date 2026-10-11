@@ -29,7 +29,9 @@ import { ready } from "./appearance-test-support";
 
 test.describe("the real, mounted appearance pipeline", () => {
   test("citizens sharing a tuple+override share one texture instance (AC5)", async ({ page }) => {
-    await page.goto("/");
+    // `?freezeCrowd=1` holds the whole crowd, no zone: sharing is a property
+    // of the cache, not of who is near the viewport.
+    await page.goto("/?freezeCrowd=1");
     await ready(page);
 
     const ids = await page.evaluate(() => window.__bc?.appearanceTextureIds ?? {});

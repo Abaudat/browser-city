@@ -34,26 +34,34 @@ import type { IgnoredSink, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
+import { type BodyDials, type BodyFrame, createBodyMotion, poseBody } from "../l3/body-pose";
 import { CitizenBody } from "../l3/citizen";
-import { loadL3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
+import { framesByAnimation, loadL3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
-import type { AppearanceTuple } from "../render/appearance/composite";
+import { type AppearanceTuple, appearanceCacheKey } from "../render/appearance/composite";
 import {
   AtlasPageLoader,
   countAllBoundTextureSources,
   countBoundAtlasPages,
 } from "../render/atlas-pages";
+import { newBodySprite, setBodyFrame } from "../render/body-sprite";
 import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "../render/camera";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName, passOfLayer } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
-import { floorOffsetPx, snapToScreenPx, worldPointPx } from "../render/screen-position";
+import {
+  floorOffsetPx,
+  snapToScreenPx,
+  visibleCellBounds,
+  worldPointPx,
+} from "../render/screen-position";
 import type { Drawable } from "../render/sort-key";
 import { fromSortUnits, toSortUnits } from "../render/sort-units";
 import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
+import { type BodyZone, bodyZoneOf, type Rect } from "../world/body-zone";
 import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
 import { buildFlights, FlightIndex } from "../world/flights";
 import {
@@ -66,6 +74,7 @@ import { bodyRect, type MovementConfig } from "../world/movement";
 import { npcWalkability } from "../world/npc-walkable";
 import { buildObjectDefIndex, type ObjectSource, objectDefById } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
+import { bandOf } from "../world/region";
 import { isBodyClear, isCellStandable } from "../world/standable";
 import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
@@ -77,7 +86,12 @@ import {
   CROWD_FLOOR,
   withStagingKerb,
 } from "./citizens";
-import { type CitizensLayerHandle, type L3BodyReport, mountCitizensLayer } from "./citizens-layer";
+import {
+  type BodyScreenBounds,
+  type CitizensLayerHandle,
+  type L3BodyReport,
+  mountCitizensLayer,
+} from "./citizens-layer";
 import { COMMUTER_ID, COMMUTER_SPEC, COMMUTER_STABLE_ID } from "./commuter";
 import {
   buildCharacterDrawable,
@@ -214,6 +228,20 @@ export interface MountStreetSceneOptions {
    * none are drawn (a DEV build's isolation switch; always present in a
    * production build). */
   readonly remotePlayers?: RemotePlayersSource;
+  /** The local character's id: seeds the player's gait and idle phase the
+   * way every client seeds this body's, so others see what the player sees.
+   * Absent until the character exists. */
+  readonly playerCharacterId?: () => string | undefined;
+  /** Called every ticker frame with what the player's body is drawing (a DEV
+   * build's e2e hook). */
+  readonly onPlayerBody?: (frame: Readonly<BodyFrame>) => void;
+  /** Called every ticker frame with where each citizen body is on the
+   * renderer (a DEV build's e2e hook). */
+  readonly onCitizenBodies?: (
+    bodies: readonly BodyScreenBounds[],
+    screen: { readonly width: number; readonly height: number },
+    citizenCount: number,
+  ) => void;
   /** Story 1.13 (NFR2): how long this scene's own ticker callback took,
    * in ms, every frame it runs -- the frame *work* the perf harness
    * gates on, never a rAF interval. One call per frame into a sink that
@@ -785,6 +813,9 @@ export async function mountStreetScene(
     onPlayerMove,
     onPlayerStep,
     remotePlayers: remotePlayersWiring,
+    playerCharacterId,
+    onPlayerBody,
+    onCitizenBodies,
     onFrameWork,
     onVisibilityChange,
     onMasksChecked,
@@ -861,6 +892,27 @@ export async function mountStreetScene(
   // off every flight, so the first camera application is right without it.
   let flights = new FlightIndex([], movementConfig);
   let playerFlightOffsetPx = 0;
+  /** The camera's viewport in floor-0 cells, or none before a camera. */
+  function viewportRect(): Rect | undefined {
+    if (!lastCamera) return undefined;
+    const b = visibleCellBounds(
+      app.screen.width,
+      app.screen.height,
+      lastCamera,
+      CROWD_FLOOR,
+      tileSizePx,
+      storeyHeightPx,
+    );
+    if (b.cellX1 <= b.cellX0 || b.cellY1 <= b.cellY0) return undefined;
+    return { x0: b.cellX0, y0: b.cellY0, x1: b.cellX1, y1: b.cellY1 };
+  }
+  /** The body zone around the viewport: judged per floor (a point on floor
+   * `f` is drawn `f` storeys north) and over the player's co-visible band. */
+  function bodyZone(): BodyZone | undefined {
+    const view = viewportRect();
+    if (!view) return undefined;
+    return bodyZoneOf(view, storeyHeightPx / tileSizePx, bandOf(walk.floor));
+  }
   function applyCamera(): void {
     const anchor = worldPointPx(
       walk.x,
@@ -1025,8 +1077,11 @@ export async function mountStreetScene(
     appearanceCache.acquire(playerTuple),
     crowdFrozen ? undefined : appearanceCache.acquire(buildCommuterAppearanceTuple(defs)),
   ]);
-  const playerSprite = new Sprite(playerFrames.frame("idle", "down", 0));
-  playerSprite.anchor.set(0.5, 1);
+  // The player's body is posed by the same function as every other
+  // character's (`l3/body-pose.ts`) and drawn through the same adapter.
+  const playerMotion = createBodyMotion();
+  const playerBodyFrame: BodyFrame = { animation: "idle", direction: "down", frameIndex: 0 };
+  const playerSprite = newBodySprite(playerFrames, playerBodyFrame);
   positionSprite(
     playerSprite,
     walk.x,
@@ -1375,6 +1430,7 @@ export async function mountStreetScene(
     const commuterMember = streetLife.add({
       id: COMMUTER_ID,
       ...makeCommuter(),
+      look: appearanceCacheKey(buildCommuterAppearanceTuple(defs), null),
       remake: makeCommuter,
     });
     const citizen = commuterMember.body;
@@ -1392,8 +1448,11 @@ export async function mountStreetScene(
       COMMUTER_STABLE_ID,
       "commuter",
     );
-    const sprite = new Sprite(commuterFrames.frame("idle", COMMUTER_SPEC.homeFacing, 0));
-    sprite.anchor.set(0.5, 1);
+    const sprite = newBodySprite(commuterFrames, {
+      animation: "idle",
+      direction: COMMUTER_SPEC.homeFacing,
+      frameIndex: 0,
+    });
     sprite.renderable = false;
     const entry: PoolEntry = { drawable, view: sprite, label: "commuter" };
     poolMembersOf(home.floor).push(entry);
@@ -1428,7 +1487,7 @@ export async function mountStreetScene(
       const oy = streetLife.offsetY(commuterMember);
       const drawX = frame.x + ox;
       const drawY = frame.y + oy;
-      sprite.texture = commuterFrames.frame(frame.animation, frame.direction, frame.frameIndex);
+      setBodyFrame(sprite, commuterFrames, frame);
       updateCharacterDrawable(drawable, drawX, drawY, frame.floor);
       positionSprite(
         sprite,
@@ -1642,10 +1701,26 @@ export async function mountStreetScene(
     tick(ticker.deltaMS);
   });
 
+  const playerBodyDials: BodyDials = {
+    strideCells: l3Config.strideCells,
+    walkFrames: walkFramesPerCycle(defs, "adult"),
+    // A frozen crowd is staged for a screenshot: the idle row is pinned.
+    idleFrames: crowdFrozen ? 1 : (framesByAnimation(defs, "adult").idle ?? 1),
+    idleFrameMilliminutes: l3Config.idleFrameMilliminutes,
+  };
+  function drawPlayerBody(dx: number, dy: number, drawn: number): void {
+    const id = playerCharacterId?.() ?? "player";
+    const t = crowdFrozen ? 0 : (cityMilliminutes?.() ?? 0);
+    poseBody(id, playerMotion, dx, dy, drawn, t, playerBodyDials, playerBodyFrame);
+    setBodyFrame(playerSprite, playerFrames, playerBodyFrame);
+    onPlayerBody?.(playerBodyFrame);
+  }
+
   function tick(deltaMS: number): void {
     const direction =
       options.bodyControl?.isOpen() === false ? { x: 0, y: 0 } : keyboard.direction();
     if (direction.x === 0 && direction.y === 0) {
+      drawPlayerBody(0, 0, 0);
       // Still applied on an idle frame (Quentin's direction): a window
       // resize does not move the player, but the camera's own offset has
       // to react to it the instant `app.renderer.width`/`height` do,
@@ -1666,6 +1741,13 @@ export async function mountStreetScene(
       transitions,
       flights,
     );
+
+    // The displacement actually made, never the input: a wall is idle.
+    {
+      const dx = walk.x - stepFrom.x;
+      const dy = walk.y - stepFrom.y;
+      drawPlayerBody(dx, dy, flights.drawnDistance(stepFrom.x, stepFrom.y, stepFrom.floor, dx, dy));
+    }
 
     onPlayerMove?.(walk.x, walk.y, walk.floor);
     onPlayerStep?.({
@@ -1780,6 +1862,8 @@ export async function mountStreetScene(
     atlasBaseUrl,
     crowdIdenticalTuples ?? false,
     { walk: npcWalk, config: l3Config, life: streetLife, frozen: crowdFrozen },
+    // A frozen crowd is staged whole for a screenshot.
+    crowdFrozen ? {} : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
   );
   // Story 4.4: the other players, in the same floor-0 container, advanced
   // from the same ticker below.
@@ -1793,6 +1877,7 @@ export async function mountStreetScene(
         ZOOM,
         {
           ...remotePlayersWiring,
+          cityMilliminutes: crowdFrozen ? undefined : cityMilliminutes,
           drawnDistance: (x, y, floor, dx, dy) => flights.drawnDistance(x, y, floor, dx, dy),
         },
       )
@@ -1820,7 +1905,8 @@ export async function mountStreetScene(
       const cityMilli = cityMilliminutes?.();
       if (cityMilli !== undefined) {
         streetLife.solve(cityMilli);
-        citizensLayer.update();
+        citizensLayer.update(cityMilli, bodyZone());
+        onCitizenBodies?.(citizensLayer.bodyBounds(), app.screen, citizensLayer.citizenCount);
       }
       updateCommuter(cityMilli);
     }

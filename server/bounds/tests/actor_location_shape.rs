@@ -124,3 +124,30 @@ fn the_region_tables_are_public() {
         );
     }
 }
+
+/// A table that carries an actor id together with a `chunk_key` is a
+/// presence table. `actor_location` is the one for actors; `player_position`
+/// is a character's own row. A citizen's chunk crossing is a write to
+/// `actor_location` and nothing else (FR58).
+#[test]
+fn no_second_presence_table() {
+    const ACTOR_ID_COLUMNS: &[&str] = &["actor_id", "citizen_id", "character_id"];
+    let schema = parse_module_schema(&module_src_dir());
+    let offenders: Vec<&str> = schema
+        .tables
+        .iter()
+        .filter(|t| t.accessor != "actor_location" && t.accessor != "player_position")
+        .filter(|t| {
+            t.columns.iter().any(|c| c.name == "chunk_key")
+                && t.columns
+                    .iter()
+                    .any(|c| ACTOR_ID_COLUMNS.contains(&c.name.as_str()))
+        })
+        .map(|t| t.accessor.as_str())
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "{offenders:?} carries an actor id and a chunk_key: a second presence table. \
+         A citizen's chunk is `actor_location`'s, rewritten by `plan_move` on a crossing; {WHY}"
+    );
+}

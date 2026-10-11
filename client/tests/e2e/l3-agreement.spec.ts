@@ -30,6 +30,7 @@ interface Sample {
   readonly facing: string;
   readonly offsetX: number;
   readonly offsetY: number;
+  readonly look: string;
 }
 
 /** City milliminutes sampled: a fine sweep across the first legs (so a
@@ -86,6 +87,8 @@ test("two clients with different views agree on every citizen's L3 state", async
     expect(all.some((s) => s.offsetX !== 0 || s.offsetY !== 0)).toBe(true);
     expect(all.some((s) => s.activity === "glance")).toBe(true);
     expect(new Set(all.map((s) => s.frameIndex)).size).toBeGreaterThan(3);
+    // The look is part of what the clients agree on, and none is empty.
+    expect(all.every((s) => s.look !== "")).toBe(true);
   } finally {
     await a.close();
     await b.close();
