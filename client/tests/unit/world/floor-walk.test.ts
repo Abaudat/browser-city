@@ -6,6 +6,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { CollisionGridQuery, GridEntry } from "../../../src/world/collision-grid";
+import { FlightIndex } from "../../../src/world/flights";
 import {
   type FloorWalkState,
   initialFloorWalkState,
@@ -39,6 +40,7 @@ const CONFIG: MovementConfig = {
  * clamps any single step's own delta to 100ms, so at this speed the
  * farthest one call ever travels is exactly one cell). */
 const FAST_CONFIG: MovementConfig = { ...CONFIG, walkSpeedCellsPerMs: 0.01 };
+const NO_FLIGHTS = new FlightIndex([], CONFIG);
 const BIG_DELTA_MS = 100;
 
 describe("initialFloorWalkState", () => {
@@ -86,7 +88,7 @@ describe("stepAndTransition", () => {
       for (let xSub = 3 * sub; xSub < 4 * sub; xSub += 3) {
         for (const dir of dirs) {
           const state = initialFloorWalkState(xSub / sub, ySub / sub, 0);
-          const next = stepAndTransition(state, dir, 100, blocked, CONFIG, transitions);
+          const next = stepAndTransition(state, dir, 100, blocked, CONFIG, transitions, NO_FLIGHTS);
           if (next.transitioned) continue;
           const box = bodyRect({ x: next.x, y: next.y }, CONFIG);
           const centre = (box.x0 + box.x1) / 2;
@@ -109,7 +111,15 @@ describe("stepAndTransition", () => {
 
   it("does not consult the transition index at all while the step stays inside the same cell", () => {
     const state: FloorWalkState = { x: 4.5, y: 0.5, floor: 0, cellX: 4, cellY: 0 };
-    const result = stepAndTransition(state, { x: 1, y: 0 }, 1, OPEN_GRID, CONFIG, transitions);
+    const result = stepAndTransition(
+      state,
+      { x: 1, y: 0 },
+      1,
+      OPEN_GRID,
+      CONFIG,
+      transitions,
+      NO_FLIGHTS,
+    );
     expect(result.transitioned).toBe(false);
     expect(result.floor).toBe(0);
   });
@@ -123,6 +133,7 @@ describe("stepAndTransition", () => {
       OPEN_GRID,
       FAST_CONFIG,
       transitions,
+      NO_FLIGHTS,
     );
     expect(result.transitioned).toBe(true);
     // The target is the anchor's own cell: the walker keeps its position and
@@ -146,6 +157,7 @@ describe("stepAndTransition", () => {
       OPEN_GRID,
       FAST_CONFIG,
       elsewhere,
+      NO_FLIGHTS,
     );
     expect(result).toMatchObject({ x: 9.5, y: 3.5, floor: -1, cellX: 9, cellY: 3 });
   });
@@ -159,12 +171,21 @@ describe("stepAndTransition", () => {
       OPEN_GRID,
       FAST_CONFIG,
       transitions,
+      NO_FLIGHTS,
     );
     expect(landed.transitioned).toBe(true);
 
     // Still holding "right", still on the landing cell: the transition
     // that produced this state must not immediately fire again.
-    const again = stepAndTransition(landed, { x: 1, y: 0 }, 1, OPEN_GRID, CONFIG, transitions);
+    const again = stepAndTransition(
+      landed,
+      { x: 1, y: 0 },
+      1,
+      OPEN_GRID,
+      CONFIG,
+      transitions,
+      NO_FLIGHTS,
+    );
     expect(again.transitioned).toBe(false);
     expect(again.floor).toBe(-1);
   });
@@ -205,6 +226,7 @@ describe("stepAndTransition", () => {
               OPEN_GRID,
               FAST_CONFIG,
               mutual,
+              NO_FLIGHTS,
             );
             if (next.transitioned) transitionCount++;
             state = next;
@@ -268,6 +290,7 @@ describe("stepAndTransition", () => {
               OPEN_GRID,
               FAST_CONFIG,
               mutual,
+              NO_FLIGHTS,
             );
             if (next.transitioned) {
               expect(previousTransitioned).toBe(false);

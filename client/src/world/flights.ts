@@ -1,22 +1,22 @@
 import type { FlightDef } from "../defs/types";
-import { footprintCells, footprintOrigin } from "../world/footprint";
-import { bodyRect, type MovementConfig } from "../world/movement";
+import { footprintCells, footprintOrigin } from "./footprint";
+import { bodyRect, type MovementConfig } from "./movement";
 import {
   forwardOpenNeighbor,
   pairTransitions,
   reverseOpenNeighbor,
   type TransitionSpec,
-} from "../world/transitions";
-import { floorOffsetPx } from "./screen-position";
+} from "./transitions";
 
 // FR182's flight offset (story 15.15): an actor on a flight is drawn lower
 // or higher along the walked treads, following the drawn surface, instead of
 // the whole floor offset arriving at the floor change. A pure function of
 // position and floor -- never of time, velocity, facing or the previous
 // tick -- so walking back retraces it exactly and standing still holds the
-// height. It is summed with the floor offset inside `worldPointPx` and
-// exists nowhere else: not in the sort key, collision, walk state or
-// picking. No `pixi.js`, no scene state.
+// height. It is summed with the floor offset inside `worldPointPx`; the
+// flight's ramp also scales the walked step (`paceScale`, story 15.21) so
+// the drawn displacement keeps walking pace. Neither reaches the sort key,
+// collision or picking. No `pixi.js`, no scene state.
 
 /** What a flight needs from its `defs/objects` row. */
 export interface FlightSource {
@@ -53,6 +53,9 @@ export interface Flight {
   /** Screen pixels at `fullS`, signed toward the transition's target floor
    * (positive is down the screen). */
   readonly dropPx: number;
+  /** Screen px dropped per ground px along the ramp (`dropPx` over the
+   * ramp's ground length): the one gradient the pace reads. */
+  readonly slope: number;
 }
 
 /**
@@ -72,7 +75,6 @@ export function buildFlights(
   transitions: readonly TransitionSpec[],
   placed: readonly PlacedFlightRow[],
   sources: ReadonlyMap<number, FlightSource>,
-  storeyHeightPx: number,
   tileSizePx: number,
   isStandable: (x: number, y: number, floor: number) => boolean,
 ): readonly Flight[] {
@@ -132,10 +134,8 @@ export function buildFlights(
       if (anchorNearS !== hi - 1) {
         throw new Error(`buildFlights: the anchor ${where} is not at the far end of its flight`);
       }
-      const sign = Math.sign(
-        floorOffsetPx(anchor.targetFloor, storeyHeightPx) -
-          floorOffsetPx(anchor.floor, storeyHeightPx),
-      );
+      // A higher floor is drawn higher up the screen (`floorOffsetPx`).
+      const sign = Math.sign(anchor.floor - anchor.targetFloor);
       const flight: Flight = {
         floor: anchor.floor,
         x0: origin.x,
@@ -148,6 +148,7 @@ export function buildFlights(
         startS: lo + fromPx / tileSizePx,
         fullS: lo + toPx / tileSizePx,
         dropPx: sign * dropPx + 0,
+        slope: (sign * dropPx) / (toPx - fromPx) + 0,
       };
       const known = built.get(row);
       if (!known) {
@@ -196,15 +197,25 @@ function cellKey(floor: number, x: number, y: number): string {
   return `${floor}|${x}|${y}`;
 }
 
+/** One stretch of a ray with a constant pace scale. */
+interface Segment {
+  readonly length: number;
+  readonly sigma: number;
+}
+
 /** The flights, keyed by cell: O(1) per query. */
 export class FlightIndex {
   private readonly byCell = new Map<string, Flight>();
+  private readonly byFloor = new Map<number, Flight[]>();
 
   constructor(
     flights: readonly Flight[],
     private readonly config: MovementConfig,
   ) {
     for (const flight of flights) {
+      const onFloor = this.byFloor.get(flight.floor) ?? [];
+      onFloor.push(flight);
+      this.byFloor.set(flight.floor, onFloor);
       for (let y = flight.y0; y < flight.y1; y++) {
         for (let x = flight.x0; x < flight.x1; x++) {
           const key = cellKey(flight.floor, x, y);
@@ -220,15 +231,13 @@ export class FlightIndex {
   }
 
   /**
-   * The screen-pixel offset for an actor whose feet are at `(x, y)` on
-   * `floor`: `0` (exactly `+0`) off every flight. An actor is on a flight
-   * when its body overlaps the footprint -- a body pressed against the near
-   * railing rests with its feet on the row boundary, outside the tread cell
-   * -- and progress is read from the feet along the flight's axis, clamped
-   * to it (flat before the first tread and after the last).
+   * The flight an actor whose feet are at `(x, y)` on `floor` is on: its
+   * body overlaps the footprint -- a body pressed against the near railing
+   * rests with its feet on the row boundary, outside the tread cell. The
+   * one lookup `offsetPx` and `paceScale` both read.
    */
-  offsetPx(x: number, y: number, floor: number): number {
-    if (this.byCell.size === 0) return 0;
+  private flightAt(x: number, y: number, floor: number): Flight | undefined {
+    if (this.byCell.size === 0) return undefined;
     const sub = this.config.subcellsPerCell;
     const body = bodyRect({ x, y }, this.config);
     const cx1 = Math.ceil(body.x1 / sub) - 1;
@@ -236,12 +245,142 @@ export class FlightIndex {
     for (let cy = Math.floor(body.y0 / sub); cy <= cy1; cy++) {
       for (let cx = Math.floor(body.x0 / sub); cx <= cx1; cx++) {
         const flight = this.byCell.get(cellKey(floor, cx, cy));
-        if (!flight) continue;
-        const s = x * flight.dirX + y * flight.dirY;
-        const t = Math.min(1, Math.max(0, (s - flight.startS) / (flight.fullS - flight.startS)));
-        return flight.dropPx * t + 0;
+        if (flight) return flight;
       }
     }
-    return 0;
+    return undefined;
+  }
+
+  /**
+   * The screen-pixel offset for an actor whose feet are at `(x, y)` on
+   * `floor`: `0` (exactly `+0`) off every flight. Progress is read from the
+   * feet along the flight's axis, clamped to it (flat before the first
+   * tread and after the last).
+   */
+  offsetPx(x: number, y: number, floor: number): number {
+    const flight = this.flightAt(x, y, floor);
+    if (!flight) return 0;
+    const s = x * flight.dirX + y * flight.dirY;
+    const t = Math.min(1, Math.max(0, (s - flight.startS) / (flight.fullS - flight.startS)));
+    return flight.dropPx * t + 0;
+  }
+
+  /**
+   * The factor a ground step in direction `(dx, dy)` is scaled by so its
+   * drawn displacement (ground plus the change in `offsetPx`) has the
+   * length of a flat step (story 15.21): `1` off every ramp and across its
+   * axis, otherwise `1 / |(d.x, d.y + slope * (d . dir))|`, clamped to
+   * `(0, 1]` -- a flight never makes a walker faster than flat ground. A
+   * pure function of position, floor and direction, never of time or
+   * history. The direction need not be unit length.
+   */
+  paceScale(x: number, y: number, floor: number, dx: number, dy: number): number {
+    const length = Math.hypot(dx, dy);
+    if (length === 0) return 1;
+    const flight = this.flightAt(x, y, floor);
+    if (!flight) return 1;
+    const s = x * flight.dirX + y * flight.dirY;
+    if (!(s > flight.startS && s < flight.fullS)) return 1;
+    const ux = dx / length;
+    const uy = dy / length;
+    const drawn = Math.hypot(ux, uy + flight.slope * (ux * flight.dirX + uy * flight.dirY));
+    return drawn > 1 ? 1 / drawn : 1;
+  }
+
+  /**
+   * The constant-scale stretches of the ray from `(x, y)` along the unit
+   * direction `(ux, uy)`, up to `maxGround` cells. It cuts wherever the body
+   * enters or leaves a flight's footprint on the floor and wherever the feet
+   * cross a ramp's ends, so a step is paced piecewise and the drawn speed is
+   * flat through the ramp's edges.
+   */
+  private segments(
+    x: number,
+    y: number,
+    floor: number,
+    ux: number,
+    uy: number,
+    maxGround: number,
+  ): Segment[] {
+    const flights = this.byFloor.get(floor);
+    if (!flights || maxGround <= 0) return [{ length: maxGround, sigma: 1 }];
+    const sub = this.config.subcellsPerCell;
+    const halfWidth = this.config.bodyWidthSubcells / 2 / sub;
+    const height = this.config.bodyHeightSubcells / sub;
+    const cuts: number[] = [];
+    const cut = (t: number) => {
+      if (t > 0 && t < maxGround) cuts.push(t);
+    };
+    for (const f of flights) {
+      if (ux !== 0) {
+        cut((f.x0 - halfWidth - x) / ux);
+        cut((f.x1 + halfWidth - x) / ux);
+      }
+      if (uy !== 0) {
+        cut((f.y0 - y) / uy);
+        cut((f.y1 + height - y) / uy);
+      }
+      const along = ux * f.dirX + uy * f.dirY;
+      if (along !== 0) {
+        const s0 = x * f.dirX + y * f.dirY;
+        cut((f.startS - s0) / along);
+        cut((f.fullS - s0) / along);
+      }
+    }
+    cuts.sort((a, b) => a - b);
+    const out: Segment[] = [];
+    let at = 0;
+    for (const t of [...cuts, maxGround]) {
+      if (t <= at) continue;
+      const mid = (at + t) / 2;
+      out.push({
+        length: t - at,
+        sigma: this.paceScale(x + ux * mid, y + uy * mid, floor, ux, uy),
+      });
+      at = t;
+    }
+    return out;
+  }
+
+  /**
+   * The effective scale of a step of `deltaMs` in direction `(dx, dy)` from
+   * `(x, y)`: the ground it covers over the flat distance it would, with the
+   * pace scale applied piecewise along the ray (story 15.21), so the drawn
+   * distance is the flat distance whatever the tick length, ramp edges
+   * included. `1` when no flight is on the floor.
+   */
+  stepScale(x: number, y: number, floor: number, dx: number, dy: number, deltaMs: number): number {
+    const length = Math.hypot(dx, dy);
+    const flat = this.config.walkSpeedCellsPerMs * deltaMs;
+    if (length === 0 || flat <= 0 || !this.byFloor.has(floor)) return 1;
+    // A scale never exceeds 1, so the step never covers more than `flat`.
+    let remaining = flat;
+    let ground = 0;
+    for (const seg of this.segments(x, y, floor, dx / length, dy / length, flat)) {
+      const needed = seg.length / seg.sigma;
+      if (remaining >= needed) {
+        ground += seg.length;
+        remaining -= needed;
+      } else {
+        ground += remaining * seg.sigma;
+        break;
+      }
+    }
+    return ground / flat;
+  }
+
+  /**
+   * The drawn-surface distance, in cells, of a ground move of `(dx, dy)`
+   * from `(x, y)`: what the walk frame is fed so the legs keep walking
+   * cadence on a flight (story 15.21). The ground distance off every ramp.
+   */
+  drawnDistance(x: number, y: number, floor: number, dx: number, dy: number): number {
+    const length = Math.hypot(dx, dy);
+    if (length === 0 || !this.byFloor.has(floor)) return length;
+    let flat = 0;
+    for (const seg of this.segments(x, y, floor, dx / length, dy / length, length)) {
+      flat += seg.length / seg.sigma;
+    }
+    return flat;
   }
 }

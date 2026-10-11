@@ -165,6 +165,10 @@ export function bodyCell(position: Vec2): { x: number; y: number } {
  * always exact because `subcellsPerCell` is a power of two. The starting
  * body is built from [`bodyRect`] (story 15.4) -- there is one body, not
  * two.
+ *
+ * `speedScale` multiplies the requested distance only (story 15.21): `1`
+ * on open ground, a flight's pace scale on its ramp. Collision is
+ * resolved against the scaled step exactly as against an unscaled one.
  */
 export function step(
   position: Vec2,
@@ -173,12 +177,13 @@ export function step(
   grid: CollisionGridQuery,
   floor: number,
   config: MovementConfig,
+  speedScale: number,
 ): Vec2 {
   if (inputDir.x === 0 && inputDir.y === 0) return position;
 
   const deltaMs = Math.min(deltaMsRaw, MAX_DELTA_MS);
   const length = Math.hypot(inputDir.x, inputDir.y);
-  const distanceCells = config.walkSpeedCellsPerMs * deltaMs;
+  const distanceCells = config.walkSpeedCellsPerMs * deltaMs * speedScale;
   const desiredXCells = position.x + (inputDir.x / length) * distanceCells;
   const desiredYCells = position.y + (inputDir.y / length) * distanceCells;
 

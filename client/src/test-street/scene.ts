@@ -46,7 +46,6 @@ import {
 } from "../render/atlas-pages";
 import { newBodySprite, setBodyFrame } from "../render/body-sprite";
 import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "../render/camera";
-import { buildFlights, FlightIndex } from "../render/flight-offset";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName, passOfLayer } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -64,9 +63,11 @@ import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
 import type { Rect } from "../world/body-zone";
 import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
+import { buildFlights, FlightIndex } from "../world/flights";
 import {
   type FloorWalkResult,
   initialFloorWalkState,
+  type PlayerStep,
   stepAndTransition,
 } from "../world/floor-walk";
 import { bodyRect, type MovementConfig } from "../world/movement";
@@ -110,7 +111,7 @@ import {
 import {
   mountRemotePlayersLayer,
   type RemotePlayersLayer,
-  type RemotePlayersWiring,
+  type RemotePlayersSource,
 } from "./remote-players-layer";
 import { lifeDialsFor, StreetLife } from "./street-life";
 import { Timetable } from "./timetable";
@@ -213,10 +214,14 @@ export interface MountStreetSceneOptions {
    * client-side and immediate, FR137) -- unlike `onOrderChange`, this is
    * polled every frame on purpose. */
   readonly onPlayerMove?: (x: number, y: number, floor: number) => void;
+  /** Every walked step of the player: the state it started from, the held
+   * direction and frame time it was resolved with, and where it ended (a
+   * DEV build's e2e step log, story 15.21). */
+  readonly onPlayerStep?: (step: PlayerStep) => void;
   /** Story 4.4 (FR138): where the other players come from. Absent means
    * none are drawn (a DEV build's isolation switch; always present in a
    * production build). */
-  readonly remotePlayers?: RemotePlayersWiring;
+  readonly remotePlayers?: RemotePlayersSource;
   /** The local character's id: seeds the player's gait and idle phase the
    * way every client seeds this body's, so others see what the player sees.
    * Absent until the character exists. */
@@ -793,6 +798,7 @@ export async function mountStreetScene(
     thresholdDefIds,
     onOrderChange,
     onPlayerMove,
+    onPlayerStep,
     remotePlayers: remotePlayersWiring,
     playerCharacterId,
     onPlayerBody,
@@ -1259,13 +1265,8 @@ export async function mountStreetScene(
   // The flights, validated against the real grid: every standable far-end
   // cell of a flight is an anchor, or the mount throws.
   flights = new FlightIndex(
-    buildFlights(
-      STREET_TRANSITIONS,
-      placedRows,
-      objectDefs,
-      storeyHeightPx,
-      tileSizePx,
-      (x, y, floor) => isCellStandable(worldIndex, movementConfig, x, y, floor),
+    buildFlights(STREET_TRANSITIONS, placedRows, objectDefs, tileSizePx, (x, y, floor) =>
+      isCellStandable(worldIndex, movementConfig, x, y, floor),
     ),
     movementConfig,
   );
@@ -1687,10 +1688,10 @@ export async function mountStreetScene(
     idleFrames: crowdFrozen ? 1 : (framesByAnimation(defs, "adult").idle ?? 1),
     idleFrameMilliminutes: l3Config.idleFrameMilliminutes,
   };
-  function drawPlayerBody(dx: number, dy: number): void {
+  function drawPlayerBody(dx: number, dy: number, drawn: number): void {
     const id = playerCharacterId?.() ?? "player";
     const t = crowdFrozen ? 0 : (cityMilliminutes?.() ?? 0);
-    poseBody(id, playerMotion, dx, dy, t, playerBodyDials, playerBodyFrame);
+    poseBody(id, playerMotion, dx, dy, drawn, t, playerBodyDials, playerBodyFrame);
     setBodyFrame(playerSprite, playerFrames, playerBodyFrame);
     onPlayerBody?.(playerBodyFrame);
   }
@@ -1699,7 +1700,7 @@ export async function mountStreetScene(
     const direction =
       options.bodyControl?.isOpen() === false ? { x: 0, y: 0 } : keyboard.direction();
     if (direction.x === 0 && direction.y === 0) {
-      drawPlayerBody(0, 0);
+      drawPlayerBody(0, 0, 0);
       // Still applied on an idle frame (Quentin's direction): a window
       // resize does not move the player, but the camera's own offset has
       // to react to it the instant `app.renderer.width`/`height` do,
@@ -1710,13 +1711,36 @@ export async function mountStreetScene(
 
     const before = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
     const floorBefore = walk.floor;
-    const xBefore = walk.x;
-    const yBefore = walk.y;
-    walk = stepAndTransition(walk, direction, deltaMS, worldIndex, movementConfig, transitions);
+    const stepFrom = walk;
+    walk = stepAndTransition(
+      walk,
+      direction,
+      deltaMS,
+      worldIndex,
+      movementConfig,
+      transitions,
+      flights,
+    );
+
     // The displacement actually made, never the input: a wall is idle.
-    drawPlayerBody(walk.x - xBefore, walk.y - yBefore);
+    {
+      const dx = walk.x - stepFrom.x;
+      const dy = walk.y - stepFrom.y;
+      drawPlayerBody(dx, dy, flights.drawnDistance(stepFrom.x, stepFrom.y, stepFrom.floor, dx, dy));
+    }
 
     onPlayerMove?.(walk.x, walk.y, walk.floor);
+    onPlayerStep?.({
+      fromX: stepFrom.x,
+      fromY: stepFrom.y,
+      fromFloor: stepFrom.floor,
+      dirX: direction.x,
+      dirY: direction.y,
+      deltaMs: deltaMS,
+      toX: walk.x,
+      toY: walk.y,
+      toFloor: walk.floor,
+    });
 
     updateCharacterDrawable(playerDrawable, walk.x, walk.y, walk.floor);
     playerFlightOffsetPx = flights.offsetPx(walk.x, walk.y, walk.floor);
@@ -1833,7 +1857,11 @@ export async function mountStreetScene(
         tileSizePx,
         storeyHeightPx,
         ZOOM,
-        { ...remotePlayersWiring, cityMilliminutes: crowdFrozen ? undefined : cityMilliminutes },
+        {
+          ...remotePlayersWiring,
+          cityMilliminutes: crowdFrozen ? undefined : cityMilliminutes,
+          drawnDistance: (x, y, floor, dx, dy) => flights.drawnDistance(x, y, floor, dx, dy),
+        },
       )
     : undefined;
   // Story 1.14 (NFR1): the atlas term's own end -- every texture this

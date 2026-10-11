@@ -36,9 +36,16 @@ export interface RemotePlayersWiring {
   readonly skip: () => string | undefined;
   /** City time in milliminutes, for the idle row; 0 when none. */
   readonly cityMilliminutes?: () => number | undefined;
+  /** The drawn-surface distance, in cells, of a ground move from a position
+   * (story 15.21): the walk frame is fed it, so legs keep walking cadence on
+   * a flight. Required: a wiring that forgets it would slide feet on stairs. */
+  readonly drawnDistance: (x: number, y: number, floor: number, dx: number, dy: number) => number;
   /** Every frame: where each drawn remote player is. */
   readonly onFrame?: (poses: Readonly<Record<string, RemotePose>>) => void;
 }
+
+/** What a caller supplies; the scene adds the flights' `drawnDistance`. */
+export type RemotePlayersSource = Omit<RemotePlayersWiring, "drawnDistance">;
 
 export interface RemotePlayersLayer {
   update(): void;
@@ -102,11 +109,14 @@ export async function mountRemotePlayersLayer(
         d = { sprite, motion: createBodyMotion(), frame, x: pose.x, y: pose.y };
         drawn.set(id, d);
       }
+      const stepX = pose.x - d.x;
+      const stepY = pose.y - d.y;
       poseBody(
         id,
         d.motion,
-        pose.x - d.x,
-        pose.y - d.y,
+        stepX,
+        stepY,
+        wiring.drawnDistance(d.x, d.y, pose.floor, stepX, stepY),
         wiring.cityMilliminutes?.() ?? 0,
         dials,
         d.frame,

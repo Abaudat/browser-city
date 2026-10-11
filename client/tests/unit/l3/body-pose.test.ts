@@ -4,7 +4,7 @@ import {
   type BodyDials,
   type BodyFrame,
   createBodyMotion,
-  poseBody,
+  poseBody as poseSurface,
 } from "../../../src/l3/body-pose";
 import { type Facing, facingOfHeading, phaseOffsetFor, walkFrame } from "../../../src/l3/gait";
 import { l3Config } from "./defs-config";
@@ -18,6 +18,16 @@ const DIALS: BodyDials = {
 };
 const frame = (): BodyFrame => ({ animation: "idle", direction: "down", frameIndex: 0 });
 const ID = "character-7";
+/** A move whose drawn length is its ground length. */
+const poseBody = (
+  id: string,
+  m: ReturnType<typeof createBodyMotion>,
+  dx: number,
+  dy: number,
+  t: number,
+  dials: BodyDials,
+  out: BodyFrame,
+) => poseSurface(id, m, dx, dy, Math.hypot(dx, dy), t, dials, out);
 
 describe("poseBody", () => {
   it("faces each of the four directions of a move", () => {
@@ -128,5 +138,19 @@ describe("poseBody", () => {
       poseBody(ID, remote, dx, dy, 100, DIALS, ro);
       expect(lo).toEqual(ro);
     }
+  });
+});
+
+describe("poseBody on a flight", () => {
+  it("the walk frame is fed the drawn distance, not the ground distance", () => {
+    const ground = createBodyMotion();
+    const ramp = createBodyMotion();
+    const a = frame();
+    const b = frame();
+    poseSurface(ID, ground, 0.1, 0, 0.1, 0, DIALS, a);
+    poseSurface(ID, ramp, 0.1, 0, 0.3, 0, DIALS, b);
+    expect(ramp.walked).toBeCloseTo(0.3);
+    expect(ground.walked).toBeCloseTo(0.1);
+    expect(b.direction).toBe(a.direction);
   });
 });

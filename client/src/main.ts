@@ -47,6 +47,7 @@ import {
   recordPlayerAppearanceForE2e,
   recordPlayerBodyForE2e,
   recordPlayerPositionForE2e,
+  recordPlayerStepForE2e,
   recordRegionRowForE2e,
   recordRemotePlayersForE2e,
   recordRemoteSampleForE2e,
@@ -72,7 +73,7 @@ import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-set
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
 import { PLAYER_START } from "./test-street/fixture";
 import { placeLinkCarrier } from "./test-street/link-carrier";
-import type { RemotePlayersWiring } from "./test-street/remote-players-layer";
+import type { RemotePlayersSource } from "./test-street/remote-players-layer";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
@@ -103,7 +104,7 @@ interface OfferWiring {
 interface PlayersWiring {
   /** Once the defs are verified: what the scene draws remote players from,
    * or none when this page draws no remote players. */
-  readonly setUp: (defs: Defs) => RemotePlayersWiring | undefined;
+  readonly setUp: (defs: Defs) => RemotePlayersSource | undefined;
   readonly onPlayerMove: (x: number, y: number, floor: number) => void;
   /** The local character's id, once it exists. */
   readonly characterId: () => string | undefined;
@@ -670,6 +671,7 @@ async function startStreetScene(
       lastPlayerCell = cell;
       debugOverlays?.redraw();
     },
+    onPlayerStep: import.meta.env.DEV ? recordPlayerStepForE2e : undefined,
     onFrameWork: recordFrameWorkForE2e,
     onVisibilityChange: recordVisibilityForE2e,
     onMasksChecked: recordMasksCheckedForE2e,

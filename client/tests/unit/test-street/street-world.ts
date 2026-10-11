@@ -51,7 +51,7 @@ import {
   streetWalkUntilMet,
   TRASH_BIN_DEF_ID,
 } from "../../../src/test-street/fixture";
-
+import { buildFlights, type Flight, FlightIndex } from "../../../src/world/flights";
 import {
   type FloorWalkResult,
   initialFloorWalkState,
@@ -374,12 +374,28 @@ export function simulateStreetWalk(
             `(${JSON.stringify(segment.until)}); stuck at (${state.x}, ${state.y}) on floor ${state.floor}`,
         );
       }
-      state = stepAndTransition(state, direction, stepMs, world, config, transitions);
+      state = stepAndTransition(
+        state,
+        direction,
+        stepMs,
+        world,
+        config,
+        transitions,
+        streetFlightIndex(),
+      );
     }
     // The key is still down while the release travels; the scene keeps
     // ticking. Everything the next segment relies on has to survive this.
     for (let lag = 0; lag < releaseLagSteps; lag++) {
-      state = stepAndTransition(state, direction, stepMs, world, config, transitions);
+      state = stepAndTransition(
+        state,
+        direction,
+        stepMs,
+        world,
+        config,
+        transitions,
+        streetFlightIndex(),
+      );
     }
     checkpoints.push({ label: segment.label, state });
   }
@@ -499,7 +515,15 @@ export function platformWestRestX(): number {
     transitioned: false,
   };
   for (let i = 0; i < 4000; i++) {
-    const next = stepAndTransition(state, { x: -1, y: 0 }, 16, world, config, transitions);
+    const next = stepAndTransition(
+      state,
+      { x: -1, y: 0 },
+      16,
+      world,
+      config,
+      transitions,
+      streetFlightIndex(),
+    );
     if (next.x === state.x) return state.x;
     state = next;
   }
@@ -569,7 +593,7 @@ export function playerBodySquareRoute(): readonly StreetWalkSegment[] {
 }
 
 /** Story 15.15: the walk down and back up the subway stairs, along both
- * edges of the tread path, for the flight-offset e2e. The south edge is the
+ * edges of the tread path, for the flight e2e. The south edge is the
  * near railing's face; the north edge is walked at the first row the route
  * walks the treads on, reached from the north so the release lag can only
  * carry the body further into the row. Each leg stops short of an anchor
@@ -663,4 +687,27 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     { name: "flight-walk", segments: flightWalkRoute(), start: fresh },
     { name: "footbridge-walk", segments: streetFootbridgeRoute(inputs), start: fresh },
   ];
+}
+
+let cachedStreetFlightList: readonly Flight[] | undefined;
+/** The street's own flights, built the way `scene.ts` builds them. */
+export function streetFlightList(): readonly Flight[] {
+  if (cachedStreetFlightList) return cachedStreetFlightList;
+  const storey =
+    committedDefs().balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
+  cachedStreetFlightList = buildFlights(
+    STREET_TRANSITIONS,
+    streetPlacedRows(),
+    streetObjectSources(),
+    16,
+    streetStandable,
+  );
+  return cachedStreetFlightList;
+}
+
+let cachedStreetFlights: FlightIndex | undefined;
+/** The street's own `FlightIndex`. */
+export function streetFlightIndex(): FlightIndex {
+  cachedStreetFlights ??= new FlightIndex(streetFlightList(), streetMovementConfig());
+  return cachedStreetFlights;
 }

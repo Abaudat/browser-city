@@ -120,7 +120,7 @@ describe("inv_drawn_body_meets_drawn_collider", () => {
 
           const grid = buildGrid(collider);
           const start: Vec2 = { x: 0, y: 0 };
-          const result = step(start, { x: nx, y: ny }, MAX_DELTA_MS, grid, FLOOR, CONFIG);
+          const result = step(start, { x: nx, y: ny }, MAX_DELTA_MS, grid, FLOOR, CONFIG, 1);
           const resultBody = drawn(bodyRect(result, CONFIG));
           const colliderDrawn = drawn(collider);
 

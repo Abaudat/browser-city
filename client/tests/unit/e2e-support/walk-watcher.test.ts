@@ -19,6 +19,7 @@ import {
   type WatcherArgs,
 } from "../../e2e/walk-watcher";
 import {
+  streetFlightIndex,
   streetMovementConfig,
   streetTransitionIndex,
   streetWorldIndex,
@@ -94,7 +95,15 @@ function installPage(order: Order, frameMs: number) {
   const scene = () => {
     if (held) {
       const dir = STREET_WALK_DIRECTIONS[held as keyof typeof STREET_WALK_DIRECTIONS];
-      state = stepAndTransition(state, dir, frameMs, world, config, transitions);
+      state = stepAndTransition(
+        state,
+        dir,
+        frameMs,
+        world,
+        config,
+        transitions,
+        streetFlightIndex(),
+      );
       bc.playerPosition = { x: state.x, y: state.y };
       bc.playerFloor = state.floor;
     }

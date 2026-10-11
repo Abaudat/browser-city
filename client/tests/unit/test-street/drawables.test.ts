@@ -495,7 +495,7 @@ describe("the player can never walk off the drawn world", () => {
           let pos: Vec2 = { x: PLAYER_START.x, y: PLAYER_START.y };
           expect(isOnDrawnGround(pos)).toBe(true);
           for (const { dx, dy, deltaMs } of inputs) {
-            pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
+            pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config, 1);
             expect(isOnDrawnGround(pos), `left the drawn world at (${pos.x}, ${pos.y})`).toBe(true);
           }
         },
@@ -516,7 +516,7 @@ describe("the player can never walk off the drawn world", () => {
     // the lamppost, from here (`street-conformance.test.ts`).
     let pos: Vec2 = { x: PLAYER_START.x, y: PLAYER_START.y };
     for (let i = 0; i < 400; i++) {
-      pos = step(pos, { x: 0, y: 1 }, 16, grid, PLAYER_START.floor, config);
+      pos = step(pos, { x: 0, y: 1 }, 16, grid, PLAYER_START.floor, config, 1);
       expect(isOnDrawnGround(pos), `left the drawn world at (${pos.x}, ${pos.y})`).toBe(true);
     }
     expect(pos.y).toBeCloseTo(shopfrontExitRestY(), 9);
@@ -545,7 +545,7 @@ describe("the player can never walk off the drawn world", () => {
       let pos = from;
       for (const { dx, dy, deltaMs } of inputs) {
         const before = pos;
-        pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
+        pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config, 1);
         expect(outsideTheWorld(pos), `slid out of the world at (${pos.x}, ${pos.y})`).toBe(false);
         if (overWell(before) && before.y <= foot.rect.y0 + 1e-9 && overWell(pos)) {
           expect(
@@ -612,7 +612,7 @@ describe("the player can never walk off the drawn world", () => {
           let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_FOOT_Y + 0.5 };
           expect(isOnDrawnGround(pos)).toBe(true);
           for (const { dx, dy, deltaMs } of inputs) {
-            pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config);
+            pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config, 1);
             expect(isOnDrawnGround(pos), `left the drawn world at (${pos.x}, ${pos.y})`).toBe(true);
           }
         },
@@ -651,7 +651,7 @@ describe("the player can never walk off the drawn world", () => {
   ): Vec2 => {
     let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_FOOT_Y + 0.5 };
     for (const [dx, dy, deltaMs] of inputs) {
-      pos = step(pos, { x: dx, y: dy }, deltaMs, world, PLAYER_START.floor, config);
+      pos = step(pos, { x: dx, y: dy }, deltaMs, world, PLAYER_START.floor, config, 1);
     }
     return pos;
   };
@@ -674,12 +674,12 @@ describe("the player can never walk off the drawn world", () => {
   it("walking straight east along the flight's foot row stops at the world's own edge, still on the pavement", () => {
     let pos: Vec2 = { x: BRIDGE_X1 + 0.5, y: BRIDGE_FOOT_Y + 0.5 };
     for (let i = 0; i < 400; i++) {
-      pos = step(pos, { x: 1, y: 0 }, 16, grid, PLAYER_START.floor, config);
+      pos = step(pos, { x: 1, y: 0 }, 16, grid, PLAYER_START.floor, config, 1);
     }
     expect(isOnDrawnGround(pos)).toBe(true);
     // Actually stopped (the boundary collider caught it), not merely
     // exhausted the loop mid-stride.
-    const further = step(pos, { x: 1, y: 0 }, 16, grid, PLAYER_START.floor, config);
+    const further = step(pos, { x: 1, y: 0 }, 16, grid, PLAYER_START.floor, config, 1);
     expect(further.x).toBeCloseTo(pos.x, 9);
   });
 });

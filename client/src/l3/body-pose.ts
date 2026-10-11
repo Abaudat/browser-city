@@ -4,7 +4,7 @@
 // else decides a character's facing or walk frame from movement.
 
 import { idleFrameAt } from "./flavour";
-import { advanceGait, type Facing, type GaitState, phaseOffsetFor, walkFrame } from "./gait";
+import { advanceSurfaceGait, type Facing, type GaitState, phaseOffsetFor, walkFrame } from "./gait";
 
 export interface BodyDials {
   readonly strideCells: number;
@@ -28,18 +28,20 @@ export function createBodyMotion(facing: Facing = "down"): BodyMotion {
 }
 
 /** Poses body `id` after a move of `(dx, dy)` cells actually made this frame,
- * at city time `t`. A frame with no displacement is the idle row on the last
- * facing. */
+ * at city time `t`. `drawn` is the move's drawn-surface length in cells (a
+ * flight's ramp), which feeds the walk frame. A frame with no displacement is
+ * the idle row on the last facing. */
 export function poseBody(
   id: string,
   motion: BodyMotion,
   dx: number,
   dy: number,
+  drawn: number,
   t: number,
   dials: BodyDials,
   out: BodyFrame,
 ): void {
-  const moving = advanceGait(motion, dx, dy);
+  const moving = advanceSurfaceGait(motion, dx, dy, drawn);
   out.direction = motion.facing;
   if (moving) {
     out.animation = "walk";
