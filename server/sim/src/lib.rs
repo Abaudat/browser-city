@@ -11,6 +11,7 @@ pub mod cadence;
 pub mod cash;
 pub mod codes;
 pub mod demo_ping;
+pub mod gameplay_metrics;
 pub mod generation;
 pub mod identity;
 // `tools/defs-build` emits already-formatted text (docs/architecture.md's
