@@ -129,17 +129,18 @@ $(cat "$errlog")"
 
 # bc_table_names <snapshot-path> <role> -- every accessor from
 # <snapshot-path>, one per line, in snapshot order. <role> is 'all',
-# 'scheduled' or 'non-scheduled'. `restore_state` is never included: it is
-# the restore mechanism's own gate, not a table export-world.sh/
-# restore-world.sh ever touch; nor are `connected_client` and
-# `metric_tally` (live-session state, not world state). <snapshot-path> is always explicit (Tim's
+# 'scheduled' or 'non-scheduled'. The tables in `sim::table_bounds::
+# NOT_EXPORTED` (`bc_wb not-exported`) are never included: they are not
+# world state export-world.sh/restore-world.sh ever touch. <snapshot-path>
+# is always explicit (Tim's
 # direction, story 4.18): export-world.sh reads the *selected* candidate
 # snapshot, which is not always $BC_SNAPSHOT, so this never reads that
 # global itself.
 bc_table_names() {
-  local snapshot="$1" role="$2"
+  local snapshot="$1" role="$2" skip
+  skip="$(bc_wb not-exported)"
   bc_wb snapshot-tables "$snapshot" | while IFS=$'\t' read -r name scheduled; do
-    case "$name" in restore_state | connected_client | metric_tally) continue ;; esac
+    printf '%s\n' "$skip" | grep -qxF "$name" && continue
     case "$role" in
       all) printf '%s\n' "$name" ;;
       scheduled) [ "$scheduled" = "1" ] && printf '%s\n' "$name" ;;

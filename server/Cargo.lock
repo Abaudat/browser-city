@@ -964,6 +964,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "sim",
 ]
 
 [[package]]

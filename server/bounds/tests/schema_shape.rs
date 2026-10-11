@@ -25,25 +25,46 @@ fn every_table_has_exactly_one_primary_key() {
 }
 
 #[test]
-fn no_rust_enum_is_declared_anywhere_in_module_source() {
+fn no_rust_enum_is_declared_in_module_source_unless_a_wire_type_no_table_stores() {
     // NFR36: extensible sets are a `u32` code plus a companion table, never
-    // an enum. Deliberately as blunt as grepping for the word `enum` --
-    // that is enough to make the wrong thing loud, and this module has no
-    // legitimate use for one.
+    // an enum column. A reducer argument may be a `SpacetimeType` enum (it
+    // carries no migration risk); a table column never is.
+    let tables = schema().tables;
     for (path, text) in read_rust_files(&module_src_dir()) {
-        for (i, line) in text.lines().enumerate() {
+        let lines: Vec<&str> = text.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
             let stripped = line.split("//").next().unwrap_or(line);
-            // A closed wire type is not an extensible set: the one
-            // client-to-server measure call's argument (story 4.14).
-            if stripped.contains("enum ClientMeasure ") {
+            let mut words = stripped.split_whitespace();
+            let Some(name) = words
+                .by_ref()
+                .skip_while(|w| *w != "enum")
+                .nth(1)
+                .map(|n| n.trim_end_matches('{').to_string())
+            else {
                 continue;
-            }
+            };
+            let derives_wire_type = lines[i.saturating_sub(3)..i]
+                .iter()
+                .any(|l| l.contains("derive") && l.contains("SpacetimeType"));
             assert!(
-                !stripped.split_whitespace().any(|w| w == "enum"),
-                "{}:{}: `enum` found -- NFR36 forbids Rust enums in the module; use a u32 code plus a companion table",
+                derives_wire_type,
+                "{}:{}: `enum {name}` -- NFR36 forbids Rust enums in the module unless it derives SpacetimeType as a reducer argument",
                 path.display(),
                 i + 1
             );
+            for table in &tables {
+                for col in &table.columns {
+                    let names_it = col
+                        .ty
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .any(|w| w == name);
+                    assert!(
+                        !names_it,
+                        "table `{}` column `{}` is the enum `{name}` -- a table column never is an enum (NFR36)",
+                        table.accessor, col.name
+                    );
+                }
+            }
         }
     }
 }

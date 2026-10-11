@@ -136,11 +136,13 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 ### Gameplay metrics
 
 - `sim::gameplay_metrics::GAMEPLAY_METRICS` lists every metric once, beside `TABLE_BOUNDS`: append-only `code`, `name`, `unit` (`Count`, `Millis`, `Proportion`), `emitting_epic`, `emission_point`, `method` (`Instrumented`, `Proxy`, `AskPlayers`), `blind_spot`, `definition` and `series`. Floats are banned: a proportion is a numerator over a denominator. `docs/gdd.md` names each metric by its registry name.
-- A `Series` is one number a metric is read through, with its own append-only code. A metric with no series is deferred to its `emitting_epic`. `tables::metrics::emit_series` is an exhaustive `match` on `Series`, so a series without an emitter does not compile. Adding a metric is one registry row and one emitter.
+- A `Series` is one number a metric is read through, with its own append-only code. A metric with no series is deferred to its `emitting_epic`. `Period::figure` (`sim`) is an exhaustive `match` on `Series`, so a series without an emitter does not compile. Adding a metric is one registry row and one emitter.
 - `gameplay_metric_sample` is the one sample table: `series_code`, `sampled_at` (indexed), `value`, `sample_size`; `Count` reads as count and 1, `Millis` as the percentile bucket edge and its report count, `Proportion` as numerator and denominator. Its `alert_rows` is live series x 24 x `METRICS_RETENTION_DAYS` (the retention window at steady state) and `max_rows` is twice that. `begin_restore` clears and then restores it like the other samples.
 - `connected_client` holds one row per open connection (`ConnectionId` key, the two reported flags, no identity): inserted by `identity_connected`, deleted by `identity_disconnected`. It is live-session state, never exported or restored, and neither `finish_publish` nor `begin_restore` clears it; the host runs `client_disconnected` for connections a restart drops.
-- `metric_tally` holds the period accumulators keyed by `tally_key(series, slot)`: the peak, the boot histogram (64 log-spaced buckets, 60 000 ms cap) and the resume counts. The sampler zeroes it after each fire (the peak restarts at the current count); `begin_restore` clears it; it is never exported.
-- `report_client_measure(ClientMeasure::Boot | Resumed)` is the one client measure call, class `player`. `sim::gameplay_metrics::accept_measure` refuses a value outside (0, 60 s] for boot or (0, 24 h] for resume, and a second report of the same kind on one connection. The client sends it from `net/measure-reporter.ts` alone.
+- `metric_tally` holds the period accumulators keyed by `sim::gameplay_metrics::Tally` (its own key space): the peak, the boot histogram (log-spaced buckets with an edge exactly at 1 000 ms, 60 000 ms cap) and the resume counts. The whole period is one pure value, `Period`, which `server` loads, applies an event to and stores; a zero is the absence of a row. `Period::fire` yields every series once and the next period (peak re-seeded to the live count); `begin_restore` clears the table.
+- `sim::table_bounds::NOT_EXPORTED` is the one list of tables an export never carries and a restore never touches (`restore_state`, `connected_client`, `metric_tally`): `world_backup not-exported` prints it for the shell scripts, and `restore_coverage.rs` and `world_backup::Shape` read it directly. `scripts/ci/check-connected-client-path.sh` holds `connected_client` to `tables/metrics.rs` and the two lifecycle reducers.
+- The reconnection outage runs from the page noticing the drop to the connection returning, so a silent drop excludes up to `PROBE_TIMEOUT_MS` of detection; `RECONNECT_SEAM_MS` equals that constant and a `sim` test pins the two.
+- `report_client_measure(ClientMeasure::Boot | Resumed)` is the one client measure call, class `player`. `sim::gameplay_metrics::accept_measure` refuses a value outside (0, 60 s] for boot or (0, 24 h] for resume, and a second report of the same kind on one connection. The client sends it from `net/measure-reporter.ts` alone. `Boot` is every boot to controllable; the story that adds the name prompt (4.16) must exclude or separate a first boot from it, because NFR1 applies to the return path.
 
 ## Time
 
@@ -287,7 +289,8 @@ and just-in-time. So:
   in the same PR (`check-bindings-current.sh`).
 - An extensible set (NFR36) is a `u32` code plus a companion data table,
   never a Rust enum, so a new variant is a row insert rather than a
-  migration. Seeding is idempotent and lives in `finish_publish` rather than on a
+  migration. A reducer argument may be a `SpacetimeType` enum; a table
+  column never is (`schema_shape.rs`). Seeding is idempotent and lives in `finish_publish` rather than on a
   hot lifecycle path — publishing a module that adds a code is followed by
   calling it, automated by `deploy.yml`'s `publish-module` job.
 - `init` records the owner, then runs `finish_publish`'s body. `finish_publish`

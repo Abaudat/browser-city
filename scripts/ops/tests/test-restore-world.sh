@@ -30,7 +30,7 @@ make_export() {
   dir="$(fake_dir)/export"
   mkdir -p "$dir"
   while IFS=$'\t' read -r table scheduled; do
-    case "$table" in restore_state | connected_client | metric_tally) continue ;; esac
+    "$WB" not-exported | grep -qxF "$table" && continue
     : > "$dir/$table.jsonl"
   done < <("$WB" snapshot-tables "$SNAPSHOT")
   printf '[0,["%s"]]\n' "$REAL_OWNER_HEX" > "$dir/module_owner.jsonl"

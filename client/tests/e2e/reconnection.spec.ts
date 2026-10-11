@@ -9,6 +9,9 @@
 // `player_position` row through its own subscription -- what the server holds,
 // not what the player's page believes. No `waitForTimeout`: every wait is on
 // an observable condition, and `retries` stays 0.
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
@@ -385,8 +388,19 @@ test("a laptop lid with a socket that died unseen: on resume the probe finds it 
 // Story 4.14 (FR172): the whole path from the client to the accumulators the
 // hourly sampler reads. The step from accumulators to sample row is proven
 // in `sim`; the sampler itself is hourly, so it is never poked from here.
-const SERIES = { bootP50: 1n, concurrentPeak: 4n, resume: 5n } as const;
-const tallyKey = (series: bigint, slot: bigint): bigint => (series << 32n) | slot;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// `sim::gameplay_metrics::Tally` keys: peak 1, resumes 2 and 3, boot buckets
+// from 0x100 (pinned by `sim`'s `tally_keys_are_distinct...`).
+const TALLY = { peak: 1n, within: 2n, total: 3n, bootBase: 0x100n } as const;
+// The boot histogram upper edges, pinned to `BOOT_EDGES` by a `sim` test.
+const BOOT_EDGES = readFileSync(
+  path.resolve(__dirname, "../../../server/sim/tests/goldens/boot_edges_v1.golden"),
+  "utf-8",
+)
+  .split("\n")
+  .filter((l) => l.trim() !== "")
+  .map(Number);
+const bootBucketOf = (ms: number): number => BOOT_EDGES.findIndex((edge) => edge >= ms);
 
 function tally(): Map<bigint, bigint> {
   const rows = ownerSql(readSpacetimeHandle(), "SELECT * FROM metric_tally");
@@ -395,9 +409,14 @@ function tally(): Map<bigint, bigint> {
 
 function bootReports(t: Map<bigint, bigint>): bigint {
   let total = 0n;
-  for (const [key, value] of t) if (key >> 32n === SERIES.bootP50) total += value;
+  for (const [key, value] of t) if (key >= TALLY.bootBase) total += value;
   return total;
 }
+
+const clockSpeed = (): string =>
+  ownerSql(readSpacetimeHandle(), "SELECT * FROM world_clock")[0]?.[2] ?? "missing";
+const sampleRows = (): number =>
+  ownerSql(readSpacetimeHandle(), "SELECT * FROM gameplay_metric_sample").length;
 
 const connectedClients = (): number =>
   ownerSql(readSpacetimeHandle(), "SELECT * FROM connected_client").length;
@@ -405,6 +424,11 @@ const connectedClients = (): number =>
 test("a boot and a reconnect each move the measure accumulators by exactly one (FR172)", async ({
   browser,
 }) => {
+  // The deltas below are exact only while no sampler fire lands inside the
+  // test: fail loudly, and name the cause, when the clock is fast or a fire
+  // zeroes the tally.
+  expect(clockSpeed(), "the instance clock must run at speed 1 for exact tally deltas").toBe("1");
+  const samplesBefore = sampleRows();
   const before = tally();
   const connectedBefore = connectedClients();
   const startedAt = Date.now();
@@ -419,13 +443,17 @@ test("a boot and a reconnect each move the measure accumulators by exactly one (
   );
   expect(markMs).toBeGreaterThan(0);
   expect(markMs).toBeLessThanOrEqual(Date.now() - startedAt);
+  // The one bucket that moved is the bucket of the page own mark: the
+  // reported figure is the mark, not a second stopwatch.
+  const bucketKey = TALLY.bootBase + BigInt(bootBucketOf(Math.max(1, Math.round(markMs ?? 0))));
+  expect((tally().get(bucketKey) ?? 0n) - (before.get(bucketKey) ?? 0n)).toBe(1n);
   await expect.poll(connectedClients).toBe(connectedBefore + 1);
-  const peakKey = tallyKey(SERIES.concurrentPeak, 0n);
+  const peakKey = TALLY.peak;
   expect(tally().get(peakKey) ?? 0n).toBeGreaterThanOrEqual(BigInt(connectedBefore + 1));
 
   // A drop that comes back on the same page: one resume, within the seam.
-  const withinKey = tallyKey(SERIES.resume, 0n);
-  const totalKey = tallyKey(SERIES.resume, 1n);
+  const withinKey = TALLY.within;
+  const totalKey = TALLY.total;
   const socketsBefore = sockets.count;
   await dropServer(sockets);
   await expect.poll(() => sockets.count, { timeout: 30_000 }).toBeGreaterThan(socketsBefore);
@@ -441,4 +469,7 @@ test("a boot and a reconnect each move the measure accumulators by exactly one (
 
   await context.close();
   await expect.poll(connectedClients).toBe(connectedBefore);
+  expect(sampleRows(), "a sampler fire landed inside the test: its tally deltas are void").toBe(
+    samplesBefore,
+  );
 });

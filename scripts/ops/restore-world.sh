@@ -92,7 +92,7 @@ if ! spacetime describe "$DB" "${SERVER_ARGS[@]}" --no-config -y --json >"$DESCR
   bc_ops_die "$SCRIPT" "'spacetime describe $DB --json' failed:
 $(cat "$WORK/describe.err")"
 fi
-LIVE_TABLES="$(bc_wb describe-tables "$DESCRIBE_JSON" | grep -vE '^(restore_state|connected_client|metric_tally)$' | sort)"
+LIVE_TABLES="$(bc_wb describe-tables "$DESCRIBE_JSON" | grep -vxFf <(bc_wb not-exported) | sort)"
 SNAPSHOT_TABLES="$(bc_table_names "$BC_SNAPSHOT" all | sort)"
 MISSING="$(comm -23 <(printf '%s\n' "$SNAPSHOT_TABLES") <(printf '%s\n' "$LIVE_TABLES"))"
 EXTRA="$(comm -13 <(printf '%s\n' "$SNAPSHOT_TABLES") <(printf '%s\n' "$LIVE_TABLES"))"

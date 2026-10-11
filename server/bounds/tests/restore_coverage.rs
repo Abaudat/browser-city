@@ -13,7 +13,18 @@ use bounds::schema::{module_src_dir, parse_module_schema, reducer_names_in_dir};
 /// and live-session state (`connected_client` mirrors open connections,
 /// which a restore does not drop; `metric_tally` is the sampler's
 /// per-period accumulator, cleared by `begin_restore`).
-const NOT_RESTORED: &[&str] = &["restore_state", "connected_client", "metric_tally"];
+const NOT_RESTORED: &[&str] = sim::table_bounds::NOT_EXPORTED;
+
+#[test]
+fn every_not_exported_entry_is_a_real_table() {
+    let schema = parse_module_schema(&module_src_dir());
+    for name in NOT_RESTORED {
+        assert!(
+            schema.tables.iter().any(|t| &t.accessor == name),
+            "NOT_EXPORTED names `{name}`, which is no table"
+        );
+    }
+}
 
 #[test]
 fn every_non_scheduled_table_has_a_restore_reducer() {

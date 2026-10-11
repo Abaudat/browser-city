@@ -31,10 +31,7 @@
 //! `metric_tally` holds the period peak, boot histogram and resume
 //! counts, zeroed after each fire.
 
-use sim::gameplay_metrics::{
-    BOOT_BUCKETS, ConnFlags, Measure, SLOT_PEAK, SLOT_RESUME_TOTAL, SLOT_RESUME_WITHIN, Series,
-    tally_key,
-};
+use sim::gameplay_metrics::{ConnFlags, Measure, Period, Tally};
 use sim::reducer_classes::{ALL_CLASSES, ReducerClass};
 use spacetimedb::sats::bsatn;
 use spacetimedb::{ConnectionId, ReducerContext, SpacetimeType, Table, Timestamp};
@@ -148,7 +145,7 @@ pub struct GameplayMetricSample {
     pub sample_size: u64,
 }
 
-/// One period accumulator (`sim::gameplay_metrics::tally_key`).
+/// One period accumulator row (`sim::gameplay_metrics::Tally`).
 #[derive(Clone)]
 #[spacetimedb::table(accessor = metric_tally)]
 pub struct MetricTally {
@@ -160,7 +157,11 @@ pub struct MetricTally {
 /// One open connection. Inserted by `identity_connected`, deleted by
 /// `identity_disconnected`; the flags record which client measures the
 /// connection has reported. It carries no identity (FR142): a player is
-/// keyed on `character_id`, and nothing here needs to know who.
+/// keyed on `character_id`, and nothing here needs to know who. The host
+/// calls `client_disconnected` for every dangling client at launch, and on an
+/// update that disconnects clients, so no row outlives its connection
+/// (SpacetimeDB `crates/core/src/host/host_controller.rs`, "Disconnect
+/// dangling clients").
 #[derive(Clone)]
 #[spacetimedb::table(accessor = connected_client)]
 pub struct ConnectedClient {
@@ -206,28 +207,44 @@ pub fn count_call(ctx: &ReducerContext, class: ReducerClass) {
     }
 }
 
-fn tally_get(ctx: &ReducerContext, key: u64) -> u64 {
-    ctx.db
-        .metric_tally()
-        .tally_key()
-        .find(key)
-        .map_or(0, |r| r.value)
+/// The period held in `metric_tally`; a missing row reads as zero.
+fn load_period(ctx: &ReducerContext) -> Period {
+    Period::from_tallies(Tally::all().map(|t| {
+        let value = ctx
+            .db
+            .metric_tally()
+            .tally_key()
+            .find(t.key())
+            .map_or(0, |r| r.value);
+        (t, value)
+    }))
 }
 
-fn tally_set(ctx: &ReducerContext, key: u64, value: u64) {
-    let row = MetricTally {
-        tally_key: key,
-        value,
-    };
-    if ctx.db.metric_tally().tally_key().find(key).is_some() {
-        ctx.db.metric_tally().tally_key().update(row);
-    } else {
-        ctx.db.metric_tally().insert(row);
+/// Writes `period` back: a zero is the absence of a row, so the table
+/// holds only what accumulated.
+fn store_period(ctx: &ReducerContext, period: &Period) {
+    for (tally, value) in period.tallies() {
+        let key = tally.key();
+        let existing = ctx.db.metric_tally().tally_key().find(key);
+        match (existing, value) {
+            (Some(_), 0) => {
+                ctx.db.metric_tally().tally_key().delete(key);
+            }
+            (Some(row), v) if row.value != v => {
+                ctx.db.metric_tally().tally_key().update(MetricTally {
+                    tally_key: key,
+                    value: v,
+                });
+            }
+            (None, v) if v > 0 => {
+                ctx.db.metric_tally().insert(MetricTally {
+                    tally_key: key,
+                    value: v,
+                });
+            }
+            _ => {}
+        }
     }
-}
-
-fn tally_add(ctx: &ReducerContext, key: u64, delta: u64) {
-    tally_set(ctx, key, tally_get(ctx, key).saturating_add(delta));
 }
 
 /// `identity_connected` write: registers the connection and lifts the
@@ -244,9 +261,9 @@ pub fn record_connect(ctx: &ReducerContext) {
             resume_reported: false,
         });
     }
-    let key = tally_key(Series::ConcurrentPeak, SLOT_PEAK);
-    let peak = sim::gameplay_metrics::peak_after(tally_get(ctx, key), table.count());
-    tally_set(ctx, key, peak);
+    let mut period = load_period(ctx);
+    period.on_connect(table.count());
+    store_period(ctx, &period);
 }
 
 /// `identity_disconnected` write: deleting a missing row is a no-op, so
@@ -286,26 +303,9 @@ pub fn report_client_measure(ctx: &ReducerContext, measure: ClientMeasure) -> Re
         measure,
     )
     .map_err(|refusal| refusal.message().to_string())?;
-    match measure {
-        Measure::Boot { millis } => {
-            let bucket = sim::gameplay_metrics::boot_bucket(millis) as u32;
-            tally_add(ctx, tally_key(Series::BootMillisP50, bucket), 1);
-        }
-        Measure::Resumed { outage_millis } => {
-            if sim::gameplay_metrics::resumed_within_seam(outage_millis) {
-                tally_add(
-                    ctx,
-                    tally_key(Series::ReconnectWithinSeam, SLOT_RESUME_WITHIN),
-                    1,
-                );
-            }
-            tally_add(
-                ctx,
-                tally_key(Series::ReconnectWithinSeam, SLOT_RESUME_TOTAL),
-                1,
-            );
-        }
-    }
+    let mut period = load_period(ctx);
+    period.on_measure(measure);
+    store_period(ctx, &period);
     ctx.db
         .connected_client()
         .connection_id()
@@ -317,68 +317,24 @@ pub fn report_client_measure(ctx: &ReducerContext, measure: ClientMeasure) -> Re
     Ok(())
 }
 
-fn boot_figure(ctx: &ReducerContext, pct: u64) -> (u64, u64) {
-    let counts: Vec<u64> = (0..BOOT_BUCKETS as u32)
-        .map(|b| tally_get(ctx, tally_key(Series::BootMillisP50, b)))
-        .collect();
-    let reports = counts.iter().fold(0u64, |a, c| a.saturating_add(*c));
-    let edge = sim::gameplay_metrics::percentile_edge_ms(&counts, pct).unwrap_or(0);
-    (u64::from(edge), reports)
-}
-
-fn peak_figure(ctx: &ReducerContext, current: u64) -> (u64, u64) {
-    let peak = tally_get(ctx, tally_key(Series::ConcurrentPeak, SLOT_PEAK));
-    (sim::gameplay_metrics::peak_after(peak, current), 1)
-}
-
-fn resume_figure(ctx: &ReducerContext) -> (u64, u64) {
-    (
-        tally_get(
-            ctx,
-            tally_key(Series::ReconnectWithinSeam, SLOT_RESUME_WITHIN),
-        ),
-        tally_get(
-            ctx,
-            tally_key(Series::ReconnectWithinSeam, SLOT_RESUME_TOTAL),
-        ),
-    )
-}
-
-/// One series figure as `(value, sample_size)`. The exhaustive `match` is
-/// the guarantee that a registered series has an emitter.
-fn emit_series(ctx: &ReducerContext, series: Series, current: u64) -> (u64, u64) {
-    match series {
-        Series::BootMillisP50 => boot_figure(ctx, 50),
-        Series::BootMillisP95 => boot_figure(ctx, 95),
-        Series::ConcurrentNow => (current, 1),
-        Series::ConcurrentPeak => peak_figure(ctx, current),
-        Series::ReconnectWithinSeam => resume_figure(ctx),
-    }
-}
-
-/// One fire gameplay-metric rows: every live series once, then the period
-/// tallies are zeroed (the peak restarts at the current count). Prunes by
-/// retention and by the table own `max_rows` before inserting.
+/// One fire gameplay-metric rows: every live series once (`Period::fire`,
+/// whose exhaustive `match` is the compile-time emitter guarantee), then
+/// the next period is stored. Prunes by retention and by the table own
+/// `max_rows` before inserting.
 fn sample_gameplay_metrics(ctx: &ReducerContext, now: Timestamp) {
-    let current = ctx.db.connected_client().count();
-    let rows: Vec<GameplayMetricSample> = Series::ALL
-        .iter()
-        .map(|&series| {
-            let (value, sample_size) = emit_series(ctx, series, current);
-            GameplayMetricSample {
-                sample_id: 0,
-                sampled_at: now,
-                series_code: series.code(),
-                value,
-                sample_size,
-            }
+    let live = ctx.db.connected_client().count();
+    let (figures, next) = load_period(ctx).fire(live);
+    let rows: Vec<GameplayMetricSample> = figures
+        .into_iter()
+        .map(|(series, value, sample_size)| GameplayMetricSample {
+            sample_id: 0,
+            sampled_at: now,
+            series_code: series.code(),
+            value,
+            sample_size,
         })
         .collect();
-    let stale: Vec<u64> = ctx.db.metric_tally().iter().map(|r| r.tally_key).collect();
-    for key in stale {
-        ctx.db.metric_tally().tally_key().delete(key);
-    }
-    tally_set(ctx, tally_key(Series::ConcurrentPeak, SLOT_PEAK), current);
+    store_period(ctx, &next);
 
     let cutoff = Timestamp::from_micros_since_unix_epoch(sim::storage::retention_cutoff_micros(
         now.to_micros_since_unix_epoch(),

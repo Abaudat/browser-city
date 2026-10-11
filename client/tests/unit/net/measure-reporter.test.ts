@@ -105,6 +105,20 @@ describe("resume", () => {
     expect(r.sent.filter((m) => m.tag === "Resumed")).toEqual([]);
   });
 
+  it("a silent drop is timed from when the page notices it, not from the drop itself", () => {
+    // The socket died at t=1000 but the probe only failed at t=6000: the
+    // outage the page can report starts at the status, so detection time is
+    // not in it (the registry blind spot says so).
+    const r = rig(500);
+    r.at(500);
+    r.reporter.setStatus("connected");
+    r.at(6000);
+    r.reporter.setStatus("disconnected");
+    r.at(7000);
+    r.reporter.setStatus("connected");
+    expect(r.sent.filter((m) => m.tag === "Resumed")).toEqual([{ tag: "Resumed", value: 1000 }]);
+  });
+
   it("reports an outage that never ends as nothing", () => {
     const r = rig(500);
     r.reporter.setStatus("connected");

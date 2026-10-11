@@ -44,31 +44,39 @@ fn body_of(text: &str, signature: &str) -> String {
 
 #[test]
 fn every_series_has_exactly_one_emitter_arm() {
-    let body = body_of(&metrics_rs(), "fn emit_series(");
+    let sim_src = repo_file("server/sim/src/gameplay_metrics.rs");
+    let body = body_of(&sim_src, "pub fn figure(");
     for s in Series::ALL {
         let arm = format!("Series::{s:?} =>");
         assert_eq!(
             body.matches(&arm).count(),
             1,
-            "`emit_series` must have exactly one `{arm}` arm"
+            "`Period::figure` must have exactly one `{arm}` arm"
         );
     }
     assert_eq!(
         body.matches("Series::").count(),
         Series::ALL.len(),
-        "`emit_series` names a series the registry does not have, or one twice"
+        "`Period::figure` names a series the registry does not have, or one twice"
     );
 }
 
 #[test]
-fn the_sampler_runs_the_gameplay_emitter_once_per_fire_and_iterates_the_registry() {
+fn the_sampler_runs_the_gameplay_emitter_once_per_fire_through_the_period_fold() {
     let text = metrics_rs();
     let run = body_of(&text, "pub fn run_sampler(");
     assert_eq!(run.matches("sample_gameplay_metrics(").count(), 1);
     let emit = body_of(&text, "fn sample_gameplay_metrics(");
+    assert_eq!(
+        emit.matches(".fire(").count(),
+        1,
+        "sample_gameplay_metrics must take every figure from Period::fire (every Series once)"
+    );
+    let sim_src = repo_file("server/sim/src/gameplay_metrics.rs");
+    let fire = body_of(&sim_src, "pub fn fire(");
     assert!(
-        emit.contains("Series::ALL") && emit.contains("emit_series("),
-        "sample_gameplay_metrics must walk Series::ALL through emit_series"
+        fire.contains("Series::ALL"),
+        "Period::fire must walk Series::ALL"
     );
 }
 
@@ -165,10 +173,4 @@ fn a_restore_clears_the_period_state_and_never_the_live_connections() {
         !publish.contains("connected_client"),
         "a publish keeps clients connected; establish_world must not clear connected_client"
     );
-}
-
-#[test]
-fn only_the_lifecycle_hooks_write_connected_client() {
-    let lib = repo_file("server/src/lib.rs");
-    assert!(lib.contains("record_connect(ctx)") && lib.contains("record_disconnect(ctx)"));
 }

@@ -104,15 +104,18 @@ pub const GAMEPLAY_METRICS: &[Metric] = &[
     Metric {
         code: 2,
         name: "screen_density",
-        unit: Unit::Proportion,
+        unit: Unit::Count,
         emitting_epic: 5,
         emission_point: "once per in-city hour per connected character, only while a player is connected",
         method: Method::Proxy,
         blind_spot: "whether the player describes the city as populated; bodies in the \
             interest region stand in for the screen",
-        definition: "At exactly one connected player, the samples whose count of citizen bodies \
-            within the character's interest region is zero, over all samples, split by city \
-            hour and district kind.",
+        definition: "At exactly one connected player, per sample, the count of citizen bodies \
+            within the character's interest region. Primary reading: the median count per \
+            sample, split by city-hour band and district kind, so a busy street at rush hour \
+            must read busy and a residential street at 3am quiet. Alarm figure from the same \
+            samples: the proportion of samples at zero (the dead screen). Epic 5 adds both as \
+            series, the median a count and the dead-screen rate a proportion.",
         series: &[],
     },
     Metric {
@@ -126,7 +129,8 @@ pub const GAMEPLAY_METRICS: &[Metric] = &[
             understudy exists, and is meaningless below a cohort of about twenty",
         definition: "Of the characters whose absence passed seven real days at least \
             twenty-eight days ago, those who connected again within those twenty-eight days. \
-            The denominator is the cohort size.",
+            The denominator is the cohort size. No absence that began before emission started \
+            counts: the clock starts when the series does.",
         series: &[],
     },
     Metric {
@@ -149,9 +153,10 @@ pub const GAMEPLAY_METRICS: &[Metric] = &[
         emitting_epic: 7,
         emission_point: "a debrief after a session, recorded under docs (first at story 7.13)",
         method: Method::AskPlayers,
-        blind_spot: "noticing is a remark and the game has no free text; the optional \
-            unrequired-act proxy cannot see noticing without acting and counts acting \
-            without noticing",
+        blind_spot: "a player who noticed and did not mention it is invisible, and a debrief is \
+            itself a prompt to talk, so the figure is unprompted only in that the city state \
+            was never named; the optional unrequired-act proxy cannot see noticing without \
+            acting and counts acting without noticing",
         definition: "Of debriefs held on an open prompt that does not mention the city's state, \
             those containing at least one unprompted mention of a specific carrier verified \
             against what the world held at the time.",
@@ -166,8 +171,11 @@ pub const GAMEPLAY_METRICS: &[Metric] = &[
         method: Method::Instrumented,
         blind_spot: "players who never reach a connected page, and a tab woken from sleep; \
             percentiles are the upper edge of a log-spaced bucket",
-        definition: "Milliseconds from navigation to controllable on a returning player's \
-            boot; the period's p50 and p95 against the one-second target.",
+        definition: "Milliseconds from navigation to controllable on every boot the client \
+            reports (once per page that has not lost its connection); the period p50 and p95, \
+            each the upper edge of its bucket, with an edge exactly at the one-second target. \
+            NFR1's target applies to the return path: the story that adds the name prompt \
+            (4.16) must exclude or separate a first boot from Boot.",
         series: &[Series::BootMillisP50, Series::BootMillisP95],
     },
     Metric {
@@ -189,9 +197,13 @@ pub const GAMEPLAY_METRICS: &[Metric] = &[
         emitting_epic: 4,
         emission_point: "client resume after a drop on the same page",
         method: Method::Instrumented,
-        blind_spot: "a drop whose page closes before it resumes is never seen, and whether \
-            position and state were seamless is not measured here",
-        definition: "Resumes whose outage was at most the seam threshold, over all resumes.",
+        blind_spot: "a drop whose page closes before it resumes is never seen, a silent drop \
+            is noticed up to the probe timeout after it happened and that detection time is \
+            not in the outage, and whether position and state were seamless is not measured \
+            here",
+        definition: "Resumes whose outage, from the page noticing the drop to the connection \
+            returning, was at most the seam threshold (5 s: an outage short enough that the \
+            player did not read it as a pause), over all resumes.",
         series: &[Series::ReconnectWithinSeam],
     },
 ];
@@ -204,7 +216,7 @@ pub fn metric_of(series: Series) -> &'static Metric {
         .expect("every series is listed by one metric")
 }
 
-/// Series per fire: `gameplay_metric_sample`'s rows per fire.
+/// Series per fire: the rows `gameplay_metric_sample` gains per fire.
 pub const LIVE_SERIES_COUNT: u64 = Series::ALL.len() as u64;
 /// The sampler fires hourly.
 pub const SAMPLES_PER_DAY: u64 = 24;
@@ -213,24 +225,57 @@ pub const SAMPLES_PER_DAY: u64 = 24;
 pub const BOOT_MAX_MS: u32 = 60_000;
 /// A resume outage above this is refused (24 hours).
 pub const RESUME_MAX_MS: u32 = 24 * 60 * 60 * 1000;
-/// A resume whose outage is at most this is within the seam.
+/// A resume whose outage is at most this is within the seam. It equals the
+/// client `PROBE_TIMEOUT_MS` (`reconnect-policy.ts`): a silent drop is only
+/// noticed that long after it happened, and `tests/gameplay_metrics.rs`
+/// pins the two together.
 pub const RECONNECT_SEAM_MS: u32 = 5_000;
 
-/// Log-spaced boot-time histogram buckets.
-pub const BOOT_BUCKETS: usize = 64;
+/// The boot target (NFR1): the histogram has an edge exactly here.
+pub const BOOT_TARGET_MS: u32 = 1_000;
+
+/// The next bucket upper edge after `prev`: roughly geometric (x1.19),
+/// 50 ms wide from 750 to 1 200 ms (the target sits on an edge), capped at
+/// `BOOT_MAX_MS`. Strictly increasing.
+const fn edge_after(prev: u32) -> u32 {
+    let grown = prev as u64 * 119 / 100;
+    let step = if grown > prev as u64 {
+        grown
+    } else {
+        prev as u64 + 1
+    };
+    let next = if prev < 750 {
+        if step > 750 { 750 } else { step }
+    } else if prev < 1_200 {
+        prev as u64 + 50
+    } else if step > BOOT_MAX_MS as u64 {
+        BOOT_MAX_MS as u64
+    } else {
+        step
+    };
+    next as u32
+}
+
+const fn count_edges() -> usize {
+    let mut n = 0;
+    let mut prev = 0;
+    while prev < BOOT_MAX_MS {
+        prev = edge_after(prev);
+        n += 1;
+    }
+    n
+}
+
+/// Log-spaced boot-time histogram buckets (derived from the edges).
+pub const BOOT_BUCKETS: usize = count_edges();
 
 const fn boot_edges() -> [u32; BOOT_BUCKETS] {
     let mut edges = [0u32; BOOT_BUCKETS];
-    let mut prev: u64 = 0;
+    let mut prev = 0;
     let mut i = 0;
     while i < BOOT_BUCKETS {
-        let grown = prev * 119 / 100;
-        let mut next = if grown > prev { grown } else { prev + 1 };
-        if next > BOOT_MAX_MS as u64 || i == BOOT_BUCKETS - 1 {
-            next = BOOT_MAX_MS as u64;
-        }
-        edges[i] = next as u32;
-        prev = next;
+        prev = edge_after(prev);
+        edges[i] = prev;
         i += 1;
     }
     edges
@@ -253,7 +298,7 @@ pub fn boot_bucket(ms: u32) -> usize {
         .unwrap_or(BOOT_BUCKETS - 1)
 }
 
-/// The nearest-rank `pct` percentile of a histogram, as its bucket's upper
+/// The nearest-rank `pct` percentile of a histogram, as its bucket upper
 /// edge; `None` when it holds no report.
 pub fn percentile_edge_ms(counts: &[u64], pct: u64) -> Option<u32> {
     let total = counts.iter().fold(0u64, |a, c| a.saturating_add(*c));
@@ -276,7 +321,7 @@ pub fn peak_after(peak: u64, current: u64) -> u64 {
     peak.max(current)
 }
 
-/// Whether a resume's outage is inside the seam threshold.
+/// Whether a resume outage is inside the seam threshold.
 pub fn resumed_within_seam(outage_ms: u32) -> bool {
     outage_ms <= RECONNECT_SEAM_MS
 }
@@ -310,7 +355,7 @@ impl MeasureRefusal {
     }
 }
 
-/// Validates an untrusted client measure against the connection's flags;
+/// Validates an untrusted client measure against the connection flags;
 /// returns the flags after accepting it.
 pub fn accept_measure(flags: ConnFlags, measure: Measure) -> Result<ConnFlags, MeasureRefusal> {
     match measure {
@@ -341,32 +386,150 @@ pub fn accept_measure(flags: ConnFlags, measure: Measure) -> Result<ConnFlags, M
     }
 }
 
-/// Tally slots. Peak and resume counts are one row each; the boot
-/// histogram is one row per bucket, under `BootMillisP50`.
-pub const SLOT_PEAK: u32 = 0;
-pub const SLOT_RESUME_WITHIN: u32 = 0;
-pub const SLOT_RESUME_TOTAL: u32 = 1;
-
-/// The `metric_tally` primary key for `series` and `slot`.
-pub const fn tally_key(series: Series, slot: u32) -> u64 {
-    ((series.code() as u64) << 32) | slot as u64
+/// One `metric_tally` row identity, with its own key space (never a series
+/// code). `key` is the table primary key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tally {
+    ConcurrentPeak,
+    ResumeWithinSeam,
+    ResumeTotal,
+    BootBucket(u8),
 }
 
-/// Every `(series, slot)` a tally row exists for.
-pub fn all_tally_slots() -> Vec<(Series, u32)> {
-    let mut out = vec![(Series::ConcurrentPeak, SLOT_PEAK)];
-    out.push((Series::ReconnectWithinSeam, SLOT_RESUME_WITHIN));
-    out.push((Series::ReconnectWithinSeam, SLOT_RESUME_TOTAL));
-    for b in 0..BOOT_BUCKETS as u32 {
-        out.push((Series::BootMillisP50, b));
+impl Tally {
+    /// The tallies that are not boot buckets.
+    pub const FIXED: [Tally; 3] = [
+        Tally::ConcurrentPeak,
+        Tally::ResumeWithinSeam,
+        Tally::ResumeTotal,
+    ];
+
+    pub const fn key(self) -> u64 {
+        match self {
+            Tally::ConcurrentPeak => 1,
+            Tally::ResumeWithinSeam => 2,
+            Tally::ResumeTotal => 3,
+            Tally::BootBucket(b) => 0x100 + b as u64,
+        }
     }
-    out
+
+    /// Every tally row that can exist.
+    pub fn all() -> impl Iterator<Item = Tally> {
+        Tally::FIXED
+            .into_iter()
+            .chain((0..BOOT_BUCKETS).map(|b| Tally::BootBucket(b as u8)))
+    }
 }
 
-/// `metric_tally`'s row count: derived from the slots above.
-pub const TALLY_ROWS: u64 = 1 + 2 + BOOT_BUCKETS as u64;
+/// `metric_tally` row count: derived from the tallies above.
+pub const TALLY_ROWS: u64 = (Tally::FIXED.len() + BOOT_BUCKETS) as u64;
 
-/// `gameplay_metric_sample`'s ceiling: live series x fires per day x
+/// One sampling period accumulators, as a pure value. `server` loads it
+/// from `metric_tally`, applies an event, and stores it back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Period {
+    pub peak: u64,
+    pub boot: [u64; BOOT_BUCKETS],
+    pub within: u64,
+    pub total: u64,
+}
+
+impl Period {
+    /// A period that starts with `live` connections open.
+    pub fn new(live: u64) -> Period {
+        Period {
+            peak: live,
+            boot: [0; BOOT_BUCKETS],
+            within: 0,
+            total: 0,
+        }
+    }
+
+    /// A connection opened; `live` is the count including it.
+    pub fn on_connect(&mut self, live: u64) {
+        self.peak = peak_after(self.peak, live);
+    }
+
+    /// An accepted client measure.
+    pub fn on_measure(&mut self, measure: Measure) {
+        match measure {
+            Measure::Boot { millis } => {
+                let b = boot_bucket(millis);
+                self.boot[b] = self.boot[b].saturating_add(1);
+            }
+            Measure::Resumed { outage_millis } => {
+                if resumed_within_seam(outage_millis) {
+                    self.within = self.within.saturating_add(1);
+                }
+                self.total = self.total.saturating_add(1);
+            }
+        }
+    }
+
+    /// One series `(value, sample_size)`. The exhaustive `match` is the
+    /// compile-time guarantee that a registered series has an emitter. A
+    /// boot series with no report reads `(0, 0)`.
+    pub fn figure(&self, series: Series, live: u64) -> (u64, u64) {
+        let reports = self.boot.iter().fold(0u64, |a, c| a.saturating_add(*c));
+        let boot = |pct| {
+            let edge = percentile_edge_ms(&self.boot, pct).unwrap_or(0);
+            (u64::from(edge), reports)
+        };
+        match series {
+            Series::BootMillisP50 => boot(50),
+            Series::BootMillisP95 => boot(95),
+            Series::ConcurrentNow => (live, 1),
+            Series::ConcurrentPeak => (peak_after(self.peak, live), 1),
+            Series::ReconnectWithinSeam => (self.within, self.total),
+        }
+    }
+
+    /// One fire: every live series once, and the next period (peak
+    /// re-seeded to `live`, every other slot zero).
+    pub fn fire(&self, live: u64) -> (Vec<(Series, u64, u64)>, Period) {
+        let rows = Series::ALL
+            .iter()
+            .map(|&s| {
+                let (value, size) = self.figure(s, live);
+                (s, value, size)
+            })
+            .collect();
+        (rows, Period::new(live))
+    }
+
+    /// Every tally row value, zero where nothing accumulated.
+    pub fn tallies(&self) -> Vec<(Tally, u64)> {
+        let mut out = vec![
+            (Tally::ConcurrentPeak, self.peak),
+            (Tally::ResumeWithinSeam, self.within),
+            (Tally::ResumeTotal, self.total),
+        ];
+        for (b, n) in self.boot.iter().enumerate() {
+            out.push((Tally::BootBucket(b as u8), *n));
+        }
+        out
+    }
+
+    /// The period held by `rows`; a missing row reads as zero.
+    pub fn from_tallies(rows: impl IntoIterator<Item = (Tally, u64)>) -> Period {
+        let mut p = Period::new(0);
+        for (tally, v) in rows {
+            match tally {
+                Tally::ConcurrentPeak => p.peak = v,
+                Tally::ResumeWithinSeam => p.within = v,
+                Tally::ResumeTotal => p.total = v,
+                Tally::BootBucket(b) => {
+                    if let Some(slot) = p.boot.get_mut(b as usize) {
+                        *slot = v;
+                    }
+                }
+            }
+        }
+        p
+    }
+}
+
+/// `gameplay_metric_sample` ceiling: live series x fires per day x
 /// retention.
 pub const fn sample_rows_for_days(days: u64) -> u64 {
     LIVE_SERIES_COUNT * SAMPLES_PER_DAY * days

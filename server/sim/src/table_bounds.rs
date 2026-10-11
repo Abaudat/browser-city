@@ -468,6 +468,14 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
     },
 ];
 
+/// Tables a world export never carries and a restore never touches: the
+/// restore gate and live-session state (`connected_client` mirrors open
+/// connections, which a restore does not drop; `metric_tally` is the
+/// sampler period accumulator). The one list: `world_backup not-exported`
+/// prints it for the shell scripts, `restore_coverage.rs` and
+/// `world_backup::Shape` read it directly.
+pub const NOT_EXPORTED: &[&str] = &["restore_state", "connected_client", "metric_tally"];
+
 /// The declared `max_rows` for `accessor`, if registered.
 pub fn max_rows_of(accessor: &str) -> Option<u64> {
     TABLE_BOUNDS

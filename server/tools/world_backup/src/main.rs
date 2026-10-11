@@ -192,6 +192,11 @@ fn run(args: &[String]) -> Result<()> {
                 );
             }
         }
+        "not-exported" => {
+            for name in sim::table_bounds::NOT_EXPORTED {
+                println!("{name}");
+            }
+        }
         "normalize" => {
             println!("{}", normalize_name(&args[2]));
         }
