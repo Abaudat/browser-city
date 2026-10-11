@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
-import { buildFlights, FlightIndex } from "../../../src/render/flight-offset";
 import { floorOffsetPx, snapToScreenPx, worldPointPx } from "../../../src/render/screen-position";
 import {
   BRIDGE_DECK_DEF_ID,
@@ -26,6 +25,7 @@ import {
   SUBWAY_FLOOR,
   streetPlacedRows,
 } from "../../../src/test-street/fixture";
+import { buildFlights, FlightIndex } from "../../../src/world/flights";
 import { initialFloorWalkState, stepAndTransition } from "../../../src/world/floor-walk";
 import { bodyRect, type MovementConfig } from "../../../src/world/movement";
 import { isBodyClear } from "../../../src/world/standable";
@@ -33,6 +33,7 @@ import { pairTransitions, type TransitionSpec } from "../../../src/world/transit
 import { fixtureExtent, fixtureFloors } from "../test-street/reachable";
 import {
   committedDefs,
+  streetFlightIndex,
   streetMovementConfig,
   streetObjectSources,
   streetStandable,
@@ -679,7 +680,15 @@ describe("the street's own flights (conformance)", () => {
     const samples: { off: number; floor: number; transitioned: boolean }[] = [];
     const walk = (dir: number, until: (floor: number) => boolean) => {
       for (let i = 0; i < 4000; i++) {
-        state = stepAndTransition(state, { x: dir, y: 0 }, 16, world, config, transitions);
+        state = stepAndTransition(
+          state,
+          { x: dir, y: 0 },
+          16,
+          world,
+          config,
+          transitions,
+          streetFlightIndex(),
+        );
         samples.push({
           off: index.offsetPx(state.x, state.y, state.floor),
           floor: state.floor,
@@ -838,7 +847,15 @@ describe("the footbridge flights: the walker is drawn continuously across the fl
       ];
       const walk = (dy: number, until: (s: typeof state) => boolean) => {
         for (let i = 0; i < 4000; i++) {
-          state = stepAndTransition(state, { x: 0, y: dy }, 16, world, config, transitions);
+          state = stepAndTransition(
+            state,
+            { x: 0, y: dy },
+            16,
+            world,
+            config,
+            transitions,
+            streetFlightIndex(),
+          );
           samples.push({
             drawn:
               state.y * TILE +

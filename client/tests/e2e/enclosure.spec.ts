@@ -27,7 +27,6 @@ import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
-import { buildFlights, FlightIndex } from "../../src/render/flight-offset";
 import { worldPointPx } from "../../src/render/screen-position";
 import {
   BRIDGE_DECK_Y,
@@ -55,6 +54,8 @@ import {
   streetPlacedRows,
   streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
+import { buildFlights, FlightIndex } from "../../src/world/flights";
+import { MAX_DELTA_MS } from "../../src/world/movement";
 import {
   STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE,
   STREET_VISIBILITY_AT_REST_IN_SHOP_A,
@@ -656,14 +657,15 @@ test.describe("story 15.15: the flight offset, mounted", () => {
   });
 });
 
-// Story 15.19 (FR182): the footbridge's flight, mounted. The cut and the
-// maths are proved in `tests/unit/render/flight-offset.test.ts`; this proves
+// Story 15.19 (FR182), 15.21 (FR183): the footbridge's flight, mounted. The cut and the
+// maths are proved in `tests/unit/render/flight-offset.test.ts` and
+// `tests/unit/world/flight-pace.test.ts`; this proves
 // the wiring on every frame of a real walk up the flight, along the deck and
 // down again, at each column: the sprite sits at the pure function's value,
 // nothing pops on one floor, and the camera, the floor and the deck's
 // culling stay in step. The recording (at the page's own size) and the stills
 // go to a directory CI uploads straight after the e2e step, for review.
-const BRIDGE_SHOT_DIR = "test-results/review-shots/story-15.19";
+const BRIDGE_SHOT_DIR = "test-results/review-shots/story-15.21";
 
 interface FootbridgeSample {
   x: number;
@@ -842,6 +844,31 @@ test.describe("story 15.19: the footbridge flights, mounted", () => {
         // A rest holds its height.
         if (prev.x === s.x && prev.y === s.y) {
           expect(drawnOffsetPx(s), `frame ${i} at rest`).toBeCloseTo(drawnOffsetPx(prev), 6);
+        }
+        // (6) Story 15.21: a step wholly inside one ramp is the pure paced
+        // step -- the ground moved is the walk the scale allows for some
+        // frame time up to the clamp, and the drawn feet moved exactly the
+        // flat distance for it, so the climb reads as a walk.
+        const gx = s.x - prev.x;
+        const gy = s.y - prev.y;
+        const ground = Math.hypot(gx, gy);
+        if (s.floor === prev.floor && ground > 0) {
+          const scaleFrom = index.paceScale(prev.x, prev.y, prev.floor, gx, gy);
+          const scaleTo = index.paceScale(s.x, s.y, s.floor, gx, gy);
+          if (scaleFrom < 1 && scaleTo === scaleFrom) {
+            const impliedMs = ground / (config.walkSpeedCellsPerMs * scaleFrom);
+            expect(impliedMs, `frame ${i} implied frame time`).toBeLessThanOrEqual(
+              MAX_DELTA_MS + 1e-6,
+            );
+            const drawnDx = (s.bounds.x - prev.bounds.x) / s.view.zoom;
+            const drawnDy = feetWorldY(s) - feetWorldY(prev);
+            expect(
+              Math.abs(
+                Math.hypot(drawnDx, drawnDy) - config.walkSpeedCellsPerMs * impliedMs * tile,
+              ),
+              `frame ${i} drawn pace`,
+            ).toBeLessThanOrEqual(2 / s.view.zoom + 1e-6);
+          }
         }
       });
       expect(sawOffset, "the walk crossed the flights").toBe(true);

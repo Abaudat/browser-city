@@ -44,7 +44,6 @@ import {
   countBoundAtlasPages,
 } from "../render/atlas-pages";
 import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "../render/camera";
-import { buildFlights, FlightIndex } from "../render/flight-offset";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName, passOfLayer } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -56,6 +55,7 @@ import { fromSortUnits, toSortUnits } from "../render/sort-units";
 import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
 import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
+import { buildFlights, FlightIndex } from "../world/flights";
 import {
   type FloorWalkResult,
   initialFloorWalkState,
@@ -1655,7 +1655,15 @@ export async function mountStreetScene(
 
     const before = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
     const floorBefore = walk.floor;
-    walk = stepAndTransition(walk, direction, deltaMS, worldIndex, movementConfig, transitions);
+    walk = stepAndTransition(
+      walk,
+      direction,
+      deltaMS,
+      worldIndex,
+      movementConfig,
+      transitions,
+      flights,
+    );
 
     onPlayerMove?.(walk.x, walk.y, walk.floor);
 
@@ -1770,7 +1778,10 @@ export async function mountStreetScene(
         tileSizePx,
         storeyHeightPx,
         ZOOM,
-        remotePlayersWiring,
+        {
+          ...remotePlayersWiring,
+          paceScale: (x, y, floor, dx, dy) => flights.paceScale(x, y, floor, dx, dy),
+        },
       )
     : undefined;
   // Story 1.14 (NFR1): the atlas term's own end -- every texture this

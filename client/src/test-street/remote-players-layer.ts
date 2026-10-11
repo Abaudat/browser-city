@@ -27,6 +27,10 @@ export interface RemotePlayersWiring {
   readonly serverNowMs: () => number | undefined;
   /** The caller's own character id, never drawn here. */
   readonly skip: () => string | undefined;
+  /** The flight pace scale at a position for a step direction (story
+   * 15.21): the walk frame is fed ground distance divided by it, i.e. the
+   * drawn-surface distance, so legs keep walking cadence on a flight. */
+  readonly paceScale?: (x: number, y: number, floor: number, dx: number, dy: number) => number;
   /** Every frame: where each drawn remote player is. */
   readonly onFrame?: (poses: Readonly<Record<string, RemotePose>>) => void;
 }
@@ -89,7 +93,10 @@ export async function mountRemotePlayersLayer(
         d = { sprite, x: pose.x, y: pose.y, facing: "down", walked: 0 };
         drawn.set(id, d);
       }
-      const moving = advanceGait(d, pose.x - d.x, pose.y - d.y);
+      const stepX = pose.x - d.x;
+      const stepY = pose.y - d.y;
+      const scale = wiring.paceScale?.(d.x, d.y, pose.floor, stepX, stepY) ?? 1;
+      const moving = advanceGait(d, stepX / scale, stepY / scale);
       const facing = d.facing;
       d.x = pose.x;
       d.y = pose.y;

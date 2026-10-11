@@ -160,7 +160,7 @@ describe("inv_move_never_ends_inside_collider", () => {
           const grid = buildGrid(colliders);
           let pos: Vec2 = start;
           for (const { dir, deltaMs } of inputs) {
-            pos = step(pos, { x: dir.dx, y: dir.dy }, deltaMs, grid, 0, config);
+            pos = step(pos, { x: dir.dx, y: dir.dy }, deltaMs, grid, 0, config, 1);
             expect(
               bodyOverlapsAny(pos, colliders, config),
               `inside a collider at (${pos.x}, ${pos.y})`,
@@ -216,7 +216,7 @@ describe("inv_move_never_tunnels", () => {
                 };
           const grid = buildGrid([wall]);
           const dir = { x: nx + (nx === 0 ? tangential : 0), y: ny + (ny === 0 ? tangential : 0) };
-          const result = step({ x: 0, y: 0 }, dir, deltaMs, grid, 0, FAST_CONFIG);
+          const result = step({ x: 0, y: 0 }, dir, deltaMs, grid, 0, FAST_CONFIG, 1);
           const body = bodyRectSubcells(result, FAST_CONFIG);
 
           // "Far side" means the whole body has crossed the wall.
@@ -306,8 +306,8 @@ describe("inv_slide_keeps_tangential_motion", () => {
             ? { x: normal.x, y: tangentialSign }
             : { x: tangentialSign, y: normal.y };
 
-          const blocked = step(start, dir, deltaMs, grid, 0, config);
-          const free = step(start, dir, deltaMs, buildGrid([]), 0, config);
+          const blocked = step(start, dir, deltaMs, grid, 0, config, 1);
+          const free = step(start, dir, deltaMs, buildGrid([]), 0, config, 1);
 
           if (vertical) {
             // X is the normal axis: pinned. Y is tangential: untouched.
@@ -337,7 +337,7 @@ describe("inv_slide_keeps_tangential_motion", () => {
     // One sub-cell of clearance, which a single delta-clamped step
     // crosses, so both axes really do reach their faces.
     const start: Vec2 = { x: (176 + halfWidth + 1) / 16, y: (176 + height + 1) / 16 };
-    const result = step(start, { x: -1, y: -1 }, 1_000, grid, 0, CONFIG);
+    const result = step(start, { x: -1, y: -1 }, 1_000, grid, 0, CONFIG, 1);
     expect(bodyOverlapsAny(result, [top, sideWall], CONFIG)).toBe(false);
     // Both axes are stopped by the corner: each one lands exactly on its
     // own face, and neither slides past the other's wall.
@@ -352,10 +352,10 @@ describe("inv_slide_keeps_tangential_motion", () => {
     const grid = buildGrid([block]);
     const halfWidth = CONFIG.bodyWidthSubcells / 2;
     const start: Vec2 = { x: (176 + halfWidth) / 16, y: 160 / 16 };
-    const result = step(start, { x: -1, y: -1 }, 100, grid, 0, CONFIG);
+    const result = step(start, { x: -1, y: -1 }, 100, grid, 0, CONFIG, 1);
     // Touching is not overlapping, so nothing blocks: it slides freely up
     // and to the left, past the block's corner.
-    const free = step(start, { x: -1, y: -1 }, 100, buildGrid([]), 0, CONFIG);
+    const free = step(start, { x: -1, y: -1 }, 100, buildGrid([]), 0, CONFIG, 1);
     expect(result.x).toBeCloseTo(free.x, 12);
     expect(result.y).toBeCloseTo(free.y, 12);
     expect(bodyOverlapsAny(result, [block], CONFIG)).toBe(false);
@@ -372,7 +372,7 @@ describe("resolveAxis symmetry: negative-direction blocking", () => {
     const rest = 3 + halfWidth;
     // Start with only a small gap so the delta-clamped (100ms) step
     // crosses it and gets pulled back to exactly `rest`.
-    const result = step({ x: rest + 0.1, y: 0 }, { x: -1, y: 0 }, 1000, grid, 0, CONFIG);
+    const result = step({ x: rest + 0.1, y: 0 }, { x: -1, y: 0 }, 1000, grid, 0, CONFIG, 1);
     expect(result.x).toBeCloseTo(rest, 9);
   });
 
@@ -382,7 +382,7 @@ describe("resolveAxis symmetry: negative-direction blocking", () => {
     const CEILING: Rect = { x0: -16000, y0: 32, x1: 16000, y1: 48 };
     const grid = buildGrid([CEILING]);
     const rest = 3 + CONFIG.bodyHeightSubcells / 16;
-    const result = step({ x: 0, y: rest + 0.1 }, { x: 0, y: -1 }, 1000, grid, 0, CONFIG);
+    const result = step({ x: 0, y: rest + 0.1 }, { x: 0, y: -1 }, 1000, grid, 0, CONFIG, 1);
     expect(result.y).toBeCloseTo(rest, 9);
   });
 });
@@ -391,7 +391,7 @@ describe("inv_absent_collider_is_walkable (movement)", () => {
   // A step in open space with no colliders never gets clamped.
   it("inv_absent_collider_is_walkable", () => {
     const grid = buildGrid([]);
-    const result = step({ x: 0, y: 0 }, { x: 1, y: 0 }, 50, grid, 0, CONFIG);
+    const result = step({ x: 0, y: 0 }, { x: 1, y: 0 }, 50, grid, 0, CONFIG, 1);
     expect(result.x).toBeCloseTo(CONFIG.walkSpeedCellsPerMs * 50, 9);
     expect(result.y).toBe(0);
   });
@@ -416,10 +416,10 @@ describe("inv_step_is_frame_rate_independent", () => {
           const grid = buildGrid([]);
           let multi: Vec2 = { x: 0, y: 0 };
           for (const d of deltas) {
-            multi = step(multi, { x: 1, y: 0 }, d, grid, 0, CONFIG);
+            multi = step(multi, { x: 1, y: 0 }, d, grid, 0, CONFIG, 1);
           }
           const total = deltas.reduce((a, b) => a + b, 0);
-          const single = step({ x: 0, y: 0 }, { x: 1, y: 0 }, total, grid, 0, CONFIG);
+          const single = step({ x: 0, y: 0 }, { x: 1, y: 0 }, total, grid, 0, CONFIG, 1);
           expect(multi.x).toBeCloseTo(single.x, 4);
         },
       ),
@@ -429,8 +429,8 @@ describe("inv_step_is_frame_rate_independent", () => {
 
   it("diagonal speed never exceeds axis speed", () => {
     const grid = buildGrid([]);
-    const axis = step({ x: 0, y: 0 }, { x: 1, y: 0 }, 1000, grid, 0, CONFIG);
-    const diagonal = step({ x: 0, y: 0 }, { x: 1, y: 1 }, 1000, grid, 0, CONFIG);
+    const axis = step({ x: 0, y: 0 }, { x: 1, y: 0 }, 1000, grid, 0, CONFIG, 1);
+    const diagonal = step({ x: 0, y: 0 }, { x: 1, y: 1 }, 1000, grid, 0, CONFIG, 1);
     const diagonalDistance = Math.hypot(diagonal.x, diagonal.y);
     expect(diagonalDistance).toBeLessThanOrEqual(axis.x + 1e-9);
   });
@@ -440,8 +440,8 @@ describe("inv_step_is_frame_rate_independent", () => {
     // loses the excess rather than teleporting. A later change to
     // `MAX_DELTA_MS` has to edit this test.
     const grid = buildGrid([]);
-    const spike = step({ x: 0, y: 0 }, { x: 1, y: 0 }, 5_000, grid, 0, CONFIG);
-    const clamped = step({ x: 0, y: 0 }, { x: 1, y: 0 }, MAX_DELTA_MS, grid, 0, CONFIG);
+    const spike = step({ x: 0, y: 0 }, { x: 1, y: 0 }, 5_000, grid, 0, CONFIG, 1);
+    const clamped = step({ x: 0, y: 0 }, { x: 1, y: 0 }, MAX_DELTA_MS, grid, 0, CONFIG, 1);
     expect(spike.x).toBe(clamped.x);
     expect(spike.x).toBeCloseTo(CONFIG.walkSpeedCellsPerMs * MAX_DELTA_MS, 12);
   });
@@ -455,7 +455,7 @@ describe("named examples", () => {
     // Walk straight through the same cell, offset from the lamppost's own
     // sub-rect (e.g. along the cell's left edge).
     const start: Vec2 = { x: 5.05, y: 5.0 };
-    const result = step(start, { x: 0, y: 1 }, 200, grid, 0, CONFIG);
+    const result = step(start, { x: 0, y: 1 }, 200, grid, 0, CONFIG, 1);
     expect(bodyOverlapsAny(result, [LAMPPOST], CONFIG)).toBe(false);
     // And it actually moved -- collision did not stop it dead.
     expect(result.y).toBeGreaterThan(start.y);
@@ -464,7 +464,7 @@ describe("named examples", () => {
   it("a 45-degree walk into a flat wall slides along it instead of stopping", () => {
     const WALL: Rect = { x0: 160, y0: -16000, x1: 176, y1: 16000 };
     const grid = buildGrid([WALL]);
-    const result = step({ x: 9.5, y: 0 }, { x: 1, y: 1 }, 1000, grid, 0, CONFIG);
+    const result = step({ x: 9.5, y: 0 }, { x: 1, y: 1 }, 1000, grid, 0, CONFIG, 1);
     // X is clamped by the wall; Y still moved (the player slides down it).
     expect(result.x).toBeLessThanOrEqual(10 + 1e-9);
     expect(result.y).toBeGreaterThan(0);
@@ -472,7 +472,7 @@ describe("named examples", () => {
 
   it("walking over a collider-less object never stops the player", () => {
     const grid = buildGrid([]); // an object with no collider contributes nothing to the grid
-    const result = step({ x: 5, y: 5 }, { x: 1, y: 0 }, 500, grid, 0, CONFIG);
+    const result = step({ x: 5, y: 5 }, { x: 1, y: 0 }, 500, grid, 0, CONFIG, 1);
     expect(result.x).toBeGreaterThan(5);
   });
 
@@ -481,7 +481,7 @@ describe("named examples", () => {
     const grid = buildGrid([WALL]);
     let pos: Vec2 = { x: 10 - CONFIG.bodyWidthSubcells / 2 / 16, y: 0 };
     for (let i = 0; i < 1000; i++) {
-      pos = step(pos, { x: 1, y: 0 }, 16, grid, 0, CONFIG);
+      pos = step(pos, { x: 1, y: 0 }, 16, grid, 0, CONFIG, 1);
     }
     expect(pos.x).toBeCloseTo(10 - CONFIG.bodyWidthSubcells / 2 / 16, 9);
   });
@@ -492,7 +492,7 @@ describe("named examples", () => {
     // Body's right edge exactly touches the wall's left face -- moving
     // away (left) must be completely free, not treated as embedded.
     const touching: Vec2 = { x: 10 - CONFIG.bodyWidthSubcells / 2 / 16, y: 0 };
-    const result = step(touching, { x: -1, y: 0 }, 500, grid, 0, CONFIG);
+    const result = step(touching, { x: -1, y: 0 }, 500, grid, 0, CONFIG, 1);
     expect(result.x).toBeLessThan(touching.x);
   });
 });
@@ -532,8 +532,8 @@ describe("O(1) lookup: no row query in the movement path", () => {
     const smallWrap = countingGrid(buildGrid(farAwayColliders(10)));
     const bigWrap = countingGrid(buildGrid(farAwayColliders(100_000)));
 
-    step({ x: 0, y: 0 }, { x: 1, y: 1 }, 1000, smallWrap.counted, 0, CONFIG);
-    step({ x: 0, y: 0 }, { x: 1, y: 1 }, 1000, bigWrap.counted, 0, CONFIG);
+    step({ x: 0, y: 0 }, { x: 1, y: 1 }, 1000, smallWrap.counted, 0, CONFIG, 1);
+    step({ x: 0, y: 0 }, { x: 1, y: 1 }, 1000, bigWrap.counted, 0, CONFIG, 1);
 
     expect(smallWrap.count()).toBe(bigWrap.count());
     expect(smallWrap.count()).toBeGreaterThan(0);

@@ -83,7 +83,7 @@ function walk(
   };
   record();
   for (const d of deltas) {
-    pos = step(pos, dir, d, GRID, 0, config);
+    pos = step(pos, dir, d, GRID, 0, config, 1);
     record();
   }
   return frames;

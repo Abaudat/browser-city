@@ -101,6 +101,7 @@ import {
   propCells,
   simulateStreetWalk,
   stairwellRowsAt,
+  streetFlightIndex,
   streetMovementConfig,
   streetObjectSources,
   streetOwnershipIndex,
@@ -629,7 +630,7 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
   ): { readonly x: number; readonly y: number } {
     let pos = start;
     for (let i = 0; i < 1000; i++) {
-      const next = step(pos, direction, 16, world, floor, config);
+      const next = step(pos, direction, 16, world, floor, config, 1);
       if (next.x === pos.x && next.y === pos.y) return next;
       pos = next;
     }
@@ -1041,7 +1042,15 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
       transitioned: false,
     };
     for (let i = 0; i < 200 && !down.transitioned; i++) {
-      down = stepAndTransition(down, STAIRS_ENTRY_DIRECTION, 16, world, config, transitions);
+      down = stepAndTransition(
+        down,
+        STAIRS_ENTRY_DIRECTION,
+        16,
+        world,
+        config,
+        transitions,
+        streetFlightIndex(),
+      );
     }
     expect(down.floor).toBe(SUBWAY_FLOOR);
     expect(down.cellX).toBe(PLATFORM_LANDING_X);
@@ -1051,7 +1060,15 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     let up: FloorWalkResult = { ...down, transitioned: false };
     const reverseDirection = { x: -STAIRS_ENTRY_DIRECTION.x, y: -STAIRS_ENTRY_DIRECTION.y };
     for (let i = 0; i < 200 && !up.transitioned; i++) {
-      up = stepAndTransition(up, reverseDirection, 16, world, config, transitions);
+      up = stepAndTransition(
+        up,
+        reverseDirection,
+        16,
+        world,
+        config,
+        transitions,
+        streetFlightIndex(),
+      );
     }
     expect(up.floor).toBe(PLAYER_START.floor);
     expect(up.cellX).toBe(STREET_EXIT_X);
@@ -1131,7 +1148,7 @@ describe("the bollard west of the shopfront stops the player where it is drawn (
     let pos = { x, y: startY };
     const maxSteps = 300;
     for (let i = 0; i < maxSteps; i++) {
-      pos = step(pos, { x: 0, y: -1 }, MAX_DELTA_MS, world, floor, config);
+      pos = step(pos, { x: 0, y: -1 }, MAX_DELTA_MS, world, floor, config, 1);
     }
     return pos;
   }
@@ -1193,7 +1210,7 @@ describe("the bollard west of the shopfront stops the player where it is drawn (
   function walkAlongRow(startX: number, dir: -1 | 1): { x: number; y: number } {
     let pos = { x: startX, y: bollard.y + 0.5 };
     for (let i = 0; i < 300; i++) {
-      pos = step(pos, { x: dir, y: 0 }, MAX_DELTA_MS, world, floor, config);
+      pos = step(pos, { x: dir, y: 0 }, MAX_DELTA_MS, world, floor, config, 1);
     }
     return pos;
   }

@@ -1,22 +1,22 @@
 import type { FlightDef } from "../defs/types";
-import { footprintCells, footprintOrigin } from "../world/footprint";
-import { bodyRect, type MovementConfig } from "../world/movement";
+import { footprintCells, footprintOrigin } from "./footprint";
+import { bodyRect, type MovementConfig } from "./movement";
 import {
   forwardOpenNeighbor,
   pairTransitions,
   reverseOpenNeighbor,
   type TransitionSpec,
-} from "../world/transitions";
-import { floorOffsetPx } from "./screen-position";
+} from "./transitions";
 
 // FR182's flight offset (story 15.15): an actor on a flight is drawn lower
 // or higher along the walked treads, following the drawn surface, instead of
 // the whole floor offset arriving at the floor change. A pure function of
 // position and floor -- never of time, velocity, facing or the previous
 // tick -- so walking back retraces it exactly and standing still holds the
-// height. It is summed with the floor offset inside `worldPointPx` and
-// exists nowhere else: not in the sort key, collision, walk state or
-// picking. No `pixi.js`, no scene state.
+// height. It is summed with the floor offset inside `worldPointPx`; the
+// flight's ramp also scales the walked step (`paceScale`, story 15.21) so
+// the drawn displacement keeps walking pace. Neither reaches the sort key,
+// collision or picking. No `pixi.js`, no scene state.
 
 /** What a flight needs from its `defs/objects` row. */
 export interface FlightSource {
@@ -53,6 +53,8 @@ export interface Flight {
   /** Screen pixels at `fullS`, signed toward the transition's target floor
    * (positive is down the screen). */
   readonly dropPx: number;
+  /** Ground pixels per cell, the unit `dropPx` is drawn in. */
+  readonly tileSizePx: number;
 }
 
 /**
@@ -132,10 +134,8 @@ export function buildFlights(
       if (anchorNearS !== hi - 1) {
         throw new Error(`buildFlights: the anchor ${where} is not at the far end of its flight`);
       }
-      const sign = Math.sign(
-        floorOffsetPx(anchor.targetFloor, storeyHeightPx) -
-          floorOffsetPx(anchor.floor, storeyHeightPx),
-      );
+      // A higher floor is drawn higher up the screen (`floorOffsetPx`).
+      const sign = Math.sign((anchor.floor - anchor.targetFloor) * storeyHeightPx);
       const flight: Flight = {
         floor: anchor.floor,
         x0: origin.x,
@@ -148,6 +148,7 @@ export function buildFlights(
         startS: lo + fromPx / tileSizePx,
         fullS: lo + toPx / tileSizePx,
         dropPx: sign * dropPx + 0,
+        tileSizePx,
       };
       const known = built.get(row);
       if (!known) {
@@ -243,5 +244,44 @@ export class FlightIndex {
       }
     }
     return 0;
+  }
+
+  /** The flight whose ramp the actor at `(x, y)` is on, or undefined: the
+   * same test and axis `offsetPx` reads, strictly inside the ramp. */
+  private rampAt(x: number, y: number, floor: number): Flight | undefined {
+    if (this.byCell.size === 0) return undefined;
+    const sub = this.config.subcellsPerCell;
+    const body = bodyRect({ x, y }, this.config);
+    const cx1 = Math.ceil(body.x1 / sub) - 1;
+    const cy1 = Math.ceil(body.y1 / sub) - 1;
+    for (let cy = Math.floor(body.y0 / sub); cy <= cy1; cy++) {
+      for (let cx = Math.floor(body.x0 / sub); cx <= cx1; cx++) {
+        const flight = this.byCell.get(cellKey(floor, cx, cy));
+        if (!flight) continue;
+        const s = x * flight.dirX + y * flight.dirY;
+        return s > flight.startS && s < flight.fullS ? flight : undefined;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * The factor a ground step in direction `(dx, dy)` is scaled by so its
+   * drawn displacement (ground plus the change in `offsetPx`) has the
+   * length of a flat step (story 15.21): `1` off every ramp, otherwise
+   * `1 / |(d.x, d.y + k * (d . dir))|` with `k` the ramp's drop per ground
+   * px. A pure function of position, floor and direction -- never of time
+   * or history. The direction need not be unit length.
+   */
+  paceScale(x: number, y: number, floor: number, dx: number, dy: number): number {
+    const length = Math.hypot(dx, dy);
+    if (length === 0) return 1;
+    const flight = this.rampAt(x, y, floor);
+    if (!flight) return 1;
+    const ux = dx / length;
+    const uy = dy / length;
+    const k = flight.dropPx / ((flight.fullS - flight.startS) * flight.tileSizePx);
+    const drawn = Math.hypot(ux, uy + k * (ux * flight.dirX + uy * flight.dirY));
+    return drawn > 0 ? 1 / drawn : 1;
   }
 }

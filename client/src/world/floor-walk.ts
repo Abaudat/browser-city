@@ -19,6 +19,7 @@
 // this is a real, generator-reachable case, not a fixture curiosity).
 
 import type { CollisionGridQuery } from "./collision-grid";
+import type { FlightIndex } from "./flights";
 import type { MovementConfig, Vec2 } from "./movement";
 import { step } from "./movement";
 import { cellOf } from "./ownership";
@@ -71,8 +72,20 @@ export function stepAndTransition(
   grid: CollisionGridQuery,
   config: MovementConfig,
   transitions: TransitionIndex,
+  flights: FlightIndex,
 ): FloorWalkResult {
-  const next = step({ x: state.x, y: state.y }, inputDir, deltaMs, grid, state.floor, config);
+  // The flight's pace scale (story 15.21) changes only the requested
+  // distance, read once at the start position.
+  const speedScale = flights.paceScale(state.x, state.y, state.floor, inputDir.x, inputDir.y);
+  const next = step(
+    { x: state.x, y: state.y },
+    inputDir,
+    deltaMs,
+    grid,
+    state.floor,
+    config,
+    speedScale,
+  );
   const cellX = cellOf(next.x);
   const cellY = cellOf(next.y);
 

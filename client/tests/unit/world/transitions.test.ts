@@ -4,6 +4,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { CollisionGridQuery, GridEntry } from "../../../src/world/collision-grid";
+import { FlightIndex } from "../../../src/world/flights";
 import {
   type FloorWalkResult,
   initialFloorWalkState,
@@ -352,7 +353,15 @@ describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and 
           const walkUntilTransition = (start: FloorWalkResult, dir: { x: number; y: number }) => {
             let state: FloorWalkResult = { ...start, transitioned: false };
             for (let step = 0; !state.transitioned && step < 10_000; step++) {
-              state = stepAndTransition(state, dir, deltaAt(step), grid, config, transitions);
+              state = stepAndTransition(
+                state,
+                dir,
+                deltaAt(step),
+                grid,
+                config,
+                transitions,
+                new FlightIndex([], config),
+              );
             }
             return state;
           };
@@ -377,7 +386,15 @@ describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and 
           // never returns the walker to the floor it came from.
           let onward: FloorWalkResult = { ...landed, transitioned: false };
           for (let step = 0; step < 200; step++) {
-            onward = stepAndTransition(onward, d, deltaAt(step), grid, config, transitions);
+            onward = stepAndTransition(
+              onward,
+              d,
+              deltaAt(step),
+              grid,
+              config,
+              transitions,
+              new FlightIndex([], config),
+            );
             expect(onward.transitioned).toBe(false);
             expect(onward.floor).toBe(-1);
           }
@@ -401,7 +418,15 @@ describe("story 15.2, Quentin's direction: for any mirrored pair, any speed and 
                 transitioned: false,
               };
               for (let step = 0; step < 200; step++) {
-                state = stepAndTransition(state, dir, deltaAt(step), grid, config, transitions);
+                state = stepAndTransition(
+                  state,
+                  dir,
+                  deltaAt(step),
+                  grid,
+                  config,
+                  transitions,
+                  new FlightIndex([], config),
+                );
                 expect(state.transitioned).toBe(false);
                 expect(state.floor).toBe(anchor.floor);
               }

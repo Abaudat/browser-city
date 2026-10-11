@@ -10,9 +10,9 @@ import { expect, test } from "@playwright/test";
 // Pulls in `declare global { interface Window { __bc } }` -- types only.
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
-import { buildFlights, FlightIndex } from "../../src/render/flight-offset";
 import { worldPointPx } from "../../src/render/screen-position";
 import { STREET_TRANSITIONS, streetPlacedRows } from "../../src/test-street/fixture";
+import { buildFlights, FlightIndex } from "../../src/world/flights";
 import {
   streetMovementConfig,
   streetObjectSources,
