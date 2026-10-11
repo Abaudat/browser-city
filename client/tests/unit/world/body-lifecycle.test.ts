@@ -30,6 +30,7 @@ function deferred<T>(): Deferred<T> {
 function harness() {
   const pending: (Deferred<string> & { id: string })[] = [];
   const counts = { acquire: 0, release: 0, create: 0, destroy: 0 };
+  let rejected = 0;
   const perId = new Map<string, number>();
   const created: { id: string; t: number }[] = [];
   const errors: string[] = [];
@@ -41,7 +42,10 @@ function harness() {
         const d = { ...deferred<string>(), id };
         pending.push(d);
         // A rejected acquire holds no slot.
-        d.promise.catch(() => perId.set(id, (perId.get(id) ?? 0) - 1));
+        d.promise.catch(() => {
+          rejected++;
+          perId.set(id, (perId.get(id) ?? 0) - 1);
+        });
         return d.promise;
       },
       release: (id) => {
@@ -61,7 +65,7 @@ function harness() {
   );
   const at = (id: string, x: number, y = 0): BodyCandidate[] => [{ id, x, y, floor: 0 }];
   const flush = () => new Promise<void>((r) => setTimeout(r, 0));
-  return { life, pending, counts, perId, created, errors, at, flush };
+  return { life, pending, counts, perId, created, errors, at, flush, rejections: () => rejected };
 }
 
 const IN = 0;
@@ -136,6 +140,26 @@ describe("BodyLifecycle", () => {
     expect(unhandled).toEqual([]);
   });
 
+  it("repeated rejections of one id report once until it gets a body", async () => {
+    const h = harness();
+    for (let frame = 0; frame < 5; frame++) {
+      h.life.apply(frame, h.at("a", IN), 1, ZONE);
+      h.pending[frame]?.reject(new Error("exhausted"));
+      await h.flush();
+    }
+    expect(h.pending).toHaveLength(5);
+    expect(h.errors).toEqual(["a"]);
+    // A success ends the streak; the next failure is reported again.
+    h.life.apply(5, h.at("a", IN), 1, ZONE);
+    h.pending[5]?.resolve("frames");
+    await h.flush();
+    h.life.apply(6, h.at("a", OUT), 1, ZONE);
+    h.life.apply(7, h.at("a", IN), 1, ZONE);
+    h.pending[6]?.reject(new Error("exhausted"));
+    await h.flush();
+    expect(h.errors).toEqual(["a", "a"]);
+  });
+
   it("inv_far_citizen_has_no_body", async () => {
     const h = harness();
     const far: BodyCandidate[] = Array.from({ length: 1000 }, (_, i) => ({
@@ -190,7 +214,7 @@ describe("BodyLifecycle", () => {
         h.life.apply(9999, crowd, crowd.length, ZONE);
         await h.flush();
         expect(h.life.bodies.size).toBe(0);
-        expect(h.counts.release).toBe(h.counts.acquire - h.errors.length);
+        expect(h.counts.release).toBe(h.counts.acquire - h.rejections());
         for (const n of h.perId.values()) expect(n).toBe(0);
       }),
       { numRuns: 10 },

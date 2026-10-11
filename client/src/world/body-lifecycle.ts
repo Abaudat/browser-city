@@ -32,6 +32,8 @@ export class BodyLifecycle<Frames, Body> {
    * token has been superseded and only releases. */
   readonly #tokens = new Map<string, number>();
   readonly #plan: BodyPlan = createBodyPlan();
+  /** Ids whose acquire is failing: reported once per streak, not per retry. */
+  readonly #failing = new Set<string>();
 
   constructor(
     hooks: BodyHooks<Frames, Body>,
@@ -80,13 +82,17 @@ export class BodyLifecycle<Frames, Body> {
     } catch (error) {
       // Nothing was acquired; the id may try again while it stays in the zone.
       if (this.#tokens.get(id) === token) this.#live.delete(id);
-      this.#onError(id, error);
+      if (!this.#failing.has(id)) {
+        this.#failing.add(id);
+        this.#onError(id, error);
+      }
       return;
     }
     if (this.#tokens.get(id) !== token) {
       this.#hooks.release(id);
       return;
     }
+    this.#failing.delete(id);
     this.#bodies.set(id, this.#hooks.create(id, frames, t));
   }
 

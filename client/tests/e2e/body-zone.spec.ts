@@ -32,9 +32,12 @@ test.describe("the body zone in a real browser", () => {
       popped: window.__bc?.bodyWatch?.poppedIn() ?? ["no watch"],
       min: window.__bc?.bodyWatch?.minBodies() ?? -1,
       max: window.__bc?.bodyWatch?.maxBodies() ?? -1,
+      spawns: window.__bc?.bodyWatch?.spawns() ?? -1,
       citizens: window.__bc?.bodyWatch?.citizens() ?? -1,
     }));
-    expect(watch.popped, "ids first drawn inside the canvas").toEqual([]);
+    // The walk must have bodies arriving, or the check below is vacuous.
+    expect(watch.spawns, "bodies that arrived during the walk").toBeGreaterThan(0);
+    expect(watch.popped, "ids that went from not drawn to drawn inside the canvas").toEqual([]);
     expect(watch.citizens).toBeGreaterThan(0);
     expect(watch.min, "the zone culls somebody").toBeLessThan(watch.citizens);
     expect(watch.max).toBeLessThanOrEqual(watch.citizens);

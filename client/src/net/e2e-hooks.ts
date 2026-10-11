@@ -69,6 +69,8 @@ declare global {
         citizens: () => number;
         /** Spawns of an id that had already had a body since `reset`. */
         respawns: () => number;
+        /** Ids that went from not drawn to drawn since `reset`. */
+        spawns: () => number;
         /** Bodies drawn now. */
         drawn: () => number;
       };
@@ -625,6 +627,7 @@ let bodyMin = 0;
 let bodyMax = 0;
 let bodyCitizens = 0;
 let bodyRespawns = 0;
+let bodySpawns = 0;
 
 export function recordCitizenBodiesForE2e(
   bodies: readonly { id: string; x0: number; y0: number; x1: number; y1: number }[],
@@ -641,12 +644,14 @@ export function recordCitizenBodiesForE2e(
       bodyMin = bodyDrawnNow.size;
       bodyMax = bodyDrawnNow.size;
       bodyRespawns = 0;
+      bodySpawns = 0;
     },
     poppedIn: () => [...bodyPopped],
     minBodies: () => bodyMin,
     maxBodies: () => bodyMax,
     citizens: () => bodyCitizens,
     respawns: () => bodyRespawns,
+    spawns: () => bodySpawns,
     drawn: () => bodyDrawnNow.size,
   };
   bodyCitizens = citizenCount;
@@ -654,13 +659,13 @@ export function recordCitizenBodiesForE2e(
   for (const b of bodies) {
     now.add(b.id);
     if (bodyDrawnNow.has(b.id)) continue;
-    if (bodyEverSeen.has(b.id)) {
-      bodyRespawns++;
-    } else {
-      const inView = b.x1 > 0 && b.y1 > 0 && b.x0 < screen.width && b.y0 < screen.height;
-      if (inView) bodyPopped.add(b.id);
-      bodyEverSeen.add(b.id);
-    }
+    // Every frame an id goes from not drawn to drawn, first spawn or respawn,
+    // is checked for being on the canvas.
+    bodySpawns++;
+    if (bodyEverSeen.has(b.id)) bodyRespawns++;
+    const inView = b.x1 > 0 && b.y1 > 0 && b.x0 < screen.width && b.y0 < screen.height;
+    if (inView) bodyPopped.add(b.id);
+    bodyEverSeen.add(b.id);
   }
   bodyDrawnNow = now;
   bodyMin = bodyMin === 0 && bodyMax === 0 ? now.size : Math.min(bodyMin, now.size);
