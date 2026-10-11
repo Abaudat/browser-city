@@ -42,14 +42,24 @@ pub struct Crossing {
 /// A route waypoint: a tile and its floor. The actor stands at tile centres.
 pub type Waypoint = (i32, i32, i8);
 
+/// The longest straight segment, in cells along either axis, the instants are
+/// defined for: the client computes the same integer square root in doubles,
+/// which is exact below this.
+pub const MAX_SEGMENT_CELLS: i32 = 65_535;
+
 /// Each waypoint's integer instant: the leg duration shared by cumulative
-/// straight-line distance, floor division. This is L3's rule
-/// (the client's `src/l3/body.ts`, `legInstants`), so the instant a crossing is
-/// written and the instant every client's ledger position crosses agree.
-/// Both sides pin it with `fixtures/leg-instants.json`.
-pub fn leg_instants(route: &[Waypoint], t_depart: i64, t_arrive: i64) -> Vec<i64> {
+/// straight-line distance in 1/1024 cells (an integer square root, rounded
+/// down), floor division. This is L3's rule, so the instant a crossing is
+/// written and the instant every client's ledger position crosses agree; both
+/// sides pin it with `fixtures/leg-instants.v1.json`. A route with a segment
+/// longer than `MAX_SEGMENT_CELLS` has no instants.
+pub fn leg_instants(route: &[Waypoint], t_depart: i64, t_arrive: i64) -> Option<Vec<i64>> {
+    if route.windows(2).any(|w| {
+        (w[0].0 - w[1].0).abs() > MAX_SEGMENT_CELLS || (w[0].1 - w[1].1).abs() > MAX_SEGMENT_CELLS
+    }) {
+        return None;
+    }
     let duration = (t_arrive - t_depart).max(0);
-    // Distance in 1/1024 cells, rounded down: an integer square root.
     let seg = |i: usize| -> i64 {
         let (ax, ay, _) = route[i - 1];
         let (bx, by, _) = route[i];
@@ -69,7 +79,7 @@ pub fn leg_instants(route: &[Waypoint], t_depart: i64, t_arrive: i64) -> Vec<i64
             out.push(t_depart + (duration as i128 * cumulative as i128 / total as i128) as i64);
         }
     }
-    out
+    Some(out)
 }
 
 /// The cell an actor on `a -> b` stands in `u` of the way along (`u` as the
@@ -94,7 +104,9 @@ pub fn crossings(
     let Some(&(fx, fy, ff)) = route.first() else {
         return Vec::new();
     };
-    let instants = leg_instants(route, t_depart, t_arrive);
+    let Some(instants) = leg_instants(route, t_depart, t_arrive) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     let mut here = start;
     if let Some(p) = plan_move(here, fx, fy, ff) {

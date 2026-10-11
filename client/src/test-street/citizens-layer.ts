@@ -34,7 +34,8 @@ import {
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
 import { bodyTexture, newBodySprite, setBodyFrame } from "../render/body-sprite";
 import { snapToScreenPx, worldPointPx } from "../render/screen-position";
-import { type BodyCandidate, bodyZoneOf, planBodies, type Rect } from "../world/body-zone";
+import { BodyLifecycle } from "../world/body-lifecycle";
+import { type BodyCandidate, type BodyZone, WHOLE_ZONE } from "../world/body-zone";
 import { cellOf } from "../world/ownership";
 import {
   AVOIDANCE_SPECS,
@@ -70,6 +71,15 @@ export interface WalkerSource {
   readonly frozen?: boolean;
 }
 
+/** A body's sprite bounds on the renderer, in pixels. */
+export interface BodyScreenBounds {
+  readonly id: string;
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
 /** One L3 body as the debug tooling reads it. */
 export interface L3BodyReport {
   readonly id: string;
@@ -101,6 +111,10 @@ export interface CitizensLayerHandle {
   readonly distinctTextureCount: number;
   /** How many citizens have a body right now (drawn, not pending). */
   bodyCount(): number;
+  /** How many citizens the street has, with a body or not. */
+  readonly citizenCount: number;
+  /** Where each body is on screen, in renderer pixels (a DEV build's e2e). */
+  bodyBounds(): readonly BodyScreenBounds[];
   compareForE2e(
     tuple: AppearanceTuple,
     override: UniformOverride | null,
@@ -108,12 +122,12 @@ export interface CitizensLayerHandle {
     direction: string,
     frame: number,
   ): Promise<{ pipeline: PixelSnapshot; stack: PixelSnapshot }>;
-  /** Instantiates and discards bodies for the body zone around `viewport`
-   * (cells) as judged on each citizen's ledger position at city time `t`,
-   * then draws every body as the street's life was last solved -- called from
-   * `scene.ts`'s own ticker, never a second ticker registered here (one
-   * driver of frame-by-frame state). No viewport means everyone has a body. */
-  update(t: number | undefined, viewport?: Rect): void;
+  /** Instantiates and discards bodies for `zone` as judged on each citizen's
+   * ledger position at city time `t`, then draws every body as the street's
+   * life was last solved -- called from `scene.ts`'s own ticker, never a
+   * second ticker registered here (one driver of frame-by-frame state). No
+   * zone means everyone has a body. */
+  update(t: number | undefined, zone?: BodyZone): void;
   /** What each walking citizen's body says about itself (the L3 overlay). */
   l3Bodies(): readonly L3BodyReport[];
   /** Every citizen's agreed state at city time `cityMilliminutes`, computed
@@ -138,9 +152,6 @@ interface Citizen {
   readonly spec: TimetableSpec | undefined;
   /** The ledger: a walker's legs. Absent for a standing citizen. */
   readonly ledger: Timetable | undefined;
-  /** Bumped on every spawn; an acquire that resolves under an old token has
-   * been despawned meanwhile and only releases. */
-  token: number;
   readonly make: () => { body: CitizenBody; timetable?: Timetable };
   readonly stand: AtState | undefined;
   readonly standAt: { readonly x: number; readonly y: number } | undefined;
@@ -157,8 +168,8 @@ export async function mountCitizensLayer(
   atlasBaseUrl: string,
   identicalTuples = false,
   l3: WalkerSource,
-  /** The zone of the first frame. No viewport: everyone has a body. */
-  options: { initialViewport?: Rect; initialCityMilliminutes?: number } = {},
+  /** The zone of the first frame. No zone: everyone has a body. */
+  options: { initialZone?: BodyZone; initialCityMilliminutes?: number } = {},
 ): Promise<CitizensLayerHandle> {
   // The crowd's own pavement, painted before the citizens so it sits
   // underneath them -- real `ModernTileset` sidewalk tiles, the same
@@ -272,106 +283,106 @@ export async function mountCitizensLayer(
       family: body.family,
       spec,
       ledger,
-      token: 0,
       make,
       stand,
       standAt,
     });
   }
 
-  /** Ids that hold a body or are waiting for its frames. */
-  const live = new Set<string>();
-
-  /** Gives `c` a body: its look first, the sprite only once the frames are
-   * resolved -- a body never draws before it is ready. */
-  async function spawn(c: Citizen): Promise<void> {
+  /** Builds a body from resolved frames, posed once at the spawn instant
+   * `t` -- where its ledger says it is, never its fixture's home cell -- so
+   * it is never drawn anywhere else. */
+  function createBody(id: string, frames: CompositeFrames, t: number): Drawn {
+    const c = citizens.get(id) as Citizen;
     const { fixture, override } = c;
-    const token = ++c.token;
-    live.add(fixture.id);
-    const frames = await cache.acquire(fixture.tuple, override);
-    if (c.token !== token || !live.has(fixture.id)) {
-      // Despawned while the acquire was pending.
-      cache.release(fixture.tuple, override);
-      return;
-    }
-    textureIdsById[fixture.id] = idFor(frames);
-
-    const sprite = newBodySprite(frames, {
-      animation: "idle",
-      direction: fixture.facing,
-      frameIndex: 0,
-    });
-    // A standing citizen never moves, so it keeps its whole-world-pixel
-    // placement (zoom 1, itself a whole screen pixel): its scatter
-    // position is fractional, and a finer snap would only shift it.
-    const px = worldPointPx(
-      fixture.gridX,
-      fixture.gridY,
-      CROWD_FLOOR,
-      tileSizePx,
-      storeyHeightPx,
-      1,
-      0,
-    );
-    sprite.x = px.x;
-    sprite.y = px.y;
-    sprite.zIndex = fixture.gridY;
-    layer.addChild(sprite);
-
+    textureIdsById[id] = idFor(frames);
     const member = l3.life.add({
-      id: fixture.id,
+      id,
       ...c.make(),
       stand: c.stand,
       standAt: c.standAt,
       look: appearanceCacheKey(fixture.tuple, override),
       remake: c.make,
     });
-    drawn.set(fixture.id, { sprite, frames, member, walks: c.spec !== undefined });
+    l3.life.pose(member, t);
+    const sprite = newBodySprite(frames, member.frame);
+    const walks = c.spec !== undefined;
+    // A standing citizen never moves, so it keeps its whole-world-pixel
+    // placement (zoom 1, itself a whole screen pixel): its scatter
+    // position is fractional, and a finer snap would only shift it.
+    const px = worldPointPx(
+      member.frame.x,
+      member.frame.y,
+      CROWD_FLOOR,
+      tileSizePx,
+      storeyHeightPx,
+      walks ? zoom : 1,
+      0,
+    );
+    sprite.x = px.x;
+    sprite.y = px.y;
+    sprite.zIndex = member.frame.y;
+    layer.addChild(sprite);
+    const d: Drawn = { sprite, frames, member, walks };
+    drawn.set(id, d);
     rankDirty = true;
+    return d;
   }
 
-  /** Discards a body whole and releases its slot; nothing merges back. */
-  function despawn(id: string): void {
-    live.delete(id);
-    const d = drawn.get(id);
-    if (!d) return; // pending: `spawn` releases when its acquire lands
-    const c = citizens.get(id) as Citizen;
+  /** Discards a body whole; nothing merges back. */
+  function destroyBody(id: string, d: Drawn): void {
     layer.removeChild(d.sprite);
     d.sprite.destroy();
     l3.life.remove(d.member);
     drawn.delete(id);
-    cache.release(c.fixture.tuple, c.override);
     rankDirty = true;
   }
 
-  const here: LedgerPoint = { x: 0, y: 0, floor: 0 };
-  /** A citizen's ledger position at `t`: cheap, never a body's pose. */
-  function candidateOf(c: Citizen, t: number): BodyCandidate {
-    if (c.ledger) {
-      ledgerPositionAt(c.ledger.stateAt(t), t, here);
-      return { id: c.fixture.id, x: here.x, y: here.y };
-    }
-    return { id: c.fixture.id, x: c.fixture.gridX, y: c.fixture.gridY };
-  }
+  const lifecycle = new BodyLifecycle<CompositeFrames, Drawn>(
+    {
+      acquire: (id) => {
+        const c = citizens.get(id) as Citizen;
+        return cache.acquire(c.fixture.tuple, c.override);
+      },
+      release: (id) => {
+        const c = citizens.get(id) as Citizen;
+        cache.release(c.fixture.tuple, c.override);
+      },
+      create: createBody,
+      destroy: destroyBody,
+    },
+    // The cache is bounded and rejects on exhaustion: the citizen stays
+    // without a body and tries again next frame while it is in the zone.
+    (id, error) => console.warn(`citizens-layer: no body for ${id}`, error),
+  );
 
-  /** Runs the body zone: despawns first, then spawns; returns the spawns. */
-  function applyZone(t: number, viewport: Rect | undefined): Promise<void>[] {
-    const candidates: BodyCandidate[] = [];
-    for (const c of citizens.values()) candidates.push(candidateOf(c, t));
-    const zone = viewport
-      ? bodyZoneOf(viewport)
-      : {
-          spawn: { x0: -Infinity, y0: -Infinity, x1: Infinity, y1: Infinity },
-          despawn: { x0: -Infinity, y0: -Infinity, x1: Infinity, y1: Infinity },
-        };
-    const plan = planBodies(live, candidates, zone);
-    for (const id of plan.despawn) despawn(id);
-    return plan.spawn.map((id) => spawn(citizens.get(id) as Citizen));
+  /** One reusable candidate per citizen: the ledger position, never a pose. */
+  const citizenList: Citizen[] = [...citizens.values()];
+  const candidates: BodyCandidate[] = citizenList.map((c) => ({
+    id: c.fixture.id,
+    x: c.fixture.gridX,
+    y: c.fixture.gridY,
+    floor: CROWD_FLOOR,
+  }));
+  const here: LedgerPoint = { x: 0, y: 0, floor: 0 };
+
+  /** Runs the body zone at `t`; returns the spawns. */
+  function applyZone(t: number, zone: BodyZone | undefined): Promise<void>[] {
+    for (let i = 0; i < candidates.length; i++) {
+      const c = citizenList[i] as Citizen;
+      if (!c.ledger) continue;
+      const cand = candidates[i] as BodyCandidate;
+      ledgerPositionAt(c.ledger.stateAt(t), t, here);
+      cand.x = here.x;
+      cand.y = here.y;
+      cand.floor = here.floor;
+    }
+    return lifecycle.apply(t, candidates, candidates.length, zone ?? WHOLE_ZONE);
   }
 
   // The bodies of the first frame are awaited, so the scene's first draw
   // shows them; later ones arrive as they walk into the zone.
-  await Promise.all(applyZone(options.initialCityMilliminutes ?? 0, options.initialViewport));
+  await Promise.all(applyZone(options.initialCityMilliminutes ?? 0, options.initialZone));
 
   /** Each citizen's place in id order, so two at one depth always draw in the
    * same order whatever order their textures arrived in. Rebuilt when the set
@@ -384,8 +395,8 @@ export async function mountCitizensLayer(
   const ID_DEPTH_STEP = 1e-6;
 
   /** Draws the street's life as `StreetLife.solve` last left it. */
-  function update(t: number | undefined, viewport?: Rect): void {
-    if (t !== undefined) applyZone(t, viewport);
+  function update(t: number | undefined, zone?: BodyZone): void {
+    if (t !== undefined) applyZone(t, zone);
     if (rankDirty) {
       rankIds();
       rankDirty = false;
@@ -450,7 +461,13 @@ export async function mountCitizensLayer(
     get distinctTextureCount() {
       return nextTextureId;
     },
-    bodyCount: () => drawn.size,
+    bodyCount: () => lifecycle.bodies.size,
+    citizenCount: citizenList.length,
+    bodyBounds: () =>
+      [...drawn].map(([id, d]) => {
+        const b = d.sprite.getBounds();
+        return { id, x0: b.minX, y0: b.minY, x1: b.maxX, y1: b.maxY };
+      }),
     compareForE2e,
     update,
     agreementAt: (t) => l3.life.agreementAt(t),

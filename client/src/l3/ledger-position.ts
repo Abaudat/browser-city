@@ -3,13 +3,25 @@
 // the body zone is judged on this, so a citizen outside it never costs a
 // micro-path, a pose or an appearance.
 
-import { legInstants } from "./body";
+import { type Leg, legInstants } from "./body";
 import type { CitizenState } from "./citizen";
 
 export interface LedgerPoint {
   x: number;
   y: number;
   floor: number;
+}
+
+/** A leg's instants, computed once per leg: the zone pass runs every frame. */
+const instantsOf = new WeakMap<object, number[]>();
+
+function instantsFor(leg: Leg): number[] {
+  let instants = instantsOf.get(leg);
+  if (!instants) {
+    instants = legInstants(leg);
+    instantsOf.set(leg, instants);
+  }
+  return instants;
 }
 
 /** Writes the ledger position of `state` at `t` into `out`. */
@@ -37,7 +49,7 @@ export function ledgerPositionAt(state: CitizenState, t: number, out: LedgerPoin
     out.floor = end.floor;
     return;
   }
-  const instants = legInstants(state.leg);
+  const instants = instantsFor(state.leg);
   let s = 0;
   while (s < last - 1 && t >= (instants[s + 1] as number)) s++;
   const a = waypoints[s] as (typeof waypoints)[number];

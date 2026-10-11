@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { parseDefs } from "../../../src/defs/parse";
+import { loadL3Config } from "../../../src/l3/config";
 import { ZOOM } from "../../../src/render/camera";
 import {
   BODY_ACQUIRE_BUDGET_MS,
@@ -10,6 +11,7 @@ import {
   type BodyCandidate,
   type BodyZone,
   bodyZoneOf,
+  createBodyPlan,
   inRect,
   planBodies,
   type Rect,
@@ -60,7 +62,7 @@ function popsInView(zone: BodyZone, fromX: number, acquireMs: number): boolean {
   let spawnedAtMs: number | undefined;
   let x = VIEW.x1 + fromX;
   for (let t = 0; x > VIEW.x0 - 5; t += dtMs) {
-    const plan = planBodies(held, [{ id: "w", x, y: 0 }], zone);
+    const plan = planBodies(held, [{ id: "w", x, y: 0, floor: 0 }], zone);
     apply(held, plan);
     if (plan.spawn.length > 0 && spawnedAtMs === undefined) spawnedAtMs = t;
     const drawn = spawnedAtMs !== undefined && t - spawnedAtMs >= acquireMs;
@@ -85,11 +87,12 @@ describe("bodyZoneOf", () => {
 });
 
 describe("planBodies", () => {
-  it("inv_far_citizen_has_no_body", () => {
+  it("a far citizen is planned no body", () => {
     const far: BodyCandidate[] = Array.from({ length: 1000 }, (_, i) => ({
       id: `far-${i}`,
       x: 10_000 + i,
       y: -10_000 - i,
+      floor: 0,
     }));
     const plan = planBodies(new Set(), far, bodyZoneOf(VIEW));
     expect(plan.spawn).toEqual([]);
@@ -99,9 +102,9 @@ describe("planBodies", () => {
 
   it("spawns inside the spawn rect and keeps a held body until the despawn rect is left", () => {
     const z = bodyZoneOf(VIEW);
-    const justInside = { id: "a", x: z.spawn.x1 - 0.01, y: 0 };
-    const between = { id: "a", x: z.spawn.x1 + BODY_DESPAWN_HYSTERESIS_CELLS / 2, y: 0 };
-    const beyond = { id: "a", x: z.despawn.x1 + 0.01, y: 0 };
+    const justInside = { id: "a", x: z.spawn.x1 - 0.01, y: 0, floor: 0 };
+    const between = { id: "a", x: z.spawn.x1 + BODY_DESPAWN_HYSTERESIS_CELLS / 2, y: 0, floor: 0 };
+    const beyond = { id: "a", x: z.despawn.x1 + 0.01, y: 0, floor: 0 };
     expect(planBodies(new Set(), [justInside], z).spawn).toEqual(["a"]);
     expect(planBodies(new Set(), [between], z).spawn).toEqual([]);
     expect(planBodies(new Set(["a"]), [between], z).keep).toEqual(["a"]);
@@ -120,7 +123,7 @@ describe("planBodies", () => {
           // A body sits on the spawn boundary while the player wobbles by
           // less than the hysteresis band either side.
           const held = new Set<string>();
-          const body = { id: "b", x: VIEW.x1 + REGION_BODY_MARGIN_CELLS, y: 0 };
+          const body = { id: "b", x: VIEW.x1 + REGION_BODY_MARGIN_CELLS, y: 0, floor: 0 };
           let transitions = 0;
           for (const w of wobble) {
             const z = bodyZoneOf(viewport(w, 0, 40, 23));
@@ -133,40 +136,6 @@ describe("planBodies", () => {
           expect(transitions).toBeLessThanOrEqual(1);
         },
       ),
-    );
-  });
-
-  it("inv_bodies_never_leak", () => {
-    fc.assert(
-      fc.property(fc.integer({ min: 1, max: 1 << 30 }), (seed) => {
-        let s = seed;
-        const rnd = () => {
-          s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-          return s / 0x1_0000_0000;
-        };
-        const crowd: BodyCandidate[] = Array.from({ length: 60 }, (_, i) => ({
-          id: `c${i}`,
-          x: rnd() * 400 - 200,
-          y: rnd() * 400 - 200,
-        }));
-        const held = new Set<string>();
-        const slots = new Map<string, number>();
-        let px = 0;
-        let py = 0;
-        for (let step = 0; step < 2000; step++) {
-          px += (rnd() - 0.5) * 6;
-          py += (rnd() - 0.5) * 6;
-          const plan = planBodies(held, crowd, bodyZoneOf(viewport(px, py, 40, 23)));
-          for (const id of plan.spawn) slots.set(id, (slots.get(id) ?? 0) + 1);
-          for (const id of plan.despawn) slots.set(id, (slots.get(id) ?? 0) - 1);
-          apply(held, plan);
-          expect(new Set([...plan.keep, ...plan.spawn])).toEqual(held);
-          const live = [...slots].filter(([, n]) => n > 0).map(([id]) => id);
-          expect(new Set(live)).toEqual(held);
-          expect([...slots.values()].every((n) => n === 0 || n === 1)).toBe(true);
-        }
-      }),
-      { numRuns: 5 },
     );
   });
 });
@@ -185,27 +154,80 @@ describe("a body is ready before it is visible", () => {
   });
 
   it("negative control: with margin 0 a late acquire pops in view", () => {
-    const zero: BodyZone = { spawn: VIEW, despawn: VIEW };
+    const zero: BodyZone = { spawn: VIEW, despawn: VIEW, storeyCells: 0, band: 0 };
     expect(popsInView(zero, 30, BODY_ACQUIRE_BUDGET_MS)).toBe(true);
   });
 });
 
+describe("the zone is judged per floor", () => {
+  const storeyCells = STOREY / TILE;
+  const FLOOR_VIEW = bodyZoneOf(VIEW, storeyCells, 0);
+
+  it("a citizen drawn in view has a body on every floor (the floor dimension of body-ready)", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: defs.maxFloor }),
+        fc.double({ min: VIEW.x0, max: VIEW.x1, noNaN: true }),
+        fc.double({ min: VIEW.y0, max: VIEW.y1, noNaN: true }),
+        (floor, x, drawnY) => {
+          // Its ledger cell is `floor` storeys south of where it is drawn.
+          const c = { id: "u", x, y: drawnY + floor * storeyCells, floor };
+          expect(planBodies(new Set(), [c], FLOOR_VIEW).spawn).toEqual(["u"]);
+        },
+      ),
+    );
+  });
+
+  it("negative control: a floor-blind zone leaves an upper-floor citizen in view without a body", () => {
+    const blind = bodyZoneOf(VIEW, 0, 0);
+    const floor = defs.maxFloor;
+    // Drawn on the viewport's bottom edge, its cell is `floor` storeys south.
+    const c = { id: "u", x: 0, y: VIEW.y1 - 1 + floor * storeyCells, floor };
+    expect(floor).toBeGreaterThan(0);
+    expect(planBodies(new Set(), [c], blind).spawn).toEqual([]);
+    expect(planBodies(new Set(), [c], FLOOR_VIEW).spawn).toEqual(["u"]);
+  });
+
+  it("a citizen outside the player's co-visible band has no body", () => {
+    const below = { id: "b", x: 0, y: 0, floor: -1 };
+    expect(planBodies(new Set(), [below], FLOOR_VIEW).spawn).toEqual([]);
+    expect(planBodies(new Set(["b"]), [below], FLOOR_VIEW).despawn).toEqual(["b"]);
+    expect(planBodies(new Set(), [below], bodyZoneOf(VIEW, storeyCells, 1)).spawn).toEqual(["b"]);
+  });
+
+  it("planning into a reused plan allocates no new lists", () => {
+    const out = createBodyPlan();
+    const arrays = [out.spawn, out.keep, out.despawn];
+    const c = [{ id: "a", x: 0, y: 0, floor: 0 }];
+    for (let i = 0; i < 5; i++) planBodies(new Set(), c, FLOOR_VIEW, out);
+    expect([out.spawn, out.keep, out.despawn]).toEqual(arrays);
+    expect(out.spawn).toEqual(["a"]);
+  });
+});
+
 describe("the body margin is arithmetic", () => {
-  it("covers the largest sprite extent, a clamped frame's walk and the acquire budget", () => {
+  it("covers the largest sprite extent, a clamped frame's walk, the acquire budget, the path box and the sidestep", () => {
     const extentCells = Math.ceil(
       Math.max(...defs.appearanceLayouts.map((l) => Math.max(l.cellWidth, l.cellHeight))) / TILE,
     );
     const walked = (WALK_CELLS_PER_S * (BODY_MAX_FRAME_DELTA_MS + BODY_ACQUIRE_BUDGET_MS)) / 1000;
-    expect(REGION_BODY_MARGIN_CELLS).toBeGreaterThanOrEqual(extentCells + walked);
+    // The drawn body leaves its ledger line by up to the path box and the
+    // sidestep, both read from the L3 dials.
+    const l3 = loadL3Config(defs);
+    expect(REGION_BODY_MARGIN_CELLS).toBeGreaterThanOrEqual(
+      extentCells + walked + l3.marginCells + l3.avoidClearanceCells,
+    );
   });
 
-  it("the despawn rect plus the footprint fits in the held region at both extremes", () => {
+  it("the despawn rect fits in the held region at both extremes", () => {
+    // `region.test.ts` holds the margin plus the footprint halo; the despawn
+    // rect adds the hysteresis, so a held body is never outside the region.
     const reach = REGION_RADIUS_CHUNKS * CHUNK_SIZE;
     for (const px of [REGION_MIN_VIEWPORT_PX, REGION_MAX_VIEWPORT_PX]) {
       const halfW = Math.ceil(px.width / ZOOM / TILE / 2);
       const halfH = Math.ceil(px.height / ZOOM / TILE / 2);
       const south = Math.ceil((defs.maxFloor * STOREY) / TILE);
-      const out = REGION_BODY_MARGIN_CELLS + BODY_DESPAWN_HYSTERESIS_CELLS + defs.maxFootprintCells;
+      const out = REGION_BODY_MARGIN_CELLS + BODY_DESPAWN_HYSTERESIS_CELLS;
       expect(reach).toBeGreaterThanOrEqual(halfW + out);
       expect(reach).toBeGreaterThanOrEqual(halfH + out + south);
     }

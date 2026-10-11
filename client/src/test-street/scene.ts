@@ -61,7 +61,7 @@ import type { Drawable } from "../render/sort-key";
 import { fromSortUnits, toSortUnits } from "../render/sort-units";
 import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
-import type { Rect } from "../world/body-zone";
+import { type BodyZone, bodyZoneOf, type Rect } from "../world/body-zone";
 import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
 import { buildFlights, FlightIndex } from "../world/flights";
 import {
@@ -74,6 +74,7 @@ import { bodyRect, type MovementConfig } from "../world/movement";
 import { npcWalkability } from "../world/npc-walkable";
 import { buildObjectDefIndex, type ObjectSource, objectDefById } from "../world/object-defs";
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
+import { bandOf } from "../world/region";
 import { isBodyClear, isCellStandable } from "../world/standable";
 import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
@@ -85,7 +86,12 @@ import {
   CROWD_FLOOR,
   withStagingKerb,
 } from "./citizens";
-import { type CitizensLayerHandle, type L3BodyReport, mountCitizensLayer } from "./citizens-layer";
+import {
+  type BodyScreenBounds,
+  type CitizensLayerHandle,
+  type L3BodyReport,
+  mountCitizensLayer,
+} from "./citizens-layer";
 import { COMMUTER_ID, COMMUTER_SPEC, COMMUTER_STABLE_ID } from "./commuter";
 import {
   buildCharacterDrawable,
@@ -229,6 +235,13 @@ export interface MountStreetSceneOptions {
   /** Called every ticker frame with what the player's body is drawing (a DEV
    * build's e2e hook). */
   readonly onPlayerBody?: (frame: Readonly<BodyFrame>) => void;
+  /** Called every ticker frame with where each citizen body is on the
+   * renderer (a DEV build's e2e hook). */
+  readonly onCitizenBodies?: (
+    bodies: readonly BodyScreenBounds[],
+    screen: { readonly width: number; readonly height: number },
+    citizenCount: number,
+  ) => void;
   /** Story 1.13 (NFR2): how long this scene's own ticker callback took,
    * in ms, every frame it runs -- the frame *work* the perf harness
    * gates on, never a rAF interval. One call per frame into a sink that
@@ -802,6 +815,7 @@ export async function mountStreetScene(
     remotePlayers: remotePlayersWiring,
     playerCharacterId,
     onPlayerBody,
+    onCitizenBodies,
     onFrameWork,
     onVisibilityChange,
     onMasksChecked,
@@ -879,7 +893,7 @@ export async function mountStreetScene(
   let flights = new FlightIndex([], movementConfig);
   let playerFlightOffsetPx = 0;
   /** The camera's viewport in floor-0 cells, or none before a camera. */
-  function viewportCells(): Rect | undefined {
+  function viewportRect(): Rect | undefined {
     if (!lastCamera) return undefined;
     const b = visibleCellBounds(
       app.screen.width,
@@ -891,6 +905,13 @@ export async function mountStreetScene(
     );
     if (b.cellX1 <= b.cellX0 || b.cellY1 <= b.cellY0) return undefined;
     return { x0: b.cellX0, y0: b.cellY0, x1: b.cellX1, y1: b.cellY1 };
+  }
+  /** The body zone around the viewport: judged per floor (a point on floor
+   * `f` is drawn `f` storeys north) and over the player's co-visible band. */
+  function bodyZone(): BodyZone | undefined {
+    const view = viewportRect();
+    if (!view) return undefined;
+    return bodyZoneOf(view, storeyHeightPx / tileSizePx, bandOf(walk.floor));
   }
   function applyCamera(): void {
     const anchor = worldPointPx(
@@ -1432,7 +1453,6 @@ export async function mountStreetScene(
       direction: COMMUTER_SPEC.homeFacing,
       frameIndex: 0,
     });
-    sprite.anchor.set(0.5, 1);
     sprite.renderable = false;
     const entry: PoolEntry = { drawable, view: sprite, label: "commuter" };
     poolMembersOf(home.floor).push(entry);
@@ -1843,9 +1863,7 @@ export async function mountStreetScene(
     crowdIdenticalTuples ?? false,
     { walk: npcWalk, config: l3Config, life: streetLife, frozen: crowdFrozen },
     // A frozen crowd is staged whole for a screenshot.
-    crowdFrozen
-      ? {}
-      : { initialViewport: viewportCells(), initialCityMilliminutes: cityMilliminutes?.() },
+    crowdFrozen ? {} : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
   );
   // Story 4.4: the other players, in the same floor-0 container, advanced
   // from the same ticker below.
@@ -1887,7 +1905,8 @@ export async function mountStreetScene(
       const cityMilli = cityMilliminutes?.();
       if (cityMilli !== undefined) {
         streetLife.solve(cityMilli);
-        citizensLayer.update(cityMilli, viewportCells());
+        citizensLayer.update(cityMilli, bodyZone());
+        onCitizenBodies?.(citizensLayer.bodyBounds(), app.screen, citizensLayer.citizenCount);
       }
       updateCommuter(cityMilli);
     }

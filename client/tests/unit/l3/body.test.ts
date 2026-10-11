@@ -1,6 +1,12 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { Body, createBodyPose, type Leg, legInstants } from "../../../src/l3/body";
+import {
+  Body,
+  createBodyPose,
+  type Leg,
+  legInstants,
+  MAX_SEGMENT_CELLS,
+} from "../../../src/l3/body";
 import { sizeProbe } from "../setup/size-probe";
 import { l3Config } from "./defs-config";
 import { CFG, TestGrid } from "./support";
@@ -244,6 +250,22 @@ describe("Body pose", () => {
     const body = new Body(straight, new TestGrid(), CFG);
     expect(poseOf(body, straight.arriveAt).distance).toBe(10);
     expect(poseOf(body, 999).distance).toBe(0);
+  });
+
+  it("a segment past the exactness bound has the instants of one at the bound", () => {
+    const at = (x: number) =>
+      legInstants(
+        leg(
+          [
+            [0, 0],
+            [x, 0],
+            [x, 1],
+          ],
+          0,
+          1000,
+        ),
+      );
+    expect(at(MAX_SEGMENT_CELLS + 5)[1]).toBe(at(MAX_SEGMENT_CELLS)[1]);
   });
 
   it("a far-apart pair of waypoints is walked straight, never thrown on", () => {

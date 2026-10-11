@@ -68,12 +68,19 @@ export function createBodyPose(): BodyPose {
  * the same instants in integers (`sim::actor_location::leg_instants`). */
 const STRAIGHT_SCALE_BITS = 10;
 
+/** The longest segment, in cells along either axis, whose squared fixed-point
+ * length is exact in a double (below 2^53). The server refuses a longer segment
+ * (`sim::actor_location::MAX_SEGMENT_CELLS`); here it is held at the bound. */
+export const MAX_SEGMENT_CELLS = 65_535;
+
 /** The straight-line distance between two waypoints, in 1/1024 cells, rounded
  * down: an integer square root of an integer, so every client and the server
  * compute the same value. */
 function straight(a: Cell, b: Cell): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
+  // Past the bound the server refuses the leg (no crossings), so only this
+  // client draws it: its length is held at the bound, never inexact.
+  const dx = Math.min(MAX_SEGMENT_CELLS, Math.abs(a.x - b.x));
+  const dy = Math.min(MAX_SEGMENT_CELLS, Math.abs(a.y - b.y));
   const n = (dx * dx + dy * dy) * 2 ** (2 * STRAIGHT_SCALE_BITS);
   let r = Math.floor(Math.sqrt(n));
   while (r * r > n) r--;

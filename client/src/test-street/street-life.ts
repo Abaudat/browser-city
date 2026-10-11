@@ -41,7 +41,7 @@ export interface LifeMember {
   readonly standAt?: { readonly x: number; readonly y: number };
   /** The composite-cache key of the citizen's look: its five stored indices
    * and the uniform override. Never re-derived from the id. */
-  readonly look?: string;
+  readonly look: string;
   /** Builds a fresh body and ledger for the agreement sample. */
   readonly remake: () => { body: CitizenBody; timetable?: LedgerSource };
   index: number;
@@ -116,6 +116,12 @@ export class StreetLife {
     this.#scratch = undefined;
   }
 
+  /** Poses one body alone at `t` (its ledger frame, no sidestep), so a body
+   * is built at the position its ledger says it has at its spawn instant. */
+  pose(member: LifeMember, t: number): void {
+    poseMember(member, t);
+  }
+
   /** Drops a body: it stops being posed and sidestepped; it stays declared. */
   remove(member: LifeMember): void {
     const i = this.#members.indexOf(member);
@@ -172,8 +178,23 @@ export class StreetLife {
         facing: m.frame.direction,
         offsetX: field.offsetX(m.index),
         offsetY: field.offsetY(m.index),
-        look: m.look ?? "",
+        look: m.look,
       }));
+  }
+}
+
+function poseMember(m: LifeMember, t: number): void {
+  const f = m.frame;
+  if (m.timetable) {
+    m.body.frameAt(m.timetable.stateAt(t), t, f);
+  } else {
+    m.body.frameAt(m.stand as AtState, t, f);
+    if (m.standAt) {
+      f.x = m.standAt.x;
+      f.y = m.standAt.y;
+      f.anchorX = f.x;
+      f.anchorY = f.y;
+    }
   }
 }
 
@@ -186,18 +207,8 @@ function solveAll(
 ): void {
   field.reset();
   for (const m of members) {
+    poseMember(m, t);
     const f = m.frame;
-    if (m.timetable) {
-      m.body.frameAt(m.timetable.stateAt(t), t, f);
-    } else {
-      m.body.frameAt(m.stand as AtState, t, f);
-      if (m.standAt) {
-        f.x = m.standAt.x;
-        f.y = m.standAt.y;
-        f.anchorX = f.x;
-        f.anchorY = f.y;
-      }
-    }
     m.index = field.add(
       m.id,
       f.x,

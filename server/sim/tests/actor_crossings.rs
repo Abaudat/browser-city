@@ -4,8 +4,8 @@
 
 use proptest::prelude::*;
 use sim::actor_location::{
-    Placement, Waypoint, crossings, crossings_per_route, crossings_per_walking_hour_milli,
-    leg_instants,
+    MAX_SEGMENT_CELLS, Placement, Waypoint, crossings, crossings_per_route,
+    crossings_per_walking_hour_milli, leg_instants,
 };
 use sim::world::{CHUNK_SIZE, chunk_key};
 
@@ -55,12 +55,21 @@ proptest! {
     fn leg_instants_are_monotone_and_span_the_leg(
         r in route(), depart in 0i64..10_000, len in 0i64..100_000,
     ) {
-        let i = leg_instants(&r, depart, depart + len);
+        let i = leg_instants(&r, depart, depart + len).unwrap();
         prop_assert_eq!(i.len(), r.len());
         prop_assert!(i.windows(2).all(|w| w[0] <= w[1]));
         prop_assert_eq!(i[0], depart);
         if r.len() > 1 { prop_assert_eq!(*i.last().unwrap(), depart + len); }
     }
+}
+
+#[test]
+fn a_segment_longer_than_the_bound_has_no_instants() {
+    let r = [(0, 0, 0), (MAX_SEGMENT_CELLS + 1, 0, 0)];
+    assert_eq!(leg_instants(&r, 0, 1000), None);
+    assert!(crossings(&r, 0, 1000, None).is_empty());
+    let ok = [(0, 0, 0), (MAX_SEGMENT_CELLS, 0, 0)];
+    assert!(leg_instants(&ok, 0, 1000).is_some());
 }
 
 #[test]

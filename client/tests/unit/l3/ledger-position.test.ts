@@ -1,5 +1,18 @@
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const instantsCalls = vi.hoisted(() => ({ n: 0 }));
+vi.mock("../../../src/l3/body", async (orig) => {
+  const real = await orig<typeof import("../../../src/l3/body")>();
+  return {
+    ...real,
+    legInstants: (leg: Parameters<typeof real.legInstants>[0]) => {
+      instantsCalls.n++;
+      return real.legInstants(leg);
+    },
+  };
+});
+
 import { Body, createBodyPose } from "../../../src/l3/body";
 import type { TransitState } from "../../../src/l3/citizen";
 import { type LedgerPoint, ledgerPositionAt } from "../../../src/l3/ledger-position";
@@ -64,5 +77,23 @@ describe("ledgerPositionAt", () => {
         },
       ),
     );
+  });
+});
+
+describe("the zone pass allocates nothing in steady state", () => {
+  it("computes a leg's instants once however many frames read it", () => {
+    const s = mk(
+      [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+      ],
+      0,
+      1000,
+    );
+    instantsCalls.n = 0;
+    const out = { x: 0, y: 0, floor: 0 };
+    for (let t = 1; t < 999; t += 7) ledgerPositionAt(s, t, out);
+    expect(instantsCalls.n).toBe(1);
   });
 });

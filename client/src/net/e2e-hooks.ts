@@ -55,6 +55,23 @@ declare global {
       frameCount?: number;
       /** Story 5.3: what the local player's body is drawing now. */
       playerBody?: { animation: string; direction: string; frameIndex: number };
+      /** Story 5.3 (FR58): what the citizen bodies have done since
+       * `reset`, recorded per drawn frame in the page. */
+      bodyWatch?: {
+        /** Starts over, counting every body now drawn as already seen. */
+        reset: () => void;
+        /** Ids whose first drawn frame since `reset` intersected the canvas. */
+        poppedIn: () => string[];
+        /** The fewest and most bodies drawn at once since `reset`. */
+        minBodies: () => number;
+        maxBodies: () => number;
+        /** Citizens the street has. */
+        citizens: () => number;
+        /** Spawns of an id that had already had a body since `reset`. */
+        respawns: () => number;
+        /** Bodies drawn now. */
+        drawn: () => number;
+      };
       /** Story 4.4 (FR138): the other players as this page draws them. */
       remotePlayers?: {
         /** Where each drawn remote player is, by character id, now. */
@@ -596,6 +613,58 @@ export function recordRegionRowForE2e(
   bucket.region = region;
   const id = `${table}:${String(Object.values(row)[0])}`;
   region[kind][id] = (region[kind][id] ?? 0) + 1;
+  window.__bc = bucket;
+}
+
+/** Story 5.3 (FR58): per-frame bookkeeping of the citizen bodies, in the
+ * page: a body whose first drawn frame is inside the canvas is a pop. */
+const bodyEverSeen = new Set<string>();
+const bodyPopped = new Set<string>();
+let bodyDrawnNow = new Set<string>();
+let bodyMin = 0;
+let bodyMax = 0;
+let bodyCitizens = 0;
+let bodyRespawns = 0;
+
+export function recordCitizenBodiesForE2e(
+  bodies: readonly { id: string; x0: number; y0: number; x1: number; y1: number }[],
+  screen: { readonly width: number; readonly height: number },
+  citizenCount: number,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.bodyWatch ??= {
+    reset: () => {
+      bodyEverSeen.clear();
+      bodyPopped.clear();
+      for (const id of bodyDrawnNow) bodyEverSeen.add(id);
+      bodyMin = bodyDrawnNow.size;
+      bodyMax = bodyDrawnNow.size;
+      bodyRespawns = 0;
+    },
+    poppedIn: () => [...bodyPopped],
+    minBodies: () => bodyMin,
+    maxBodies: () => bodyMax,
+    citizens: () => bodyCitizens,
+    respawns: () => bodyRespawns,
+    drawn: () => bodyDrawnNow.size,
+  };
+  bodyCitizens = citizenCount;
+  const now = new Set<string>();
+  for (const b of bodies) {
+    now.add(b.id);
+    if (bodyDrawnNow.has(b.id)) continue;
+    if (bodyEverSeen.has(b.id)) {
+      bodyRespawns++;
+    } else {
+      const inView = b.x1 > 0 && b.y1 > 0 && b.x0 < screen.width && b.y0 < screen.height;
+      if (inView) bodyPopped.add(b.id);
+      bodyEverSeen.add(b.id);
+    }
+  }
+  bodyDrawnNow = now;
+  bodyMin = bodyMin === 0 && bodyMax === 0 ? now.size : Math.min(bodyMin, now.size);
+  bodyMax = Math.max(bodyMax, now.size);
   window.__bc = bucket;
 }
 

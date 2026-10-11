@@ -34,6 +34,7 @@ import {
   recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
   recordCharacterForE2e,
+  recordCitizenBodiesForE2e,
   recordDistinctBoundAtlasPagesForE2e,
   recordDoorwaysForE2e,
   recordFrameWorkForE2e,
@@ -655,6 +656,7 @@ async function startStreetScene(
     remotePlayers,
     playerCharacterId: players.characterId,
     onPlayerBody: import.meta.env.DEV ? recordPlayerBodyForE2e : undefined,
+    onCitizenBodies: import.meta.env.DEV ? recordCitizenBodiesForE2e : undefined,
     onPlayerMove: (x, y, floor) => {
       recordPlayerPositionForE2e(x, y, floor);
       players.onPlayerMove(x, y, floor);

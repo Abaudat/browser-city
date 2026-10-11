@@ -35,7 +35,8 @@ fn leg_instants_match_the_shared_fixture() {
             &route,
             case["departAt"].as_i64().unwrap(),
             case["arriveAt"].as_i64().unwrap(),
-        );
+        )
+        .expect("a fixture segment is within the bound");
         assert_eq!(got, want, "route {route:?}");
     }
 }
