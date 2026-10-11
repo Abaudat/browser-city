@@ -12,7 +12,6 @@ use sim::gameplay_metrics::{
 
 const GOLDEN: &str = include_str!("goldens/codes_gameplay_metrics_v1.golden");
 const EDGES_GOLDEN: &str = include_str!("goldens/boot_edges_v1.golden");
-const RECONNECT_POLICY_TS: &str = include_str!("../../../client/src/net/reconnect-policy.ts");
 
 fn golden(set: &str) -> Vec<(u32, String)> {
     GOLDEN
@@ -213,28 +212,10 @@ fn the_edges_are_pinned_to_the_golden_the_e2e_reads() {
     assert_eq!(golden, edges());
 }
 
-// -- the seam and the probe timeout ------------------------------------
-
-#[test]
-fn the_seam_equals_the_clients_probe_timeout() {
-    let line = RECONNECT_POLICY_TS
-        .lines()
-        .find(|l| l.contains("export const PROBE_TIMEOUT_MS"))
-        .expect("PROBE_TIMEOUT_MS in reconnect-policy.ts");
-    let value: u32 = line
-        .split('=')
-        .nth(1)
-        .unwrap()
-        .trim()
-        .trim_end_matches(';')
-        .replace('_', "")
-        .parse()
-        .unwrap();
-    assert_eq!(
-        RECONNECT_SEAM_MS, value,
-        "a silent drop is noticed PROBE_TIMEOUT_MS late: change them together"
-    );
-}
+// -- the seam ---------------------------------------------------------------
+// `RECONNECT_SEAM_MS` is held equal to the client PROBE_TIMEOUT_MS by
+// `scripts/ci/check-reconnect-seam-agrees.sh` (NFR30: server tests never
+// read the client tree).
 
 #[test]
 fn the_seam_boundary_is_inclusive() {
