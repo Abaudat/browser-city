@@ -136,7 +136,7 @@ describe("BodyLifecycle", () => {
     expect(unhandled).toEqual([]);
   });
 
-  it("inv_far_citizen_has_no_body: 1000 far citizens touch no acquire, body or release", async () => {
+  it("inv_far_citizen_has_no_body", async () => {
     const h = harness();
     const far: BodyCandidate[] = Array.from({ length: 1000 }, (_, i) => ({
       id: `far-${i}`,
@@ -151,7 +151,7 @@ describe("BodyLifecycle", () => {
     expect(h.life.bodies.size).toBe(0);
   });
 
-  it("inv_bodies_never_leak: after any seeded interleaving, acquire - release per look equals the live bodies", async () => {
+  it("inv_bodies_never_leak", async () => {
     await fc.assert(
       fc.asyncProperty(fc.integer({ min: 1, max: 1 << 30 }), async (seed) => {
         let s = seed;
