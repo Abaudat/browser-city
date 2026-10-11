@@ -1,5 +1,5 @@
 //! `fixtures/leg-instants.v1.json` pins L3's waypoint-instant rule on both
-//! sides: `client/tests/unit/l3/body.test.ts` reads the same file. A server
+//! sides: the client's `tests/unit/l3/body.test.ts` reads the same file. A server
 //! wake-up instant and a client ledger position agree at a chunk boundary
 //! only while the two implementations agree on these numbers.
 

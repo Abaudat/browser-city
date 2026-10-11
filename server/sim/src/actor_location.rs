@@ -44,7 +44,7 @@ pub type Waypoint = (i32, i32, i8);
 
 /// Each waypoint's integer instant: the leg duration shared by cumulative
 /// straight-line distance, floor division. This is L3's rule
-/// (`client/src/l3/body.ts`, `legInstants`), so the instant a crossing is
+/// (the client's `src/l3/body.ts`, `legInstants`), so the instant a crossing is
 /// written and the instant every client's ledger position crosses agree.
 /// Both sides pin it with `fixtures/leg-instants.json`.
 pub fn leg_instants(route: &[Waypoint], t_depart: i64, t_arrive: i64) -> Vec<i64> {
