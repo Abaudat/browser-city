@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use bounds::generation_stamp::{
-    CI_PROPTEST_CASES, CITY_POOL_SIZE, MEASURED_BLOCKS, check_doc, comment_restates_a_measurement,
+    CI_PROPTEST_CASES, MEASURED_BLOCKS, check_doc, comment_restates_a_measurement,
     current_fingerprint, quotes_a_version,
 };
 use sim::generation::GENERATION_VERSION;
@@ -111,24 +111,4 @@ fn the_implied_case_count_is_ci_s_proptest_cases() {
         .expect("ci.yml sets PROPTEST_CASES");
     let value: u32 = line.split(':').nth(1).unwrap().trim().parse().unwrap();
     assert_eq!(value, CI_PROPTEST_CASES);
-}
-
-/// The pool-based invariants judge `city_pool_size()` cities per CI run;
-/// the pool-based blocks size their implied failure probability by
-/// `CITY_POOL_SIZE`.
-#[test]
-fn the_pool_blocks_use_the_invariants_own_city_pool_size() {
-    let text = read("server/sim/tests/invariants.rs");
-    let at = text
-        .find("fn city_pool_size()")
-        .expect("city_pool_size exists");
-    let body = &text[at..];
-    let body = &body[..body.find("\n}").unwrap()];
-    let default: u32 = body
-        .split("unwrap_or(")
-        .nth(1)
-        .and_then(|r| r.split(')').next())
-        .and_then(|n| n.trim().parse().ok())
-        .expect("city_pool_size has a numeric default");
-    assert_eq!(default, CITY_POOL_SIZE);
 }

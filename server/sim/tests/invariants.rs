@@ -6492,7 +6492,7 @@ fn city_pool_size() -> u64 {
     std::env::var("GENERATION_CITY_POOL")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(96)
+        .unwrap_or(u64::from(sim::generation::guards::CITY_POOL_SIZE))
 }
 
 /// Judge every `n`th laid interior with story 2.4's sub-cell body check:

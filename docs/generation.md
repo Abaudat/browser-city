@@ -462,7 +462,7 @@ bounds the 99th-percentile fill over the 64-node sample, strictly under
 the proptest, the pinned seed and the sweep all call it). The seed's p99
 fill is 71%.
 
-**Margin rule.** A perfect route at or beyond the takeover distance
+**p99 margin rule.** A perfect route at or beyond the takeover distance
 already fills 50% (allowed is `2 * manhattan` there), so only the share
 of the worst measured p99 fill above that floor can worsen: scale that
 share by 1.25, add the floor back, round up to a multiple of 5. The
@@ -1094,6 +1094,8 @@ threshold_cells_per_city: min=3201 p1=3473 p50=3886 p99=4251 max=4504 mean=3880.
 fixture_cells_per_city: min=7502 p1=8088 p50=8987 p99=9797 max=10355 mean=8978.0 stddev=366.9
 layout attempts needed (u32::MAX = rejected): {1: 23292358, 2: 1334735, 3: 628107, 4: 341075, 5: 192792, 6: 112084, 7: 64379, 8: 90167, 4294967295: 2}
 check-chain failures by verdict: {}
+buildings laid with a program shorter than the longest that fit, by type (of laid): {"bottling_plant": 35, "builders_yard": 40, "clinic": 35, "condo_block": 4806, "corner_shop": 29, "cottage": 11523, "depot": 47, "fire_station": 451, "food_plant": 35, "market_hall": 1, "police_station": 413, "print_works": 18, "recycling_facility": 38, "terrace_house": 25560, "transit_office": 488, "vehicle_repair_garage": 26, "villa": 8804, "warehouse": 190, "welfare_office": 1, "workshop": 22} of {"bakery": 304085, "bank_branch": 139940, "bookshop": 140286, "bottling_plant": 358074, "builders_yard": 429241, "butcher": 304450, "cafe": 314739, "cinema": 315041, "clinic": 283919, "clothes_shop": 163106, "condo_block": 1775470, "corner_shop": 690317, "cottage": 3339704, "council": 30001, "depot": 30001, "fire_station": 283606, "food_plant": 393850, "general_retail": 507954, "greengrocer": 303759, "gym": 116090, "hairdresser": 305948, "hardware_shop": 227505, "hospital": 30001, "hotel": 144552, "launderette": 146405, "library": 281999, "market_hall": 199992, "office_block": 304326, "pharmacy": 228774, "police_station": 284134, "post_office": 252848, "print_works": 250522, "pub": 180935, "recycling_facility": 428587, "restaurant": 116298, "school": 283885, "shelter": 159589, "supermarket": 315662, "terrace_house": 8360021, "transit_office": 283443, "vehicle_repair_garage": 267069, "villa": 2306992, "warehouse": 80809, "welfare_office": 105674, "workshop": 286094}
+buildings rejected, by type: {"corner_shop": 2}
   generate succeeds (check chain): 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
   layout attempts at most max_layout_attempts = 8: 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
@@ -1108,6 +1110,7 @@ check-chain failures by verdict: {}
     zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
   an enterable dwelling in the lowest density band: 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
+pooled_enterable_share_x1000_per_pool: min=97360 p1=97414 p50=97680 p99=97951 max=98033 mean=97678.6 stddev=118.3
   pooled enterable share within enterable_target_percent = 98% +- 1% (96-city pools): 0 of 312 misses (rate 0.000000%), implied 1-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 312 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.961538% (implied 1-case CI failure probability <= 0.9615%)
 ```

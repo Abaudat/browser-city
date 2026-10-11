@@ -20,9 +20,9 @@ pub const CI_PROPTEST_CASES: u32 = 4096;
 
 /// The text every proptest-gated ceiling's report carries; a `Proptest`
 /// block's pasted output must contain it.
-/// The cities the pool-based invariants judge per CI run (pinned to
-/// `invariants.rs`'s default pool size by a test).
-pub const CITY_POOL_SIZE: u32 = 96;
+/// The cities the pool-based invariants judge per CI run: one constant,
+/// held by the compiler across `invariants.rs` and the sweep blocks.
+pub use sim::generation::guards::CITY_POOL_SIZE;
 
 /// The text every proptest-gated ceiling's report carries, for the block's
 /// own CI case count; a `Proptest` block's pasted output must contain it.

@@ -32,6 +32,11 @@ struct Record {
     thresholds: i64,
     fixtures: i64,
     attempts: Vec<u32>,
+    /// Building types laid with fewer rooms than the longest program
+    /// their footprint fits, and types rejected outright.
+    short: Vec<u32>,
+    laid_types: Vec<u32>,
+    rejected_types: Vec<u32>,
 }
 
 fn report(name: &str, miss: &BandMiss, n: u64, cases: u32) {
@@ -49,6 +54,9 @@ pub fn interiors_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u
         threads()
     );
     let cases = INTERIORS_SWEEP.ci_cases;
+    let vocab = sim::generation::interiors::Vocabulary::new(content);
+    let by_id: BTreeMap<u32, &sim::generated::defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
     let id = |k: &str| content.tags.iter().find(|t| t.key == k).unwrap().id;
     let kind_tags = guards::KindTags {
         dwelling: id("dwelling"),
@@ -62,13 +70,28 @@ pub fn interiors_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u
         let figures = guards::interior_figures(&d, content, cfg, &kind_tags);
         let (mut walls, mut floors, mut thresholds, mut fixtures) = (0i64, 0i64, 0i64, 0i64);
         let mut attempts = Vec::new();
+        let (mut short, mut laid_types, mut rejected_types) = (Vec::new(), Vec::new(), Vec::new());
         for o in d.interiors.outcomes() {
             match o {
                 InteriorOutcome::Laid {
                     interior,
                     attempts: a,
+                    plot,
+                    building_type,
                     ..
                 } => {
+                    laid_types.push(*building_type);
+                    if let Some(e) = d.skeleton.envelopes.envelopes().find(|e| e.plot == *plot)
+                        && interior.rooms.len()
+                            < sim::generation::interiors::longest_program_len(
+                                e,
+                                by_id[building_type],
+                                cfg,
+                                &vocab,
+                            )
+                    {
+                        short.push(*building_type);
+                    }
                     attempts.push(*a);
                     walls += interior.walls().len() as i64;
                     floors += interior
@@ -79,7 +102,10 @@ pub fn interiors_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u
                     thresholds += interior.thresholds.len() as i64;
                     fixtures += interior.fixtures.len() as i64;
                 }
-                InteriorOutcome::Rejected { .. } => attempts.push(u32::MAX),
+                InteriorOutcome::Rejected { building_type, .. } => {
+                    attempts.push(u32::MAX);
+                    rejected_types.push(*building_type);
+                }
                 InteriorOutcome::Shell { .. } => {}
             }
         }
@@ -102,6 +128,9 @@ pub fn interiors_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u
             thresholds,
             fixtures,
             attempts,
+            short,
+            laid_types,
+            rejected_types,
         }
     });
 
@@ -171,6 +200,27 @@ pub fn interiors_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u
         *failures.entry(kind).or_insert(0) += 1;
     }
     println!("check-chain failures by verdict: {failures:?}");
+    // Report lines, not ceilings: what the last-attempt fallback and the
+    // rejections hide from `rejected_percent_of_attempted`.
+    let key_of = |id: u32| by_id.get(&id).map_or("?", |d| d.key);
+    let tally = |f: fn(&Record) -> &Vec<u32>| {
+        let mut m: BTreeMap<&str, u64> = BTreeMap::new();
+        for r in &records {
+            for id in f(r) {
+                *m.entry(key_of(*id)).or_insert(0) += 1;
+            }
+        }
+        m
+    };
+    println!(
+        "buildings laid with a program shorter than the longest that fit, by type (of laid): {:?} of {:?}",
+        tally(|r| &r.short),
+        tally(|r| &r.laid_types)
+    );
+    println!(
+        "buildings rejected, by type: {:?}",
+        tally(|r| &r.rejected_types)
+    );
     for r in records.iter().filter(|r| r.failure.is_some()).take(3) {
         println!("  seed {}: {}", r.seed, r.failure.as_ref().unwrap());
     }
@@ -242,6 +292,7 @@ pub fn interiors_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u
         + cfg.interior_enterable_target_tolerance_percent)
         * 1000;
     let mut pools = 0u64;
+    let mut pool_shares: Vec<i64> = Vec::new();
     let mut outside = BandMiss::new();
     for (k, pool) in records.chunks(CITY_POOL_SIZE as usize).enumerate() {
         if pool.len() < CITY_POOL_SIZE as usize {
@@ -251,12 +302,14 @@ pub fn interiors_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u
         let enterable: i64 = pool.iter().map(|r| r.figures.laid).sum();
         let placed: i64 = pool.iter().map(|r| r.placed_buildings).sum();
         let share_x1000 = enterable * 100_000 / placed.max(1);
+        pool_shares.push(share_x1000);
         if share_x1000 < lo || share_x1000 > hi {
             // The pool's first seed names it.
             outside.record(pool[0].seed);
             let _ = k;
         }
     }
+    Stats::new(pool_shares).print("pooled_enterable_share_x1000_per_pool");
     report(
         &format!(
             "pooled enterable share within enterable_target_percent = {}% +- {}% ({CITY_POOL_SIZE}-city pools)",

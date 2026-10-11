@@ -12,6 +12,11 @@ use super::{District, DistrictSite, GenerationConfig, GenerationContent, Skeleto
 use crate::rules::RuleSite as _;
 use crate::world::Rect;
 
+/// The cities the pool-based invariants judge per run by default
+/// (`GENERATION_CITY_POOL` overrides it); the sweep blocks that stand in
+/// for them size their implied failure probability by it.
+pub const CITY_POOL_SIZE: u32 = 96;
+
 fn adjacent(a: Rect, b: Rect) -> bool {
     let overlap_y = a.y1.min(b.y1) - a.y0.max(b.y0);
     let overlap_x = a.x1.min(b.x1) - a.x0.max(b.x0);

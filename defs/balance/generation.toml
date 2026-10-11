@@ -1076,8 +1076,10 @@ max = 100000
 # The maximum percent of buildings with a room program (attempted
 # layouts) that may come out `Rejected`, asserted per city -- without it
 # a generator that rejects everything hard would pass AC2 by starving
-# AC3. Measured at 0 on every seed; 5 leaves room for a hand-tuned type
-# that is occasionally tight, never for a quiet regression.
+# AC3. The `rejected_percent_of_attempted` line of the `interiors sweep`
+# block of `docs/generation.md` carries the measured share; 5 leaves room
+# for a hand-tuned type that is occasionally tight, never for a quiet
+# regression.
 key = "generation.interiors.max_rejected_percent"
 value = 5
 min = 0

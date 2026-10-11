@@ -1832,6 +1832,28 @@ pub fn lay_out(
     lay_out_with(city_seed, envelope, plot, def, cfg, content, vocab, &rows)
 }
 
+/// How many rooms the longest program this envelope's footprint fits
+/// holds (0 when none fits) -- what a building laid out with fewer rooms
+/// fell back from. Read-only: it generates nothing.
+#[cfg(any(test, feature = "test-fixtures"))]
+pub fn longest_program_len(
+    envelope: &Envelope,
+    def: &defs::BuildingTypeDef,
+    cfg: &GenerationConfig,
+    vocab: &Vocabulary,
+) -> usize {
+    if def.rooms.is_empty() {
+        return 0;
+    }
+    let t = cfg.envelope_wall_thickness_cells;
+    let cap = cfg.interior_max_room_aspect;
+    let probe = Frame::new(envelope.footprint, envelope.front, t, false);
+    entrance_columns(envelope.footprint, envelope.front, t)
+        .map(|eus| select_programs(def, vocab, probe.w, probe.d, t, cap, eus))
+        .and_then(|p| p.first().map(Vec::len))
+        .unwrap_or(0)
+}
+
 /// Every committed requirement row, by id -- read once per run, not once
 /// per building.
 fn requirement_rows(content: &GenerationContent) -> Vec<RequirementRow> {
