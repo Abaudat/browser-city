@@ -945,13 +945,16 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
     );
 }
 
-/// Prints the whole golden file: `cargo test -p sim --features test-
-/// fixtures --test generation_golden -- --ignored --nocapture print_golden`,
-/// then commit the output to `tests/goldens/generation_v<version>.golden`
-/// whenever `GENERATION_VERSION` is bumped.
+/// Prints the whole golden file when `GENERATION_PRINT_GOLDEN` is set --
+/// `GENERATION_PRINT_GOLDEN=1 cargo test -p sim --features test-fixtures
+/// --test generation_golden -- --nocapture print_golden` -- then commit the
+/// output to `tests/goldens/generation_v<version>.golden` whenever
+/// `GENERATION_VERSION` is bumped. A no-op otherwise.
 #[test]
-#[ignore = "prints the golden; run by hand when GENERATION_VERSION is bumped"]
 fn print_golden() {
+    if std::env::var_os("GENERATION_PRINT_GOLDEN").is_none() {
+        return;
+    }
     let cfg = frozen_config();
     println!("version={GENERATION_VERSION}");
     for seed in SEEDS {

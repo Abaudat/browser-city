@@ -541,14 +541,14 @@ detour-bounds sweep wall-clock: 330.4s (0.330ms/seed)
 ```
 
 The exhaustive loop (`measure-generation`, 50,000 mixed seeds) at
-`GENERATION_VERSION` 11: worst exhaustive excess 320 (seed
+`GENERATION_VERSION` 12: worst exhaustive excess 320 (seed
 `610140160610395379`, unchanged, so `max_detour_excess_cells` and its
 pinned seeds hold), worst exhaustive ratio at or beyond the takeover
 distance 176% (seed `4595557621078204092`; 189% at the 14-node sample over
 the million seeds above), worst both-endpoints-interior excess 312.
 
 ```text
-exhaustive detour loop at GENERATION_VERSION=11 fingerprint=e0d4aff0b3fda0b7: 50000 seeds
+exhaustive detour loop at GENERATION_VERSION=12 fingerprint=08c9df20ee01f8d9: 50000 seeds
 detour_excess_cells_sampled_14node: min=0 p1=0 p50=0 p99=92 max=312 mean=3.4 stddev=17.2
 detour_excess_cells_sampled_14node worst: 312 at seed 4595557621078204092 ((67, 40)-(512, 38))
 detour_excess_cells_exhaustive max: 320 at seed 610140160610395379 ((486, 53)-(512, 474)) -- the number max_detour_excess_cells's own margin rule is applied to; pin the seed (with this exhaustive figure) in streets::PINNED_DETOUR_SEEDS if it moves

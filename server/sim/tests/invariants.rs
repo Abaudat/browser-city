@@ -179,6 +179,10 @@ pub const INV_GENERATION_A_BEDROOM_OPENS_ONLY_ONTO_A_BATHROOM_AND_A_BATHROOM_IS_
 pub const INV_GENERATION_NO_ROOM_EXCEEDS_THE_ASPECT_CAP: &str = "in every city of the shared pool, no room's long side exceeds max_room_aspect times its short side (story 3.5, Artie's direction)";
 pub const INV_GENERATION_EVERY_DWELLING_SLEEPS_WASHES_AND_COOKS: &str = "in every city of the shared pool, every enterable building whose type carries dwelling holds at least one bed, one basin and one cooker (story 3.5, Derek's direction)";
 pub const INV_GENERATION_INTERIOR_RETRIES_ARE_BOUNDED: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), no building used more than max_layout_attempts layout attempts, and the rejected share of attempted layouts never exceeds max_rejected_percent (story 3.5 AC2)";
+pub const INV_GENERATION_EVERY_PLACEMENT_IS_ONE_ROW_AT_ITS_ANCHOR: &str = "in every city of the shared pool, every pass-7 placement is one row -- def id, anchor, floor -- whose claimed cells are the anchor plus the def's own extent, each on a floor cell of its own room, inside its building, or off the carriageway and outside every footprint on the street, and no two solid props claim one cell (story 3.6 AC1, FR110, FR126)";
+pub const INV_GENERATION_PROPS_NEVER_NARROW_A_DOORWAY_BELOW_THE_BODY: &str = "in every city of the shared pool, every building's rows -- walls, fixtures and shopfront -- rasterised through their real ObjectDef colliders leave no region past a passage the player body cannot fit, with the street approach as the seed (story 3.6 AC3, FR128)";
+pub const INV_GENERATION_PROPS_LEAVE_NO_ENCLOSED_REGION: &str = "in every city of the shared pool, no pavement band carrying street furniture holds an enclosed or too-narrow region, and no chunk window of the district has more cut-off regions with every row than with the walls alone (story 3.6 AC3, FR128)";
+pub const INV_GENERATION_COLLISION_MAP_IS_THE_ROWS_RASTERISED: &str = "in every city of the shared pool, the cached per-district collision map equals a reference rasterisation of every row's real collider chunk by chunk, and the accessor returns the one allocation each time (story 3.6 AC2, FR128)";
 pub const INV_GENERATION_ENTERABLE_INTERIOR_COUNT_MEETS_THE_FLOOR: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), generation succeeds and the count of buildings whose own cells make them enterable (every room reachable from the street, every owed fixture present) is at least min_enterable_count (story 3.5 AC3, FR114)";
 pub const INV_GENERATION_ENTERABLE_SET_SPANS_EVERY_REQUIRED_KIND: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), the enterable set holds dwellings, shops, cafes and institutional back rooms, each kind enterable for at least its committed percent of what pass 5 placed of it and none over max_kind_share_percent of the enterable set, and an enterable dwelling exists in the lowest density band (story 3.5 AC3, FR114)";
 pub const INV_GENERATION_KIND_SPREAD_REJECTS_A_CITY_OF_FLATS: &str = "the kind-spread verdict refuses 97 enterable flats and one of each other kind, and accepts a balanced set (story 3.5 AC3)";
@@ -7621,6 +7625,92 @@ fn the_prop_checks_report_a_real_prop_planted_in_a_doorway_and_on_a_frontage() {
         enclosed + narrow >= 1,
         "walls planted across a pavement band must be reported"
     );
+}
+
+/// Story 3.6 (Tim's direction): `District::check_reachability` is a typed
+/// verdict, not only a test helper. A hand-built district holding one
+/// laid-out building with its walls, a real wall def planted in its street
+/// doorway: the verdict is `Err(Unreachable)`; the same district without
+/// the plant is `Ok`.
+#[test]
+fn check_reachability_names_a_prop_planted_in_a_doorway_as_a_typed_error() {
+    use sim::generation::interiors::{Room, Threshold};
+    use sim::generation::{InteriorOutcome, PlacedRow, Prop, PropMap, Role, Side};
+    let content = GenerationContent::committed();
+    let site = sim::generation::SiteBounds {
+        x0: 0,
+        y0: 0,
+        x1: 64,
+        y1: 64,
+    };
+    let footprint = Rect {
+        x0: 10,
+        y0: 10,
+        x1: 18,
+        y1: 18,
+    };
+    let interior = sim::generation::Interior {
+        footprint,
+        front: Side::South,
+        rooms: vec![Room {
+            rect: Rect {
+                x0: 11,
+                y0: 11,
+                x1: 17,
+                y1: 17,
+            },
+            room_type: defs::ROOM_TYPES[0].id,
+        }],
+        thresholds: vec![Threshold {
+            x: 14,
+            y: 17,
+            room: 0,
+            entrance: true,
+        }],
+        fixtures: Vec::new(),
+        approach: vec![(14, 18), (14, 19)],
+    };
+    let wall = def_by_key("wall_segment");
+    let wall_row = |x: i32, y: i32| Prop {
+        row: PlacedRow {
+            floor: 0,
+            y,
+            x,
+            def_id: wall.id,
+            layer: wall.layer,
+            orientation: 0,
+        },
+        building: Some(footprint),
+        role: Role::Wall,
+    };
+    let walls: Vec<Prop> = interior
+        .walls()
+        .into_iter()
+        .map(|(x, y)| wall_row(x, y))
+        .collect();
+    let district = |props: Vec<Prop>| {
+        let mut d = planted_district(site, Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        d.interiors = sim::generation::InteriorMap::test_fixture(vec![InteriorOutcome::Laid {
+            plot: 0,
+            building_type: 0,
+            interior: interior.clone(),
+            attempts: 1,
+            work: Default::default(),
+        }]);
+        d.props = PropMap::test_fixture(site, props, defs::OBJECTS).unwrap();
+        d
+    };
+    assert_eq!(
+        district(walls.clone()).check_reachability(&content),
+        Ok(()),
+        "the untouched building is reachable"
+    );
+    let mut sealed = walls;
+    sealed.push(wall_row(14, 17));
+    assert!(matches!(
+        district(sealed).check_reachability(&content),
+        Err(GenerationError::Unreachable { count, .. }) if count >= 1
+    ));
 }
 
 /// `inv_generation_no_room_exceeds_the_aspect_cap` (story 3.5, Artie's
