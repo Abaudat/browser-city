@@ -33,8 +33,8 @@ const flatCells = (ms: number) => config.walkSpeedCellsPerMs * ms;
 const FLAT_PX = flatCells(TICK_MS) * TILE;
 /** Float noise only: the drawn step is exact. */
 const EXACT = 1e-5;
-/** The sampled drawn path length is within this of the flat step. */
-const PATH_TOL = 1e-3;
+/** The drawn path length is within this of the flat step. */
+const PATH_TOL = 1e-5;
 
 function drawnPx(
   at: FlightIndex,
@@ -47,23 +47,31 @@ function drawnPx(
   return Math.hypot((to.x - from.x) * TILE, dy);
 }
 
-/** The drawn path length of a straight ground move: the offset is
- * piecewise linear along it, so a fine walk of it measures the path the
- * sprite takes, bends at the ramp's edges included. */
+/** The drawn path length of a straight ground move: the offset is linear
+ * between the ramps' ends, so the path is measured piece by piece, cut where
+ * the move crosses one -- the bends at a ramp's edges included. */
 function drawnPathPx(
   at: FlightIndex,
   from: { x: number; y: number },
   to: { x: number; y: number },
   floor: number,
 ): number {
-  const pieces = 1000;
+  const cuts = [0, 1];
+  for (const f of flights) {
+    if (f.floor !== floor) continue;
+    const s0 = from.x * f.dirX + from.y * f.dirY;
+    const s1 = to.x * f.dirX + to.y * f.dirY;
+    if (s0 === s1) continue;
+    for (const edge of [f.startS, f.fullS]) {
+      const t = (edge - s0) / (s1 - s0);
+      if (t > 0 && t < 1) cuts.push(t);
+    }
+  }
+  cuts.sort((p, q) => p - q);
   let total = 0;
   let prev = from;
-  for (let i = 1; i <= pieces; i++) {
-    const p = {
-      x: from.x + ((to.x - from.x) * i) / pieces,
-      y: from.y + ((to.y - from.y) * i) / pieces,
-    };
+  for (const t of cuts.slice(1)) {
+    const p = { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
     total += drawnPx(at, prev, p, floor);
     prev = p;
   }

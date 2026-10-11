@@ -62,6 +62,6 @@ export function advanceSurfaceGait(
   drawn: number,
 ): boolean {
   const moving = advanceGait(state, dx, dy);
-  if (moving) state.walked += drawn - Math.hypot(dx, dy);
+  if (moving) state.walked += drawn - Math.sqrt(dx * dx + dy * dy);
   return moving;
 }
