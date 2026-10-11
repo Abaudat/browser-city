@@ -13,8 +13,7 @@ import {
 } from "../../../src/test-street/fixture";
 import { initialFloorWalkState, stepAndTransition } from "../../../src/world/floor-walk";
 import { footprintCells } from "../../../src/world/footprint";
-import { step } from "../../../src/world/movement";
-import { cellOf } from "../../../src/world/ownership";
+import { bodyCell, step } from "../../../src/world/movement";
 import { isBodyClear, isCellStandable } from "../../../src/world/standable";
 import { pairTransitions, TransitionIndex } from "../../../src/world/transitions";
 import { WorldIndex } from "../../../src/world/world-index";
@@ -87,7 +86,7 @@ describe("the footbridge flight on the real grid (FR117)", () => {
           const x = cx / sub;
           const y = feet / sub;
           // Only positions whose own cell is a flight cell, never an anchor.
-          const here = { x: cellOf(x), y: cellOf(y) };
+          const here = bodyCell({ x, y });
           if (!cells.some((c) => c.x === here.x && c.y === here.y)) continue;
           positions++;
           for (const dir of [
@@ -97,8 +96,9 @@ describe("the footbridge flight on the real grid (FR117)", () => {
             { x: 1, y: 0 },
           ]) {
             const next = step({ x, y }, dir, 16, world, row.floor, config);
-            const walkedInto = cellKey(row.floor, cellOf(next.x), cellOf(next.y));
-            const changedCell = cellOf(next.x) !== here.x || cellOf(next.y) !== here.y;
+            const nextCell = bodyCell(next);
+            const walkedInto = cellKey(row.floor, nextCell.x, nextCell.y);
+            const changedCell = nextCell.x !== here.x || nextCell.y !== here.y;
             const result = stepAndTransition(
               initialFloorWalkState(x, y, row.floor),
               dir,

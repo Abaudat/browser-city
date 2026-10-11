@@ -21,6 +21,7 @@ import {
   LAMPPOST_DEF_ID,
   PLATFORM_LANDING_X,
   PLATFORM_LANDING_Y,
+  PLATFORM_STAIR_RAILING_DEF_ID,
   PLATFORM_UP_ANCHOR_X,
   PLAYER_START,
   SHOPFRONT_EXIT_Y,
@@ -45,6 +46,7 @@ import {
   streetNearRailingPressRoute,
   streetPlacedRows,
   streetSubwayApproachRoute,
+  streetSubwayWallWalkRoute,
   streetWalkRoute,
   streetWalkUntilMet,
   TRASH_BIN_DEF_ID,
@@ -279,6 +281,15 @@ export function nearRailingRestY(): number {
   return STAIRS_Y + 1 + rail.collider.y0 / defs.colliderSubcellsPerCell;
 }
 
+/** Where a body pressed south on the platform's tread row rests: the top
+ * face of the platform stair railing's own collider, read from `defs/`. */
+export function platformWallRestY(): number {
+  const defs = committedDefs();
+  const rail = defs.objects.find((o) => o.id === PLATFORM_STAIR_RAILING_DEF_ID);
+  if (!rail?.collider) throw new Error("platformWallRestY: no collider on the platform railing");
+  return PLATFORM_LANDING_Y + 1 + rail.collider.y0 / defs.colliderSubcellsPerCell;
+}
+
 /** Every real value [`streetWalkRoute`] needs, assembled once -- the one
  * call site every unit test and e2e spec goes through. */
 export function streetWalkInputs(): StreetWalkInputs {
@@ -292,6 +303,7 @@ export function streetWalkInputs(): StreetWalkInputs {
     bridgeUnderExitClearY: bridgeUnderExitClearY(),
     subwayTreadRowY: subwayTreadRowY(),
     nearRailingRestY: nearRailingRestY(),
+    platformWallRestY: platformWallRestY(),
   };
 }
 
@@ -613,6 +625,7 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     { name: "street-walk", segments: streetWalkRoute(inputs), start: fresh },
     { name: "subway-approach", segments: streetSubwayApproachRoute(inputs), start: fresh },
     { name: "near-railing-press", segments: streetNearRailingPressRoute(inputs), start: fresh },
+    { name: "subway-wall-walk", segments: streetSubwayWallWalkRoute(inputs), start: fresh },
     {
       name: "bollard",
       segments: streetBollardRoute(inputs, streetMovementConfig()),
