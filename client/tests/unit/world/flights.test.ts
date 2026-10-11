@@ -70,7 +70,6 @@ function synthetic(): FlightIndex {
       TRANSITIONS,
       [STREET_ROW, PLATFORM_ROW, PROP_ROW],
       SOURCES,
-      STOREY,
       TILE,
       noStandableFarEnd,
     ),
@@ -143,7 +142,6 @@ describe("flight offset (FR182)", () => {
                 },
               ],
             ]),
-            STOREY,
             TILE,
             noStandableFarEnd,
           );
@@ -199,7 +197,6 @@ describe("flight offset (FR182)", () => {
         TRANSITIONS,
         [STREET_ROW, { ...STREET_ROW }, PLATFORM_ROW],
         SOURCES,
-        STOREY,
         TILE,
         noStandableFarEnd,
       ),
@@ -209,7 +206,6 @@ describe("flight offset (FR182)", () => {
         TRANSITIONS,
         [{ ...STREET_ROW, x: 9 }, PLATFORM_ROW],
         SOURCES,
-        STOREY,
         TILE,
         noStandableFarEnd,
       ),
@@ -217,9 +213,7 @@ describe("flight offset (FR182)", () => {
   });
 
   it("has no flight for an anchor no flight object covers", () => {
-    expect(buildFlights(TRANSITIONS, [PROP_ROW], SOURCES, STOREY, TILE, noStandableFarEnd)).toEqual(
-      [],
-    );
+    expect(buildFlights(TRANSITIONS, [PROP_ROW], SOURCES, TILE, noStandableFarEnd)).toEqual([]);
   });
 });
 
@@ -286,7 +280,7 @@ describe("a flight on any axis (FR182)", () => {
     it(`walking ${name} (from_px 0, to_px at the anchor cell's near edge): zero at the open edge, the signed drop at to_px, flat beyond`, () => {
       const { A, R, transitions, placed, sources } = pair(d);
       const index = new FlightIndex(
-        buildFlights(transitions, placed, sources, STOREY, TILE, noStandableFarEnd),
+        buildFlights(transitions, placed, sources, TILE, noStandableFarEnd),
         config,
       );
       // Feet `u` cells from the anchor cell's centre toward the open side.
@@ -330,7 +324,6 @@ describe("flight construction (FR182)", () => {
           [1, { width: 3, height: 1, flight: { dropPx: 8, fromPx: 0, toPx: 49 } }],
           [2, { width: 2, height: 2, flight: { dropPx: 4, fromPx: 0, toPx: 16 } }],
         ]),
-        STOREY,
         TILE,
         noStandableFarEnd,
       ),
@@ -343,14 +336,7 @@ describe("flight construction (FR182)", () => {
       [2, { width: 2, height: 2, flight: { dropPx: 4, fromPx: 4, toPx: 12 } }],
     ]);
     const index = new FlightIndex(
-      buildFlights(
-        TRANSITIONS,
-        [STREET_ROW, PLATFORM_ROW],
-        sources,
-        STOREY,
-        TILE,
-        noStandableFarEnd,
-      ),
+      buildFlights(TRANSITIONS, [STREET_ROW, PLATFORM_ROW], sources, TILE, noStandableFarEnd),
       config,
     );
     // Street: open edge x = 13, walking west; `px` native pixels from it.
@@ -376,7 +362,6 @@ describe("flight construction (FR182)", () => {
         TRANSITIONS,
         [{ defId: 1, x: 10, y: 5, floor: 0 }],
         new Map([[1, { width: 1, height: 1, flight: { dropPx: 8, fromPx: 0, toPx: 8 } }]]),
-        STOREY,
         TILE,
         noStandableFarEnd,
       ),
@@ -384,14 +369,7 @@ describe("flight construction (FR182)", () => {
   });
 
   it("refuses two flights that share a cell, and an index with none is always zero", () => {
-    const [flight] = buildFlights(
-      TRANSITIONS,
-      [STREET_ROW],
-      SOURCES,
-      STOREY,
-      TILE,
-      noStandableFarEnd,
-    );
+    const [flight] = buildFlights(TRANSITIONS, [STREET_ROW], SOURCES, TILE, noStandableFarEnd);
     if (!flight) throw new Error("no flight");
     expect(() => new FlightIndex([flight, flight], config)).toThrow(/share cell/);
     expect(new FlightIndex([], config).offsetPx(11, 5.9, 0)).toBe(0);
@@ -415,7 +393,6 @@ describe("flight construction (FR182)", () => {
         { defId: 2, x: 30, y: 11, floor: 1 },
       ],
       sources,
-      STOREY,
       TILE,
       noStandableFarEnd,
     );
@@ -445,7 +422,6 @@ describe("flight construction (FR182)", () => {
         [...pair(30, 10, 11), ...pair(31, 11, 10)],
         rows,
         sources,
-        STOREY,
         TILE,
         noStandableFarEnd,
       ),
@@ -456,14 +432,7 @@ describe("flight construction (FR182)", () => {
       { x: 31, y: 10, floor: 1, targetX: 31, targetY: 10, targetFloor: 0 },
     ];
     expect(() =>
-      buildFlights(
-        [...pair(30, 10, 11), ...southward],
-        rows,
-        sources,
-        STOREY,
-        TILE,
-        noStandableFarEnd,
-      ),
+      buildFlights([...pair(30, 10, 11), ...southward], rows, sources, TILE, noStandableFarEnd),
     ).toThrow(/anchors \(30, 10, floor 0\) and \(31, 11, floor 0\).*differently/);
     // (d) two columns that climb to different floors disagree even when the offset's sign
     // is the same: refused, naming both anchors.
@@ -472,22 +441,19 @@ describe("flight construction (FR182)", () => {
       { x: 31, y: 11, floor: 2, targetX: 31, targetY: 11, targetFloor: 0 },
     ];
     expect(() =>
-      buildFlights([...pair(30, 10, 11), ...toSecond], rows, sources, STOREY, TILE, () => false),
+      buildFlights([...pair(30, 10, 11), ...toSecond], rows, sources, TILE, () => false),
     ).toThrow(/anchors \(30, 10, floor 0\) and \(31, 10, floor 0\).*differently/);
     // (c) a standable far-end cell with no anchor is refused, naming the cell and the row; a
     // cell no body can stand in needs none.
-    expect(() => buildFlights(pair(30, 10, 11), rows, sources, STOREY, TILE, () => true)).toThrow(
+    expect(() => buildFlights(pair(30, 10, 11), rows, sources, TILE, () => true)).toThrow(
       /row \(30, 11, floor 0\).*far-end cell \(31, 10\)/,
     );
-    expect(
-      buildFlights(pair(30, 10, 11), rows, sources, STOREY, TILE, (x) => x === 30).length,
-    ).toBe(2);
+    expect(buildFlights(pair(30, 10, 11), rows, sources, TILE, (x) => x === 30).length).toBe(2);
     // Anchored in both columns, it is one flight with a +0 axis, never -0.
     const [street] = buildFlights(
       [...pair(30, 10, 11), ...pair(31, 10, 11)],
       rows,
       sources,
-      STOREY,
       TILE,
       () => true,
     );
@@ -496,7 +462,7 @@ describe("flight construction (FR182)", () => {
 
   it("ignores a placed row whose def declares no drop, or has no def", () => {
     const rows = [PROP_ROW, { defId: 99, x: 10, y: 5, floor: 0 }];
-    expect(buildFlights(TRANSITIONS, rows, SOURCES, STOREY, TILE, noStandableFarEnd)).toEqual([]);
+    expect(buildFlights(TRANSITIONS, rows, SOURCES, TILE, noStandableFarEnd)).toEqual([]);
   });
 
   it("gives a transition that changes no floor offset a zero drop", () => {
@@ -504,7 +470,7 @@ describe("flight construction (FR182)", () => {
       { x: 10, y: 5, floor: 0, targetX: 19, targetY: 2, targetFloor: 0 },
       { x: 20, y: 2, floor: 0, targetX: 11, targetY: 5, targetFloor: 0 },
     ];
-    const flights = buildFlights(flat, [STREET_ROW], SOURCES, STOREY, TILE, noStandableFarEnd);
+    const flights = buildFlights(flat, [STREET_ROW], SOURCES, TILE, noStandableFarEnd);
     expect(flights.map((f) => f.dropPx)).toEqual([0]);
     expect(Object.is(flights[0]?.dropPx, 0)).toBe(true);
   });
@@ -517,7 +483,6 @@ describe("the street's own flights (conformance)", () => {
     STREET_TRANSITIONS,
     streetPlacedRows(),
     streetObjectSources(),
-    storey,
     TILE,
     streetStandable,
   );
@@ -793,7 +758,6 @@ describe("the footbridge flights: the walker is drawn continuously across the fl
     STREET_TRANSITIONS,
     streetPlacedRows(),
     streetObjectSources(),
-    storey,
     TILE,
     streetStandable,
   );
@@ -934,7 +898,6 @@ describe("a flight's ramp follows the drawn nosings (FR182)", () => {
     STREET_TRANSITIONS,
     streetPlacedRows(),
     streetObjectSources(),
-    storey,
     TILE,
     streetStandable,
   );
@@ -1126,7 +1089,6 @@ describe("no actor on a flight is drawn under a higher floor (FR124)", () => {
     STREET_TRANSITIONS,
     streetPlacedRows(),
     streetObjectSources(),
-    storey,
     TILE,
     streetStandable,
   );

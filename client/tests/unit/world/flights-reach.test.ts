@@ -48,9 +48,13 @@ describe("the flight offset is draw-only (FR182)", () => {
       "world/floor-walk.ts",
     ]);
     expect(readers(/\.offsetPx\(/)).toEqual(["test-street/scene.ts"]);
-    expect(readers(/\.paceScale(\?\.)?\(/)).toEqual(
-      ["test-street/scene.ts", "test-street/remote-players-layer.ts", "world/floor-walk.ts"].sort(),
-    );
+    // The scale reaches the step through `stepAndTransition` alone, and the
+    // remote walk frame reads the drawn distance.
+    expect(readers(/\.stepScale\(/)).toEqual(["world/floor-walk.ts"]);
+    expect(readers(/\.drawnDistance\(/)).toEqual([
+      "test-street/remote-players-layer.ts",
+      "test-street/scene.ts",
+    ]);
   });
 
   it("inv_stair_offset_never_affects_depth_order: on a flight, the player's key is the walked feet", () => {
@@ -64,7 +68,6 @@ describe("the flight offset is draw-only (FR182)", () => {
       STREET_TRANSITIONS,
       streetPlacedRows(),
       streetObjectSources(),
-      storey,
       TILE,
       streetStandable,
     );
@@ -98,7 +101,6 @@ describe("the flight offset is draw-only (FR182)", () => {
         STREET_TRANSITIONS,
         streetPlacedRows(),
         streetObjectSources(),
-        storey,
         TILE,
         streetStandable,
       ),

@@ -136,7 +136,6 @@ test("the commuter walks a leg on time, smoothly, in the walk row facing its tra
       STREET_TRANSITIONS,
       streetPlacedRows(),
       streetObjectSources(),
-      STOREY_HEIGHT_PX,
       TILE_SIZE_PX,
       streetStandable,
     ),

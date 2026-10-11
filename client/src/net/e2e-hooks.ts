@@ -7,6 +7,7 @@
 import type { AppearanceTuple, UniformOverride } from "../render/appearance/composite";
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
 import type { CityTime } from "../time/city-time";
+import type { PlayerStep } from "../world/floor-walk";
 import type { PingObservation } from "./observe-ping";
 import type { RegionTableName } from "./region-subscription";
 
@@ -34,6 +35,10 @@ declare global {
        * recorded with the position, from the same `FloorWalkResult`, so a
        * reader can never see one without the other. */
       playerFloor?: number;
+      /** Story 15.21: every resolved walk step of the player, kept only
+       * while a spec has set this to an array (an unset one records
+       * nothing), so a spec can replay each step with its own frame time. */
+      playerSteps?: PlayerStep[];
       /** Story 1.13 (NFR2): per-frame *work* time in ms -- how long the
        * scene's own ticker callback took, never a rAF interval (headless
        * CI has no vsync or GPU, so wall-clock FPS there is noise).
@@ -209,6 +214,13 @@ export function recordRenderOrderForE2e(order: readonly bigint[]): void {
  * client-side, with no round trip (FR137): the street scene's current
  * continuous player position, read every frame -- `movement.spec.ts` is
  * the only reader. */
+export function recordPlayerStepForE2e(step: PlayerStep): void {
+  if (!import.meta.env.DEV) return;
+  window.__bc?.playerSteps?.push(step);
+}
+
+/** Story 1.8's proof that a held direction key moves the avatar
+ * client-side, with no round trip (FR137): see `recordPlayerPositionForE2e`. */
 export function recordPlayerPositionForE2e(x: number, y: number, floor: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };

@@ -896,10 +896,11 @@ it only with a `flight`, no collider and the `underfoot` tag) when its treads
 are drawn as their own rows on the lower floor, so a climber is drawn over
 them: floor N+1 is drawn after all of floor N. It is summed
 with the floor offset inside `worldPointPx`. The flight's ramp also scales the
-walked step (`FlightIndex.paceScale`, passed by `stepAndTransition` to
-`step` as `speedScale`) so the step's drawn displacement keeps walking pace
-(FR183), and the walk frame is fed the drawn-surface distance; neither reaches
-the sort key, collision or picking.
+walked step (`FlightIndex.stepScale`, applied piecewise along the step and
+passed by `stepAndTransition` to `step` as `speedScale`) so the step's drawn
+path keeps walking pace (FR183), and the walk frame is fed the drawn-surface
+distance (`FlightIndex.drawnDistance`); neither reaches the sort key,
+collision or picking.
 
 Only a test-street row with no `object_def` reads its art straight out of
 the repo-root `ModernTileset/` at runtime (`new URL(..., import.meta.url)`

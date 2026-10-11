@@ -51,3 +51,17 @@ export function advanceGait(state: GaitState, dx: number, dy: number): boolean {
   state.walked += Math.sqrt(dx * dx + dy * dy);
   return true;
 }
+
+/** `advanceGait` for a body whose move has a drawn-surface length different
+ * from its ground length (a flight's ramp, story 15.21): the walk frame is
+ * fed `drawn` cells, so the legs keep walking cadence on the treads. */
+export function advanceSurfaceGait(
+  state: GaitState,
+  dx: number,
+  dy: number,
+  drawn: number,
+): boolean {
+  const moving = advanceGait(state, dx, dy);
+  if (moving) state.walked += drawn - Math.hypot(dx, dy);
+  return moving;
+}

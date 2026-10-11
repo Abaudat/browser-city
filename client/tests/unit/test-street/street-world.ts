@@ -569,7 +569,7 @@ export function westOpenSpotRoute(): readonly StreetWalkSegment[] {
 }
 
 /** Story 15.15: the walk down and back up the subway stairs, along both
- * edges of the tread path, for the flight-offset e2e. The south edge is the
+ * edges of the tread path, for the flight e2e. The south edge is the
  * near railing's face; the north edge is walked at the first row the route
  * walks the treads on, reached from the north so the release lag can only
  * carry the body further into the row. Each leg stops short of an anchor
@@ -674,7 +674,6 @@ export function streetFlightList(): readonly Flight[] {
     STREET_TRANSITIONS,
     streetPlacedRows(),
     streetObjectSources(),
-    storey,
     16,
     streetStandable,
   );

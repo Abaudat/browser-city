@@ -12,7 +12,7 @@
 import { Container, Sprite } from "pixi.js";
 import type { Defs } from "../defs/types";
 import { loadL3Config, walkFramesPerCycle } from "../l3/config";
-import { advanceGait, type Facing, phaseOffsetFor, walkFrame } from "../l3/gait";
+import { advanceSurfaceGait, type Facing, phaseOffsetFor, walkFrame } from "../l3/gait";
 import type {
   AppearanceTextureCache,
   CompositeFrames,
@@ -27,13 +27,16 @@ export interface RemotePlayersWiring {
   readonly serverNowMs: () => number | undefined;
   /** The caller's own character id, never drawn here. */
   readonly skip: () => string | undefined;
-  /** The flight pace scale at a position for a step direction (story
-   * 15.21): the walk frame is fed ground distance divided by it, i.e. the
-   * drawn-surface distance, so legs keep walking cadence on a flight. */
-  readonly paceScale?: (x: number, y: number, floor: number, dx: number, dy: number) => number;
+  /** The drawn-surface distance, in cells, of a ground move from a position
+   * (story 15.21): the walk frame is fed it, so legs keep walking cadence on
+   * a flight. Required: a wiring that forgets it would slide feet on stairs. */
+  readonly drawnDistance: (x: number, y: number, floor: number, dx: number, dy: number) => number;
   /** Every frame: where each drawn remote player is. */
   readonly onFrame?: (poses: Readonly<Record<string, RemotePose>>) => void;
 }
+
+/** What a caller supplies; the scene adds the flights' `drawnDistance`. */
+export type RemotePlayersSource = Omit<RemotePlayersWiring, "drawnDistance">;
 
 export interface RemotePlayersLayer {
   update(): void;
@@ -95,8 +98,12 @@ export async function mountRemotePlayersLayer(
       }
       const stepX = pose.x - d.x;
       const stepY = pose.y - d.y;
-      const scale = wiring.paceScale?.(d.x, d.y, pose.floor, stepX, stepY) ?? 1;
-      const moving = advanceGait(d, stepX / scale, stepY / scale);
+      const moving = advanceSurfaceGait(
+        d,
+        stepX,
+        stepY,
+        wiring.drawnDistance(d.x, d.y, pose.floor, stepX, stepY),
+      );
       const facing = d.facing;
       d.x = pose.x;
       d.y = pose.y;
