@@ -91,8 +91,13 @@ fn the_sample_bound_is_derived_from_live_series_fires_and_retention() {
         .expect("gameplay_metric_sample has no bound (NFR37)");
     let live: u64 = GAMEPLAY_METRICS.iter().map(|m| m.series.len() as u64).sum();
     assert_eq!(live, LIVE_SERIES_COUNT);
-    assert_eq!(bound.max_rows, live * 24 * METRICS_RETENTION_DAYS);
-    assert_eq!(bound.max_rows, sample_rows_for_days(METRICS_RETENTION_DAYS));
+    // Alert at the retention window's steady state, ceiling at twice it.
+    assert_eq!(bound.alert_rows, live * 24 * METRICS_RETENTION_DAYS);
+    assert_eq!(
+        bound.alert_rows,
+        sample_rows_for_days(METRICS_RETENTION_DAYS)
+    );
+    assert_eq!(bound.max_rows, 2 * bound.alert_rows);
 }
 
 #[test]
@@ -141,4 +146,29 @@ fn every_metric_has_its_own_trace_matrix_row_naming_the_registry_epic() {
             assert!(row.contains("| covered |"), "`{}` is live: {row}", m.name);
         }
     }
+}
+
+#[test]
+fn a_restore_clears_the_period_state_and_never_the_live_connections() {
+    let restore = repo_file("server/src/tables/restore.rs");
+    let begin = body_of(&restore, "pub fn begin_restore");
+    assert!(
+        begin.contains("clear_gameplay_state("),
+        "begin_restore must clear the gameplay tally and samples"
+    );
+    assert!(
+        !begin.contains("connected_client"),
+        "begin_restore must not touch connected_client: a restore does not drop connections"
+    );
+    let publish = repo_file("server/src/tables/publish.rs");
+    assert!(
+        !publish.contains("connected_client"),
+        "a publish keeps clients connected; establish_world must not clear connected_client"
+    );
+}
+
+#[test]
+fn only_the_lifecycle_hooks_write_connected_client() {
+    let lib = repo_file("server/src/lib.rs");
+    assert!(lib.contains("record_connect(ctx)") && lib.contains("record_disconnect(ctx)"));
 }

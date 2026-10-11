@@ -9,14 +9,18 @@ use std::path::Path;
 
 use bounds::schema::{module_src_dir, parse_module_schema, reducer_names_in_dir};
 
+/// Tables a restore deliberately never touches: the restore gate itself,
+/// and live-session state (`connected_client` mirrors open connections,
+/// which a restore does not drop; `metric_tally` is the sampler's
+/// per-period accumulator, cleared by `begin_restore`).
+const NOT_RESTORED: &[&str] = &["restore_state", "connected_client", "metric_tally"];
+
 #[test]
 fn every_non_scheduled_table_has_a_restore_reducer() {
     let schema = parse_module_schema(&module_src_dir());
     let reducers = reducer_names_in_dir(&module_src_dir());
     for table in &schema.tables {
-        if table.scheduled_reducer.is_some() || table.accessor == "restore_state" {
-            // `restore_state` is the restore mechanism's own gate, not
-            // something the mechanism restores.
+        if table.scheduled_reducer.is_some() || NOT_RESTORED.contains(&table.accessor.as_str()) {
             continue;
         }
         let expected = format!("restore_{}", table.accessor);
@@ -150,7 +154,7 @@ fn the_two_named_table_lists_exactly_partition_every_non_scheduled_table() {
     }
 
     for table in &schema.tables {
-        if table.scheduled_reducer.is_some() || table.accessor == "restore_state" {
+        if table.scheduled_reducer.is_some() || NOT_RESTORED.contains(&table.accessor.as_str()) {
             continue;
         }
         let in_init = init_seeded.contains(&table.accessor);

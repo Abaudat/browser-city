@@ -112,6 +112,11 @@ for t in $STATIC_TABLES; do
 done
 ok "each static table's sampled row_count equals its own row count"
 
+# Story 4.14: one gameplay_metric_sample row per live series per fire.
+SERIES_COUNT="$(grep -c '^series ' "$REPO_ROOT/server/sim/tests/goldens/codes_gameplay_metrics_v1.golden")"
+[ "$(rows_of gameplay_metric_sample)" -eq $((FIRES * SERIES_COUNT)) ]   || fail "gameplay_metric_sample holds $(rows_of gameplay_metric_sample) rows, expected $FIRES fire(s) x $SERIES_COUNT series"
+ok "exactly one gameplay_metric_sample row per live series ($SERIES_COUNT) per fire"
+
 resp="$DATA_DIR/sample-owner.json"
 sql_json "SELECT * FROM table_sample WHERE table_accessor = 'module_owner'" >"$resp"
 [ "$(bc_wb column-values "$resp" alert_rows | sort -u)" = "1" ] && [ "$(bc_wb column-values "$resp" max_rows | sort -u)" = "1" ] \

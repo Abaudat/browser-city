@@ -16,7 +16,7 @@ import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position
 import { SHOP_COUNTER_DEF_ID, STREET_PROPS } from "../../src/test-street/fixture";
 import { committedDefs } from "../unit/test-street/street-world";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
-import { readSpacetimeHandle } from "./spacetime-harness.mjs";
+import { ownerSql, readSpacetimeHandle } from "./spacetime-harness.mjs";
 import { walkRealCells } from "./walk-support";
 
 type WebSocketRoute = Parameters<Parameters<Page["routeWebSocket"]>[1]>[0];
@@ -380,4 +380,65 @@ test("a laptop lid with a socket that died unseen: on resume the probe finds it 
   expect(await position(a)).toEqual(before);
 
   await context.close();
+});
+
+// Story 4.14 (FR172): the whole path from the client to the accumulators the
+// hourly sampler reads. The step from accumulators to sample row is proven
+// in `sim`; the sampler itself is hourly, so it is never poked from here.
+const SERIES = { bootP50: 1n, concurrentPeak: 4n, resume: 5n } as const;
+const tallyKey = (series: bigint, slot: bigint): bigint => (series << 32n) | slot;
+
+function tally(): Map<bigint, bigint> {
+  const rows = ownerSql(readSpacetimeHandle(), "SELECT * FROM metric_tally");
+  return new Map(rows.map(([key, value]) => [BigInt(key), BigInt(value)]));
+}
+
+function bootReports(t: Map<bigint, bigint>): bigint {
+  let total = 0n;
+  for (const [key, value] of t) if (key >> 32n === SERIES.bootP50) total += value;
+  return total;
+}
+
+const connectedClients = (): number =>
+  ownerSql(readSpacetimeHandle(), "SELECT * FROM connected_client").length;
+
+test("a boot and a reconnect each move the measure accumulators by exactly one (FR172)", async ({
+  browser,
+}) => {
+  const before = tally();
+  const connectedBefore = connectedClients();
+  const startedAt = Date.now();
+  const context = await browser.newContext();
+  const a = await context.newPage();
+  const sockets = await openPlayer(a);
+
+  // One boot report, and the figure is the page's own controllable mark.
+  await expect.poll(() => bootReports(tally()) - bootReports(before)).toBe(1n);
+  const markMs = await a.evaluate(
+    () => performance.getEntriesByName("bc-boot:player-controllable", "mark")[0]?.startTime,
+  );
+  expect(markMs).toBeGreaterThan(0);
+  expect(markMs).toBeLessThanOrEqual(Date.now() - startedAt);
+  await expect.poll(connectedClients).toBe(connectedBefore + 1);
+  const peakKey = tallyKey(SERIES.concurrentPeak, 0n);
+  expect(tally().get(peakKey) ?? 0n).toBeGreaterThanOrEqual(BigInt(connectedBefore + 1));
+
+  // A drop that comes back on the same page: one resume, within the seam.
+  const withinKey = tallyKey(SERIES.resume, 0n);
+  const totalKey = tallyKey(SERIES.resume, 1n);
+  const socketsBefore = sockets.count;
+  await dropServer(sockets);
+  await expect.poll(() => sockets.count, { timeout: 30_000 }).toBeGreaterThan(socketsBefore);
+  await expect
+    .poll(() => a.evaluate(() => window.__bc?.connection?.live()), { timeout: 30_000 })
+    .toBe(1);
+  await expect.poll(() => (tally().get(totalKey) ?? 0n) - (before.get(totalKey) ?? 0n)).toBe(1n);
+  expect((tally().get(withinKey) ?? 0n) - (before.get(withinKey) ?? 0n)).toBe(1n);
+  // The page reports its boot once: the reconnect is not a second boot.
+  expect(bootReports(tally()) - bootReports(before)).toBe(1n);
+  // One open connection for this page, as before the drop.
+  await expect.poll(connectedClients).toBe(connectedBefore + 1);
+
+  await context.close();
+  await expect.poll(connectedClients).toBe(connectedBefore);
 });

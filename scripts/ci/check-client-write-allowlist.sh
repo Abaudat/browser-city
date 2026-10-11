@@ -11,7 +11,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC_DIR="${1:-"$REPO_ROOT/client/src"}"
 [ -d "$SRC_DIR" ] || { echo "check-client-write-allowlist: $SRC_DIR not found" >&2; exit 1; }
 
-ALLOWED="beginLink completeLink createCharacter setPlayerPosition syncClock"
+ALLOWED="beginLink completeLink createCharacter reportClientMeasure setPlayerPosition syncClock"
 
 FOUND="$(
   find "$SRC_DIR" -name '*.ts' -not -path '*/bindings/*' -print0 \
@@ -37,6 +37,12 @@ OUTSIDE_NET="$(grep -rlE '\.reducers\.setPlayerPosition' "$SRC_DIR" --include='*
 if [ -n "$OUTSIDE_NET" ]; then
   echo "check-client-write-allowlist: FAIL -- the position write lives under client/src/net/ alone:" >&2
   echo "$OUTSIDE_NET" >&2
+  exit 1
+fi
+MEASURE_OUTSIDE="$(grep -rlE '\.reducers\.reportClientMeasure' "$SRC_DIR" --include='*.ts' --exclude-dir=bindings | grep -v '/net/measure-reporter\.ts$' || true)"
+if [ -n "$MEASURE_OUTSIDE" ]; then
+  echo "check-client-write-allowlist: FAIL -- reportClientMeasure is called from client/src/net/measure-reporter.ts alone:" >&2
+  echo "$MEASURE_OUTSIDE" >&2
   exit 1
 fi
 echo "check-client-write-allowlist: the client calls exactly: $WANT (NFR32)" >&2

@@ -105,8 +105,9 @@ use super::item_instance::{
     ItemHeld, ItemInstance, ItemPlaced, item_held, item_instance, item_placed,
 };
 use super::metrics::{
-    ReducerClassCounter, ReducerClassSample, StorageSample, TableSample, count_call,
-    reducer_class_counter, reducer_class_sample, storage_sample, table_sample,
+    GameplayMetricSample, ReducerClassCounter, ReducerClassSample, StorageSample, TableSample,
+    count_call, gameplay_metric_sample, reducer_class_counter, reducer_class_sample,
+    storage_sample, table_sample,
 };
 use super::ops::{ModuleOwner, module_owner, require_owner};
 use super::player_position::{PlayerPosition, player_position};
@@ -164,6 +165,7 @@ const INIT_SEEDED_TABLES: &[&str] = &[
     "table_sample",
     "reducer_class_counter",
     "reducer_class_sample",
+    "gameplay_metric_sample",
 ];
 
 /// Every non-scheduled table that is never pre-populated before
@@ -255,6 +257,9 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     {
         ctx.db.reducer_class_sample().sample_id().delete(id);
     }
+    // The same stance for the gameplay metrics: the samples are cleared and
+    // restored; the tally is the target own period state and is cleared.
+    super::metrics::clear_gameplay_state(ctx);
     let mut nonempty: Vec<&str> = Vec::new();
     if ctx.db.demo_ping().iter().next().is_some() {
         nonempty.push("demo_ping");
@@ -662,6 +667,17 @@ impl_autoinc_row!(
         class: String::new(),
         calls_total: 0,
         calls_delta: 0,
+    }
+);
+impl_autoinc_row!(
+    GameplayMetricSample,
+    sample_id,
+    GameplayMetricSample {
+        sample_id: 0,
+        sampled_at: Timestamp::UNIX_EPOCH,
+        series_code: 0,
+        value: 0,
+        sample_size: 0,
     }
 );
 impl_autoinc_row!(
@@ -1088,6 +1104,26 @@ pub fn restore_reducer_class_sample(
             ctx.db.reducer_class_sample().sample_id().delete(id);
         },
         "reducer_class_sample",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_gameplay_metric_sample(
+    ctx: &ReducerContext,
+    rows: Vec<GameplayMetricSample>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.gameplay_metric_sample().insert(r),
+        |id| {
+            ctx.db.gameplay_metric_sample().sample_id().delete(id);
+        },
+        "gameplay_metric_sample",
         sequence_floor,
     )
 }

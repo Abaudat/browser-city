@@ -80,7 +80,7 @@ if ! spacetime describe "$DB" "${SERVER_ARGS[@]}" --no-config -y --json >"$DESCR
   bc_ops_die "$SCRIPT" "'spacetime describe $DB --json' failed:
 $(cat "$TMP_DIR/.describe.err")"
 fi
-LIVE_TABLES="$(bc_wb describe-tables "$DESCRIBE_JSON" | grep -v '^restore_state$' | sort)"
+LIVE_TABLES="$(bc_wb describe-tables "$DESCRIBE_JSON" | grep -vE '^(restore_state|connected_client|metric_tally)$' | sort)"
 
 LIVE_SHAPE_FILE="$TMP_DIR/.live-shape.txt"
 : > "$LIVE_SHAPE_FILE"

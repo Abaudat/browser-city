@@ -435,6 +435,37 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 15_000,
         kind: BoundKind::Engineering,
     },
+    // Story 4.14: the gameplay-metrics pipeline. One generic sample table
+    // (live series x fires per day x retention), the per-period tally
+    // (one row per slot) and the live connections.
+    TableBound {
+        accessor: "gameplay_metric_sample",
+        max_rows: 2 * crate::gameplay_metrics::sample_rows_for_days(
+            crate::storage::METRICS_RETENTION_DAYS,
+        ),
+        expected_rows: crate::gameplay_metrics::sample_rows_for_days(
+            crate::storage::METRICS_RETENTION_DAYS,
+        ) / 2,
+        alert_rows: crate::gameplay_metrics::sample_rows_for_days(
+            crate::storage::METRICS_RETENTION_DAYS,
+        ),
+        kind: BoundKind::Engineering,
+    },
+    TableBound {
+        accessor: "metric_tally",
+        max_rows: crate::gameplay_metrics::TALLY_ROWS,
+        expected_rows: crate::gameplay_metrics::TALLY_ROWS,
+        alert_rows: crate::gameplay_metrics::TALLY_ROWS,
+        kind: BoundKind::Mechanical,
+    },
+    // One row per open connection: the concurrency ceiling.
+    TableBound {
+        accessor: "connected_client",
+        max_rows: 5_000,
+        expected_rows: 50,
+        alert_rows: 1_000,
+        kind: BoundKind::Engineering,
+    },
 ];
 
 /// The declared `max_rows` for `accessor`, if registered.

@@ -787,25 +787,26 @@ This is a passion project with no commercial target, no deadline and no audience
 
 ### Technical Metrics
 
-| Metric | Target |
-|---|---|
-| Cold boot to player-controllable | **< 1 second**, mid-range laptop, domestic connection |
-| Sustained frame rate | **60 FPS** at 1080p over a 10-minute session including rush hour |
-| Server uptime | Continuous; the city never stops ticking |
-| Monthly server spend | Within the self-funded bounded budget (figure set at architecture) |
-| Reconnection seam | Zero — position and state consistent with elapsed time, every time |
+| Metric | Target | Unit and emission |
+|---|---|---|
+| Cold boot to player-controllable (`boot_time`) | **< 1 second**, mid-range laptop, domestic connection | Milliseconds; p50 and p95 per hour, reported once per boot by the client. Blind to players who never connect |
+| Sustained frame rate | **60 FPS** at 1080p over a 10-minute session including rush hour | Not yet instrumented |
+| Server uptime | Continuous; the city never stops ticking | Not yet instrumented |
+| Monthly server spend | Within the self-funded bounded budget (figure set at architecture) | Not yet instrumented |
+| Reconnection seam (`reconnection_continuity`) | Zero — position and state consistent with elapsed time, every time | A proportion: resumes within the seam threshold over all resumes. Blind to whether position and state were seamless, and to a page that closes before it resumes |
+| Concurrent players (`concurrent_players`) | None; it is the condition `screen_density` reads under | A count: live connections at each hourly fire and the peak since the previous fire |
 
 ### Gameplay Metrics
 
-Each connects to a pillar. Adjectives are not metrics.
+Each connects to a pillar. Adjectives are not metrics: every row ends in a count, a duration or a proportion, and states what it cannot see. The code is the registry name (`sim::gameplay_metrics`), which holds the definition. No metric is ever shown or read back inside the game.
 
-| Metric | What it tests | Pillar |
-|---|---|---|
-| **Voluntary time in the discretionary middle** — do players stay in an unsupervised shift when nothing requires them to? | The Burger Test. If players skip or idle through the middle, P4 has failed and the design's foundation is wrong | P4 |
-| **Perceived aliveness at 1 connected player** — does a solo player describe the city as populated? | Whether AI carries density, the project's named engineering risk | P2 |
-| **Return rate after absence** — do players who log off for a week come back? | Whether "absence is safe" reads as safe, or as abandonment | P3 |
-| **Minute-spend split** — how own-time divides between qualification and lateral pursuit | Whether the central choice is a real contest or a foregone conclusion. A heavy skew either way means one side is underpriced | P1 |
-| **Unprompted noticing** — do players mention city state (a full bin, a late tram) without being asked? | Whether emergence is legible or merely present. The addendum flags this as the thing the Truth Test cannot measure | P4, P2 |
+| Metric | What it tests | Pillar | Emitted by | What it cannot see |
+|---|---|---|---|---|
+| **Voluntary time in the discretionary middle** (`middle_presence`) — do players stay in an unsupervised shift when nothing requires them to? | The Burger Test. If players skip or idle through the middle, P4 has failed and the design's foundation is wrong | P4 | Epic 8, once per shift at ritual close | Whether the player enjoyed it or waited it out |
+| **Perceived aliveness at 1 connected player** (`screen_density`) — does a solo player describe the city as populated? | Whether AI carries density, the project's named engineering risk | P2 | Epic 5, hourly per connected character; bodies in the interest region stand in for the screen | Whether the player calls the city populated |
+| **Return rate after absence** (`return_after_absence`) — do players who log off for a week come back? | Whether "absence is safe" reads as safe, or as abandonment | P3 | Epic 9, from connect and disconnect gaps; a cohort under about twenty means nothing | Why the player came back |
+| **Minute-spend split** (`own_time_split`) — how own-time divides between qualification and lateral pursuit | Whether the central choice is a real contest or a foregone conclusion. A heavy skew either way means one side is underpriced | P1 | Epic 12 (pursuits) and Epic 13 (qualification); reads from story 13.10 | A pursuit that is a qualification in disguise, a class attended for the people |
+| **Unprompted noticing** (`noticing`) — do players mention city state (a full bin, a late tram) without being asked? | Whether emergence is legible or merely present. The addendum flags this as the thing the Truth Test cannot measure | P4, P2 | Asked of players after a session on an open prompt, first at story 7.13 | Noticing without acting, and acting without noticing, in the proxy |
 
 **The honest position:** the last metric is the one that matters most and is the hardest to instrument. Players do not get satisfaction from a system being genuinely simulated; they get it from *noticing* something. If nobody notices, the fidelity was money burned regardless of how true it is.
 

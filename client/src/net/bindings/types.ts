@@ -101,6 +101,20 @@ export const CitizenTransitionSchedule = __t.object("CitizenTransitionSchedule",
 });
 export type CitizenTransitionSchedule = __Infer<typeof CitizenTransitionSchedule>;
 
+// The tagged union or sum type for the algebraic type `ClientMeasure`.
+export const ClientMeasure = __t.enum("ClientMeasure", {
+  Boot: __t.u32(),
+  Resumed: __t.u32(),
+});
+export type ClientMeasure = __Infer<typeof ClientMeasure>;
+
+export const ConnectedClient = __t.object("ConnectedClient", {
+  connectionId: __t.connectionId(),
+  bootReported: __t.bool(),
+  resumeReported: __t.bool(),
+});
+export type ConnectedClient = __Infer<typeof ConnectedClient>;
+
 export const ContainerKind = __t.object("ContainerKind", {
   code: __t.u32(),
   name: __t.string(),
@@ -145,6 +159,15 @@ export const FloorTransition = __t.object("FloorTransition", {
   chunkKey: __t.u64(),
 });
 export type FloorTransition = __Infer<typeof FloorTransition>;
+
+export const GameplayMetricSample = __t.object("GameplayMetricSample", {
+  sampleId: __t.u64(),
+  sampledAt: __t.timestamp(),
+  seriesCode: __t.u32(),
+  value: __t.u64(),
+  sampleSize: __t.u64(),
+});
+export type GameplayMetricSample = __Infer<typeof GameplayMetricSample>;
 
 export const GrowthSchedule = __t.object("GrowthSchedule", {
   scheduledId: __t.u64(),
@@ -214,6 +237,12 @@ export const MatterKind = __t.object("MatterKind", {
   name: __t.string(),
 });
 export type MatterKind = __Infer<typeof MatterKind>;
+
+export const MetricTally = __t.object("MetricTally", {
+  tallyKey: __t.u64(),
+  value: __t.u64(),
+});
+export type MetricTally = __Infer<typeof MetricTally>;
 
 export const MetricsSampleSchedule = __t.object("MetricsSampleSchedule", {
   scheduledId: __t.u64(),

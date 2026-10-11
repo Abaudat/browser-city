@@ -82,7 +82,7 @@ snapshot() {
   spacetime describe --json --server "$SERVER_URL" --no-config -y "$DB" 2>/dev/null \
     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);for(const t of j.sections.find(x=>x.Tables).Tables)console.log(t.source_name)})' \
     | sort | while read -r t; do
-      case "$t" in reducer_class_counter | reducer_class_sample | table_sample | storage_sample | player_position) continue ;; esac
+      case "$t" in reducer_class_counter | reducer_class_sample | gameplay_metric_sample | metric_tally | connected_client | table_sample | storage_sample | player_position) continue ;; esac
       echo "$t=$(rows_of "$t")"
     done
 }

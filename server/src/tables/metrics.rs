@@ -24,10 +24,20 @@
 //! each fire writes one `reducer_class_sample` row per class with the
 //! running total and the delta since the previous fire. No threshold: the
 //! first months of samples are the baseline.
+//!
+//! Gameplay metrics (FR171, FR172, story 4.14) ride the same fire: the
+//! registry is `sim::gameplay_metrics`, one `gameplay_metric_sample` row
+//! per live series per fire. `connected_client` mirrors open connections;
+//! `metric_tally` holds the period peak, boot histogram and resume
+//! counts, zeroed after each fire.
 
+use sim::gameplay_metrics::{
+    BOOT_BUCKETS, ConnFlags, Measure, SLOT_PEAK, SLOT_RESUME_TOTAL, SLOT_RESUME_WITHIN, Series,
+    tally_key,
+};
 use sim::reducer_classes::{ALL_CLASSES, ReducerClass};
 use spacetimedb::sats::bsatn;
-use spacetimedb::{ReducerContext, Table, Timestamp};
+use spacetimedb::{ConnectionId, ReducerContext, SpacetimeType, Table, Timestamp};
 
 use crate::demo_ping;
 
@@ -120,6 +130,54 @@ pub struct ReducerClassSample {
     pub calls_delta: u64,
 }
 
+/// One gameplay-metric series figure at one fire, read through its
+/// metric unit (`sim::gameplay_metrics::Unit`): `value`/`sample_size` are
+/// the count and 1, the percentile and its report count, or a numerator
+/// and its denominator. No threshold: no target exists yet.
+#[derive(Clone)]
+#[spacetimedb::table(accessor = gameplay_metric_sample)]
+pub struct GameplayMetricSample {
+    #[primary_key]
+    #[auto_inc]
+    // `pub`: `tables::restore::restore_gameplay_metric_sample` constructs this row.
+    pub sample_id: u64,
+    #[index(btree)]
+    pub sampled_at: Timestamp,
+    pub series_code: u32,
+    pub value: u64,
+    pub sample_size: u64,
+}
+
+/// One period accumulator (`sim::gameplay_metrics::tally_key`).
+#[derive(Clone)]
+#[spacetimedb::table(accessor = metric_tally)]
+pub struct MetricTally {
+    #[primary_key]
+    pub tally_key: u64,
+    pub value: u64,
+}
+
+/// One open connection. Inserted by `identity_connected`, deleted by
+/// `identity_disconnected`; the flags record which client measures the
+/// connection has reported. It carries no identity (FR142): a player is
+/// keyed on `character_id`, and nothing here needs to know who.
+#[derive(Clone)]
+#[spacetimedb::table(accessor = connected_client)]
+pub struct ConnectedClient {
+    #[primary_key]
+    pub connection_id: ConnectionId,
+    pub boot_reported: bool,
+    pub resume_reported: bool,
+}
+
+/// What a client reports about itself; validated in
+/// `sim::gameplay_metrics::accept_measure`.
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientMeasure {
+    Boot { millis: u32 },
+    Resumed { outage_millis: u32 },
+}
+
 /// Counts one call to `class`. The first statement of every reducer body
 /// (`scripts/ci/check-reducer-counted.sh`), never fails: a missing counter
 /// row is created.
@@ -145,6 +203,227 @@ pub fn count_call(ctx: &ReducerContext, class: ReducerClass) {
                 sampled_calls: 0,
             });
         }
+    }
+}
+
+fn tally_get(ctx: &ReducerContext, key: u64) -> u64 {
+    ctx.db
+        .metric_tally()
+        .tally_key()
+        .find(key)
+        .map_or(0, |r| r.value)
+}
+
+fn tally_set(ctx: &ReducerContext, key: u64, value: u64) {
+    let row = MetricTally {
+        tally_key: key,
+        value,
+    };
+    if ctx.db.metric_tally().tally_key().find(key).is_some() {
+        ctx.db.metric_tally().tally_key().update(row);
+    } else {
+        ctx.db.metric_tally().insert(row);
+    }
+}
+
+fn tally_add(ctx: &ReducerContext, key: u64, delta: u64) {
+    tally_set(ctx, key, tally_get(ctx, key).saturating_add(delta));
+}
+
+/// `identity_connected` write: registers the connection and lifts the
+/// period peak. Infallible.
+pub fn record_connect(ctx: &ReducerContext) {
+    let Some(connection_id) = ctx.connection_id() else {
+        return;
+    };
+    let table = ctx.db.connected_client();
+    if table.connection_id().find(connection_id).is_none() {
+        table.insert(ConnectedClient {
+            connection_id,
+            boot_reported: false,
+            resume_reported: false,
+        });
+    }
+    let key = tally_key(Series::ConcurrentPeak, SLOT_PEAK);
+    let peak = sim::gameplay_metrics::peak_after(tally_get(ctx, key), table.count());
+    tally_set(ctx, key, peak);
+}
+
+/// `identity_disconnected` write: deleting a missing row is a no-op, so
+/// the count cannot underflow. Infallible.
+pub fn record_disconnect(ctx: &ReducerContext) {
+    if let Some(connection_id) = ctx.connection_id() {
+        ctx.db
+            .connected_client()
+            .connection_id()
+            .delete(connection_id);
+    }
+}
+
+/// The one client-to-server measure call (NFR32 allowlist). A refusal is
+/// `Err`, so it is uncounted and writes nothing.
+#[spacetimedb::reducer]
+pub fn report_client_measure(ctx: &ReducerContext, measure: ClientMeasure) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Player);
+    let connection_id = ctx
+        .connection_id()
+        .ok_or_else(|| "no connection to report on".to_string())?;
+    let row = ctx
+        .db
+        .connected_client()
+        .connection_id()
+        .find(connection_id)
+        .ok_or_else(|| "connection is not registered".to_string())?;
+    let measure = match measure {
+        ClientMeasure::Boot { millis } => Measure::Boot { millis },
+        ClientMeasure::Resumed { outage_millis } => Measure::Resumed { outage_millis },
+    };
+    let flags = sim::gameplay_metrics::accept_measure(
+        ConnFlags {
+            boot_reported: row.boot_reported,
+            resume_reported: row.resume_reported,
+        },
+        measure,
+    )
+    .map_err(|refusal| refusal.message().to_string())?;
+    match measure {
+        Measure::Boot { millis } => {
+            let bucket = sim::gameplay_metrics::boot_bucket(millis) as u32;
+            tally_add(ctx, tally_key(Series::BootMillisP50, bucket), 1);
+        }
+        Measure::Resumed { outage_millis } => {
+            if sim::gameplay_metrics::resumed_within_seam(outage_millis) {
+                tally_add(
+                    ctx,
+                    tally_key(Series::ReconnectWithinSeam, SLOT_RESUME_WITHIN),
+                    1,
+                );
+            }
+            tally_add(
+                ctx,
+                tally_key(Series::ReconnectWithinSeam, SLOT_RESUME_TOTAL),
+                1,
+            );
+        }
+    }
+    ctx.db
+        .connected_client()
+        .connection_id()
+        .update(ConnectedClient {
+            boot_reported: flags.boot_reported,
+            resume_reported: flags.resume_reported,
+            ..row
+        });
+    Ok(())
+}
+
+fn boot_figure(ctx: &ReducerContext, pct: u64) -> (u64, u64) {
+    let counts: Vec<u64> = (0..BOOT_BUCKETS as u32)
+        .map(|b| tally_get(ctx, tally_key(Series::BootMillisP50, b)))
+        .collect();
+    let reports = counts.iter().fold(0u64, |a, c| a.saturating_add(*c));
+    let edge = sim::gameplay_metrics::percentile_edge_ms(&counts, pct).unwrap_or(0);
+    (u64::from(edge), reports)
+}
+
+fn peak_figure(ctx: &ReducerContext, current: u64) -> (u64, u64) {
+    let peak = tally_get(ctx, tally_key(Series::ConcurrentPeak, SLOT_PEAK));
+    (sim::gameplay_metrics::peak_after(peak, current), 1)
+}
+
+fn resume_figure(ctx: &ReducerContext) -> (u64, u64) {
+    (
+        tally_get(
+            ctx,
+            tally_key(Series::ReconnectWithinSeam, SLOT_RESUME_WITHIN),
+        ),
+        tally_get(
+            ctx,
+            tally_key(Series::ReconnectWithinSeam, SLOT_RESUME_TOTAL),
+        ),
+    )
+}
+
+/// One series figure as `(value, sample_size)`. The exhaustive `match` is
+/// the guarantee that a registered series has an emitter.
+fn emit_series(ctx: &ReducerContext, series: Series, current: u64) -> (u64, u64) {
+    match series {
+        Series::BootMillisP50 => boot_figure(ctx, 50),
+        Series::BootMillisP95 => boot_figure(ctx, 95),
+        Series::ConcurrentNow => (current, 1),
+        Series::ConcurrentPeak => peak_figure(ctx, current),
+        Series::ReconnectWithinSeam => resume_figure(ctx),
+    }
+}
+
+/// One fire gameplay-metric rows: every live series once, then the period
+/// tallies are zeroed (the peak restarts at the current count). Prunes by
+/// retention and by the table own `max_rows` before inserting.
+fn sample_gameplay_metrics(ctx: &ReducerContext, now: Timestamp) {
+    let current = ctx.db.connected_client().count();
+    let rows: Vec<GameplayMetricSample> = Series::ALL
+        .iter()
+        .map(|&series| {
+            let (value, sample_size) = emit_series(ctx, series, current);
+            GameplayMetricSample {
+                sample_id: 0,
+                sampled_at: now,
+                series_code: series.code(),
+                value,
+                sample_size,
+            }
+        })
+        .collect();
+    let stale: Vec<u64> = ctx.db.metric_tally().iter().map(|r| r.tally_key).collect();
+    for key in stale {
+        ctx.db.metric_tally().tally_key().delete(key);
+    }
+    tally_set(ctx, tally_key(Series::ConcurrentPeak, SLOT_PEAK), current);
+
+    let cutoff = Timestamp::from_micros_since_unix_epoch(sim::storage::retention_cutoff_micros(
+        now.to_micros_since_unix_epoch(),
+    ));
+    ctx.db
+        .gameplay_metric_sample()
+        .sampled_at()
+        .delete(..cutoff);
+    drop_oldest(
+        ctx.db.gameplay_metric_sample().count(),
+        rows.len() as u64,
+        "gameplay_metric_sample",
+        |n| {
+            ctx.db
+                .gameplay_metric_sample()
+                .sampled_at()
+                .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
+                .take(n)
+                .map(|r| r.sample_id)
+                .collect()
+        },
+        |id| {
+            ctx.db.gameplay_metric_sample().sample_id().delete(id);
+        },
+    );
+    for row in rows {
+        ctx.db.gameplay_metric_sample().insert(row);
+    }
+}
+
+/// Empties the gameplay-metric period state; `begin_restore` calls it
+/// (a restore does not drop connections, so `connected_client` stays).
+pub fn clear_gameplay_state(ctx: &ReducerContext) {
+    let keys: Vec<u64> = ctx.db.metric_tally().iter().map(|r| r.tally_key).collect();
+    for key in keys {
+        ctx.db.metric_tally().tally_key().delete(key);
+    }
+    let ids: Vec<u64> = ctx
+        .db
+        .gameplay_metric_sample()
+        .iter()
+        .map(|r| r.sample_id)
+        .collect();
+    for id in ids {
+        ctx.db.gameplay_metric_sample().sample_id().delete(id);
     }
 }
 
@@ -270,6 +549,9 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(storage_sample);
     sample!(reducer_class_counter);
     sample!(reducer_class_sample);
+    sample!(gameplay_metric_sample);
+    sample!(metric_tally);
+    sample!(connected_client);
 
     let total: u64 = taken
         .iter()
@@ -431,4 +713,5 @@ fn drop_oldest(
 /// the caller's re-arm and stop the cadence.
 pub fn run_sampler(ctx: &ReducerContext) {
     sample_all_tables(ctx, ctx.timestamp);
+    sample_gameplay_metrics(ctx, ctx.timestamp);
 }

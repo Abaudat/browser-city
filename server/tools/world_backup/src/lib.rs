@@ -121,7 +121,10 @@ impl Shape {
     pub fn from_snapshot(snapshot: &ModuleSchema) -> Shape {
         let mut map = BTreeMap::new();
         for t in &snapshot.tables {
-            if t.accessor == "restore_state" {
+            if matches!(
+                t.accessor.as_str(),
+                "restore_state" | "connected_client" | "metric_tally"
+            ) {
                 continue;
             }
             let mut cols: Vec<String> = t.columns.iter().map(|c| normalize_name(&c.name)).collect();

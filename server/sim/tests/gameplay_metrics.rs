@@ -91,8 +91,16 @@ fn a_deferred_metric_names_an_epic_after_4_and_a_live_one_epic_4() {
 #[test]
 fn every_metric_states_what_it_cannot_see_and_how_it_is_defined() {
     for m in GAMEPLAY_METRICS {
-        assert!(!m.blind_spot.trim().is_empty(), "{} has no blind_spot", m.name);
-        assert!(!m.definition.trim().is_empty(), "{} has no definition", m.name);
+        assert!(
+            !m.blind_spot.trim().is_empty(),
+            "{} has no blind_spot",
+            m.name
+        );
+        assert!(
+            !m.definition.trim().is_empty(),
+            "{} has no definition",
+            m.name
+        );
         assert!(
             !m.emission_point.trim().is_empty(),
             "{} has no emission_point",
@@ -231,15 +239,34 @@ fn boot_refuses_zero_and_absurd_values() {
             "{millis}"
         );
     }
-    assert!(accept_measure(FRESH, Measure::Boot { millis: BOOT_MAX_MS }).is_ok());
+    assert!(
+        accept_measure(
+            FRESH,
+            Measure::Boot {
+                millis: BOOT_MAX_MS
+            }
+        )
+        .is_ok()
+    );
 }
 
 #[test]
 fn resume_is_accepted_once_and_bounded() {
-    let f = accept_measure(FRESH, Measure::Resumed { outage_millis: 1200 }).unwrap();
+    let f = accept_measure(
+        FRESH,
+        Measure::Resumed {
+            outage_millis: 1200,
+        },
+    )
+    .unwrap();
     assert!(f.resume_reported && !f.boot_reported);
     assert_eq!(
-        accept_measure(f, Measure::Resumed { outage_millis: 1200 }),
+        accept_measure(
+            f,
+            Measure::Resumed {
+                outage_millis: 1200
+            }
+        ),
         Err(MeasureRefusal::AlreadyReported)
     );
     for outage_millis in [0, RESUME_MAX_MS + 1] {
