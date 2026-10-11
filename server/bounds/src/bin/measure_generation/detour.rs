@@ -37,6 +37,10 @@ pub fn detour_sweep(cfg: &GenerationConfig, n: u64) {
         bounds::generation_stamp::stamp(&bounds::generation_stamp::DETOUR_SWEEP),
         threads()
     );
+    println!(
+        "{}",
+        bounds::generation_stamp::ci_runs_line(&bounds::generation_stamp::DETOUR_SWEEP)
+    );
     let start = Instant::now();
     let records = par_map_in_seed_order(n, threads(), |i| {
         let seed = mixed_detour_seed(i);

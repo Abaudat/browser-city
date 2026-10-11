@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use bounds::generation_stamp::{CITY_POOL_SIZE, INTERIORS_SWEEP};
+use bounds::generation_stamp::{CI_COVERAGE_CITY_POOL, CITY_POOL_SIZE, INTERIORS_SWEEP};
 use bounds::sweep::{par_map_in_seed_order, threads};
 use sim::generation::guards::{self, InteriorFigures};
 use sim::generation::{GenerationConfig, GenerationContent, InteriorOutcome};
@@ -52,6 +52,10 @@ pub fn interiors_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u
         "{}: {n} seeds, {} threads (salt {MEASURE_INTERIORS_SEED_SALT:#x})",
         bounds::generation_stamp::stamp(&INTERIORS_SWEEP),
         threads()
+    );
+    println!(
+        "{}",
+        bounds::generation_stamp::ci_runs_line(&bounds::generation_stamp::INTERIORS_SWEEP)
     );
     let cases = INTERIORS_SWEEP.ci_cases;
     let vocab = sim::generation::interiors::Vocabulary::new(content);
@@ -285,38 +289,49 @@ pub fn interiors_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u
 
     // The pooled band is a statistic over one CI run's pool, not over one
     // city: judge consecutive pools of the CI run's own size.
-    let lo = (cfg.interior_enterable_target_percent
-        - cfg.interior_enterable_target_tolerance_percent)
-        * 1000;
-    let hi = (cfg.interior_enterable_target_percent
-        + cfg.interior_enterable_target_tolerance_percent)
-        * 1000;
-    let mut pools = 0u64;
-    let mut pool_shares: Vec<i64> = Vec::new();
-    let mut outside = BandMiss::new();
-    for (k, pool) in records.chunks(CITY_POOL_SIZE as usize).enumerate() {
-        if pool.len() < CITY_POOL_SIZE as usize {
-            break;
+    // The pooled band is a statistic over one CI run's pool, not over one
+    // city: judge consecutive pools of every size CI judges it at (the
+    // test job's 96 cities, the coverage job's 8), against the band
+    // scaled to the pool size.
+    for pool_size in [CITY_POOL_SIZE as usize, CI_COVERAGE_CITY_POOL as usize] {
+        let (lo, hi) = guards::pooled_share_band_x1000(
+            cfg.interior_enterable_target_percent,
+            cfg.interior_enterable_target_tolerance_percent,
+            pool_size as u64,
+        );
+        let mut pools = 0u64;
+        let mut pool_shares: Vec<i64> = Vec::new();
+        let mut outside = BandMiss::new();
+        for pool in records.chunks(pool_size) {
+            if pool.len() < pool_size {
+                break;
+            }
+            pools += 1;
+            let enterable: i64 = pool.iter().map(|r| r.figures.laid).sum();
+            let placed: i64 = pool.iter().map(|r| r.placed_buildings).sum();
+            let share_x1000 = enterable * 100_000 / placed.max(1);
+            pool_shares.push(share_x1000);
+            if share_x1000 < lo || share_x1000 > hi {
+                // The pool's first seed names it.
+                outside.record(pool[0].seed);
+            }
         }
-        pools += 1;
-        let enterable: i64 = pool.iter().map(|r| r.figures.laid).sum();
-        let placed: i64 = pool.iter().map(|r| r.placed_buildings).sum();
-        let share_x1000 = enterable * 100_000 / placed.max(1);
-        pool_shares.push(share_x1000);
-        if share_x1000 < lo || share_x1000 > hi {
-            // The pool's first seed names it.
-            outside.record(pool[0].seed);
-            let _ = k;
-        }
+        Stats::new(pool_shares).print(&format!(
+            "pooled_enterable_share_x1000_per_{pool_size}_city_pool"
+        ));
+        report(
+            &format!(
+                "pooled enterable share within [{}.{:03}, {}.{:03}]% ({pool_size}-city pools; enterable_target_percent = {}% +- {}% at {CITY_POOL_SIZE})",
+                lo / 1000,
+                lo % 1000,
+                hi / 1000,
+                hi % 1000,
+                cfg.interior_enterable_target_percent,
+                cfg.interior_enterable_target_tolerance_percent
+            ),
+            &outside,
+            pools,
+            1,
+        );
     }
-    Stats::new(pool_shares).print("pooled_enterable_share_x1000_per_pool");
-    report(
-        &format!(
-            "pooled enterable share within enterable_target_percent = {}% +- {}% ({CITY_POOL_SIZE}-city pools)",
-            cfg.interior_enterable_target_percent, cfg.interior_enterable_target_tolerance_percent
-        ),
-        &outside,
-        pools,
-        1,
-    );
 }

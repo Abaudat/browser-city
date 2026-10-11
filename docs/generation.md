@@ -803,9 +803,16 @@ shared pool the pass-6 and whole-district invariants judge
 rule-of-three bound when there are no misses. A sweep over `n` cities
 bounds the per-city rate by `3 / n`, so a 96-city CI run fails with
 probability at most `1 - (1 - 3/n)^96`: `n >= 24,000` keeps it at about
-1.2%, and the `interiors sweep` runs 30,000. The pooled enterable-share
-band is a statistic over one pool, so that block reports it over
-consecutive 96-city pools. *Fixed-seed* blocks (`exhaustive loop`,
+1.2%, and the `interiors sweep` runs 30,000. The `coverage` CI job runs
+the same checks at its own, smaller counts (256 proptest cases, an
+8-city pool; pinned to `ci.yml` by a test) and every block prints both
+counts under its header; for a per-city ceiling a smaller count only
+lowers the failure probability. The pooled enterable-share band is a
+statistic over one pool, so its figure changes with the pool size: the
+block reports it over consecutive pools of every size CI judges it at,
+against a band that is the committed one at 96 cities and widens by
+`sqrt(96 / pool)` below it (`guards::pooled_share_band_x1000`), the same
+number of standard errors at every size. *Fixed-seed* blocks (`exhaustive loop`,
 `pooled evidence`) are deterministic facts with no miss rate. The per-seed guard figures a proptest asserts are computed by one
 function (`sim::generation::guards`) that the proptest and the sweep both
 call.
@@ -833,6 +840,7 @@ block is reproducible bar thread count and wall-clock.
 
 ```text
 detour-bounds sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, 32 threads, passes 1-2 only
+CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
   p99_detour_fill_percent = 95% (64-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
@@ -872,7 +880,7 @@ detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worst
   171% at seed 4929245716913353663
   178% at seed 4832727318219098284
   189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 226.0s (0.226ms/seed)
+detour-bounds sweep wall-clock: 231.3s (0.231ms/seed)
 ```
 
 ### band sweep
@@ -881,6 +889,7 @@ detour-bounds sweep wall-clock: 226.0s (0.226ms/seed)
 
 ```text
 band sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, all five passes (salt 0xb0f05ee4)
+CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
 land_use_share_commercial deviation from its key (18%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.6 stddev=6.0
   5.5-sigma share tolerance implied: 3.32 percentage points
 land_use_share_industrial deviation from its key (14%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.7 stddev=5.8
@@ -922,7 +931,7 @@ largest_institutional_pocket_share_basis_points: min=87 p1=117 p50=205 p99=234 m
 profession_depth_per_city: min=44 p1=55 p50=61 p99=67 max=67 mean=61.4 stddev=2.3
   profession_count_per_city_min = 36: 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-band sweep wall-clock: 154.7s (0.155ms/seed)
+band sweep wall-clock: 147.4s (0.147ms/seed)
 ```
 
 ### exhaustive loop
@@ -1028,6 +1037,7 @@ ad hoc presence tags (never distributed) -- seeds with 0 placed:
 
 ```text
 rows sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, 32 threads
+CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
   committed rules hold (inv_generation_committed_rules_hold_for_any_seed): 0 of 1000000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 96-case CI failure probability <= 0.0288%)
   cafe_present: pooled mean placed 10.49, fewest in one district 7, owed somewhere but none placed in 0 districts
@@ -1044,6 +1054,7 @@ rows sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds,
 
 ```text
 region-loss sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
+CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   seeds with any region carried by no block: 20769 of 1000000 (first: Some(11091164158115210688)) -- by design, a block takes its majority use
   every institutional region carried by no block (inv_generation_an_institutional_region_is_carried_by_a_block): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
@@ -1073,6 +1084,7 @@ pooled core over city mean screen: 190% (busy_core_over_city_min_percent = 150%)
 
 ```text
 interiors sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 30000 seeds, 32 threads (salt 0xb0f05ee7)
+CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 enterable_count: min=766 p1=805 p50=868 p99=932 max=973 mean=868.5 stddev=27.3
 enterable_share_percent: min=92 p1=95 p50=97 p99=99 max=100 mean=97.2 stddev=1.2
 shell_count: min=0 p1=3 p50=20 p99=44 max=61 mean=20.6 stddev=10.4
@@ -1110,9 +1122,12 @@ buildings rejected, by type: {"corner_shop": 2}
     zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
   an enterable dwelling in the lowest density band: 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
-pooled_enterable_share_x1000_per_pool: min=97360 p1=97414 p50=97680 p99=97951 max=98033 mean=97678.6 stddev=118.3
-  pooled enterable share within enterable_target_percent = 98% +- 1% (96-city pools): 0 of 312 misses (rate 0.000000%), implied 1-case CI failure probability 0.000000%, offending seeds: []
+pooled_enterable_share_x1000_per_96_city_pool: min=97360 p1=97414 p50=97680 p99=97951 max=98033 mean=97678.6 stddev=118.3
+  pooled enterable share within [97.000, 99.000]% (96-city pools; enterable_target_percent = 98% +- 1% at 96): 0 of 312 misses (rate 0.000000%), implied 1-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 312 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.961538% (implied 1-case CI failure probability <= 0.9615%)
+pooled_enterable_share_x1000_per_8_city_pool: min=96042 p1=96691 p50=97683 p99=98588 max=99082 mean=97678.1 stddev=415.5
+  pooled enterable share within [94.536, 101.464]% (8-city pools; enterable_target_percent = 98% +- 1% at 96): 0 of 3750 misses (rate 0.000000%), implied 1-case CI failure probability 0.000000%, offending seeds: []
+    zero observed misses over 3750 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.080000% (implied 1-case CI failure probability <= 0.0800%)
 ```
 
 ## Density is per screen

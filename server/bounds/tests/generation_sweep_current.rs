@@ -7,8 +7,8 @@
 use std::path::{Path, PathBuf};
 
 use bounds::generation_stamp::{
-    CI_PROPTEST_CASES, MEASURED_BLOCKS, check_doc, comment_restates_a_measurement,
-    current_fingerprint, quotes_a_version,
+    CI_COVERAGE_CITY_POOL, CI_COVERAGE_PROPTEST_CASES, CI_PROPTEST_CASES, MEASURED_BLOCKS,
+    check_doc, comment_restates_a_measurement, current_fingerprint, quotes_a_version,
 };
 use sim::generation::GENERATION_VERSION;
 
@@ -111,4 +111,27 @@ fn the_implied_case_count_is_ci_s_proptest_cases() {
         .expect("ci.yml sets PROPTEST_CASES");
     let value: u32 = line.split(':').nth(1).unwrap().trim().parse().unwrap();
     assert_eq!(value, CI_PROPTEST_CASES);
+}
+
+/// The coverage job's own overrides are the counts the blocks print for it.
+#[test]
+fn the_coverage_job_counts_are_ci_s_own() {
+    let ci = read(".github/workflows/ci.yml");
+    let at = ci.find("\n  coverage:").expect("ci.yml has a coverage job");
+    let job = &ci[at + 1..];
+    let end = job.find("\n  client-check:").unwrap_or(job.len());
+    let job = &job[..end];
+    let value = |key: &str| -> u32 {
+        job.lines()
+            .find(|l| l.trim_start().starts_with(key))
+            .unwrap_or_else(|| panic!("the coverage job sets {key}"))
+            .split(':')
+            .nth(1)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap()
+    };
+    assert_eq!(value("PROPTEST_CASES:"), CI_COVERAGE_PROPTEST_CASES);
+    assert_eq!(value("GENERATION_CITY_POOL:"), CI_COVERAGE_CITY_POOL);
 }

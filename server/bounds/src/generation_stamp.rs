@@ -18,8 +18,12 @@ use sim::rules::RuleDef;
 /// the two together).
 pub const CI_PROPTEST_CASES: u32 = 4096;
 
-/// The text every proptest-gated ceiling's report carries; a `Proptest`
-/// block's pasted output must contain it.
+/// The coverage job's own overrides (`ci.yml`, pinned by a test): its
+/// proptest case count and its city pool, both smaller than the `test`
+/// job's because the instrumented build is slow.
+pub const CI_COVERAGE_PROPTEST_CASES: u32 = 256;
+pub const CI_COVERAGE_CITY_POOL: u32 = 8;
+
 /// The cities the pool-based invariants judge per CI run: one constant,
 /// held by the compiler across `invariants.rs` and the sweep blocks.
 pub use sim::generation::guards::CITY_POOL_SIZE;
@@ -54,6 +58,8 @@ pub struct MeasuredBlock {
     /// How many cases (or pooled cities) one CI run judges the block's
     /// per-seed ceilings over.
     pub ci_cases: u32,
+    /// The same, in the `coverage` job (0: a deterministic block).
+    pub ci_coverage_cases: u32,
     /// The `defs::BALANCE` keys the block's figures bound.
     pub ceilings: &'static [&'static str],
 }
@@ -80,6 +86,7 @@ pub const DETOUR_SWEEP: MeasuredBlock = MeasuredBlock {
     rerun_args: "1000000",
     kind: BlockKind::Proptest,
     ci_cases: CI_PROPTEST_CASES,
+    ci_coverage_cases: CI_COVERAGE_PROPTEST_CASES,
     ceilings: &[
         "generation.streets.max_detour_percent",
         "generation.streets.max_detour_excess_cells",
@@ -94,6 +101,7 @@ pub const BAND_SWEEP: MeasuredBlock = MeasuredBlock {
     rerun_args: "1000000",
     kind: BlockKind::Proptest,
     ci_cases: CI_PROPTEST_CASES,
+    ci_coverage_cases: CI_COVERAGE_PROPTEST_CASES,
     ceilings: &[
         "generation.land_use.share_tolerance_pct",
         "generation.envelopes.count_tolerance_percent",
@@ -122,6 +130,7 @@ pub const EXHAUSTIVE_LOOP: MeasuredBlock = MeasuredBlock {
     rerun_args: "",
     kind: BlockKind::FixedSeed,
     ci_cases: CI_PROPTEST_CASES,
+    ci_coverage_cases: 0,
     ceilings: &[
         "generation.streets.max_detour_excess_cells",
         "generation.plots.max_open_percent_by_count",
@@ -148,6 +157,7 @@ pub const REGION_LOSS_SWEEP: MeasuredBlock = MeasuredBlock {
     rerun_args: "1000000",
     kind: BlockKind::Proptest,
     ci_cases: CI_PROPTEST_CASES,
+    ci_coverage_cases: CI_COVERAGE_PROPTEST_CASES,
     ceilings: &[],
 };
 
@@ -157,6 +167,7 @@ pub const ROWS_SWEEP: MeasuredBlock = MeasuredBlock {
     rerun_args: "1000000",
     kind: BlockKind::Proptest,
     ci_cases: CITY_POOL_SIZE,
+    ci_coverage_cases: CI_COVERAGE_CITY_POOL,
     ceilings: &[],
 };
 
@@ -166,6 +177,7 @@ pub const POOLED_EVIDENCE: MeasuredBlock = MeasuredBlock {
     rerun_args: "",
     kind: BlockKind::FixedSeed,
     ci_cases: CI_PROPTEST_CASES,
+    ci_coverage_cases: 0,
     ceilings: &[
         "generation.streets.peripheral_pooled_min_ratio_percent",
         "generation.catchment_floor_min_bite_percent",
@@ -184,6 +196,7 @@ pub const INTERIORS_SWEEP: MeasuredBlock = MeasuredBlock {
     rerun_args: "30000",
     kind: BlockKind::Proptest,
     ci_cases: CITY_POOL_SIZE,
+    ci_coverage_cases: CI_COVERAGE_CITY_POOL,
     ceilings: &[
         "generation.interiors.max_layout_attempts",
         "generation.interiors.max_room_aspect",
@@ -536,6 +549,15 @@ pub fn parse_stamp(line: &str) -> Option<(&str, u32, &str)> {
     Some((label, version.parse().ok()?, &rest[..hex_len]))
 }
 
+/// The line a proptest-gated block's output carries under its header: the
+/// case counts each CI job judges its ceilings at.
+pub fn ci_runs_line(block: &MeasuredBlock) -> String {
+    format!(
+        "CI judges these ceilings at {} cases in the test job and {} in the coverage job",
+        block.ci_cases, block.ci_coverage_cases
+    )
+}
+
 /// One proptest ceiling's miss count, rate and the failure probability a
 /// `cases`-case run implies (`1 - (1 - p)^cases`); with zero
 /// misses, the rule-of-three bound (`3 / n` per seed) as well, since zero
@@ -769,13 +791,17 @@ pub fn check_doc(
                 ),
             });
         }
-        if block.kind == BlockKind::Proptest && !body.contains(&implied_marker(block.ci_cases)) {
+        if block.kind == BlockKind::Proptest
+            && !(body.contains(&implied_marker(block.ci_cases))
+                && body.contains(&ci_runs_line(block)))
+        {
             out.push(Violation {
                 kind: ViolationKind::MissingCeilingReport,
                 block: label.clone(),
                 message: format!(
-                    "`{label}` is a proptest-gated block and its pasted output has no `{}` line -- paste `{rerun}` verbatim",
-                    implied_marker(block.ci_cases)
+                    "`{label}` is a proptest-gated block and its pasted output lacks the `{}` line or the `{}` line -- paste `{rerun}` verbatim",
+                    implied_marker(block.ci_cases),
+                    ci_runs_line(block)
                 ),
             });
         }
@@ -928,7 +954,8 @@ mod tests {
     fn stamped(block: &MeasuredBlock, v: u32, fingerprint: u64) -> String {
         let report = if block.kind == BlockKind::Proptest {
             format!(
-                "\n  x: 0 of 5 misses, {} CI failure probability 0%",
+                "\n{}\n  x: 0 of 5 misses, {} CI failure probability 0%",
+                ci_runs_line(block),
                 implied_marker(block.ci_cases)
             )
         } else {

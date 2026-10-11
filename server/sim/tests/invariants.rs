@@ -7447,7 +7447,11 @@ fn inv_generation_kind_spread_rejects_a_city_of_flats() {
 }
 
 /// `inv_generation_enterable_share_matches_the_committed_band` (story 3.5
-/// AC3): pooled over 0..256 so the count cannot drift to "100, barely".
+/// AC3): the enterable share pooled over the shared city pool, so the
+/// count cannot drift to "100, barely". The band is the committed one at
+/// the default pool and widens by `sqrt(96 / pool)` below it
+/// (`GENERATION_CITY_POOL`, the coverage job's 8 cities), the same number
+/// of standard errors at every pool size.
 #[test]
 fn inv_generation_enterable_share_matches_the_committed_band() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -7457,19 +7461,21 @@ fn inv_generation_enterable_share_matches_the_committed_band() {
         placed += city.district.skeleton.envelopes.placed_count();
     }
     let share_x1000 = enterable * 100_000 / placed;
-    let lo = (cfg.interior_enterable_target_percent
-        - cfg.interior_enterable_target_tolerance_percent)
-        * 1000;
-    let hi = (cfg.interior_enterable_target_percent
-        + cfg.interior_enterable_target_tolerance_percent)
-        * 1000;
+    let (lo, hi) = sim::generation::guards::pooled_share_band_x1000(
+        cfg.interior_enterable_target_percent,
+        cfg.interior_enterable_target_tolerance_percent,
+        city_pool().len() as u64,
+    );
     assert!(
         share_x1000 >= lo && share_x1000 <= hi,
-        "pooled enterable share {}.{:03}% is outside [{}, {}]%",
+        "pooled enterable share {}.{:03}% over {} cities is outside [{}.{:03}, {}.{:03}]%",
         share_x1000 / 1000,
         share_x1000 % 1000,
+        city_pool().len(),
         lo / 1000,
-        hi / 1000
+        lo % 1000,
+        hi / 1000,
+        hi % 1000
     );
 }
 

@@ -17,6 +17,10 @@ pub fn region_loss_sweep(cfg: &GenerationConfig, n: u64) {
         "\n{}: {n} seeds, passes 1-2 only (salt {MEASURE_REGION_SEED_SALT:#x})",
         bounds::generation_stamp::stamp(&bounds::generation_stamp::REGION_LOSS_SWEEP)
     );
+    println!(
+        "{}",
+        bounds::generation_stamp::ci_runs_line(&bounds::generation_stamp::REGION_LOSS_SWEEP)
+    );
     // (seed, any region lost, every institutional region lost)
     let records = par_map_in_seed_order(n, threads(), |i| {
         let seed = seed_from_ids(MEASURE_REGION_SEED_SALT, i);

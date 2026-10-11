@@ -40,6 +40,10 @@ pub fn band_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
 {}: {n} seeds, all five passes (salt {MEASURE_BAND_SEED_SALT:#x})",
         bounds::generation_stamp::stamp(&bounds::generation_stamp::BAND_SWEEP)
     );
+    println!(
+        "{}",
+        bounds::generation_stamp::ci_runs_line(&bounds::generation_stamp::BAND_SWEEP)
+    );
     let uses = [
         (LandUse::Commercial, cfg.share_commercial_pct, "commercial"),
         (LandUse::Industrial, cfg.share_industrial_pct, "industrial"),

@@ -91,6 +91,10 @@ pub fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
         bounds::generation_stamp::stamp(&bounds::generation_stamp::ROWS_SWEEP),
         threads()
     );
+    println!(
+        "{}",
+        bounds::generation_stamp::ci_runs_line(&bounds::generation_stamp::ROWS_SWEEP)
+    );
     let mut failing = BandMiss::new();
     let mut reasons: Vec<(u64, String)> = Vec::new();
     // Per row: pooled placed, fewest placed in one district, districts

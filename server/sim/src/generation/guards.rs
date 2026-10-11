@@ -17,6 +17,18 @@ use crate::world::Rect;
 /// for them size their implied failure probability by it.
 pub const CITY_POOL_SIZE: u32 = 96;
 
+/// The pooled enterable-share band `(lo, hi)` in thousandths of a percent
+/// at `pool` cities. `tolerance` is the committed half-width at
+/// [`CITY_POOL_SIZE`] cities; a smaller pool's share is noisier by
+/// `sqrt(CITY_POOL_SIZE / pool)`, so the half-width widens by the same
+/// factor and the band stays the same number of standard errors wide at
+/// every pool size CI judges it at. Never narrower than committed.
+pub fn pooled_share_band_x1000(target: i64, tolerance: i64, pool: u64) -> (i64, i64) {
+    let scaled = (u64::from(CITY_POOL_SIZE) * 1_000_000 / pool.max(1)).isqrt() as i64;
+    let half = tolerance * scaled.max(1000);
+    (target * 1000 - half, target * 1000 + half)
+}
+
 fn adjacent(a: Rect, b: Rect) -> bool {
     let overlap_y = a.y1.min(b.y1) - a.y0.max(b.y0);
     let overlap_x = a.x1.min(b.x1) - a.x0.max(b.x0);
@@ -948,6 +960,15 @@ mod tests {
             !is_enterable(&no_fixtures, &content, &vocab),
             "a room owing a fixture without it is not enterable"
         );
+    }
+
+    #[test]
+    fn the_pooled_band_is_the_committed_one_at_the_ci_pool_and_wider_below_it() {
+        assert_eq!(pooled_share_band_x1000(98, 1, 96), (97_000, 99_000));
+        assert_eq!(pooled_share_band_x1000(98, 1, 8), (94_536, 101_464));
+        assert_eq!(pooled_share_band_x1000(98, 1, 1000), (97_000, 99_000));
+        let (lo, hi) = pooled_share_band_x1000(98, 1, 8);
+        assert!(lo < 97_000 && hi > 99_000);
     }
 
     #[test]
