@@ -28,6 +28,7 @@ describe("every walked route", () => {
         "street-walk",
         "subway-approach",
         "near-railing-press",
+        "subway-wall-walk",
         "bollard",
         "bridge-lap",
         "bin-reach",

@@ -7,22 +7,21 @@
 //
 // A transition is edge-triggered, entered by walking, never level-
 // triggered by a key still held: it is only ever checked against the cell
-// a step just *walked into* -- the cell the position's `Math.floor`
-// resolves to changing from the previous tick's is what "walked into"
-// means here. Landing on a cell via a transition never itself counts as
-// walking into it: the check that produced the landing is not re-run
-// against its own result, and the very next call only re-checks once the
-// position leaves that landing cell. That is what makes two transitions
-// that happen to target each other's own anchor impossible to bounce
-// between forever just because a direction key is still held (`sim::
-// world::WorldSpec::build` does not reject that shape of data itself, so
-// this is a real, generator-reachable case, not a fixture curiosity).
+// a step just *walked into* -- the cell `bodyCell` resolves the position to
+// changing from the previous tick's is what "walked into" means here.
+// Landing on a cell via a transition never itself counts as walking into
+// it: the check that produced the landing is not re-run against its own
+// result, and the very next call only re-checks once the position leaves
+// that landing cell. That is what makes two transitions that happen to
+// target each other's own anchor impossible to bounce between forever just
+// because a direction key is still held (`sim::world::WorldSpec::build`
+// does not reject that shape of data itself, so this is a real,
+// generator-reachable case, not a fixture curiosity).
 
 import type { CollisionGridQuery } from "./collision-grid";
 import type { FlightIndex } from "./flights";
 import type { MovementConfig, Vec2 } from "./movement";
-import { step } from "./movement";
-import { cellOf } from "./ownership";
+import { bodyCell, step } from "./movement";
 import type { TransitionIndex } from "./transitions";
 
 /** The walker's own state between steps: continuous position, floor, and
@@ -48,10 +47,11 @@ export interface FloorWalkResult extends FloorWalkState {
 }
 
 /** The initial `FloorWalkState` for a fixed starting position -- computes
- * `cellX`/`cellY` once so a caller never has to import `cellOf` itself
- * just to construct the first state. */
+ * `cellX`/`cellY` once (by `bodyCell`) so a caller never has to derive the
+ * first state's cell itself. */
 export function initialFloorWalkState(x: number, y: number, floor: number): FloorWalkState {
-  return { x, y, floor, cellX: cellOf(x), cellY: cellOf(y) };
+  const cell = bodyCell({ x, y });
+  return { x, y, floor, cellX: cell.x, cellY: cell.y };
 }
 
 /**
@@ -86,8 +86,7 @@ export function stepAndTransition(
     config,
     speedScale,
   );
-  const cellX = cellOf(next.x);
-  const cellY = cellOf(next.y);
+  const { x: cellX, y: cellY } = bodyCell(next);
 
   if (cellX === state.cellX && cellY === state.cellY) {
     return { x: next.x, y: next.y, floor: state.floor, cellX, cellY, transitioned: false };

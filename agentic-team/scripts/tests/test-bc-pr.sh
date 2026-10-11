@@ -242,6 +242,32 @@ check "re-attaching replaces the existing file" 0 \
 check "the replace passes the existing blob sha" 0 log_has "$FAKE_AT_RE/calls.log" "^gh_content_put pr-assets issue-8/$SHA7/street.png [^ ]+ b10b5ha$"
 
 echo
+echo "for-issue against a stub gh: the issue's branch is the link, not the body:"
+# A stub gh, no BC_FAKE, so gh_pr_for_issue's own query and filter run.
+# A plain `pr list` answers the open PRs; one with --search answers the
+# "Closes #<n>" body search.
+GH_STUB="$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/bc-pr-gh.XXXXXX")"
+cat > "$GH_STUB/gh" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *" --search "*) cat "$GH_STUB_DIR/search.json" ;;
+  *) cat "$GH_STUB_DIR/list.json" ;;
+esac
+SH
+chmod +x "$GH_STUB/gh"
+cat > "$GH_STUB/list.json" <<'JSON'
+[{"number":435,"headRefOid":"s435","headRefName":"close-the-demos-sprint"},
+ {"number":432,"headRefOid":"s4300","headRefName":"Abaudat/issue-4300"},
+ {"number":431,"headRefOid":"s430","headRefName":"Abaudat/issue-430"}]
+JSON
+echo '[{"number":99,"headRefOid":"s99"}]' > "$GH_STUB/search.json"
+run_gh() { GH="$GH_STUB/gh" GH_STUB_DIR="$GH_STUB" bash "$BC_PR" "$@"; }
+check_out "for-issue: a 'Refs #430' PR is still found by its issue-430 branch" 0   '{"number":431,"head":"s430"}' run_gh for-issue 430
+check_out "for-issue: no branch for the issue -> falls back to the Closes body" 0   '{"number":99,"head":"s99"}' run_gh for-issue 43
+echo '[]' > "$GH_STUB/search.json"
+check "for-issue: neither a branch nor a Closes body -> exit 1" 1 run_gh for-issue 7
+
+echo
 echo "unknown command: usage on stderr, exit 2:"
 check "unknown command exits 2" 2 run "$(fake_dir)" bogus-command
 

@@ -5,7 +5,10 @@ Read the reviews requesting changes:
 
     gh pr view {{pr}} --comments
 
-Fix every point a lead raised, commit, and push to the PR's branch. Never
+Fix every point a lead raised, commit, and push to the PR's branch. Merging
+this PR closes issue #{{issue}}, always, so finish the issue's work here: never
+change the body's `Closes #{{issue}}` to `Refs #{{issue}}`, and never leave a
+step for after the merge, even if a lead asks for it. Never
 ask questions; decide and note assumptions directly in your comment.
 
 A finding that a story's live declaration is false is not fixed by the

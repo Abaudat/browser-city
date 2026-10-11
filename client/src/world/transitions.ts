@@ -352,9 +352,9 @@ export function sameCellEntryProblems(
   for (const t of transitions) {
     if (t.targetX !== t.x || t.targetY !== t.y) continue;
     const inAnchor = (cx: number, feet: number) =>
-      Math.floor(cx / s) === t.x && Math.floor(feet / s) === t.y;
+      Math.floor(cx / s) === t.x && Math.floor((feet - 1) / s) === t.y;
     for (let cx = t.x * s; cx < (t.x + 1) * s; cx++) {
-      for (let feet = t.y * s; feet < (t.y + 1) * s; feet++) {
+      for (let feet = t.y * s + 1; feet <= (t.y + 1) * s; feet++) {
         const enters = [
           [1, 0],
           [-1, 0],
