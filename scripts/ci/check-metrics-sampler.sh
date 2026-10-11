@@ -245,14 +245,40 @@ grep -qF "cadence liveness unreadable" "$STALE_FINDINGS" && fail "the stale find
 ok "a stale sample files one finding carrying the live cadence liveness"
 
 # --- (h) a host restart leaves no stale connection row -----------------------
-# Kill the server with the subscriber still attached, restart it on the same
-# data dir: the host must disconnect the dangling client, so the table holds
-# only the true live count (zero: the subscriber is gone).
+# The subscriber stays attached while the server is stopped under it, so the
+# row it holds can only be removed by the host: at shutdown or at launch
+# ("Disconnect dangling clients"). It is asserted present immediately before
+# the stop, so the proof cannot pass on a table that was already empty; the
+# subscriber is reaped only after the server is confirmed gone, and the
+# server is restarted on the same data dir. A forced kill is not used: it
+# loses the database registration in the data dir (observed), which would
+# prove nothing about connections. Needs a graceful stop, which Windows
+# does not have for this process, so (h) runs on the CI platform only.
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    echo "check-metrics-sampler: SKIP (h) -- no graceful stop of the server on this platform; CI runs it" >&2
+    exit 0
+    ;;
+esac
+[ "$(( $(rows_of connected_client) - READER ))" -ge 1 ]   || fail "no connected_client row for the subscriber just before the restart: the proof would be vacuous"
+# `spacetime start` is a wrapper: stop the listener on the port as well.
+stop_instance() { # <signal>
+  local pids p
+  kill "-$1" "$START_PID" 2>/dev/null
+  if command -v lsof >/dev/null 2>&1; then
+    pids="$(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null)"
+  elif command -v fuser >/dev/null 2>&1; then
+    pids="$(fuser "$PORT/tcp" 2>/dev/null)"
+  fi
+  for p in $pids; do kill "-$1" "$p" 2>/dev/null; done
+}
+stop_instance TERM
+bc_stop_spacetime_confirmed "$START_PID" "$SERVER_URL" 20 || {
+  stop_instance KILL
+  bc_stop_spacetime_confirmed "$START_PID" "$SERVER_URL" 20 || fail "the server did not stop"
+}
 kill "$SUB_PID" 2>/dev/null
 SUB_PID=""
-
-bc_stop_spacetime "$START_PID"
-sleep 3
 START_PID="$(bc_start_spacetime "$DATA_DIR/data" "$PORT" "$START_LOG")"
 bc_wait_spacetime_healthy "$SERVER_URL" "$HEALTH_DEADLINE_S"   || fail "SpacetimeDB did not become healthy after the restart" "$START_LOG"
 WAITED=0
