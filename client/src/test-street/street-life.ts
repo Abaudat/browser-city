@@ -44,6 +44,10 @@ export interface LifeMember {
   index: number;
 }
 
+/** What agreement needs of a citizen whether or not it has a body: its id,
+ * its ledger and how to build a fresh body. */
+export type LifeDeclared = Pick<LifeMember, "id" | "remake" | "timetable" | "stand" | "standAt">;
+
 export interface LifeSample {
   readonly id: string;
   readonly x: number;
@@ -62,7 +66,11 @@ export function standState(node: { x: number; y: number }, floor: number, facing
 export class StreetLife {
   readonly #dials: AvoidDials;
   readonly #walk: Walkability;
+  /** Citizens with a body: what `solve` poses and sidesteps. */
   readonly #members: LifeMember[] = [];
+  /** Every citizen of the street, with a body or not: what `agreementAt`
+   * samples, so it never depends on who is near a viewport. */
+  readonly #declared = new Map<string, LifeDeclared>();
   readonly #field = new AvoidanceField();
   #scratch: { members: LifeMember[]; field: AvoidanceField } | undefined;
 
@@ -78,12 +86,31 @@ export class StreetLife {
     };
   }
 
-  /** Registers a citizen; returns it. */
+  /** Registers a citizen with a body; returns it. It is also declared. */
   add(member: Omit<LifeMember, "index" | "frame">): LifeMember {
     const full: LifeMember = { ...member, frame: createCitizenFrame(), index: -1 };
     this.#members.push(full);
-    this.#scratch = undefined;
+    this.declare(full);
     return full;
+  }
+
+  /** Declares a citizen that may never have a body: it is sampled for
+   * agreement only. */
+  declare(entry: LifeDeclared): void {
+    this.#declared.set(entry.id, {
+      id: entry.id,
+      remake: entry.remake,
+      timetable: entry.timetable,
+      stand: entry.stand,
+      standAt: entry.standAt,
+    });
+    this.#scratch = undefined;
+  }
+
+  /** Drops a body: it stops being posed and sidestepped; it stays declared. */
+  remove(member: LifeMember): void {
+    const i = this.#members.indexOf(member);
+    if (i >= 0) this.#members.splice(i, 1);
   }
 
   get members(): readonly LifeMember[] {
@@ -114,7 +141,7 @@ export class StreetLife {
   agreementAt(t: number): readonly LifeSample[] {
     if (!this.#scratch) {
       this.#scratch = {
-        members: this.#members.map((m) => ({
+        members: [...this.#declared.values()].map((m) => ({
           ...m,
           ...m.remake(),
           frame: createCitizenFrame(),

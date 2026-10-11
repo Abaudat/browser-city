@@ -544,6 +544,30 @@ export function westOpenSpotRoute(): readonly StreetWalkSegment[] {
   ];
 }
 
+/** Story 5.3: a square on the open pavement -- up, left, down, right -- for
+ * the player's-body e2e. Each leg is relative to where the last one rested. */
+export function playerBodySquareRoute(): readonly StreetWalkSegment[] {
+  const base = westOpenSpotRoute();
+  const rest = simulateStreetWalk(base).at(-1)?.state;
+  if (!rest) throw new Error("player-body-square: the base route did not walk");
+  const side = 1.5;
+  return [
+    ...base,
+    { label: "square-up", key: "ArrowUp", until: { kind: "y-at-most", value: rest.y - 0.5 } },
+    {
+      label: "square-left",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: rest.x - side },
+    },
+    { label: "square-down", key: "ArrowDown", until: { kind: "y-at-least", value: rest.y } },
+    {
+      label: "square-right",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: rest.x },
+    },
+  ];
+}
+
 /** Story 15.15: the walk down and back up the subway stairs, along both
  * edges of the tread path, for the flight-offset e2e. The south edge is the
  * near railing's face; the north edge is walked at the first row the route
@@ -634,6 +658,7 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     { name: "bridge-lap", segments: streetBridgeLapRoute(), start: afterStreetWalk },
     { name: "bin-reach", segments: binReachRoute(), start: fresh },
     { name: "west-open-spot", segments: westOpenSpotRoute(), start: fresh },
+    { name: "player-body-square", segments: playerBodySquareRoute(), start: fresh },
     { name: "railing-foot", segments: railingFootRoute(), start: fresh },
     { name: "flight-walk", segments: flightWalkRoute(), start: fresh },
     { name: "footbridge-walk", segments: streetFootbridgeRoute(inputs), start: fresh },

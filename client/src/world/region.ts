@@ -126,3 +126,8 @@ export function planRegion(held: Iterable<HandleKey>, centre: RegionCentre): Reg
   );
   return { subscribe, release };
 }
+
+/** Cells beyond the spawn rect a body is kept before it despawns. Spatial
+ * only: there is no timer. `region.test.ts` and `body-zone.test.ts` hold
+ * spawn margin + this + the footprint inside the held region. */
+export const BODY_DESPAWN_HYSTERESIS_CELLS = 4;

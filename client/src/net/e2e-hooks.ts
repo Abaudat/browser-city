@@ -48,6 +48,8 @@ declare global {
        * it stays 0 for the whole stale-defs window before the scene
        * mounts at all. */
       frameCount?: number;
+      /** Story 5.3: what the local player's body is drawing now. */
+      playerBody?: { animation: string; direction: string; frameIndex: number };
       /** Story 4.4 (FR138): the other players as this page draws them. */
       remotePlayers?: {
         /** Where each drawn remote player is, by character id, now. */
@@ -581,6 +583,23 @@ export function recordRegionRowForE2e(
   bucket.region = region;
   const id = `${table}:${String(Object.values(row)[0])}`;
   region[kind][id] = (region[kind][id] ?? 0) + 1;
+  window.__bc = bucket;
+}
+
+/** Story 5.3: the local player's body frame, written from the scene's own
+ * ticker. */
+export function recordPlayerBodyForE2e(frame: {
+  readonly animation: string;
+  readonly direction: string;
+  readonly frameIndex: number;
+}): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.playerBody = {
+    animation: frame.animation,
+    direction: frame.direction,
+    frameIndex: frame.frameIndex,
+  };
   window.__bc = bucket;
 }
 
