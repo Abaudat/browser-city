@@ -58,6 +58,8 @@ bash agentic-team/scripts/bc-pr.sh open <issue> "<title>" <bodyfile>
 
 `<bodyfile>` is your PR description — the assumptions you made and the consistency gate result.
 
+Merging the PR closes the issue, always, so the PR does the whole issue: never change the `Closes #<issue>` the script writes to `Refs #<issue>`, and never leave a step of the issue for after the merge.
+
 ### Screenshots
 
 When your task has anything on screen, or a lead's direction asks for screenshots, attach them. The leads review from what's on screen.

@@ -14,6 +14,12 @@ with no debug overlay, console or dev tool, can see or do it:
 and `reject` a declaration that is false of the PR: `none` for work that is
 visible, or `visible` for work a player cannot reach.
 
+Merging this PR closes issue #{{issue}}, always: an issue never stays open
+after its PR merges. So never ask for `Refs #{{issue}}` in place of
+`Closes #{{issue}}`, or for the issue to be left open for later. If the issue's
+work is not finished — a cause not yet established, a step not yet done —
+that is a `reject` naming what is still missing, and this PR carries it.
+
 Decide, from your area of ownership only, whether this PR is good to merge.
 Never ask questions; decide and note assumptions directly in your comment.
 

@@ -21,7 +21,7 @@ usage: bc-pr.sh <command> [args]
   open <issue> <title> <bodyfile>  -- open a PR from the cwd's current branch (Crew)
   attach <image>...                 -- upload images for the cwd's branch and HEAD, print markdown (Crew)
   merge <pr>                        -- squash-merge and delete the branch
-  for-issue <issue>                 -- {"number":n,"head":"<sha>"} of the open PR closing it
+  for-issue <issue>                 -- {"number":n,"head":"<sha>"} of the open PR on its issue-<n> branch
   head <pr>                         -- the PR's current head sha
   ci-status <pr>                    -- "success" | "failure" | "pending" for $BC_REQUIRED_CHECK on its head
   ci-run-url <pr>                    -- the $BC_REQUIRED_CHECK run's html_url, empty if none

@@ -96,14 +96,22 @@ gh_pr_list_open() { # -> JSON array of open PRs
     --json number,title,headRefOid,body,labels 2>/dev/null
 }
 
-gh_pr_for_issue() { # <issue-n> -> {number, headRefOid} of the PR that closes it, or nothing
+gh_pr_for_issue() { # <issue-n> -> {number, headRefOid} of the open PR for it, or nothing
   [ -n "${BC_FAKE:-}" ] && { bc_fake_read gh_pr_for_issue "$1"; return; }
+  # The issue's PR is the one on its worktree's branch: `bc-session.sh`
+  # names the worktree issue-<n>, and Orca prefixes the branch with the
+  # user (Abaudat/issue-430). The body is not the link: the leads may ask for
+  # `Refs #<n>` instead of `Closes #<n>`, and that must not lose the PR. A PR
+  # opened off-branch by hand is still found by its `Closes #<n>`.
   local out
-  out="$("$GH" pr list --repo "$BC_REPO" --state open \
-    --search "\"Closes #$1\" in:body" \
-    --json number,headRefOid 2>/dev/null)" || return 1
-  [ "$(printf '%s' "$out" | "$JQ" 'length')" -gt 0 ] || return 1
-  printf '%s' "$out" | "$JQ" -c '.[0]'
+  out="$("$GH" pr list --repo "$BC_REPO" --state open --limit 200     --json number,headRefOid,headRefName 2>/dev/null)" || return 1
+  out="$(printf '%s' "$out" | "$JQ" -c --arg b "issue-$1"     '[.[] | select(.headRefName == $b or (.headRefName | endswith("/" + $b)))] | .[0] // empty')"
+  if [ -z "$out" ]; then
+    out="$("$GH" pr list --repo "$BC_REPO" --state open       --search "\"Closes #$1\" in:body"       --json number,headRefOid 2>/dev/null)" || return 1
+    out="$(printf '%s' "$out" | "$JQ" -c '.[0] // empty')"
+  fi
+  [ -n "$out" ] || return 1
+  printf '%s' "$out" | "$JQ" -c '{number, headRefOid}'
 }
 
 gh_pr_head() { # <pr> -> current head SHA
