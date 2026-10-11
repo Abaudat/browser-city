@@ -12,10 +12,10 @@ id = 26
 key = "bed_single_blue"
 name = "Single Bed (blue)"
 layer = "furniture"
-sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_140.png", x = 0, y = 6, w = 16, h = 32 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_140.png", x = 0, y = 0, w = 16, h = 48 }
 width = 1
-height = 2
-collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 32 }
+height = 3
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 38 }
 tags = ["bed", "indoor", "fixture"]
 
 [[object]]
@@ -23,10 +23,10 @@ id = 27
 key = "bed_single_white"
 name = "Single Bed (white)"
 layer = "furniture"
-sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_147.png", x = 0, y = 6, w = 16, h = 32 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_147.png", x = 0, y = 0, w = 16, h = 48 }
 width = 1
-height = 2
-collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 32 }
+height = 3
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 38 }
 tags = ["bed", "indoor", "fixture"]
 
 [[object]]
