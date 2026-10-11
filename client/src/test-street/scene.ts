@@ -44,7 +44,6 @@ import {
   countBoundAtlasPages,
 } from "../render/atlas-pages";
 import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "../render/camera";
-import { buildFlights, FlightIndex } from "../render/flight-offset";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName, passOfLayer } from "../render/layer-table";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -56,9 +55,11 @@ import { fromSortUnits, toSortUnits } from "../render/sort-units";
 import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
 import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
+import { buildFlights, FlightIndex } from "../world/flights";
 import {
   type FloorWalkResult,
   initialFloorWalkState,
+  type PlayerStep,
   stepAndTransition,
 } from "../world/floor-walk";
 import { bodyRect, type MovementConfig } from "../world/movement";
@@ -102,7 +103,7 @@ import {
 import {
   mountRemotePlayersLayer,
   type RemotePlayersLayer,
-  type RemotePlayersWiring,
+  type RemotePlayersSource,
 } from "./remote-players-layer";
 import { lifeDialsFor, StreetLife } from "./street-life";
 import { Timetable } from "./timetable";
@@ -205,10 +206,14 @@ export interface MountStreetSceneOptions {
    * client-side and immediate, FR137) -- unlike `onOrderChange`, this is
    * polled every frame on purpose. */
   readonly onPlayerMove?: (x: number, y: number, floor: number) => void;
+  /** Every walked step of the player: the state it started from, the held
+   * direction and frame time it was resolved with, and where it ended (a
+   * DEV build's e2e step log, story 15.21). */
+  readonly onPlayerStep?: (step: PlayerStep) => void;
   /** Story 4.4 (FR138): where the other players come from. Absent means
    * none are drawn (a DEV build's isolation switch; always present in a
    * production build). */
-  readonly remotePlayers?: RemotePlayersWiring;
+  readonly remotePlayers?: RemotePlayersSource;
   /** Story 1.13 (NFR2): how long this scene's own ticker callback took,
    * in ms, every frame it runs -- the frame *work* the perf harness
    * gates on, never a rAF interval. One call per frame into a sink that
@@ -778,6 +783,7 @@ export async function mountStreetScene(
     thresholdDefIds,
     onOrderChange,
     onPlayerMove,
+    onPlayerStep,
     remotePlayers: remotePlayersWiring,
     onFrameWork,
     onVisibilityChange,
@@ -1225,13 +1231,8 @@ export async function mountStreetScene(
   // The flights, validated against the real grid: every standable far-end
   // cell of a flight is an anchor, or the mount throws.
   flights = new FlightIndex(
-    buildFlights(
-      STREET_TRANSITIONS,
-      placedRows,
-      objectDefs,
-      storeyHeightPx,
-      tileSizePx,
-      (x, y, floor) => isCellStandable(worldIndex, movementConfig, x, y, floor),
+    buildFlights(STREET_TRANSITIONS, placedRows, objectDefs, tileSizePx, (x, y, floor) =>
+      isCellStandable(worldIndex, movementConfig, x, y, floor),
     ),
     movementConfig,
   );
@@ -1655,9 +1656,29 @@ export async function mountStreetScene(
 
     const before = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
     const floorBefore = walk.floor;
-    walk = stepAndTransition(walk, direction, deltaMS, worldIndex, movementConfig, transitions);
+    const stepFrom = walk;
+    walk = stepAndTransition(
+      walk,
+      direction,
+      deltaMS,
+      worldIndex,
+      movementConfig,
+      transitions,
+      flights,
+    );
 
     onPlayerMove?.(walk.x, walk.y, walk.floor);
+    onPlayerStep?.({
+      fromX: stepFrom.x,
+      fromY: stepFrom.y,
+      fromFloor: stepFrom.floor,
+      dirX: direction.x,
+      dirY: direction.y,
+      deltaMs: deltaMS,
+      toX: walk.x,
+      toY: walk.y,
+      toFloor: walk.floor,
+    });
 
     updateCharacterDrawable(playerDrawable, walk.x, walk.y, walk.floor);
     playerFlightOffsetPx = flights.offsetPx(walk.x, walk.y, walk.floor);
@@ -1770,7 +1791,10 @@ export async function mountStreetScene(
         tileSizePx,
         storeyHeightPx,
         ZOOM,
-        remotePlayersWiring,
+        {
+          ...remotePlayersWiring,
+          drawnDistance: (x, y, floor, dx, dy) => flights.drawnDistance(x, y, floor, dx, dy),
+        },
       )
     : undefined;
   // Story 1.14 (NFR1): the atlas term's own end -- every texture this

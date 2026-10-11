@@ -880,7 +880,7 @@ viewer's own must never sort as though it were on that floor because of
 it.
 
 An actor on a flight is drawn with a flight offset
-(`render/flight-offset.ts`), a pure function of its position. A flight is
+(`world/flights.ts`), a pure function of its position. A flight is
 the footprint of the placed object under a `floor_transition` anchor whose
 def declares a `flight` (`flight.drop_px`, `flight.from_px`,
 `flight.to_px`; JSON-only). The offset is zero at `flight.from_px` and
@@ -895,8 +895,12 @@ with no anchor. A flight may be undrawn (`sprite` omitted; `defs-build` allows
 it only with a `flight`, no collider and the `underfoot` tag) when its treads
 are drawn as their own rows on the lower floor, so a climber is drawn over
 them: floor N+1 is drawn after all of floor N. It is summed
-with the floor offset inside `worldPointPx` and exists nowhere else: not
-in the sort key, collision, walk state or picking.
+with the floor offset inside `worldPointPx`. The flight's ramp also scales the
+walked step (`FlightIndex.stepScale`, applied piecewise along the step and
+passed by `stepAndTransition` to `step` as `speedScale`) so the step's drawn
+path keeps walking pace (FR183), and the walk frame is fed the drawn-surface
+distance (`FlightIndex.drawnDistance`); neither reaches the sort key,
+collision or picking.
 
 Only a test-street row with no `object_def` reads its art straight out of
 the repo-root `ModernTileset/` at runtime (`new URL(..., import.meta.url)`
@@ -1562,10 +1566,13 @@ own `defs/` comment; a `from_balance` refusal alongside one is a
 config-consistency (loosening) guard, never a generator worst-case
 claim.
 
-The detour-bounds sweep and the exhaustive detour loop pasted into
-`docs/generation.md` carry the `GENERATION_VERSION` and the fingerprint of
-the `generation.*` balance rows they were measured under; `bounds` fails
-on a mismatch of either.
+Every measured generation figure lives only in a stamped block of
+`docs/generation.md` whose label is in
+`bounds::generation_stamp::MEASURED_BLOCKS`. The stamp carries the
+`GENERATION_VERSION` and a fingerprint of the generation balance rows, the
+rules and the building types. Three gates: a pass change without a
+version bump fails the goldens, a version bump fails the stamps, a retune
+fails the fingerprint.
 
 Pass 2's own junction registry enforces one specific case: where two
 *different* streets each cross the same third street (a staggered

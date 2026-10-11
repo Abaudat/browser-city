@@ -19,8 +19,9 @@
 // generator-reachable case, not a fixture curiosity).
 
 import type { CollisionGridQuery } from "./collision-grid";
+import type { FlightIndex } from "./flights";
 import type { MovementConfig, Vec2 } from "./movement";
-import { bodyCell, step } from "./movement";
+import { bodyCell, MAX_DELTA_MS, step } from "./movement";
 import type { TransitionIndex } from "./transitions";
 
 /** The walker's own state between steps: continuous position, floor, and
@@ -43,6 +44,19 @@ export interface FloorWalkResult extends FloorWalkState {
    * `floor` itself, which stays correct even for a transition whose
    * target floor happens to equal its anchor floor. */
   readonly transitioned: boolean;
+}
+
+/** One resolved walk step of the player (story 15.21's e2e step log). */
+export interface PlayerStep {
+  readonly fromX: number;
+  readonly fromY: number;
+  readonly fromFloor: number;
+  readonly dirX: number;
+  readonly dirY: number;
+  readonly deltaMs: number;
+  readonly toX: number;
+  readonly toY: number;
+  readonly toFloor: number;
 }
 
 /** The initial `FloorWalkState` for a fixed starting position -- computes
@@ -71,8 +85,27 @@ export function stepAndTransition(
   grid: CollisionGridQuery,
   config: MovementConfig,
   transitions: TransitionIndex,
+  flights: FlightIndex,
 ): FloorWalkResult {
-  const next = step({ x: state.x, y: state.y }, inputDir, deltaMs, grid, state.floor, config);
+  // The flight's pace (story 15.21) scales the requested distance,
+  // piecewise along the step so a ramp's edges cost no jolt.
+  const speedScale = flights.stepScale(
+    state.x,
+    state.y,
+    state.floor,
+    inputDir.x,
+    inputDir.y,
+    Math.min(deltaMs, MAX_DELTA_MS),
+  );
+  const next = step(
+    { x: state.x, y: state.y },
+    inputDir,
+    deltaMs,
+    grid,
+    state.floor,
+    config,
+    speedScale,
+  );
   const { x: cellX, y: cellY } = bodyCell(next);
 
   if (cellX === state.cellX && cellY === state.cellY) {

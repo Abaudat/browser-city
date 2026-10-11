@@ -2487,7 +2487,7 @@
 <rect x="376" y="742" width="16" height="16" fill="#37474f"/>
 <rect x="520" y="742" width="16" height="16" fill="#37474f"/>
 <rect x="568" y="742" width="16" height="16" fill="#37474f"/>
-<text x="8" y="782" font-family="sans-serif" font-size="13" font-weight="bold">housing (and mixed use): 12 of 511 dressed interiors</text>
+<text x="8" y="782" font-family="sans-serif" font-size="13" font-weight="bold">housing (and mixed use): 12 of 515 dressed interiors</text>
 <text x="8" y="801" font-family="sans-serif" font-size="9">terrace_house 9x12</text>
 <rect x="8" y="804" width="81" height="108" fill="#37474f"/>
 <rect x="44" y="813" width="36" height="90" fill="#ffe0b2"/>
@@ -2758,54 +2758,54 @@
 <rect x="629" y="1078" width="17" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="593" y="1087" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>toilet_white</title></rect>
 <rect x="594" y="1087" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<text x="776" y="1003" font-family="sans-serif" font-size="9">cottage 8x10</text>
-<rect x="776" y="1006" width="72" height="90" fill="#37474f"/>
-<rect x="785" y="1015" width="54" height="36" fill="#ffe0b2"/>
-<rect x="821" y="1060" width="18" height="27" fill="#ffe0b2"/>
-<rect x="785" y="1060" width="27" height="27" fill="#ffe0b2"/>
-<rect x="803" y="1006" width="9" height="9" fill="#ffeb3b"/>
-<rect x="830" y="1051" width="9" height="9" fill="#ffffff"/>
-<rect x="794" y="1051" width="9" height="9" fill="#ffffff"/>
-<rect x="794" y="1015" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_dark</title></rect>
-<rect x="794" y="1015" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="812" y="1015" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="812" y="1015" width="8" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="803" y="1024" width="18" height="18" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
-<rect x="805" y="1028" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="803" y="1060" width="9" height="9" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="803" y="1060" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="821" y="1060" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="821" y="1060" width="8" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="785" y="1060" width="9" height="18" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
-<rect x="785" y="1060" width="9" height="12" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="821" y="1078" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>toilet_white</title></rect>
-<rect x="822" y="1078" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="830" y="1078" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin</title></rect>
-<rect x="831" y="1079" width="5" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<text x="968" y="1003" font-family="sans-serif" font-size="9">villa 8x8</text>
-<rect x="968" y="1006" width="72" height="72" fill="#37474f"/>
-<rect x="977" y="1015" width="27" height="54" fill="#ffe0b2"/>
-<rect x="1013" y="1042" width="18" height="27" fill="#ffe0b2"/>
-<rect x="1013" y="1015" width="18" height="18" fill="#ffe0b2"/>
-<rect x="995" y="1069" width="9" height="9" fill="#ffeb3b"/>
-<rect x="1004" y="1060" width="9" height="9" fill="#ffffff"/>
+<text x="776" y="1003" font-family="sans-serif" font-size="9">cottage 9x8</text>
+<rect x="776" y="1006" width="81" height="72" fill="#37474f"/>
+<rect x="785" y="1015" width="36" height="54" fill="#ffe0b2"/>
+<rect x="830" y="1015" width="18" height="27" fill="#ffe0b2"/>
+<rect x="830" y="1051" width="18" height="18" fill="#ffe0b2"/>
+<rect x="812" y="1006" width="9" height="9" fill="#ffeb3b"/>
+<rect x="821" y="1015" width="9" height="9" fill="#ffffff"/>
+<rect x="821" y="1060" width="9" height="9" fill="#ffffff"/>
+<rect x="794" y="1015" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
+<rect x="794" y="1015" width="8" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="839" y="1015" width="9" height="9" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
+<rect x="839" y="1015" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="785" y="1033" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_dark</title></rect>
+<rect x="785" y="1033" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="830" y="1033" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin</title></rect>
+<rect x="831" y="1034" width="5" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="839" y="1033" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>toilet_white</title></rect>
+<rect x="840" y="1033" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="794" y="1033" width="18" height="18" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
+<rect x="796" y="1037" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="830" y="1051" width="9" height="9" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
+<rect x="830" y="1051" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="839" y="1051" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact</title></rect>
+<rect x="839" y="1051" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<text x="968" y="1003" font-family="sans-serif" font-size="9">villa 8x10</text>
+<rect x="968" y="1006" width="72" height="90" fill="#37474f"/>
+<rect x="977" y="1015" width="27" height="72" fill="#ffe0b2"/>
+<rect x="1013" y="1060" width="18" height="27" fill="#ffe0b2"/>
+<rect x="1013" y="1015" width="18" height="36" fill="#ffe0b2"/>
+<rect x="995" y="1087" width="9" height="9" fill="#ffeb3b"/>
+<rect x="1004" y="1069" width="9" height="9" fill="#ffffff"/>
 <rect x="1004" y="1024" width="9" height="9" fill="#ffffff"/>
 <rect x="986" y="1015" width="9" height="9" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="986" y="1015" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1013" y="1015" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact</title></rect>
-<rect x="1013" y="1015" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1022" y="1015" width="9" height="9" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="1022" y="1015" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="977" y="1033" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_dark</title></rect>
-<rect x="977" y="1033" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1013" y="1042" width="9" height="9" fill="#00acc1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>toilet_cream</title></rect>
-<rect x="1014" y="1042" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1022" y="1042" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="1022" y="1042" width="8" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="977" y="1042" width="18" height="18" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
-<rect x="979" y="1046" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1022" y="1060" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin</title></rect>
-<rect x="1023" y="1061" width="5" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1022" y="1015" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
+<rect x="1022" y="1015" width="8" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1022" y="1033" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact</title></rect>
+<rect x="1022" y="1033" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="977" y="1042" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_dark</title></rect>
+<rect x="977" y="1042" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="986" y="1051" width="9" height="9" fill="#e53935" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_stool</title></rect>
+<rect x="986" y="1051" width="9" height="8" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1013" y="1060" width="9" height="9" fill="#00acc1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>toilet_cream</title></rect>
+<rect x="1014" y="1060" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1022" y="1060" width="9" height="9" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
+<rect x="1022" y="1060" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1013" y="1078" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin</title></rect>
+<rect x="1014" y="1079" width="5" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="8" y="1232" font-family="sans-serif" font-size="13" font-weight="bold">commercial workplaces: 12 of 177 dressed interiors</text>
 <text x="8" y="1251" font-family="sans-serif" font-size="9">hairdresser 11x10</text>
 <rect x="8" y="1254" width="99" height="90" fill="#37474f"/>

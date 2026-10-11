@@ -1,4 +1,4 @@
-version=12
+version=13
 seed=1 regions=res:2,com:1,ind:1,inst:3 nodes=116 edges=170 blocks=83 dead_ends=0 max_detour_pct=167 p99_detour_pct=145 density_rings=[79, 54, 24] plots=908 open_plots=28 envelopes_placed=880 envelopes_rejected=0 types_placed=880 distinct_types=6 enterable=874 shells=0 interiors_rejected=6 props=44772 count_ok=true digest=000c71c303389354
 seed=2 regions=res:2,com:1,ind:2,inst:3 nodes=121 edges=178 blocks=88 dead_ends=0 max_detour_pct=119 p99_detour_pct=136 density_rings=[80, 51, 22] plots=919 open_plots=31 envelopes_placed=888 envelopes_rejected=0 types_placed=888 distinct_types=6 enterable=883 shells=0 interiors_rejected=5 props=44548 count_ok=true digest=45ae7a1b95c0c94b
 seed=3 regions=res:2,com:1,ind:1,inst:3 nodes=124 edges=183 blocks=92 dead_ends=0 max_detour_pct=141 p99_detour_pct=131 density_rings=[79, 54, 24] plots=914 open_plots=29 envelopes_placed=885 envelopes_rejected=0 types_placed=885 distinct_types=6 enterable=884 shells=0 interiors_rejected=1 props=43506 count_ok=true digest=c78c764a719da39d

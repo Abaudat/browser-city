@@ -1872,7 +1872,7 @@ export function streetBridgeLapRoute(): readonly StreetWalkSegment[] {
 
 /**
  * Story 15.19: up and back down the footbridge's flight at each of its two
- * columns, for the flight-offset e2e. From the lamppost east to the entrance,
+ * columns, for the flight e2e. From the lamppost east to the entrance,
  * a still beside the stairs' abutment, then the foot row: up the west column
  * with a reversal on the street flight, over the cut and back down it by the
  * deck flight, then up the east column, along the deck to its west end and

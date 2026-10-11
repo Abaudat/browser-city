@@ -27,7 +27,6 @@ import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
-import { buildFlights, FlightIndex } from "../../src/render/flight-offset";
 import { worldPointPx } from "../../src/render/screen-position";
 import {
   BRIDGE_DECK_Y,
@@ -55,6 +54,9 @@ import {
   streetPlacedRows,
   streetSubwayApproachRoute,
 } from "../../src/test-street/fixture";
+import { buildFlights, FlightIndex } from "../../src/world/flights";
+import { initialFloorWalkState, stepAndTransition } from "../../src/world/floor-walk";
+import { MAX_DELTA_MS } from "../../src/world/movement";
 import {
   STREET_VISIBILITY_AT_LAMPPOST_OUTSIDE,
   STREET_VISIBILITY_AT_REST_IN_SHOP_A,
@@ -67,10 +69,13 @@ import {
   propCells,
   shopfrontExitRestY,
   stairwellRowsAt,
+  streetFlightIndex,
   streetMovementConfig,
   streetObjectSources,
   streetStandable,
+  streetTransitionIndex,
   streetWalkInputs,
+  streetWorldIndex,
 } from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
 import { SCREENSHOT_OPTIONS } from "./screenshot-support";
@@ -471,7 +476,7 @@ test.describe("story 15.13: the street stairwell's draw order, mounted", () => {
 });
 
 // Story 15.15 (FR182): the flight offset, mounted. The maths is proved in
-// `tests/unit/render/flight-offset*.test.ts`; this proves the wiring -- the
+// `tests/unit/world/flights*.test.ts`; this proves the wiring -- the
 // mounted sprite sits at the pure function's own value, and the camera stays
 // on it, on every frame of a real walk down and back up the subway stairs.
 // The recording (at the page's own size) and the stills go to a directory CI
@@ -506,7 +511,6 @@ test.describe("story 15.15: the flight offset, mounted", () => {
       STREET_TRANSITIONS,
       streetPlacedRows(),
       streetObjectSources(),
-      storey,
       tile,
       streetStandable,
     );
@@ -656,14 +660,15 @@ test.describe("story 15.15: the flight offset, mounted", () => {
   });
 });
 
-// Story 15.19 (FR182): the footbridge's flight, mounted. The cut and the
-// maths are proved in `tests/unit/render/flight-offset.test.ts`; this proves
+// Story 15.19 (FR182), 15.21 (FR183): the footbridge's flight, mounted. The cut and the
+// maths are proved in `tests/unit/world/flights.test.ts` and
+// `tests/unit/world/flight-pace.test.ts`; this proves
 // the wiring on every frame of a real walk up the flight, along the deck and
 // down again, at each column: the sprite sits at the pure function's value,
 // nothing pops on one floor, and the camera, the floor and the deck's
 // culling stay in step. The recording (at the page's own size) and the stills
 // go to a directory CI uploads straight after the e2e step, for review.
-const BRIDGE_SHOT_DIR = "test-results/review-shots/story-15.19";
+const BRIDGE_SHOT_DIR = "test-results/review-shots/story-15.21";
 
 interface FootbridgeSample {
   x: number;
@@ -688,7 +693,6 @@ test.describe("story 15.19: the footbridge flights, mounted", () => {
       STREET_TRANSITIONS,
       streetPlacedRows(),
       streetObjectSources(),
-      storey,
       tile,
       streetStandable,
     );
@@ -726,6 +730,9 @@ test.describe("story 15.19: the footbridge flights, mounted", () => {
         const w = window as unknown as { __flightSamples: unknown[]; __flightStop: boolean };
         w.__flightSamples = [];
         w.__flightStop = false;
+        const bucket = window.__bc ?? { pings: [] };
+        bucket.playerSteps = [];
+        window.__bc = bucket;
         const sample = () => {
           const bc = window.__bc;
           const pos = bc?.playerPosition;
@@ -782,6 +789,47 @@ test.describe("story 15.19: the footbridge flights, mounted", () => {
         () => (window as unknown as { __flightSamples: FootbridgeSample[] }).__flightSamples,
       );
       expect(samples.length).toBeGreaterThan(100);
+
+      // Story 15.21: the wiring. Every step the scene resolved, replayed with
+      // the frame time and direction it was resolved with against the pure
+      // walk and the street's own flights, lands where the scene put the
+      // player; a scene that paced nothing (or paced with an empty index)
+      // fails on the first step on a ramp.
+      const steps = await page.evaluate(
+        () => (window.__bc?.playerSteps ?? []) as import("../../src/world/floor-walk").PlayerStep[],
+      );
+      expect(steps.length).toBeGreaterThan(100);
+      const replayWorld = streetWorldIndex();
+      const replayTransitions = streetTransitionIndex();
+      const replayFlights = streetFlightIndex();
+      let pacedSteps = 0;
+      for (const [n, st] of steps.entries()) {
+        const replay = stepAndTransition(
+          initialFloorWalkState(st.fromX, st.fromY, st.fromFloor),
+          { x: st.dirX, y: st.dirY },
+          st.deltaMs,
+          replayWorld,
+          config,
+          replayTransitions,
+          replayFlights,
+        );
+        expect(replay.x, `step ${n} x`).toBeCloseTo(st.toX, 9);
+        expect(replay.y, `step ${n} y`).toBeCloseTo(st.toY, 9);
+        expect(replay.floor, `step ${n} floor`).toBe(st.toFloor);
+        if (
+          replayFlights.stepScale(
+            st.fromX,
+            st.fromY,
+            st.fromFloor,
+            st.dirX,
+            st.dirY,
+            Math.min(st.deltaMs, MAX_DELTA_MS),
+          ) < 1
+        ) {
+          pacedSteps++;
+        }
+      }
+      expect(pacedSteps, "the walk climbed ramps").toBeGreaterThan(10);
 
       const drawnOffsetPx = (s: FootbridgeSample): number => {
         const feetWorldY = (s.bounds.y + s.bounds.height - s.view.offsetY) / s.view.zoom;

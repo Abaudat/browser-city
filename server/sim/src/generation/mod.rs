@@ -43,6 +43,8 @@ pub mod envelopes;
 #[cfg(not(feature = "test-fixtures"))]
 mod envelopes;
 #[cfg(feature = "test-fixtures")]
+pub mod guards;
+#[cfg(feature = "test-fixtures")]
 pub mod interiors;
 #[cfg(not(feature = "test-fixtures"))]
 mod interiors;
@@ -104,9 +106,9 @@ pub fn rect_seed_key(r: SiteBounds) -> u64 {
 
 /// Bumped whenever any implemented pass's algorithm or seeding changes in
 /// a way that could move its output for a fixed seed -- `tests/goldens/
-/// generation_v12.golden` is keyed to this, exactly like `sim::rng::
+/// generation_v13.golden` is keyed to this, exactly like `sim::rng::
 /// RNG_VERSION`/`sim::appearance::APPEARANCE_VERSION`.
-pub const GENERATION_VERSION: u32 = 12;
+pub const GENERATION_VERSION: u32 = 13;
 
 /// Every way generation itself can fail, across every implemented pass --
 /// one type, never a `Result<_, String>` per pass.
@@ -667,7 +669,8 @@ pub struct GenerationConfig {
     /// over a fixed seed range (`0..256`), summed low-band mean area over
     /// summed high-band mean area must be at least this percent -- a
     /// density-blind network pools to ~100 (parity), this generator to
-    /// ~289 at `GENERATION_VERSION` 9 (Quentin's direction, cycle 4).
+    /// ~289 (`pooled evidence` block of `docs/generation.md`; Quentin's
+    /// direction, cycle 4).
     pub peripheral_pooled_min_ratio_percent: i32,
     /// A thin strip (short side under half the local target) may run to
     /// this percent of the target along its long side before it is cut
