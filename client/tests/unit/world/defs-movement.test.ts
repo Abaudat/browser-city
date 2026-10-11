@@ -34,7 +34,7 @@ describe("the committed walking speed", () => {
           let pos: Vec2 = { x: 0, y: 0 };
           let elapsedMs = 0;
           for (const d of deltas) {
-            pos = step(pos, { x: 1, y: 0 }, d, emptyGrid, 0, config);
+            pos = step(pos, { x: 1, y: 0 }, d, emptyGrid, 0, config, 1);
             elapsedMs += d;
             if (pos.x >= VIEWPORT_CELLS) break;
           }
@@ -86,7 +86,7 @@ describe("the committed lamppost def", () => {
     const baseCentreX = LAMPPOST_CELL.x + (collider.x0 + collider.x1) / 2 / config.subcellsPerCell;
     let pos: Vec2 = { x: baseCentreX, y: LAMPPOST_CELL.y };
     for (let i = 0; i < 200; i++) {
-      pos = step(pos, { x: 0, y: 1 }, 16, grid, 0, config);
+      pos = step(pos, { x: 0, y: 1 }, 16, grid, 0, config, 1);
     }
     const restY = LAMPPOST_CELL.y + collider.y0 / config.subcellsPerCell;
     expect(pos.y).toBeCloseTo(restY, 9);
@@ -102,7 +102,7 @@ describe("the committed lamppost def", () => {
     const clearX = LAMPPOST_CELL.x + (collider.x0 - halfWidth) / config.subcellsPerCell;
     let pos: Vec2 = { x: clearX, y: LAMPPOST_CELL.y };
     for (let i = 0; i < 200; i++) {
-      pos = step(pos, { x: 0, y: 1 }, 16, grid, 0, config);
+      pos = step(pos, { x: 0, y: 1 }, 16, grid, 0, config, 1);
     }
     // Walked clean past the whole cell the lamppost occupies.
     expect(pos.y).toBeGreaterThan(LAMPPOST_CELL.y + 1);

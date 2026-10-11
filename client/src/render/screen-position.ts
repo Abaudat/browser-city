@@ -48,7 +48,7 @@ export function snapToScreenPx(v: number, zoom: number): number {
  * demo, #333): every actor and every debug overlay reads a world point
  * through this one function, never a second copy of the arithmetic.
  *
- * `flightOffsetPx` is `render/flight-offset.ts`'s value for an actor on a
+ * `flightOffsetPx` is `world/flights.ts`'s value for an actor on a
  * flight (FR182); every static drawable, the crowd and every label pass `0`.
  */
 export function worldPointPx(

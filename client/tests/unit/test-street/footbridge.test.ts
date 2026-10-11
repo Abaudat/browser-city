@@ -19,7 +19,12 @@ import { pairTransitions, TransitionIndex } from "../../../src/world/transitions
 import { WorldIndex } from "../../../src/world/world-index";
 import { cellKey, reachableCells, reachableGrid } from "./reachable";
 import { REACHABLE_GRID } from "./reachable-golden";
-import { committedDefs, streetMovementConfig, streetObjectSources } from "./street-world";
+import {
+  committedDefs,
+  streetFlightIndex,
+  streetMovementConfig,
+  streetObjectSources,
+} from "./street-world";
 
 const config = streetMovementConfig();
 const sub = config.subcellsPerCell;
@@ -95,7 +100,7 @@ describe("the footbridge flight on the real grid (FR117)", () => {
             { x: -1, y: 0 },
             { x: 1, y: 0 },
           ]) {
-            const next = step({ x, y }, dir, 16, world, row.floor, config);
+            const next = step({ x, y }, dir, 16, world, row.floor, config, 1);
             const nextCell = bodyCell(next);
             const walkedInto = cellKey(row.floor, nextCell.x, nextCell.y);
             const changedCell = nextCell.x !== here.x || nextCell.y !== here.y;
@@ -106,6 +111,7 @@ describe("the footbridge flight on the real grid (FR117)", () => {
               world,
               config,
               transitions,
+              streetFlightIndex(),
             );
             const intoAnchor = changedCell && anchors.has(walkedInto);
             if (intoAnchor) entered++;

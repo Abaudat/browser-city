@@ -118,7 +118,7 @@ function assertRestNeverPenetrates(codec: Codec): number {
         // A start inside a collider is no resting place `step` produced.
         fc.pre(!colliders.some((c) => overlaps(bodyRect(pos, CONFIG), c)));
         for (const { dx, dy, ms } of inputs) {
-          const next = step(pos, { x: dx, y: dy }, ms, grid, 0, CONFIG);
+          const next = step(pos, { x: dx, y: dy }, ms, grid, 0, CONFIG, 1);
           const wanted = CONFIG.walkSpeedCellsPerMs * Math.min(ms, 100);
           if (
             (dx !== 0 || dy !== 0) &&

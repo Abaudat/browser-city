@@ -158,6 +158,7 @@ Every functional and non-functional requirement for BrowserCity, one line each. 
 - **FR123** — Depth sorting uses the key (y, layer_rank, x, object_id) over one y-sorted pool after three flat passes; objects are never sliced
 - **FR124** — Floor is a vertical screen offset, not a sort key
 - **FR182** — On stairs and ramps, a character's floor offset is applied gradually along the walked path, following the drawn surface, and never moves the character off it. Where the art shows less than a full storey, the remainder is taken at the floor change
+- **FR183** — On stairs and ramps, a character's pace along the drawn surface stays a walking pace, so the time to cross a flight is the time to walk its treads and risers, and a flight that shows a storey takes a storey's worth of steps longer than the ground it covers. What the art does not show (FR182) is neither drawn nor walked. Movement stays continuous (FR149): no change in speed is visible at either end of a flight
 - **FR125** — Multi-cell props decompose into per-cell drawables, each with its own anchor
 - **FR126** — Tilemap rows are placed object instances at their anchor cell; a multi-cell prop is one row and extent comes from `object_def`
 - **FR127** — Object footprints are capped at approximately 8x8; larger structures compose from multiple objects
