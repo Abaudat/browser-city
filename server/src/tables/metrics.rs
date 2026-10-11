@@ -24,10 +24,17 @@
 //! each fire writes one `reducer_class_sample` row per class with the
 //! running total and the delta since the previous fire. No threshold: the
 //! first months of samples are the baseline.
+//!
+//! Gameplay metrics (FR171, FR172, story 4.14) ride the same fire: the
+//! registry is `sim::gameplay_metrics`, one `gameplay_metric_sample` row
+//! per live series per fire. `connected_client` mirrors open connections;
+//! `metric_tally` holds the period peak, boot histogram and resume
+//! counts, zeroed after each fire.
 
+use sim::gameplay_metrics::{ConnFlags, Measure, Period, Tally};
 use sim::reducer_classes::{ALL_CLASSES, ReducerClass};
 use spacetimedb::sats::bsatn;
-use spacetimedb::{ReducerContext, Table, Timestamp};
+use spacetimedb::{ConnectionId, ReducerContext, SpacetimeType, Table, Timestamp};
 
 use crate::demo_ping;
 
@@ -120,6 +127,58 @@ pub struct ReducerClassSample {
     pub calls_delta: u64,
 }
 
+/// One gameplay-metric series figure at one fire, read through its
+/// metric unit (`sim::gameplay_metrics::Unit`): `value`/`sample_size` are
+/// the count and 1, the percentile and its report count, or a numerator
+/// and its denominator. No threshold: no target exists yet.
+#[derive(Clone)]
+#[spacetimedb::table(accessor = gameplay_metric_sample)]
+pub struct GameplayMetricSample {
+    #[primary_key]
+    #[auto_inc]
+    // `pub`: `tables::restore::restore_gameplay_metric_sample` constructs this row.
+    pub sample_id: u64,
+    #[index(btree)]
+    pub sampled_at: Timestamp,
+    pub series_code: u32,
+    pub value: u64,
+    pub sample_size: u64,
+}
+
+/// One period accumulator row (`sim::gameplay_metrics::Tally`).
+#[derive(Clone)]
+#[spacetimedb::table(accessor = metric_tally)]
+pub struct MetricTally {
+    #[primary_key]
+    pub tally_key: u64,
+    pub value: u64,
+}
+
+/// One open connection. Inserted by `identity_connected`, deleted by
+/// `identity_disconnected`; the flags record which client measures the
+/// connection has reported. It carries no identity (FR142): a player is
+/// keyed on `character_id`, and nothing here needs to know who. The host
+/// calls `client_disconnected` for every dangling client at launch, and on an
+/// update that disconnects clients, so no row outlives its connection
+/// (SpacetimeDB `crates/core/src/host/host_controller.rs`, "Disconnect
+/// dangling clients").
+#[derive(Clone)]
+#[spacetimedb::table(accessor = connected_client)]
+pub struct ConnectedClient {
+    #[primary_key]
+    pub connection_id: ConnectionId,
+    pub boot_reported: bool,
+    pub resume_reported: bool,
+}
+
+/// What a client reports about itself; validated in
+/// `sim::gameplay_metrics::accept_measure`.
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientMeasure {
+    Boot { millis: u32 },
+    Resumed { outage_millis: u32 },
+}
+
 /// Counts one call to `class`. The first statement of every reducer body
 /// (`scripts/ci/check-reducer-counted.sh`), never fails: a missing counter
 /// row is created.
@@ -145,6 +204,182 @@ pub fn count_call(ctx: &ReducerContext, class: ReducerClass) {
                 sampled_calls: 0,
             });
         }
+    }
+}
+
+/// The period held in `metric_tally`; a missing row reads as zero.
+fn load_period(ctx: &ReducerContext) -> Period {
+    Period::from_tallies(Tally::all().map(|t| {
+        let value = ctx
+            .db
+            .metric_tally()
+            .tally_key()
+            .find(t.key())
+            .map_or(0, |r| r.value);
+        (t, value)
+    }))
+}
+
+/// Writes `period` back: a zero is the absence of a row, so the table
+/// holds only what accumulated.
+fn store_period(ctx: &ReducerContext, period: &Period) {
+    for (tally, value) in period.tallies() {
+        let key = tally.key();
+        let existing = ctx.db.metric_tally().tally_key().find(key);
+        match (existing, value) {
+            (Some(_), 0) => {
+                ctx.db.metric_tally().tally_key().delete(key);
+            }
+            (Some(row), v) if row.value != v => {
+                ctx.db.metric_tally().tally_key().update(MetricTally {
+                    tally_key: key,
+                    value: v,
+                });
+            }
+            (None, v) if v > 0 => {
+                ctx.db.metric_tally().insert(MetricTally {
+                    tally_key: key,
+                    value: v,
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+/// `identity_connected` write: registers the connection and lifts the
+/// period peak. Infallible.
+pub fn record_connect(ctx: &ReducerContext) {
+    let Some(connection_id) = ctx.connection_id() else {
+        return;
+    };
+    let table = ctx.db.connected_client();
+    if table.connection_id().find(connection_id).is_none() {
+        table.insert(ConnectedClient {
+            connection_id,
+            boot_reported: false,
+            resume_reported: false,
+        });
+    }
+    let mut period = load_period(ctx);
+    period.on_connect(table.count());
+    store_period(ctx, &period);
+}
+
+/// `identity_disconnected` write: deleting a missing row is a no-op, so
+/// the count cannot underflow. Infallible.
+pub fn record_disconnect(ctx: &ReducerContext) {
+    if let Some(connection_id) = ctx.connection_id() {
+        ctx.db
+            .connected_client()
+            .connection_id()
+            .delete(connection_id);
+    }
+}
+
+/// The one client-to-server measure call (NFR32 allowlist). A refusal is
+/// `Err`, so it is uncounted and writes nothing.
+#[spacetimedb::reducer]
+pub fn report_client_measure(ctx: &ReducerContext, measure: ClientMeasure) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Player);
+    let connection_id = ctx
+        .connection_id()
+        .ok_or_else(|| "no connection to report on".to_string())?;
+    let row = ctx
+        .db
+        .connected_client()
+        .connection_id()
+        .find(connection_id)
+        .ok_or_else(|| "connection is not registered".to_string())?;
+    let measure = match measure {
+        ClientMeasure::Boot { millis } => Measure::Boot { millis },
+        ClientMeasure::Resumed { outage_millis } => Measure::Resumed { outage_millis },
+    };
+    let flags = sim::gameplay_metrics::accept_measure(
+        ConnFlags {
+            boot_reported: row.boot_reported,
+            resume_reported: row.resume_reported,
+        },
+        measure,
+    )
+    .map_err(|refusal| refusal.message().to_string())?;
+    let mut period = load_period(ctx);
+    period.on_measure(measure);
+    store_period(ctx, &period);
+    ctx.db
+        .connected_client()
+        .connection_id()
+        .update(ConnectedClient {
+            boot_reported: flags.boot_reported,
+            resume_reported: flags.resume_reported,
+            ..row
+        });
+    Ok(())
+}
+
+/// One fire gameplay-metric rows: every live series once (`Period::fire`,
+/// whose exhaustive `match` is the compile-time emitter guarantee), then
+/// the next period is stored. Prunes by retention and by the table own
+/// `max_rows` before inserting.
+fn sample_gameplay_metrics(ctx: &ReducerContext, now: Timestamp) {
+    let live = ctx.db.connected_client().count();
+    let (figures, next) = load_period(ctx).fire(live);
+    let rows: Vec<GameplayMetricSample> = figures
+        .into_iter()
+        .map(|(series, value, sample_size)| GameplayMetricSample {
+            sample_id: 0,
+            sampled_at: now,
+            series_code: series.code(),
+            value,
+            sample_size,
+        })
+        .collect();
+    store_period(ctx, &next);
+
+    let cutoff = Timestamp::from_micros_since_unix_epoch(sim::storage::retention_cutoff_micros(
+        now.to_micros_since_unix_epoch(),
+    ));
+    ctx.db
+        .gameplay_metric_sample()
+        .sampled_at()
+        .delete(..cutoff);
+    drop_oldest(
+        ctx.db.gameplay_metric_sample().count(),
+        rows.len() as u64,
+        "gameplay_metric_sample",
+        |n| {
+            ctx.db
+                .gameplay_metric_sample()
+                .sampled_at()
+                .filter(Timestamp::from_micros_since_unix_epoch(i64::MIN)..)
+                .take(n)
+                .map(|r| r.sample_id)
+                .collect()
+        },
+        |id| {
+            ctx.db.gameplay_metric_sample().sample_id().delete(id);
+        },
+    );
+    for row in rows {
+        ctx.db.gameplay_metric_sample().insert(row);
+    }
+}
+
+/// Empties the gameplay-metric period state; `begin_restore` calls it
+/// (a restore does not drop connections, so `connected_client` stays).
+pub fn clear_gameplay_state(ctx: &ReducerContext) {
+    let keys: Vec<u64> = ctx.db.metric_tally().iter().map(|r| r.tally_key).collect();
+    for key in keys {
+        ctx.db.metric_tally().tally_key().delete(key);
+    }
+    let ids: Vec<u64> = ctx
+        .db
+        .gameplay_metric_sample()
+        .iter()
+        .map(|r| r.sample_id)
+        .collect();
+    for id in ids {
+        ctx.db.gameplay_metric_sample().sample_id().delete(id);
     }
 }
 
@@ -270,6 +505,9 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(storage_sample);
     sample!(reducer_class_counter);
     sample!(reducer_class_sample);
+    sample!(gameplay_metric_sample);
+    sample!(metric_tally);
+    sample!(connected_client);
 
     let total: u64 = taken
         .iter()
@@ -431,4 +669,5 @@ fn drop_oldest(
 /// the caller's re-arm and stop the cadence.
 pub fn run_sampler(ctx: &ReducerContext) {
     sample_all_tables(ctx, ctx.timestamp);
+    sample_gameplay_metrics(ctx, ctx.timestamp);
 }

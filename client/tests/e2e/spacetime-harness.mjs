@@ -224,3 +224,21 @@ function seedWorld(handle) {
   callReducer(handle, "restore_actor_location", `[${actors.join(",")}]`, String(count));
   callReducer(handle, "finish_restore");
 }
+
+/** Reads a table as the module owner through `spacetime sql`: rows of
+ * trimmed cell strings, header rows dropped. Read-only. */
+export function ownerSql(handle, query) {
+  const result = spawnSync(
+    "spacetime",
+    ["sql", "--no-config", "--server", handle.serverUrl, "--yes", handle.dbName, query],
+    { cwd: REPO_ROOT, encoding: "utf-8" },
+  );
+  if (result.status !== 0) {
+    throw new Error(`spacetime sql failed (${query}):\n${result.stdout}\n${result.stderr}`);
+  }
+  return result.stdout
+    .split("\n")
+    .slice(2)
+    .filter((line) => line.trim() !== "")
+    .map((line) => line.split("|").map((cell) => cell.trim()));
+}

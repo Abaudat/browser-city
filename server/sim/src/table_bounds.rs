@@ -435,7 +435,46 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 15_000,
         kind: BoundKind::Engineering,
     },
+    // Story 4.14: the gameplay-metrics pipeline. One generic sample table
+    // (live series x fires per day x retention), the per-period tally
+    // (one row per slot) and the live connections.
+    TableBound {
+        accessor: "gameplay_metric_sample",
+        max_rows: 2 * crate::gameplay_metrics::sample_rows_for_days(
+            crate::storage::METRICS_RETENTION_DAYS,
+        ),
+        expected_rows: crate::gameplay_metrics::sample_rows_for_days(
+            crate::storage::METRICS_RETENTION_DAYS,
+        ) / 2,
+        alert_rows: crate::gameplay_metrics::sample_rows_for_days(
+            crate::storage::METRICS_RETENTION_DAYS,
+        ),
+        kind: BoundKind::Engineering,
+    },
+    TableBound {
+        accessor: "metric_tally",
+        max_rows: crate::gameplay_metrics::TALLY_ROWS,
+        expected_rows: crate::gameplay_metrics::TALLY_ROWS,
+        alert_rows: crate::gameplay_metrics::TALLY_ROWS,
+        kind: BoundKind::Mechanical,
+    },
+    // One row per open connection: the concurrency ceiling.
+    TableBound {
+        accessor: "connected_client",
+        max_rows: 5_000,
+        expected_rows: 50,
+        alert_rows: 1_000,
+        kind: BoundKind::Engineering,
+    },
 ];
+
+/// Tables a world export never carries and a restore never touches: the
+/// restore gate and live-session state (`connected_client` mirrors open
+/// connections, which a restore does not drop; `metric_tally` is the
+/// sampler period accumulator). The one list: `world_backup not-exported`
+/// prints it for the shell scripts, `restore_coverage.rs` and
+/// `world_backup::Shape` read it directly.
+pub const NOT_EXPORTED: &[&str] = &["restore_state", "connected_client", "metric_tally"];
 
 /// The declared `max_rows` for `accessor`, if registered.
 pub fn max_rows_of(accessor: &str) -> Option<u64> {

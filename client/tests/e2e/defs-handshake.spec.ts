@@ -59,6 +59,9 @@ test("the matched-version path costs no additional round trip: exactly one non-r
       // are counted by `interest-region.spec.ts`, never here.
       const text = typeof payload === "string" ? payload : payload.toString("latin1");
       if (text.includes('"chunk_key"')) return;
+      // Story 4.14: the boot measure is the one deliberate self-report, sent
+      // once the scene is controllable -- not the handshake costing a trip.
+      if (text.includes("report_client_measure")) return;
       sentCount++;
     });
   });

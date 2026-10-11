@@ -121,7 +121,7 @@ impl Shape {
     pub fn from_snapshot(snapshot: &ModuleSchema) -> Shape {
         let mut map = BTreeMap::new();
         for t in &snapshot.tables {
-            if t.accessor == "restore_state" {
+            if sim::table_bounds::NOT_EXPORTED.contains(&t.accessor.as_str()) {
                 continue;
             }
             let mut cols: Vec<String> = t.columns.iter().map(|c| normalize_name(&c.name)).collect();

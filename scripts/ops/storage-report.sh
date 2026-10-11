@@ -109,6 +109,30 @@ paste -d'|' \
   <(column "$TMP/classes.json" calls_total) \
   <(column "$TMP/classes.json" calls_delta) >"$TMP/classes.rows"
 
+# Gameplay metrics (story 4.14): the newest fire's rows as one section,
+# `gameplay <series> <value>/<sample_size>`. Best effort and never a
+# finding: no target exists yet, "sampler stale" already covers them.
+GOLDEN="$SCRIPT_DIR/../../server/sim/tests/goldens/codes_gameplay_metrics_v1.golden"
+series_name() { # <code>
+  local n
+  n="$(awk -v c="$1" '$1 == "series" && $2 == c { print $3 }' "$GOLDEN" 2>/dev/null | tr -d '\r')"
+  echo "${n:-series_$1}"
+}
+if ( bc_sql_json "storage-report" "$DB" "${SERVER_ARGS[@]}" "SELECT * FROM gameplay_metric_sample" >"$TMP/gameplay.json" ) 2>"$TMP/gameplay-error.log"   && bc_wb row-count "$TMP/gameplay.json" >/dev/null 2>&1; then
+  paste -d'|'     <(column "$TMP/gameplay.json" sampled_at)     <(column "$TMP/gameplay.json" series_code)     <(column "$TMP/gameplay.json" value)     <(column "$TMP/gameplay.json" sample_size) >"$TMP/gameplay.rows"
+  GAMEPLAY_LINES=""
+  while IFS='|' read -r at code value size; do
+    [ "$at" = "$SAMPLED_AT" ] || continue
+    GAMEPLAY_LINES="$GAMEPLAY_LINES$(printf 'storage-report:   gameplay %s %s/%s
+' "$(series_name "$code")" "$value" "$size")"$'
+'
+  done <"$TMP/gameplay.rows"
+  [ -z "$GAMEPLAY_LINES" ] || printf '%s' "$GAMEPLAY_LINES"
+else
+  echo "storage-report: gameplay metrics unreadable" >&2
+  cat "$TMP/gameplay-error.log" >&2
+fi
+
 # Cadence liveness, one line per armed cadence (the code is
 # `cadence_code` in server/src/tables/schedules.rs), ages in seconds against
 # the same clock as the stale check. Best effort: a failed read changes the

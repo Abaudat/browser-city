@@ -38,6 +38,8 @@ check_contains "table_sample columns" "sample_id,sampled_at,table_accessor,rows,
 check_contains "cadence_liveness columns" "cadence,last_target_at,last_fired_at,fires,missed" "$(columns_of cadence_liveness)"
 check_contains "reducer_class_sample columns" "sample_id,sampled_at,class,calls_total,calls_delta" "$(columns_of reducer_class_sample)"
 
+check_contains "gameplay_metric_sample columns" "sample_id,sampled_at,series_code,value,sample_size" "$(columns_of gameplay_metric_sample)"
+
 # stub_bin <storage-rows> <table-rows> <class-rows> [fail-mode]
 stub_bin() {
   local d
@@ -46,6 +48,7 @@ stub_bin() {
   printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of table_sample)" "$2" >"$d/tables.json"
   printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of reducer_class_sample)" "${3:-[]}" >"$d/classes.json"
   printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of cadence_liveness)" "${LIVENESS:-[]}" >"$d/liveness.json"
+  printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of gameplay_metric_sample)" "${GAMEPLAY:-[]}" >"$d/gameplay.json"
   cat >"$d/spacetime" <<STUB
 #!/usr/bin/env bash
 case "${4:-}" in
@@ -53,6 +56,7 @@ case "${4:-}" in
   auth) echo "Error: 401 unauthorized" >&2; exit 0 ;;
 esac
 case "\$*" in
+  *gameplay_metric_sample*) cat "$d/gameplay.json" ;;
   *cadence_liveness*) echo liveness >>"$CALLS_LOG"; [ "${4:-}" = "liveness-fail" ] && { echo "Error: boom" >&2; exit 1; }; cat "$d/liveness.json" ;;
   *storage_sample*) cat "$d/storage.json" ;;
   *reducer_class_sample*) cat "$d/classes.json" ;;
@@ -189,6 +193,17 @@ check "class rows never breach -> exit 0" 0 bash -c "exit $CODE"
 check_contains "prints the scheduled class's total and delta" "class scheduled calls_total=5 calls_delta=5" "$OUT"
 check_contains "prints the player class" "class player calls_total=1 calls_delta=1" "$OUT"
 check "an older fire's class row is not printed" 0 lacks "$OUT" "calls_total=2 "
+
+echo
+echo "gameplay metrics are printed for the newest fire as one section, never alerted on"
+GAME='[[1,100,1,900,4],[2,100,2,1200,4],[3,100,3,2,1],[4,100,4,3,1],[5,100,5,1,2],[6,50,3,9,1]]'
+OUT="$(GAMEPLAY="$GAME" run_report '[[1,100,5000,false,false,10737418240,42949672960]]' '[]' '[]' 2>&1)"; CODE=$?
+check "gameplay rows never breach -> exit 0" 0 bash -c "exit $CODE"
+check_contains "prints boot p50 as value/sample_size" "gameplay boot_millis_p50 900/4" "$OUT"
+check_contains "prints the proportion as numerator/denominator" "gameplay reconnect_within_seam 1/2" "$OUT"
+check_contains "prints the concurrent peak" "gameplay concurrent_peak 3/1" "$OUT"
+check "an older fire's gameplay row is not printed" 0 lacks "$OUT" "concurrent_now 9/1"
+check "and writes no finding" 0 is_empty "$FINDINGS"
 
 echo
 echo "unreadable is exit 2, never a breach"

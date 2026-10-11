@@ -65,4 +65,17 @@ export type BootMarkName = (typeof BOOT_MARK)[keyof typeof BOOT_MARK];
 export function markBoot(name: BootMarkName, at?: number): void {
   if (at === undefined) performance.mark(name);
   else performance.mark(name, { startTime: at });
+  for (const listener of markListeners) listener(name);
+}
+
+const markListeners = new Set<(name: BootMarkName) => void>();
+
+/** Calls `listener` with the name of every mark `markBoot` sets from now
+ * on; returns the unsubscribe. The one way a consumer (the measure
+ * reporter, story 4.14) learns a milestone fired without a second clock. */
+export function onBootMark(listener: (name: BootMarkName) => void): () => void {
+  markListeners.add(listener);
+  return () => {
+    markListeners.delete(listener);
+  };
 }

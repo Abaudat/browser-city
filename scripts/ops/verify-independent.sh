@@ -115,7 +115,7 @@ max_expected_id() {
 # from `world_clock.epoch_at`, landing on either database after the export
 # appends rows to it alone and prunes its oldest. verify-world.sh proves them
 # forward-only (`sample-forward-diff`).
-LIVE_TABLES="cadence_liveness reducer_class_counter table_sample storage_sample reducer_class_sample"
+LIVE_TABLES="cadence_liveness reducer_class_counter table_sample storage_sample reducer_class_sample gameplay_metric_sample"
 is_live_table() { # <table>
   local t
   for t in $LIVE_TABLES; do

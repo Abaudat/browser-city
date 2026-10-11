@@ -59,6 +59,7 @@ import {
   sceneRegionFeed,
 } from "./net/e2e-hooks";
 import { beginLink, completeLinkWithIdToken, newLinkCode } from "./net/link";
+import { startMeasureReporter } from "./net/measure-reporter";
 import type { PingObservation } from "./net/observe-ping";
 import { startPositionSender } from "./net/position-sender";
 import { PROTOCOL_VERSION } from "./net/protocol-version";
@@ -199,6 +200,9 @@ async function main(): Promise<void> {
   const bodyControl = createBodyControl();
   const feedConnection = connectionReason(bodyControl);
   const moveRegion = (x: number, y: number, floor: number): void => region.moveTo(x, y, floor);
+  // Story 4.14 (FR172): the boot time and the resume outage, reported once
+  // each through the one measure call.
+  const { reporter: measureReporter } = startMeasureReporter(() => conn.current());
   // A reconnect is a new `connect()`: every caller reads the connection
   // through `conn.current()` at the moment of use, never holds one.
   const conn = superviseConnect(
@@ -208,6 +212,7 @@ async function main(): Promise<void> {
         notice.setStatus(status);
         feedConnection(status);
         senderLifecycle.setConnected(status === "connected");
+        measureReporter.setStatus(status);
         if (status === "disconnected") latch.resolveUnreachable();
       },
       onHandshake: (version) => {

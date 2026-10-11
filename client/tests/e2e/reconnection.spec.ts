@@ -9,6 +9,9 @@
 // `player_position` row through its own subscription -- what the server holds,
 // not what the player's page believes. No `waitForTimeout`: every wait is on
 // an observable condition, and `retries` stays 0.
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
@@ -16,7 +19,7 @@ import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position
 import { SHOP_COUNTER_DEF_ID, STREET_PROPS } from "../../src/test-street/fixture";
 import { committedDefs } from "../unit/test-street/street-world";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
-import { readSpacetimeHandle } from "./spacetime-harness.mjs";
+import { ownerSql, readSpacetimeHandle } from "./spacetime-harness.mjs";
 import { walkRealCells } from "./walk-support";
 
 type WebSocketRoute = Parameters<Parameters<Page["routeWebSocket"]>[1]>[0];
@@ -128,6 +131,10 @@ test.describe.configure({ mode: "serial" });
 test("a dropped connection returns by itself: the notice goes lost then reconnected, nothing reloads, the body stays put, and the sender resumes (FR140, NFR4)", async ({
   browser,
 }) => {
+  // The test spans a real outage, a 45-frame hold and a walk, with waits of
+  // its own up to 30 s: it runs 13-29 s on a CI runner (master included), so
+  // the 30 s default is its flake, not a bound it can meet.
+  test.setTimeout(45_000);
   const a = await (await browser.newContext()).newPage();
   const sockets = await openPlayer(a);
   const id = await characterId(a);
@@ -380,4 +387,93 @@ test("a laptop lid with a socket that died unseen: on resume the probe finds it 
   expect(await position(a)).toEqual(before);
 
   await context.close();
+});
+
+// Story 4.14 (FR172): the whole path from the client to the accumulators the
+// hourly sampler reads. The step from accumulators to sample row is proven
+// in `sim`; the sampler itself is hourly, so it is never poked from here.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// `sim::gameplay_metrics::Tally` keys: peak 1, resumes 2 and 3, boot buckets
+// from 0x100 (pinned by `sim`'s `tally_keys_are_distinct...`).
+const TALLY = { peak: 1n, within: 2n, total: 3n, bootBase: 0x100n } as const;
+// The boot histogram upper edges, pinned to `BOOT_EDGES` by a `sim` test.
+const BOOT_EDGES = readFileSync(
+  path.resolve(__dirname, "../../../server/sim/tests/goldens/boot_edges_v1.golden"),
+  "utf-8",
+)
+  .split("\n")
+  .filter((l) => l.trim() !== "")
+  .map(Number);
+const bootBucketOf = (ms: number): number => BOOT_EDGES.findIndex((edge) => edge >= ms);
+
+function tally(): Map<bigint, bigint> {
+  const rows = ownerSql(readSpacetimeHandle(), "SELECT * FROM metric_tally");
+  return new Map(rows.map(([key, value]) => [BigInt(key), BigInt(value)]));
+}
+
+function bootReports(t: Map<bigint, bigint>): bigint {
+  let total = 0n;
+  for (const [key, value] of t) if (key >= TALLY.bootBase) total += value;
+  return total;
+}
+
+const clockSpeed = (): string =>
+  ownerSql(readSpacetimeHandle(), "SELECT speed FROM world_clock")[0]?.[0] ?? "missing";
+const sampleRows = (): number =>
+  ownerSql(readSpacetimeHandle(), "SELECT * FROM gameplay_metric_sample").length;
+
+const connectedClients = (): number =>
+  ownerSql(readSpacetimeHandle(), "SELECT * FROM connected_client").length;
+
+test("a boot and a reconnect each move the measure accumulators by exactly one (FR172)", async ({
+  browser,
+}) => {
+  // The deltas below are exact only while no sampler fire lands inside the
+  // test: fail loudly, and name the cause, when the clock is fast or a fire
+  // zeroes the tally.
+  expect(clockSpeed(), "the instance clock must run at speed 1 for exact tally deltas").toBe("1");
+  const samplesBefore = sampleRows();
+  const before = tally();
+  const connectedBefore = connectedClients();
+  const startedAt = Date.now();
+  const context = await browser.newContext();
+  const a = await context.newPage();
+  const sockets = await openPlayer(a);
+
+  // One boot report, and the figure is the page's own controllable mark.
+  await expect.poll(() => bootReports(tally()) - bootReports(before)).toBe(1n);
+  const markMs = await a.evaluate(
+    () => performance.getEntriesByName("bc-boot:player-controllable", "mark")[0]?.startTime,
+  );
+  expect(markMs).toBeGreaterThan(0);
+  expect(markMs).toBeLessThanOrEqual(Date.now() - startedAt);
+  // The one bucket that moved is the bucket of the page own mark: the
+  // reported figure is the mark, not a second stopwatch.
+  const bucketKey = TALLY.bootBase + BigInt(bootBucketOf(Math.max(1, Math.round(markMs ?? 0))));
+  expect((tally().get(bucketKey) ?? 0n) - (before.get(bucketKey) ?? 0n)).toBe(1n);
+  await expect.poll(connectedClients).toBe(connectedBefore + 1);
+  const peakKey = TALLY.peak;
+  expect(tally().get(peakKey) ?? 0n).toBeGreaterThanOrEqual(BigInt(connectedBefore + 1));
+
+  // A drop that comes back on the same page: one resume, within the seam.
+  const withinKey = TALLY.within;
+  const totalKey = TALLY.total;
+  const socketsBefore = sockets.count;
+  await dropServer(sockets);
+  await expect.poll(() => sockets.count, { timeout: 30_000 }).toBeGreaterThan(socketsBefore);
+  await expect
+    .poll(() => a.evaluate(() => window.__bc?.connection?.live()), { timeout: 30_000 })
+    .toBe(1);
+  await expect.poll(() => (tally().get(totalKey) ?? 0n) - (before.get(totalKey) ?? 0n)).toBe(1n);
+  expect((tally().get(withinKey) ?? 0n) - (before.get(withinKey) ?? 0n)).toBe(1n);
+  // The page reports its boot once: the reconnect is not a second boot.
+  expect(bootReports(tally()) - bootReports(before)).toBe(1n);
+  // One open connection for this page, as before the drop.
+  await expect.poll(connectedClients).toBe(connectedBefore + 1);
+
+  await context.close();
+  await expect.poll(connectedClients).toBe(connectedBefore);
+  expect(sampleRows(), "a sampler fire landed inside the test: its tally deltas are void").toBe(
+    samplesBefore,
+  );
 });

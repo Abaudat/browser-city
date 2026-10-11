@@ -41,7 +41,9 @@ SNAPSHOT="$REPO_ROOT/server/schema.snapshot.json"
 STATIC_TABLES="module_owner world_clock matter_kind provision reason_code node_kind unit layer_code holder_kind actor_kind container_kind"
 
 START_PID=""
+SUB_PID=""
 cleanup() {
+  [ -z "$SUB_PID" ] || kill "$SUB_PID" 2>/dev/null
   if [ -n "${BC_KEEP_DATA_DIR:-}" ]; then
     echo "check-metrics-sampler: BC_KEEP_DATA_DIR set -- leaving $DATA_DIR and the instance on $SERVER_URL running" >&2
     return
@@ -78,6 +80,26 @@ echo "check-metrics-sampler: publishing the time-control flavour" >&2
 bash "$REPO_ROOT/scripts/dev/publish-dev.sh" "$DB_NAME" "${SERVER_ARGS[@]}" --no-config >"$DATA_DIR/publish.log" 2>&1 \
   || fail "could not publish the time-control flavour" "$DATA_DIR/publish.log"
 
+# --- (g) one held connection, for the live-connection mirror -----------------
+# A subscriber (the CLI identity is the module owner, exempt from the issuer
+# check) stays connected across the first fire: connected_client holds
+# exactly it, and the fire leaves the tally holding exactly the peak slot.
+SUB_LOG="$DATA_DIR/subscribe.log"
+spacetime subscribe "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y --timeout 900 "SELECT * FROM world_clock" >"$SUB_LOG" 2>&1 &
+SUB_PID=$!
+WAITED=0
+until [ "$(rows_of connected_client)" -ge 1 ]; do
+  [ "$WAITED" -lt 30 ] || fail "connected_client never held the subscriber's connection" "$SUB_LOG"
+  sleep 1
+  WAITED=$((WAITED + 1))
+done
+# The CLI reader (`spacetime sql`) is itself a connection while it runs, so
+# every read of connected_client sees its own row: one subscriber is two rows.
+READER=1
+LIVE_N="$(( $(rows_of connected_client) - READER ))"
+[ "$LIVE_N" -eq 1 ] || fail "connected_client holds $LIVE_N connection(s) beside the reader with one subscriber attached, expected 1"
+ok "connected_client holds exactly the one open connection (plus the reader's own)"
+
 # --- (a) one sample per table per fire ---------------------------------------
 clock speed "$MAX_SPEED" >"$DATA_DIR/speed-up.log" 2>&1 || fail "set_clock_speed $MAX_SPEED failed" "$DATA_DIR/speed-up.log"
 WAITED=0
@@ -111,6 +133,19 @@ for t in $STATIC_TABLES; do
     || fail "table '$t': sampled rows [$DISTINCT] differ from its actual row count $ACTUAL"
 done
 ok "each static table's sampled row_count equals its own row count"
+
+# Story 4.14: one gameplay_metric_sample row per live series per fire.
+SERIES_COUNT="$(grep -c '^series ' "$REPO_ROOT/server/sim/tests/goldens/codes_gameplay_metrics_v1.golden")"
+[ "$(rows_of gameplay_metric_sample)" -eq $((FIRES * SERIES_COUNT)) ]   || fail "gameplay_metric_sample holds $(rows_of gameplay_metric_sample) rows, expected $FIRES fire(s) x $SERIES_COUNT series"
+ok "exactly one gameplay_metric_sample row per live series ($SERIES_COUNT) per fire"
+
+resp="$DATA_DIR/tally.json"
+sql_json "SELECT * FROM metric_tally" >"$resp"
+[ "$(bc_wb row-count "$resp")" -eq 1 ]   || fail "metric_tally holds $(bc_wb row-count "$resp") rows after a fire, expected exactly the peak slot" "$resp"
+PEAK="$(bc_wb column-values "$resp" value)"
+# The subscriber, plus at most the one transient reader the fire may overlap.
+[ "$(bc_wb column-values "$resp" tally_key)" = "1" ] && [ "${PEAK:-0}" -ge "$LIVE_N" ] && [ "${PEAK:-0}" -le $((LIVE_N + READER)) ]   || fail "metric_tally after a fire is not the peak slot (key 1) seeded to the live count ($LIVE_N..$((LIVE_N + READER))), got [$PEAK]" "$resp"
+ok "after a fire metric_tally holds exactly the peak slot, seeded to the live connection count"
 
 resp="$DATA_DIR/sample-owner.json"
 sql_json "SELECT * FROM table_sample WHERE table_accessor = 'module_owner'" >"$resp"
@@ -208,6 +243,51 @@ STALE_CODE=$?
 grep -qF "cadence 2: last fired" "$STALE_FINDINGS" || fail "the stale finding carries no liveness entry for cadence 2 (METRICS)" "$STALE_FINDINGS"
 grep -qF "cadence liveness unreadable" "$STALE_FINDINGS" && fail "the stale finding's liveness read failed against the live instance" "$STALE_LOG"
 ok "a stale sample files one finding carrying the live cadence liveness"
+
+# --- (h) a host restart leaves no stale connection row -----------------------
+# The subscriber stays attached while the server is stopped under it, so the
+# row it holds can only be removed by the host: at shutdown or at launch
+# ("Disconnect dangling clients"). It is asserted present immediately before
+# the stop, so the proof cannot pass on a table that was already empty; the
+# subscriber is reaped only after the server is confirmed gone, and the
+# server is restarted on the same data dir. A forced kill is not used: it
+# loses the database registration in the data dir (observed), which would
+# prove nothing about connections. Needs a graceful stop, which Windows
+# does not have for this process, so (h) runs on the CI platform only.
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    echo "check-metrics-sampler: SKIP (h) -- no graceful stop of the server on this platform; CI runs it" >&2
+    exit 0
+    ;;
+esac
+[ "$(( $(rows_of connected_client) - READER ))" -ge 1 ]   || fail "no connected_client row for the subscriber just before the restart: the proof would be vacuous"
+# `spacetime start` is a wrapper: stop the listener on the port as well.
+stop_instance() { # <signal>
+  local pids p
+  kill "-$1" "$START_PID" 2>/dev/null
+  if command -v lsof >/dev/null 2>&1; then
+    pids="$(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null)"
+  elif command -v fuser >/dev/null 2>&1; then
+    pids="$(fuser "$PORT/tcp" 2>/dev/null)"
+  fi
+  for p in $pids; do kill "-$1" "$p" 2>/dev/null; done
+}
+stop_instance TERM
+bc_stop_spacetime_confirmed "$START_PID" "$SERVER_URL" 20 || {
+  stop_instance KILL
+  bc_stop_spacetime_confirmed "$START_PID" "$SERVER_URL" 20 || fail "the server did not stop"
+}
+kill "$SUB_PID" 2>/dev/null
+SUB_PID=""
+START_PID="$(bc_start_spacetime "$DATA_DIR/data" "$PORT" "$START_LOG")"
+bc_wait_spacetime_healthy "$SERVER_URL" "$HEALTH_DEADLINE_S"   || fail "SpacetimeDB did not become healthy after the restart" "$START_LOG"
+WAITED=0
+until [ "$(( $(rows_of connected_client) - READER ))" -eq 0 ]; do
+  [ "$WAITED" -lt 30 ] || fail "connected_client still holds $(( $(rows_of connected_client) - READER )) stale row(s) after a host restart: concurrent_now would over-count"
+  sleep 1
+  WAITED=$((WAITED + 1))
+done
+ok "a host restart leaves no stale connected_client row"
 
 echo "check-metrics-sampler: the sampler fires, samples every table exactly once per fire, and cannot be called directly" >&2
 exit 0

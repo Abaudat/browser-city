@@ -42,6 +42,7 @@ import CreateCharacterReducer from "./create_character_reducer";
 import CreateDistrictReducer from "./create_district_reducer";
 import FinishPublishReducer from "./finish_publish_reducer";
 import FinishRestoreReducer from "./finish_restore_reducer";
+import ReportClientMeasureReducer from "./report_client_measure_reducer";
 import RestoreActorKindReducer from "./restore_actor_kind_reducer";
 import RestoreActorLocationReducer from "./restore_actor_location_reducer";
 import RestoreBuildingReducer from "./restore_building_reducer";
@@ -56,6 +57,7 @@ import RestoreContainerKindReducer from "./restore_container_kind_reducer";
 import RestoreDemoPingReducer from "./restore_demo_ping_reducer";
 import RestoreDistrictReducer from "./restore_district_reducer";
 import RestoreFloorTransitionReducer from "./restore_floor_transition_reducer";
+import RestoreGameplayMetricSampleReducer from "./restore_gameplay_metric_sample_reducer";
 import RestoreHolderKindReducer from "./restore_holder_kind_reducer";
 import RestoreItemHeldReducer from "./restore_item_held_reducer";
 import RestoreItemInstanceReducer from "./restore_item_instance_reducer";
@@ -254,6 +256,7 @@ const reducersSchema = __reducers(
   __reducerSchema("create_district", CreateDistrictReducer),
   __reducerSchema("finish_publish", FinishPublishReducer),
   __reducerSchema("finish_restore", FinishRestoreReducer),
+  __reducerSchema("report_client_measure", ReportClientMeasureReducer),
   __reducerSchema("restore_actor_kind", RestoreActorKindReducer),
   __reducerSchema("restore_actor_location", RestoreActorLocationReducer),
   __reducerSchema("restore_building", RestoreBuildingReducer),
@@ -268,6 +271,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_demo_ping", RestoreDemoPingReducer),
   __reducerSchema("restore_district", RestoreDistrictReducer),
   __reducerSchema("restore_floor_transition", RestoreFloorTransitionReducer),
+  __reducerSchema("restore_gameplay_metric_sample", RestoreGameplayMetricSampleReducer),
   __reducerSchema("restore_holder_kind", RestoreHolderKindReducer),
   __reducerSchema("restore_item_held", RestoreItemHeldReducer),
   __reducerSchema("restore_item_instance", RestoreItemInstanceReducer),

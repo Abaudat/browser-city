@@ -102,6 +102,12 @@ $path"
       # new code is not this script's concern.
       echo "check-golden-version-bump: $path changed -- governed by check-codes-append-only.sh, not this script" >&2
       ;;
+    boot_edges_*.golden)
+      # A derived pin, not a permanent contract: sim's own test holds it
+      # equal to the histogram edges the e2e reads, so it can only move
+      # together with them.
+      echo "check-golden-version-bump: $path changed -- derived from sim::gameplay_metrics, pinned by its own test" >&2
+      ;;
     *)
       echo "check-golden-version-bump: FAIL -- $path has no permanence rule, add one" >&2
       FAILED=1
