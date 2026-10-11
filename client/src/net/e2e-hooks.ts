@@ -210,17 +210,17 @@ export function recordRenderOrderForE2e(order: readonly bigint[]): void {
   window.__bc = bucket;
 }
 
-/** Story 1.8's proof that a held direction key moves the avatar
- * client-side, with no round trip (FR137): the street scene's current
- * continuous player position, read every frame -- `movement.spec.ts` is
- * the only reader. */
+/** Story 15.21: every resolved player step, recorded only while a spec has
+ * set `__bc.playerSteps`; the footbridge spec in `enclosure.spec.ts` reads it. */
 export function recordPlayerStepForE2e(step: PlayerStep): void {
   if (!import.meta.env.DEV) return;
   window.__bc?.playerSteps?.push(step);
 }
 
 /** Story 1.8's proof that a held direction key moves the avatar
- * client-side, with no round trip (FR137): see `recordPlayerPositionForE2e`. */
+ * client-side, with no round trip (FR137): the street scene's current
+ * continuous player position, read every frame -- `movement.spec.ts` is
+ * the only reader. */
 export function recordPlayerPositionForE2e(x: number, y: number, floor: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
