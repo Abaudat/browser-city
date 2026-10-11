@@ -38,7 +38,7 @@ import { type BodyDials, type BodyFrame, createBodyMotion, poseBody } from "../l
 import { CitizenBody } from "../l3/citizen";
 import { framesByAnimation, loadL3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
-import type { AppearanceTuple } from "../render/appearance/composite";
+import { type AppearanceTuple, appearanceCacheKey } from "../render/appearance/composite";
 import {
   AtlasPageLoader,
   countAllBoundTextureSources,
@@ -1408,6 +1408,7 @@ export async function mountStreetScene(
     const commuterMember = streetLife.add({
       id: COMMUTER_ID,
       ...makeCommuter(),
+      look: appearanceCacheKey(buildCommuterAppearanceTuple(defs), null),
       remake: makeCommuter,
     });
     const citizen = commuterMember.body;

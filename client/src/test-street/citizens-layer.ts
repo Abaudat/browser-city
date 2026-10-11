@@ -27,6 +27,7 @@ import type {
 } from "../render/appearance/appearance-texture";
 import {
   type AppearanceTuple,
+  appearanceCacheKey,
   resolveUniform,
   type UniformOverride,
 } from "../render/appearance/composite";
@@ -262,6 +263,7 @@ export async function mountCitizensLayer(
       timetable: ledger,
       stand,
       standAt,
+      look: appearanceCacheKey(fixture.tuple, override),
       remake: make,
     });
     citizens.set(fixture.id, {
@@ -321,6 +323,7 @@ export async function mountCitizensLayer(
       ...c.make(),
       stand: c.stand,
       standAt: c.standAt,
+      look: appearanceCacheKey(fixture.tuple, override),
       remake: c.make,
     });
     drawn.set(fixture.id, { sprite, frames, member, walks: c.spec !== undefined });

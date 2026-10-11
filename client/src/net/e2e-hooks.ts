@@ -156,6 +156,7 @@ declare global {
         facing: string;
         offsetX: number;
         offsetY: number;
+        look: string;
       }[];
       /** Story 5.1: the L3 commuter as last drawn -- a callable read fresh
        * each call, `undefined` while it is not on screen. */

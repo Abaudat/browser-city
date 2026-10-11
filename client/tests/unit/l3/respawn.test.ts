@@ -35,8 +35,8 @@ const sample = (b: CitizenBody, s: TransitState, t: number) => {
   return f;
 };
 
-describe("inv_respawned_body_matches_continuous_body", () => {
-  it("a body discarded at t1 and rebuilt at t2 draws exactly what one that lived on draws", () => {
+describe("a respawned body", () => {
+  it("inv_respawned_body_matches_continuous_body", () => {
     fc.assert(
       fc.property(
         fc.string({ minLength: 1, maxLength: 8 }),

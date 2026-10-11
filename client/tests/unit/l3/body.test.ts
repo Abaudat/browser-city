@@ -603,3 +603,29 @@ describe("properties", () => {
     );
   });
 });
+
+describe("legInstants against the shared fixture", () => {
+  it("matches fixtures/leg-instants.v1.json, the server's rule", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const { legInstants } = await import("../../../src/l3/body");
+    const doc = JSON.parse(
+      readFileSync(
+        fileURLToPath(new URL("../../../../fixtures/leg-instants.v1.json", import.meta.url)),
+        "utf-8",
+      ),
+    ) as {
+      cases: { route: number[][]; departAt: number; arriveAt: number; instants: number[] }[];
+    };
+    for (const c of doc.cases) {
+      const waypoints = c.route.map(([x, y, floor]) => ({
+        x: x as number,
+        y: y as number,
+        floor: floor as number,
+      }));
+      expect(legInstants({ waypoints, departAt: c.departAt, arriveAt: c.arriveAt })).toEqual(
+        c.instants,
+      );
+    }
+  });
+});

@@ -674,6 +674,8 @@ jobs:
         run: bash ../scripts/ci/check-no-frame-rate-reducers.sh
       - name: story 4.4 FR138, one home for the player_position accessor and for the position reducer call
         run: bash ../scripts/ci/check-player-position-path.sh
+      - name: story 5.3 FR58, one writer for the actor_location accessor
+        run: bash ../scripts/ci/check-actor-location-path.sh
       - name: story 4.4 NFR32, the client calls exactly the allow-listed reducers and procedures
         run: bash ../scripts/ci/check-client-write-allowlist.sh
       - name: story 4.4, remotePlayers appears only in the allow-listed specs

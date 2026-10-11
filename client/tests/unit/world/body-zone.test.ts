@@ -171,8 +171,8 @@ describe("planBodies", () => {
   });
 });
 
-describe("inv_body_ready_before_visible", () => {
-  it("a body that draws acquireMs after it spawns is never first drawn inside the viewport", () => {
+describe("a body is ready before it is visible", () => {
+  it("inv_body_ready_before_visible", () => {
     fc.assert(
       fc.property(
         fc.double({ min: 12, max: 80, noNaN: true }),

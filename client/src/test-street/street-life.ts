@@ -39,6 +39,9 @@ export interface LifeMember {
   readonly stand?: AtState;
   /** Where a standing citizen is drawn, when not on its tile's centre. */
   readonly standAt?: { readonly x: number; readonly y: number };
+  /** The composite-cache key of the citizen's look: its five stored indices
+   * and the uniform override. Never re-derived from the id. */
+  readonly look?: string;
   /** Builds a fresh body and ledger for the agreement sample. */
   readonly remake: () => { body: CitizenBody; timetable?: LedgerSource };
   index: number;
@@ -46,7 +49,10 @@ export interface LifeMember {
 
 /** What agreement needs of a citizen whether or not it has a body: its id,
  * its ledger and how to build a fresh body. */
-export type LifeDeclared = Pick<LifeMember, "id" | "remake" | "timetable" | "stand" | "standAt">;
+export type LifeDeclared = Pick<
+  LifeMember,
+  "id" | "remake" | "timetable" | "stand" | "standAt" | "look"
+>;
 
 export interface LifeSample {
   readonly id: string;
@@ -57,6 +63,8 @@ export interface LifeSample {
   readonly facing: string;
   readonly offsetX: number;
   readonly offsetY: number;
+  /** The look: what must be identical on every client and every respawn. */
+  readonly look: string;
 }
 
 export function standState(node: { x: number; y: number }, floor: number, facing: Facing): AtState {
@@ -103,6 +111,7 @@ export class StreetLife {
       timetable: entry.timetable,
       stand: entry.stand,
       standAt: entry.standAt,
+      look: entry.look,
     });
     this.#scratch = undefined;
   }
@@ -163,6 +172,7 @@ export class StreetLife {
         facing: m.frame.direction,
         offsetX: field.offsetX(m.index),
         offsetY: field.offsetY(m.index),
+        look: m.look ?? "",
       }));
   }
 }

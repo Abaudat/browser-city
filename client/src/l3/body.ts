@@ -64,12 +64,21 @@ export function createBodyPose(): BodyPose {
   };
 }
 
-/** The straight-line distance between two waypoints. The square root of an
- * integer sum is correctly rounded, so every client computes the same value. */
+/** Fixed-point scale of `straight`: 2^10 per cell, so the server can compute
+ * the same instants in integers (`sim::actor_location::leg_instants`). */
+const STRAIGHT_SCALE_BITS = 10;
+
+/** The straight-line distance between two waypoints, in 1/1024 cells, rounded
+ * down: an integer square root of an integer, so every client and the server
+ * compute the same value. */
 function straight(a: Cell, b: Cell): number {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
+  const n = (dx * dx + dy * dy) * 2 ** (2 * STRAIGHT_SCALE_BITS);
+  let r = Math.floor(Math.sqrt(n));
+  while (r * r > n) r--;
+  while ((r + 1) * (r + 1) <= n) r++;
+  return r;
 }
 
 function routeStraight(leg: Leg): number {
