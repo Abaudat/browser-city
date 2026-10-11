@@ -1216,11 +1216,13 @@ fn program_fits(
     })
 }
 
-/// The rooms this footprint holds: the required core plus the longest
-/// prefix of the optional tail, in declared order, that some plan fits
-/// (a room more can make a footprint fit, by splitting a room the aspect
-/// cap refuses). `None` when no prefix fits.
-fn select_program<'a>(
+/// The programs this footprint holds, longest first: the required core
+/// plus a prefix of the optional tail, in declared order, that some plan
+/// fits (a room more can make a footprint fit, by splitting a room the
+/// aspect cap refuses). The first is the one the attempts build; the
+/// shorter ones are what the last attempt falls back to when a randomised
+/// search cannot realise the longest. Empty when no prefix fits.
+fn select_programs<'a>(
     def: &defs::BuildingTypeDef,
     vocab: &Vocabulary<'a>,
     w: i32,
@@ -1228,7 +1230,7 @@ fn select_program<'a>(
     t: i32,
     cap: i32,
     entrance_us: [i32; 2],
-) -> Option<Vec<&'a defs::RoomTypeDef>> {
+) -> Vec<Vec<&'a defs::RoomTypeDef>> {
     let mut rooms: Vec<&defs::RoomTypeDef> = def.rooms.iter().map(|&id| vocab.room(id)).collect();
     let need = |r: &defs::RoomTypeDef, doors: i32| vocab.need(r, doors);
     let z = Sizing {
@@ -1236,14 +1238,18 @@ fn select_program<'a>(
         cap,
         need: &need,
     };
-    let mut best = program_fits(&rooms, w, d, z, entrance_us).then(|| rooms.clone());
+    let mut fitting: Vec<Vec<&'a defs::RoomTypeDef>> = Vec::new();
+    if program_fits(&rooms, w, d, z, entrance_us) {
+        fitting.push(rooms.clone());
+    }
     for &id in def.optional_rooms {
         rooms.push(vocab.room(id));
         if program_fits(&rooms, w, d, z, entrance_us) {
-            best = Some(rooms.clone());
+            fitting.push(rooms.clone());
         }
     }
-    best
+    fitting.reverse();
+    fitting
 }
 
 /// The fixture tags a room owes and how many of each: every committed
@@ -1826,6 +1832,28 @@ pub fn lay_out(
     lay_out_with(city_seed, envelope, plot, def, cfg, content, vocab, &rows)
 }
 
+/// How many rooms the longest program this envelope's footprint fits
+/// holds (0 when none fits) -- what a building laid out with fewer rooms
+/// fell back from. Read-only: it generates nothing.
+#[cfg(any(test, feature = "test-fixtures"))]
+pub fn longest_program_len(
+    envelope: &Envelope,
+    def: &defs::BuildingTypeDef,
+    cfg: &GenerationConfig,
+    vocab: &Vocabulary,
+) -> usize {
+    if def.rooms.is_empty() {
+        return 0;
+    }
+    let t = cfg.envelope_wall_thickness_cells;
+    let cap = cfg.interior_max_room_aspect;
+    let probe = Frame::new(envelope.footprint, envelope.front, t, false);
+    entrance_columns(envelope.footprint, envelope.front, t)
+        .map(|eus| select_programs(def, vocab, probe.w, probe.d, t, cap, eus))
+        .and_then(|p| p.first().map(Vec::len))
+        .unwrap_or(0)
+}
+
 /// Every committed requirement row, by id -- read once per run, not once
 /// per building.
 fn requirement_rows(content: &GenerationContent) -> Vec<RequirementRow> {
@@ -1870,9 +1898,10 @@ fn lay_out_with(
     let t = cfg.envelope_wall_thickness_cells;
     let cap = cfg.interior_max_room_aspect;
     let probe = Frame::new(envelope.footprint, envelope.front, t, false);
-    let program = entrance_columns(envelope.footprint, envelope.front, t)
-        .and_then(|eus| select_program(def, vocab, probe.w, probe.d, t, cap, eus));
-    let Some(program) = program else {
+    let programs = entrance_columns(envelope.footprint, envelope.front, t)
+        .map(|eus| select_programs(def, vocab, probe.w, probe.d, t, cap, eus))
+        .unwrap_or_default();
+    if programs.is_empty() {
         return InteriorOutcome::Rejected {
             plot: plot_index,
             building_type: def.id,
@@ -1890,28 +1919,35 @@ fn lay_out_with(
     let mut work = LayoutWork::default();
     for attempt in 0..attempts {
         let mut rng = Rng::new(seed_from_ids(building_seed, attempt as u64));
-        let Some(interior) = attempt_layout(
-            &mut rng, envelope, plot, &program, rows, vocab, t, cap, &mut work,
-        ) else {
-            continue;
-        };
-        let in_aspect = interior
-            .rooms
-            .iter()
-            .all(|r| within_aspect(r.rect.width() as i32, r.rect.height() as i32, cap));
-        if !in_aspect {
-            continue;
-        }
-        let site = building_site(&interior, vocab);
-        work.cells_judged += site.occupied_cells() as u64;
-        if crate::rules::evaluate_local(content.rules, &site).is_empty() {
-            return InteriorOutcome::Laid {
-                plot: plot_index,
-                building_type: def.id,
-                interior,
-                attempts: attempt + 1,
-                work,
+        // Every attempt builds the longest program; the last also falls
+        // back through the shorter ones, so a footprint whose longest
+        // program no randomised plan realises still gets its core.
+        let last = attempt + 1 == attempts;
+        let candidates = if last { &programs[..] } else { &programs[..1] };
+        for program in candidates {
+            let Some(interior) = attempt_layout(
+                &mut rng, envelope, plot, program, rows, vocab, t, cap, &mut work,
+            ) else {
+                continue;
             };
+            let in_aspect = interior
+                .rooms
+                .iter()
+                .all(|r| within_aspect(r.rect.width() as i32, r.rect.height() as i32, cap));
+            if !in_aspect {
+                continue;
+            }
+            let site = building_site(&interior, vocab);
+            work.cells_judged += site.occupied_cells() as u64;
+            if crate::rules::evaluate_local(content.rules, &site).is_empty() {
+                return InteriorOutcome::Laid {
+                    plot: plot_index,
+                    building_type: def.id,
+                    interior,
+                    attempts: attempt + 1,
+                    work,
+                };
+            }
         }
     }
     InteriorOutcome::Rejected {
