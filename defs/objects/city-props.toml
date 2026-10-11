@@ -24,7 +24,7 @@ interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
 # Story 2.10 (FR111): the rule engine's own vocabulary -- `defs/tags/
 # city.toml`'s declared set, never a literal key past `tools/defs-build`.
 # Story 2.9 (AC1): `fixture` is this object's own role tag.
-tags = ["waste", "fixture"]
+tags = ["waste", "fixture", "outdoor"]
 
 [[object]]
 id = 2
@@ -38,7 +38,7 @@ height = 1
 # drawn (the art starts five rows down), leaving the front lip free to
 # approach from.
 collider = { x0 = 0, y0 = 5, x1 = 32, y1 = 12 }
-tags = ["seating", "fixture"]
+tags = ["seating", "fixture", "outdoor"]
 
 [[object]]
 id = 3
@@ -70,7 +70,7 @@ width = 1
 # archetype's own defining case -- a small base collider near the bottom
 # of the cell, so a player passes through the rest of the cell freely.
 archetype = "pole"
-tags = ["lighting", "fixture"]
+tags = ["lighting", "street_light", "fixture", "outdoor"]
 
 [[object]]
 id = 5

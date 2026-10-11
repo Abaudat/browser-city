@@ -66,3 +66,27 @@ group = "shared"
 [[page_group]]
 theme = "post_office"
 group = "shared"
+
+[[page_group]]
+theme = "bedroom"
+group = "shared"
+
+[[page_group]]
+theme = "kitchen"
+group = "shared"
+
+[[page_group]]
+theme = "bathroom"
+group = "shared"
+
+[[page_group]]
+theme = "basement"
+group = "shared"
+
+[[page_group]]
+theme = "living_room"
+group = "shared"
+
+[[page_group]]
+theme = "grocery_store"
+group = "shared"

@@ -33,21 +33,6 @@ subject = "counter"
 within = "stairs"
 mode = "forbid"
 
-# Adjacency: a shopfront has the shop's counter on some side -- a
-# placeholder until the prop pass emits shopfronts (story 3.6). The
-# interior-layout pass never emits one, so it cannot fire on its output.
-[[adjacency]]
-id = 4
-key = "counter_faces_a_shopfront"
-a = "shopfront"
-relation = "require"
-rotate = true
-alternatives = [
-  [
-    { direction = "north", tag = "counter" },
-  ],
-]
-
 # Requirement: a room holding seating has a waste bin -- still a
 # placeholder for the prop-placement pass (waste bins and seating are its
 # vocabulary), kept on `seating` so it can never fire on anything the

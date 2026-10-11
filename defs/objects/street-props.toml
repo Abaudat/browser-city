@@ -1,0 +1,69 @@
+# Story 3.6 (FR110): street furniture pass 7 stands on the pavement. Each
+# carries `outdoor` and the `fixture` role. A tree carries no function
+# tag: a def no rule row names is ambient dressing, placed by density.
+
+[[object]]
+id = 53
+key = "city_bench"
+name = "City Bench"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Bench_1.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 3, y0 = 0, x1 = 29, y1 = 15 }
+tags = ["seating", "outdoor", "fixture"]
+
+[[object]]
+id = 54
+key = "plane_tree"
+name = "Plane Tree"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Tree_1.png", x = 0, y = 0, w = 32, h = 48 }
+width = 2
+height = 1
+collider = { x0 = 12, y0 = 0, x1 = 19, y1 = 15 }
+tags = ["outdoor", "fixture"]
+
+[[object]]
+id = 55
+key = "round_tree"
+name = "Round Tree"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Tree_3.png", x = 0, y = 0, w = 32, h = 48 }
+width = 2
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 31, y1 = 16 }
+tags = ["outdoor", "fixture"]
+
+[[object]]
+id = 56
+key = "planter_pot_clay"
+name = "Clay Planter"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Pot_3.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+collider = { x0 = 2, y0 = 0, x1 = 13, y1 = 16 }
+tags = ["outdoor", "fixture"]
+
+[[object]]
+id = 57
+key = "planter_pot_stone"
+name = "Stone Planter"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Pot_4.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+collider = { x0 = 2, y0 = 0, x1 = 13, y1 = 16 }
+tags = ["outdoor", "fixture"]
+
+[[object]]
+id = 58
+key = "flower_bush_small"
+name = "Small Flower Bush"
+layer = "objects"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Flower_Bush_7.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+collider = { x0 = 1, y0 = 2, x1 = 15, y1 = 15 }
+tags = ["outdoor", "fixture"]

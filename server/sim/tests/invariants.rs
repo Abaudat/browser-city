@@ -3073,9 +3073,12 @@ fn the_catchment_floor_bites_for_every_scoped_row_over_seeds_0_to_256() {
                 building_type: a.building_type,
             })
             .collect();
+        let props =
+            sim::generation::PropMap::test_fixture(skeleton.plots.site(), Vec::new(), &[]).unwrap();
         let d = sim::generation::District {
             skeleton,
             interiors: sim::generation::InteriorMap::test_fixture(shells),
+            props,
         };
         let site = d.site(&content);
         for (row, (biting, pairs)) in rows.iter().zip(tally.iter_mut()) {
@@ -3631,6 +3634,7 @@ fn planted_district(
                 })
                 .collect(),
         ),
+        props: sim::generation::PropMap::test_fixture(site, Vec::new(), &[]).unwrap(),
     }
 }
 
@@ -4172,6 +4176,7 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
         building_types: &types,
         room_types: &[],
         tags: &[],
+        objects: &[],
     };
 
     for seed in 0..200u64 {
@@ -4519,6 +4524,7 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         building_types: &building_types,
         room_types: &[],
         tags: &[],
+        objects: &[],
     };
 
     // Catchment (0, 0): 4 dwellings, no commercial land at all --
@@ -6829,47 +6835,21 @@ fn interior_bounds(i: &sim::generation::Interior) -> Rect {
     }
 }
 
-/// Story 2.4's two placement checks run unchanged over one generated
-/// interior: a sub-cell `WalkabilityGrid` of its wall and fixture
-/// colliders (each a whole cell) plus any `planted` ones, over the
-/// footprint and the first approach cell outside the street door, seeded
-/// in that cell. Everything past the grid's edge is the open street, so
-/// nothing more of it is needed. `(enclosed, narrow)`.
+/// Story 2.4's two placement checks run over one generated interior's
+/// *real* rows -- its walls, every fixture's resolved def and its
+/// shopfront, each through its own `ObjectDef` collider -- plus any
+/// `planted` real props, over the footprint and the first approach cell
+/// outside the street door, seeded in that cell. Everything past the
+/// window's edge is the open street. `(enclosed, narrow)`.
 fn body_findings(
+    d: &sim::generation::District,
     i: &sim::generation::Interior,
-    planted: &[Rect],
+    planted: &[sim::generation::PlacedRow],
 ) -> Result<(usize, usize), String> {
-    let s = defs::COLLIDER_SUBCELLS_PER_CELL;
-    let cell = |x: i32, y: i32| Rect {
-        x0: x * s,
-        y0: y * s,
-        x1: (x + 1) * s,
-        y1: (y + 1) * s,
-    };
-    let mut colliders: Vec<Rect> = i.walls().into_iter().map(|(x, y)| cell(x, y)).collect();
-    colliders.extend(i.fixtures.iter().map(|f| cell(f.x, f.y)));
-    colliders.extend_from_slice(planted);
-    let &(sx, sy) = i.approach.first().ok_or("no approach")?;
-    let fp = i.footprint;
-    let b = Rect {
-        x0: fp.x0.min(sx),
-        y0: fp.y0.min(sy),
-        x1: fp.x1.max(sx + 1),
-        y1: fp.y1.max(sy + 1),
-    };
-    let grid = WalkabilityGrid::build(
-        Rect {
-            x0: b.x0 * s,
-            y0: b.y0 * s,
-            x1: b.x1 * s,
-            y1: b.y1 * s,
-        },
-        &colliders,
-    )?;
-    let (seed_x, seed_y) = (sx * s + s / 4, sy * s + s / 4);
-    let (bw, bh) = player_body_subcells(defs::BALANCE);
-    let enclosed = enclosed_regions(&grid, seed_x, seed_y)?;
-    let narrow = narrow_passages(&grid, seed_x, seed_y, bw, bh)?;
+    let (window, seed) = sim::generation::props::building_window(i).ok_or("no approach")?;
+    let rows = building_rows(d, i, planted);
+    let (enclosed, narrow) =
+        sim::generation::props::window_findings(window, seed, &rows, defs::OBJECTS)?;
     Ok((enclosed.len(), narrow.len()))
 }
 
@@ -7120,7 +7100,7 @@ fn inv_generation_every_emitted_interior_validates_clean() {
             let stride = body_check_stride();
             for (n, (plot, _, interior)) in d.interiors.laid().enumerate() {
                 let (enclosed, narrow) = if n % stride == 0 {
-                    body_findings(interior, &[])?
+                    body_findings(d, interior, &[])?
                 } else {
                     (0, 0)
                 };
@@ -7152,69 +7132,51 @@ fn inv_generation_every_emitted_interior_validates_clean() {
 }
 
 /// Proves [`body_findings`] has teeth: a generated interior whose inner
-/// doorway is narrowed below the player body, by two planted colliders
-/// either side of it, is reported by `narrow_passages` -- and the same
-/// interior untouched reports nothing.
+/// doorway has a real prop planted in it whose collider leaves less than
+/// the player body either side is reported -- and the same interior
+/// untouched reports nothing.
 #[test]
 fn the_body_check_reports_a_generated_doorway_narrowed_below_the_body() {
-    let s = defs::COLLIDER_SUBCELLS_PER_CELL;
-    let (bw, bh) = player_body_subcells(defs::BALANCE);
     let pool = city_pool();
-    let (interior, door) = pool
+    let (d, interior, door) = pool
         .iter()
-        .flat_map(|c| c.district.interiors.laid().map(|(_, _, i)| i))
-        .find_map(|i| i.thresholds.iter().find(|t| !t.entrance).map(|t| (i, *t)))
+        .find_map(|c| {
+            c.district.interiors.laid().find_map(|(_, _, i)| {
+                i.thresholds
+                    .iter()
+                    .find(|t| !t.entrance)
+                    .map(|t| (&c.district, i, *t))
+            })
+        })
         .expect("a pooled interior with an inner door");
-    assert_eq!(body_findings(interior, &[]).unwrap(), (0, 0));
-    let (x, y) = (door.x * s, door.y * s);
-    let in_a_column = interior
-        .rooms
+    assert_eq!(body_findings(d, interior, &[]).unwrap(), (0, 0));
+    // A real def whose collider leaves under the body's width either side.
+    let (bw, _) = player_body_subcells(defs::BALANCE);
+    let narrow_def = defs::OBJECTS
         .iter()
-        .any(|r| r.rect.contains(door.x, door.y + 1) || r.rect.contains(door.x, door.y - 1));
-    // Leave a gap one sub-cell under the body across the passage.
-    let planted = if in_a_column {
-        let gap = bw - 1;
-        let side = (s - gap) / 2;
-        [
-            Rect {
-                x0: x,
-                y0: y,
-                x1: x + side,
-                y1: y + s,
-            },
-            Rect {
-                x0: x + side + gap,
-                y0: y,
-                x1: x + s,
-                y1: y + s,
-            },
-        ]
-    } else {
-        let gap = bh - 1;
-        let side = (s - gap) / 2;
-        [
-            Rect {
-                x0: x,
-                y0: y,
-                x1: x + s,
-                y1: y + side,
-            },
-            Rect {
-                x0: x,
-                y0: y + side + gap,
-                x1: x + s,
-                y1: y + s,
-            },
-        ]
+        .find(|o| {
+            o.width == 1
+                && o.height == 1
+                && o.collider.is_some_and(|c| {
+                    c.y0 == 0
+                        && c.y1 == defs::COLLIDER_SUBCELLS_PER_CELL
+                        && c.x0 + (defs::COLLIDER_SUBCELLS_PER_CELL - c.x1) < bw
+                        && c.x1 - c.x0 < defs::COLLIDER_SUBCELLS_PER_CELL
+                })
+        })
+        .expect("a def that narrows a doorway below the body");
+    let planted = sim::generation::PlacedRow {
+        floor: 0,
+        y: door.y,
+        x: door.x,
+        def_id: narrow_def.id,
+        layer: narrow_def.layer,
+        orientation: 0,
     };
-    let (enclosed, narrow) = body_findings(interior, &planted).unwrap();
-    assert_eq!(
-        enclosed, 0,
-        "the narrowed doorway still lets a point through"
-    );
+    let (enclosed, narrow) = body_findings(d, interior, &[planted]).unwrap();
     assert!(
-        narrow >= 1,
-        "a doorway under the body's own width must be reported"
+        enclosed + narrow >= 1,
+        "a doorway narrowed under the body's own width must be reported"
     );
 }
 
@@ -7248,6 +7210,417 @@ fn inv_generation_interior_retries_are_bounded() {
         );
         Ok(())
     });
+}
+
+// --- story 3.6: prop placement (FR110) ---------------------------------
+
+/// The rows of one laid building, plus any `planted` real props.
+fn building_rows(
+    d: &sim::generation::District,
+    i: &sim::generation::Interior,
+    planted: &[sim::generation::PlacedRow],
+) -> Vec<sim::generation::PlacedRow> {
+    let mut rows: Vec<sim::generation::PlacedRow> = d
+        .props
+        .props()
+        .iter()
+        .filter(|p| p.building == Some(i.footprint))
+        .map(|p| p.row)
+        .collect();
+    rows.extend_from_slice(planted);
+    rows
+}
+
+/// A real object def by key (a test may name one; the generator may not).
+fn def_by_key(key: &str) -> &'static defs::ObjectDef {
+    defs::OBJECTS
+        .iter()
+        .find(|o| o.key == key)
+        .unwrap_or_else(|| panic!("no object def '{key}'"))
+}
+
+/// A planted real prop: a full-cell wall def standing at `(x, y)`.
+fn planted_wall(x: i32, y: i32) -> sim::generation::PlacedRow {
+    let wall = def_by_key("wall_segment");
+    sim::generation::PlacedRow {
+        floor: 0,
+        y,
+        x,
+        def_id: wall.id,
+        layer: wall.layer,
+        orientation: 0,
+    }
+}
+
+/// `inv_generation_every_placement_is_one_row_at_its_anchor` (story 3.6
+/// AC1, FR126/FR128): a placement is one row -- def id, anchor, floor --
+/// and the cells it claims are the anchor plus the def's own extent,
+/// recomputed here, each on a floor cell of its own building or off the
+/// carriageway and outside every footprint on the street; no two solid
+/// props claim one cell.
+#[test]
+fn inv_generation_every_placement_is_one_row_at_its_anchor() {
+    over_pool(
+        "inv_generation_every_placement_is_one_row_at_its_anchor",
+        |c| {
+            let d = &c.district;
+            let laid: std::collections::BTreeMap<Rect, &sim::generation::Interior> = d
+                .interiors
+                .laid()
+                .map(|(_, _, i)| (i.footprint, i))
+                .collect();
+            let mut solid: std::collections::BTreeSet<(i32, i32)> = Default::default();
+            for p in d.props.props() {
+                let def = defs::OBJECTS
+                    .iter()
+                    .find(|o| o.id == p.row.def_id)
+                    .ok_or_else(|| format!("row names unknown def {}", p.row.def_id))?;
+                let (w, h) = (def.width as i32, def.height as i32);
+                // The anchor is the south-west corner: x grows east, the
+                // footprint rises north from the anchor row.
+                let claimed: Vec<(i32, i32)> = (p.row.x..p.row.x + w)
+                    .flat_map(|x| ((p.row.y - h + 1)..=p.row.y).map(move |y| (x, y)))
+                    .collect();
+                ensure!(
+                    claimed.len() == (w * h) as usize,
+                    "a row claims {} cells for a {w}x{h} def",
+                    claimed.len()
+                );
+                for &(x, y) in &claimed {
+                    match p.role {
+                        sim::generation::Role::Wall | sim::generation::Role::Shopfront => {
+                            let b = p.building.ok_or("a wall row names no building")?;
+                            ensure!(b.contains(x, y), "a wall cell outside its building");
+                        }
+                        sim::generation::Role::Fixture { room, .. } => {
+                            let b = p.building.ok_or("a fixture row names no building")?;
+                            let i = laid.get(&b).ok_or("a fixture in an unlaid building")?;
+                            ensure!(
+                                i.rooms[room].rect.contains(x, y),
+                                "fixture {} claims ({x}, {y}) off its own room's floor",
+                                def.key
+                            );
+                        }
+                        sim::generation::Role::Street { .. } => {
+                            // Never on the carriageway and never inside a
+                            // building's footprint: the pavement, or the
+                            // free ground a lamp completing the lighting
+                            // may take.
+                            ensure!(
+                                d.props.street().in_site(x, y) && !d.props.street().is_road(x, y),
+                                "street furniture {} claims ({x}, {y}) on the carriageway",
+                                def.key
+                            );
+                            ensure!(
+                                !d.skeleton
+                                    .envelopes
+                                    .envelopes()
+                                    .any(|e| e.footprint.contains(x, y)),
+                                "street furniture {} claims ({x}, {y}) inside a building",
+                                def.key
+                            );
+                        }
+                    }
+                    if def.collider.is_some() {
+                        ensure!(
+                            solid.insert((x, y)),
+                            "two solid props claim ({x}, {y}) ({})",
+                            def.key
+                        );
+                    }
+                }
+            }
+            Ok(())
+        },
+    );
+}
+
+/// `inv_generation_props_never_narrow_a_doorway_below_the_body` (story 3.6
+/// AC3, FR128 applied to generated output): across every pooled city,
+/// every building's own rows -- walls, fixtures and the shopfront --
+/// rasterised through their real colliders leave no region past a passage
+/// the player body cannot fit, with the street approach as the seed.
+#[test]
+fn inv_generation_props_never_narrow_a_doorway_below_the_body() {
+    over_pool(
+        "inv_generation_props_never_narrow_a_doorway_below_the_body",
+        |c| {
+            let d = &c.district;
+            let stride = body_check_stride();
+            for (n, (plot, _, interior)) in d.interiors.laid().enumerate() {
+                if n % stride != 0 {
+                    continue;
+                }
+                let (_, narrow) = body_findings(d, interior, &[])?;
+                ensure!(
+                    narrow == 0,
+                    "plot {plot}: {narrow} regions are past a passage the body cannot fit"
+                );
+            }
+            Ok(())
+        },
+    );
+}
+
+/// The district's street windows -- each pavement band that carries
+/// furniture -- with the rows that stand in them, plus `planted` ones.
+fn street_window_findings(
+    d: &sim::generation::District,
+    window: Rect,
+    seed: (i32, i32),
+    planted: &[sim::generation::PlacedRow],
+) -> Result<(usize, usize), String> {
+    let mut rows: Vec<sim::generation::PlacedRow> = Vec::new();
+    for p in d.props.props() {
+        let Some(def) = defs::OBJECTS.iter().find(|o| o.id == p.row.def_id) else {
+            continue;
+        };
+        if sim::generation::props::extent(&p.row, def).overlaps(&window) {
+            rows.push(p.row);
+        }
+    }
+    rows.extend_from_slice(planted);
+    let (enclosed, narrow) =
+        sim::generation::props::window_findings(window, seed, &rows, defs::OBJECTS)?;
+    Ok((enclosed.len(), narrow.len()))
+}
+
+/// `inv_generation_props_leave_no_enclosed_region` (story 3.6 AC3):
+/// street furniture on the pavement seals no stretch of it off from the
+/// carriageway -- the same enclosed-region check over each frontage band
+/// -- and the district's cached collision map, windowed by chunk, shows no
+/// walkable cell cut off from the street that was not already cut off
+/// without any prop: a lamppost and a bench can seal a plot frontage as a
+/// counter can seal a room.
+#[test]
+fn inv_generation_props_leave_no_enclosed_region() {
+    over_pool("inv_generation_props_leave_no_enclosed_region", |c| {
+        let d = &c.district;
+        for &(window, seed) in d.props.windows() {
+            let (enclosed, narrow) = street_window_findings(d, window, seed, &[])?;
+            ensure!(
+                enclosed == 0 && narrow == 0,
+                "a street window {window:?} has {enclosed} enclosed and {narrow} narrow regions"
+            );
+        }
+        // The district, a chunk at a time: the window holding the street
+        // furniture finds no more cut-off regions with every row than with
+        // the walls alone -- a prop never seals off what the walls left
+        // open.
+        let site = d.skeleton.plots.site();
+        let street = d.props.street();
+        let chunk = sim::world::CHUNK_SIZE;
+        let mut windows: std::collections::BTreeSet<(i32, i32)> = Default::default();
+        for p in d.props.props() {
+            if matches!(p.role, sim::generation::Role::Street { .. }) {
+                windows.insert((p.row.x.div_euclid(chunk), p.row.y.div_euclid(chunk)));
+            }
+        }
+        for (cx, cy) in windows {
+            let win = Rect {
+                x0: (cx * chunk).max(site.x0),
+                y0: (cy * chunk).max(site.y0),
+                x1: ((cx + 1) * chunk).min(site.x1),
+                y1: ((cy + 1) * chunk).min(site.y1),
+            };
+            let Some(seed) = (win.y0..win.y1)
+                .flat_map(|y| (win.x0..win.x1).map(move |x| (x, y)))
+                .find(|&(x, y)| street.is_road(x, y))
+            else {
+                continue;
+            };
+            let mut all: Vec<sim::generation::PlacedRow> = Vec::new();
+            let mut walls: Vec<sim::generation::PlacedRow> = Vec::new();
+            for p in d.props.props() {
+                let Some(def) = defs::OBJECTS.iter().find(|o| o.id == p.row.def_id) else {
+                    continue;
+                };
+                if sim::generation::props::extent(&p.row, def).overlaps(&win) {
+                    all.push(p.row);
+                    if p.role == sim::generation::Role::Wall {
+                        walls.push(p.row);
+                    }
+                }
+            }
+            let count = |rows: &[sim::generation::PlacedRow]| -> Result<usize, String> {
+                let (e, n) =
+                    sim::generation::props::window_findings(win, seed, rows, defs::OBJECTS)?;
+                Ok(e.len() + n.len())
+            };
+            let (with_props, without) = (count(&all)?, count(&walls)?);
+            ensure!(
+                with_props <= without,
+                "chunk window {win:?}: {with_props} cut-off regions with props, {without} with walls alone"
+            );
+        }
+        Ok(())
+    });
+}
+
+/// `inv_generation_collision_map_is_the_rows_rasterised` (story 3.6 AC2,
+/// FR128): the cached per-district collision equals a straightforward
+/// reference -- every row's real collider through `walkability::
+/// rasterise`, a cell blocked iff any of its sub-cells is -- chunk by
+/// chunk, and the accessor hands back the one allocation every time.
+#[test]
+fn inv_generation_collision_map_is_the_rows_rasterised() {
+    use sim::world::walkability::{Placement, rasterise};
+    let s = defs::COLLIDER_SUBCELLS_PER_CELL;
+    over_pool("inv_generation_collision_map_is_the_rows_rasterised", |c| {
+        let d = &c.district;
+        let fc = d.props.collision(0).ok_or("no floor-0 collision")?;
+        ensure!(
+            std::ptr::eq(fc, d.props.collision(0).unwrap()),
+            "the collision map is rebuilt on each read"
+        );
+        let site = d.skeleton.plots.site();
+        let chunk = 32;
+        let mut y = site.y0;
+        while y < site.y1 {
+            let mut x = site.x0;
+            while x < site.x1 {
+                let win = Rect {
+                    x0: x,
+                    y0: y,
+                    x1: (x + chunk).min(site.x1),
+                    y1: (y + chunk).min(site.y1),
+                };
+                let placements: Vec<Placement> = d
+                    .props
+                    .props()
+                    .iter()
+                    .filter(|p| {
+                        defs::OBJECTS
+                            .iter()
+                            .find(|o| o.id == p.row.def_id)
+                            .is_some_and(|def| {
+                                sim::generation::props::extent(&p.row, def).overlaps(&win)
+                            })
+                    })
+                    .map(|p| Placement {
+                        def_id: p.row.def_id,
+                        anchor_x: p.row.x,
+                        anchor_y: p.row.y,
+                        floor: p.row.floor,
+                    })
+                    .collect();
+                let grid = rasterise(
+                    Rect {
+                        x0: win.x0 * s,
+                        y0: win.y0 * s,
+                        x1: win.x1 * s,
+                        y1: win.y1 * s,
+                    },
+                    0,
+                    &placements,
+                    defs::OBJECTS,
+                )?;
+                for cy in win.y0..win.y1 {
+                    for cx in win.x0..win.x1 {
+                        let touched = (0..s)
+                            .any(|dy| (0..s).any(|dx| grid.is_blocked(cx * s + dx, cy * s + dy)));
+                        ensure!(
+                            touched == fc.is_blocked(cx, cy),
+                            "cell ({cx}, {cy}): reference {touched}, cached {}",
+                            fc.is_blocked(cx, cy)
+                        );
+                    }
+                }
+                x += chunk;
+            }
+            y += chunk;
+        }
+        Ok(())
+    });
+}
+
+/// Proves the two new checks have teeth (story 3.6, the precedent of
+/// `the_body_check_reports_a_generated_doorway_narrowed_below_the_body`): a
+/// real wall def planted in a generated building's street doorway seals
+/// its rooms off, and real walls planted across a generated pavement band
+/// cut a stretch of it off from the carriageway -- each is reported, and
+/// the same district untouched reports nothing.
+#[test]
+fn the_prop_checks_report_a_real_prop_planted_in_a_doorway_and_on_a_frontage() {
+    let pool = city_pool();
+    let (d, interior) = pool
+        .iter()
+        .find_map(|c| {
+            c.district
+                .interiors
+                .laid()
+                .find(|(_, _, i)| i.rooms.len() >= 2)
+                .map(|(_, _, i)| (&c.district, i))
+        })
+        .expect("a pooled building with rooms");
+    assert_eq!(body_findings(d, interior, &[]).unwrap(), (0, 0));
+    let door = interior
+        .entrance()
+        .expect("a laid building has an entrance");
+    let (enclosed, _) = body_findings(d, interior, &[planted_wall(door.x, door.y)]).unwrap();
+    assert!(
+        enclosed >= 1,
+        "a wall planted in the street doorway must leave its rooms enclosed"
+    );
+
+    // A pavement band: wall off its kerb row between two caps.
+    let (dd, window, seed) = pool
+        .iter()
+        .find_map(|c| {
+            c.district
+                .props
+                .windows()
+                .iter()
+                .find(|(w, _)| w.width().min(w.height()) >= 4 && w.width().max(w.height()) >= 14)
+                .map(|&(w, s)| (&c.district, w, s))
+        })
+        .expect("a pooled street window with a deep pavement band");
+    assert_eq!(
+        street_window_findings(dd, window, seed, &[]).unwrap(),
+        (0, 0),
+        "the untouched window reports nothing"
+    );
+    let vertical = window.height() >= window.width();
+    let (lo, hi) = if vertical {
+        (window.x0, window.x1)
+    } else {
+        (window.y0, window.y1)
+    };
+    // The seed sits on the carriageway row; the face row is the far end.
+    let seed_row = if vertical { seed.0 } else { seed.1 };
+    let (carriage, face) = if seed_row == lo {
+        (lo, hi - 1)
+    } else {
+        (hi - 1, lo)
+    };
+    let step = if carriage == lo { 1 } else { -1 };
+    let kerb = carriage + step;
+    let (a0, a1) = if vertical {
+        (window.y0, window.y1)
+    } else {
+        (window.x0, window.x1)
+    };
+    let cell = |t: i32, r: i32| if vertical { (r, t) } else { (t, r) };
+    let mut planted = Vec::new();
+    for t in (a0 + 3)..(a1 - 3) {
+        for r in [kerb, face] {
+            let (x, y) = cell(t, r);
+            planted.push(planted_wall(x, y));
+        }
+    }
+    let mut r = kerb;
+    while r + step != face {
+        r += step;
+        for t in [a0 + 3, a1 - 4] {
+            let (x, y) = cell(t, r);
+            planted.push(planted_wall(x, y));
+        }
+    }
+    let (enclosed, narrow) = street_window_findings(dd, window, seed, &planted).unwrap();
+    assert!(
+        enclosed + narrow >= 1,
+        "walls planted across a pavement band must be reported"
+    );
 }
 
 /// `inv_generation_no_room_exceeds_the_aspect_cap` (story 3.5, Artie's

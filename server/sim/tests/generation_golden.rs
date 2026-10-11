@@ -1,7 +1,7 @@
 //! The determinism harness for stories 3.2-3.4 (FR110 passes 1-5): same
 //! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
 //! all six passes for a fixed seed set and compares a readable summary
-//! plus a digest against the committed `tests/goldens/generation_v11.
+//! plus a digest against the committed `tests/goldens/generation_v12.
 //! golden`, so a diff names what moved rather than just "hash differs".
 //! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
 //! bump.sh` fails a PR that touches the golden without bumping that
@@ -30,7 +30,9 @@
 //! running pass 2 twice over one pass-1 output is byte-identical (pass 2
 //! never mutates its own input).
 
-use sim::generated::defs::{BuildingTypeDef, RoomTypeDef, TagDef, TagPlacement, TagStructure};
+use sim::generated::defs::{
+    BuildingTypeDef, ColliderRect, ObjectDef, RoomTypeDef, TagDef, TagPlacement, TagStructure,
+};
 use sim::generation::neighbourhoods::NeighbourhoodConfig;
 use sim::generation::streets::DETOUR_SAMPLE_MAX_NODES;
 use sim::generation::{
@@ -41,7 +43,7 @@ use sim::rules::{CoherenceMode, RuleDef, RuleKind, RuleSet};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v11.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v12.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -154,6 +156,11 @@ fn frozen_config() -> GenerationConfig {
         interior_enterable_target_tolerance_percent: 10,
         interior_kind_min_enterable_percent: [0, 0, 0, 0],
         interior_max_kind_share_percent: 100,
+        props_pavement_cells: [3, 2, 1],
+        props_lamp_cadence_cells: 8,
+        props_ambient_per_100_min: 20,
+        props_ambient_per_100_max: 40,
+        props_max_solid_percent: 50,
     }
 }
 
@@ -379,6 +386,141 @@ const FROZEN_TAGS: &[TagDef] = &[
         structure: None,
         placement: Some(TagPlacement::WallBacked),
     },
+    TagDef {
+        id: 9340,
+        key: "frozen_inside",
+        role: None,
+        structure: None,
+        placement: None,
+    },
+    TagDef {
+        id: 9341,
+        key: "frozen_outside",
+        role: None,
+        structure: None,
+        placement: None,
+    },
+    TagDef {
+        id: 9342,
+        key: "frozen_beam",
+        role: None,
+        structure: None,
+        placement: None,
+    },
+];
+
+/// The frozen object table: a plain wall, one inside lamp, two inside
+/// crates (a 2x1 and its 1x1 compact variant), an outside lamp (subject
+/// of the street's lighting row) and an outside planter (ambient).
+const FROZEN_OBJECTS: &[ObjectDef] = &[
+    ObjectDef {
+        id: 9501,
+        key: "frozen_masonry",
+        name: "Frozen Masonry",
+        layer: 4,
+        sprite: None,
+        width: 1,
+        height: 1,
+        collider: Some(ColliderRect {
+            x0: 0,
+            y0: 0,
+            x1: 16,
+            y1: 16,
+        }),
+        interact_at: None,
+        window: false,
+        tags: &[9301, 9302],
+    },
+    ObjectDef {
+        id: 9502,
+        key: "frozen_inside_lamp",
+        name: "Frozen Inside Lamp",
+        layer: 2,
+        sprite: None,
+        width: 1,
+        height: 1,
+        collider: Some(ColliderRect {
+            x0: 4,
+            y0: 4,
+            x1: 12,
+            y1: 12,
+        }),
+        interact_at: None,
+        window: false,
+        tags: &[9330, 9340, 9307],
+    },
+    ObjectDef {
+        id: 9503,
+        key: "frozen_crate_wide",
+        name: "Frozen Wide Crate",
+        layer: 2,
+        sprite: None,
+        width: 2,
+        height: 1,
+        collider: Some(ColliderRect {
+            x0: 0,
+            y0: 0,
+            x1: 32,
+            y1: 16,
+        }),
+        interact_at: None,
+        window: false,
+        tags: &[9331, 9340, 9307],
+    },
+    ObjectDef {
+        id: 9504,
+        key: "frozen_crate_small",
+        name: "Frozen Small Crate",
+        layer: 2,
+        sprite: None,
+        width: 1,
+        height: 1,
+        collider: Some(ColliderRect {
+            x0: 2,
+            y0: 2,
+            x1: 14,
+            y1: 14,
+        }),
+        interact_at: None,
+        window: false,
+        tags: &[9331, 9340, 9307],
+    },
+    ObjectDef {
+        id: 9505,
+        key: "frozen_outside_lamp",
+        name: "Frozen Outside Lamp",
+        layer: 2,
+        sprite: None,
+        width: 1,
+        height: 1,
+        collider: Some(ColliderRect {
+            x0: 5,
+            y0: 5,
+            x1: 11,
+            y1: 11,
+        }),
+        interact_at: None,
+        window: false,
+        tags: &[9341, 9342, 9307],
+    },
+    ObjectDef {
+        id: 9506,
+        key: "frozen_planter",
+        name: "Frozen Planter",
+        layer: 2,
+        sprite: None,
+        width: 1,
+        height: 1,
+        collider: Some(ColliderRect {
+            x0: 3,
+            y0: 3,
+            x1: 13,
+            y1: 13,
+        }),
+        interact_at: None,
+        window: false,
+        tags: &[9341, 9307],
+    },
 ];
 
 const FROZEN_ROOM_TYPES: &[RoomTypeDef] = &[
@@ -445,6 +587,37 @@ const FROZEN_RULES: &[RuleDef] = &[
         },
     },
     RuleDef {
+        id: 9205,
+        key: "frozen_inside_never_outside",
+        kind: RuleKind::Coherence {
+            subject: 9340,
+            within: 9306,
+            mode: CoherenceMode::Forbid,
+        },
+    },
+    RuleDef {
+        id: 9206,
+        key: "frozen_outside_never_inside",
+        kind: RuleKind::Coherence {
+            subject: 9341,
+            within: 9303,
+            mode: CoherenceMode::Forbid,
+        },
+    },
+    RuleDef {
+        id: 9207,
+        key: "frozen_street_beams",
+        kind: RuleKind::Distribution {
+            subject: 9342,
+            per: 9306,
+            ratio: sim::rules::RowRatio::Fixed(30),
+            tolerance_percent: 90,
+            min_spacing: 6,
+            max_distance: 2000,
+            scope: sim::rules::DistributionScope::Site,
+        },
+    },
+    RuleDef {
         id: 9202,
         key: "frozen_distribution",
         kind: RuleKind::Distribution {
@@ -465,6 +638,7 @@ fn frozen_content() -> GenerationContent<'static> {
         building_types: FROZEN_BUILDING_TYPES,
         room_types: FROZEN_ROOM_TYPES,
         tags: FROZEN_TAGS,
+        objects: FROZEN_OBJECTS,
     }
 }
 
@@ -490,6 +664,7 @@ fn plan_digest(
     em: &envelopes::EnvelopeMap,
     bt: &sim::generation::BuildingTypeMap,
     io: &sim::generation::InteriorMap,
+    props: &sim::generation::PropMap,
 ) -> u64 {
     let mut text = String::new();
     for cy in 0..lu.rows() {
@@ -602,6 +777,33 @@ fn plan_digest(
             }
         }
     }
+    // Pass 7: every placed row and the composited collision, not a count.
+    for r in props.rows() {
+        text.push_str(&format!(
+            "row floor={} {},{} def={} layer={} orientation={}\n",
+            r.floor, r.x, r.y, r.def_id, r.layer, r.orientation
+        ));
+    }
+    text.push_str(&format!(
+        "collision {:016x}\n",
+        collision_hash(props, &pm.site())
+    ));
+    fnv1a(&text)
+}
+
+/// The FNV-1a of every cell of floor 0's cached collision over the site,
+/// row-major -- the map itself, not a count of blocked cells.
+fn collision_hash(props: &sim::generation::PropMap, site: &sim::world::Rect) -> u64 {
+    let fc = props
+        .collision(0)
+        .expect("floor 0 always has a collision map");
+    let mut text = String::new();
+    for y in site.y0..site.y1 {
+        for x in site.x0..site.x1 {
+            text.push(if fc.is_blocked(x, y) { '1' } else { '0' });
+        }
+        text.push('\n');
+    }
     fnv1a(&text)
 }
 
@@ -616,6 +818,7 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
         &d.skeleton.building_types,
         &d.interiors,
     );
+    let props = &d.props;
     let count_verdict = d.skeleton.check_building_count(cfg).is_ok();
 
     let regions = lu.regions();
@@ -640,7 +843,7 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     let distinct_types = bt.distinct_types().len();
 
     format!(
-        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} types_placed={types_placed} distinct_types={distinct_types} enterable={} shells={} interiors_rejected={} count_ok={count_verdict} digest={:016x}",
+        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} types_placed={types_placed} distinct_types={distinct_types} enterable={} shells={} interiors_rejected={} props={} count_ok={count_verdict} digest={:016x}",
         count(LandUse::Residential),
         count(LandUse::Commercial),
         count(LandUse::Industrial),
@@ -651,7 +854,8 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
         io.enterable_count(),
         io.shell_count(),
         io.rejected_count(),
-        plan_digest(lu, net, pm, em, bt, io),
+        props.props().len(),
+        plan_digest(lu, net, pm, em, bt, io, props),
     )
 }
 
@@ -667,7 +871,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v11.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v12.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );
@@ -719,8 +923,38 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
     let bt_b = sim::generation::building_types::run(SEEDS[0], &em_b, &pm_b, &net_b, &cfg, &content); // generation-entry-point: allow
     let io_a = sim::generation::interiors::run(SEEDS[0], &em_a, &bt_a, &pm_a, &cfg, &content); // generation-entry-point: allow
     let io_b = sim::generation::interiors::run(SEEDS[0], &em_b, &bt_b, &pm_b, &cfg, &content); // generation-entry-point: allow
+    let sk_a = sim::generation::Skeleton {
+        land_use: lu.clone(),
+        streets: net_a.clone(),
+        plots: pm_a.clone(),
+        envelopes: em_a.clone(),
+        building_types: bt_a.clone(),
+    };
+    let sk_b = sim::generation::Skeleton {
+        land_use: lu.clone(),
+        streets: net_b.clone(),
+        plots: pm_b.clone(),
+        envelopes: em_b.clone(),
+        building_types: bt_b.clone(),
+    };
+    let pr_a = sim::generation::props::run(SEEDS[0], &sk_a, &io_a, &cfg, &content).unwrap(); // generation-entry-point: allow
+    let pr_b = sim::generation::props::run(SEEDS[0], &sk_b, &io_b, &cfg, &content).unwrap(); // generation-entry-point: allow
     assert_eq!(
-        plan_digest(&lu, &net_a, &pm_a, &em_a, &bt_a, &io_a),
-        plan_digest(&lu, &net_b, &pm_b, &em_b, &bt_b, &io_b)
+        plan_digest(&lu, &net_a, &pm_a, &em_a, &bt_a, &io_a, &pr_a),
+        plan_digest(&lu, &net_b, &pm_b, &em_b, &bt_b, &io_b, &pr_b)
     );
+}
+
+/// Prints the whole golden file: `cargo test -p sim --features test-
+/// fixtures --test generation_golden -- --ignored --nocapture print_golden`,
+/// then commit the output to `tests/goldens/generation_v<version>.golden`
+/// whenever `GENERATION_VERSION` is bumped.
+#[test]
+#[ignore = "prints the golden; run by hand when GENERATION_VERSION is bumped"]
+fn print_golden() {
+    let cfg = frozen_config();
+    println!("version={GENERATION_VERSION}");
+    for seed in SEEDS {
+        println!("{}", summary_line(seed, &cfg));
+    }
 }

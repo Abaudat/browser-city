@@ -97,3 +97,37 @@ placement = "wall_backed"
 id = 54
 key = "workbench"
 placement = "wall_backed"
+
+# Story 3.6 (FR110): the prop pass's own vocabulary. Every object def a
+# prop pass may place carries exactly one of `indoor` / `outdoor` --
+# which side of the door its sprite family belongs to -- and the pass
+# reads the two `[[coherence]]` rows over them (`defs/rules/props.toml`)
+# to know where each may stand, never a sheet path or an object key.
+[[tag]]
+id = 55
+key = "indoor"
+
+[[tag]]
+id = 56
+key = "outdoor"
+
+# Dressing a room owes by its function tag, stood like every other owed
+# fixture by its own placement class (the debt story 3.5 recorded).
+[[tag]]
+id = 57
+key = "toilet"
+placement = "wall_backed"
+
+# What a street lamp is, so the street's lighting row is stated over the
+# lamps of the street alone, never over a room's own light.
+[[tag]]
+id = 58
+key = "street_light"
+
+# A cell of the street's own pavement -- never a building's doorstep, which
+# also carries `pavement` -- so the street's lighting row is stated over
+# the street alone. Pass 7 stamps it on every cell of pavement its street
+# grid holds.
+[[tag]]
+id = 59
+key = "footway"

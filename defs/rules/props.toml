@@ -1,0 +1,64 @@
+# Story 3.6 (FR110/FR112): the prop-placement pass's own committed rule
+# rows, evaluated by the one `sim::rules::evaluate`. The pass
+# (`sim::generation::props`) reads these same rows to know where each
+# object may stand and what the street owes -- never a second copy.
+
+# Where a prop may stand, as a pair of `forbid` coherence rows: an object
+# carrying `indoor` never sits in an area that has street pavement in it,
+# one carrying `outdoor` never in an area that has a floor in it. The pass
+# reads the pair to know which side of the door each def belongs to, and
+# only ever stands a def that carries one of them -- a sprite family never
+# crosses the door, and a def that names neither (the test street's own
+# counter) is never offered.
+[[coherence]]
+id = 39
+key = "indoor_props_never_on_the_street"
+subject = "indoor"
+within = "pavement"
+mode = "forbid"
+
+[[coherence]]
+id = 40
+key = "outdoor_props_never_indoors"
+subject = "outdoor"
+within = "floor"
+mode = "forbid"
+
+# Dressing a washing room owes: a toilet, by the same requirement the
+# layout pass stands every owed fixture by.
+[[requirement]]
+id = 41
+key = "bathroom_has_a_toilet"
+container = "washing"
+requires = "toilet"
+min = 1
+
+# A street is never unlit and its lamps keep a cadence: every footway cell
+# has a street lamp within `max_distance`, no two lamps closer than
+# `min_spacing`, and the count sits in the ratio band -- a cadence by rule,
+# never a loop that steps N cells. Stated over the street's own pavement
+# (`footway`), which pass 7 stamps on every cell of it, so a doorstep and a
+# hand-laid room's one cell of pavement owe no lamp. A lane's pavement is
+# one cell deep, so per cell of footway it holds more lamps than an
+# arterial does: the ratio's band is wide on purpose.
+[[distribution]]
+id = 42
+key = "street_is_lit"
+subject = "street_light"
+per = "footway"
+ratio = 24
+tolerance_percent = 100
+min_spacing = 6
+max_distance = 14
+
+# A shopfront reads as a shop from the pavement: the building behind a
+# shopfront glazing unit holds the counter it serves. The pass stands one
+# shopfront on the street wall of every building holding a counter. (A
+# requirement over the building, not an adjacency: the counter stands
+# against the far wall, never against the glass.)
+[[requirement]]
+id = 4
+key = "counter_faces_a_shopfront"
+container = "shopfront"
+requires = "counter"
+min = 1

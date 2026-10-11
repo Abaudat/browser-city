@@ -1494,14 +1494,15 @@ or plot's draws.
 `generation::plan(city_seed, &cfg, &content) -> Result<District,
 GenerationError>` chains every implemented pass in order with no verdict
 on the result (only pass 1's own site check can fail). A `District` is
-its `skeleton` (passes 1-5, a `Skeleton`) and its `interiors` (pass 6),
-each read through its own field. `plan_skeleton` runs passes 1-5 exactly
+its `skeleton` (passes 1-5, a `Skeleton`), its `interiors` (pass 6) and
+its `props` (pass 7), each read through its own field. `plan_skeleton` runs passes 1-5 exactly
 as `plan` does. `District::check` is every verdict `generate` holds a
 plan to, in order. `content` is
-`GenerationContent { rules: RuleSet<'_>, building_types, room_types, tags }`
+`GenerationContent { rules: RuleSet<'_>, building_types, room_types, tags, objects }`
 -- every content table a pass reads, loaded once
 (`GenerationContent::committed()` wraps `RuleSet::committed()`,
-`defs::BUILDING_TYPES`, `defs::ROOM_TYPES` and `defs::TAGS`) and passed
+`defs::BUILDING_TYPES`, `defs::ROOM_TYPES`, `defs::TAGS` and
+`defs::OBJECTS`) and passed
 down as a struct, never a literal read from `defs::` inside a pass; one
 signature, no `plan_with` twin.
 `District::check_building_count(&cfg)` holds AC4's building-count
@@ -1511,12 +1512,12 @@ no violation); `District::check_workplace_count(&cfg, &content)` holds
 AC4's workplace-count verdict, the same two-band shape as building count;
 `District::check_enterable_count(&cfg)` and
 `District::check_institutions_enterable(&content)` hold pass 6's two
-verdicts.
-`generation::generate` is `plan` plus all five, in that order; production
+verdicts; `District::check_reachability(&content)` holds pass 7's.
+`generation::generate` is `plan` plus all six, in that order; production
 calls `generation::create`, which wraps it. `generate` and `plan` are
 reachable outside `sim` only with the `test-fixtures` feature, which
 `browser_city` never enables. `scripts/ci/check-generation-entry-point.sh` fails
-the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`/`interiors::run(` call under `server/sim/tests/` or `server/bounds/` not marked `//
+the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`/`interiors::run(`/`props::run(` call under `server/sim/tests/` or `server/bounds/` not marked `//
 generation-entry-point: allow` -- the marker is reserved for the
 independence properties and the golden's pass-2-run-twice test, which
 deliberately feed one pass a perturbed or repeated predecessor;
@@ -1725,6 +1726,34 @@ content-blindness `check-rule-engine-no-content-keys.sh` holds the rule
 engine to: no building-type/tag/profession/rule key as a quoted literal
 under `server/sim/src/generation/`.
 
+Pass 7 (`generation::props::run(city_seed, &skeleton, &interiors, &cfg,
+&content) -> Result<PropMap, GenerationError>`, story 3.6) is pure, reads
+earlier passes and mutates none. `GenerationContent` gains `objects`
+(`defs::OBJECTS`); defs are chosen by tag, never by key. `PropMap` is the
+sorted list of `PlacedRow { floor, y, x, def_id, layer, orientation }` --
+`placed_object`'s columns minus the surrogate id and chunk key, anchor =
+the footprint's south-west cell, extent only ever read from
+`ObjectDef.width/height` -- each carried with its owner (`Prop`, `Role`),
+plus the street's cells (`StreetGrid`) and `collision: BTreeMap<i8,
+FloorCollision>`, the one per-district cache: tile-granular, a cell
+blocked iff a placed collider touches it, built once inside `run`.
+Nothing outside `generation::`/`world::` builds a collision grid or
+rasterises placements (`scripts/ci/check-no-runtime-collision-
+inference.sh`); `create_district` still discards the plan and writes no
+row. The rows are walls, every pass-6 fixture resolved to a def carrying
+its tag, one shopfront per building holding a counter, and the street's
+lamps, ambient furniture and bins. Which side of the door a def stands is
+the two `[[coherence]]` rows over `indoor`/`outdoor`; the street's rows
+are `street_is_lit` and `waste_per_three_seating`. The street's own cells
+carry `pavement` and every `per` tag no object or building type carries
+(`footway`). `District::check` appends `check_reachability`: per building
+and per pavement band that carries furniture, a windowed
+`enclosed_regions` (on the body-eroded grid) and `narrow_passages` over
+the rows' real colliders; `Unreachable { count, window, first, narrow }`
+and `FixtureUnplaceable { x, y, tag }` join `GenerationError`. Balance
+keys are `generation.props.*`. `DistrictSite::build` stamps the pavement
+and every prop.
+
 Evidence: `bounds/src/generation_evidence.rs` renders every implemented
 pass's own output, for three committed seeds, to `docs/generation/*.svg`
 -- pass 5's own file additionally tints each envelope by a derived,
@@ -1741,7 +1770,9 @@ dashed catchment grid with a pink wash over a physically-short
 catchment (no text on the map; the per/owed/placed figures live in a
 panel below it, one line per catchment). Pass 6's file shows the
 enterable set by derived kind and a contact sheet of laid-out interiors
-per kind at viewport scale, rooms as rects.
+per kind at viewport scale, rooms as rects; pass 7's shows two street
+windows at viewport scale and dressed interiors, every prop as its
+footprint with its collider hatched.
 `cargo run -p bounds --bin dump-generation`
 regenerates them; `bounds/tests/generation_evidence_current.rs` fails
 the build if the committed files and a fresh render ever disagree.
