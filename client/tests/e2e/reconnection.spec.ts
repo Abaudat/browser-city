@@ -131,6 +131,10 @@ test.describe.configure({ mode: "serial" });
 test("a dropped connection returns by itself: the notice goes lost then reconnected, nothing reloads, the body stays put, and the sender resumes (FR140, NFR4)", async ({
   browser,
 }) => {
+  // The test spans a real outage, a 45-frame hold and a walk, with waits of
+  // its own up to 30 s: it runs 13-29 s on a CI runner (master included), so
+  // the 30 s default is its flake, not a bound it can meet.
+  test.setTimeout(90_000);
   const a = await (await browser.newContext()).newPage();
   const sockets = await openPlayer(a);
   const id = await characterId(a);
