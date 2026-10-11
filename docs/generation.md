@@ -1299,8 +1299,8 @@ disagree.
 | generation.interiors.max_layout_attempts | committed | Interior layout | how many times one building's layout may be rebuilt before it is `Rejected` -- the loop is never unbounded |
 | generation.interiors.min_enterable_count | committed | Interior layout | FR114's floor on the enterable count (`docs/gdd.md`'s Scale Baseline); `generate` fails below it |
 | generation.interiors.max_rejected_percent | committed | Interior layout | the maximum percent of attempted layouts that may be `Rejected`, asserted per city |
-| generation.interiors.enterable_target_percent | committed | Interior layout | the enterable share of placed buildings, pooled over the fixed seed range 0..256 |
-| generation.interiors.enterable_target_tolerance_percent | committed | Interior layout | the pooled band around the target above |
+| generation.interiors.enterable_target_percent | committed | Interior layout | the enterable share of placed buildings, pooled over the shared city pool (96 cities in the test job, 8 in the coverage job) |
+| generation.interiors.enterable_target_tolerance_percent | committed | Interior layout | the pooled band's half-width around the target above at 96 cities, widened by `sqrt(96 / pool)` for a smaller pool |
 | generation.interiors.dwelling_min_enterable_percent | committed | Interior layout | the minimum percent of placed dwellings that must be enterable |
 | generation.interiors.shop_min_enterable_percent | committed | Interior layout | the same minimum for shops |
 | generation.interiors.cafe_min_enterable_percent | committed | Interior layout | the same minimum for cafes |

@@ -1087,8 +1087,9 @@ max = 100
 
 [[balance]]
 # AC3's pooled band: the enterable share of placed buildings, pooled over
-# the fixed seed range 0..256, must sit within the tolerance below of
-# this -- so the count cannot drift to "100, barely". Only a vacant unit
+# the shared city pool (96 cities in the test job, 8 in the coverage job,
+# seeded from the run's `PROPTEST_RNG_SEED`), must sit within the
+# tolerance below of this -- so the count cannot drift to "100, barely". Only a vacant unit
 # or a storage yard is a Shell, so the share sits near the top: the
 # `enterable_share_percent` line of the `interiors sweep` block of
 # `docs/generation.md` carries its mean, spread and min; the pooled mean
@@ -1099,6 +1100,12 @@ min = 1
 max = 100
 
 [[balance]]
+# The band's half-width, in percentage points, at the canonical pool of 96
+# cities. A smaller pool's share is noisier by `sqrt(96 / pool)`, so below
+# 96 the half-width widens by that factor (never narrower than this): the
+# same number of standard errors at every pool size CI judges it at, in
+# `guards::pooled_share_band_x1000`. The two pooled lines of the
+# `interiors sweep` block of `docs/generation.md` measure it at 96 and 8.
 key = "generation.interiors.enterable_target_tolerance_percent"
 value = 1
 min = 0
