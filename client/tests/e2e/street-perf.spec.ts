@@ -191,6 +191,7 @@ test("the frame path stays inside its work budget for a whole walked session (NF
 
   const heapSamples: { atMs: number; usedHeapBytes: number }[] = [];
   const frameSamples: number[] = [];
+  const frameStamps: number[] = [];
   const startedAt = Date.now();
   while (Date.now() - startedAt < RUN_MS) {
     await walkRoute(page, lap);
@@ -203,6 +204,9 @@ test("the frame path stays inside its work budget for a whole walked session (NF
     // means no frame is ever dropped for longer than one heap sample.
     const batch = (await page.evaluate(() => window.__bc?.stopFrameTimings?.() ?? [])) as number[];
     frameSamples.push(...batch);
+    frameStamps.push(
+      ...((await page.evaluate(() => window.__bc?.lastFrameStamps ?? [])) as number[]),
+    );
     heapSamples.push({ atMs: Date.now() - startedAt, usedHeapBytes: await sampleHeapBytes() });
     await page.evaluate(() => window.__bc?.startFrameTimings?.());
   }
@@ -210,6 +214,9 @@ test("the frame path stays inside its work budget for a whole walked session (NF
     () => window.__bc?.stopFrameTimings?.() ?? [],
   )) as number[];
   frameSamples.push(...finalBatch);
+  frameStamps.push(
+    ...((await page.evaluate(() => window.__bc?.lastFrameStamps ?? [])) as number[]),
+  );
 
   const samples = frameSamples;
   expect(samples.length).toBeGreaterThan(100);
@@ -227,6 +234,20 @@ test("the frame path stays inside its work budget for a whole walked session (NF
       p99: percentile(sorted, 99),
       max: sorted[sorted.length - 1],
     },
+    // Where the worst frame fell, against the arrival milestones (story
+    // 4.6): `performance.now()` ms, comparable with each other.
+    maxFrame: (() => {
+      const index = frameSamples.indexOf(sorted[sorted.length - 1] as number);
+      return { ms: frameSamples[index], atMs: frameStamps[index] };
+    })(),
+    milestones: await page.evaluate(() =>
+      Object.fromEntries(
+        performance
+          .getEntriesByType("mark")
+          .filter((m) => m.name.startsWith("bc-boot:") || m.name.startsWith("bc-e2e:"))
+          .map((m) => [m.name, m.startTime]),
+      ),
+    ),
     heapSamples,
   };
   mkdirSync("test-results/story-1.13-perf", { recursive: true });

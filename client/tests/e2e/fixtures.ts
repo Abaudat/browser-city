@@ -36,26 +36,41 @@ export async function arriveNow(page: Page, name = ARRIVE_NAME): Promise<void> {
   await page.keyboard.press("Enter");
 }
 
-export const test = base.extend<{ arrive: boolean; arrivingContexts: undefined }>({
+/** Installs, before any page script runs, the DEV-only note that this spec
+ * assumes the pre-flat start in the shop (`PLAYER_START`). */
+async function startInShop(target: Page | BrowserContext): Promise<void> {
+  await target.addInitScript(() => {
+    (window as { __bcStart?: string }).__bcStart = "shop";
+  });
+}
+
+export const test = base.extend<{
+  arrive: boolean;
+  /** Where the player starts: the shop the pre-flat specs assume (default),
+   * or the home flat a new character really arrives in. */
+  startAt: "shop" | "home";
+  arrivingContexts: undefined;
+}>({
   arrive: [true, { option: true }],
+  startAt: ["shop", { option: true }],
   // A spec that opens its own contexts (`browser.newContext`) arrives them
   // too: the method is wrapped for the length of the test.
   arrivingContexts: [
-    async ({ browser, arrive }, use) => {
+    async ({ browser, arrive, startAt }, use) => {
       const original = browser.newContext.bind(browser);
-      if (arrive) {
-        browser.newContext = async (options) => {
-          const context = await original(options);
-          await arriveOnLoad(context);
-          return context;
-        };
-      }
+      browser.newContext = async (options) => {
+        const context = await original(options);
+        if (startAt === "shop") await startInShop(context);
+        if (arrive) await arriveOnLoad(context);
+        return context;
+      };
       await use(undefined);
       browser.newContext = original;
     },
     { auto: true },
   ],
-  page: async ({ page, arrive }, use) => {
+  page: async ({ page, arrive, startAt }, use) => {
+    if (startAt === "shop") await startInShop(page);
     if (arrive) await arriveOnLoad(page);
     await use(page);
   },

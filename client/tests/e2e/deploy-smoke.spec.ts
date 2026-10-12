@@ -130,6 +130,61 @@ test("the deployed client boots for real: connects, subscribes and renders behin
   expect(failures, `failures:\n${failures.join("\n")}`).toEqual([]);
 });
 
+// Story 4.6: the live deploy still proves a player can get in. A page whose
+// storage is unusable keeps no identity token, so `create_character` is never
+// called for it (FR141's visitor): it can answer the prompt, enter the world
+// and move, and leaves `character` on the live database untouched. A deploy
+// whose arrival gate never opens fails here, not in a player's tab.
+test("a new player can answer the prompt and reach the world, without a character being created", async ({
+  page,
+}) => {
+  const deployUrl = process.env.BC_DEPLOY_URL;
+  if (!deployUrl) {
+    throw new Error("deploy-smoke.spec.ts: BC_DEPLOY_URL must be set");
+  }
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      get() {
+        throw new DOMException("storage denied", "SecurityError");
+      },
+    });
+  });
+  // Every frame this page sends, decoded: a reducer's name travels in it.
+  const sent: string[] = [];
+  page.on("websocket", (ws) => {
+    ws.on("framesent", ({ payload }) => {
+      sent.push(typeof payload === "string" ? payload : payload.toString("latin1"));
+    });
+  });
+
+  await page.goto(deployUrl);
+  const prompt = page.locator('[data-bc-surface="name-prompt"] input');
+  await expect(prompt).toBeFocused();
+  await page.keyboard.type("Smoke");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(
+    (markName) => performance.getEntriesByName(markName).length > 0,
+    BOOT_MARK.PLAYER_CONTROLLABLE,
+    { timeout: 30_000 },
+  );
+  await expect(page.locator('[data-bc-surface="name-prompt"]')).toHaveCount(0);
+
+  // The body answers: holding a key moves the world under the camera.
+  const canvas = page.locator("#test-street canvas");
+  const before = await canvas.screenshot();
+  await page.keyboard.down("KeyD");
+  await page.waitForTimeout(600);
+  await page.keyboard.up("KeyD");
+  const after = await canvas.screenshot();
+  expect(
+    Buffer.compare(before, after),
+    "holding a movement key changed nothing on screen",
+  ).not.toBe(0);
+
+  // And no character was created for it.
+  expect(sent.some((frame) => frame.includes("create_character"))).toBe(false);
+});
+
 // Story 1.12 (AC1, FR168): "off means off", against a real *production*
 // build. Deliberately folded into this spec rather than given a server or
 // a Playwright project of its own (Quentin/Tim's direction) -- the

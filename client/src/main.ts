@@ -34,6 +34,7 @@ import {
   sdkContainerBackend,
 } from "./net/container-subscription";
 import {
+  e2eStartsInShop,
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
   exposeCommuterDrawnForE2e,
@@ -47,6 +48,7 @@ import {
   exposeRegionForE2e,
   exposeRemotePlayersForE2e,
   exposeWorldTransformForE2e,
+  markArrivalForE2e,
   recordAllBoundTextureSourcesForE2e,
   recordAppearanceTextureIdsForE2e,
   recordCharacterForE2e,
@@ -90,7 +92,7 @@ import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
-import { PLAYER_START } from "./test-street/fixture";
+import { HOME_FLAT_SPAWN, PLAYER_START } from "./test-street/fixture";
 import { placeLinkCarrier } from "./test-street/link-carrier";
 import type { RemotePlayersSource } from "./test-street/remote-players-layer";
 import { buildRushCrowd } from "./test-street/rush-crowd";
@@ -203,6 +205,7 @@ async function main(): Promise<void> {
   // the day anything reads that row.
   const senderLifecycle = createSenderLifecycle(() => {
     const p = positionConfig as PositionConfig;
+    markArrivalForE2e("sender-started");
     return startPositionSender({
       conn: () => conn.current(),
       position: () => playerPosition,
@@ -290,6 +293,7 @@ async function main(): Promise<void> {
       onCharacter: (character) => {
         latestCharacter = character;
         recordCharacterForE2e(character);
+        markArrivalForE2e("character-known");
         markArrived(identityStorage);
         arrival.characterKnown();
         syncSender();
@@ -592,7 +596,10 @@ async function startStreetScene(
   // position drives it (`onPlayerMove`), edge-triggered.
   const remotePlayers = players.setUp(defs);
   region.configure({ minFloor: defs.minFloor, maxFloor: defs.maxFloor });
-  followScene(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor);
+  // Story 4.6: a new character is first placed in the home flat; only a DEV
+  // spec that says so starts in the shop.
+  const start = e2eStartsInShop() ? PLAYER_START : HOME_FLAT_SPAWN;
+  followScene(start.x, start.y, start.floor);
 
   const tileSizePx = getBalance(defs, "render.tile_size_px");
   const storeyHeightPx = getBalance(defs, "render.storey_height_px");
@@ -723,6 +730,7 @@ async function startStreetScene(
     objectDefs: objectDefsById(defs),
     windowDefIds: windowDefIds(defs),
     thresholdDefIds: thresholdDefIds(defs),
+    playerStart: start,
     startWithCrowdFrozen: freezeCrowdForE2e,
     cityMilliminutes,
     crowdIdenticalTuples: identicalCrowdForE2e,

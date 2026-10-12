@@ -699,15 +699,15 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   const thresholdPx = committedDefs().objects.find(
     (o) => o.id === THRESHOLD_ARCH_SLATE_DEF_ID,
   )?.sprite;
-  expect(doorways, "the scene recorded no doorway sprites").toHaveLength(4);
+  expect(doorways, "the scene recorded no doorway sprites").toHaveLength(6);
   for (const doorway of doorways ?? []) {
     expect(doorway.textureWidth).toBeGreaterThan(0);
     expect(doorway.textureHeight).toBeGreaterThan(0);
   }
   expect(
     doorways?.filter((d) => d.textureHeight === thresholdPx?.h && d.liftPx === 0),
-  ).toHaveLength(2);
-  expect(doorways?.filter((d) => d.liftPx > 0)).toHaveLength(2);
+  ).toHaveLength(3);
+  expect(doorways?.filter((d) => d.liftPx > 0)).toHaveLength(3);
 
   // FR120, from inside: this building's own near-side walls are gone, and
   // the neighbour's are not -- keyed on the enclosure id, never proximity.

@@ -106,7 +106,8 @@ const milestoneSummaries = milestoneRuns.map((run) => {
     }
   }
   const firstPaint = summarize(run.samples.map((s) => s.firstPaintMs));
-  const interactivePrompt = summarize(run.samples.map((s) => s.interactivePromptMs));
+  const nameSubmitted = summarize(run.samples.map((s) => s.nameSubmittedMs));
+  const submitToControllable = summarize(run.samples.map((s) => s.submitToControllableMs));
   const playerControllable = summarize(run.samples.map((s) => s.playerControllableMs));
   const atlasRequestCounts = run.samples.map((s) => s.atlasRequestCount);
   const atlasBytesSamples = run.samples.map((s) => s.atlasBytes);
@@ -125,7 +126,8 @@ const milestoneSummaries = milestoneRuns.map((run) => {
     summary,
     met,
     firstPaint,
-    interactivePrompt,
+    nameSubmitted,
+    submitToControllable,
     playerControllable,
     atlasRequestCount: summarize(atlasRequestCounts),
     atlasBytes: summarize(atlasBytesSamples),
@@ -377,7 +379,10 @@ for (const m of milestoneSummaries) {
     `| first paint | ${pct1(m.firstPaint.median)} | ${pct1(m.firstPaint.p75)} | ${pct1(m.firstPaint.p95)} | ${pct1(m.firstPaint.max)} |`,
   );
   p(
-    `| interactive prompt (stand-in, FR144) | ${pct1(m.interactivePrompt.median)} | ${pct1(m.interactivePrompt.p75)} | ${pct1(m.interactivePrompt.p95)} | ${pct1(m.interactivePrompt.max)} |`,
+    `| name submitted (FR144; the harness submits as soon as the field exists) | ${pct1(m.nameSubmitted.median)} | ${pct1(m.nameSubmitted.p75)} | ${pct1(m.nameSubmitted.p95)} | ${pct1(m.nameSubmitted.max)} |`,
+  );
+  p(
+    `| submit to controllable (ms after the submit) | ${pct1(m.submitToControllable.median)} | ${pct1(m.submitToControllable.p75)} | ${pct1(m.submitToControllable.p95)} | ${pct1(m.submitToControllable.max)} |`,
   );
   p(
     `| player-controllable | ${pct1(m.playerControllable.median)} | ${pct1(m.playerControllable.p75)} | ${pct1(m.playerControllable.p95)} | ${pct1(m.playerControllable.max)} |`,

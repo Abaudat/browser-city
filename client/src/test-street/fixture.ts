@@ -245,6 +245,37 @@ const WINDOW_X_B = DOOR_X_B + 1;
  * (the door column's own centre): the player has a real body width, so it
  * must be centred in the one-cell-wide door gap. */
 export const PLAYER_START = { x: DOOR_X_A + 0.5, y: 4, floor: 0 } as const;
+
+// --- The home flat (story 4.6): where a new character is first placed.
+// A bedsit on the same street, east of shop B: four interior columns by
+// three rows, a bed against the west wall, one door in its front wall onto
+// the pavement, and nothing else -- no counter, no stock, nothing placed
+// for the occasion. Throwaway fixture until generated interiors and
+// tenancy (story 7.1).
+// East of the footbridge, on a stretch of pavement the street gains for it
+// (the bridge's raised deck is drawn over everything north of it, so the
+// flat stands clear of it).
+const FLAT_WEST_WALL_X = 22;
+const FLAT_INTERIOR_X0 = FLAT_WEST_WALL_X + 1;
+const FLAT_INTERIOR_X1 = FLAT_INTERIOR_X0 + 3;
+const FLAT_EAST_WALL_X = FLAT_INTERIOR_X1 + 1;
+const FLAT_NORTH_WALL_Y = NORTH_WALL_Y;
+// One row north of the shops' fronts, so the pavement strip along them
+// stays open and the scripted walks that use it are untouched.
+const FLAT_SOUTH_WALL_Y = SOUTH_WALL_Y - 1;
+const FLAT_INTERIOR_Y0 = FLAT_NORTH_WALL_Y + 1;
+const FLAT_INTERIOR_Y1 = FLAT_SOUTH_WALL_Y - 1;
+const FLAT_DOOR_X = FLAT_INTERIOR_X0;
+
+/** A new character's first position: on the flat's floor beside the bed,
+ * the door ahead of them across the room. */
+export const HOME_FLAT_SPAWN = {
+  x: FLAT_INTERIOR_X0 + 1.5,
+  y: FLAT_INTERIOR_Y0 + 1.5,
+  floor: 0,
+} as const;
+/** The flat's own door cell, onto the pavement. */
+export const HOME_FLAT_DOOR = { x: FLAT_DOOR_X, y: FLAT_SOUTH_WALL_Y } as const;
 export const PLAYER_STABLE_ID = 1000n;
 
 /** The anchor cell of the lamppost, out on the pavement -- a real collider
@@ -272,6 +303,10 @@ export const SHOP_B_BUILDING_ID = 2n;
  * player stands on it -- otherwise the platform's own front wall would
  * permanently hide whoever just walked onto it. */
 export const PLATFORM_BUILDING_ID = 3n;
+/** The home flat's ownership id (story 4.6). */
+export const HOME_FLAT_BUILDING_ID = 4n;
+/** `defs/objects/interior-props.toml`'s `bed_single_blue`. */
+export const BED_SINGLE_BLUE_DEF_ID = 26;
 
 // --- the subway (declared before STREET_BUILDING_AREAS, which references
 // the platform's own footprint) -----------------------------------------
@@ -467,6 +502,16 @@ export const STREET_BUILDING_AREAS: readonly OwnershipArea[] = [
     ownerId: SHOP_B_BUILDING_ID,
     floor: 0,
     rect: { x0: PARTY_WALL_X + 1, y0: NORTH_WALL_Y, x1: EAST_WALL_X_B + 1, y1: SOUTH_WALL_Y + 1 },
+  },
+  {
+    ownerId: HOME_FLAT_BUILDING_ID,
+    floor: 0,
+    rect: {
+      x0: FLAT_WEST_WALL_X,
+      y0: FLAT_NORTH_WALL_Y,
+      x1: FLAT_EAST_WALL_X + 1,
+      y1: FLAT_SOUTH_WALL_Y + 1,
+    },
   },
   {
     ownerId: PLATFORM_BUILDING_ID,
@@ -811,6 +856,58 @@ const STREET_PROP_LIST: StreetProp[] = [
   },
   { id: 36n, assetKey: "basket", x: WINDOW_X_B, y: INTERIOR_Y1, floor: 0, layer: "furniture" },
 
+  // --- The home flat (story 4.6): walls on four sides, a door in the front
+  // wall, a bed against the west wall. Ids 160-166 are its own.
+  ...wallRun(
+    160n,
+    "horizontal",
+    FLAT_WEST_WALL_X,
+    FLAT_NORTH_WALL_Y,
+    FLAT_EAST_WALL_X - FLAT_WEST_WALL_X + 1,
+    0,
+  ),
+  ...wallRun(
+    161n,
+    "vertical",
+    FLAT_WEST_WALL_X,
+    FLAT_INTERIOR_Y1,
+    FLAT_INTERIOR_Y1 - FLAT_INTERIOR_Y0 + 1,
+    0,
+  ),
+  ...wallRun(
+    162n,
+    "vertical",
+    FLAT_EAST_WALL_X,
+    FLAT_INTERIOR_Y1,
+    FLAT_INTERIOR_Y1 - FLAT_INTERIOR_Y0 + 1,
+    0,
+  ),
+  ...wallRun(163n, "horizontal", FLAT_WEST_WALL_X, FLAT_SOUTH_WALL_Y, 1, 0),
+  ...wallRun(
+    164n,
+    "horizontal",
+    FLAT_DOOR_X + 1,
+    FLAT_SOUTH_WALL_Y,
+    FLAT_EAST_WALL_X - FLAT_DOOR_X,
+    0,
+  ),
+  {
+    id: 165n,
+    x: FLAT_DOOR_X,
+    y: FLAT_SOUTH_WALL_Y,
+    floor: 0,
+    layer: "walls",
+    defId: THRESHOLD_ARCH_SLATE_DEF_ID,
+  },
+  {
+    id: 166n,
+    x: FLAT_INTERIOR_X0,
+    y: FLAT_INTERIOR_Y1,
+    floor: 0,
+    layer: "furniture",
+    defId: BED_SINGLE_BLUE_DEF_ID,
+  },
+
   // --- The subway ---------------------------------------------------------
   // The street stairwell (a real descending stairwell with railings,
   // Artie's direction): four def rows -- the railings block their own
@@ -1067,19 +1164,28 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
     x: 21,
     y: BRIDGE_FOOT_Y,
     width: 1,
-    height: BRIDGE_FOOT_Y - SOUTH_WALL_Y + 1,
+    height: BRIDGE_FOOT_Y - BRIDGE_UP_ANCHOR_Y + 1,
   },
+  // The extended pavement's own edges: east, and south of it.
+  {
+    id: 106n,
+    x: FLAT_EAST_WALL_X + 1,
+    y: SOUTH_WALL_Y,
+    width: 1,
+    height: PAVEMENT_Y1 - SOUTH_WALL_Y + 1,
+  },
+  { id: 107n, x: 22, y: PAVEMENT_Y1 + 1, width: FLAT_EAST_WALL_X + 1 - 22 + 1, height: 1 },
   // South of the pavement, west of the stairwell: the finial row and the
   // top railing's own row (the railing collides at its foot only, so a
   // body can walk along its open strip and out past the well's west end).
   { id: 103n, x: 0, y: STAIRWELL_Y0 + 1, width: STAIRWELL_X0, height: 2 },
-  // North of the pavement, either side of the terrace.
-  { id: 104n, x: 1, y: SOUTH_WALL_Y - 1, width: WEST_WALL_X - 1, height: 1 },
+  // North of the pavement, east of the terrace.
+  // East of the terrace, up to the home flat's own front wall.
   {
     id: 105n,
     x: EAST_WALL_X_B + 1,
     y: SOUTH_WALL_Y - 1,
-    width: 21 - (EAST_WALL_X_B + 1),
+    width: 21 - (EAST_WALL_X_B + 1) + 1,
     height: 1,
   },
   // Around the subway entrance: west of the treads and below the entrance
@@ -1182,6 +1288,25 @@ export const INTERIOR_FLOOR_TILES: StreetGroundTiles = {
   y1: SOUTH_WALL_Y,
 };
 
+export const INTERIOR_FLOOR_TILES_FLAT: StreetGroundTiles = {
+  defId: FLOOR_PALE_STONE_DEF_ID,
+  floor: STREET_FLOOR,
+  x0: FLAT_INTERIOR_X0,
+  y0: FLAT_INTERIOR_Y0,
+  x1: FLAT_INTERIOR_X1 + 1,
+  y1: FLAT_SOUTH_WALL_Y,
+};
+
+/** The flat's door sill is the flat's own floor. */
+export const DOOR_SILL_TILES_FLAT: StreetGroundTiles = {
+  defId: FLOOR_PALE_STONE_DEF_ID,
+  floor: STREET_FLOOR,
+  x0: FLAT_DOOR_X,
+  y0: FLAT_SOUTH_WALL_Y,
+  x1: FLAT_DOOR_X + 1,
+  y1: FLAT_SOUTH_WALL_Y + 1,
+};
+
 export const INTERIOR_FLOOR_TILES_B: StreetGroundTiles = {
   defId: FLOOR_PALE_STONE_DEF_ID,
   floor: STREET_FLOOR,
@@ -1218,6 +1343,27 @@ export const SIDEWALK_TILES: StreetGroundTiles = {
   x0: 1,
   y0: SOUTH_WALL_Y,
   x1: 21,
+  y1: PAVEMENT_Y1 + 1,
+};
+
+/** The pavement the home flat's door opens onto: the two rows that join the
+ * street's first stretch to it past the footbridge's flight, and the stretch
+ * itself. */
+export const SIDEWALK_TILES_FLAT_APPROACH: StreetGroundTiles = {
+  assetKey: "sidewalk",
+  floor: STREET_FLOOR,
+  x0: 21,
+  y0: SOUTH_WALL_Y,
+  x1: 22,
+  y1: BRIDGE_DECK_Y + 1,
+};
+
+export const SIDEWALK_TILES_FLAT: StreetGroundTiles = {
+  assetKey: "sidewalk",
+  floor: STREET_FLOOR,
+  x0: 22,
+  y0: SOUTH_WALL_Y,
+  x1: FLAT_EAST_WALL_X + 1,
   y1: PAVEMENT_Y1 + 1,
 };
 
@@ -1274,9 +1420,13 @@ export const PLATFORM_EDGE_TILES: StreetGroundTiles = {
 export const STREET_GROUND_TILES: readonly StreetGroundTiles[] = [
   INTERIOR_FLOOR_TILES,
   INTERIOR_FLOOR_TILES_B,
+  INTERIOR_FLOOR_TILES_FLAT,
   SIDEWALK_TILES,
+  SIDEWALK_TILES_FLAT_APPROACH,
+  SIDEWALK_TILES_FLAT,
   DOOR_SILL_TILES_A,
   DOOR_SILL_TILES_B,
+  DOOR_SILL_TILES_FLAT,
   SUBWAY_ENTRANCE_TILES,
   BRIDGE_FOOT_TILES,
   PLATFORM_FLOOR_TILES,

@@ -128,13 +128,23 @@ async function collectOneSample(
 // `player-controllable`, production build over HTTP/2, cold context,
 // `domestic` network, 4x CPU, the player taking `GATE_TYPING_MS` after first
 // contentful paint to type a short name. The verdict is the p75 of
-// `GATE_SAMPLES` samples against `GATE_BUDGET_MS`. A miss is fixed on the
-// critical path -- never with a longer typing window, a looser bound or
-// fewer samples. The submit-at-first-paint (0 ms) leg is recorded, not
-// gated.
+// `GATE_SAMPLES` samples against `GATE_BUDGET_MS`, and no single typed
+// sample may reach it. A miss is fixed on the critical path -- never with a
+// longer typing window, a looser bound or fewer samples.
+//
+// Arrival is optimistic (control opens at submit once the first frame
+// exists), so with a 2000 ms typing window the typed leg measures about one
+// frame, and boot could grow a long way before it tripped. The leg that
+// really moves is the 0 ms one -- submit at first paint, nothing streamed
+// yet -- so it is ratcheted: `ZERO_LEG_P75_RATCHET_MS` is the recorded p75
+// (PR #451's first-boot-gate artifact, 879e7205), the verdict fails above it
+// plus `RATCHET_SLACK`, and the constant is lowered when a run improves it
+// and never raised.
 const GATE_TYPING_MS = 2000;
 const GATE_BUDGET_MS = 1000;
 const GATE_SAMPLES = Number(process.env.BC_BOOT_GATE_SAMPLES ?? 10);
+const ZERO_LEG_P75_RATCHET_MS = 1316;
+const RATCHET_SLACK = 1.25;
 const GATE_ONLY = Boolean(process.env.BC_BOOT_GATE_ONLY);
 
 /** Nearest-rank percentile of `values` (ms). */
@@ -182,6 +192,11 @@ if (GATE_ONLY || process.env.BC_BOOT_GATE) {
       "utf-8",
     );
     expect(verdict.gatedP75Ms).toBeLessThan(GATE_BUDGET_MS);
+    for (const sample of gated) expect(sample).toBeLessThan(GATE_BUDGET_MS);
+    expect(
+      verdict.submitAtFirstPaintP75Ms,
+      "submit at first paint got slower than the ratchet: fix the critical path; lower the constant when a run improves it, never raise it",
+    ).toBeLessThanOrEqual(ZERO_LEG_P75_RATCHET_MS * RATCHET_SLACK);
   });
 }
 

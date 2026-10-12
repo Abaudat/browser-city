@@ -182,8 +182,6 @@ jobs:
               - 'client/index.html'
               - 'client/src/boot/**'
               - 'client/src/ui/name-prompt.ts'
-              - 'client/src/main.ts'
-              - 'client/src/net/**'
 
   scripts-tests:
     name: scripts-tests
@@ -1104,6 +1102,45 @@ jobs:
           BC_BOOT_OUT_DIR: ${{ github.workspace }}/boot-smoke-out
           BC_BOOT_HOST_LABEL: github-actions-runner
         run: bash scripts/dev/run-boot-budget-spike.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: boot-smoke
+          path: boot-smoke-out
+          if-no-files-found: warn
+          retention-days: 7
+
+  # Story 4.6 (NFR1, FR145): the first-boot gate is its own job, on every
+  # client or server change -- submit -> controllable depends on the scene's
+  # first frame, the defs and the assets as much as on the boot path, so no
+  # path filter narrower than the e2e one can stand in for it.
+  first-boot-gate:
+    name: first-boot-gate
+    needs: [changes, client-build]
+    if: |
+      always() &&
+      needs.changes.outputs.e2e == 'true' &&
+      (needs.client-build.result == 'success' || needs.client-build.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - working-directory: client
+        run: npm ci
+      - working-directory: client
+        run: npx playwright install --with-deps chromium
       # NFR1 / FR145's first-boot gate (story 4.6), pre-registered in
       # `boot-budget.spec.ts`: on a production build over HTTP/2, a cold
       # context, the domestic network and 4x CPU, the p75 of the player's
@@ -1124,19 +1161,12 @@ jobs:
           path: first-boot-gate-out
           if-no-files-found: warn
           retention-days: 14
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: boot-smoke
-          path: boot-smoke-out
-          if-no-files-found: warn
-          retention-days: 7
 
   ci:
     name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    needs: [changes, scripts-tests, defs, check, test, build, migrate, coverage, client-check, client-build, e2e, review-shots, e2e-perf, boot-smoke]
+    needs: [changes, scripts-tests, defs, check, test, build, migrate, coverage, client-check, client-build, e2e, review-shots, e2e-perf, boot-smoke, first-boot-gate]
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

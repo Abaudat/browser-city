@@ -253,6 +253,9 @@ export interface MountStreetSceneOptions {
    * gates on, never a rAF interval. One call per frame into a sink that
    * does nothing unless a perf run has asked for samples. */
   readonly onFrameWork?: (ms: number) => void;
+  /** Where the player starts (story 4.6: the home flat); defaults to
+   * `PLAYER_START`, the shop the pre-flat specs assume. */
+  readonly playerStart?: { readonly x: number; readonly y: number; readonly floor: number };
   /** The scene's first frame has rendered (story 4.6). */
   readonly onFirstFrame?: (at: number) => void;
   /** Story 5.4 (NFR11): how long L3 took this frame, in ms -- the pose,
@@ -872,6 +875,7 @@ export async function mountStreetScene(
     onCitizenBodies,
     onFrameWork,
     onFirstFrame,
+    playerStart = PLAYER_START,
     onVisibilityChange,
     onMasksChecked,
     onIntent,
@@ -932,7 +936,7 @@ export async function mountStreetScene(
   // `(0, 0)` position while ground tiles or props already sit inside it,
   // the exact defect (a mount-time jump) this cycle's finding 1 named.
   let walk: FloorWalkResult = {
-    ...initialFloorWalkState(PLAYER_START.x, PLAYER_START.y, PLAYER_START.floor),
+    ...initialFloorWalkState(playerStart.x, playerStart.y, playerStart.floor),
     transitioned: false,
   };
 

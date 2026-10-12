@@ -26,7 +26,6 @@ function baseRaw(overrides: RawOverrides = {}) {
       "bc-boot:handshake-open": 150,
       "bc-boot:subscription-applied": 200,
       "bc-boot:atlas-ready": 500,
-      "bc-boot:interactive-prompt": 520,
       "bc-boot:player-controllable": 520,
       ...overrides.marks,
     } as Record<string, number>,
@@ -143,11 +142,10 @@ describe("computeSampleTerms", () => {
     expect(result.terms.toControllable).toBe(20); // 520 - max(500, 200)
   });
 
-  it("reports totalMs, firstPaintMs, interactivePromptMs and playerControllableMs", () => {
+  it("reports totalMs, firstPaintMs and playerControllableMs", () => {
     const result = computeSampleTerms(baseRaw());
     expect(result.totalMs).toBe(520);
     expect(result.firstPaintMs).toBe(60);
-    expect(result.interactivePromptMs).toBe(520);
     expect(result.playerControllableMs).toBe(520);
   });
 

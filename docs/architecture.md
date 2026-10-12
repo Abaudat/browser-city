@@ -402,13 +402,16 @@ and an OIDC identity on the same character.
   `model.rs` and generated into both artefacts) and one with a control or
   invisible format character. It is stored once on `character.name`,
   never unique and never renamed, and reaches the client through
-  `my_character`. `client/src/identity/name-rule.ts` mirrors the rule; both
-  read `fixtures/character-names.v1.tsv`. The client writes
+  `my_character`. `client/src/identity/name-rule.ts` mirrors `plan_name`;
+  their tests hold both to `fixtures/character-names.v1.tsv`. The client writes
   `bc.arrived.v1` (`identity/arrival-flag.ts`) when `my_character` reports a
   character, never on submit alone; with the flag set and an identity that
-  reaches no character the prompt is asked again. A tenancy (who lives
-  where) does not exist yet: the first spawn is the test street's fixture
-  flat.
+  reaches no character the prompt is asked again. `character.name` is
+  where a player's name lives until the player's body is a citizen row
+  (FR35); when citizens gain names the two are read through one path, never
+  two naming systems. A page whose token cannot be persisted (FR141) still
+  answers the prompt and enters as a visitor with the name discarded: it can
+  hold no character, so the answer is dropped.
 
 ## Stock
 
@@ -1920,10 +1923,13 @@ A first boot is the name prompt: the whole boot runs behind it while the
 player types, and `boot/arrival.ts` opens the gate (removes the prompt,
 releases `awaiting-name`, marks `PLAYER_CONTROLLABLE`) once the first frame
 has rendered and the name was submitted. `NAME_SUBMITTED` carries the time
-the shell's inline script saw the submit. The `boot-smoke` job's first-boot
-gate (`boot-budget.spec.ts`, `BC_BOOT_GATE_ONLY`) holds the p75 of
-`NAME_SUBMITTED` to `PLAYER_CONTROLLABLE` under 1000 ms on a production
-build, 4x CPU, domestic network, with a fixed 2000 ms typing window;
+the shell's inline script saw the submit. Arrival is optimistic, so the
+typed leg measures about one frame; the `first-boot-gate` job
+(`boot-budget.spec.ts`, `BC_BOOT_GATE_ONLY`; every client or server change)
+holds, on a production build over HTTP/2, 4x CPU and the domestic network,
+the p75 of `NAME_SUBMITTED` to `PLAYER_CONTROLLABLE` and every single sample
+under 1000 ms with a fixed 2000 ms typing window, and ratchets the 0 ms leg
+(submit at first paint), the leg that really moves;
 `scripts/ci/check-boot-shell.sh` holds the built shell to inline markup
 and CSS with nothing render-blocking and nothing that reads as loading.
 

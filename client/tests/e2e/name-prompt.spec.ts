@@ -6,11 +6,14 @@
 // bound here; the timing gate is `boot-budget/boot-budget.spec.ts`'s.
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
-import { PLAYER_START } from "../../src/test-street/fixture";
+import { HOME_FLAT_SPAWN } from "../../src/test-street/fixture";
 import { waitForPlayerControllable } from "./boot-test-support";
 import { expect, test } from "./fixtures";
+import { ownerSql, readSpacetimeHandle } from "./spacetime-harness.mjs";
 
-test.use({ arrive: false });
+// The prompt is driven by hand, and the player arrives where a new character
+// really does: the home flat.
+test.use({ arrive: false, startAt: "home" });
 
 const PROMPT = '[data-bc-surface="name-prompt"]';
 
@@ -114,8 +117,37 @@ test("after submit nothing new is fetched before the player is controllable, and
 
   // The first position is the flat's, not a street spawn.
   const position = await page.evaluate(() => window.__bc?.playerPosition);
-  expect(position?.x).toBeCloseTo(PLAYER_START.x, 0);
-  expect(position?.y).toBeCloseTo(PLAYER_START.y, 0);
+  expect(position?.x).toBeCloseTo(HOME_FLAT_SPAWN.x, 1);
+  expect(position?.y).toBeCloseTo(HOME_FLAT_SPAWN.y, 1);
+
+  // ...and the authority agrees: once the sender has sent, the server's own
+  // row for this character is in the flat (not the client's belief).
+  const characterId = await page.evaluate(() => window.__bc?.character?.characterId);
+  await expect
+    .poll(
+      () =>
+        ownerSql(
+          readSpacetimeHandle(),
+          `SELECT * FROM player_position WHERE character_id = ${characterId}`,
+        )[0],
+      { timeout: 10_000 },
+    )
+    .toBeDefined();
+  const row = ownerSql(
+    readSpacetimeHandle(),
+    `SELECT * FROM player_position WHERE character_id = ${characterId}`,
+  )[0] as string[];
+  // Columns: character_id, chunk_key, x, y, floor, frac_x, frac_y, updated_at.
+  const [x, y, fl, fx, fy] = [row[2], row[3], row[4], row[5], row[6]].map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  expect(x + (fx as number) / 256).toBeCloseTo(HOME_FLAT_SPAWN.x, 1);
+  expect(y + (fy as number) / 256).toBeCloseTo(HOME_FLAT_SPAWN.y, 1);
+  expect(fl).toBe(HOME_FLAT_SPAWN.floor);
 
   // No ceremony: the prompt is gone from the DOM and a key moves the body.
   await expect(page.locator(PROMPT)).toHaveCount(0);

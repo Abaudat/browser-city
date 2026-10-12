@@ -45,6 +45,10 @@ declare global {
        * Recording is off until `__bcStartFrameTimings` turns it on, so a
        * functional spec never pays for it. */
       frameTimings?: number[];
+      /** `performance.now()` of each `frameTimings` sample, and of the last
+       * stopped window -- so the perf report can say *when* its worst frame was. */
+      frameStamps?: number[];
+      lastFrameStamps?: number[];
       startFrameTimings?: () => void;
       stopFrameTimings?: () => number[];
       /** Story 5.4 (NFR11): per-frame L3 window in ms, same pattern as
@@ -327,19 +331,37 @@ export function recordFrameWorkForE2e(ms: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.frameCount = (bucket.frameCount ?? 0) + 1;
-  if (bucket.frameTimings) bucket.frameTimings.push(ms);
+  if (bucket.frameTimings) {
+    bucket.frameTimings.push(ms);
+    bucket.frameStamps?.push(performance.now());
+  }
   if (bucket.startFrameTimings) return;
   bucket.startFrameTimings = () => {
     const current = window.__bc;
-    if (current) current.frameTimings = [];
+    if (current) {
+      current.frameTimings = [];
+      current.frameStamps = [];
+    }
   };
   bucket.stopFrameTimings = () => {
     const current = window.__bc;
     const samples = current?.frameTimings ?? [];
-    if (current) current.frameTimings = undefined;
+    if (current) {
+      current.lastFrameStamps = current.frameStamps ?? [];
+      current.frameTimings = undefined;
+      current.frameStamps = undefined;
+    }
     return samples;
   };
   window.__bc = bucket;
+}
+
+/** Story 4.6: DEV-only user-timing marks for the arrival milestones the perf
+ * report places its worst frame against (a mark is set once). */
+export function markArrivalForE2e(name: "character-known" | "sender-started"): void {
+  if (!import.meta.env.DEV) return;
+  const full = `bc-e2e:${name}`;
+  if (performance.getEntriesByName(full).length === 0) performance.mark(full);
 }
 
 /** Story 5.4 (NFR11): the L3 window recorder the budget spec drives, the
@@ -666,6 +688,13 @@ export function exposeIdentityActionsForE2e(actions: {
   bucket.createCharacter = actions.createCharacter;
   bucket.startLink = actions.startLink;
   window.__bc = bucket;
+}
+
+/** Story 4.6: a spec that assumes the pre-flat start (the shop, `PLAYER_START`)
+ * says so with `window.__bcStart = "shop"` before the page's scripts run;
+ * everyone else, and every production build, starts in the home flat. */
+export function e2eStartsInShop(): boolean {
+  return import.meta.env.DEV && (window as { __bcStart?: string }).__bcStart === "shop";
 }
 
 /** Story 4.1: exposes the client's derived in-city time as a callable. */
