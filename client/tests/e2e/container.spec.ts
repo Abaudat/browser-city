@@ -102,6 +102,9 @@ test("clicking the cupboard from within reach opens its view; walking away close
     until: { kind: "y-at-most", value: prop.y + 1.1 },
   });
 
+  // Standing in reach, the cupboard is closed: nothing is drawn above it.
+  await page.screenshot({ path: `${SHOT_DIR}/cupboard-closed.png` });
+
   // A real click on the drawn cupboard.
   const centre = cellBottomCentre(prop.x, prop.y);
   const anchor = worldPointPx(

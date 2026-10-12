@@ -372,8 +372,9 @@ pub fn finish_restore(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 /// Refuses to finish a restore in which a held item sits outside its
-/// container's grid, overlaps another, names a container that is not a
-/// placed container object, or names an item with no instance or def.
+/// container's grid, overlaps another, names a placed object that is not a
+/// container, or names an item with no instance or def. A container whose
+/// object is gone (a dangling reference) is left alone.
 fn audit_held_rows(ctx: &ReducerContext) -> Result<(), String> {
     use sim::container_grid::{Occupant, first_misfit};
     use sim::generated::defs::{ITEMS, OBJECTS};
@@ -405,14 +406,22 @@ fn audit_held_rows(ctx: &ReducerContext) -> Result<(), String> {
             });
     }
     for ((kind, id), mut rows) in by_container {
-        let grid = (kind == sim::codes::container_kind::OBJECT)
+        // A container whose object is gone is a dangling reference, which
+        // is a legal state: there is no grid to hold its rows to.
+        let placed = (kind == sim::codes::container_kind::OBJECT)
             .then(|| ctx.db.placed_object().object_id().find(id))
-            .flatten()
-            .and_then(|o| OBJECTS.iter().find(|d| d.id == o.def_id))
+            .flatten();
+        let Some(placed) = placed else {
+            if kind == sim::codes::container_kind::OBJECT {
+                continue;
+            }
+            return Err(format!("held items name unknown container kind {kind}"));
+        };
+        let grid = OBJECTS
+            .iter()
+            .find(|d| d.id == placed.def_id)
             .and_then(|d| d.grid)
-            .ok_or_else(|| {
-                format!("held items name container ({kind}, {id}), which is not a placed container")
-            })?;
+            .ok_or_else(|| format!("held items name object {id}, which is not a container"))?;
         rows.sort_by_key(|r| r.instance_id);
         if let Some((instance_id, why)) = first_misfit((grid.width as u8, grid.height as u8), &rows)
         {
