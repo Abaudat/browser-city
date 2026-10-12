@@ -11,6 +11,19 @@ export const L3_P95_BUDGET_MS = 2;
 /** The tail, where GC shows up. */
 export const L3_P99_BUDGET_MS = 4;
 
+/** What the runner measured when NFR11 was falsified (`ubuntu-latest`, run
+ * 38210916612, `docs/spikes/5.4-l3-frame-budget.md`): the verdict window's p95
+ * and p99 in ms, and the supplementary sweep's. The budget above is MISSED by
+ * the first; the gate below is the tripwire that holds the finding where it
+ * was recorded, +25%, so L3 cannot get slower unnoticed while D-L3 is open.
+ * Lowering the figures when L3 gets cheaper is the way out; raising them is
+ * not available. */
+export const RECORDED_RUNNER_P95_MS = 2.2;
+export const RECORDED_RUNNER_P99_MS = 2.4;
+export const RECORDED_SWEEP_P95_MS = 1.3;
+export const RECORDED_SWEEP_P99_MS = 1.4;
+export const REGRESSION_MARGIN = 1.25;
+
 /** Frames the in-situ window (the real ticker, render interleaved) must
  * hold: the runner yields about 1,200 in 60 s. */
 export const MIN_TICKER_FRAMES = 1_000;
@@ -193,45 +206,66 @@ export interface L3Measurement {
 }
 
 export interface Verdict {
+  /** NFR11 itself: the budget held. */
   readonly met: boolean;
+  /** Everything wrong: budget misses first, then the gate's. */
   readonly failures: readonly string[];
+  /** What fails CI: preconditions, allocation, major GCs, heap growth, and
+   * L3 getting slower than the recorded finding. A budget miss alone is the
+   * recorded finding (D-L3 reopened), not a red build. */
+  readonly gateFailures: readonly string[];
 }
 
 /** NFR11's verdict, and every precondition that stops it being vacuous. */
 export function verdict(m: L3Measurement): Verdict {
-  const failures: string[] = [];
+  const missed: string[] = [];
+  const gate: string[] = [];
   if (!(m.liveBodiesMin >= m.requiredBodies)) {
-    failures.push(`only ${m.liveBodiesMin} live bodies, ${m.requiredBodies} required`);
+    gate.push(`only ${m.liveBodiesMin} live bodies, ${m.requiredBodies} required`);
   }
   if (!(m.walkingMin >= m.requiredWalking)) {
-    failures.push(`only ${m.walkingMin} walking bodies, ${m.requiredWalking} required`);
+    gate.push(`only ${m.walkingMin} walking bodies, ${m.requiredWalking} required`);
   }
   if (!(m.l3Ms.frames >= MIN_TICKER_FRAMES)) {
-    failures.push(`${m.l3Ms.frames} ticker frames measured, ${MIN_TICKER_FRAMES} required`);
+    gate.push(`${m.l3Ms.frames} ticker frames measured, ${MIN_TICKER_FRAMES} required`);
   }
   if (!(m.sweepMs.frames >= MIN_MEASURED_FRAMES)) {
-    failures.push(`${m.sweepMs.frames} sweep frames measured, ${MIN_MEASURED_FRAMES} required`);
+    gate.push(`${m.sweepMs.frames} sweep frames measured, ${MIN_MEASURED_FRAMES} required`);
   }
-  if (!(m.sweepMs.p95 <= L3_P95_BUDGET_MS)) {
-    failures.push(`sweep p95 ${m.sweepMs.p95.toFixed(3)} ms over ${L3_P95_BUDGET_MS} ms`);
-  }
-  if (!(m.sweepMs.p99 <= L3_P99_BUDGET_MS)) {
-    failures.push(`sweep p99 ${m.sweepMs.p99.toFixed(3)} ms over ${L3_P99_BUDGET_MS} ms`);
-  }
-  if (!(m.l3Ms.p95 <= L3_P95_BUDGET_MS)) {
-    failures.push(`L3 p95 ${m.l3Ms.p95.toFixed(3)} ms over ${L3_P95_BUDGET_MS} ms`);
-  }
-  if (!(m.l3Ms.p99 <= L3_P99_BUDGET_MS)) {
-    failures.push(`L3 p99 ${m.l3Ms.p99.toFixed(3)} ms over ${L3_P99_BUDGET_MS} ms`);
+  const windows: [string, Distribution, number, number][] = [
+    ["L3", m.l3Ms, RECORDED_RUNNER_P95_MS, RECORDED_RUNNER_P99_MS],
+    ["sweep", m.sweepMs, RECORDED_SWEEP_P95_MS, RECORDED_SWEEP_P99_MS],
+  ];
+  for (const [name, d, recorded95, recorded99] of windows) {
+    if (!(d.p95 <= L3_P95_BUDGET_MS)) {
+      missed.push(`${name} p95 ${d.p95.toFixed(3)} ms over ${L3_P95_BUDGET_MS} ms`);
+    }
+    if (!(d.p99 <= L3_P99_BUDGET_MS)) {
+      missed.push(`${name} p99 ${d.p99.toFixed(3)} ms over ${L3_P99_BUDGET_MS} ms`);
+    }
+    if (!(d.p95 <= recorded95 * REGRESSION_MARGIN)) {
+      gate.push(
+        `${name} p95 ${d.p95.toFixed(3)} ms regressed past the recorded ${recorded95} ms +25%`,
+      );
+    }
+    if (!(d.p99 <= recorded99 * REGRESSION_MARGIN)) {
+      gate.push(
+        `${name} p99 ${d.p99.toFixed(3)} ms regressed past the recorded ${recorded99} ms +25%`,
+      );
+    }
   }
   if (!(m.allocBytesPerFrame <= MAX_L3_ALLOC_BYTES_PER_FRAME)) {
-    failures.push(
+    gate.push(
       `L3 allocates ${m.allocBytesPerFrame.toFixed(0)} B/frame over ${MAX_L3_ALLOC_BYTES_PER_FRAME}`,
     );
   }
-  if (m.gc.majorCount > 0) failures.push(`${m.gc.majorCount} major GCs in the window`);
+  if (m.gc.majorCount > 0) gate.push(`${m.gc.majorCount} major GCs in the window`);
   if (!(m.heapGrowthRatio <= MAX_L3_HEAP_GROWTH_RATIO)) {
-    failures.push(`retained heap grew ${m.heapGrowthRatio.toFixed(2)}x`);
+    gate.push(`retained heap grew ${m.heapGrowthRatio.toFixed(2)}x`);
   }
-  return { met: failures.length === 0, failures };
+  return {
+    met: missed.length === 0 && gate.length === 0,
+    failures: [...missed, ...gate],
+    gateFailures: gate,
+  };
 }

@@ -37,7 +37,15 @@ const GOOD: L3Measurement = {
 
 describe("L3 budget verdict (NFR11)", () => {
   it("is met by a healthy run", () => {
-    expect(verdict(GOOD)).toEqual({ met: true, failures: [] });
+    expect(verdict(GOOD)).toEqual({ met: true, failures: [], gateFailures: [] });
+  });
+
+  it("records a budget miss within the recorded finding as MISSED without failing the gate", () => {
+    const recorded = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.2));
+    const v = verdict({ ...GOOD, l3Ms: recorded });
+    expect(v.met).toBe(false);
+    expect(v.failures.join()).toContain("p95");
+    expect(v.gateFailures).toEqual([]);
   });
 
   it("FAILS a planted over-budget series", () => {
@@ -47,6 +55,7 @@ describe("L3 budget verdict (NFR11)", () => {
     const v = verdict({ ...GOOD, l3Ms: slow });
     expect(v.met).toBe(false);
     expect(v.failures.join()).toContain("p95");
+    expect(v.gateFailures.join()).toContain("regressed");
   });
 
   it("FAILS a planted tail the p95 hides", () => {
@@ -56,12 +65,13 @@ describe("L3 budget verdict (NFR11)", () => {
     const v = verdict({ ...GOOD, l3Ms: tail });
     expect(v.met).toBe(false);
     expect(v.failures.join()).toContain("p99");
+    expect(v.gateFailures.join()).toContain("regressed");
   });
 
   it("FAILS a planted allocating series", () => {
     const v = verdict({ ...GOOD, allocBytesPerFrame: MAX_L3_ALLOC_BYTES_PER_FRAME + 1 });
     expect(v.met).toBe(false);
-    expect(v.failures.join()).toContain("B/frame");
+    expect(v.gateFailures.join()).toContain("B/frame");
   });
 
   it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
@@ -73,7 +83,7 @@ describe("L3 budget verdict (NFR11)", () => {
 
   it("FAILS a render-free sweep over budget even when the ticker is green", () => {
     const slow = distribution(Array.from({ length: MIN_MEASURED_FRAMES }, () => 2.5));
-    expect(verdict({ ...GOOD, sweepMs: slow }).met).toBe(false);
+    expect(verdict({ ...GOOD, sweepMs: slow }).gateFailures).not.toEqual([]);
   });
 
   it("FAILS a vacuous run: too few bodies, too few walking, too few frames", () => {

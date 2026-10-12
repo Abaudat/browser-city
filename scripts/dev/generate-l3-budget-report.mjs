@@ -49,7 +49,7 @@ out();
 out("## Pre-registered verdict");
 out();
 out(
-  `The statistic is the p95 of the per-frame L3 window (\`streetLife.solve\` + \`citizensLayer.update\`, Pixi's render excluded) measured in the real ticker with the render interleaved, CPU unthrottled, ${after.crowd.size} citizens bodied at once in one bubble on shipped dials. Budget: p95 <= ${after.budget.p95Ms} ms, p99 <= ${after.budget.p99Ms} ms, zero major GCs, allocation under a stamped ceiling. Gated by \`client/tests/e2e/l3-budget.spec.ts\` in \`e2e-perf\`; the 4x CPU-throttled run is reported, never gated.`,
+  `The statistic is the p95 of the per-frame L3 window (\`streetLife.solve\` + \`citizensLayer.update\`, Pixi's render excluded) measured in the real ticker with the software rasteriser off (the rendered window is reported beside it), CPU unthrottled, ${after.crowd.size} citizens bodied at once in one bubble on shipped dials. Budget: p95 <= ${after.budget.p95Ms} ms, p99 <= ${after.budget.p99Ms} ms, zero major GCs, allocation under a stamped ceiling. Gated by \`client/tests/e2e/l3-budget.spec.ts\` in \`e2e-perf\`: a budget miss is the recorded finding, and the CI gate holds the recorded figure +25% so L3 cannot get slower unnoticed; the 4x CPU-throttled run is reported, never gated.`,
 );
 out();
 out(`## Verdict: **${after.verdict}**`);
