@@ -66,3 +66,7 @@ group = "shared"
 [[page_group]]
 theme = "post_office"
 group = "shared"
+
+[[page_group]]
+theme = "kitchen_black_shadow"
+group = "shared"

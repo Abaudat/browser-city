@@ -9,11 +9,11 @@ use std::collections::BTreeMap;
 use crate::atlas::character::PartKind;
 use crate::model::{
     ATLAS_MAX_PAGES_PER_GROUP, AtlasPageDef, AtlasRect, CHARACTER_COMPOSITE_PAGES,
-    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, DistributionScopeDef, FlightDef,
+    COLLIDER_SUBCELLS_PER_CELL, ColliderRect, Defs, DistributionScopeDef, FlightDef, GridDef,
     INTERACT_AT_MAX_REACH_CELLS, MAX_DENOMINATIONS, MAX_FACE_VALUE, MAX_FLOOR, MAX_FOOTPRINT_CELLS,
-    MAX_SHELF_LIFE_MINUTES, MIN_FLOOR, NeighbourTermDef, POSITION_UNITS_PER_CELL,
-    REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode, RawDirection, RoleDef,
-    RuleKindDef, SpriteRect,
+    MAX_GRID_EXTENT, MAX_ITEMS_PER_CONTAINER, MAX_SHELF_LIFE_MINUTES, MIN_FLOOR, NeighbourTermDef,
+    POSITION_UNITS_PER_CELL, REAL_MS_PER_CITY_MINUTE, RawAdjacencyRelation, RawCoherenceMode,
+    RawDirection, RoleDef, RuleKindDef, SpriteRect,
 };
 
 // `RawLandUse::as_str` is used via the fully-qualified method call above,
@@ -80,6 +80,20 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     ));
 
     out.push_str(&format!(
+        "/// FR94: a container grid's width and height are each held to this.
+pub const MAX_GRID_EXTENT: u8 = {MAX_GRID_EXTENT};
+
+"
+    ));
+
+    out.push_str(&format!(
+        "/// FR95: the most cells one container grid holds; `item_held`'s row bound is this times `placed_object`'s.
+pub const MAX_ITEMS_PER_CONTAINER: u64 = {MAX_ITEMS_PER_CONTAINER};
+
+"
+    ));
+
+    out.push_str(&format!(
         "/// The world's declared floor range: no row may sit outside it.\npub const MIN_FLOOR: i32 = {MIN_FLOOR};\npub const MAX_FLOOR: i32 = {MAX_FLOOR};\n\n"
     ));
 
@@ -106,11 +120,14 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
     out.push_str("pub struct SpriteRect {\n    pub sheet: &'static str,\n    pub x: u32,\n    pub y: u32,\n    pub w: u32,\n    pub h: u32,\n}\n\n");
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    out.push_str("pub struct ObjectDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub name: &'static str,\n    pub layer: u32,\n    pub sprite: Option<SpriteRect>,\n    pub width: u32,\n    pub height: u32,\n    pub collider: Option<ColliderRect>,\n    pub interact_at: Option<ColliderRect>,\n    pub window: bool,\n    pub tags: &'static [u32],\n}\n\n");
+    out.push_str("pub struct GridDef {\n    pub width: u32,\n    pub height: u32,\n}\n\n");
+
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    out.push_str("pub struct ObjectDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub name: &'static str,\n    pub layer: u32,\n    pub sprite: Option<SpriteRect>,\n    pub width: u32,\n    pub height: u32,\n    pub collider: Option<ColliderRect>,\n    pub interact_at: Option<ColliderRect>,\n    pub grid: Option<GridDef>,\n    pub window: bool,\n    pub tags: &'static [u32],\n}\n\n");
     out.push_str("pub const OBJECTS: &[ObjectDef] = &[\n");
     for o in &defs.objects {
         out.push_str(&format!(
-            "    ObjectDef {{ id: {}, key: {:?}, name: {:?}, layer: {}, sprite: {}, width: {}, height: {}, collider: {}, interact_at: {}, window: {}, tags: &{} }},\n",
+            "    ObjectDef {{ id: {}, key: {:?}, name: {:?}, layer: {}, sprite: {}, width: {}, height: {}, collider: {}, interact_at: {}, grid: {}, window: {}, tags: &{} }},\n",
             o.id,
             o.key,
             o.name,
@@ -120,6 +137,7 @@ pub fn emit_rust(defs: &Defs, defs_version: &str) -> String {
             o.height,
             fmt_collider_rust(o.collider),
             fmt_collider_rust(o.interact_at),
+            fmt_grid_rust(o.grid),
             o.window,
             fmt_u32_slice(&o.tags)
         ));
@@ -688,6 +706,23 @@ fn fmt_collider_rust(collider: Option<ColliderRect>) -> String {
     }
 }
 
+fn fmt_grid_rust(grid: Option<GridDef>) -> String {
+    match grid {
+        None => "None".to_string(),
+        Some(g) => format!(
+            "Some(GridDef {{ width: {}, height: {} }})",
+            g.width, g.height
+        ),
+    }
+}
+
+fn fmt_grid_json(grid: Option<GridDef>) -> String {
+    match grid {
+        None => "null".to_string(),
+        Some(g) => format!("{{ \"height\": {}, \"width\": {} }}", g.height, g.width),
+    }
+}
+
 fn fmt_collider_json(collider: Option<ColliderRect>) -> String {
     match collider {
         None => "null".to_string(),
@@ -761,6 +796,10 @@ pub fn emit_json(
     out.push_str(&format!(
         "  \"max_footprint_cells\": {MAX_FOOTPRINT_CELLS},\n"
     ));
+    out.push_str(&format!("  \"max_grid_extent\": {MAX_GRID_EXTENT},\n"));
+    out.push_str(&format!(
+        "  \"max_items_per_container\": {MAX_ITEMS_PER_CONTAINER},\n"
+    ));
     out.push_str(&format!("  \"min_floor\": {MIN_FLOOR},\n"));
     out.push_str(&format!("  \"max_floor\": {MAX_FLOOR},\n"));
     out.push_str(&format!(
@@ -805,10 +844,11 @@ pub fn emit_json(
             None => panic!("object '{}' (id {}) has no packed atlas rect", o.key, o.id),
         };
         out.push_str(&format!(
-            "    {{ \"atlas\": {}, \"collider\": {}, \"flight\": {}, \"height\": {}, \"id\": {}, \"interact_at\": {}, \"key\": {}, \"layer\": {}, \"name\": {}, \"sprite\": {}, \"tags\": {}, \"width\": {}, \"window\": {} }}{comma}\n",
+            "    {{ \"atlas\": {}, \"collider\": {}, \"flight\": {}, \"grid\": {}, \"height\": {}, \"id\": {}, \"interact_at\": {}, \"key\": {}, \"layer\": {}, \"name\": {}, \"sprite\": {}, \"tags\": {}, \"width\": {}, \"window\": {} }}{comma}\n",
             atlas,
             fmt_collider_json(o.collider),
             fmt_flight_json(o.flight),
+            fmt_grid_json(o.grid),
             o.height,
             o.id,
             fmt_collider_json(o.interact_at),
@@ -1221,6 +1261,10 @@ mod tests {
                     x1: 16,
                     y1: 32,
                 }),
+                grid: Some(GridDef {
+                    width: 4,
+                    height: 3,
+                }),
                 window: false,
                 tags: vec![2],
                 flight: Some(FlightDef {
@@ -1424,7 +1468,7 @@ mod tests {
         assert!(out.starts_with(GENERATED_HEADER_RUST));
         assert!(out.contains("pub const DEFS_VERSION: &str = \"abc123\";"));
         assert!(out.contains(
-            "ObjectDef { id: 1, key: \"trash_bin\", name: \"Trash Bin\", layer: 2, sprite: Some(SpriteRect { sheet: \"ModernTileset/Pier_Bin_1.png\", x: 0, y: 0, w: 16, h: 16 }), width: 1, height: 1, collider: Some(ColliderRect { x0: 4, y0: 4, x1: 12, y1: 12 }), interact_at: Some(ColliderRect { x0: 0, y0: 16, x1: 16, y1: 32 }), window: false, tags: &[2] }"
+            "ObjectDef { id: 1, key: \"trash_bin\", name: \"Trash Bin\", layer: 2, sprite: Some(SpriteRect { sheet: \"ModernTileset/Pier_Bin_1.png\", x: 0, y: 0, w: 16, h: 16 }), width: 1, height: 1, collider: Some(ColliderRect { x0: 4, y0: 4, x1: 12, y1: 12 }), interact_at: Some(ColliderRect { x0: 0, y0: 16, x1: 16, y1: 32 }), grid: Some(GridDef { width: 4, height: 3 }), window: false, tags: &[2] }"
         ));
         assert!(out.contains("pub const COLLIDER_SUBCELLS_PER_CELL: i32 = 16;"));
         assert!(out.contains("pub const INTERACT_AT_MAX_REACH_CELLS: i32 = 2;"));
@@ -1490,14 +1534,16 @@ mod tests {
         assert!(lines[4].contains("\"position_units_per_cell\": 256"));
         assert!(lines[5].contains("\"interact_at_max_reach_cells\": 2"));
         assert!(lines[6].contains("\"max_footprint_cells\": 8"));
-        assert!(lines[7].contains("\"min_floor\": -1"));
-        assert!(lines[8].contains("\"max_floor\": 7"));
-        assert!(lines[9].contains("\"max_shelf_life_minutes\": 525600"));
-        assert!(lines[10].contains("\"max_face_value\": 1000"));
-        assert!(lines[11].contains("\"max_denominations\": 16"));
-        assert!(lines[12].contains("\"denomination_unit\": 0"));
-        assert!(lines[13].contains("\"real_ms_per_city_minute\": 2500"));
-        assert!(lines[14].contains("\"atlas_max_pages_per_group\": 2"));
+        assert!(lines[7].contains("\"max_grid_extent\": 8"));
+        assert!(lines[8].contains("\"max_items_per_container\": 64"));
+        assert!(lines[9].contains("\"min_floor\": -1"));
+        assert!(lines[10].contains("\"max_floor\": 7"));
+        assert!(lines[11].contains("\"max_shelf_life_minutes\": 525600"));
+        assert!(lines[12].contains("\"max_face_value\": 1000"));
+        assert!(lines[13].contains("\"max_denominations\": 16"));
+        assert!(lines[14].contains("\"denomination_unit\": 0"));
+        assert!(lines[15].contains("\"real_ms_per_city_minute\": 2500"));
+        assert!(lines[16].contains("\"atlas_max_pages_per_group\": 2"));
         assert!(!out.contains('\r'));
     }
 
@@ -1861,6 +1907,7 @@ mod tests {
             height: 1,
             collider: None,
             interact_at: None,
+            grid: None,
             window: false,
             tags: vec![],
             flight: None,

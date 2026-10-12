@@ -137,6 +137,10 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         height: o.height,
                         collider: o.collider.as_ref().map(|c| located(text, c)),
                         interact_at: o.interact_at.as_ref().map(|c| located(text, c)),
+                        grid: o
+                            .grid
+                            .as_ref()
+                            .map(|g| (located(text, &g.width), located(text, &g.height))),
                         window: o.window,
                         tags: o.tags,
                         flight: o.flight.as_ref().map(|f| located(text, f)),

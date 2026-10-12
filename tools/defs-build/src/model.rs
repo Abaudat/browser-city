@@ -86,6 +86,21 @@ pub const INTERACT_AT_MAX_REACH_CELLS: i64 = 2;
 /// reaches `sim::generated::defs` (see `emit.rs`).
 pub const MAX_FOOTPRINT_CELLS: i64 = 8;
 
+/// FR94: a container grid's width and height are each held to this. The
+/// largest grid we need is a pallet (8x6); `sim::item_instance` reads the
+/// generated copy.
+pub const MAX_GRID_EXTENT: i64 = 8;
+
+/// FR95: the most cells one container grid holds -- every item is at least
+/// 1x1, so a grid of at most this many cells can never be bound by a count.
+/// `item_held`'s row bound is this times `placed_object`'s.
+pub const MAX_ITEMS_PER_CONTAINER: i64 = 64;
+
+const _: () = assert!(
+    MAX_GRID_EXTENT * MAX_GRID_EXTENT <= MAX_ITEMS_PER_CONTAINER,
+    "the largest container grid must fit within MAX_ITEMS_PER_CONTAINER"
+);
+
 /// The world's declared floor range (story 4.3): the subway is `-1`, and
 /// the eight floors `placed_object`'s bound assumes run `0..=7`. A region
 /// subscription is bounded only because floors are. Declared once, here,
@@ -380,6 +395,12 @@ pub struct RawObject {
     /// the declaration that this object has an interaction; there is no
     /// separate `interactable` flag anywhere.
     pub interact_at: Option<Spanned<RawColliderRect>>,
+    /// Story 6.10 (FR94): a container grid in whole cells. Its presence *is*
+    /// the declaration that this object is a container; there is no
+    /// `container` flag. Sizes live in `defs/` only -- they are the tedium
+    /// dial.
+    #[serde(default)]
+    pub grid: Option<RawGrid>,
     /// Story 1.7 (FR121): a window wall tile draws semi-transparently
     /// (`render.window_alpha`, a balance key -- never a literal) and lets
     /// near-side retraction hide it exactly like any other front wall.
@@ -432,6 +453,13 @@ pub struct RawDenomination {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawBulk {
+    pub width: Spanned<u32>,
+    pub height: Spanned<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawGrid {
     pub width: Spanned<u32>,
     pub height: Spanned<u32>,
 }
@@ -1221,6 +1249,8 @@ pub struct ObjectEntry {
     pub height: Option<u32>,
     pub collider: Option<Located<RawColliderRect>>,
     pub interact_at: Option<Located<RawColliderRect>>,
+    /// Story 6.10: the container grid's width and height, as authored.
+    pub grid: Option<(Located<u32>, Located<u32>)>,
     pub window: bool,
     pub tags: Vec<String>,
     /// Story 15.15: see [`RawObject::flight`].
@@ -1588,12 +1618,21 @@ pub struct ObjectDef {
     pub collider: Option<ColliderRect>,
     /// Present exactly when this object declares an interaction (FR148).
     pub interact_at: Option<ColliderRect>,
+    /// Present exactly when this object is a container (FR94): its grid in
+    /// whole cells.
+    pub grid: Option<GridDef>,
     pub window: bool,
     /// Resolved tag ids (story 2.10, FR111), sorted and deduplicated --
     /// the engine's only vocabulary, never a literal key past this point.
     pub tags: Vec<u32>,
     /// Story 15.15: client-only (`defs.json`, never `sim::generated::defs`).
     pub flight: Option<FlightDef>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GridDef {
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

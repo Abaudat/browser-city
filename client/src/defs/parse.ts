@@ -24,6 +24,7 @@ import type {
   EyesDef,
   Family,
   FlightDef,
+  GridDef,
   HairstyleDef,
   ItemDef,
   ObjectDef,
@@ -236,6 +237,7 @@ function parseObject(value: unknown, path: string): ObjectDef {
       "height",
       "collider",
       "interact_at",
+      "grid",
       "flight",
       "window",
       "tags",
@@ -244,6 +246,7 @@ function parseObject(value: unknown, path: string): ObjectDef {
   );
   const collider = parseNullableCollider(obj.collider, `${path}.collider`);
   const interactAt = parseNullableCollider(obj.interact_at, `${path}.interact_at`);
+  const grid = parseNullableGrid(obj.grid, `${path}.grid`);
   const tags = expectU32Array(obj.tags, `${path}.tags`);
   const flight = parseNullableFlight(obj.flight, `${path}.flight`);
   return {
@@ -263,7 +266,18 @@ function parseObject(value: unknown, path: string): ObjectDef {
     tags,
     ...(collider ? { collider } : {}),
     ...(interactAt ? { interactAt } : {}),
+    ...(grid ? { grid } : {}),
     ...(flight ? { flight } : {}),
+  };
+}
+
+function parseNullableGrid(value: unknown, path: string): GridDef | undefined {
+  if (value === null || value === undefined) return undefined;
+  const obj = expectRecord(value, path);
+  checkKnownKeys(obj, ["width", "height"], path);
+  return {
+    width: expectU32(obj.width, `${path}.width`),
+    height: expectU32(obj.height, `${path}.height`),
   };
 }
 
@@ -560,6 +574,8 @@ export function parseDefs(data: unknown): Defs {
       "position_units_per_cell",
       "interact_at_max_reach_cells",
       "max_footprint_cells",
+      "max_grid_extent",
+      "max_items_per_container",
       "min_floor",
       "max_floor",
       "max_shelf_life_minutes",
@@ -600,6 +616,11 @@ export function parseDefs(data: unknown): Defs {
     "$.interact_at_max_reach_cells",
   );
   const maxFootprintCells = expectU32(root.max_footprint_cells, "$.max_footprint_cells");
+  const maxGridExtent = expectU32(root.max_grid_extent, "$.max_grid_extent");
+  const maxItemsPerContainer = expectU32(
+    root.max_items_per_container,
+    "$.max_items_per_container",
+  );
   const minFloor = expectI32(root.min_floor, "$.min_floor");
   const maxFloor = expectU32(root.max_floor, "$.max_floor");
   const maxShelfLifeMinutes = expectU32(root.max_shelf_life_minutes, "$.max_shelf_life_minutes");
@@ -813,6 +834,7 @@ export function parseDefs(data: unknown): Defs {
     checkObjectName(object);
     checkObjectLayer(object);
     checkObjectFootprintCap(object, maxFootprintCells);
+    checkObjectGrid(object, maxGridExtent, maxItemsPerContainer);
     checkSpriteNonZeroArea(object);
     if (tileSizePx !== undefined) {
       checkSpriteMatchesFootprint(object, tileSizePx);
@@ -837,6 +859,8 @@ export function parseDefs(data: unknown): Defs {
     positionUnitsPerCell,
     interactAtMaxReachCells,
     maxFootprintCells,
+    maxGridExtent,
+    maxItemsPerContainer,
     minFloor,
     maxFloor,
     maxShelfLifeMinutes,
@@ -1131,6 +1155,31 @@ function checkObjectFootprintCap(object: ObjectDef, maxFootprintCells: number): 
   }
 }
 
+/** FR94/FR95: a container grid's axes are each `1..=MAX_GRID_EXTENT` and
+ * its area is within `MAX_ITEMS_PER_CONTAINER`, so a count cap is never
+ * what makes a container full. */
+function checkObjectGrid(
+  object: ObjectDef,
+  maxGridExtent: number,
+  maxItemsPerContainer: number,
+): void {
+  const g = object.grid;
+  if (!g) return;
+  for (const [axis, v] of [
+    ["width", g.width],
+    ["height", g.height],
+  ] as const) {
+    if (v === 0 || v > maxGridExtent) {
+      fail(`object '${object.key}' grid ${axis} ${v} is outside 1..=${maxGridExtent} (MAX_GRID_EXTENT)`);
+    }
+  }
+  if (g.width * g.height > maxItemsPerContainer) {
+    fail(
+      `object '${object.key}' grid ${g.width}x${g.height} is over MAX_ITEMS_PER_CONTAINER (${maxItemsPerContainer})`,
+    );
+  }
+}
+
 /** A sprite rect must have positive area -- checked independently of
  * whether its sheet's real dimensions are known, exactly like `tools/
  * defs-build`'s own `validate.rs`. */
@@ -1252,7 +1301,7 @@ export function canonicalDump(defs: Defs): string {
   for (const o of defs.objects) {
     const tags = [...o.tags].sort((a, b) => a - b).join(",");
     lines.push(
-      `object ${o.key} id=${o.id} name=${o.name} layer=${o.layer} sprite=${o.sprite ? `${o.sprite.sheet}:${o.sprite.x},${o.sprite.y},${o.sprite.w},${o.sprite.h}` : "none"} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} window=${o.window} tags=[${tags}]`,
+      `object ${o.key} id=${o.id} name=${o.name} layer=${o.layer} sprite=${o.sprite ? `${o.sprite.sheet}:${o.sprite.x},${o.sprite.y},${o.sprite.w},${o.sprite.h}` : "none"} height=${o.height} width=${o.width} collider=${rect(o.collider)} interact_at=${rect(o.interactAt)} grid=${o.grid ? `${o.grid.width}x${o.grid.height}` : "none"} window=${o.window} tags=[${tags}]`,
     );
   }
   for (const i of defs.items) {

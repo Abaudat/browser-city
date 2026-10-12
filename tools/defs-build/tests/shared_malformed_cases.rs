@@ -94,6 +94,8 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "denomination-perishable" => "denomination-perishable",
         "denomination-face-value-duplicate" => "denomination-face-value-duplicate",
         "denominations-over-cap" => "denominations-over-cap",
+        "object-grid-zero" => "object-grid-zero",
+        "object-grid-extent-exceeded" => "object-grid-extent-exceeded",
         other => panic!(
             "shared case '{other}' has no mapped tests/fixtures/invalid/ directory -- add one to fixture_for()"
         ),

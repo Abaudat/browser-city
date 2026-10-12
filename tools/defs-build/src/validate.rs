@@ -1699,6 +1699,7 @@ struct LoweredObjectEntry {
     height: u32,
     collider: Option<Located<RawColliderRect>>,
     interact_at: Option<Located<RawColliderRect>>,
+    grid: Option<(Located<u32>, Located<u32>)>,
     window: bool,
     tags: Vec<String>,
     flight: Option<Located<RawFlight>>,
@@ -1866,6 +1867,7 @@ fn lower_object(
         height,
         collider,
         interact_at: e.interact_at.clone(),
+        grid: e.grid.clone(),
         window: e.window,
         tags: e.tags.clone(),
         flight: e.flight.clone(),
@@ -2695,6 +2697,30 @@ fn check_object_footprint_cap(entries: &[LoweredObjectEntry]) -> Result<(), Defs
     Ok(())
 }
 
+/// Story 6.10 (FR94/FR95): a container grid's axes are each `1..=MAX_GRID_EXTENT`.
+/// `model.rs` asserts at compile time that the largest such grid is within
+/// `MAX_ITEMS_PER_CONTAINER`, so a count cap can never be what makes a
+/// container full.
+fn check_object_grids(entries: &[LoweredObjectEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        let Some((w, h)) = &e.grid else { continue };
+        for (axis, v) in [("width", w), ("height", h)] {
+            if v.value == 0 || v.value as i64 > MAX_GRID_EXTENT {
+                return Err(DefsError::new(
+                    &e.path,
+                    v.line,
+                    v.col,
+                    format!(
+                        "object '{}' grid {axis} {} is outside 1..={MAX_GRID_EXTENT} (MAX_GRID_EXTENT)",
+                        e.key.value, v.value
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Story 15.15: a declared `flight` has `drop_px` in
 /// `1..=render.storey_height_px`, `from_px < to_px`, a ramp that fits some
 /// axis of the footprint (`to_px <= max(width, height) * tile_size_px`), and
@@ -3319,6 +3345,7 @@ pub fn validate(
     let lowered_objects = lower_objects(&raw.objects, &archetypes_by_key)?;
 
     check_object_footprint_cap(&lowered_objects)?;
+    check_object_grids(&lowered_objects)?;
     check_object_colliders(&lowered_objects)?;
     check_object_interact_at(&lowered_objects)?;
     check_object_sprite_sheet_root(&raw.objects, sprite_sheet_allowed_root)?;
@@ -3490,6 +3517,10 @@ pub fn validate(
                     y0: c.value.y0,
                     x1: c.value.x1,
                     y1: c.value.y1,
+                }),
+                grid: o.grid.as_ref().map(|(w, h)| GridDef {
+                    width: w.value,
+                    height: h.value,
                 }),
                 window: o.window,
                 tags: resolve_object_tags(&o.path, &o.key, &o.tags, &tag_ids)

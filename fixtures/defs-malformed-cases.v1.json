@@ -54,5 +54,7 @@
   "denomination-not-piece",
   "denomination-perishable",
   "denomination-face-value-duplicate",
-  "denominations-over-cap"
+  "denominations-over-cap",
+  "object-grid-zero",
+  "object-grid-extent-exceeded"
 ]

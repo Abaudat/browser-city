@@ -727,6 +727,16 @@ fn an_object_footprint_dimension_of_zero_is_named() {
     assert!(err.message.contains("footprint width or height of 0"));
 }
 
+/// FR94: a container grid axis of 0 or over `MAX_GRID_EXTENT` is refused
+/// at the value, never clamped.
+#[test]
+fn an_object_grid_axis_of_zero_or_over_the_extent_is_refused() {
+    let err = build_err("object-grid-zero");
+    assert!(err.message.contains("grid width 0 is outside 1..=8"));
+    let err = build_err("object-grid-extent-exceeded");
+    assert!(err.message.contains("grid width 9 is outside 1..=8"));
+}
+
 /// FR127's cap: a 9-cell-wide footprint is refused, naming the object and
 /// directing the author to compose the structure from multiple objects.
 #[test]
@@ -1177,6 +1187,8 @@ fn every_known_category_has_a_fixture_directory() {
         "sprite-height-not-tile-multiple",
         "sprite-shorter-than-footprint",
         "object-dimension-zero",
+        "object-grid-zero",
+        "object-grid-extent-exceeded",
         "empty-object-name",
         "footprint-cap-exceeded",
         "walkable-flag-rejected",
