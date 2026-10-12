@@ -5,8 +5,8 @@
 
 use sim::codes::container_kind;
 use sim::container_grid::{
-    FitError, Occupant, Store, can_ever_fit, first_fit, fits, footprint, needs_rotation,
-    packing_forced, plan_store,
+    FitError, Occupant, Store, can_ever_fit, first_fit, first_misfit, fits, footprint,
+    needs_rotation, packing_forced, plan_store,
 };
 use sim::generated::defs::{ITEMS, MAX_FOOTPRINT_CELLS, OBJECTS};
 use sim::item_instance::{
@@ -298,4 +298,18 @@ fn packing_is_forced_by_a_refusal_or_by_needing_a_rotation_and_by_nothing_else()
     let held = [occ(3, (0, 0), (1, 1), 0)];
     let refused = plan_store(world, container(), grid, 9, &held, (1, 1), (0, 0), 0).unwrap();
     assert!(packing_forced(grid, 9, &held, (1, 1), &refused));
+}
+
+#[test]
+fn the_audit_names_the_first_row_that_leaves_the_grid_or_overlaps() {
+    let grid = (4, 3);
+    let ok = [occ(1, (0, 0), (2, 2), 0), occ(2, (2, 0), (2, 1), 0)];
+    assert_eq!(first_misfit(grid, &ok), None);
+    let out = [occ(1, (0, 0), (2, 2), 0), occ(2, (3, 0), (2, 1), 0)];
+    assert_eq!(first_misfit(grid, &out), Some((2, FitError::OutOfGrid)));
+    let over = [occ(1, (0, 0), (2, 2), 0), occ(2, (1, 1), (1, 1), 0)];
+    assert_eq!(
+        first_misfit(grid, &over),
+        Some((2, FitError::Overlaps { instance_id: 1 }))
+    );
 }

@@ -183,3 +183,19 @@ pub fn packing_forced(
         }
     }
 }
+
+/// The first row of `rows` (one container's held items, in any order) that
+/// does not fit `grid` beside the rows before it, or `None` when they all
+/// do: the audit that makes "a held item's slot is validated against its
+/// container's real grid" (FR95) hold for rows written outside
+/// [`plan_store`], a restore for one.
+pub fn first_misfit(grid: Cells, rows: &[Occupant]) -> Option<(u64, FitError)> {
+    let mut placed: Vec<Occupant> = Vec::with_capacity(rows.len());
+    for r in rows {
+        if let Err(e) = fits(grid, &placed, r.bulk, r.orientation, r.slot) {
+            return Some((r.instance_id, e));
+        }
+        placed.push(*r);
+    }
+    None
+}
