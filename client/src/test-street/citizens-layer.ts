@@ -483,9 +483,9 @@ export async function mountCitizensLayer(
       for (const d of drawn.values()) {
         const m = d.member;
         if (!m.solved) continue;
-        const onLeg = m.frame.arriveAt > m.frame.departAt;
+        // A body on a leg or showing a flavour, or with something to report.
         const flavour = m.frame.flavour;
-        if (!onLeg && !flavour) continue;
+        if (!m.frame.moving && !flavour && m.fallbacks === 0 && !m.paceOutOfBand) continue;
         const ox = m.offsetX;
         const oy = m.offsetY;
         out.push({

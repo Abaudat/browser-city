@@ -281,6 +281,9 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   const workerCalibrationMs = await page.evaluate(
     async () => (await window.__bc?.l3WorkerCalibrate?.(21)) ?? 0,
   );
+  // The calibrations stall the pipeline for a moment (they run on the worker
+  // the ticks queue behind): let it drain before the window opens.
+  await page.waitForTimeout(1_000);
   const statsBefore = await page.evaluate(() => window.__bc?.l3SolveStats?.(true));
   const heapSamples: { atMs: number; usedHeapBytes: number }[] = [];
   const l3Samples: number[] = [];
