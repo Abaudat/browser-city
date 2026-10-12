@@ -38,7 +38,7 @@ export const MIN_MEASURED_FRAMES = 3_000;
  * (`docs/spikes/5.4-l3-frame-budget.md`), so a doubling goes red; the remainder
  * is the micro-path search each leg start runs. Restamp it when the figure
  * moves, never above measured + 25%. */
-export const MAX_L3_ALLOC_BYTES_PER_FRAME = 20_480;
+export const MAX_L3_ALLOC_BYTES_PER_FRAME = 18_432;
 
 /** Retained heap, last window against the first, after a forced GC at each
  * end -- the same method and bound as `street-perf.spec.ts`. */

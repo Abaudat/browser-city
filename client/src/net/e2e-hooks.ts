@@ -50,8 +50,11 @@ declare global {
       /** Story 5.4 (NFR11): per-frame L3 window in ms, same pattern as
        * `frameTimings`; recorded only between start and stop. */
       l3Timings?: number[];
+      l3SolveTimings?: number[];
       startL3Timings?: () => void;
       stopL3Timings?: () => number[];
+      /** The solve share of each `l3Timings` window (the rest is the layer's update). */
+      stopL3SolveTimings?: () => number[];
       /** Story 5.4: every drawn L3 body as the debug overlay reads it. */
       l3Bodies?: () => readonly {
         id: string;
@@ -328,14 +331,24 @@ export function recordFrameWorkForE2e(ms: number): void {
 /** Story 5.4 (NFR11): the L3 window recorder the budget spec drives, the
  * same idiom as `recordFrameWorkForE2e`: nothing is kept, and nothing
  * allocated, unless a caller has started it. */
-export function recordL3WorkForE2e(ms: number): void {
+export function recordL3WorkForE2e(ms: number, solveMs = 0): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   if (bucket.l3Timings) bucket.l3Timings.push(ms);
+  if (bucket.l3SolveTimings) bucket.l3SolveTimings.push(solveMs);
   if (bucket.startL3Timings) return;
   bucket.startL3Timings = () => {
     const current = window.__bc;
-    if (current) current.l3Timings = [];
+    if (current) {
+      current.l3Timings = [];
+      current.l3SolveTimings = [];
+    }
+  };
+  bucket.stopL3SolveTimings = () => {
+    const current = window.__bc;
+    const samples = current?.l3SolveTimings ?? [];
+    if (current) current.l3SolveTimings = undefined;
+    return samples;
   };
   bucket.stopL3Timings = () => {
     const current = window.__bc;

@@ -86,6 +86,12 @@ class Heap {
     this.#seqs[b] = s;
   }
 
+  /** Empties the heap, keeping its storage. */
+  reset(): void {
+    this.size = 0;
+    this.#seq = 0;
+  }
+
   push(node: number, key: number): void {
     if (this.size === this.#nodes.length) {
       const grow = this.size * 2;
@@ -132,6 +138,33 @@ class Heap {
     }
     return top;
   }
+}
+
+/** The search's working arrays, owned by the module and reused by every call:
+ * a search allocates only the route it returns. Searches never nest. */
+const scratch = {
+  g: new Int32Array(0),
+  parent: new Int32Array(0),
+  dirOf: new Int8Array(0),
+  closed: new Uint8Array(0),
+  heap: new Heap(64),
+};
+
+function scratchFor(total: number): typeof scratch {
+  if (scratch.g.length < total) {
+    // Grown geometrically so a run of slowly larger boxes does not reallocate.
+    const size = Math.max(total, scratch.g.length * 2);
+    scratch.g = new Int32Array(size);
+    scratch.parent = new Int32Array(size);
+    scratch.dirOf = new Int8Array(size);
+    scratch.closed = new Uint8Array(size);
+  }
+  scratch.g.fill(NONE, 0, total);
+  scratch.parent.fill(NONE, 0, total);
+  scratch.dirOf.fill(NONE, 0, total);
+  scratch.closed.fill(0, 0, total);
+  scratch.heap.reset();
+  return scratch;
 }
 
 /** Whether a body standing at `(x, y)` (cell units) is clear of blocked tiles. */
@@ -244,11 +277,7 @@ export function findMicroPath(
   const h = Math.max(from.y, to.y) + marginCells - minY + 1;
   const total = w * h;
   if (!(total <= maxCells)) return { ok: false, reason: "budget", expansions: 0 };
-  const g = new Int32Array(total).fill(NONE);
-  const parent = new Int32Array(total).fill(NONE);
-  const dirOf = new Int8Array(total).fill(NONE);
-  const closed = new Uint8Array(total);
-  const heap = new Heap(64);
+  const { g, parent, dirOf, closed, heap } = scratchFor(total);
 
   const startIdx = (from.y - minY) * w + (from.x - minX);
   const goalIdx = (to.y - minY) * w + (to.x - minX);

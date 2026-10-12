@@ -85,6 +85,10 @@ out();
 out("| Window | Frames | p50 | p95 | p99 | max |");
 out("| --- | --- | --- | --- | --- | --- |");
 out(row("L3, unthrottled, real ticker, rasteriser off (verdict figure)", after.l3Ms));
+if (after.l3SolveMs && after.l3UpdateMs) {
+  out(row("  of which the solve (`streetLife.solve`)", after.l3SolveMs));
+  out(row("  of which the update (`citizensLayer.update`: zone plan, sprite writes)", after.l3UpdateMs));
+}
 out(row("L3, unthrottled, real ticker, rendered (reported)", after.l3RenderedMs));
 out(row("L3, unthrottled, render-free sweep (supplementary, same gate)", after.l3SweepMs));
 out(row("whole frame work, rendered, unthrottled", after.frameWorkMs));

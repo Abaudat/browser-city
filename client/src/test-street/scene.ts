@@ -256,7 +256,7 @@ export interface MountStreetSceneOptions {
    * never Pixi's render. Called every frame the crowd ticks; the sink does
    * nothing unless a perf run has asked for samples. `l3/` itself reads no
    * clock: the bracket is here. */
-  readonly onL3Work?: (ms: number) => void;
+  readonly onL3Work?: (ms: number, solveMs: number) => void;
   /** Story 5.4: the dev-only rush-hour load (`rush-crowd.ts`) added to the
    * street, built by the caller inside its DEV branch so a production bundle
    * never holds the builder. Absent in every production path. */
@@ -1989,8 +1989,9 @@ export async function mountStreetScene(
         const l3Start = onL3Work ? performance.now() : 0;
         const zone = bodyZone();
         streetLife.solve(cityMilli, zone);
+        const solved = onL3Work ? performance.now() : 0;
         citizensLayer.update(cityMilli, zone);
-        onL3Work?.(performance.now() - l3Start);
+        onL3Work?.(performance.now() - l3Start, solved - l3Start);
         onCitizenBodies?.(citizensLayer.bodyBounds(), app.screen, citizensLayer.citizenCount);
       }
       updateCommuter(cityMilli);

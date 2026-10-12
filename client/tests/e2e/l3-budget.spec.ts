@@ -113,8 +113,11 @@ async function startTimings(page: Page): Promise<void> {
   });
 }
 
-async function stopTimings(page: Page): Promise<{ l3: number[]; frame: number[] }> {
+async function stopTimings(
+  page: Page,
+): Promise<{ l3: number[]; solve: number[]; frame: number[] }> {
   return page.evaluate(() => ({
+    solve: window.__bc?.stopL3SolveTimings?.() ?? [],
     l3: window.__bc?.stopL3Timings?.() ?? [],
     frame: window.__bc?.stopFrameTimings?.() ?? [],
   }));
@@ -248,6 +251,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   const calibrationMs = await page.evaluate(calibrationWorkload, 21);
   const heapSamples: { atMs: number; usedHeapBytes: number }[] = [];
   const l3Samples: number[] = [];
+  const solveSamples: number[] = [];
   let gc: GcSummary = {
     minorPausesMs: [],
     minorCount: 0,
@@ -266,6 +270,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   ) {
     const { batch, gc: lapGc } = await lap(LAP_MS, await startGcTrace(cdp));
     l3Samples.push(...batch.l3);
+    solveSamples.push(...batch.solve);
     if (lapGc) gc = addGc(gc, lapGc);
     heapSamples.push({ atMs: Date.now() - startedAt, usedHeapBytes: await heapBytes(cdp) });
   }
@@ -302,6 +307,10 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   const sweep = await page.evaluate((n) => window.__bc?.l3Sweep?.(n) ?? [], SWEEP_FRAMES);
   const sweepMs = distribution(sweep);
   const l3Ms = distribution(l3Samples);
+  // The window split: the solve (what a worker could take) and the rest, the
+  // layer's update (zone plan and sprite writes, main thread whatever happens).
+  const solveMs = distribution(solveSamples);
+  const updateMs = distribution(l3Samples.map((ms, i) => ms - (solveSamples[i] ?? 0)));
   const renderedMs = distribution(renderedL3);
   const frameMs = distribution(frameSamples);
   const requiredWalking = Math.floor(RUSH_CROWD_SIZE * RUSH_MIN_WALKING_SHARE);
@@ -354,6 +363,8 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     },
     l3Ms,
     l3RenderedMs: renderedMs,
+    l3SolveMs: solveMs,
+    l3UpdateMs: updateMs,
     l3SweepMs: sweepMs,
     frameWorkMs: frameMs,
     throttled4x: {

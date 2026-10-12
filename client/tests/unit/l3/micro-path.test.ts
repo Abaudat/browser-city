@@ -263,4 +263,32 @@ describe("findMicroPath: totality at any distance", () => {
     const r = findMicroPath(open(), { x: 0, y: 0 }, { x: 40, y: 40 }, 6, 64, 65536);
     expect(r).toMatchObject({ ok: false, reason: "budget" });
   });
+
+  it("a search is unchanged by whatever searches ran before it (scratch is reused)", () => {
+    const wall = wallAt([
+      [5, 2],
+      [5, 3],
+      [5, 4],
+      [5, 5],
+    ]);
+    const probeA = (): unknown =>
+      findMicroPath(wall, { x: 0, y: 3 }, { x: 10, y: 4 }, 4, 4096, 65536);
+    const before = probeA();
+    // A bigger search leaves stale costs, parents and closed marks behind...
+    findMicroPath(open(), { x: -30, y: -30 }, { x: 30, y: 30 }, 6, 100_000, 65536);
+    // ...and a failing one stops mid-search, leaving the heap non-empty.
+    findMicroPath(open(), { x: 0, y: 0 }, { x: 40, y: 40 }, 6, 64, 65536);
+    findMicroPath(wallAt([[1, 0]]), { x: 0, y: 0 }, { x: 1, y: 0 }, 4, 4096, 65536);
+    expect(probeA()).toEqual(before);
+  });
+
+  it("returns routes that are not overwritten by the next search", () => {
+    const a = findMicroPath(open(), { x: 0, y: 0 }, { x: 4, y: 3 }, 4, 4096, 65536);
+    if (!a.ok) throw new Error("expected a path");
+    const snapshot = Array.from(a.cells);
+    const route = Array.from(a.route);
+    findMicroPath(open(), { x: 9, y: 9 }, { x: 20, y: 2 }, 4, 4096, 65536);
+    expect(Array.from(a.cells)).toEqual(snapshot);
+    expect(Array.from(a.route)).toEqual(route);
+  });
 });
