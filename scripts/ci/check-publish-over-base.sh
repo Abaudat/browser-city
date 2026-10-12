@@ -88,7 +88,8 @@ export_to "$DATA_DIR/after"
 # Every row the base world held must be present, byte for byte. The
 # manifest names the schema and a time, a publish re-arms the scheduled
 # tables by design, and a publish may add rows (a cadence a newer module
-# arms), so only a lost or changed row fails.
+# arms), and a column a newer module appends extends a row without
+# changing it, so only a lost or changed row fails.
 SKIP=" manifest.json "
 while IFS= read -r table; do
   [ -n "$table" ] && SKIP="$SKIP$table.jsonl "
@@ -98,7 +99,15 @@ for f in "$DATA_DIR"/before/*; do
   name="$(basename "$f")"
   case "$SKIP" in *" $name "*) continue ;; esac
   [ -f "$DATA_DIR/after/$name" ] || { echo "$name: table is gone" >>"$DATA_DIR/lost.txt"; continue; }
-  comm -23 <(sort "$f") <(sort "$DATA_DIR/after/$name") | sed "s|^|$name: |" >>"$DATA_DIR/lost.txt"
+  # A row survives when it is there byte for byte, or when it is there with
+  # columns appended (an additive column, NFR33, extends the canonical
+  # array: `[1,[0]]` becomes `[1,[0],""]`) -- nothing else counts.
+  awk 'NR==FNR { after[++n] = $0; next }
+       { row = $0; prefix = substr(row, 1, length(row) - 1) ","; ok = 0
+         for (i = 1; i <= n; i++) {
+           if (after[i] == row || (substr(row, length(row)) == "]" && index(after[i], prefix) == 1)) { ok = 1; break }
+         }
+         if (!ok) print }' "$DATA_DIR/after/$name" "$f" | sed "s|^|$name: |" >>"$DATA_DIR/lost.txt"
 done
 if [ -s "$DATA_DIR/lost.txt" ]; then
   fail "the world lost or changed rows across the publish" "$DATA_DIR/lost.txt"

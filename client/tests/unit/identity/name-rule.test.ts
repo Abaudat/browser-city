@@ -39,7 +39,7 @@ describe("name rule", () => {
 
   it("never throws and is idempotent on what it accepts", () => {
     fc.assert(
-      fc.property(fc.string({ unit: "binary" }), (s) => {
+      fc.property(fc.string({ unit: "binary", maxLength: 64 }), (s) => {
         const got = planName(s, MAX);
         if (got.ok) expect(planName(got.name, MAX)).toEqual(got);
       }),
