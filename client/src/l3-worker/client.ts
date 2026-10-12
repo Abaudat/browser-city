@@ -17,43 +17,41 @@ import type { LifeSample } from "../test-street/street-life";
 import type { BodyZone } from "../world/body-zone";
 import type { FedChunk } from "../world/walk-mirror";
 import {
-  bufferDoubles,
+  B_ANIMATION,
+  B_DIRECTION,
+  B_FALLBACKS,
+  B_FLAGS,
+  B_FLAVOUR,
+  B_FLOOR,
+  B_FRAME_INDEX,
+  BYTES_PER_SLOT_FIELDS,
   type CitizenInit,
+  F_BLOCKED,
+  F_CAPPED,
+  F_MOVING,
+  F_PACE_OUT,
+  F_PRESENT,
   type FromWorker,
   H_BAND,
   H_DESPAWN,
+  H_DETAIL,
+  H_DETAIL_SLOT,
   H_HAS_ZONE,
   H_SOLVE_MS,
   H_SPAWN,
   H_STOREY,
   H_T,
   H_WANT_DIAG,
-  HEADER_DOUBLES,
+  HEADING_PER_SLOT,
   type Port,
-  R_ANIMATION,
-  R_ARRIVE_AT,
-  R_BLOCKED,
-  R_CAPPED,
-  R_DEPART_AT,
-  R_DIRECTION,
-  R_DISTANCE,
-  R_FALLBACKS,
-  R_FLAVOUR,
-  R_FLOOR,
-  R_FRAME_INDEX,
-  R_HEADING_X,
-  R_HEADING_Y,
-  R_LEG_KEY,
-  R_MOVING,
-  R_OFFSET_X,
-  R_OFFSET_Y,
-  R_PACE_OUT,
-  R_PRESENT,
-  R_X,
-  R_Y,
-  RECORD_DOUBLES,
-  slotsIn,
   type ToWorker,
+  tickBytes,
+  viewTick,
+  XY_OFFSET_X,
+  XY_OFFSET_Y,
+  XY_PER_SLOT,
+  XY_X,
+  XY_Y,
 } from "./protocol";
 
 /** A body the worker solves: its frame and sidestep as of the last result
@@ -120,9 +118,9 @@ export class L3Client {
   #lastSolveMs = 0;
   #drawnInstant = Number.NaN;
   #diagnosticFrames = 0;
+  #detailSlot = -1;
   readonly #replies = new Map<number, (value: never) => void>();
   #nextId = 1;
-  readonly #views = new WeakMap<ArrayBuffer, Float64Array>();
 
   constructor(port: Port<FromWorker, ToWorker>, lookahead: number = LOOKAHEAD_FRAMES) {
     this.#port = port;
@@ -198,6 +196,12 @@ export class L3Client {
     this.#port.postMessage({ type: "remove", slot: member.slot });
   }
 
+  /** The one body whose leg (key, depart and arrive instants, distance walked)
+   * comes back with each result: the street's commuter. */
+  setDetail(member: ClientMember | undefined): void {
+    this.#detailSlot = member ? member.slot : -1;
+  }
+
   /** Asks for the diagnostics (fallbacks, pace band) to be kept fresh. */
   wantDiagnostics(): void {
     this.#diagnosticFrames = DIAGNOSTIC_FRAMES;
@@ -233,35 +237,41 @@ export class L3Client {
         });
       }
     }
-    const f = this.#viewOf(buf);
+    const tick = viewTick(buf);
+    const f = tick.head;
+    const { xy, heading, bytes } = tick;
     const names = this.#names;
-    const slots = Math.min(this.#members.length, slotsIn(f.length));
+    const slots = Math.min(this.#members.length, tick.slots);
     for (let slot = 0; slot < slots; slot++) {
       const m = this.#members[slot];
       if (!m) continue;
-      const base = HEADER_DOUBLES + slot * RECORD_DOUBLES;
-      if (f[base + R_PRESENT] === 0) continue;
+      const o = slot * BYTES_PER_SLOT_FIELDS;
+      const flags = bytes[o + B_FLAGS] as number;
+      if ((flags & F_PRESENT) === 0) continue;
       const fr = m.frame;
-      fr.x = f[base + R_X] as number;
-      fr.y = f[base + R_Y] as number;
-      fr.floor = f[base + R_FLOOR] as number;
-      fr.animation = names[f[base + R_ANIMATION] as number] as string;
-      fr.direction = names[f[base + R_DIRECTION] as number] as CitizenFrame["direction"];
-      fr.frameIndex = f[base + R_FRAME_INDEX] as number;
-      fr.headingX = f[base + R_HEADING_X] as number;
-      fr.headingY = f[base + R_HEADING_Y] as number;
-      fr.moving = f[base + R_MOVING] === 1;
-      fr.flavour = names[f[base + R_FLAVOUR] as number] as string;
-      fr.legKey = f[base + R_LEG_KEY] as number;
-      fr.departAt = f[base + R_DEPART_AT] as number;
-      fr.arriveAt = f[base + R_ARRIVE_AT] as number;
-      fr.distance = f[base + R_DISTANCE] as number;
-      m.offsetX = f[base + R_OFFSET_X] as number;
-      m.offsetY = f[base + R_OFFSET_Y] as number;
-      m.capped = f[base + R_CAPPED] === 1;
-      m.blocked = f[base + R_BLOCKED] === 1;
-      m.fallbacks = f[base + R_FALLBACKS] as number;
-      m.paceOutOfBand = f[base + R_PACE_OUT] === 1;
+      const x = slot * XY_PER_SLOT;
+      fr.x = xy[x + XY_X] as number;
+      fr.y = xy[x + XY_Y] as number;
+      fr.floor = (bytes[o + B_FLOOR] as number) - 128;
+      fr.animation = names[bytes[o + B_ANIMATION] as number] as string;
+      fr.direction = names[bytes[o + B_DIRECTION] as number] as CitizenFrame["direction"];
+      fr.frameIndex = bytes[o + B_FRAME_INDEX] as number;
+      fr.headingX = heading[slot * HEADING_PER_SLOT] as number;
+      fr.headingY = heading[slot * HEADING_PER_SLOT + 1] as number;
+      fr.moving = (flags & F_MOVING) !== 0;
+      fr.flavour = names[bytes[o + B_FLAVOUR] as number] as string;
+      m.offsetX = xy[x + XY_OFFSET_X] as number;
+      m.offsetY = xy[x + XY_OFFSET_Y] as number;
+      m.capped = (flags & F_CAPPED) !== 0;
+      m.blocked = (flags & F_BLOCKED) !== 0;
+      m.fallbacks = bytes[o + B_FALLBACKS] as number;
+      m.paceOutOfBand = (flags & F_PACE_OUT) !== 0;
+      if (slot === this.#detailSlot) {
+        fr.legKey = f[H_DETAIL] as number;
+        fr.departAt = f[H_DETAIL + 1] as number;
+        fr.arriveAt = f[H_DETAIL + 2] as number;
+        fr.distance = f[H_DETAIL + 3] as number;
+      }
       m.solved = true;
     }
     this.#lastSolveMs = f[H_SOLVE_MS] as number;
@@ -280,10 +290,9 @@ export class L3Client {
       return false;
     }
     let use = buf;
-    if (use.byteLength < bufferDoubles(this.#capacity) * 8) {
-      use = new ArrayBuffer(bufferDoubles(this.#capacity) * 8);
-    }
-    const f = this.#viewOf(use);
+    if (use.byteLength < tickBytes(this.#capacity))
+      use = new ArrayBuffer(tickBytes(this.#capacity));
+    const f = viewTick(use).head;
     f[H_T] = t;
     if (zone) {
       f[H_HAS_ZONE] = 1;
@@ -300,6 +309,7 @@ export class L3Client {
     } else {
       f[H_HAS_ZONE] = 0;
     }
+    f[H_DETAIL_SLOT] = this.#detailSlot;
     f[H_WANT_DIAG] = this.#diagnosticFrames > 0 ? 1 : 0;
     if (this.#diagnosticFrames > 0) this.#diagnosticFrames--;
     this.#posted++;
@@ -365,24 +375,15 @@ export class L3Client {
     });
   }
 
-  #viewOf(buf: ArrayBuffer): Float64Array {
-    let v = this.#views.get(buf);
-    if (!v) {
-      v = new Float64Array(buf);
-      this.#views.set(buf, v);
-    }
-    return v;
-  }
-
   #grow(capacity: number): void {
     this.#capacity = capacity;
     // The buffers here are replaced at their next use; those out with the
     // worker come back under-sized and are replaced then.
     for (let i = 0; i < this.#free.length; i++) {
-      this.#free[i] = new ArrayBuffer(bufferDoubles(capacity) * 8);
+      this.#free[i] = new ArrayBuffer(tickBytes(capacity));
     }
     while (this.#free.length + this.#ready.length + this.#inFlight() < BUFFERS) {
-      this.#free.push(new ArrayBuffer(bufferDoubles(capacity) * 8));
+      this.#free.push(new ArrayBuffer(tickBytes(capacity)));
     }
   }
 

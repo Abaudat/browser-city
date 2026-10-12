@@ -85,9 +85,14 @@ export interface Port<In, Out> {
   onmessage: ((event: { data: In }) => void) | null;
 }
 
-// ---- the tick buffer (Float64Array): header, then one record per slot ----
+// ---- the tick buffer: one ArrayBuffer, header then one record per slot ----
+//
+// Header (`HEADER_DOUBLES` doubles), then per slot, in three runs: four doubles
+// (x, y, offsetX, offsetY -- exact), two float32 (heading) and eight bytes (the
+// `B_*` fields). 48 bytes a body: the buffer crosses threads every frame, so
+// its size is the traffic.
 
-export const HEADER_DOUBLES = 16;
+export const HEADER_DOUBLES = 20;
 export const H_T = 0;
 export const H_HAS_ZONE = 1;
 /** spawn x0, y0, x1, y1 then despawn x0, y0, x1, y1. */
@@ -99,36 +104,70 @@ export const H_BAND = 11;
 export const H_SOLVE_MS = 12;
 /** In: 1 while the main thread wants diagnostics refreshed. */
 export const H_WANT_DIAG = 13;
+/** In: the one slot whose leg comes back in `H_DETAIL`, or -1. */
+export const H_DETAIL_SLOT = 14;
+/** Out: leg key, depart instant, arrive instant, distance walked. */
+export const H_DETAIL = 16;
 
-export const R_PRESENT = 0;
-export const R_X = 1;
-export const R_Y = 2;
-export const R_FLOOR = 3;
-export const R_ANIMATION = 4;
-export const R_DIRECTION = 5;
-export const R_FRAME_INDEX = 6;
-export const R_HEADING_X = 7;
-export const R_HEADING_Y = 8;
-export const R_MOVING = 9;
-export const R_FLAVOUR = 10;
-export const R_OFFSET_X = 11;
-export const R_OFFSET_Y = 12;
-export const R_CAPPED = 13;
-export const R_BLOCKED = 14;
-export const R_FALLBACKS = 15;
-export const R_PACE_OUT = 16;
-export const R_LEG_KEY = 17;
-export const R_DEPART_AT = 18;
-export const R_ARRIVE_AT = 19;
-export const R_DISTANCE = 20;
-export const RECORD_DOUBLES = 21;
+/** Per slot, in `Tick.xy`. */
+export const XY_X = 0;
+export const XY_Y = 1;
+export const XY_OFFSET_X = 2;
+export const XY_OFFSET_Y = 3;
+export const XY_PER_SLOT = 4;
+/** Per slot, in `Tick.heading`. */
+export const HEADING_PER_SLOT = 2;
+/** Per slot, in `Tick.bytes`. */
+export const B_FLAGS = 0;
+/** The floor plus 128. */
+export const B_FLOOR = 1;
+export const B_ANIMATION = 2;
+export const B_DIRECTION = 3;
+export const B_FLAVOUR = 4;
+export const B_FRAME_INDEX = 5;
+export const B_FALLBACKS = 6;
+export const BYTES_PER_SLOT_FIELDS = 8;
+/** `B_FLAGS` bits. */
+export const F_PRESENT = 1;
+export const F_MOVING = 2;
+export const F_CAPPED = 4;
+export const F_BLOCKED = 8;
+export const F_PACE_OUT = 16;
 
-/** Doubles a buffer needs to hold `slots` records. */
-export function bufferDoubles(slots: number): number {
-  return HEADER_DOUBLES + slots * RECORD_DOUBLES;
+/** Bytes per slot, the three runs together. */
+export const BYTES_PER_SLOT = XY_PER_SLOT * 8 + HEADING_PER_SLOT * 4 + BYTES_PER_SLOT_FIELDS;
+
+/** Bytes a buffer needs to hold `slots` records. */
+export function tickBytes(slots: number): number {
+  return HEADER_DOUBLES * 8 + slots * BYTES_PER_SLOT;
 }
 
-/** How many slots a buffer of `doubles` holds. */
-export function slotsIn(doubles: number): number {
-  return Math.max(0, Math.floor((doubles - HEADER_DOUBLES) / RECORD_DOUBLES));
+/** How many slots a buffer of `byteLength` holds. */
+export function slotsIn(byteLength: number): number {
+  return Math.max(0, Math.floor((byteLength - HEADER_DOUBLES * 8) / BYTES_PER_SLOT));
+}
+
+export interface Tick {
+  readonly head: Float64Array;
+  readonly xy: Float64Array;
+  readonly heading: Float32Array;
+  readonly bytes: Uint8Array;
+  readonly slots: number;
+}
+
+/** Typed views over the runs of a tick buffer. */
+export function viewTick(buf: ArrayBuffer): Tick {
+  const slots = slotsIn(buf.byteLength);
+  const head = HEADER_DOUBLES * 8;
+  return {
+    head: new Float64Array(buf, 0, HEADER_DOUBLES),
+    xy: new Float64Array(buf, head, slots * XY_PER_SLOT),
+    heading: new Float32Array(buf, head + slots * XY_PER_SLOT * 8, slots * HEADING_PER_SLOT),
+    bytes: new Uint8Array(
+      buf,
+      head + slots * (XY_PER_SLOT * 8 + HEADING_PER_SLOT * 4),
+      slots * BYTES_PER_SLOT_FIELDS,
+    ),
+    slots,
+  };
 }

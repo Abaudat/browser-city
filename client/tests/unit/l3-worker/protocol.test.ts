@@ -296,7 +296,7 @@ describe("the L3 worker protocol", () => {
     client.request(1, undefined);
     const tick = sent.find((m) => m.type === "tick");
     if (tick?.type !== "tick") throw new Error("no tick sent");
-    expect(slotsIn(tick.buf.byteLength / 8)).toBeGreaterThanOrEqual(600);
+    expect(slotsIn(tick.buf.byteLength)).toBeGreaterThanOrEqual(600);
   });
 
   it("carries the body zone: a body outside it walks its ledger line", () => {
@@ -402,5 +402,27 @@ describe("the L3 worker protocol", () => {
       expect(strip(a[i] ?? [])).toEqual(strip(reference.s.agreementAt(t)));
       expect(strip(l[i] ?? [])).toEqual(strip(reference.s.liveAt(t)));
     });
+  });
+
+  it("returns the leg of the one detail body, and only that body's", () => {
+    const { walk, client, list } = connected();
+    const reference = inProcess(walk, list);
+    const members = list.map((c) => client.add(c.id));
+    const walkerIndex = list.findIndex((c) => c.spec !== undefined);
+    const watched = members[walkerIndex];
+    if (!watched) throw new Error("no walker");
+    client.setDetail(watched);
+    const t = 45_000;
+    client.request(t, undefined);
+    client.apply();
+    reference.s.solve(t);
+    const r = reference.members[walkerIndex];
+    if (!r) throw new Error("no reference member");
+    expect(watched.frame.legKey).toBe(r.frame.legKey);
+    expect(watched.frame.departAt).toBe(r.frame.departAt);
+    expect(watched.frame.arriveAt).toBe(r.frame.arriveAt);
+    expect(watched.frame.distance).toBe(r.frame.distance);
+    const other = members.find((_m, i) => i !== walkerIndex && reference.members[i]?.frame.legKey);
+    expect(other?.frame.legKey ?? 0).toBe(0);
   });
 });

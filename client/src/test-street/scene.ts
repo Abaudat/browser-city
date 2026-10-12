@@ -1526,6 +1526,7 @@ export async function mountStreetScene(
       },
     ]);
     const commuterMember = l3Client.add(COMMUTER_ID);
+    l3Client.setDetail(commuterMember);
     const frame = commuterMember.frame;
     const lamppostId = STREET_PROPS.find(
       (prop) => isDefStreetProp(prop) && prop.defId === LAMPPOST_DEF_ID,

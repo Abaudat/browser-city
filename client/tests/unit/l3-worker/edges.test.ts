@@ -5,16 +5,18 @@ import { describe, expect, it } from "vitest";
 import { pathConfigOf, walkFramesPerCycle } from "../../../src/l3/config";
 import { L3Client } from "../../../src/l3-worker/client";
 import {
-  bufferDoubles,
+  B_FALLBACKS,
+  B_FLAGS,
+  BYTES_PER_SLOT_FIELDS,
   type CitizenInit,
+  F_PRESENT,
   type FromWorker,
   H_T,
-  HEADER_DOUBLES,
+  H_WANT_DIAG,
   type Port,
-  R_FALLBACKS,
-  R_PRESENT,
-  RECORD_DOUBLES,
   type ToWorker,
+  tickBytes,
+  viewTick,
 } from "../../../src/l3-worker/protocol";
 import { L3Solver } from "../../../src/l3-worker/solver";
 import { buildRushCrowd } from "../../../src/test-street/rush-crowd";
@@ -60,10 +62,10 @@ function solverWithLog() {
 }
 
 function tickBuffer(slots: number, t: number, wantDiag = false): ArrayBuffer {
-  const buf = new ArrayBuffer(bufferDoubles(slots) * 8);
-  const f = new Float64Array(buf);
+  const buf = new ArrayBuffer(tickBytes(slots));
+  const f = viewTick(buf).head;
   f[H_T] = t;
-  f[13] = wantDiag ? 1 : 0;
+  f[H_WANT_DIAG] = wantDiag ? 1 : 0;
   return buf;
 }
 
@@ -104,9 +106,9 @@ describe("L3Solver with a street", () => {
     solver.handle({ type: "tick", buf });
     const result = out.find((m) => m.type === "result");
     if (result?.type !== "result") throw new Error("no result");
-    const f = new Float64Array(result.buf);
-    expect(f[HEADER_DOUBLES + R_PRESENT]).toBe(1);
-    expect(f[HEADER_DOUBLES + RECORD_DOUBLES + R_PRESENT]).toBe(0);
+    const { bytes } = viewTick(result.buf);
+    expect((bytes[B_FLAGS] as number) & F_PRESENT).toBe(F_PRESENT);
+    expect((bytes[BYTES_PER_SLOT_FIELDS + B_FLAGS] as number) & F_PRESENT).toBe(0);
     expect(result.names?.length).toBeGreaterThan(0);
   });
 
@@ -119,8 +121,7 @@ describe("L3Solver with a street", () => {
     expect(results).toHaveLength(2);
     for (const r of results) {
       if (r.type !== "result") continue;
-      const f = new Float64Array(r.buf);
-      expect(f[HEADER_DOUBLES + R_FALLBACKS]).toBe(0);
+      expect(viewTick(r.buf).bytes[B_FALLBACKS]).toBe(0);
     }
   });
 
@@ -177,6 +178,6 @@ describe("L3Client edges", () => {
     client.request(1, undefined);
     const tick = sent.find((m) => m.type === "tick");
     if (tick?.type !== "tick") throw new Error("no tick");
-    expect(new Float64Array(tick.buf)[13]).toBe(1);
+    expect(viewTick(tick.buf).head[H_WANT_DIAG]).toBe(1);
   });
 });

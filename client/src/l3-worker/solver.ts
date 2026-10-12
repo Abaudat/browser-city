@@ -14,41 +14,40 @@ import type { BodyZone } from "../world/body-zone";
 import { WalkMirror } from "../world/walk-mirror";
 import { calibrationWorkload } from "./calibration";
 import {
+  B_ANIMATION,
+  B_DIRECTION,
+  B_FALLBACKS,
+  B_FLAGS,
+  B_FLAVOUR,
+  B_FLOOR,
+  B_FRAME_INDEX,
+  BYTES_PER_SLOT_FIELDS,
   type CitizenInit,
+  F_BLOCKED,
+  F_CAPPED,
+  F_MOVING,
+  F_PACE_OUT,
+  F_PRESENT,
   type FromWorker,
   H_BAND,
   H_DESPAWN,
+  H_DETAIL,
+  H_DETAIL_SLOT,
   H_HAS_ZONE,
   H_SOLVE_MS,
   H_SPAWN,
   H_STOREY,
   H_T,
   H_WANT_DIAG,
-  HEADER_DOUBLES,
-  R_ANIMATION,
-  R_ARRIVE_AT,
-  R_BLOCKED,
-  R_CAPPED,
-  R_DEPART_AT,
-  R_DIRECTION,
-  R_DISTANCE,
-  R_FALLBACKS,
-  R_FLAVOUR,
-  R_FLOOR,
-  R_FRAME_INDEX,
-  R_HEADING_X,
-  R_HEADING_Y,
-  R_LEG_KEY,
-  R_MOVING,
-  R_OFFSET_X,
-  R_OFFSET_Y,
-  R_PACE_OUT,
-  R_PRESENT,
-  R_X,
-  R_Y,
-  RECORD_DOUBLES,
-  slotsIn,
+  HEADING_PER_SLOT,
+  type Tick,
   type ToWorker,
+  viewTick,
+  XY_OFFSET_X,
+  XY_OFFSET_Y,
+  XY_PER_SLOT,
+  XY_X,
+  XY_Y,
 } from "./protocol";
 
 /** Ticks between diagnostic refreshes. */
@@ -81,7 +80,6 @@ export class L3Solver {
   #config: L3Config | undefined;
   readonly #citizens = new Map<string, CitizenInit>();
   readonly #slots: (LifeMember | undefined)[] = [];
-  readonly #views = new WeakMap<ArrayBuffer, Float64Array>();
   /** Interned strings (animations, facings, flavours) the buffer indexes. */
   readonly #names: string[] = [];
   readonly #nameIndex = new Map<string, number>();
@@ -205,15 +203,6 @@ export class L3Solver {
     });
   }
 
-  #viewOf(buf: ArrayBuffer): Float64Array {
-    let view = this.#views.get(buf);
-    if (!view) {
-      view = new Float64Array(buf);
-      this.#views.set(buf, view);
-    }
-    return view;
-  }
-
   #intern(name: string): number {
     let i = this.#nameIndex.get(name);
     if (i === undefined) {
@@ -247,15 +236,15 @@ export class L3Solver {
   #tick(buf: ArrayBuffer): void {
     const life = this.#life;
     const config = this.#config;
-    const f = this.#viewOf(buf);
     if (!life || !config) {
       this.#host.post({ type: "result", buf });
       return;
     }
-    const t = f[H_T] as number;
+    const tick: Tick = viewTick(buf);
+    const f = tick.head;
     const zone = this.#readZone(f);
     const start = this.#host.now();
-    life.solve(t, zone);
+    life.solve(f[H_T] as number, zone);
     f[H_SOLVE_MS] = this.#host.now() - start;
 
     // Diagnostics walk each body's segments: refreshed on request, at most
@@ -263,46 +252,51 @@ export class L3Solver {
     this.#ticks++;
     const wantDiag = f[H_WANT_DIAG] === 1 && this.#ticks % DIAGNOSTIC_EVERY === 0;
     const msPerMilliminute = config.realMsPerCityMinute / 1000;
-    const slots = Math.min(this.#slots.length, slotsIn(f.length));
     if (this.#diag.length < this.#slots.length * 2) {
       const grown = new Float64Array(this.#slots.length * 2);
       grown.set(this.#diag);
       this.#diag = grown;
     }
-    for (let slot = 0; slot < slotsIn(f.length); slot++) {
-      const base = HEADER_DOUBLES + slot * RECORD_DOUBLES;
-      const member = slot < slots ? this.#slots[slot] : undefined;
+    const detail = f[H_DETAIL_SLOT] as number;
+    const { xy, heading, bytes } = tick;
+    for (let slot = 0; slot < tick.slots; slot++) {
+      const o = slot * BYTES_PER_SLOT_FIELDS;
+      const member = this.#slots[slot];
       if (!member) {
-        f[base + R_PRESENT] = 0;
+        bytes[o + B_FLAGS] = 0;
         continue;
       }
       const frame = member.frame;
-      f[base + R_PRESENT] = 1;
-      f[base + R_X] = frame.x;
-      f[base + R_Y] = frame.y;
-      f[base + R_FLOOR] = frame.floor;
-      f[base + R_ANIMATION] = this.#intern(frame.animation);
-      f[base + R_DIRECTION] = this.#intern(frame.direction);
-      f[base + R_FRAME_INDEX] = frame.frameIndex;
-      f[base + R_HEADING_X] = frame.headingX;
-      f[base + R_HEADING_Y] = frame.headingY;
-      f[base + R_MOVING] = frame.moving ? 1 : 0;
-      f[base + R_FLAVOUR] = this.#intern(frame.flavour);
-      f[base + R_OFFSET_X] = life.offsetX(member);
-      f[base + R_OFFSET_Y] = life.offsetY(member);
-      f[base + R_CAPPED] = life.field.capped(member.index) ? 1 : 0;
-      f[base + R_BLOCKED] = life.field.blocked(member.index) ? 1 : 0;
-      f[base + R_LEG_KEY] = frame.legKey;
-      f[base + R_DEPART_AT] = frame.departAt;
-      f[base + R_ARRIVE_AT] = frame.arriveAt;
-      f[base + R_DISTANCE] = frame.distance;
+      const x = slot * XY_PER_SLOT;
+      xy[x + XY_X] = frame.x;
+      xy[x + XY_Y] = frame.y;
+      xy[x + XY_OFFSET_X] = life.offsetX(member);
+      xy[x + XY_OFFSET_Y] = life.offsetY(member);
+      heading[slot * HEADING_PER_SLOT] = frame.headingX;
+      heading[slot * HEADING_PER_SLOT + 1] = frame.headingY;
       if (wantDiag) {
         const report = member.body.diagnostics(msPerMilliminute, config);
         this.#diag[slot * 2] = report?.fallbacks ?? 0;
         this.#diag[slot * 2 + 1] = report?.paceOutOfBand ? 1 : 0;
       }
-      f[base + R_FALLBACKS] = this.#diag[slot * 2] as number;
-      f[base + R_PACE_OUT] = this.#diag[slot * 2 + 1] as number;
+      bytes[o + B_FLAGS] =
+        F_PRESENT |
+        (frame.moving ? F_MOVING : 0) |
+        (life.field.capped(member.index) ? F_CAPPED : 0) |
+        (life.field.blocked(member.index) ? F_BLOCKED : 0) |
+        (this.#diag[slot * 2 + 1] ? F_PACE_OUT : 0);
+      bytes[o + B_FLOOR] = frame.floor + 128;
+      bytes[o + B_ANIMATION] = this.#intern(frame.animation);
+      bytes[o + B_DIRECTION] = this.#intern(frame.direction);
+      bytes[o + B_FLAVOUR] = this.#intern(frame.flavour);
+      bytes[o + B_FRAME_INDEX] = frame.frameIndex;
+      bytes[o + B_FALLBACKS] = Math.min(255, this.#diag[slot * 2] as number);
+      if (slot === detail) {
+        f[H_DETAIL] = frame.legKey;
+        f[H_DETAIL + 1] = frame.departAt;
+        f[H_DETAIL + 2] = frame.arriveAt;
+        f[H_DETAIL + 3] = frame.distance;
+      }
     }
     if (this.#names.length > this.#namesSent) {
       this.#namesSent = this.#names.length;
