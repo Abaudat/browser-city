@@ -67,21 +67,32 @@ out(
 );
 out();
 out(
-  "Also gated: zero stale frames (a frame drawn with its result still in flight), a result drawn at most one frame after its instant, no worker restarts, no major GC pause longer than a frame on either thread, allocation under a stamped ceiling on each thread, and each statistic against the recorded finding +25% so L3 cannot get slower unnoticed. The 4x CPU throttle is reported, never gated. Gated by `client/tests/e2e/l3-budget.spec.ts` in `e2e-perf`.",
+  "Also gated: zero stale frames (a frame drawn with its result still in flight), a result drawn at most one frame after its instant, no worker restarts, every major GC on either thread an incremental-marking finalisation (none in a player's rendered frame or in the worker, the quiet window at most 3 of at most 6.9 ms), allocation under a stamped ceiling on each thread, and each statistic against the recorded finding +25% so L3 cannot get slower unnoticed. The 4x CPU throttle is reported, never gated. Gated by `client/tests/e2e/l3-budget.spec.ts` in `e2e-perf`.",
 );
 out();
-out(`## Verdict: **${record.verdict}**`);
+// The verdict of record is the spec's, unless a run on the verdict-of-record
+// machine went over the budget: that is not flake, it is NFR11 missed there.
+const is7763 = (r) => /EPYC 7763/.test(r.environment.cpu);
+const over7763 = runs.filter((r) => is7763(r) && r.l3SolveMs.p95 > r.budget.p95Ms + 1e-9);
+const verdict = over7763.length > 0 ? "MISSED" : record.verdict;
+out(`## Verdict: **${verdict}**`);
 out();
 const solve95 = record.l3SolveMs.p95;
 out(
-  record.verdict === "MET"
+  verdict === "MET"
     ? `The frame's thread pays ${ms(record.l3Ms.p95)} p95 (story 5.4 measured ${ms(baseline.l3Ms.p95)} for the same work on the main thread) and the worker's own solve is ${ms(solve95)} p95 / ${ms(record.l3SolveMs.p99)} p99, inside the ${record.budget.p95Ms} ms / ${record.budget.p99Ms} ms budget on both threads.`
     : `The frame's thread pays ${ms(record.l3Ms.p95)} p95 and the worker's own solve is ${ms(solve95)} p95 against the ${record.budget.p95Ms} ms budget.`,
 );
 out();
 // The tripwire items in the failure list are relative to the constants of the
 // run's own commit; what is left is what decides the verdict.
-const missed = record.failures.filter((f) => !/regressed past/.test(f));
+if (over7763.length > 0) {
+  out(
+    `${over7763.length} of ${runs.filter(is7763).length} runs on the EPYC 7763 put the worker's solve over ${record.budget.p95Ms} ms p95: that is NFR11 missed at the line on the verdict-of-record machine, not flake.`,
+  );
+  out();
+}
+const missed = record.failures.filter((f) => /ms over \d+ ms/.test(f));
 if (missed.length > 0) {
   out("What the run holds against the verdict:");
   out();
@@ -95,7 +106,9 @@ if (risks.length > 0) {
   for (const r of risks) out(`- ${r}`);
   out();
   out(
-    "The budget holds on both threads at the line. The worker's absolute 2 ms p95 is a red gate in `e2e-perf`, so creep past it fails CI; the next story that adds per-body path work spends from nothing.",
+    verdict === "MET"
+      ? "The budget holds on both threads at the line. The worker's absolute 2 ms p95 is a red gate in `e2e-perf`, so creep past it fails CI; the next story that adds per-body path work spends from nothing."
+      : "The worker's absolute 2 ms p95 is a red gate in `e2e-perf` on the SKUs that hold it: with no margin, a run on the verdict-of-record machine crosses it by a measuring step (0.1 ms) now and then.",
   );
   out();
 }
@@ -141,6 +154,27 @@ out(
 );
 out();
 out("## Runs of the final code");
+out();
+const bySku = new Map();
+for (const r of runs) {
+  const sku = r.environment.cpu.replace(/ \d+-Core Processor/, "").replace(/\(R\)/g, "");
+  if (!bySku.has(sku)) bySku.set(sku, []);
+  bySku.get(sku).push(r);
+}
+const median = (xs) => {
+  const v = [...xs].sort((a, b) => a - b);
+  return v[Math.floor(v.length / 2)];
+};
+out(`The spread of the worker's solve p95 over ${runs.length} runs, by SKU:`);
+out();
+out("| SKU | Runs | Worker solve p95 min / median / max | Over 2 ms | Frame-thread window p95 max | Stale frames | Restarts |");
+out("| --- | --- | --- | --- | --- | --- | --- |");
+for (const [sku, rs] of [...bySku.entries()].sort()) {
+  const p = rs.map((r) => r.l3SolveMs.p95);
+  out(
+    `| ${sku} | ${rs.length} | ${ms(Math.min(...p))} / ${ms(median(p))} / ${ms(Math.max(...p))} | ${rs.filter((r) => r.l3SolveMs.p95 > r.budget.p95Ms + 1e-9).length} | ${ms(Math.max(...rs.map((r) => r.l3Ms.p95)))} | ${rs.reduce((n, r) => n + r.solveStale.staleFrames, 0)} | ${rs.reduce((n, r) => n + (r.solveStale.restarts ?? 0), 0)} |`,
+  );
+}
 out();
 out(
   "`ubuntu-latest` is a mixed pool of CPUs; each run is a separate `e2e-perf` job on the same code, and the verdict of record is the slowest machine's.",
@@ -200,10 +234,19 @@ const gcRow = (label, g) =>
   `- ${label}: ${g.minorCount} minor GCs (longest ${ms(g.longestMinorPauseMs)}), ${g.majorCount} major GCs (longest ${ms(g.longestMajorPauseMs)}).`;
 const gated = record.gcRenderedWindow ?? record.gc;
 const gatedWorker = record.workerGcRenderedWindow ?? record.workerGc;
-out(gcRow("Frame's thread, rendered window (a pause over a frame is red)", gated));
-out(gcRow("Worker, rendered window (a pause over a frame is red)", gatedWorker));
-out(gcRow("Frame's thread, verdict window (render off, a quiet page: reported)", record.gc));
-out(gcRow("Worker, verdict window (reported)", record.workerGc));
+const types = (g) => [...new Set(g.majorTypes ?? [])].join(", ") || "none";
+out(gcRow("Frame's thread, rendered window (held at zero)", gated));
+out(gcRow("Worker, rendered window (held at zero)", gatedWorker));
+out(gcRow("Frame's thread, verdict window (render off, a quiet page: at most 3, each at most 6.9 ms)", record.gc));
+out(gcRow("Worker, verdict window (held at zero)", record.workerGc));
+out(
+  `- Kinds of major seen in the verdict window: frame's thread ${types(record.gc)}; worker ${types(record.workerGc)}. Only incremental-marking finalisations pass.`,
+);
+if (record.control) {
+  out(
+    `- Control, an idle page with no L3 on it and a ${record.control.heapMb} MB live heap under the same trace for the same time: ${record.control.majorCount} major GCs (longest ${ms(record.control.longestMajorPauseMs)}; ${[...new Set(record.control.majorTypes)].join(", ") || "none"}). What V8 collects on a quiet page is not L3's.`,
+  );
+}
 out(`- Retained heap, last lap against the first: ${record.heap.growthRatio.toFixed(3)}x (bound ${record.heap.bound}x).`);
 out();
 out("Largest allocators under the worker's solve:");

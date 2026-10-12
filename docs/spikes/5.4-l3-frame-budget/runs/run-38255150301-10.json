@@ -1,0 +1,625 @@
+{
+  "story": "5.4",
+  "nfr": "NFR11",
+  "environment": {
+    "platform": "linux",
+    "cpu": "AMD EPYC 7763 64-Core Processor",
+    "cores": 4,
+    "chromium": "153.0.8010.12",
+    "ci": true,
+    "runId": "38255150301",
+    "runner": "GitHub Actions 1000011289",
+    "image": "ubuntu24"
+  },
+  "runMs": 60000,
+  "soak": false,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "crowd": {
+    "size": 200,
+    "pileCell": {
+      "x": 10,
+      "y": 18
+    },
+    "liveBodiesMin": 259,
+    "walkingMin": 133,
+    "sidesteppingMax": 105,
+    "cappedMax": 91
+  },
+  "budget": {
+    "p95Ms": 2,
+    "p99Ms": 4
+  },
+  "verdict": "MISSED",
+  "failures": [
+    "frame-thread rendered window: 1 major GCs, 0 allowed",
+    "worker rendered window: 2 major GCs, 0 allowed"
+  ],
+  "risks": [
+    "worker solve p95 2.000 ms has no margin: over 1.6 ms"
+  ],
+  "calibrationMs": 5.300000000017462,
+  "l3Ratios": {
+    "p95": 0.07547169811735191,
+    "p99": 0.0943396226411986,
+    "sweepP95": 0.24528301887590243,
+    "sweepP99": 0.2830188679235958
+  },
+  "l3Ms": {
+    "frames": 3151,
+    "p50": 0.3000000000174623,
+    "p95": 0.40000000002328306,
+    "p99": 0.5,
+    "max": 2.3000000000174623
+  },
+  "l3RenderedMs": {
+    "frames": 248,
+    "p50": 0.3000000000174623,
+    "p95": 0.8999999999941792,
+    "p99": 1.7000000000116415,
+    "max": 2.1999999999825377
+  },
+  "l3SolveMs": {
+    "frames": 3151,
+    "p50": 1.5,
+    "p95": 2,
+    "p99": 2.6999999999825377,
+    "max": 3.900000000023283
+  },
+  "untraced": {
+    "l3Ms": {
+      "frames": 527,
+      "p50": 0.3000000000174623,
+      "p95": 0.40000000002328306,
+      "p99": 0.5,
+      "max": 1.7999999999883585
+    },
+    "l3SolveMs": {
+      "frames": 527,
+      "p50": 1.5,
+      "p95": 1.7000000000116415,
+      "p99": 2.199999999953434,
+      "max": 2.7000000000116415
+    }
+  },
+  "solveStale": {
+    "staleFrames": 0,
+    "skippedRequests": 0,
+    "maxLagFrames": 0,
+    "restarts": 0,
+    "lagEvents": []
+  },
+  "workerCalibrationMs": 6.2000000000116415,
+  "l3SweepMs": {
+    "frames": 4000,
+    "p50": 0.9000000000232831,
+    "p95": 1.3000000000465661,
+    "p99": 1.5,
+    "max": 1.8999999999650754
+  },
+  "frameWorkMs": {
+    "frames": 248,
+    "p50": 1.3999999999941792,
+    "p95": 2.2999999999883585,
+    "p99": 3.3999999999941792,
+    "max": 5.5
+  },
+  "throttled4x": {
+    "rate": 4,
+    "l3Ms": {
+      "frames": 482,
+      "p50": 0.5999999999767169,
+      "p95": 1.5,
+      "p99": 2,
+      "max": 5.399999999965075
+    },
+    "workerThrottle": {
+      "reached": false,
+      "error": "Error: Operation is only supported for pages, not workers",
+      "calibrationMs": 6.2999999999883585,
+      "slowdown": 1.0161290322542789
+    },
+    "workerSolveMs": null,
+    "frameWorkMs": {
+      "frames": 482,
+      "p50": 0.8999999999650754,
+      "p95": 2.2999999999883585,
+      "p99": 3,
+      "max": 6.400000000023283
+    }
+  },
+  "allocation": {
+    "windowMs": 15000,
+    "frames": 4000,
+    "l3Bytes": 47217820,
+    "l3BytesPerFrame": 11804.455,
+    "ceilingBytesPerFrame": 15360,
+    "mainBytesPerFrame": 847.280612244898,
+    "mainCeilingBytesPerFrame": 1152,
+    "mainTop": [
+      {
+        "fn": "port.onmessage",
+        "url": "http://127.0.0.1:5173/src/l3-worker/client.ts",
+        "bytes": 231888
+      },
+      {
+        "fn": "seedOf",
+        "url": "http://127.0.0.1:5173/src/l3/seed.ts",
+        "bytes": 94856
+      },
+      {
+        "fn": "legInstants",
+        "url": "http://127.0.0.1:5173/src/l3/body.ts",
+        "bytes": 67228
+      },
+      {
+        "fn": "apply",
+        "url": "http://127.0.0.1:5173/src/world/body-lifecycle.ts",
+        "bytes": 53396
+      },
+      {
+        "fn": "viewBytes",
+        "url": "http://127.0.0.1:5173/src/l3-worker/protocol.ts",
+        "bytes": 47760
+      },
+      {
+        "fn": "viewDoubles",
+        "url": "http://127.0.0.1:5173/src/l3-worker/protocol.ts",
+        "bytes": 44520
+      },
+      {
+        "fn": "collect",
+        "url": "http://127.0.0.1:5173/src/world/walk-mirror.ts",
+        "bytes": 40812
+      },
+      {
+        "fn": "applyZone",
+        "url": "http://127.0.0.1:5173/src/test-street/citizens-layer.ts",
+        "bytes": 37856
+      },
+      {
+        "fn": "get stats",
+        "url": "http://127.0.0.1:5173/src/l3-worker/client.ts",
+        "bytes": 36608
+      },
+      {
+        "fn": "avalanche",
+        "url": "http://127.0.0.1:5173/src/l3/seed.ts",
+        "bytes": 7776
+      }
+    ],
+    "top": [
+      {
+        "fn": "#ensurePaths",
+        "url": "http://127.0.0.1:5173/src/l3/body.ts",
+        "bytes": 31064564
+      },
+      {
+        "fn": "#scanWalls",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 4503432
+      },
+      {
+        "fn": "pullTaut",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 4280568
+      },
+      {
+        "fn": "lineIsClear",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 3743760
+      },
+      {
+        "fn": "frameAt",
+        "url": "http://127.0.0.1:5173/src/l3/citizen.ts",
+        "bytes": 1129708
+      },
+      {
+        "fn": "seedOf",
+        "url": "http://127.0.0.1:5173/src/l3/seed.ts",
+        "bytes": 1050552
+      },
+      {
+        "fn": "findMicroPath",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 539556
+      },
+      {
+        "fn": "legInstants",
+        "url": "http://127.0.0.1:5173/src/l3/body.ts",
+        "bytes": 337064
+      },
+      {
+        "fn": "resolve",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 196156
+      },
+      {
+        "fn": "sortIndices",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 114608
+      }
+    ]
+  },
+  "control": {
+    "note": "an idle page, no L3, a live heap of the same size, the same trace for the same time",
+    "heapMb": 18,
+    "majorCount": 2,
+    "longestMajorPauseMs": 1.162,
+    "majorTypes": [
+      "finalize incremental marking via task",
+      "finalize incremental marking via task"
+    ],
+    "minorCount": 0
+  },
+  "gcRenderedWindow": {
+    "minorCount": 12,
+    "majorCount": 1,
+    "totalPauseMs": 13.378,
+    "longestMinorPauseMs": 1.613,
+    "longestMajorPauseMs": 4.358,
+    "majorTypes": [
+      "finalize incremental marking via stack guard"
+    ],
+    "minorP99PauseMs": 1.613
+  },
+  "workerGcRenderedWindow": {
+    "minorCount": 13,
+    "majorCount": 2,
+    "totalPauseMs": 29.266000000000002,
+    "longestMinorPauseMs": 3.43,
+    "longestMajorPauseMs": 6.546,
+    "majorTypes": [
+      "finalize incremental marking via task",
+      "finalize incremental marking via task"
+    ],
+    "minorP99PauseMs": 3.43
+  },
+  "gc": {
+    "minorCount": 26,
+    "majorCount": 0,
+    "totalPauseMs": 17.346,
+    "longestMinorPauseMs": 0.858,
+    "longestMajorPauseMs": 0,
+    "majorTypes": [],
+    "minorP99PauseMs": 0.858
+  },
+  "majorEvents": [
+    {
+      "thread": "worker",
+      "args": {
+        "type": "finalize incremental marking via task",
+        "usedHeapSizeAfter": 1778216,
+        "usedHeapSizeBefore": 3918256
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 5049,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3479,
+      "tdur": 2079,
+      "tid": 3504,
+      "ts": 143434761,
+      "tts": 473583
+    },
+    {
+      "thread": "worker",
+      "args": {
+        "type": "finalize incremental marking via task",
+        "usedHeapSizeAfter": 1778012,
+        "usedHeapSizeBefore": 1942728
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 6546,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3479,
+      "tdur": 2991,
+      "tid": 3504,
+      "ts": 144048035,
+      "tts": 485659
+    },
+    {
+      "thread": "main",
+      "args": {
+        "type": "finalize incremental marking via stack guard",
+        "usedHeapSizeAfter": 18982664,
+        "usedHeapSizeBefore": 20567764
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 4358,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3479,
+      "tdur": 3994,
+      "tid": 3479,
+      "ts": 160323735,
+      "tts": 2466652
+    },
+    {
+      "thread": "main",
+      "args": {
+        "type": "finalize incremental marking via task",
+        "usedHeapSizeAfter": 752668,
+        "usedHeapSizeBefore": 908156
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 1162,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3554,
+      "tdur": 988,
+      "tid": 3554,
+      "ts": 317643644,
+      "tts": 41596
+    },
+    {
+      "thread": "main",
+      "args": {
+        "type": "finalize incremental marking via task",
+        "usedHeapSizeAfter": 752668,
+        "usedHeapSizeBefore": 752668
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 799,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3554,
+      "tdur": 697,
+      "tid": 3554,
+      "ts": 318246265,
+      "tts": 44408
+    }
+  ],
+  "workerGc": {
+    "minorCount": 51,
+    "majorCount": 0,
+    "totalPauseMs": 48.393,
+    "longestMinorPauseMs": 2.663,
+    "longestMajorPauseMs": 0,
+    "majorTypes": [],
+    "minorP99PauseMs": 2.663
+  },
+  "cpuTopSelf": [
+    {
+      "fn": "(program) ",
+      "share": 0.9888070692194404
+    },
+    {
+      "fn": "collectRenderablesSimple http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=6b0b4fe5",
+      "share": 0.0022091310751104565
+    },
+    {
+      "fn": "packQuadAttributes http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=6b0b4fe5",
+      "share": 0.0008836524300441826
+    },
+    {
+      "fn": "postMessage ",
+      "share": 0.0007363770250368188
+    },
+    {
+      "fn": "(garbage collector) ",
+      "share": 0.000589101620029455
+    },
+    {
+      "fn": "port.onmessage src/l3-worker/client.ts",
+      "share": 0.000589101620029455
+    },
+    {
+      "fn": "instantsFor src/l3/ledger-position.ts",
+      "share": 0.0004418262150220913
+    },
+    {
+      "fn": "_tick http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=6b0b4fe5",
+      "share": 0.0002945508100147275
+    },
+    {
+      "fn": "updateQuadBounds http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=6b0b4fe5",
+      "share": 0.0002945508100147275
+    },
+    {
+      "fn": "break http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=6b0b4fe5",
+      "share": 0.0002945508100147275
+    },
+    {
+      "fn": "bind http://127.0.0.1:5173/node_modules/.vite/deps/RenderTargetSystem-BredZz1o.js?v=6b0b4fe5",
+      "share": 0.0002945508100147275
+    },
+    {
+      "fn": "(anonymous) src/test-street/scene.ts",
+      "share": 0.0002945508100147275
+    },
+    {
+      "fn": "drawPlayerBody src/test-street/scene.ts",
+      "share": 0.0002945508100147275
+    },
+    {
+      "fn": "addChild http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=6b0b4fe5",
+      "share": 0.0002945508100147275
+    },
+    {
+      "fn": "update src/test-street/citizens-layer.ts",
+      "share": 0.0002945508100147275
+    }
+  ],
+  "workerCpuTopSelf": [
+    {
+      "fn": "(idle) ",
+      "share": 0.9901960784313726
+    },
+    {
+      "fn": "#resolveBody src/l3/avoidance.ts",
+      "share": 0.0022848122299767367
+    },
+    {
+      "fn": "#roomOn src/l3/avoidance.ts",
+      "share": 0.0019524759056164839
+    },
+    {
+      "fn": "#closestApproach src/l3/avoidance.ts",
+      "share": 0.0007892987703555999
+    },
+    {
+      "fn": "poseAt src/l3/body.ts",
+      "share": 0.0004985044865403788
+    },
+    {
+      "fn": "scope.onmessage src/l3-worker/worker.ts?worker_file&type=module",
+      "share": 0.00041542040545031574
+    },
+    {
+      "fn": "findMicroPath src/l3/micro-path.ts",
+      "share": 0.00037387836490528417
+    },
+    {
+      "fn": "#scanWalls src/l3/avoidance.ts",
+      "share": 0.00037387836490528417
+    },
+    {
+      "fn": "(garbage collector) ",
+      "share": 0.00037387836490528417
+    },
+    {
+      "fn": "frameAt src/l3/citizen.ts",
+      "share": 0.000290794283815221
+    },
+    {
+      "fn": "resolve src/l3/avoidance.ts",
+      "share": 0.000290794283815221
+    },
+    {
+      "fn": "solveAll src/test-street/street-life.ts",
+      "share": 0.0002492522432701894
+    },
+    {
+      "fn": "#byPosition src/l3/avoidance.ts",
+      "share": 0.0002492522432701894
+    },
+    {
+      "fn": "#tick src/l3-worker/solver.ts",
+      "share": 0.00020771020272515787
+    },
+    {
+      "fn": "clearAt src/l3/micro-path.ts",
+      "share": 0.00020771020272515787
+    }
+  ],
+  "workerCpuTopLines": [
+    {
+      "at": "src/l3/avoidance.ts:383",
+      "share": 0.0022848122299767367
+    },
+    {
+      "at": "src/l3/avoidance.ts:568",
+      "share": 0.0019524759056164839
+    },
+    {
+      "at": "src/l3/avoidance.ts:246",
+      "share": 0.0007892987703555999
+    },
+    {
+      "at": "src/l3-worker/worker.ts?worker_file&type=module:9",
+      "share": 0.00037387836490528417
+    },
+    {
+      "at": "src/l3/micro-path.ts:172",
+      "share": 0.00037387836490528417
+    },
+    {
+      "at": "src/l3/avoidance.ts:322",
+      "share": 0.00037387836490528417
+    },
+    {
+      "at": "src/l3/citizen.ts:82",
+      "share": 0.000290794283815221
+    },
+    {
+      "at": "src/l3/avoidance.ts:286",
+      "share": 0.000290794283815221
+    },
+    {
+      "at": "src/test-street/street-life.ts:177",
+      "share": 0.0002492522432701894
+    },
+    {
+      "at": "src/l3/avoidance.ts:119",
+      "share": 0.0002492522432701894
+    },
+    {
+      "at": "src/l3/micro-path.ts:130",
+      "share": 0.00020771020272515787
+    },
+    {
+      "at": "src/l3/avoidance.ts:128",
+      "share": 0.00020771020272515787
+    },
+    {
+      "at": "src/world/walk-mirror.ts:26",
+      "share": 0.0001246261216350947
+    },
+    {
+      "at": "src/l3-worker/solver.ts:152",
+      "share": 0.0001246261216350947
+    },
+    {
+      "at": "src/l3-worker/solver.ts:72",
+      "share": 0.00008308408109006314
+    },
+    {
+      "at": "src/l3/body.ts:252",
+      "share": 0.00008308408109006314
+    },
+    {
+      "at": "src/l3/body.ts:265",
+      "share": 0.00008308408109006314
+    },
+    {
+      "at": "src/l3/body.ts:243",
+      "share": 0.00008308408109006314
+    },
+    {
+      "at": "src/l3/body.ts:80",
+      "share": 0.00008308408109006314
+    },
+    {
+      "at": "src/l3/body.ts:131",
+      "share": 0.00008308408109006314
+    }
+  ],
+  "heap": {
+    "samples": [
+      {
+        "atMs": 0,
+        "usedHeapBytes": 19182704
+      },
+      {
+        "atMs": 10371,
+        "usedHeapBytes": 19218948
+      },
+      {
+        "atMs": 20843,
+        "usedHeapBytes": 19229952
+      },
+      {
+        "atMs": 31250,
+        "usedHeapBytes": 19250900
+      },
+      {
+        "atMs": 41645,
+        "usedHeapBytes": 19248836
+      },
+      {
+        "atMs": 52121,
+        "usedHeapBytes": 19260660
+      },
+      {
+        "atMs": 62549,
+        "usedHeapBytes": 19261372
+      }
+    ],
+    "growthRatio": 1.002207404900622,
+    "bound": 1.5
+  }
+}

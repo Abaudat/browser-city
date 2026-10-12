@@ -69,6 +69,15 @@ const GOOD: L3Measurement = {
     longestMajorPauseMs: 0,
     majorTypes: [],
   },
+  controlGc: {
+    minorPausesMs: [],
+    minorCount: 0,
+    majorCount: 2,
+    totalPauseMs: 2,
+    longestMinorPauseMs: 0,
+    longestMajorPauseMs: 1.3,
+    majorTypes: ["finalize incremental marking via task", "finalize incremental marking via task"],
+  },
   cpu: "AMD EPYC 7763 64-Core Processor",
   heapGrowthRatio: 1.01,
 };
@@ -145,35 +154,39 @@ describe("L3 budget verdict (NFR11)", () => {
   });
 
   it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
-    // One major in the rendered window, however short, is red on either thread.
     const task = "finalize incremental marking via task";
-    const one = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 3, majorTypes: [task] };
-    expect(verdict({ ...GOOD, gc: one }).gateFailures.join()).toContain(
-      "frame-thread rendered window: 1 major GCs",
+    const some = (n: number, pause: number) => ({
+      ...GOOD.gc,
+      majorCount: n,
+      longestMajorPauseMs: pause,
+      majorTypes: Array.from({ length: n }, () => task),
+    });
+    // At the recorded figures, green; one major or a millisecond more, red.
+    expect(verdict({ ...GOOD, gc: some(2, 6.8) }).met).toBe(true);
+    expect(verdict({ ...GOOD, gc: some(3, 3) }).gateFailures.join()).toContain(
+      "frame-thread rendered window: 3 major GCs, 2 allowed",
     );
-    expect(verdict({ ...GOOD, workerGc: one }).gateFailures.join()).toContain(
-      "worker rendered window: 1 major GCs",
+    expect(verdict({ ...GOOD, gc: some(1, 7) }).gateFailures.join()).toContain("paused 7.00 ms");
+    expect(verdict({ ...GOOD, workerGc: some(4, 3) }).gateFailures.join()).toContain(
+      "worker rendered window: 4 major GCs",
     );
-    expect(verdict({ ...GOOD, quietWorkerGc: one }).gateFailures.join()).toContain(
-      "worker verdict window",
+    expect(verdict({ ...GOOD, quietWorkerGc: some(3, 1) }).gateFailures.join()).toContain(
+      "worker verdict window: 3 major GCs",
     );
-    // The quiet frame thread may finalise up to the recorded count.
+    // The quiet frame thread may not show more than the idle control did.
     const quiet = {
       ...GOOD.quietGc,
       majorCount: 3,
-      longestMajorPauseMs: 5.5,
+      longestMajorPauseMs: 4,
       majorTypes: [task, task, task],
     };
-    expect(verdict({ ...GOOD, quietGc: quiet }).met).toBe(true);
-    expect(verdict({ ...GOOD, quietGc: { ...quiet, majorCount: 4 } }).met).toBe(false);
-    // A 7 ms finalisation is red, a 6.8 ms one is not.
-    expect(
-      verdict({ ...GOOD, quietGc: { ...quiet, longestMajorPauseMs: 7 } }).gateFailures.join(),
-    ).toContain("paused 7.00 ms");
-    expect(verdict({ ...GOOD, quietGc: { ...quiet, longestMajorPauseMs: 6.8 } }).met).toBe(true);
+    expect(verdict({ ...GOOD, quietGc: quiet }).gateFailures.join()).toContain(
+      "the idle control 2",
+    );
+    expect(verdict({ ...GOOD, quietGc: some(2, 4) }).met).toBe(true);
     // Any other kind of major is red: it is the one L3's own garbage would cause.
-    const failing = { ...quiet, majorCount: 1, majorTypes: ["allocation failure"] };
-    expect(verdict({ ...GOOD, quietGc: failing }).gateFailures.join()).toContain(
+    const failing = { ...some(1, 2), majorTypes: ["allocation failure"] };
+    expect(verdict({ ...GOOD, workerGc: failing }).gateFailures.join()).toContain(
       "'allocation failure', not an incremental finalisation",
     );
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);

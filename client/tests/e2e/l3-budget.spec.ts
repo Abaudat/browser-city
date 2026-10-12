@@ -473,6 +473,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     workerGc: renderedWorkerGc,
     quietGc: gc,
     quietWorkerGc: workerGc,
+    controlGc,
     cpu: cpus()[0]?.model ?? "unknown",
     heapGrowthRatio: last / first,
   });

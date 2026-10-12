@@ -10,11 +10,6 @@ name: l3-repeat
 
 on:
   workflow_dispatch:
-  # Removed again once the story's runs are in: a workflow dispatches only
-  # from the default branch, so the first measurement runs on a push here.
-  push:
-    branches: [Abaudat/issue-448]
-    paths: [".github/workflows/l3-repeat.yml"]
 
 permissions:
   contents: read
