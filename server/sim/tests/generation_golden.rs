@@ -1,7 +1,7 @@
 //! The determinism harness for stories 3.2-3.4 (FR110 passes 1-5): same
 //! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
 //! all six passes for a fixed seed set and compares a readable summary
-//! plus a digest against the committed `tests/goldens/generation_v14.
+//! plus a digest against the committed `tests/goldens/generation_v13.
 //! golden`, so a diff names what moved rather than just "hash differs".
 //! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
 //! bump.sh` fails a PR that touches the golden without bumping that
@@ -43,7 +43,7 @@ use sim::rules::{CoherenceMode, RuleDef, RuleKind, RuleSet};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v14.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v13.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -790,13 +790,21 @@ fn plan_digest(
             r.floor, r.x, r.y, r.def_id, r.layer, r.orientation
         ));
     }
-    text.push_str(&walkability_lines(props, &pm.site()));
+    let fc = floor_grids_of(props, &pm.site())
+        .remove(&0)
+        .expect("floor 0 always has a grid");
+    text.push_str(&format!(
+        "collision {:016x}
+",
+        fnv1a(&grid_text(&fc))
+    ));
     fnv1a(&text)
 }
 
-/// One line per floor: the grid's bounds and the FNV-1a of every tile of
-/// it, row-major -- the grid itself, not a count of blocked tiles.
-fn walkability_lines(props: &sim::generation::PropMap, site: &sim::world::Rect) -> String {
+fn floor_grids_of(
+    props: &sim::generation::PropMap,
+    site: &sim::world::Rect,
+) -> std::collections::BTreeMap<i8, sim::world::FloorCollision> {
     let placements: Vec<sim::world::walkability::Placement> = props
         .rows()
         .map(|r| sim::world::walkability::Placement {
@@ -806,28 +814,78 @@ fn walkability_lines(props: &sim::generation::PropMap, site: &sim::world::Rect) 
             floor: r.floor,
         })
         .collect();
-    let grids = sim::world::floor_grids(*site, &placements, FROZEN_OBJECTS)
-        .expect("a generated district rasterises");
-    let mut out = String::new();
-    for (floor, fc) in grids {
-        let b = fc.bounds();
-        let mut cells = String::new();
-        for y in b.y0..b.y1 {
-            for x in b.x0..b.x1 {
-                cells.push(if fc.is_blocked(x, y) { '1' } else { '0' });
-            }
-            cells.push('\n');
+    sim::world::floor_grids(*site, &placements, FROZEN_OBJECTS)
+        .expect("a generated district rasterises")
+}
+
+/// Every tile of a grid, row-major -- the grid itself, not a count.
+fn grid_text(fc: &sim::world::FloorCollision) -> String {
+    let b = fc.bounds();
+    let mut cells = String::new();
+    for y in b.y0..b.y1 {
+        for x in b.x0..b.x1 {
+            cells.push(if fc.is_blocked(x, y) { '1' } else { '0' });
         }
+        cells.push('\n');
+    }
+    cells
+}
+
+/// One line per floor: the grid's bounds and the FNV-1a of its tiles.
+fn walkability_lines(props: &sim::generation::PropMap, site: &sim::world::Rect) -> String {
+    let mut out = String::new();
+    for (floor, fc) in floor_grids_of(props, site) {
+        let b = fc.bounds();
         out.push_str(&format!(
-            "walkability floor={floor} bounds={},{},{},{} {:016x}\n",
+            "walkability floor={floor} bounds={},{},{},{} {:016x}
+",
             b.x0,
             b.y0,
             b.x1,
             b.y1,
-            fnv1a(&cells)
+            fnv1a(&grid_text(&fc))
         ));
     }
     out
+}
+
+/// `fnv1a` of [`walkability_lines`] per seed: every floor's bounds and
+/// bitset. A change to rasterisation is a diff here; it is a list of
+/// constants, not a `*.golden`, because the generator's own output (the
+/// rows) has not moved. Regenerate with `GENERATION_PRINT_GOLDEN=1`.
+const WALKABILITY_DIGESTS: [(u64, u64); 5] = [
+    (1, 0x35ebc30c048763ba),
+    (2, 0xc9205cd1ba4969e8),
+    (3, 0xd2fb3dacb8515a79),
+    (42, 0x2e6a002f5633cd7f),
+    (123_456_789, 0x9d0cb3bc95789bfb),
+];
+
+#[test]
+fn walkability_matches_committed_digests() {
+    let cfg = frozen_config();
+    let content = frozen_content();
+    let mut got = Vec::new();
+    for seed in SEEDS {
+        let d = plan(seed, &cfg, &content).expect("frozen_config's own site is always valid");
+        let lines = walkability_lines(&d.props, &d.skeleton.plots.site());
+        if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
+            println!("walkability-digest ({seed}, 0x{:016x}),", fnv1a(&lines));
+        }
+        got.push((seed, fnv1a(&lines), lines));
+    }
+    if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
+        return;
+    }
+    assert_eq!(got.len(), WALKABILITY_DIGESTS.len());
+    for ((seed, digest, lines), (want_seed, want)) in got.iter().zip(WALKABILITY_DIGESTS) {
+        assert_eq!(*seed, want_seed);
+        assert_eq!(
+            *digest, want,
+            "seed {seed}'s walkability moved:
+{lines}"
+        );
+    }
 }
 
 fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
@@ -894,7 +952,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v14.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v13.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );
