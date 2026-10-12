@@ -962,7 +962,9 @@ jobs:
       needs.changes.outputs.e2e == 'true' &&
       (needs.client-build.result == 'success' || needs.client-build.result == 'skipped')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Story 4.6: the first-boot gate (a production build and twenty cold
+    # throttled samples) joins the perf specs and the smoke rehearsal.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
