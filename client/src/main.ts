@@ -738,6 +738,7 @@ async function startStreetScene(
     () => handle.l3Bodies(),
     () => handle.citizensLayer.bodyCount(),
     (t) => handle.citizensLayer.liveAt(t),
+    (frames) => handle.l3Sweep(frames),
   );
 
   // Story 1.12 (FR165/FR168): the whole of the debug tooling's gate, and

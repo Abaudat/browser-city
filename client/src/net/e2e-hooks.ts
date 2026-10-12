@@ -60,6 +60,8 @@ declare global {
         avoidance?: { offsetCells: number; capped: boolean; blocked: boolean };
         activity?: string;
       }[];
+      /** Story 5.4: times `frames` render-free L3 frames (NFR11). */
+      l3Sweep?: (frames: number) => number[];
       /** Story 5.4: how many bodies are drawn right now. */
       bodyCount?: () => number;
       /** Story 2.8 (FR147): how many ticker frames the mounted street
@@ -328,12 +330,14 @@ export function exposeL3BodiesForE2e(
   bodies: NonNullable<NonNullable<Window["__bc"]>["l3Bodies"]>,
   count: NonNullable<NonNullable<Window["__bc"]>["bodyCount"]>,
   live: NonNullable<NonNullable<Window["__bc"]>["l3Live"]>,
+  sweep: NonNullable<NonNullable<Window["__bc"]>["l3Sweep"]>,
 ): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.l3Bodies = bodies;
   bucket.bodyCount = count;
   bucket.l3Live = live;
+  bucket.l3Sweep = sweep;
   window.__bc = bucket;
 }
 

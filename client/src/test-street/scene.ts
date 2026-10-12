@@ -426,6 +426,11 @@ export interface StreetSceneHandle {
   commuterDrawn(): CommuterDrawn | undefined;
   /** What each live L3 body says about itself, for the debug tooling. */
   l3Bodies(): readonly L3BodyReport[];
+  /** Story 5.4 (NFR11): runs the L3 frame -- solve and the layer's update,
+   * the same window `onL3Work` brackets -- for `frames` successive 60 Hz
+   * instants from the current city time, timing each. No render, so a
+   * GPU-less runner that draws few frames still yields thousands of samples. */
+  l3Sweep(frames: number): number[];
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
   /** Live-updates the FR173 highlight dial (0-100) -- re-applies
@@ -2016,6 +2021,21 @@ export async function mountStreetScene(
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
     commuterDrawn: () => commuterDrawn(),
     l3Bodies: () => [...commuterDiagnostics(), ...citizensLayer.l3Bodies()],
+    l3Sweep: (frames) => {
+      const start = cityMilliminutes?.();
+      if (start === undefined) return [];
+      const step = 1000 / 60 / msPerMilliminute;
+      const out: number[] = [];
+      for (let k = 0; k < frames; k++) {
+        const t = start + k * step;
+        const at = performance.now();
+        const zone = bodyZone();
+        streetLife.solve(t, zone);
+        citizensLayer.update(t, zone);
+        out.push(performance.now() - at);
+      }
+      return out;
+    },
     playerScreenBounds: () => {
       const b = playerSprite.getBounds();
       return { x: b.x, y: b.y, width: b.width, height: b.height };
