@@ -27,6 +27,7 @@ import {
   exposeConnectionForE2e,
   exposeIdentityActionsForE2e,
   exposeL3AgreementForE2e,
+  exposePlayerDrawnPointForE2e,
   exposePlayerScreenBoundsForE2e,
   exposeRegionForE2e,
   exposeRemotePlayersForE2e,
@@ -724,6 +725,7 @@ async function startStreetScene(
   recordDoorwaysForE2e(handle.doorways);
   recordAllBoundTextureSourcesForE2e(handle.allBoundTextureSources);
   exposePlayerScreenBoundsForE2e(handle.playerScreenBounds);
+  exposePlayerDrawnPointForE2e(handle.playerDrawnPoint);
   exposeCommuterDrawnForE2e(handle.commuterDrawn);
   exposeL3AgreementForE2e((t) => handle.citizensLayer.agreementAt(t));
 

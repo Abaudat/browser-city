@@ -607,6 +607,7 @@ A reconnect is a new `connect()`; the SDK connection is single-use and has no re
 - The dial is `net.player_position_hz` (min 1, max 20) and `net.player_interpolation_delay_ms`, read once by `world/position-config.ts`; the sender period is `1000 / hz`, and the delay is never under two periods. The server reads neither.
 - Sending: `net/position-sender.ts` polls the scene's latest position at half the period (injected timer, never the ticker) and offers its quantised form to `world/position-scheduler.ts`, which sends at most once per period, nothing while the position equals the last one sent, and always the rest position. `net/sender-lifecycle.ts` runs it while the connection is `connected` and the caller has a character and the scene is mounted: it stops on leaving `connected` (the SDK queues a call on a dead connection, unbounded) and restarts on the next `connected`, so its first send is the scene's position at that moment; a page with no character makes no call. The scene must adopt the stored row before the sender starts (story 4.7): the first send is the scene's own position and overwrites the row. `scripts/ci/check-client-write-allowlist.sh` holds the client's reducer and procedure calls to `createCharacter`, `beginLink`, `completeLink`, `reportClientMeasure`, `syncClock` and `setPlayerPosition`; `reportClientMeasure` is called from `net/measure-reporter.ts` alone.
 - Receiving: `net/` hands each row on as plain data. `world/remote-motion.ts` keeps at most `REMOTE_MAX_SAMPLES` samples per character, spaced by `updated_at`, and returns the position at the server clock minus the delay, linear between the bracketing samples and holding past the newest. A gap over two periods holds the older position until one period before the newer sample; a floor change or a jump over `REMOTE_SNAP_CELLS` snaps; an insert appears in place and a delete removes. Facing and walk or idle are read from the motion.
+- Remote players are pool members of the floor they stand on, kept out of the reported order, placed by the scene's one `placeActor` (`render/actor-placement.ts`, `flights.offsetPx`) like the local player and the commuter, with visibility owned by `VisibilityApplier`; the crowd container holds citizens only. `remote-players-layer.ts` is the motion-to-pose driver and owns no container, sort, position or visibility (`scripts/ci/check-remote-actor-path.sh`).
 - A DEV build subscribes to and draws no remote players unless the page has `?remotePlayers`; a production build always does. `scripts/ci/check-e2e-remote-players-isolation.sh` keeps that opt-in out of every spec that owns a `-snapshots` directory.
 
 ## Movement and collision (client)
@@ -938,8 +939,9 @@ reorders a pool member.
 - `client/src/render/visibility.ts`'s `computeVisibility` is the only
   visibility rule and imports no `pixi.js` (Biome enforces this);
   `client/src/render/pixi-visibility.ts`'s `VisibilityApplier` is the only
-  code that writes `sprite.visible`/`sprite.alpha`, and never adds,
-  removes or reorders pool members.
+  code that writes `sprite.visible`/`sprite.alpha`
+  (`scripts/ci/check-visibility-writer.sh`), and never adds, removes or
+  reorders pool members.
 - Visibility is recomputed only on a change of the viewer's own cell
   ownership or floor, and applies to every pass -- the flat ground passes
   as well as the sorted pool.

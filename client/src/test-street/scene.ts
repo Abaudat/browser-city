@@ -37,6 +37,7 @@ import { attachPointer } from "../input/pointer";
 import { type BodyDials, type BodyFrame, createBodyMotion, poseBody } from "../l3/body-pose";
 import { CitizenBody } from "../l3/citizen";
 import { framesByAnimation, loadL3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
+import { type ActorPlacement, placeActorAt } from "../render/actor-placement";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import { type AppearanceTuple, appearanceCacheKey } from "../render/appearance/composite";
 import {
@@ -58,7 +59,7 @@ import {
   worldPointPx,
 } from "../render/screen-position";
 import type { Drawable } from "../render/sort-key";
-import { fromSortUnits, toSortUnits } from "../render/sort-units";
+import { fromSortUnits } from "../render/sort-units";
 import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
 import { type BodyZone, bodyZoneOf, type Rect } from "../world/body-zone";
@@ -99,6 +100,7 @@ import {
   isDefPropDrawable,
   type PropDrawable,
   type PropDrawableByAsset,
+  REMOTE_STABLE_ID_BASE,
   updateCharacterDrawable,
 } from "./drawables";
 import {
@@ -115,6 +117,7 @@ import {
   streetPlacedRows,
 } from "./fixture";
 import {
+  type ActorHost,
   mountRemotePlayersLayer,
   type RemotePlayersLayer,
   type RemotePlayersSource,
@@ -410,6 +413,8 @@ export interface StreetSceneHandle {
    * (Quentin's direction: a follow-camera proof must never check its own
    * implementation). */
   playerScreenBounds(): { x: number; y: number; width: number; height: number };
+  /** The player's sprite point in world pixels, for the e2e hook. */
+  playerDrawnPoint(): { x: number; y: number };
   /** The commuter as last drawn, or `undefined` while it is not on screen
    * (no clock, or the crowd frozen). A getter read fresh each call, for
    * `l3-walk.spec.ts`'s per-frame sampling. */
@@ -1082,16 +1087,6 @@ export async function mountStreetScene(
   const playerMotion = createBodyMotion();
   const playerBodyFrame: BodyFrame = { animation: "idle", direction: "down", frameIndex: 0 };
   const playerSprite = newBodySprite(playerFrames, playerBodyFrame);
-  positionSprite(
-    playerSprite,
-    walk.x,
-    walk.y,
-    walk.floor,
-    tileSizePx,
-    storeyHeightPx,
-    0,
-    playerFlightOffsetPx,
-  );
   const playerEntry: PoolEntry = {
     drawable: playerDrawable,
     view: playerSprite,
@@ -1167,6 +1162,69 @@ export async function mountStreetScene(
         if (!unreportedIds.has(id)) renderOrder.push(id);
       }
     }
+  }
+
+  // Re-sorts are batched: placing an actor only marks its floor dirty, and
+  // `flushOrder` (one ticker listener after every placer of the frame)
+  // re-sorts each dirty floor once -- not once per moving actor.
+  const dirtyFloors = new Set<number>();
+  let reportedMoved = false;
+
+  /** Re-sorts every dirty floor once; reports the order when an actor that
+   * is part of it moved. */
+  function flushOrder(): void {
+    if (dirtyFloors.size === 0) return;
+    for (const floor of dirtyFloors) reorderFloor(floor);
+    dirtyFloors.clear();
+    if (reportedMoved) {
+      reportedMoved = false;
+      rebuildRenderOrder();
+      onOrderChange?.(renderOrder);
+    }
+  }
+
+  /** Seats a new actor in `floor`'s pool, in the display list at once. */
+  function enterPool(entry: PoolEntry, floor: number): void {
+    poolMembersOf(floor).push(entry);
+    stacks.stackFor(floor).pool.addChild(entry.view);
+    dirtyFloors.add(floor);
+  }
+
+  /** The one placement every actor goes through (the local player, the
+   * commuter, remote players): refresh the drawable, put the sprite at the
+   * point `placeActorAt` gives (flight offset included, returned for the
+   * camera anchor), move it between floor pools at once on a floor change
+   * and mark its floor for the frame's one re-sort when its key moved. A
+   * floor change also re-applies the member's visibility against the
+   * standing viewer. */
+  function placeActor(entry: PoolEntry, x: number, y: number, floor: number): ActorPlacement {
+    const drawable = entry.drawable;
+    const floorBefore = drawable.floor;
+    const keyX = drawable.x;
+    const keyY = drawable.y;
+    updateCharacterDrawable(drawable, x, y, floor);
+    const placed = placeActorAt(
+      (px, py, pf) => flights.offsetPx(px, py, pf),
+      { x, y, floor },
+      floorBefore,
+      { tileSizePx, storeyHeightPx, zoom: ZOOM },
+    );
+    entry.view.x = placed.point.x;
+    entry.view.y = placed.point.y;
+    let moved = drawable.x !== keyX || drawable.y !== keyY;
+    if (placed.leavesFloor !== undefined) {
+      const leaving = membersByFloor.get(placed.leavesFloor);
+      const index = leaving ? leaving.indexOf(entry) : -1;
+      if (leaving && index >= 0) leaving.splice(index, 1);
+      dirtyFloors.add(placed.leavesFloor);
+      enterPool(entry, placed.stackFloor);
+      visibilityApplier.applyMember(entry, windowAlpha);
+      moved = true;
+    } else if (moved) {
+      dirtyFloors.add(floor);
+    }
+    if (moved && !unreportedIds.has(drawable.stableId)) reportedMoved = true;
+    return placed;
   }
 
   function reorderAll(): void {
@@ -1291,7 +1349,9 @@ export async function mountStreetScene(
     ),
     movementConfig,
   );
-  playerFlightOffsetPx = flights.offsetPx(walk.x, walk.y, walk.floor);
+  // The player's first placement is the same call every later frame makes
+  // (it may load in standing on a flight).
+  playerFlightOffsetPx = placeActor(playerEntry, walk.x, walk.y, walk.floor).flightOffsetPx;
   // The transitions, checked against the real grid: a transition onto its own
   // cell keeps the walker's position, so that position is clear on both floors.
   const transitions = new TransitionIndex(STREET_TRANSITIONS, {
@@ -1474,8 +1534,6 @@ export async function mountStreetScene(
       if (!report || !drawn) return [];
       return [{ id: COMMUTER_ID, x: drawn.x, y: drawn.y, floor: drawn.floor, ...report }];
     };
-    let lastSortY = drawable.y;
-    let lastSortX = drawable.x;
     updateCommuter = (cityMilli) => {
       sprite.renderable = cityMilli !== undefined;
       if (cityMilli === undefined) {
@@ -1488,17 +1546,7 @@ export async function mountStreetScene(
       const drawX = frame.x + ox;
       const drawY = frame.y + oy;
       setBodyFrame(sprite, commuterFrames, frame);
-      updateCharacterDrawable(drawable, drawX, drawY, frame.floor);
-      positionSprite(
-        sprite,
-        drawX,
-        drawY,
-        frame.floor,
-        tileSizePx,
-        storeyHeightPx,
-        0,
-        flights.offsetPx(drawX, drawY, frame.floor),
-      );
+      placeActor(entry, drawX, drawY, frame.floor);
       drawn = {
         cityMilli,
         legKey: frame.legKey,
@@ -1514,11 +1562,6 @@ export async function mountStreetScene(
         direction: frame.direction,
         frameIndex: frame.frameIndex,
       };
-      if (drawable.x !== lastSortX || drawable.y !== lastSortY) {
-        lastSortX = drawable.x;
-        lastSortY = drawable.y;
-        reorderFloor(frame.floor);
-      }
     };
   }
 
@@ -1729,8 +1772,6 @@ export async function mountStreetScene(
       return;
     }
 
-    const before = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
-    const floorBefore = walk.floor;
     const stepFrom = walk;
     walk = stepAndTransition(
       walk,
@@ -1762,47 +1803,11 @@ export async function mountStreetScene(
       toFloor: walk.floor,
     });
 
-    updateCharacterDrawable(playerDrawable, walk.x, walk.y, walk.floor);
-    playerFlightOffsetPx = flights.offsetPx(walk.x, walk.y, walk.floor);
-    positionSprite(
-      playerSprite,
-      walk.x,
-      walk.y,
-      walk.floor,
-      tileSizePx,
-      storeyHeightPx,
-      0,
-      playerFlightOffsetPx,
-    );
-
-    // Only re-sort when the player's own sort key actually moved to a
-    // new sub-tile unit (Tim's direction): a street of static props
-    // costs nothing per frame.
-    // A floor transition moves the player between two pools -- a rare
-    // event, never the per-frame path -- so its own floor's pool and the
-    // one it left are both re-sorted, which is also what re-parents the
-    // player's sprite into the stack it now belongs to.
-    if (walk.floor !== floorBefore) {
-      const leaving = membersByFloor.get(floorBefore);
-      if (leaving) {
-        const index = leaving.indexOf(playerEntry);
-        if (index >= 0) leaving.splice(index, 1);
-      }
-      poolMembersOf(walk.floor).push(playerEntry);
-      reorderFloor(floorBefore);
-      reorderFloor(walk.floor);
-      rebuildRenderOrder();
-      onOrderChange?.(renderOrder);
-    } else {
-      const after = { x: toSortUnits(walk.x), y: toSortUnits(walk.y) };
-      if (after.x !== before.x || after.y !== before.y) {
-        // Only the player's own floor can have changed order: every
-        // other member of every other pool is static.
-        reorderFloor(walk.floor);
-        rebuildRenderOrder();
-        onOrderChange?.(renderOrder);
-      }
-    }
+    // The shared actor placement: position through the flight offset, the
+    // move between floor pools on a floor transition, and the floor marked
+    // for this frame's one re-sort when the sort key moved to a new
+    // sub-tile unit. The camera anchor reads the offset it applied.
+    playerFlightOffsetPx = placeActor(playerEntry, walk.x, walk.y, walk.floor).flightOffsetPx;
 
     // Ownership is looked up only when the player's own cell actually
     // changed (Tim's direction) -- never every frame -- and visibility is
@@ -1865,22 +1870,58 @@ export async function mountStreetScene(
     // A frozen crowd is staged whole for a screenshot.
     crowdFrozen ? {} : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
   );
-  // Story 4.4: the other players, in the same floor-0 container, advanced
-  // from the same ticker below.
-  const remotePlayers = remotePlayersWiring
-    ? await mountRemotePlayersLayer(
-        crowdContainer,
-        defs,
-        appearanceCache,
-        tileSizePx,
-        storeyHeightPx,
-        ZOOM,
-        {
-          ...remotePlayersWiring,
-          cityMilliminutes: crowdFrozen ? undefined : cityMilliminutes,
-          drawnDistance: (x, y, floor, dx, dy) => flights.drawnDistance(x, y, floor, dx, dy),
+  // Story 4.4/4.9: the other players. Each is a pool member of the floor it
+  // stands on, kept out of the reported order, placed by `placeActor` like
+  // the local player and the commuter, and a visibility member -- so what
+  // the viewer sees of it is `VisibilityApplier`'s alone. Spawn and despawn
+  // follow the layer's own spatial hold (the subscription's hysteresis).
+  let nextRemoteStableId = REMOTE_STABLE_ID_BASE;
+  const remoteHost: ActorHost = {
+    add(sprite, x, y, floor) {
+      const stableId = nextRemoteStableId++;
+      const drawable = buildCharacterDrawable(
+        rankOf(layerCodeByName("characters")),
+        x,
+        y,
+        floor,
+        stableId,
+        "remote",
+      );
+      const entry: PoolEntry = { drawable, view: sprite, label: "remote" };
+      unreportedIds.add(stableId);
+      allVisibilityMembers.push(entry);
+      enterPool(entry, floor);
+      placeActor(entry, x, y, floor);
+      visibilityApplier.applyMember(entry, windowAlpha);
+      return {
+        place: (px, py, pf) => {
+          placeActor(entry, px, py, pf);
         },
-      )
+        remove: () => {
+          const pool = membersByFloor.get(entry.drawable.floor);
+          const index = pool ? pool.indexOf(entry) : -1;
+          if (pool && index >= 0) pool.splice(index, 1);
+          const at = allVisibilityMembers.indexOf(entry);
+          if (at >= 0) allVisibilityMembers.splice(at, 1);
+          unreportedIds.delete(stableId);
+          entry.view.removeFromParent();
+          dirtyFloors.add(entry.drawable.floor);
+        },
+        stackFloor: () => {
+          for (const pf of stacks.floors()) {
+            if (entry.view.parent === stacks.stackFor(pf).pool) return pf;
+          }
+          return undefined;
+        },
+      };
+    },
+  };
+  const remotePlayers = remotePlayersWiring
+    ? await mountRemotePlayersLayer(remoteHost, defs, appearanceCache, {
+        ...remotePlayersWiring,
+        cityMilliminutes: crowdFrozen ? undefined : cityMilliminutes,
+        drawnDistance: (x, y, floor, dx, dy) => flights.drawnDistance(x, y, floor, dx, dy),
+      })
     : undefined;
   // Story 1.14 (NFR1): the atlas term's own end -- every texture this
   // scene loads before its first frame (the static tiles above, the
@@ -1912,6 +1953,10 @@ export async function mountStreetScene(
     }
     remotePlayers?.update();
   });
+
+  // After every placer of the frame (the listeners above are all NORMAL),
+  // before the render: each dirty floor is re-sorted once.
+  app.ticker.add(flushOrder, undefined, UPDATE_PRIORITY.NORMAL - 1);
 
   // Story 2.7 (Tim's direction): a composite page re-uploads at most
   // once per frame -- every look's own draw this tick only marks its
@@ -1984,6 +2029,7 @@ export async function mountStreetScene(
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
     commuterDrawn: () => commuterDrawn(),
     l3Bodies: () => [...commuterDiagnostics(), ...citizensLayer.l3Bodies()],
+    playerDrawnPoint: () => ({ x: playerSprite.x, y: playerSprite.y }),
     playerScreenBounds: () => {
       const b = playerSprite.getBounds();
       return { x: b.x, y: b.y, width: b.width, height: b.height };
