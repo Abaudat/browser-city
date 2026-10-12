@@ -78,13 +78,19 @@ function leg(
   };
 }
 
+/** `pct` percent of `count`, whole bodies (not a position). */
+function percentOf(count: number, pct: number): number {
+  const scaled = count * pct;
+  return (scaled - (scaled % 100)) / 100;
+}
+
 export function buildRushCrowd(defs: Defs, count = RUSH_CROWD_SIZE): RushCrowd {
   const fixtures: CitizenFixture[] = [];
   const specs: Record<string, TimetableSpec> = {};
-  const standers = Math.round(count * 0.2);
-  const pile = Math.round(count * 0.1);
-  const diagonal = Math.round(count * 0.1);
-  const columns = Math.round(count * 0.25);
+  const standers = percentOf(count, 20);
+  const pile = percentOf(count, 10);
+  const diagonal = percentOf(count, 10);
+  const columns = percentOf(count, 25);
   const lanes = count - standers - pile - diagonal - columns;
   const rows = RUSH_Y1 - RUSH_Y0 + 1;
 
@@ -113,7 +119,7 @@ export function buildRushCrowd(defs: Defs, count = RUSH_CROWD_SIZE): RushCrowd {
   for (let k = 0; k < lanes; k++, n++) {
     // Rows are shared by both directions: head-on passes.
     const row = RUSH_Y0 + (k % rows);
-    const east = Math.floor(k / rows) % 2 === 0;
+    const east = ((k - (k % rows)) / rows) % 2 === 0;
     const len = between(n, 0x11, 6, 14);
     const x0 = between(n, 0x12, RUSH_X0, RUSH_X1 - len);
     const from = { x: east ? x0 : x0 + len, y: row };

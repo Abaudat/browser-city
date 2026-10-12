@@ -21,6 +21,7 @@ const GOOD: L3Measurement = {
   l3Ms: distribution(Array.from({ length: MIN_MEASURED_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01)),
   allocBytesPerFrame: 0,
   gc: {
+    minorPausesMs: [0.5, 0.7, 0.9, 1],
     minorCount: 4,
     majorCount: 0,
     totalPauseMs: 3,
@@ -61,7 +62,10 @@ describe("L3 budget verdict (NFR11)", () => {
 
   it("FAILS on a major GC, a long minor pause and heap growth", () => {
     expect(verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1 } }).met).toBe(false);
-    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, longestMinorPauseMs: 2.5 } }).met).toBe(false);
+    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, minorPausesMs: [2.5, 2.6, 2.7, 3] } }).met).toBe(
+      false,
+    );
+    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, longestMinorPauseMs: 9 } }).met).toBe(false);
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);
   });
 
@@ -104,6 +108,12 @@ describe("GC classification", () => {
     expect(gc.totalPauseMs).toBeCloseTo(11.3);
     expect(gc.longestMinorPauseMs).toBe(1.5);
     expect(gc.longestMajorPauseMs).toBe(9);
+  });
+
+  it("tolerates one outlier scavenge but not a shifted distribution", () => {
+    const pauses = [...Array.from({ length: 300 }, () => 0.8), 3.8];
+    const gc = { ...GOOD.gc, minorPausesMs: pauses, longestMinorPauseMs: 3.8 };
+    expect(verdict({ ...GOOD, gc }).met).toBe(true);
   });
 
   it("adds laps", () => {

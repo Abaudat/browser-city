@@ -154,6 +154,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   const l3Samples: number[] = [];
   const frameSamples: number[] = [];
   let gc: GcSummary = {
+    minorPausesMs: [],
     minorCount: 0,
     majorCount: 0,
     totalPauseMs: 0,
@@ -292,7 +293,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
       ceilingBytesPerFrame: MAX_L3_ALLOC_BYTES_PER_FRAME,
       top: topAllocators(profile.profile.head),
     },
-    gc,
+    gc: { ...gc, minorPausesMs: undefined },
     cpuTopSelf: cpuTop,
     heap: { samples: heapSamples, growthRatio: last / first, bound: MAX_L3_HEAP_GROWTH_RATIO },
   };

@@ -21,6 +21,12 @@ export const MIN_MEASURED_FRAMES = 3_000;
  * allocation fails CI against it; lower it when the figure falls. */
 export const MAX_L3_ALLOC_BYTES_PER_FRAME = 204_800;
 
+/** A single scavenge may not take longer than this many L3 budgets: it
+ * would cost a frame and more. The routine pause is held to the budget at
+ * its p99 instead (`L3_P95_BUDGET_MS`): one outlier on a shared runner is
+ * noise, a distribution that shifts is not. */
+export const MAX_MINOR_PAUSE_BUDGETS = 4;
+
 /** Retained heap, last window against the first, after a forced GC at each
  * end -- the same method and bound as `street-perf.spec.ts`. */
 export const MAX_L3_HEAP_GROWTH_RATIO = 1.5;
@@ -66,6 +72,8 @@ export interface TraceEvent {
 }
 
 export interface GcSummary {
+  /** Every minor pause, in ms. */
+  readonly minorPausesMs: readonly number[];
   readonly minorCount: number;
   readonly majorCount: number;
   readonly totalPauseMs: number;
@@ -77,6 +85,7 @@ export interface GcSummary {
  * count, each collection once under its umbrella name (`MinorGC` /
  * `MajorGC`), so nested phase events never double a collection. */
 export function summariseGc(events: readonly TraceEvent[]): GcSummary {
+  const minorPausesMs: number[] = [];
   let minorCount = 0;
   let majorCount = 0;
   let total = 0;
@@ -87,6 +96,7 @@ export function summariseGc(events: readonly TraceEvent[]): GcSummary {
     const ms = e.dur / 1000;
     if (e.name === "MinorGC") {
       minorCount++;
+      minorPausesMs.push(ms);
       total += ms;
       longestMinor = Math.max(longestMinor, ms);
     } else if (e.name === "MajorGC") {
@@ -96,6 +106,7 @@ export function summariseGc(events: readonly TraceEvent[]): GcSummary {
     }
   }
   return {
+    minorPausesMs,
     minorCount,
     majorCount,
     totalPauseMs: total,
@@ -107,6 +118,7 @@ export function summariseGc(events: readonly TraceEvent[]): GcSummary {
 /** Sums per-lap GC summaries. */
 export function addGc(a: GcSummary, b: GcSummary): GcSummary {
   return {
+    minorPausesMs: [...a.minorPausesMs, ...b.minorPausesMs],
     minorCount: a.minorCount + b.minorCount,
     majorCount: a.majorCount + b.majorCount,
     totalPauseMs: a.totalPauseMs + b.totalPauseMs,
@@ -208,10 +220,15 @@ export function verdict(m: L3Measurement): Verdict {
     );
   }
   if (m.gc.majorCount > 0) failures.push(`${m.gc.majorCount} major GCs in the window`);
-  if (!(m.gc.longestMinorPauseMs <= L3_P95_BUDGET_MS)) {
-    failures.push(
-      `longest minor GC ${m.gc.longestMinorPauseMs.toFixed(2)} ms over ${L3_P95_BUDGET_MS} ms`,
-    );
+  const minorP99 = percentile(
+    [...m.gc.minorPausesMs].sort((x, y) => x - y),
+    99,
+  );
+  if (m.gc.minorPausesMs.length > 0 && !(minorP99 <= L3_P95_BUDGET_MS)) {
+    failures.push(`minor GC p99 ${minorP99.toFixed(2)} ms over ${L3_P95_BUDGET_MS} ms`);
+  }
+  if (!(m.gc.longestMinorPauseMs <= MAX_MINOR_PAUSE_BUDGETS * L3_P95_BUDGET_MS)) {
+    failures.push(`longest minor GC ${m.gc.longestMinorPauseMs.toFixed(2)} ms is a dropped frame`);
   }
   if (!(m.heapGrowthRatio <= MAX_L3_HEAP_GROWTH_RATIO)) {
     failures.push(`retained heap grew ${m.heapGrowthRatio.toFixed(2)}x`);
