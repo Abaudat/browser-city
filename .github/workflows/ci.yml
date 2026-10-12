@@ -589,7 +589,10 @@ jobs:
       # live -- it has no excuse for an uncovered line. Scoped to sim only:
       # a repo-wide percentage gate only teaches people to write
       # assertion-free tests to pad it.
-      - run: cargo llvm-cov -p sim --fail-under-lines 90
+      # The balance-max generation guard is a release-mode check (the `test`
+      # job runs it); under this unoptimized, instrumented build it takes
+      # minutes for no coverage the live-extent tests do not already give.
+      - run: cargo llvm-cov -p sim --fail-under-lines 90 -- --skip generate_at_the_balance_max_extent_stays_inside_its_ceiling
 
   client-check:
     name: client-check

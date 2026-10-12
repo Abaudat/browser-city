@@ -33,10 +33,9 @@ subject = "counter"
 within = "stairs"
 mode = "forbid"
 
-# Requirement: a room holding seating has a waste bin -- still a
-# placeholder for the prop-placement pass (waste bins and seating are its
-# vocabulary), kept on `seating` so it can never fire on anything the
-# interior-layout pass emits.
+# Requirement: an area holding seating has a waste bin -- the prop-placement
+# pass's own row (a block's street benches, each with its bin in the block);
+# the interior-layout pass never emits seating, so it cannot fire there.
 [[requirement]]
 id = 5
 key = "walled_room_has_waste_bin"

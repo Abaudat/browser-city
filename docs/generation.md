@@ -815,34 +815,65 @@ and the unit tests on hand-built samples, not by the proptest.
   consequence and never a mechanism: *cadence* (the `street_is_lit` row:
   lamps every `generation.props.lamp_cadence_cells` on the kerb-side row
   of each side of a street, the two sides staggered half a cadence, kept
-  `min_spacing` apart, every footway cell within `max_distance` of one); *companions* (the
-  `waste_per_three_seating` row: a bin by every cluster of three seats,
-  inside the row's distance and in the same block); *ambient* (benches in
-  clusters of three and trees, offered per 100 cells of building-side run
-  from `generation.props.ambient_per_100_cells_at_density_min` at the
-  periphery to `..._max` at the core -- provisional, to be re-judged the
-  day the city is walkable). A def no row names is ambient.
+  `min_spacing` apart; then any footway cell still out of `max_distance`
+  of a lamp gets one on the nearest free footway cell, judged exactly as
+  the row judges -- site-wide, catchment lines ignored -- and a cell no
+  footway cell can cover is a counted skip, never a lamp in a yard);
+  *ambient* (singles, and now and then a pair: benches, trees, planters,
+  offered per 100 cells of building-side run from
+  `generation.props.ambient_per_100_cells_at_density_min` at the periphery
+  to `..._max` at the core -- provisional, to be re-judged the day the
+  city is walkable); *companions* (the `waste_per_three_seating` row,
+  allocated the way pass 5 places a distributed institution: every seat
+  within `max_distance` of a bin in its own block, each bin where it covers
+  the most uncovered seats and `min_spacing` from the others, and when the
+  count would pass the row's upper bound the bins covering the fewest
+  seats go with the seats nothing else covers). A def that carries a tag
+  any row names as a subject or a required fixture is never ambient: it
+  stands only where its row owes it.
+- **Seats at a table.** A table set owes chairs beside it
+  (`table_set_has_a_chair`, `..._second_chair`: distribution rows over the
+  table set's tag, judged district-wide because the layout pass judges
+  every other kind per building before any chair stands). A chair is
+  underfoot (no collider), on a free floor cell next to the table, or on
+  the nearest cell within the row's reach when none is free, never beside
+  a doorway.
 - **Carriers, never consequence.** Every prop is placed in its empty,
   default state: an empty bin, a till holding no cash, bare shelves, no
   litter, no poster, no boarded window. Those states have authors in the
   sim. A dressing def never carries a pass-6 anchor tag, so a room never
   gains a second till or a bed nobody's program owed.
 - **Reachability.** `District::check` appends `check_reachability`: each
-  building's rows are rasterised through the real colliders over its
-  footprint and the first approach cell, and each pavement band that
-  carries furniture over its band, the face row behind it and the first
-  carriageway row; `enclosed_regions` (on the body-eroded grid, so a
-  sliver a collider leaves beside a wall is not a region) and
-  `narrow_passages` at the player body must report nothing. Never the
+  building's rows over its footprint and the first approach cell, and each
+  pavement band that carries furniture over its band, the face row behind
+  it and the first carriageway row. A window whose every free cell is
+  reachable over whole cells passes (sound while the player body fits a
+  cell and no collider leaves its own footprint -- both tested, with a
+  differential against the exact check); any other window is rasterised
+  through the real colliders and `enclosed_regions` (on the body-eroded
+  grid, so a sliver a collider leaves beside a wall is not a region) and
+  `narrow_passages` at the player body must report nothing. The
+  invariants judge with their own oracle, never the shortcut. Never the
   whole district at sub-cell resolution.
 - **Skips are typed and counted** (`PropSkips`): a compact fallback, a
   building re-placed at compact, a shopfront with no clear stretch of
   street wall, a street piece with no fitting cell. None fails generation.
 - **Not in this story:** upper storeys and anything above floor 0, dressing
-  beyond the toilet (a fridge, a wardrobe, a sofa, a bath), litter and
-  every other consequence state, named signage and tenancy, back gardens,
-  seasonal or time-of-day dressing, anything on the subway floor, and a
-  client consuming the rows (placements do not reach the client here).
+  beyond the toilet and a table's chairs (a fridge, a wardrobe, a sofa, a
+  bath), litter and every other consequence state, named signage and
+  tenancy, back gardens, seasonal or time-of-day dressing, anything on the
+  subway floor, and a client consuming the rows (placements do not reach
+  the client here). **Owed to the story that makes a district live:** the
+  ground, floor and threshold objects -- the rows are walls, fixtures,
+  shopfronts and furniture, so a district written from them alone has no
+  floor under its rooms and no doorway arch; and the rows per chunk are to
+  be measured before any are written (a shell or rejected building is one
+  wall row per footprint cell, the largest single contributor).
+  **Known debt:** a glazing unit is drawn along `x`, so a building fronting
+  east or west gets none: about 31% of the buildings holding a counter
+  over seeds 0..7, and with the few whose street wall has no clear
+  stretch, roughly a third of shops (2002 counters, 1352 shopfronts)
+  do not read as shops from the pavement.
 - **Evidence:** [`docs/generation/props-seed-1.svg`](generation/props-seed-1.svg),
   [`-seed-2`](generation/props-seed-2.svg), [`-seed-3`](generation/props-seed-3.svg)
   -- a core street window and a periphery street window at viewport scale
@@ -923,7 +954,7 @@ block is reproducible bar thread count and wall-clock.
 `cargo run -p bounds --release --bin measure-generation -- detour 1000000`
 
 ```text
-detour-bounds sweep at GENERATION_VERSION=13 fingerprint=f016ecbacb510ff3: 1000000 seeds, 32 threads, passes 1-2 only
+detour-bounds sweep at GENERATION_VERSION=13 fingerprint=2e000314dbf2ef22: 1000000 seeds, 32 threads, passes 1-2 only
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
@@ -964,7 +995,7 @@ detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worst
   171% at seed 4929245716913353663
   178% at seed 4832727318219098284
   189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 247.1s (0.247ms/seed)
+detour-bounds sweep wall-clock: 284.6s (0.285ms/seed)
 ```
 
 ### band sweep
@@ -972,7 +1003,7 @@ detour-bounds sweep wall-clock: 247.1s (0.247ms/seed)
 `cargo run -p bounds --release --bin measure-generation -- bands 1000000`
 
 ```text
-band sweep at GENERATION_VERSION=13 fingerprint=f016ecbacb510ff3: 1000000 seeds, all five passes (salt 0xb0f05ee4)
+band sweep at GENERATION_VERSION=13 fingerprint=2e000314dbf2ef22: 1000000 seeds, all five passes (salt 0xb0f05ee4)
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
 land_use_share_commercial deviation from its key (18%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.6 stddev=6.0
   5.5-sigma share tolerance implied: 3.32 percentage points
@@ -1015,7 +1046,7 @@ largest_institutional_pocket_share_basis_points: min=87 p1=117 p50=205 p99=234 m
 profession_depth_per_city: min=44 p1=55 p50=61 p99=67 max=67 mean=61.4 stddev=2.3
   profession_count_per_city_min = 36: 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-band sweep wall-clock: 151.7s (0.152ms/seed)
+band sweep wall-clock: 134.7s (0.135ms/seed)
 ```
 
 ### exhaustive loop
@@ -1023,7 +1054,7 @@ band sweep wall-clock: 151.7s (0.152ms/seed)
 `cargo run -p bounds --release --bin measure-generation`
 
 ```text
-exhaustive loop at GENERATION_VERSION=13 fingerprint=f016ecbacb510ff3: 50000 seeds at 512x512 cells
+exhaustive loop at GENERATION_VERSION=13 fingerprint=2e000314dbf2ef22: 50000 seeds at 512x512 cells
 building_count: min=778 p1=829 p50=889 p99=949 max=990 mean=889.2 stddev=25.6
 building_count extremes: min 778 at seed 11805315485014167829, max 990 at seed 11123925265906853341 (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)
 rejected_percent: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
@@ -1120,7 +1151,7 @@ ad hoc presence tags (never distributed) -- seeds with 0 placed:
 `cargo run -p bounds --release --bin measure-generation -- rows 1000000`
 
 ```text
-rows sweep at GENERATION_VERSION=13 fingerprint=f016ecbacb510ff3: 1000000 seeds, 32 threads
+rows sweep at GENERATION_VERSION=13 fingerprint=2e000314dbf2ef22: 1000000 seeds, 32 threads
 CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
   committed rules hold (inv_generation_committed_rules_hold_for_any_seed): 0 of 1000000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 96-case CI failure probability <= 0.0288%)
@@ -1137,7 +1168,7 @@ CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 `cargo run -p bounds --release --bin measure-generation -- regions 1000000`
 
 ```text
-region-loss sweep at GENERATION_VERSION=13 fingerprint=f016ecbacb510ff3: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
+region-loss sweep at GENERATION_VERSION=13 fingerprint=2e000314dbf2ef22: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   seeds with any region carried by no block: 20769 of 1000000 (first: Some(11091164158115210688)) -- by design, a block takes its majority use
   every institutional region carried by no block (inv_generation_an_institutional_region_is_carried_by_a_block): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
@@ -1149,7 +1180,7 @@ CI judges these ceilings at 4096 cases in the test job and 256 in the coverage j
 `cargo run -p bounds --release --bin measure-generation -- pooled`
 
 ```text
-pooled evidence at GENERATION_VERSION=13 fingerprint=f016ecbacb510ff3: seeds 0..256 pooled, evidence seeds 1, 2, 3
+pooled evidence at GENERATION_VERSION=13 fingerprint=2e000314dbf2ef22: seeds 0..256 pooled, evidence seeds 1, 2, 3
 pooled low-band / high-band mean block area over seeds 0..256: 289% (peripheral_pooled_min_ratio_percent = 150%)
 pooled chopped share of low-band blocks over seeds 0..256: 1886 of 5600 (33%)
 evidence seed 1: low-band / high-band mean block area 2.65x (Artie's bar 2x)
@@ -1167,7 +1198,7 @@ pooled core over city mean screen: 190% (busy_core_over_city_min_percent = 150%)
 `cargo run -p bounds --release --bin measure-generation -- interiors`
 
 ```text
-interiors sweep at GENERATION_VERSION=13 fingerprint=f016ecbacb510ff3: 30000 seeds, 32 threads (salt 0xb0f05ee7)
+interiors sweep at GENERATION_VERSION=13 fingerprint=2e000314dbf2ef22: 30000 seeds, 32 threads (salt 0xb0f05ee7)
 CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 enterable_count: min=766 p1=805 p50=868 p99=932 max=973 mean=868.5 stddev=27.3
 enterable_share_percent: min=92 p1=95 p50=97 p99=99 max=100 mean=97.2 stddev=1.2
@@ -1408,7 +1439,9 @@ disagree.
 ## distribution
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| waste_per_three_seating | committed | Prop placement | site | - | seating with no bin anywhere nearby, or every bin clumped in one corner while the rest of the street collects litter; pass 7 stands benches in clusters of three and a bin within `max_distance` of each cluster, in the same block; scoped `site` because distribution's own coverage math already is -- "Does not fit"'s distribution gap below is this row's own answer to how it behaves when the site grows |
+| waste_per_three_seating | committed | Prop placement | site | - | seating with no bin anywhere nearby, or every bin clumped in one corner while the rest of the street collects litter; pass 7 stands benches as ambient singles and pairs and allocates a bin to every seat within `max_distance`, in the same block, under the row's own ratio band; scoped `site` because distribution's own coverage math already is -- "Does not fit"'s distribution gap below is this row's own answer to how it behaves when the site grows |
+| table_set_has_a_chair | committed | Prop placement | site | - | a table set with no chair within `max_distance` -- a dining room nobody can sit in; stated as a distribution, not a requirement, because the layout pass judges every other kind over its own building before any chair stands |
+| table_set_has_a_second_chair | committed | Prop placement | site | - | the same row again: two rows, two seats |
 | street_is_lit | committed | Prop placement | site | - | a street with no lighting at all, or lamps at irregular spacing: every footway cell (a cell of the street's own pavement, never a doorstep) has a street lamp within `max_distance`, no two closer than `min_spacing`, and the count sits in the ratio band; stated over the `street_light` tag, so a room's own light never counts as street lighting |
 | depot_present | committed | Building type | site | - | a depot per roughly `ratio` dwellings, never clustered with another depot -- "the district has a depot" (AC2); one per district is what a depot is, so a district that grows past the next multiple of `ratio` is owed another, built by the development chain; no coverage ceiling (the walk to one is content) |
 | council_present | committed | Building type | site | - | same shape, the council |

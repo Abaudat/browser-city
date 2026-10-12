@@ -90,3 +90,11 @@ group = "shared"
 [[page_group]]
 theme = "grocery_store"
 group = "shared"
+
+[[page_group]]
+theme = "japanese_interiors"
+group = "shared"
+
+[[page_group]]
+theme = "hospital"
+group = "shared"

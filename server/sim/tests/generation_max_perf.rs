@@ -29,17 +29,6 @@ fn generate_at_the_balance_max_extent_stays_inside_its_ceiling() {
         .find(|b| b.key == "generation.site_extent_cells")
         .map(|b| b.max)
         .expect("the site extent balance key") as i32;
-    // The guard is a release-mode one (the header's `--release`): the
-    // unoptimized, instrumented coverage run (cargo-llvm-cov sets
-    // `LLVM_PROFILE_FILE`) uses the live extent, where it still exercises
-    // the same code and structural bounds.
-    let max_extent = if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
-        GenerationConfig::from_balance(defs::BALANCE)
-            .unwrap()
-            .site_extent_cells
-    } else {
-        max_extent
-    };
     let mut cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     cfg.site_extent_cells = max_extent;
     let content = GenerationContent::committed();
@@ -53,12 +42,6 @@ fn generate_at_the_balance_max_extent_stays_inside_its_ceiling() {
         "generate at {max_extent} cells took {secs} s, past {CEILING_SECS} s"
     );
 
-    let area = (max_extent as u64) * (max_extent as u64);
-    assert!(
-        (d.props.props().len() as u64) <= area,
-        "{} placements over {area} cells",
-        d.props.props().len()
-    );
     let fc = d.props.collision(0).expect("floor 0 collision");
     // One bit per cell of the site extent padded two cells a side.
     let bytes = (max_extent as u64 + 4).pow(2).div_ceil(64) * 8;

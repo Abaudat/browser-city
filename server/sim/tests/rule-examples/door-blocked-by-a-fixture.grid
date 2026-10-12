@@ -1,7 +1,7 @@
 rules: door_never_blocked_by_a_fixture
 expect: fail
 floor: 0
-legend: W=wall+wall_run F=floor l=floor+fixture+lighting 1=floor+room+private+sleeping 2=floor+room+private+cooking 3=floor+room+private+washing 4=floor+room+private+dining X=floor+room+private+sleeping+fixture b=floor+fixture+bed k=floor+fixture+cooker s=floor+fixture+basin t=floor+fixture+table_set T=floor+fixture+toilet D=threshold+wall_run+entrance P=pavement
+legend: W=wall+wall_run F=floor l=floor+fixture+lighting 1=floor+room+private+sleeping 2=floor+room+private+cooking 3=floor+room+private+washing 4=floor+room+private+dining X=floor+room+private+sleeping+fixture b=floor+fixture+bed k=floor+fixture+cooker s=floor+fixture+basin t=floor+fixture+table_set T=floor+fixture+toilet D=threshold+wall_run+entrance P=pavement H=floor+fixture+chair
 area: 1 0,0 17,4
 area: 2 1,1 4,3
 area: 2 2,3 3,4
@@ -14,7 +14,7 @@ area: 5 14,3 15,4
 grid:
 WWWWWWWWWWWWWWWWW
 WlFbWlFkWlFsWlFtW
-WFXFWF2FWT3FWF4FW
+WFXFWF2FWT3FWH4FW
 WWDWWWDWWWDWWWDWW
 ..P...P...P...P..
 violations:

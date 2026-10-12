@@ -34,10 +34,10 @@ id = 28
 key = "bed_compact"
 name = "Compact Bed"
 layer = "furniture"
-sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_141.png", x = 0, y = 0, w = 16, h = 48 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/20_Japanese_Interiors_Singles/Japanese_Interiors_Singles_69.png", x = 0, y = 0, w = 16, h = 32 }
 width = 1
 height = 1
-collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 6 }
+collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 6 }
 tags = ["bed", "indoor", "fixture"]
 
 [[object]]
@@ -159,7 +159,7 @@ sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_So
 width = 2
 height = 1
 collider = { x0 = 5, y0 = 0, x1 = 28, y1 = 10 }
-tags = ["desk", "indoor", "fixture"]
+tags = ["indoor", "fixture"]
 
 [[object]]
 id = 40
@@ -170,7 +170,7 @@ sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_So
 width = 2
 height = 1
 collider = { x0 = 5, y0 = 0, x1 = 28, y1 = 10 }
-tags = ["desk", "indoor", "fixture"]
+tags = ["indoor", "fixture"]
 
 [[object]]
 id = 41
@@ -181,7 +181,7 @@ sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_So
 width = 1
 height = 1
 collider = { x0 = 1, y0 = 0, x1 = 15, y1 = 9 }
-tags = ["desk", "indoor", "fixture"]
+tags = ["indoor", "fixture"]
 
 [[object]]
 id = 42
@@ -278,10 +278,10 @@ id = 50
 key = "counter_compact"
 name = "Compact Counter"
 layer = "furniture"
-sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_21.png", x = 0, y = 0, w = 16, h = 16 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_264.png", x = 0, y = 0, w = 16, h = 32 }
 width = 1
 height = 1
-collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 16 }
+collider = { x0 = 1, y0 = 0, x1 = 16, y1 = 16 }
 interact_at = { x0 = -4, y0 = 16, x1 = 20, y1 = 32 }
 tags = ["counter", "indoor", "fixture"]
 
@@ -294,7 +294,7 @@ sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_So
 width = 1
 height = 1
 collider = { x0 = 0, y0 = 0, x1 = 15, y1 = 9 }
-tags = ["lighting", "indoor", "fixture"]
+tags = ["indoor", "fixture"]
 
 [[object]]
 id = 52
@@ -305,4 +305,77 @@ sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_So
 width = 1
 height = 1
 collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 9 }
-tags = ["lighting", "indoor", "fixture"]
+tags = ["indoor", "fixture"]
+
+[[object]]
+id = 59
+key = "string_lights"
+name = "String Lights"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_12.png", x = 0, y = 0, w = 32, h = 16 }
+width = 2
+height = 1
+tags = ["lighting", "indoor", "underfoot", "fixture"]
+
+[[object]]
+id = 60
+key = "glass_lamp"
+name = "Glass Lamp"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_27.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["lighting", "indoor", "underfoot", "fixture"]
+
+[[object]]
+id = 61
+key = "desk_papers_grey"
+name = "Desk with Papers (grey)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_127.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 6, y0 = 0, x1 = 26, y1 = 6 }
+tags = ["desk", "indoor", "fixture"]
+
+[[object]]
+id = 62
+key = "desk_papers_wood"
+name = "Desk with Papers (wood)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_132.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 6, y0 = 0, x1 = 26, y1 = 6 }
+tags = ["desk", "indoor", "fixture"]
+
+[[object]]
+id = 63
+key = "desk_planter_small"
+name = "Small Desk (planter)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_143.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 15, y1 = 11 }
+tags = ["desk", "indoor", "fixture"]
+
+[[object]]
+id = 64
+key = "chair_yellow"
+name = "Chair (yellow)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_74.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+tags = ["chair", "indoor", "underfoot", "fixture"]
+
+[[object]]
+id = 65
+key = "chair_green"
+name = "Chair (green)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_86.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+tags = ["chair", "indoor", "underfoot", "fixture"]

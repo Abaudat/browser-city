@@ -22,16 +22,20 @@
 //! whole footprint stands on its room's floor, clear of every doorway,
 //! its approach and every other fixture, never clipped; a def that does not
 //! fit falls back to the tag's compact variant. A building whose natural
-//! footprints leave a pocket the player body cannot reach is re-placed at
-//! compact. [`reach_findings`] is the one windowed verdict
-//! ([`super::District::check_reachability`] runs it over the finished
-//! district). The collision map is built once, here, as one
-//! [`FloorCollision`] per floor, and cached on [`PropMap`]; nothing
-//! recomputes it.
+//! placement leaves a free cell unreachable over whole cells
+//! ([`needs_compact`], the cheap reading) is placed again at compact. The
+//! verdict over what stands is [`super::District::check_reachability`]:
+//! the whole-cell reading where it clears a window (sound under two
+//! tested conditions, see [`whole_cells_open`]), the exact sub-cell check
+//! ([`window_findings`]) everywhere else. The collision map is built
+//! once, here, as one [`FloorCollision`] per floor, and cached on
+//! [`PropMap`]; nothing recomputes it.
 //!
 //! **Carriers, never consequence.** Every prop is placed in its empty,
-//! default state; no pass-6 anchor tag is ever carried by a dressing def
-//! (`tools/defs-build`'s requirement rows own that).
+//! default state. A def carrying a tag any row owes -- a distribution
+//! subject or a required fixture -- is placed only where its row asks
+//! ([`Catalogue::ambient`] never offers it as dressing), so a pass-6
+//! anchor tag never turns up on street furniture.
 //!
 //! **Seeding.** `seed_from_ids(city_seed, PASS_ID)`, then one stream per
 //! building keyed by [`rect_seed_key`] of its footprint and its fixture's
@@ -500,8 +504,14 @@ struct Catalogue<'a> {
     /// Subjects of coherence rows: a def carrying one declares which
     /// side of the door it belongs to.
     side_tags: BTreeSet<TagId>,
-    /// Tags a distribution row is subject of.
-    subjects: BTreeSet<TagId>,
+    /// Tags a row owes somewhere: every distribution row's subject and
+    /// every requirement row's `requires`. A def carrying one stands only
+    /// where a row asks for it, never as ambient dressing.
+    owed: BTreeSet<TagId>,
+    /// `(per, subject, rows)` of the distribution rows judged over an
+    /// object def's tag: what a placed def owes beside itself (a table
+    /// set's chairs, one per row).
+    attendants: Vec<(TagId, TagId, u32, i32)>,
     /// `(subject, per, min_spacing, max_distance, ratio)` of every
     /// distribution row.
     distributions: Vec<Dist>,
@@ -523,6 +533,7 @@ struct Dist {
     min_spacing: i32,
     max_distance: i32,
     ratio: u32,
+    tolerance_percent: u32,
 }
 
 /// Where a candidate def would stand, as the tags of the place.
@@ -540,7 +551,7 @@ impl<'a> Catalogue<'a> {
         let mut forbid = Vec::new();
         let mut side_tags = BTreeSet::new();
         let mut distributions = Vec::new();
-        let mut subjects = BTreeSet::new();
+        let mut owed: BTreeSet<TagId> = BTreeSet::new();
         for r in content.rules.iter() {
             if let Some(c) = r.as_coherence() {
                 // Only the rows that bar a prop from a floor or a street
@@ -552,8 +563,11 @@ impl<'a> Catalogue<'a> {
                     }
                 }
             }
+            if let Some(r) = r.as_requirement() {
+                owed.insert(r.requires);
+            }
             if let Some(d) = r.as_distribution() {
-                subjects.insert(d.subject);
+                owed.insert(d.subject);
                 let ratio = match d.ratio {
                     RowRatio::Fixed(n) => n,
                     RowRatio::Read(_) => d.ratio.smallest(),
@@ -564,6 +578,7 @@ impl<'a> Catalogue<'a> {
                     min_spacing: d.min_spacing as i32,
                     max_distance: d.max_distance as i32,
                     ratio,
+                    tolerance_percent: d.tolerance_percent,
                 });
             }
         }
@@ -606,13 +621,38 @@ impl<'a> Catalogue<'a> {
                 street_tags.insert(d.per);
             }
         }
+        // What a placed def owes beside itself: a distribution row over a
+        // tag an object def (no room, no street cell) carries, whose
+        // subject an object def carries too -- one subject per row.
+        let mut attendants: Vec<(TagId, TagId, u32, i32)> = Vec::new();
+        for d in &distributions {
+            let object_per = objects.iter().any(|o| o.tags.contains(&d.per));
+            let room_per = content
+                .room_types
+                .iter()
+                .any(|room| room.tags.contains(&d.per));
+            let object_subject = objects.iter().any(|o| o.tags.contains(&d.subject));
+            if object_per && !room_per && !parts.is_part(d.per) && object_subject {
+                match attendants
+                    .iter_mut()
+                    .find(|(c, r, _, _)| *c == d.per && *r == d.subject)
+                {
+                    Some(a) => {
+                        a.2 += 1;
+                        a.3 = a.3.min(d.max_distance);
+                    }
+                    None => attendants.push((d.per, d.subject, 1, d.max_distance)),
+                }
+            }
+        }
         Ok(Catalogue {
             parts,
             street_tags,
+            attendants,
             objects,
             forbid,
             side_tags,
-            subjects,
+            owed,
             distributions,
             facade,
             wall,
@@ -645,6 +685,23 @@ impl<'a> Catalogue<'a> {
         v
     }
 
+    /// Every outdoor def that may stand on the pavement and that no row
+    /// names as a subject or a required fixture, sorted by id: the pool
+    /// ambient dressing draws from.
+    fn ambient(&self) -> Vec<&'a defs::ObjectDef> {
+        let mut v: Vec<&defs::ObjectDef> = self
+            .objects
+            .iter()
+            .filter(|o| {
+                self.eligible(o, Place::Pavement)
+                    && !o.tags.contains(&self.parts.wall)
+                    && !o.tags.iter().any(|t| self.owed.contains(t))
+            })
+            .collect();
+        v.sort_by_key(|o| o.id);
+        v
+    }
+
     fn area(d: &defs::ObjectDef) -> u32 {
         d.width * d.height
     }
@@ -670,13 +727,12 @@ pub fn run(
     let seed = seed_from_ids(city_seed, PASS_ID);
     let mut props: Vec<Prop> = Vec::new();
     let mut skips = PropSkips::default();
-    let (body_w, body_h) = player_body_subcells(defs::BALANCE);
 
     for (env, outcome) in skeleton.envelopes.envelopes().zip(interiors.outcomes()) {
         match outcome {
             InteriorOutcome::Laid { interior, .. } => {
                 let mut b = dress_building(seed, &cat, cfg, interior, false, &mut skips)?;
-                if reach_findings(interior, &b, &cat, (body_w, body_h)) {
+                if needs_compact(interior, &b, &cat) {
                     skips.buildings_replaced += 1;
                     b = dress_building(seed, &cat, cfg, interior, true, &mut skips)?;
                 }
@@ -883,6 +939,110 @@ fn dress_building(
         }
     }
 
+    // What a placed def owes beside itself (a table set's chair): on a
+    // free floor cell next to its footprint, one the building's cells stay
+    // reachable around when one exists.
+    let placed_now: Vec<Prop> = out.clone();
+    for prop in &placed_now {
+        let Role::Fixture { room, .. } = prop.role else {
+            continue;
+        };
+        let Some(def) = def_of(cat.objects, prop.row.def_id) else {
+            continue;
+        };
+        for &(container, requires, min, reach) in &cat.attendants {
+            if !def.tags.contains(&container) {
+                continue;
+            }
+            let cands: Vec<&defs::ObjectDef> = cat
+                .carrying(requires, Place::Floor)
+                .into_iter()
+                .filter(|d| d.width == 1 && d.height == 1)
+                .collect();
+            if cands.is_empty() {
+                continue;
+            }
+            let room_rect = interior.rooms[room].rect;
+            let e = extent(&prop.row, def);
+            for n in 0..min {
+                let mut rng = Rng::new(seed_from_ids(
+                    seed,
+                    seed_from_ids(
+                        key,
+                        seed_from_ids(pack(prop.row.x, prop.row.y), 0xc4a1 + n as u64),
+                    ),
+                ));
+                // Beside the footprint first; failing that, any free floor
+                // cell of the room inside the row's own reach of it.
+                // A chair is underfoot, so when no free cell is left within
+                // reach it stands on a solid prop's own cell rather than
+                // leave the table unseated; never beside a doorway.
+                let free_strict = |c: (i32, i32)| {
+                    room_rect.contains(c.0, c.1)
+                        && !taken.cells.contains(&c)
+                        && !reserved.contains(&c)
+                        && !fixture_cells.contains(&c)
+                };
+                let free_lenient =
+                    |c: (i32, i32)| room_rect.contains(c.0, c.1) && !reserved.contains(&c);
+                let mut spots: Vec<(i32, i32)> = Vec::new();
+                for strict in [true, false] {
+                    let free = |c: (i32, i32)| {
+                        if strict {
+                            free_strict(c)
+                        } else {
+                            free_lenient(c)
+                        }
+                    };
+                    for ring in 1..=reach.max(1) {
+                        let mut layer: Vec<(i32, i32)> = Vec::new();
+                        for y in (e.y0 - ring)..(e.y1 + ring) {
+                            for x in (e.x0 - ring)..(e.x1 + ring) {
+                                // Chebyshev distance from the footprint.
+                                let dx = (e.x0 - x).max(x - (e.x1 - 1)).max(0);
+                                let dy = (e.y0 - y).max(y - (e.y1 - 1)).max(0);
+                                // Orthogonally beside it at ring 1.
+                                let beside = ring > 1 || dx == 0 || dy == 0;
+                                if dx.max(dy) == ring && beside && free((x, y)) {
+                                    layer.push((x, y));
+                                }
+                            }
+                        }
+                        for k in (1..layer.len()).rev() {
+                            let j = rng.below(k as u64 + 1) as usize;
+                            layer.swap(k, j);
+                        }
+                        spots.extend(layer);
+                    }
+                }
+                let def_c = cands[rng.below(cands.len() as u64) as usize];
+                let row_at = |c: (i32, i32)| PlacedRow {
+                    floor: 0,
+                    y: c.1,
+                    x: c.0,
+                    def_id: def_c.id,
+                    layer: def_c.layer,
+                    orientation: 0,
+                };
+                // Chairs are underfoot (no collider), so any free cell
+                // will do and none can seal a pocket.
+                let pick = spots.first().copied();
+                if let Some(c) = pick {
+                    taken.cells.insert(c);
+                    out.push(Prop {
+                        row: row_at(c),
+                        building: Some(fp),
+                        role: Role::Fixture {
+                            cell: c,
+                            tag: requires,
+                            room,
+                        },
+                    });
+                }
+            }
+        }
+    }
+
     // The shopfront: one glazing unit on the street wall of a building
     // holding the fixture a requirement row names for it.
     let shopfront = shopfront_prop(seed, cat, interior, &fixture_tags(&out));
@@ -1016,16 +1176,6 @@ pub fn window_findings(
     rows: &[PlacedRow],
     objects: &[defs::ObjectDef],
 ) -> Result<(Vec<Finding>, Vec<Finding>), String> {
-    // The whole-cell reading first: a window whose every cell no collider
-    // touches is reachable from the seed over whole cells needs no
-    // sub-cell grid at all -- each such cell is a full body wide, so
-    // sharing an edge with the next is a passage the body fits through,
-    // and a nook a collider leaves inside a blocked cell is part of its
-    // prop. Only a window the whole-cell reading cannot clear is
-    // rasterised at sub-cell resolution.
-    if whole_cells_open(window, seed_cell, rows, objects) {
-        return Ok((Vec::new(), Vec::new()));
-    }
     let s = defs::COLLIDER_SUBCELLS_PER_CELL;
     let placements: Vec<Placement> = rows
         .iter()
@@ -1098,7 +1248,15 @@ pub fn window_findings(
 
 /// Whether every cell of `window` that no collider touches is reachable
 /// from `seed_cell` over whole cells -- and the seed itself is one.
-fn whole_cells_open(
+///
+/// Sound as a shortcut for [`window_findings`] under two conditions, both
+/// tested: the player body is no bigger than one cell on either axis (so a
+/// free cell is a full body wide and sharing an edge with the next is a
+/// passage the body fits), and no collider reaches outside its def's own
+/// footprint (so a cell no footprint covers is wholly free). When it holds
+/// the exact check reports nothing; a differential test holds the two
+/// together.
+pub fn whole_cells_open(
     window: Rect,
     seed_cell: (i32, i32),
     rows: &[PlacedRow],
@@ -1159,13 +1317,11 @@ pub fn building_window(interior: &Interior) -> Option<(Rect, (i32, i32))> {
 }
 
 /// Whether `props` (one building's rows) fail to leave every free cell of
-/// the building's window reachable over whole cells -- the cheap reading
-/// [`window_findings`] opens with. A building that fails it is placed
-/// again at compact footprints, which stand inside the whole cells pass 6
-/// already proved a lane through, rather than judged at sub-cell
-/// resolution; the district verdict ([`check_reachability`]) still judges
-/// whatever stands.
-fn reach_findings(interior: &Interior, props: &[Prop], cat: &Catalogue, _body: (i32, i32)) -> bool {
+/// the building's window reachable over whole cells. A building that does
+/// is placed again at compact footprints, which stand inside the whole
+/// cells pass 6 already proved a lane through; the district verdict
+/// ([`check_reachability`]) judges whatever stands.
+fn needs_compact(interior: &Interior, props: &[Prop], cat: &Catalogue) -> bool {
     let Some((window, seed)) = building_window(interior) else {
         return true;
     };
@@ -1186,9 +1342,6 @@ struct Spacing {
     /// Whether the piece must front a block: a seat or a bin outside every
     /// area could never be judged against the bin it owes.
     need_block: bool,
-    /// Whether a free ground cell off the carriageway will do where there
-    /// is no pavement (a lamp completing a catchment's lighting).
-    ground_ok: bool,
 }
 
 impl Spacing {
@@ -1198,14 +1351,9 @@ impl Spacing {
             cells: 0,
             keep_walkable: true,
             need_block: true,
-            ground_ok: false,
         }
     }
 }
-
-/// What one placement added, to take it back: its cells and the function
-/// tags it registered.
-type Undo = (Vec<(i32, i32)>, Vec<TagId>);
 
 /// A placed anchor cell and the block it fronts.
 type Anchor = ((i32, i32), Option<Rect>);
@@ -1218,13 +1366,52 @@ struct StreetState<'a> {
     /// them.
     furniture: BTreeSet<(i32, i32)>,
     reserved: BTreeSet<(i32, i32)>,
-    /// Undo log for a cluster that cannot be completed: the cells and
-    /// tags each placement added, newest last.
-    undo: Vec<Undo>,
+    /// The object table, to take a piece back by its own extent.
+    defs: &'a [defs::ObjectDef],
     /// Placed anchors, with the block they front, by function tag.
     placed: BTreeMap<TagId, Vec<Anchor>>,
 }
 
+impl<'a> StreetState<'a> {
+    /// A fresh state over `grid`: every building footprint is taken and
+    /// every approach cell, with the ring around it, is kept clear.
+    fn new(
+        grid: &'a StreetGrid,
+        defs: &'a [defs::ObjectDef],
+        skeleton: &Skeleton,
+        interiors: &InteriorMap,
+    ) -> Self {
+        let mut st = StreetState {
+            grid,
+            taken: BTreeSet::new(),
+            furniture: BTreeSet::new(),
+            reserved: BTreeSet::new(),
+            defs,
+            placed: BTreeMap::new(),
+        };
+        for (_, _, interior) in interiors.laid() {
+            for &(x, y) in &interior.approach {
+                for dx in -1..=1 {
+                    for dy in -1..=1 {
+                        st.reserved.insert((x + dx, y + dy));
+                    }
+                }
+            }
+        }
+        for e in skeleton.envelopes.envelopes() {
+            for y in e.footprint.y0..e.footprint.y1 {
+                for x in e.footprint.x0..e.footprint.x1 {
+                    st.taken.insert((x, y));
+                }
+            }
+        }
+        st
+    }
+}
+
+/// The street's furniture, in order: lamps on a cadence, the lighting
+/// row completed, ambient pieces by density, then the bins the companion
+/// rows owe.
 #[allow(clippy::too_many_arguments)]
 fn street_furniture(
     seed: u64,
@@ -1236,39 +1423,25 @@ fn street_furniture(
     props: &mut Vec<Prop>,
     skips: &mut PropSkips,
 ) {
-    let mut st = StreetState {
-        grid,
-        taken: BTreeSet::new(),
-        furniture: BTreeSet::new(),
-        reserved: BTreeSet::new(),
-        undo: Vec::new(),
-        placed: BTreeMap::new(),
-    };
-    for (_, _, interior) in interiors.laid() {
-        for &(x, y) in &interior.approach {
-            for dx in -1..=1 {
-                for dy in -1..=1 {
-                    st.reserved.insert((x + dx, y + dy));
-                }
-            }
-        }
-    }
-    // Every cell a building's own props already cover is not pavement,
-    // but a plot's setback strip may be: keep street furniture off any
-    // footprint.
-    for e in skeleton.envelopes.envelopes() {
-        for y in e.footprint.y0..e.footprint.y1 {
-            for x in e.footprint.x0..e.footprint.x1 {
-                st.taken.insert((x, y));
-            }
-        }
-    }
+    let mut st = StreetState::new(grid, cat.objects, skeleton, interiors);
+    place_lamps(&mut st, cat, cfg, skeleton, seed, props);
+    complete_lighting(&mut st, cat, props, skips);
+    place_ambient(&mut st, cat, cfg, skeleton, seed, props, skips);
+    allocate_companions(&mut st, cat, props, skips);
+}
 
-    let edges = skeleton.streets.edges();
-    let pavement = cat.parts.pavement;
-    let _ = pavement;
-
-    // Lamps: every distribution row over pavement.
+/// Lamps: every distribution row judged over the street's own cells.
+/// `cadence` is per side; the two sides of a street are staggered half a
+/// cadence, so the street reads as a lamp every half cadence and each
+/// side is its own regular row.
+fn place_lamps(
+    st: &mut StreetState,
+    cat: &Catalogue,
+    cfg: &GenerationConfig,
+    skeleton: &Skeleton,
+    seed: u64,
+    props: &mut Vec<Prop>,
+) {
     for d in cat
         .distributions
         .iter()
@@ -1278,11 +1451,8 @@ fn street_furniture(
         if cands.is_empty() {
             continue;
         }
-        // `cadence` is per side; the two sides of a street are staggered
-        // half a cadence, so the street reads as a lamp every half
-        // cadence and each side is its own regular row.
         let cadence = cfg.props_lamp_cadence_cells.max(d.min_spacing).max(2);
-        for e in edges {
+        for e in skeleton.streets.edges() {
             for (side, band) in bands(e, cfg).into_iter().enumerate() {
                 let len = band.to - band.from;
                 let mut rng = Rng::new(seed_from_ids(
@@ -1314,9 +1484,8 @@ fn street_furniture(
                             cells: d.min_spacing,
                             keep_walkable: false,
                             need_block: false,
-                            ground_ok: false,
                         };
-                        if try_place(&mut st, cat, &band, def, (x, y), spacing, props) {
+                        if try_place(st, cat, &band, def, (x, y), spacing, props) {
                             break;
                         }
                     }
@@ -1324,12 +1493,19 @@ fn street_furniture(
             }
         }
     }
+}
 
-    // Coverage, completed from the row itself: any pavement cell with no
-    // street lamp within `max_distance` in its own catchment (a street the
-    // site edge or a catchment line cuts short, a junction's furniture
-    // having taken the offered cell) gets one at the nearest free pavement
-    // cell of that catchment.
+/// Coverage completed from the row itself, judged as the row judges it:
+/// a footway cell with no lamp within `max_distance` (a street the site
+/// edge cut short, a junction's furniture having taken the offered cell)
+/// gets one on the nearest free footway cell. A cell no footway cell can
+/// cover is a counted skip -- the row's numbers, not a lamp in a yard.
+fn complete_lighting(
+    st: &mut StreetState,
+    cat: &Catalogue,
+    props: &mut Vec<Prop>,
+    skips: &mut PropSkips,
+) {
     for d in cat
         .distributions
         .iter()
@@ -1339,9 +1515,7 @@ fn street_furniture(
         if cands.is_empty() {
             continue;
         }
-        let extent = cfg.catchment_extent_cells;
         let reach = d.max_distance.max(1);
-        let catchment = |x: i32, y: i32| crate::rules::catchment_of(x, y, extent);
         let bucket = |x: i32, y: i32| (x.div_euclid(reach), y.div_euclid(reach));
         let mut lamps: BTreeMap<(i32, i32), Vec<(i32, i32)>> = BTreeMap::new();
         for &(c, _) in st.placed.get(&d.subject).map(Vec::as_slice).unwrap_or(&[]) {
@@ -1349,14 +1523,11 @@ fn street_furniture(
         }
         let covered = |lamps: &BTreeMap<(i32, i32), Vec<(i32, i32)>>, x: i32, y: i32| {
             let (bx, by) = bucket(x, y);
-            let cx = catchment(x, y);
             (-1..=1).any(|dx| {
                 (-1..=1).any(|dy| {
                     lamps.get(&(bx + dx, by + dy)).is_some_and(|v| {
-                        v.iter().any(|l| {
-                            (l.0 - x).abs().max((l.1 - y).abs()) <= d.max_distance
-                                && catchment(l.0, l.1) == cx
-                        })
+                        v.iter()
+                            .any(|l| (l.0 - x).abs().max((l.1 - y).abs()) <= d.max_distance)
                     })
                 })
             })
@@ -1366,25 +1537,12 @@ fn street_furniture(
             cells: d.min_spacing,
             keep_walkable: false,
             need_block: false,
-            ground_ok: true,
         };
-        // The pavement tag is on every street pavement cell and on every
-        // building's approach: both owe a lamp in their own catchment.
-        let mut owed: BTreeSet<(i32, i32)> =
-            grid.pavement_cells().map(|(x, y, _)| (y, x)).collect();
-        if d.per == pavement {
-            for (_, _, interior) in interiors.laid() {
-                for &(x, y) in &interior.approach {
-                    owed.insert((y, x));
-                }
-            }
-        }
-        let cells: Vec<(i32, i32)> = owed.into_iter().map(|(y, x)| (x, y)).collect();
+        let cells: Vec<(i32, i32)> = st.grid.pavement_cells().map(|(x, y, _)| (x, y)).collect();
         for (x, y) in cells {
             if covered(&lamps, x, y) {
                 continue;
             }
-            let home = catchment(x, y);
             let mut placed = false;
             'rings: for r in 0..=d.max_distance {
                 for dy in -r..=r {
@@ -1393,21 +1551,13 @@ fn street_furniture(
                             continue;
                         }
                         let (cx, cy) = (x + dx, y + dy);
-                        if catchment(cx, cy) != home || grid.is_road(cx, cy) {
+                        if !st.grid.is_pavement(cx, cy) {
                             continue;
                         }
-                        let band = Band {
-                            vertical: true,
-                            outer: cx,
-                            kerb: cx,
-                            outward: 1,
-                            from: cy,
-                            to: cy + 1,
-                            pave: 1,
-                            edge_key: 0,
-                        };
-                        let def = cands[((cx as i64 * 31 + cy as i64) as usize) % cands.len()];
-                        if try_place(&mut st, cat, &band, def, (cx, cy), spacing, props) {
+                        let band = single_cell_band(cx, cy);
+                        let def = cands
+                            [((cx as i64 * 31 + cy as i64).unsigned_abs() as usize) % cands.len()];
+                        if try_place(st, cat, &band, def, (cx, cy), spacing, props) {
                             lamps.entry(bucket(cx, cy)).or_default().push((cx, cy));
                             placed = true;
                             break 'rings;
@@ -1420,33 +1570,43 @@ fn street_furniture(
             }
         }
     }
+}
 
-    // Ambient furniture and the companions its rows owe.
+/// A one-cell stand-in band for a piece offered at an arbitrary
+/// pavement cell (no cross-section to keep: it is a lamp).
+fn single_cell_band(x: i32, y: i32) -> Band {
+    Band {
+        vertical: true,
+        outer: x,
+        kerb: x,
+        outward: 1,
+        from: y,
+        to: y + 1,
+        pave: 0,
+        edge_key: 0,
+    }
+}
+
+/// Ambient pieces: singles, and now and then a pair, offered per 100
+/// cells of building-side run at the density of the street, drawn from
+/// every outdoor def no row owes (a bench, a tree, a planter). Never a
+/// def carrying a tag a row names as subject or as a required fixture.
+fn place_ambient(
+    st: &mut StreetState,
+    cat: &Catalogue,
+    cfg: &GenerationConfig,
+    skeleton: &Skeleton,
+    seed: u64,
+    props: &mut Vec<Prop>,
+    skips: &mut PropSkips,
+) {
     let per100_lo = cfg.props_ambient_per_100_min as i64;
     let per100_hi = cfg.props_ambient_per_100_max as i64;
-    let ambient: Vec<&defs::ObjectDef> = {
-        let mut v: Vec<&defs::ObjectDef> = cat
-            .objects
-            .iter()
-            .filter(|o| {
-                cat.eligible(o, Place::Pavement)
-                    && !o.tags.contains(&cat.parts.wall)
-                    && !o.tags.iter().any(|t| cat.subjects.contains(t))
-            })
-            .collect();
-        v.sort_by_key(|o| o.id);
-        v
-    };
-    let companions: Vec<Dist> = cat
-        .distributions
-        .iter()
-        .copied()
-        .filter(|d| d.per != pavement)
-        .collect();
+    let ambient = cat.ambient();
     if ambient.is_empty() {
         return;
     }
-    for e in edges {
+    for e in skeleton.streets.edges() {
         for (si, band) in bands(e, cfg).into_iter().enumerate() {
             if band.pave < 2 {
                 continue;
@@ -1475,131 +1635,182 @@ fn street_furniture(
             for _ in 0..n {
                 let t = band.from + rng.below(len.max(1) as u64) as i32;
                 let def = ambient[rng.below(ambient.len() as u64) as usize];
-                let companion = companions
-                    .iter()
-                    .find(|c| def.tags.contains(&c.per))
-                    .copied();
-                let count = companion.map_or(1, |c| c.ratio.max(1) as i32);
-                let (mark_props, mark_undo) = (props.len(), st.undo.len());
-                let mut cursor = t;
-                let mut first_def = def.id;
-                let mut placed_cells: Vec<((i32, i32), Option<Rect>)> = Vec::new();
-                let mut along: Vec<i32> = Vec::new();
-                for _ in 0..count {
-                    let d = if let Some(c) = companion {
-                        let pool: Vec<&defs::ObjectDef> = ambient
-                            .iter()
-                            .copied()
-                            .filter(|o| o.tags.contains(&c.per))
-                            .collect();
-                        let alt: Vec<&defs::ObjectDef> =
-                            pool.iter().copied().filter(|o| o.id != first_def).collect();
-                        let pool = if alt.is_empty() { pool } else { alt };
-                        pool[rng.below(pool.len() as u64) as usize]
-                    } else {
-                        def
-                    };
-                    first_def = d.id;
-                    let at = band.cell(cursor, band.outer);
-                    if try_place(&mut st, cat, &band, d, at, Spacing::none(), props) {
-                        placed_cells.push((at, st.grid.block_at(at.0, at.1)));
-                        along.push(cursor);
-                    }
-                    cursor += d.width as i32 + 1;
-                }
-                let mut ok = placed_cells.len() as i32 == count;
-                if let (Some(c), true) = (companion, ok) {
-                    // Every block the cluster stands in holds a bin within
-                    // `max_distance` of every seat of the cluster in it.
-                    let mut blocks: Vec<Option<Rect>> =
-                        placed_cells.iter().map(|&(_, b)| b).collect();
-                    blocks.sort();
-                    blocks.dedup();
-                    let cands = cat.carrying(c.subject, Place::Pavement);
-                    for blk in blocks {
-                        let near = st.placed.get(&c.subject).cloned().unwrap_or_default();
-                        let covered =
-                            placed_cells
-                                .iter()
-                                .filter(|(_, b)| *b == blk)
-                                .all(|&(p, _)| {
-                                    near.iter().any(|&(n, nb)| {
-                                        nb == blk
-                                            && (n.0 - p.0).abs().max((n.1 - p.1).abs())
-                                                <= c.max_distance
-                                    })
-                                });
-                        if covered {
-                            continue;
-                        }
-                        if cands.is_empty() {
-                            ok = false;
-                            break;
-                        }
-                        let bin = cands[rng.below(cands.len() as u64) as usize];
-                        // From the cluster's middle outward, only where every
-                        // seat of it stays within the row's own distance.
-                        let lo = along.iter().copied().min().unwrap_or(t);
-                        let hi = along.iter().copied().max().unwrap_or(t);
-                        let mid = (lo + hi) / 2;
-                        let mut spots: Vec<i32> = Vec::new();
-                        for k in 0..=c.max_distance {
-                            for sp in [mid + k, mid - k] {
-                                if along.iter().all(|&a| (sp - a).abs() <= c.max_distance)
-                                    && !spots.contains(&sp)
-                                {
-                                    spots.push(sp);
-                                }
-                            }
-                        }
-                        let mut placed_bin = false;
-                        for sp in spots {
-                            let at = band.cell(sp, band.outer);
-                            if st.grid.block_at(at.0, at.1) != blk {
-                                continue;
-                            }
-                            let spacing = Spacing {
-                                subject: c.subject,
-                                cells: c.min_spacing,
-                                keep_walkable: true,
-                                need_block: true,
-                                ground_ok: false,
-                            };
-                            if try_place(&mut st, cat, &band, bin, at, spacing, props) {
-                                placed_bin = true;
-                                break;
-                            }
-                        }
-                        if !placed_bin {
-                            ok = false;
-                            break;
-                        }
-                    }
-                }
-                if !ok {
+                let at = band.cell(t, band.outer);
+                if !try_place(st, cat, &band, def, at, Spacing::none(), props) {
                     skips.street_unplaced += 1;
-                    rollback(&mut st, props, mark_props, mark_undo);
+                    continue;
+                }
+                // Now and then a pair: a different def beside the first.
+                if rng.below(4) == 0 {
+                    let other: Vec<&defs::ObjectDef> =
+                        ambient.iter().copied().filter(|o| o.id != def.id).collect();
+                    if !other.is_empty() {
+                        let d2 = other[rng.below(other.len() as u64) as usize];
+                        let at2 = band.cell(t + def.width as i32 + 1, band.outer);
+                        try_place(st, cat, &band, d2, at2, Spacing::none(), props);
+                    }
                 }
             }
         }
     }
 }
 
-/// Takes back everything placed since `(mark_props, mark_undo)`.
-fn rollback(st: &mut StreetState, props: &mut Vec<Prop>, mark_props: usize, mark_undo: usize) {
-    props.truncate(mark_props);
-    while st.undo.len() > mark_undo {
-        let (cells, tags) = st.undo.pop().expect("length checked");
-        for c in cells {
-            st.taken.remove(&c);
-            st.furniture.remove(&c);
+/// Companion rows (`waste` per `seating`): the way pass 5 places a
+/// distributed institution from its row. Every seat is covered by a bin
+/// within the row's `max_distance` in its own block; each bin stands where
+/// it covers the most uncovered seats, kept `min_spacing` from the others;
+/// and when the count would pass the row's own upper bound
+/// ([`crate::rules::distribution_target`] over the seats standing), the
+/// bins covering the fewest seats go, with the seats nothing else covers.
+fn allocate_companions(
+    st: &mut StreetState,
+    cat: &Catalogue,
+    props: &mut Vec<Prop>,
+    skips: &mut PropSkips,
+) {
+    let companions: Vec<Dist> = cat
+        .distributions
+        .iter()
+        .copied()
+        .filter(|d| !cat.street_tags.contains(&d.per))
+        .collect();
+    for c in companions {
+        let bins_def = cat.carrying(c.subject, Place::Pavement);
+        if bins_def.is_empty() {
+            continue;
         }
-        for t in tags {
-            if let Some(v) = st.placed.get_mut(&t) {
-                v.pop();
+        let spacing = Spacing {
+            subject: c.subject,
+            cells: c.min_spacing,
+            keep_walkable: true,
+            need_block: true,
+        };
+        let seats_of = |st: &StreetState| -> Vec<Anchor> {
+            let mut v = st.placed.get(&c.per).cloned().unwrap_or_default();
+            v.sort_by_key(|&((x, y), _)| (y, x));
+            v
+        };
+        let near = |a: (i32, i32), b: (i32, i32)| {
+            (a.0 - b.0).abs().max((a.1 - b.1).abs()) <= c.max_distance
+        };
+        let bins_of = |st: &StreetState| -> Vec<Anchor> {
+            st.placed.get(&c.subject).cloned().unwrap_or_default()
+        };
+        // Cover every seat.
+        loop {
+            let bins = bins_of(st);
+            let seats = seats_of(st);
+            let uncovered: Vec<Anchor> = seats
+                .iter()
+                .copied()
+                .filter(|&(s, b)| !bins.iter().any(|&(n, nb)| nb == b && near(n, s)))
+                .collect();
+            let Some(&(first, block)) = uncovered.first() else {
+                break;
+            };
+            let mut cands: Vec<(usize, i32, i32, i32)> = Vec::new();
+            for dy in -c.max_distance..=c.max_distance {
+                for dx in -c.max_distance..=c.max_distance {
+                    let (x, y) = (first.0 + dx, first.1 + dy);
+                    if !st.grid.is_pavement(x, y) || st.grid.block_at(x, y) != block {
+                        continue;
+                    }
+                    let gain = uncovered
+                        .iter()
+                        .filter(|&&(s, b)| b == block && near((x, y), s))
+                        .count();
+                    cands.push((usize::MAX - gain, dx.abs().max(dy.abs()), y, x));
+                }
+            }
+            cands.sort();
+            let mut placed = false;
+            for (_, _, y, x) in cands {
+                let def =
+                    bins_def[((x as i64 * 31 + y as i64).unsigned_abs() as usize) % bins_def.len()];
+                let band = single_cell_band(x, y);
+                if try_place(st, cat, &band, def, (x, y), spacing, props) {
+                    placed = true;
+                    break;
+                }
+            }
+            if !placed {
+                // No bin can stand within reach: the seat goes.
+                skips.street_unplaced += 1;
+                remove_at(st, props, first);
+            }
+        }
+        // Trim to the row's own ratio band.
+        loop {
+            let seats = seats_of(st);
+            let bins = bins_of(st);
+            let (_, _, upper) = crate::rules::distribution_target(
+                seats.len() as u64,
+                c.ratio.max(1),
+                c.tolerance_percent,
+            );
+            if (bins.len() as u64) <= upper || bins.is_empty() {
+                break;
+            }
+            // The bin whose own seats are fewest.
+            let cover = |bin: &Anchor| -> Vec<Anchor> {
+                seats
+                    .iter()
+                    .copied()
+                    .filter(|&(s, b)| b == bin.1 && near(bin.0, s))
+                    .collect()
+            };
+            let victim = *bins
+                .iter()
+                .min_by_key(|b| {
+                    let ((x, y), _) = **b;
+                    (cover(b).len(), y, x)
+                })
+                .expect("non-empty");
+            let sole: Vec<Anchor> = cover(&victim)
+                .into_iter()
+                .filter(|&(s, b)| {
+                    !bins
+                        .iter()
+                        .any(|o| *o != victim && o.1 == b && near(o.0, s))
+                })
+                .collect();
+            remove_at(st, props, victim.0);
+            for (s, _) in sole {
+                remove_at(st, props, s);
+                skips.street_unplaced += 1;
             }
         }
     }
+}
+
+/// Takes back the street piece anchored at `at` -- its row, its cells and
+/// the anchors it registered -- leaving the state as if it had never been
+/// placed. Returns whether a piece stood there.
+fn remove_at(st: &mut StreetState, props: &mut Vec<Prop>, at: (i32, i32)) -> bool {
+    let Some(i) = props
+        .iter()
+        .position(|p| matches!(p.role, Role::Street { .. }) && (p.row.x, p.row.y) == at)
+    else {
+        return false;
+    };
+    let p = props.remove(i);
+    if let Some(def) = def_of(st.defs, p.row.def_id) {
+        let e = extent(&p.row, def);
+        for y in e.y0..e.y1 {
+            for x in e.x0..e.x1 {
+                st.taken.remove(&(x, y));
+                st.furniture.remove(&(x, y));
+            }
+        }
+        for t in def.tags {
+            if let Some(v) = st.placed.get_mut(t)
+                && let Some(k) = v.iter().position(|&(c, _)| c == at)
+            {
+                v.remove(k);
+            }
+        }
+    }
+    true
 }
 
 /// The window of every pavement band that carries a placed prop: the
@@ -1677,7 +1888,6 @@ fn try_place(
         cells: spacing,
         keep_walkable,
         need_block,
-        ground_ok,
     } = spacing;
     let row = PlacedRow {
         floor: 0,
@@ -1691,9 +1901,10 @@ fn try_place(
     let mut block: Option<Option<Rect>> = None;
     for y in fp.y0..fp.y1 {
         for x in fp.x0..fp.x1 {
-            let standable = st.grid.is_pavement(x, y)
-                || (ground_ok && st.grid.in_site(x, y) && !st.grid.is_road(x, y));
-            if !standable || st.taken.contains(&(x, y)) || st.reserved.contains(&(x, y)) {
+            if !st.grid.is_pavement(x, y)
+                || st.taken.contains(&(x, y))
+                || st.reserved.contains(&(x, y))
+            {
                 return false;
             }
             let b = st.grid.block_at(x, y);
@@ -1732,25 +1943,35 @@ fn try_place(
             if !keep_walkable && band.pave < 2 {
                 continue;
             }
-            let free = band.rows().any(|r| {
-                let (cx, cy) = band.cell(t, r);
-                st.grid.is_pavement(cx, cy) && !st.taken.contains(&(cx, cy)) && !inside(cx, cy)
-            });
+            // A stand-in band (`pave == 0`: a piece offered at an arbitrary
+            // cell) has no rows of its own: a walkable pavement cell must
+            // stay beside it.
+            let free = if band.pave == 0 {
+                [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+                    .into_iter()
+                    .any(|(cx, cy)| {
+                        st.grid.is_pavement(cx, cy)
+                            && !st.taken.contains(&(cx, cy))
+                            && !inside(cx, cy)
+                    })
+            } else {
+                band.rows().any(|r| {
+                    let (cx, cy) = band.cell(t, r);
+                    st.grid.is_pavement(cx, cy) && !st.taken.contains(&(cx, cy)) && !inside(cx, cy)
+                })
+            };
             if !free {
                 return false;
             }
         }
     }
-    let mut cells = Vec::new();
     for y in fp.y0..fp.y1 {
         for x in fp.x0..fp.x1 {
             st.taken.insert((x, y));
             st.furniture.insert((x, y));
-            cells.push((x, y));
         }
     }
     let fronted = block.flatten();
-    let mut tags = Vec::new();
     // Every function tag of the def is a placed anchor of its own, so a
     // companion row can find it.
     for t in def.tags {
@@ -1760,10 +1981,8 @@ fn try_place(
             .any(|d| d.subject == *t || d.per == *t)
         {
             st.placed.entry(*t).or_default().push((at, fronted));
-            tags.push(*t);
         }
     }
-    st.undo.push((cells, tags));
     props.push(Prop {
         row,
         building: None,
@@ -1814,8 +2033,11 @@ pub(super) fn check_reachability(
             .get(&interior.footprint)
             .map(Vec::as_slice)
             .unwrap_or(&[]);
-        let (enclosed, narrow) =
-            window_findings(window, seed, rows, objects).map_err(GenerationError::InvalidConfig)?;
+        if whole_cells_open(window, seed, rows, objects) {
+            continue;
+        }
+        let (enclosed, narrow) = window_findings(window, seed, rows, objects)
+            .map_err(|reason| GenerationError::WindowUnreadable { window, reason })?;
         if let Some(e) = fail(window, enclosed, narrow) {
             return Err(e);
         }
@@ -1836,8 +2058,11 @@ pub(super) fn check_reachability(
                 }
             }
         }
+        if whole_cells_open(window, seed, &rows, objects) {
+            continue;
+        }
         let (enclosed, narrow) = window_findings(window, seed, &rows, objects)
-            .map_err(GenerationError::InvalidConfig)?;
+            .map_err(|reason| GenerationError::WindowUnreadable { window, reason })?;
         if let Some(e) = fail(window, enclosed, narrow) {
             return Err(e);
         }
@@ -2301,5 +2526,426 @@ mod tests {
         sorted.sort();
         assert_eq!(rows, sorted);
         assert_eq!(std::mem::size_of::<PlacedRow>(), 20);
+    }
+
+    // --- the whole-cell shortcut ---------------------------------------
+
+    #[test]
+    fn the_player_body_is_never_bigger_than_one_cell_so_the_shortcut_is_sound() {
+        // `whole_cells_open` reads a free cell as a full body wide: it is
+        // sound only while the body fits a cell on both axes. Raising the
+        // balance range past a cell must fail here, naming why.
+        for key in [
+            "movement.player_body_width_subcells",
+            "movement.player_body_height_subcells",
+        ] {
+            let row = defs::BALANCE.iter().find(|b| b.key == key).unwrap();
+            assert!(
+                row.max <= defs::COLLIDER_SUBCELLS_PER_CELL as i64,
+                "{key} may reach {} sub-cells, more than a cell: props::whole_cells_open treats a free cell as a full body wide and is no longer sound",
+                row.max
+            );
+        }
+    }
+
+    #[test]
+    fn every_def_collider_lies_inside_its_own_footprint() {
+        // The other half of the shortcut's soundness: a cell no footprint
+        // covers is wholly free.
+        let s = defs::COLLIDER_SUBCELLS_PER_CELL;
+        for o in defs::OBJECTS {
+            if let Some(c) = o.collider {
+                assert!(
+                    c.x0 >= 0
+                        && c.y0 >= 0
+                        && c.x1 <= o.width as i32 * s
+                        && c.y1 <= o.height as i32 * s
+                        && c.x0 < c.x1
+                        && c.y0 < c.y1,
+                    "{}: collider {c:?} outside its {}x{} footprint",
+                    o.key,
+                    o.width,
+                    o.height
+                );
+            }
+        }
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Differential: whenever the whole-cell reading says a window is
+        /// open, the exact sub-cell path reports nothing, over real defs at
+        /// random anchors and a random seed cell.
+        #[test]
+        fn whole_cells_open_implies_the_exact_check_reports_nothing(
+            placements in proptest::collection::vec((0usize..1000, 0i32..9, 0i32..9), 0..9),
+            seed_x in 0i32..9,
+            seed_y in 0i32..9,
+        ) {
+            let solid: Vec<&defs::ObjectDef> = defs::OBJECTS
+                .iter()
+                .filter(|o| o.collider.is_some())
+                .collect();
+            let rows: Vec<PlacedRow> = placements
+                .iter()
+                .map(|&(i, x, y)| {
+                    let d = solid[i % solid.len()];
+                    PlacedRow { floor: 0, y, x, def_id: d.id, layer: d.layer, orientation: 0 }
+                })
+                .collect();
+            let window = Rect { x0: 0, y0: 0, x1: 9, y1: 9 };
+            if whole_cells_open(window, (seed_x, seed_y), &rows, defs::OBJECTS) {
+                let (enclosed, narrow) =
+                    window_findings(window, (seed_x, seed_y), &rows, defs::OBJECTS).unwrap();
+                prop_assert!(enclosed.is_empty() && narrow.is_empty());
+            }
+        }
+    }
+
+    // --- the street half -----------------------------------------------
+
+    use crate::generation::envelopes::EnvelopeMap;
+    use crate::generation::land_use::{LandUseCell, LandUseMap};
+    use crate::generation::plots::PlotMap;
+    use crate::generation::streets::{Axis, Block, StreetEdge, StreetNetwork};
+    use crate::generation::{BuildingTypeMap, LandUse};
+
+    const SITE: Rect = Rect {
+        x0: 0,
+        y0: 0,
+        x1: 64,
+        y1: 64,
+    };
+
+    /// One vertical street-tier edge down the middle of a 64-cell site
+    /// (carriageway x 30..34, pavement 28..30 and 34..36), a block each
+    /// side, no buildings.
+    fn street_skeleton(blocks: bool) -> Skeleton {
+        let edge = StreetEdge {
+            axis: Axis::Vertical,
+            coord: 32,
+            from: 0,
+            to: 64,
+            class: StreetClass::Street,
+            width_cells: 8,
+        };
+        let blocks = if blocks {
+            vec![
+                Block {
+                    bounds: Rect {
+                        x0: 0,
+                        y0: 0,
+                        x1: 28,
+                        y1: 64,
+                    },
+                },
+                Block {
+                    bounds: Rect {
+                        x0: 36,
+                        y0: 0,
+                        x1: 64,
+                        y1: 64,
+                    },
+                },
+            ]
+        } else {
+            Vec::new()
+        };
+        Skeleton {
+            land_use: LandUseMap::test_fixture(
+                SITE,
+                64,
+                1,
+                1,
+                0,
+                0,
+                vec![LandUseCell {
+                    use_: LandUse::Commercial,
+                    density: 100,
+                }],
+            ),
+            streets: StreetNetwork::test_fixture(SITE, vec![edge], blocks),
+            plots: PlotMap::test_fixture(SITE, Vec::new()),
+            envelopes: EnvelopeMap::test_fixture(Vec::new()),
+            building_types: BuildingTypeMap::test_fixture(Vec::new()),
+        }
+    }
+
+    fn lamp_def(cat: &Catalogue<'static>) -> &'static defs::ObjectDef {
+        let d = cat
+            .distributions
+            .iter()
+            .find(|d| cat.street_tags.contains(&d.per))
+            .expect("the lighting row");
+        cat.carrying(d.subject, Place::Pavement)[0]
+    }
+
+    fn lamp_anchors(st: &StreetState, cat: &Catalogue<'static>) -> Vec<(i32, i32)> {
+        let d = cat
+            .distributions
+            .iter()
+            .find(|d| cat.street_tags.contains(&d.per))
+            .unwrap();
+        let mut v: Vec<(i32, i32)> = st
+            .placed
+            .get(&d.subject)
+            .map(|a| a.iter().map(|&(c, _)| c).collect())
+            .unwrap_or_default();
+        v.sort_by_key(|&(x, y)| (x, y));
+        v
+    }
+
+    #[test]
+    fn lamps_stand_every_cadence_and_the_two_sides_are_staggered_half_of_one() {
+        let cat = catalogue();
+        let cfg = cfg();
+        let sk = street_skeleton(true);
+        let grid = StreetGrid::build(&sk, &cfg);
+        let empty = InteriorMap::test_fixture(Vec::new());
+        let mut st = StreetState::new(&grid, cat.objects, &sk, &empty);
+        let mut props = Vec::new();
+        place_lamps(&mut st, &cat, &cfg, &sk, 7, &mut props);
+        let lamps = lamp_anchors(&st, &cat);
+        let west: Vec<i32> = lamps.iter().filter(|c| c.0 == 29).map(|c| c.1).collect();
+        let east: Vec<i32> = lamps.iter().filter(|c| c.0 == 34).map(|c| c.1).collect();
+        let cadence = cfg.props_lamp_cadence_cells;
+        assert!(west.len() >= 4 && east.len() >= 4, "{west:?} {east:?}");
+        // A lamp stands on the kerb row of each side, never elsewhere.
+        assert_eq!(west.len() + east.len(), lamps.len());
+        // First half a cadence in, the far side half a cadence further.
+        assert_eq!(west[0], cadence / 2);
+        assert_eq!(east[0], cadence / 2 + cadence / 2);
+        for pair in west.windows(2).take(3) {
+            assert_eq!(pair[1] - pair[0], cadence);
+        }
+        for pair in east.windows(2).take(3) {
+            assert_eq!(pair[1] - pair[0], cadence);
+        }
+        assert!(lamps.iter().all(|&(x, y)| !grid.is_road(x, y)));
+        assert_eq!(props.len(), lamps.len());
+    }
+
+    #[test]
+    fn a_footway_cell_no_lamp_reaches_is_completed_on_footway_never_on_the_road() {
+        let cat = catalogue();
+        let cfg = cfg();
+        let sk = street_skeleton(true);
+        let grid = StreetGrid::build(&sk, &cfg);
+        let empty = InteriorMap::test_fixture(Vec::new());
+        let mut st = StreetState::new(&grid, cat.objects, &sk, &empty);
+        let mut props = Vec::new();
+        let mut skips = PropSkips::default();
+        // No cadence pass at all: the completion alone lights the street.
+        complete_lighting(&mut st, &cat, &mut props, &mut skips);
+        let lamps = lamp_anchors(&st, &cat);
+        assert!(!lamps.is_empty());
+        let reach = cat
+            .distributions
+            .iter()
+            .find(|d| cat.street_tags.contains(&d.per))
+            .unwrap()
+            .max_distance;
+        for (x, y, _) in grid.pavement_cells() {
+            assert!(
+                lamps
+                    .iter()
+                    .any(|l| (l.0 - x).abs().max((l.1 - y).abs()) <= reach),
+                "footway cell ({x}, {y}) is out of reach of every lamp"
+            );
+        }
+        assert!(
+            lamps
+                .iter()
+                .all(|&(x, y)| grid.is_pavement(x, y) && !grid.is_road(x, y)),
+            "a lamp stands off the footway"
+        );
+        assert_eq!(skips.street_unplaced, 0);
+    }
+
+    #[test]
+    fn a_piece_that_would_take_a_cross_sections_last_walkable_cell_is_refused() {
+        let cat = catalogue();
+        let cfg = cfg();
+        let sk = street_skeleton(true);
+        let grid = StreetGrid::build(&sk, &cfg);
+        let empty = InteriorMap::test_fixture(Vec::new());
+        let mut st = StreetState::new(&grid, cat.objects, &sk, &empty);
+        let mut props = Vec::new();
+        let bin = {
+            let d = cat
+                .distributions
+                .iter()
+                .find(|d| {
+                    !cat.street_tags.contains(&d.per)
+                        && !cat.carrying(d.subject, Place::Pavement).is_empty()
+                })
+                .unwrap();
+            cat.carrying(d.subject, Place::Pavement)[0]
+        };
+        // The west band is x 28 and 29 deep: one bin leaves a cell.
+        let band = bands(&sk.streets.edges()[0], &cfg)[0];
+        let at = |x: i32, y: i32| (x, y);
+        let keep = Spacing::none();
+        assert!(try_place(
+            &mut st,
+            &cat,
+            &band,
+            bin,
+            at(28, 20),
+            keep,
+            &mut props
+        ));
+        // A second beside it, on the other row of the same cross-section,
+        // would leave none, and furniture also keeps a cell clear of any
+        // other: refused.
+        assert!(!try_place(
+            &mut st,
+            &cat,
+            &band,
+            bin,
+            at(29, 20),
+            keep,
+            &mut props
+        ));
+        assert_eq!(props.len(), 1);
+    }
+
+    #[test]
+    fn a_piece_with_no_block_is_refused_unless_it_is_a_lamp() {
+        let cat = catalogue();
+        let cfg = cfg();
+        let sk = street_skeleton(false);
+        let grid = StreetGrid::build(&sk, &cfg);
+        let empty = InteriorMap::test_fixture(Vec::new());
+        let mut st = StreetState::new(&grid, cat.objects, &sk, &empty);
+        let mut props = Vec::new();
+        let band = bands(&sk.streets.edges()[0], &cfg)[0];
+        let ambient = cat.ambient();
+        let piece = ambient.iter().find(|d| d.width == 1).copied().unwrap();
+        assert!(!try_place(
+            &mut st,
+            &cat,
+            &band,
+            piece,
+            (28, 10),
+            Spacing::none(),
+            &mut props
+        ));
+        let lamp = lamp_def(&cat);
+        let spacing = Spacing {
+            subject: 0,
+            cells: 0,
+            keep_walkable: false,
+            need_block: false,
+        };
+        assert!(try_place(
+            &mut st,
+            &cat,
+            &band,
+            lamp,
+            (29, 10),
+            spacing,
+            &mut props
+        ));
+    }
+
+    #[test]
+    fn taking_a_piece_back_leaves_the_state_as_if_it_was_never_placed() {
+        let cat = catalogue();
+        let cfg = cfg();
+        let sk = street_skeleton(true);
+        let grid = StreetGrid::build(&sk, &cfg);
+        let empty = InteriorMap::test_fixture(Vec::new());
+        let mut st = StreetState::new(&grid, cat.objects, &sk, &empty);
+        let mut props = Vec::new();
+        let band = bands(&sk.streets.edges()[0], &cfg)[0];
+        let lamp = lamp_def(&cat);
+        let spacing = Spacing {
+            subject: cat
+                .distributions
+                .iter()
+                .find(|d| cat.street_tags.contains(&d.per))
+                .unwrap()
+                .subject,
+            cells: 6,
+            keep_walkable: false,
+            need_block: false,
+        };
+        assert!(try_place(
+            &mut st,
+            &cat,
+            &band,
+            lamp,
+            (29, 5),
+            spacing,
+            &mut props
+        ));
+        let before = (
+            st.taken.clone(),
+            st.furniture.clone(),
+            st.placed.clone(),
+            props.len(),
+        );
+        assert!(try_place(
+            &mut st,
+            &cat,
+            &band,
+            lamp,
+            (29, 30),
+            spacing,
+            &mut props
+        ));
+        assert_ne!(st.taken, before.0);
+        assert!(remove_at(&mut st, &mut props, (29, 30)));
+        assert_eq!(
+            (
+                st.taken.clone(),
+                st.furniture.clone(),
+                st.placed.clone(),
+                props.len()
+            ),
+            before
+        );
+        assert!(!remove_at(&mut st, &mut props, (29, 30)));
+    }
+
+    #[test]
+    fn ambient_never_offers_a_def_a_row_owes_somewhere() {
+        // An outdoor def carrying an anchor tag a row requires (a market
+        // stall's till) is never scattered as ambient.
+        let content = GenerationContent::committed();
+        let cat0 = Catalogue::new(&content).unwrap();
+        let template = *cat0.ambient().first().expect("an ambient def");
+        let anchor = defs::TAGS
+            .iter()
+            .find(|t| t.placement == Some(defs::TagPlacement::FacingDoor))
+            .expect("an anchor tag")
+            .id;
+        assert!(cat0.owed.contains(&anchor));
+        let tags: &'static [u32] = Box::leak(
+            template
+                .tags
+                .iter()
+                .copied()
+                .chain([anchor])
+                .collect::<Vec<u32>>()
+                .into_boxed_slice(),
+        );
+        let stall = defs::ObjectDef {
+            id: 90_002,
+            key: "an_unrelated_stall",
+            tags,
+            ..*template
+        };
+        let mut objects: Vec<defs::ObjectDef> = defs::OBJECTS.to_vec();
+        objects.push(stall);
+        let planted = GenerationContent {
+            objects: &objects,
+            ..content
+        };
+        let cat = Catalogue::new(&planted).unwrap();
+        assert!(cat.ambient().iter().all(|d| d.id != 90_002));
+        assert!(cat.ambient().iter().any(|d| d.id == template.id));
     }
 }

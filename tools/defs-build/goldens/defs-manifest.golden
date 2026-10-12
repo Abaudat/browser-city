@@ -56,6 +56,13 @@ object 55 round_tree
 object 56 planter_pot_clay
 object 57 planter_pot_stone
 object 58 flower_bush_small
+object 59 string_lights
+object 60 glass_lamp
+object 61 desk_papers_grey
+object 62 desk_papers_wood
+object 63 desk_planter_small
+object 64 chair_yellow
+object 65 chair_green
 item 1 bottle
 item 2 recycled_glass
 item 3 coin_1
@@ -760,6 +767,7 @@ tag 56 outdoor
 tag 57 toilet
 tag 58 street_light
 tag 59 footway
+tag 60 chair
 rule 1 lighting_ground_floor_only
 rule 2 waste_per_three_seating
 rule 3 no_counter_in_a_stairwell
@@ -798,3 +806,5 @@ rule 39 indoor_props_never_on_the_street
 rule 40 outdoor_props_never_indoors
 rule 41 bathroom_has_a_toilet
 rule 42 street_is_lit
+rule 43 table_set_has_a_chair
+rule 44 table_set_has_a_second_chair

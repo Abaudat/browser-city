@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Story 3.6 (FR110, FR128): the district's collision is composited once, by
 # pass 7 (`sim::generation::props`), and cached on the `PropMap`; nothing
-# infers it again at spawn time or at runtime. So, outside `generation/` and
-# `world/` (the map's own modules):
+# infers it again at spawn time or at runtime. So, outside
+# `generation/props.rs` and `world/` (the map's own modules):
 #
 #   1. nothing under `server/src/` or `server/sim/src/` builds a collision
 #      grid -- `FloorCollision::build(` -- or rasterises placements --
@@ -24,8 +24,8 @@ fail=0
 
 BUILDS="$(
   git ls-files 'server/src/*.rs' 'server/sim/src/*.rs' -z |
-    xargs -0 -r grep -nHE '(FloorCollision::build|[^_a-zA-Z]rasterise)\(' |
-    grep -vE '^server/sim/src/(generation|world)/' |
+    xargs -0 -r grep -nHE '(FloorCollision::build|WalkabilityGrid::build|[^_a-zA-Z]rasterise)\(' |
+    grep -vE '^server/sim/src/(generation/props\.rs|world/)' |
     grep -v 'collision-inference: allow' || true
 )"
 if [ -n "$BUILDS" ]; then

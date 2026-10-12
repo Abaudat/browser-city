@@ -131,3 +131,9 @@ key = "street_light"
 [[tag]]
 id = 59
 key = "footway"
+
+# A seat drawn at a table. Not a room's anchor: pass 7 stands one beside each
+# table set it places, as the requirement row over `table_set` asks.
+[[tag]]
+id = 60
+key = "chair"

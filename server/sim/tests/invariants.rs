@@ -6698,9 +6698,126 @@ fn body_findings(
 ) -> Result<(usize, usize), String> {
     let (window, seed) = sim::generation::props::building_window(i).ok_or("no approach")?;
     let rows = building_rows(d, i, planted);
-    let (enclosed, narrow) =
-        sim::generation::props::window_findings(window, seed, &rows, defs::OBJECTS)?;
-    Ok((enclosed.len(), narrow.len()))
+    let (enclosed, narrow, _) = oracle(window, seed, &rows)?;
+    Ok((enclosed, narrow))
+}
+
+/// The invariants' own oracle for a window of placed rows -- independent
+/// of the generator's verdict and of its whole-cell shortcut: every row's
+/// real collider through `walkability::rasterise`, the player body
+/// `erode`d out, a flood from the seed over the body-passable origins.
+/// What it returns is the set of body-passable origins cut off from the
+/// seed -- a component touching the window's edge is the open street, not
+/// a finding, and a component whose every covered cell is a placed prop's
+/// own footprint is the nook a collider leaves inside its own cell, part
+/// of the prop -- and how many components of it are `(enclosed, narrow)`:
+/// with no raw path from the seed, or with one the body cannot use.
+/// What [`oracle`] finds: `(enclosed, narrow, cut-off origins)`.
+type Oracle = (usize, usize, std::collections::BTreeSet<(i32, i32)>);
+
+fn oracle(
+    window: Rect,
+    seed: (i32, i32),
+    rows: &[sim::generation::PlacedRow],
+) -> Result<Oracle, String> {
+    use sim::world::walkability::{Placement, rasterise};
+    use std::collections::{BTreeSet, VecDeque};
+    let s = defs::COLLIDER_SUBCELLS_PER_CELL;
+    let (bw, bh) = player_body_subcells(defs::BALANCE);
+    let bounds = Rect {
+        x0: window.x0 * s,
+        y0: window.y0 * s,
+        x1: window.x1 * s,
+        y1: window.y1 * s,
+    };
+    let placements: Vec<Placement> = rows
+        .iter()
+        .map(|r| Placement {
+            def_id: r.def_id,
+            anchor_x: r.x,
+            anchor_y: r.y,
+            floor: r.floor,
+        })
+        .collect();
+    let raw = rasterise(bounds, 0, &placements, defs::OBJECTS)?;
+    let eroded = erode(&raw, bw, bh);
+    let start = (seed.0 * s + s / 4, seed.1 * s + s / 4);
+    if !eroded.is_passable(start.0, start.1) {
+        return Err(format!("the body does not fit at the seed {seed:?}"));
+    }
+    let flood = |passable: &dyn Fn(i32, i32) -> bool| -> BTreeSet<(i32, i32)> {
+        let mut seen: BTreeSet<(i32, i32)> = BTreeSet::new();
+        let mut q = VecDeque::new();
+        seen.insert(start);
+        q.push_back(start);
+        while let Some((x, y)) = q.pop_front() {
+            for n in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
+                if bounds.contains(n.0, n.1) && passable(n.0, n.1) && seen.insert(n) {
+                    q.push_back(n);
+                }
+            }
+        }
+        seen
+    };
+    let raw_reach = flood(&|x, y| raw.is_passable(x, y));
+    let body_reach = flood(&|x, y| eroded.is_passable(x, y));
+    let mut owned: BTreeSet<(i32, i32)> = BTreeSet::new();
+    for r in rows {
+        if let Some(def) = defs::OBJECTS.iter().find(|o| o.id == r.def_id) {
+            let e = sim::generation::props::extent(r, def);
+            for y in e.y0..e.y1 {
+                for x in e.x0..e.x1 {
+                    owned.insert((x, y));
+                }
+            }
+        }
+    }
+    let mut cut: BTreeSet<(i32, i32)> = BTreeSet::new();
+    let (mut enclosed, mut narrow) = (0usize, 0usize);
+    let mut seen: BTreeSet<(i32, i32)> = BTreeSet::new();
+    for y in bounds.y0..bounds.y1 {
+        for x in bounds.x0..bounds.x1 {
+            if !eroded.is_passable(x, y) || body_reach.contains(&(x, y)) || seen.contains(&(x, y)) {
+                continue;
+            }
+            // One cut-off component of body-passable origins.
+            let mut comp: Vec<(i32, i32)> = Vec::new();
+            let mut q = VecDeque::new();
+            seen.insert((x, y));
+            q.push_back((x, y));
+            while let Some((cx, cy)) = q.pop_front() {
+                comp.push((cx, cy));
+                for n in [(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)] {
+                    if bounds.contains(n.0, n.1)
+                        && eroded.is_passable(n.0, n.1)
+                        && !body_reach.contains(&n)
+                        && seen.insert(n)
+                    {
+                        q.push_back(n);
+                    }
+                }
+            }
+            let touches_edge = comp.iter().any(|&(cx, cy)| {
+                cx == bounds.x0 || cy == bounds.y0 || cx + bw >= bounds.x1 || cy + bh >= bounds.y1
+            });
+            let prop_only = comp.iter().all(|&(cx, cy)| {
+                (cy.div_euclid(s)..=(cy + bh - 1).div_euclid(s)).all(|ty| {
+                    (cx.div_euclid(s)..=(cx + bw - 1).div_euclid(s))
+                        .all(|tx| owned.contains(&(tx, ty)))
+                })
+            });
+            if touches_edge || prop_only {
+                continue;
+            }
+            if raw_reach.contains(&comp[0]) {
+                narrow += 1;
+            } else {
+                enclosed += 1;
+            }
+            cut.extend(comp);
+        }
+    }
+    Ok((enclosed, narrow, cut))
 }
 
 fn tag_id(key: &str) -> TagId {
@@ -7073,9 +7190,8 @@ fn street_window_findings(
         }
     }
     rows.extend_from_slice(planted);
-    let (enclosed, narrow) =
-        sim::generation::props::window_findings(window, seed, &rows, defs::OBJECTS)?;
-    Ok((enclosed.len(), narrow.len()))
+    let (enclosed, narrow, _) = oracle(window, seed, &rows)?;
+    Ok((enclosed, narrow))
 }
 
 /// `inv_generation_props_leave_no_enclosed_region` (story 3.6 AC3):
@@ -7142,16 +7258,16 @@ fn inv_generation_props_leave_no_enclosed_region() {
                     }
                 }
             }
-            let count = |rows: &[sim::generation::PlacedRow]| -> Result<usize, String> {
-                let (e, n) =
-                    sim::generation::props::window_findings(win, seed, rows, defs::OBJECTS)?;
-                Ok(e.len() + n.len())
-            };
-            let (with_props, without) = (count(&all)?, count(&walls)?);
-            ensure!(
-                with_props <= without,
-                "chunk window {win:?}: {with_props} cut-off regions with props, {without} with walls alone"
-            );
+            let (_, _, with_props) = oracle(win, seed, &all)?;
+            let (_, _, without) = oracle(win, seed, &walls)?;
+            // Every sub-cell cut off with every row was already cut off
+            // with the walls alone: nothing a prop seals hides behind a
+            // legitimately non-zero baseline.
+            if let Some(&(x, y)) = with_props.difference(&without).next() {
+                return Err(format!(
+                    "chunk window {win:?}: props cut off the sub-cell ({x}, {y}) the walls alone left reachable"
+                ));
+            }
         }
         Ok(())
     });

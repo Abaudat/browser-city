@@ -50,5 +50,18 @@ printf '%s\n' 'fn reducer() { props::run(1, &s, &i, &c, &x); }' > "$d/server/src
 check "a reducer calling the generator's builder fails" 1 run "$d"
 check_contains "names the file" "lib.rs" "$(run "$d" 2>&1)"
 
+d="$(repo)"
+printf '%s
+' 'fn g() { walkability::rasterise(b, 0, &p, o); }' > "$d/server/sim/src/generation/interiors.rs"
+( cd "$d" && git add -A ) >/dev/null 2>&1
+check "a sibling generation module may not rasterise" 1 run "$d"
+check_contains "names the file" "interiors.rs" "$(run "$d" 2>&1)"
+
+d="$(repo)"
+printf '%s
+' 'fn g() { WalkabilityGrid::build(b, &c); }' > "$d/server/sim/src/routing.rs"
+( cd "$d" && git add -A ) >/dev/null 2>&1
+check "a walkability grid built outside the allowed modules fails" 1 run "$d"
+
 summary
 exit $?

@@ -1734,7 +1734,7 @@ engine to: no building-type/tag/profession/rule key as a quoted literal
 under `server/sim/src/generation/`.
 
 Pass 7 (`generation::props::run(city_seed, &skeleton, &interiors, &cfg,
-&content) -> Result<PropMap, GenerationError>`, story 3.6) is pure, reads
+&content) -> Result<PropMap, GenerationError>`) is pure, reads
 earlier passes and mutates none. `GenerationContent` gains `objects`
 (`defs::OBJECTS`); defs are chosen by tag, never by key. `PropMap` is the
 sorted list of `PlacedRow { floor, y, x, def_id, layer, orientation }` --

@@ -158,6 +158,10 @@ pub enum GenerationError {
     /// a floor, or none of them fits its cell even at its smallest
     /// footprint -- an owed fixture is never quietly left out.
     FixtureUnplaceable { x: i32, y: i32, tag: u32 },
+    /// Pass 7's verdict could not rasterise a window of placed rows (an
+    /// unknown def id, a window over the grid ceiling): the rows are not
+    /// readable, which is not a balance-config error.
+    WindowUnreadable { window: SiteBounds, reason: String },
     /// Pass 7's verdict: placed props leave `count` walkable region(s)
     /// enclosed or too narrow for the player body inside `window` (world
     /// cells); `first` is the first one's bounds in sub-cells and `narrow`
@@ -222,6 +226,10 @@ impl std::fmt::Display for GenerationError {
             GenerationError::FixtureUnplaceable { x, y, tag } => write!(
                 f,
                 "generation::props: no object def carrying tag {tag} stands on the fixture cell ({x}, {y})"
+            ),
+            GenerationError::WindowUnreadable { window, reason } => write!(
+                f,
+                "generation::props: window {window:?} could not be rasterised: {reason}"
             ),
             GenerationError::Unreachable {
                 count,

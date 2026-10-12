@@ -1761,7 +1761,8 @@ pub fn props_svg_path(seed: u64) -> std::path::PathBuf {
 /// `(y, x)`), clamped inside the site.
 fn busiest_window(d: &sim::generation::District, centre: (i32, i32)) -> sim::world::Rect {
     let site = d.skeleton.plots.site();
-    let mut best: Option<((usize, i32, i32), sim::world::Rect)> = None;
+    type Score = ((usize, usize), i32, i32);
+    let mut best: Option<(Score, sim::world::Rect)> = None;
     for oy in (-40..=40).step_by(4) {
         for ox in (-40..=40).step_by(4) {
             let x0 = (centre.0 - VIEWPORT_W / 2 + ox).clamp(site.x0, site.x1 - VIEWPORT_W);
@@ -1772,7 +1773,9 @@ fn busiest_window(d: &sim::generation::District, centre: (i32, i32)) -> sim::wor
                 x1: x0 + VIEWPORT_W,
                 y1: y0 + VIEWPORT_H,
             };
-            let n = d
+            // Variety first (so a tree, a bench and a bin all stand in
+            // frame), then count, then the north-west-most.
+            let in_window: Vec<u32> = d
                 .props
                 .props()
                 .iter()
@@ -1780,7 +1783,10 @@ fn busiest_window(d: &sim::generation::District, centre: (i32, i32)) -> sim::wor
                     matches!(p.role, sim::generation::Role::Street { .. })
                         && w.contains(p.row.x, p.row.y)
                 })
-                .count();
+                .map(|p| p.row.def_id)
+                .collect();
+            let distinct: std::collections::BTreeSet<u32> = in_window.iter().copied().collect();
+            let n = (distinct.len(), in_window.len());
             let key = (n, -y0, -x0);
             if best.as_ref().is_none_or(|(k, _)| key > *k) {
                 best = Some((key, w));
@@ -1962,7 +1968,24 @@ pub fn props_svg(d: &sim::generation::District, content: &GenerationContent) -> 
         ));
         y += 22;
         let stride = (all.len() / SHEET_PER_KIND).max(1);
-        let picks: Vec<_> = all.iter().step_by(stride).take(SHEET_PER_KIND).collect();
+        let mut picks: Vec<_> = all.iter().step_by(stride).take(SHEET_PER_KIND).collect();
+        // The best-furnished interior of the kind is always on the sheet,
+        // first, so a dressed cafe or kitchen is there to judge.
+        let richest = all.iter().max_by_key(|(_, _, i)| {
+            d.props
+                .props()
+                .iter()
+                .filter(|p| {
+                    p.building == Some(i.footprint)
+                        && matches!(p.role, sim::generation::Role::Fixture { .. })
+                })
+                .count()
+        });
+        if let (Some(r), false) = (richest, picks.is_empty()) {
+            picks.retain(|p| p.2.footprint != r.2.footprint);
+            picks.insert(0, r);
+            picks.truncate(SHEET_PER_KIND);
+        }
         for (i, (_, ty, interior)) in picks.iter().enumerate() {
             let col = i as i64 % SHEET_COLUMNS;
             let row = i as i64 / SHEET_COLUMNS;
