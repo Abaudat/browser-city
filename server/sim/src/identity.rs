@@ -59,7 +59,7 @@ fn is_invisible_format(c: char) -> bool {
 
 /// The name rule: trimmed, 1..=`NAME_MAX_CHARS` scalar values, no control or
 /// invisible format characters. Returns the name to store. Idempotent.
-/// `client/src/identity/name-rule.ts` mirrors it from the same case table
+/// The client's name prompt mirrors it from the same case table
 /// (`fixtures/character-names.v1.tsv`).
 pub fn plan_name(raw: &str) -> Result<String, NameError> {
     let name = raw.trim();
