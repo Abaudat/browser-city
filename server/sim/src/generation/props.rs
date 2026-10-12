@@ -1220,8 +1220,10 @@ pub fn window_findings(
     }
     let part_of_a_prop = |f: &Finding, pad: (i32, i32)| {
         let (x0, y0) = (f.bounds.x0.div_euclid(s), f.bounds.y0.div_euclid(s));
-        let x1 = (f.bounds.x1 + pad.0 - 1).div_euclid(s);
-        let y1 = (f.bounds.y1 + pad.1 - 1).div_euclid(s);
+        // `bounds` is exclusive: the last origin is `x1 - 1`, and a body
+        // from it covers `pad - 1` sub-cells further.
+        let x1 = (f.bounds.x1 + pad.0 - 2).div_euclid(s);
+        let y1 = (f.bounds.y1 + pad.1 - 2).div_euclid(s);
         (y0..=y1).all(|y| (x0..=x1).all(|x| owned.contains(&(x, y))))
     };
     // On the eroded grid the origins stop a body short of the east and
@@ -2601,6 +2603,42 @@ mod tests {
                 prop_assert!(enclosed.is_empty() && narrow.is_empty());
             }
         }
+    }
+
+    #[test]
+    fn a_pocket_sealed_by_four_props_is_part_of_them() {
+        // CI's minimal counterexample of the differential below: a bridge
+        // abutment, a workbench, a bed and a bush leave a body-sized
+        // pocket whose every covered cell is one of their own footprints.
+        let by_key = |k: &str| defs::OBJECTS.iter().find(|o| o.key == k).unwrap();
+        let rows: Vec<PlacedRow> = [
+            ("bridge_stairs_abutment", 4, 2),
+            ("workbench_table_orange", 5, 2),
+            ("bed_single_blue", 6, 5),
+            ("flower_bush_small", 7, 2),
+        ]
+        .iter()
+        .map(|&(k, x, y)| {
+            let d = by_key(k);
+            PlacedRow {
+                floor: 0,
+                y,
+                x,
+                def_id: d.id,
+                layer: d.layer,
+                orientation: 0,
+            }
+        })
+        .collect();
+        let window = Rect {
+            x0: 0,
+            y0: 0,
+            x1: 9,
+            y1: 9,
+        };
+        assert!(whole_cells_open(window, (0, 0), &rows, defs::OBJECTS));
+        let (enclosed, narrow) = window_findings(window, (0, 0), &rows, defs::OBJECTS).unwrap();
+        assert!(enclosed.is_empty() && narrow.is_empty());
     }
 
     // --- the street half -----------------------------------------------
