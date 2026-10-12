@@ -10,7 +10,7 @@
 // scene that moved its camera would otherwise start clicking empty
 // pavement while still passing.
 import { mkdirSync } from "node:fs";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { KEYBINDINGS_STORAGE_KEY } from "../../src/input/keybindings-storage";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
@@ -25,6 +25,7 @@ import {
 import { committedDefs } from "../unit/test-street/street-world";
 import { waitForPlayerControllable } from "./boot-test-support";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
+import { expect, test } from "./fixtures";
 
 const COUNTER_ID = 8n;
 const BIN_ID = 15n;

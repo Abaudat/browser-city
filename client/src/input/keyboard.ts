@@ -91,8 +91,21 @@ export class KeyboardState {
  * direction stuck held. Returns a cleanup function that removes every
  * listener it added.
  */
+/** Whether a key event's target is somewhere text is typed. */
+export function isEditable(target: EventTarget | null): boolean {
+  const el = target as { tagName?: unknown; isContentEditable?: unknown } | null;
+  if (!el || typeof el.tagName !== "string") return false;
+  const tag = el.tagName.toUpperCase();
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
+}
+
 export function attachKeyboard(state: KeyboardState, target: Window = window): () => void {
-  const onKeyDown = (event: KeyboardEvent): void => state.keydown(event.code);
+  // Typing into a text field (the name prompt, story 4.6) never drives the
+  // body: "wasd" in a name is not a walk.
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (isEditable(event.target)) return;
+    state.keydown(event.code);
+  };
   const onKeyUp = (event: KeyboardEvent): void => state.keyup(event.code);
   const onReleaseAll = (): void => state.releaseAll();
 

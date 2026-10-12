@@ -17,8 +17,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
+import { expect, test } from "./fixtures";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -43,6 +44,10 @@ function frameCount(page: Page): Promise<number> {
 function notice(page: Page) {
   return page.locator("[data-bc-notice]");
 }
+
+// The wire is counted from boot: a player arriving adds the create call, so
+// these specs stay visitors.
+test.use({ arrive: false });
 
 test("the matched-version path costs no additional round trip: exactly one non-region client-to-server frame before the scene renders (FR147)", async ({
   page,

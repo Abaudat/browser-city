@@ -1,4 +1,5 @@
 import { Application } from "pixi.js";
+import { createArrival } from "./boot/arrival";
 import { DEFAULT_HANDSHAKE_TIMEOUT_MS } from "./boot/boot-gate";
 import { BOOT_MARK, markBoot } from "./boot/boot-marks";
 import { runBootSequence } from "./boot/boot-sequence";
@@ -9,12 +10,18 @@ import { readReloadedFor, writeReloadedFor } from "./boot/reloaded-for-storage";
 import type { DebugWorldView } from "./debug/world-view";
 import { fetchDefs } from "./defs/load";
 import type { Defs } from "./defs/types";
+import { hasArrived, markArrived } from "./identity/arrival-flag";
 import { guardedCreateCharacter } from "./identity/create-guard";
 import { carrierDefId, offerDue, readOfferRules } from "./identity/link-offer";
 import { decideOffer } from "./identity/link-offer-gate";
 import { loadLastShownDay, saveLastShownDay } from "./identity/link-prompt";
 import { offerLink, resumeLinkIfPending } from "./identity/link-session";
-import { type BodyControl, connectionReason, createBodyControl } from "./input/body-control";
+import {
+  AWAITING_NAME,
+  type BodyControl,
+  connectionReason,
+  createBodyControl,
+} from "./input/body-control";
 import type { Intent } from "./input/intent";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
@@ -84,6 +91,7 @@ import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
 import { mountConnectionNotice } from "./ui/connection-notice";
+import { adoptNamePrompt } from "./ui/name-prompt";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, thresholdDefIds, windowDefIds } from "./world/object-defs";
@@ -203,6 +211,37 @@ async function main(): Promise<void> {
   // connection being down after having been up closes it.
   const bodyControl = createBodyControl();
   const feedConnection = connectionReason(bodyControl);
+  // Story 4.6 (FR144): the name prompt is the shell's own markup, adopted
+  // here. Until the player has committed a name the body is not theirs; the
+  // world has been streaming behind the prompt the whole time.
+  const needsPrompt = !hasArrived(identityStorage);
+  if (needsPrompt) bodyControl.setReason(AWAITING_NAME, true);
+  let controllableMarked = false;
+  const arrival = createArrival({
+    needsPrompt,
+    create: async (name) => {
+      // FR141: no character for an identity whose token could not be kept;
+      // that player still walks in, as a visitor the city does not keep.
+      if (latestIdentity?.persisted !== true) return;
+      await conn.current().reducers.createCharacter({ name });
+    },
+    open: () => {
+      prompt?.remove();
+      bodyControl.setReason(AWAITING_NAME, false);
+      if (!controllableMarked) {
+        controllableMarked = true;
+        markBoot(BOOT_MARK.PLAYER_CONTROLLABLE);
+      }
+    },
+    reopen: (name) => {
+      prompt?.reopen(name);
+      bodyControl.setReason(AWAITING_NAME, true);
+    },
+    onSubmitted: (at) => markBoot(BOOT_MARK.NAME_SUBMITTED, at),
+  });
+  const prompt = adoptNamePrompt(document, {
+    onSubmit: (name, at) => arrival.submit(name, at),
+  });
   const moveRegion = (x: number, y: number, floor: number): void => region.moveTo(x, y, floor);
   // Story 4.14 (FR172): the boot time and the resume outage, reported once
   // each through the one measure call.
@@ -216,6 +255,7 @@ async function main(): Promise<void> {
         notice.setStatus(status);
         feedConnection(status);
         senderLifecycle.setConnected(status === "connected");
+        arrival.setConnected(status === "connected");
         measureReporter.setStatus(status);
         if (status === "disconnected") latch.resolveUnreachable();
       },
@@ -243,8 +283,11 @@ async function main(): Promise<void> {
       onCharacter: (character) => {
         latestCharacter = character;
         recordCharacterForE2e(character);
+        markArrived(identityStorage);
+        arrival.characterKnown();
         syncSender();
       },
+      onCharacterAbsent: () => arrival.characterAbsent(),
       region: {
         controller: region,
         rows: {
@@ -296,10 +339,11 @@ async function main(): Promise<void> {
   exposeIdentityActionsForE2e({
     // The guard sits on the create path itself: nothing creates a character
     // for an identity whose token could not be kept.
-    createCharacter: guardedCreateCharacter(
-      () => latestIdentity?.persisted === true,
-      () => conn.current().reducers.createCharacter({}),
-    ),
+    createCharacter: (name = "Tester") =>
+      guardedCreateCharacter(
+        () => latestIdentity?.persisted === true,
+        () => conn.current().reducers.createCharacter({ name }),
+      )(),
     startLink: () =>
       offerLink({
         config: OIDC_CONFIG,
@@ -379,6 +423,7 @@ async function main(): Promise<void> {
       region,
       sceneRegionFeed(moveRegion),
       bodyControl,
+      () => arrival.sceneReady(),
       {
         setUp: (defs) => {
           positionConfig = loadPositionConfig(defs);
@@ -464,6 +509,7 @@ async function startStreetScene(
   region: RegionController,
   followScene: (x: number, y: number, floor: number) => void,
   bodyControl: BodyControl,
+  onFirstFrame: () => void,
   players: PlayersWiring,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
@@ -697,6 +743,7 @@ async function startStreetScene(
     },
     onPlayerStep: import.meta.env.DEV ? recordPlayerStepForE2e : undefined,
     onFrameWork: recordFrameWorkForE2e,
+    onFirstFrame: () => onFirstFrame(),
     onVisibilityChange: recordVisibilityForE2e,
     onMasksChecked: recordMasksCheckedForE2e,
     keyboard,

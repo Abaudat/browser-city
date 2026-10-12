@@ -13,8 +13,11 @@
 // Four things, all real: (a) the page loads with no failed request and no
 // console/page error; (b) the WebSocket actually dials the configured
 // Maincloud URI and database, not merely "some" URL; (c) the initial
-// subscription applies; (d) the player-controllable mark fires -- the
-// same honesty bar boot-marks.spec.ts holds every other mark to.
+// subscription applies; (d) the first frame renders behind the name prompt
+// and the prompt takes typing. This runs against Maincloud as a fresh
+// identity and must leave `character` untouched, so it never submits a
+// name: submit -> controllable is the pre-merge e2e's, against a
+// disposable database (story 4.6).
 import { expect, test } from "@playwright/test";
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import { DEBUG_OVERLAYS } from "../../src/debug/overlays";
@@ -22,7 +25,7 @@ import { DEBUG_OVERLAYS } from "../../src/debug/overlays";
 const EXPECT_WS_ORIGIN = process.env.BC_DEPLOY_EXPECT_WS_ORIGIN;
 const EXPECT_DB = process.env.BC_DEPLOY_EXPECT_DB;
 
-test("the deployed client boots for real: connects, subscribes and reaches player-controllable", async ({
+test("the deployed client boots for real: connects, subscribes and renders behind an interactive name prompt", async ({
   page,
 }) => {
   // A smoke test with nothing to check the connection against is not a
@@ -64,15 +67,24 @@ test("the deployed client boots for real: connects, subscribes and reaches playe
   }
   await page.goto(deployUrl);
 
-  // (d) player-controllable, the same 30s liveness bound every other boot
-  // spec in this repo uses. BOOT_MARK.PLAYER_CONTROLLABLE passed in as an
+  // (d) the first frame rendered, the same 30s liveness bound every other
+  // boot spec in this repo uses. The mark name is passed in as an
   // argument, never hardcoded here too -- a renamed mark must fail loudly
   // in one place, not pass here while failing everywhere else.
   await page.waitForFunction(
     (markName) => performance.getEntriesByName(markName).length > 0,
-    BOOT_MARK.PLAYER_CONTROLLABLE,
+    BOOT_MARK.FIRST_FRAME_RENDERED,
     { timeout: 30_000 },
   );
+  // The prompt is the page: visible, focused, and it takes typing. Typed
+  // and cleared, never submitted -- a submit would create a character on
+  // the live database.
+  const prompt = page.locator('[data-bc-surface="name-prompt"] input');
+  await expect(prompt).toBeVisible();
+  await expect(prompt).toBeFocused();
+  await page.keyboard.type("Smoke");
+  await expect(prompt).toHaveValue("Smoke");
+  await prompt.fill("");
 
   // (b) the WebSocket dialled the configured Maincloud URI and database --
   // client/src/net/connection.ts's own DbConnection.builder() call, never
@@ -104,9 +116,13 @@ test("the deployed client boots for real: connects, subscribes and reaches playe
     { timeout: 10_000 },
   );
   expect(
-    marks[BOOT_MARK.PLAYER_CONTROLLABLE],
-    "player-controllable mark never fired",
+    marks[BOOT_MARK.FIRST_FRAME_RENDERED],
+    "first-frame-rendered mark never fired",
   ).toBeDefined();
+  expect(
+    marks[BOOT_MARK.NAME_SUBMITTED],
+    "the smoke test must never submit a name",
+  ).toBeUndefined();
 
   // (a) no failed request, no HTTP error response, no console/page error --
   // checked last, so a real connection/subscription failure above reports
@@ -146,7 +162,7 @@ test("no debug overlay can be activated in a production build (FR168, AC1)", asy
     await page.goto(`${deployUrl}${separator}debug=${query}`);
     await page.waitForFunction(
       (markName) => performance.getEntriesByName(markName).length > 0,
-      BOOT_MARK.PLAYER_CONTROLLABLE,
+      BOOT_MARK.FIRST_FRAME_RENDERED,
       { timeout: 30_000 },
     );
 

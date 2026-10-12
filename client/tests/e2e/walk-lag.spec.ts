@@ -2,9 +2,10 @@
 // takes: 0.2 cells, east and west, in open street. Every hop is checked
 // against `RELEASE_LAG` by `walk-support.ts`; the records it writes carry
 // the figures for each one.
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import type { StreetWalkSegment } from "../../src/test-street/fixture";
+import { expect, test } from "./fixtures";
 import { walkRealSegment } from "./walk-support";
 
 const HOPS = 20;

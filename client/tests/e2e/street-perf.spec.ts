@@ -32,7 +32,7 @@
 // (wider) growth bound, first lap vs. last lap, so a leak has a chance to
 // be caught on a run every PR waits for, not only on the soak nobody does.
 import { mkdirSync, writeFileSync } from "node:fs";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
 import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
@@ -46,6 +46,7 @@ import {
 } from "../../src/test-street/fixture";
 import { binReachRoute, committedDefs, streetWalkInputs } from "../unit/test-street/street-world";
 import { canvasOffsetForWorldPx } from "./camera-test-support";
+import { expect, test } from "./fixtures";
 import { median, percentile } from "./l3-budget-verdict";
 import { walkSyntheticSegment } from "./walk-support";
 

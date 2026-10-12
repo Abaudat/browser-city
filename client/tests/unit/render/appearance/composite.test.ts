@@ -313,6 +313,7 @@ function defsWith(overrides: Partial<Defs> = {}): Defs {
     defsVersion: "test",
     colliderSubcellsPerCell: 16,
     positionUnitsPerCell: 256,
+    nameMaxChars: 24,
     interactAtMaxReachCells: 2,
     maxFootprintCells: 8,
     minFloor: -1,

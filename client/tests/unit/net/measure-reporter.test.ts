@@ -10,7 +10,7 @@ import {
   watchControllableMark,
 } from "../../../src/net/measure-reporter";
 
-function rig(boot: number | undefined = undefined) {
+function rig(boot: number | undefined = undefined, firstBoot = false) {
   const sent: Measure[] = [];
   let now = 0;
   let bootMs = boot;
@@ -18,6 +18,7 @@ function rig(boot: number | undefined = undefined) {
     send: (m) => sent.push(m),
     bootMs: () => bootMs,
     now: () => now,
+    firstBoot: () => firstBoot,
   });
   return {
     sent,
@@ -32,6 +33,13 @@ function rig(boot: number | undefined = undefined) {
 }
 
 describe("boot", () => {
+  it("is never sent for a first boot, which includes the player typing", () => {
+    const r = rig(4200, true);
+    r.reporter.setStatus("connected");
+    r.reporter.markControllable();
+    expect(r.sent).toEqual([]);
+  });
+
   it("is sent once, when connected and the controllable mark exists", () => {
     const r = rig(912.4);
     r.reporter.setStatus("connecting");

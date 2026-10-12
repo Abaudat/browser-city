@@ -20,13 +20,14 @@
 // traced one.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { cpus, platform } from "node:os";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import {
   RUSH_CROWD_SIZE,
   RUSH_MIN_WALKING_SHARE,
   RUSH_PILE_CELL,
 } from "../../src/test-street/rush-crowd";
+import { expect, test } from "./fixtures";
 import {
   addGc,
   attributedBytes,

@@ -89,8 +89,8 @@ snapshot() {
 
 A="$(mint)"; B="$(mint)"; C="$(mint)"
 [ -n "$A" ] && [ -n "$B" ] && [ -n "$C" ] || fail "could not mint identities"
-expect_ok "create_character as A" "$A" create_character
-expect_ok "create_character as B" "$B" create_character
+expect_ok "create_character as A" "$A" create_character '["Alice"]'
+expect_ok "create_character as B" "$B" create_character '["Bob"]'
 # C never creates a character.
 
 # --- leg 1: one row per character, equal to its last write ----------------

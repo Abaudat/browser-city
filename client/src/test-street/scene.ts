@@ -251,6 +251,8 @@ export interface MountStreetSceneOptions {
    * gates on, never a rAF interval. One call per frame into a sink that
    * does nothing unless a perf run has asked for samples. */
   readonly onFrameWork?: (ms: number) => void;
+  /** The scene's first frame has rendered (story 4.6). */
+  readonly onFirstFrame?: (at: number) => void;
   /** Story 5.4 (NFR11): how long L3 took this frame, in ms -- the pose,
    * avoidance and flavour solve plus the crowd's body zone and sprite writes,
    * never Pixi's render. Called every frame the crowd ticks; the sink does
@@ -844,6 +846,7 @@ export async function mountStreetScene(
     onPlayerBody,
     onCitizenBodies,
     onFrameWork,
+    onFirstFrame,
     onVisibilityChange,
     onMasksChecked,
     onIntent,
@@ -2024,19 +2027,15 @@ export async function mountStreetScene(
 
   // Story 1.14 (NFR1): fires once, after the first frame has actually
   // rendered (`UPDATE_PRIORITY.UTILITY` runs after Pixi's own render --
-  // see the frame-work window comment above). FR144's name prompt does
-  // not exist yet, so `INTERACTIVE_PROMPT` and `PLAYER_CONTROLLABLE` are
-  // both stand-ins fired at this same instant (Tim's direction): the
-  // keyboard was already attached before the ticker started, so input is
-  // genuinely accepted from here on -- `docs/spikes/1.14-boot-budget.md`'s
-  // harness proves it by pressing a key right after this mark and
-  // asserting the player's position actually changes.
+  // see the frame-work window comment above). Whether the body is the
+  // player's yet is `boot/arrival.ts`'s call, made from this callback
+  // (story 4.6): the keyboard was already attached before the ticker
+  // started, so input is genuinely accepted once the gate opens.
   app.ticker.addOnce(
     () => {
       const at = performance.now();
       markBoot(BOOT_MARK.FIRST_FRAME_RENDERED, at);
-      markBoot(BOOT_MARK.INTERACTIVE_PROMPT, at);
-      markBoot(BOOT_MARK.PLAYER_CONTROLLABLE, at);
+      onFirstFrame?.(at);
     },
     undefined,
     UPDATE_PRIORITY.UTILITY,

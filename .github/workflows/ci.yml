@@ -177,6 +177,11 @@ jobs:
               - 'server/spikes/boot_budget/**'
               - 'client/playwright.config.ts'
               - 'client/vite.config.ts'
+              # Story 4.6: `index.html` is critical-path code now, so a
+              # change to the shell or the boot path is measured.
+              - 'client/index.html'
+              - 'client/src/boot/**'
+              - 'client/src/ui/name-prompt.ts'
 
   scripts-tests:
     name: scripts-tests
@@ -718,6 +723,11 @@ jobs:
           cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm run build
+      # Story 4.6 (FR144, FR145, FR177): the built shell is the name
+      # prompt -- inline markup and CSS, nothing render-blocking, the
+      # product's name as title, no loading indication. Seconds, no browser.
+      - name: story 4.6 FR144/FR177, the built shell is a usable name prompt with nothing loading
+        run: bash ../scripts/ci/check-boot-shell.sh dist src/ui
       - name: the e2e test hook must not ship in the production bundle
         run: |
           if grep -rq '__bc' dist/assets/*.js; then
@@ -1008,6 +1018,26 @@ jobs:
       - name: the frame path and L3 stay inside their work budgets (NFR2, NFR11)
         working-directory: client
         run: npm run test:e2e:perf
+      # NFR1 / FR145's first-boot gate (story 4.6), pre-registered in
+      # `boot-budget.spec.ts`: on a production build over HTTP/2, a cold
+      # context, the domestic network and 4x CPU, the p75 of the player's
+      # submit -> controllable is under 1000 ms with a fixed 2000 ms typing
+      # window. A miss is fixed on the critical path, never by a longer
+      # window, a looser bound or fewer samples.
+      - name: the first boot is controllable within budget of the name submit (NFR1, FR145)
+        env:
+          BC_BOOT_GATE_ONLY: "1"
+          BC_BOOT_SKIP_DECODE: "1"
+          BC_BOOT_OUT_DIR: ${{ github.workspace }}/first-boot-gate-out
+          BC_BOOT_HOST_LABEL: github-actions-runner
+        run: bash scripts/dev/run-boot-budget-spike.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: first-boot-gate
+          path: first-boot-gate-out
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

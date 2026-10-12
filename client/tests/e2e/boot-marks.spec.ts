@@ -16,10 +16,11 @@
 // synchronously inside that observer's own callback -- no round trip, no
 // task-queue gap -- with the position-change check given exactly 3
 // animation frames, per Quentin's direction.
-import { expect, test } from "@playwright/test";
+
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import { REGION_RADIUS_CHUNKS } from "../../src/world/region";
+import { expect, test } from "./fixtures";
 import { E2E_WORLD } from "./spacetime-harness.mjs";
 
 declare global {
@@ -54,15 +55,17 @@ test("every boot mark fires during a normal load, in a sane order", async ({ pag
   }
 
   // The handshake and the subscription it opens can never be out of
-  // order; neither can the scene's own first render and the two
-  // FR144/FR145 stand-ins that piggyback on it.
+  // order; neither can the scene's first render, the submit and the
+  // moment the body answers (the prompt, story 4.6).
   expect(byName.get(BOOT_MARK.HANDSHAKE_OPEN)).toBeLessThanOrEqual(
     byName.get(BOOT_MARK.SUBSCRIPTION_APPLIED) as number,
   );
   expect(byName.get(BOOT_MARK.FIRST_FRAME_RENDERED)).toBeLessThanOrEqual(
-    byName.get(BOOT_MARK.INTERACTIVE_PROMPT) as number,
+    byName.get(BOOT_MARK.PLAYER_CONTROLLABLE) as number,
   );
-  expect(byName.get(BOOT_MARK.INTERACTIVE_PROMPT)).toBe(byName.get(BOOT_MARK.PLAYER_CONTROLLABLE));
+  expect(byName.get(BOOT_MARK.NAME_SUBMITTED)).toBeLessThanOrEqual(
+    byName.get(BOOT_MARK.PLAYER_CONTROLLABLE) as number,
+  );
 });
 
 test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually moves the player within 3 frames", async ({

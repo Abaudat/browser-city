@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BrowserCity</title>
+    <!-- One flat gable in the accent on the panel near-black, inline so
+         the tab icon costs no request and is there at first paint. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2314161a'/%3E%3Cpath d='M2 14V7l6-5 6 5v7z' fill='%235e9ed6'/%3E%3C/svg%3E"
+    />
     <!-- The one shared visual language every DOM UI surface uses
          (`ui/options-menu.ts`, `ui/connection-notice.ts`, and the boot
          name prompt story 4.6 adds): these custom properties, not a
@@ -56,6 +62,59 @@
       #test-street canvas {
         display: block;
       }
+      /* The name prompt (story 4.6, FR144): one field, nothing else. It is
+         the page until the world replaces it; it never shows anything that
+         reads as loading, and it is removed, not faded. */
+      #bc-name-prompt {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        background: var(--bc-panel-bg);
+        font-family: var(--bc-font);
+      }
+      html[data-bc-returning] #bc-name-prompt {
+        display: none;
+      }
+      #bc-name-prompt input {
+        box-sizing: border-box;
+        width: min(20rem, 80vw);
+        padding: 0.6rem 0.8rem;
+        font: inherit;
+        font-size: 1.1rem;
+        text-align: center;
+        color: var(--bc-text);
+        background: var(--bc-control-bg);
+        border: 1px solid var(--bc-border);
+        border-radius: 4px;
+        outline: none;
+      }
+      #bc-name-prompt input::placeholder {
+        color: var(--bc-muted);
+      }
+      #bc-name-prompt input:focus {
+        border-color: var(--bc-accent);
+        box-shadow: 0 0 0 1px var(--bc-accent);
+      }
+      /* Submitted before the bundle arrived: the same look, caret gone. */
+      #bc-name-prompt input:disabled {
+        opacity: 1;
+        color: var(--bc-text);
+        -webkit-text-fill-color: var(--bc-text);
+        background: var(--bc-control-bg);
+      }
+      #bc-name-prompt button {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        border: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
     </style>
   </head>
   <body>
@@ -66,6 +125,47 @@
          `data-bc-surface`. D17 keeps every affordance for the world (were
          one ever needed) in the DOM, never drawn on the canvas. -->
     <div id="test-street"></div>
+    <!-- The name prompt (story 4.6, FR144): real markup in the shell, so it
+         is interactive at first paint with zero game assets loaded. The
+         inline script below is the whole of what runs before the bundle:
+         it hides the prompt from a returning player before first paint, and
+         holds a submit made before the bundle has evaluated (no navigation,
+         nothing lost). `src/ui/name-prompt.ts` adopts this element. The
+         key and `maxlength` mirror `identity/arrival-flag.ts` and
+         `defs`' `name_max_chars`; `tests/unit/identity/shell-contract.test.ts`
+         pins them. -->
+    <form id="bc-name-prompt" data-bc-surface="name-prompt" autocomplete="off" novalidate>
+      <input
+        name="name"
+        type="text"
+        maxlength="24"
+        autocomplete="off"
+        autocapitalize="words"
+        spellcheck="false"
+        placeholder="Your name"
+        aria-label="Your name"
+        autofocus
+      />
+      <button type="submit" aria-label="Enter"></button>
+    </form>
+    <script>
+      (function () {
+        try {
+          if (localStorage.getItem("bc.arrived.v1") !== null) {
+            document.documentElement.setAttribute("data-bc-returning", "");
+          }
+        } catch (e) {}
+        var form = document.getElementById("bc-name-prompt");
+        var input = form.elements.name;
+        form.addEventListener("submit", function (event) {
+          event.preventDefault();
+          var name = input.value;
+          if (name.trim() === "") return;
+          form.bcSubmitted = { name: name, at: performance.now() };
+          input.disabled = true;
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

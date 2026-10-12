@@ -61,7 +61,7 @@
 // claim that the picture is right, not whatever the runner happened to
 // generate.
 import { createHash } from "node:crypto";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
@@ -111,6 +111,7 @@ import {
   streetWindowDefIds,
 } from "../unit/test-street/street-world";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
+import { expect, test } from "./fixtures";
 import { SCREENSHOT_OPTIONS } from "./screenshot-support";
 import { walkRealSegment, walkSyntheticSegment } from "./walk-support";
 
@@ -589,11 +590,16 @@ test("one walk down the test street: collision, depth order, retraction, floors 
    * a screenshot is taken, so nothing sent during that specific window
    * can be a result of movement, whatever caused it -- belt and braces
    * alongside the socket scoping above, not a substitute for it. */
+  let trackedMs = 0;
+  let trackedSince: number | undefined;
   function trackFrames(): void {
     cdp.on("Network.webSocketFrameSent", onWsFrameSent);
+    trackedSince = Date.now();
   }
   function untrackFrames(): void {
     cdp.off("Network.webSocketFrameSent", onWsFrameSent);
+    if (trackedSince !== undefined) trackedMs += Date.now() - trackedSince;
+    trackedSince = undefined;
   }
 
   await page.goto("/?freezeCrowd=1");
@@ -963,9 +969,12 @@ test("one walk down the test street: collision, depth order, retraction, floors 
   );
 
   untrackFrames();
-  // FR137: the whole walk was client-authoritative -- not one WebSocket
-  // data frame, and therefore not one reducer call, while moving.
-  expect(framesSentWhileWalking).toBe(0);
+  // FR137: the whole walk was client-authoritative -- the only data frames
+  // while moving are the position sender's own, at the dial's rate (the
+  // player has a character since story 4.6), never one per step.
+  const hz = committedDefs().balance.find((b) => b.key === "net.player_position_hz")?.value ?? 0;
+  expect(hz).toBeGreaterThan(0);
+  expect(framesSentWhileWalking).toBeLessThanOrEqual(Math.ceil((trackedMs / 1000) * hz) + 3);
 
   // Appearance is the same five parts it was before the walk (FR61): the
   // avatar never lost or re-rolled a part by walking, transitioning floor

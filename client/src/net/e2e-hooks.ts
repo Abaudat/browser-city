@@ -20,11 +20,11 @@ declare global {
       /** Story 4.5: whether the link offer's carrier was placed this
        * session, set once the scene is about to mount. */
       linkOffer?: { placed: boolean };
-      createCharacter?: () => Promise<void>;
+      createCharacter?: (name?: string) => Promise<void>;
       startLink?: () => Promise<void>;
       /** Story 4.5: the character this identity reaches, once the
        * `my_character` view delivers it. */
-      character?: { characterId: string; createdAtMicros: string; linked: boolean };
+      character?: { characterId: string; createdAtMicros: string; linked: boolean; name: string };
       renderOrder?: string[];
       /** Story 4.8: the reconnect supervisor. `live` is how many SDK
        * connections are open (never more than one); `drop` closes the
@@ -605,6 +605,7 @@ export function recordCharacterForE2e(character: {
   characterId: bigint;
   createdAtMicros: bigint;
   linked: boolean;
+  name: string;
 }): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
@@ -612,6 +613,7 @@ export function recordCharacterForE2e(character: {
     characterId: character.characterId.toString(),
     createdAtMicros: character.createdAtMicros.toString(),
     linked: character.linked,
+    name: character.name,
   };
   window.__bc = bucket;
 }
@@ -627,7 +629,7 @@ export function recordLinkOfferForE2e(placed: boolean): void {
  * 4.6, the link offer's carrier), callable by a spec until they do. No
  * argument accepts a token. */
 export function exposeIdentityActionsForE2e(actions: {
-  createCharacter: () => Promise<void>;
+  createCharacter: (name?: string) => Promise<void>;
   startLink: () => Promise<void>;
 }): void {
   if (!import.meta.env.DEV) return;

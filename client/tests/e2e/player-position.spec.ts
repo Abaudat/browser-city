@@ -12,13 +12,14 @@
 // players, so the shared instance's leftovers never reach a pixel baseline.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import type { Browser, Page } from "@playwright/test";
 import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
 import { BRIDGE_FLOOR, STREET_FLOOR, streetWalkRoute } from "../../src/test-street/fixture";
 import { CHUNK_SIZE } from "../../src/world/chunk";
 import { REGION_LEAVE_RADIUS_CHUNKS, REGION_RADIUS_CHUNKS } from "../../src/world/region";
 import { streetWalkInputs } from "../unit/test-street/street-world";
+import { expect, test } from "./fixtures";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
 import { walkRealCells, walkRealSegment } from "./walk-support";
 
@@ -83,6 +84,9 @@ async function createCharacter(page: Page): Promise<string> {
   return id;
 }
 
+// These specs own when a character exists, so none arrives by itself.
+test.use({ arrive: false });
+
 test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a standing player costs nothing", async ({
   browser,
 }) => {
@@ -95,7 +99,8 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   // A page with no character puts no position write on the wire, walking or
   // not: every deployed visitor is in this state, and a refused call is
   // uncounted by the `position` class, so only the wire can show it.
-  await walkRealCells(a.page, "hop", HOP_CELLS, true);
+  // (The body is not driveable before a name either, story 4.6: nothing
+  // here can walk, and the wire stays silent.)
   await frames(a.page, 90);
   expect(a.sends()).toBe(0);
 

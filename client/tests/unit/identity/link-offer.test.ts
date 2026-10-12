@@ -11,7 +11,7 @@ const REAL_MS_PER_MIN = 2500;
 const DAY_MICROS = BigInt(MIN_PER_DAY * REAL_MS_PER_MIN) * 1000n;
 
 const base: OfferInputs = {
-  character: { characterId: 1n, createdAtMicros: 5n * DAY_MICROS, linked: false },
+  character: { characterId: 1n, createdAtMicros: 5n * DAY_MICROS, linked: false, name: "" },
   identity: { identityHex: "ab", persisted: true },
   configured: true,
   clock: { epochMicros: 0n, speed: 1 },
@@ -42,7 +42,7 @@ describe("offerDue (story 4.5, FR143)", () => {
     expect(
       offerDue({
         ...base,
-        character: { characterId: 1n, createdAtMicros: 5n * DAY_MICROS, linked: true },
+        character: { characterId: 1n, createdAtMicros: 5n * DAY_MICROS, linked: true, name: "" },
       }),
     ).toBe(false);
     expect(offerDue({ ...base, configured: false })).toBe(false);

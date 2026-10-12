@@ -144,8 +144,8 @@ The browser page is a UX surface in its own right. Beyond FR144's name prompt, n
 | Aspect | Decision |
 |---|---|
 | **While the payload streams** | The name prompt is the page. The player is typing during the load, so there is no loading screen, no spinner and no progress bar — the boot design already removes the thing a loading indicator would report on |
-| **Page title** | The city's name. It is a place, and a browser tab is how the player finds it among their other tabs |
-| **Favicon** | A single recognisable mark. Same reasoning |
+| **Page title** | The product's name, `BrowserCity`, and nothing else. The city itself is unnamed and unremarkable, and no in-fiction city name is invented for the tab |
+| **Favicon** | One flat gable in the accent on the panel near-black, an inline SVG data URI in the shell so it costs no request. Reads at 16 px as one shape |
 | **Return visit** | No prompt. Controllable in under a second, spawning wherever cause and elapsed time put the character (FR146). The page looks the same as it did on leaving because nothing was suspended |
 | **Browser refresh** | Behaves as a reconnection, not a restart. The character does not move, no state is lost, and nothing is re-prompted |
 | **Back button** | Leaves the game. The city keeps running — this is the design's central promise and needs no warning dialog |

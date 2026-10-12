@@ -789,7 +789,7 @@ This is a passion project with no commercial target, no deadline and no audience
 
 | Metric | Target | Unit and emission |
 |---|---|---|
-| Cold boot to player-controllable (`boot_time`) | **< 1 second**, mid-range laptop, domestic connection; the target applies to the return path | Milliseconds; p50 and p95 per hour, every boot the client reports (a first boot included until story 4.16 separates it). Blind to players who never connect |
+| Cold boot to player-controllable (`boot_time`) | **< 1 second**, mid-range laptop, domestic connection; the target applies to the return path | Milliseconds; p50 and p95 per hour, every return boot the client reports (a first boot, which includes the player typing, is never reported as this). Blind to players who never connect |
 | Sustained frame rate | **60 FPS** at 1080p over a 10-minute session including rush hour | Not yet instrumented |
 | Server uptime | Continuous; the city never stops ticking | Not yet instrumented |
 | Monthly server spend | Within the self-funded bounded budget (figure set at architecture) | Not yet instrumented |

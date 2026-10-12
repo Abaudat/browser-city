@@ -4,7 +4,8 @@
 // specs read the public identity and character id the DEV hook exposes.
 // Specs share one SpacetimeDB instance, so every assertion is on ids
 // captured inside the test, never on table-wide counts.
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import type { Browser, Page } from "@playwright/test";
+import { ARRIVED_FLAG_KEY } from "../../src/identity/arrival-flag";
 // Pulls in `declare global { interface Window { __bc } }` -- types only.
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
@@ -13,6 +14,7 @@ import { LINK_CARRIER_CELL, LINK_CARRIER_PROP_ID } from "../../src/test-street/l
 import { committedDefs } from "../unit/test-street/street-world";
 import { waitForPlayerControllable } from "./boot-test-support";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
+import { expect, test } from "./fixtures";
 import { callReducer, readSpacetimeHandle } from "./spacetime-harness.mjs";
 
 const IDENTITY_KEY = "bc.identity.v1";
@@ -46,6 +48,9 @@ function countFramesSent(page: Page): { readonly count: () => number } {
   });
   return { count: () => n };
 }
+
+// These specs own when a character is created, so none arrives by itself.
+test.use({ arrive: false });
 
 async function identityOf(page: Page): Promise<string> {
   await page.waitForFunction(() => window.__bc?.identity !== undefined, undefined, {
@@ -94,7 +99,10 @@ test("a first visit then a reload is the same identity and the same character", 
   expect(requests.filter((r) => r.includes("/v1/identity"))).toEqual([
     "POST /v1/identity/websocket-token",
   ]);
-  expect(await page.evaluate(() => Object.keys(window.localStorage))).toEqual([IDENTITY_KEY]);
+  expect(await page.evaluate(() => Object.keys(window.localStorage))).toEqual([
+    ARRIVED_FLAG_KEY,
+    IDENTITY_KEY,
+  ]);
 
   // Control: a context with empty storage is someone else, so the equality
   // above cannot pass vacuously.

@@ -10,7 +10,7 @@
 // The one screenshot is a supplement, not the proof: it catches a drawing
 // regression the attribute assertions cannot see, and it is deliberately
 // the last thing here.
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { DEBUG_OVERLAYS } from "../../src/debug/overlays";
 import type {} from "../../src/net/e2e-hooks";
 import { STAIRWELL_X0 } from "../../src/test-street/fixture";
@@ -20,6 +20,7 @@ import {
   topRailingFoot,
 } from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
+import { expect, test } from "./fixtures";
 import { SCREENSHOT_OPTIONS } from "./screenshot-support";
 import { walkRealSegment } from "./walk-support";
 

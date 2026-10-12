@@ -3,10 +3,11 @@
 // browser client through the SDK's onInsert callback, within the
 // acceptance criterion's one-second budget. Everything else about
 // `demo_ping` is covered by tests/unit/*.test.ts against fabricated data.
-import { expect, test } from "@playwright/test";
+
 // Pulls in `declare global { interface Window { __bc } }` -- types only,
 // nothing imported at runtime.
 import type {} from "../../src/net/e2e-hooks";
+import { expect, test } from "./fixtures";
 import { callReducer, readSpacetimeHandle } from "./spacetime-harness.mjs";
 
 test("a reducer write reaches the subscribed client within one second", async ({ page }) => {

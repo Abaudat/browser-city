@@ -64,6 +64,7 @@ async function collectOneSample(
   browser: import("@playwright/test").Browser,
   network: NetworkProfile,
   cpu: CpuProfile,
+  typingMs = 0,
 ) {
   // Quentin's cycle-3 direction: the production preview negotiates HTTP/2
   // over a throwaway self-signed cert (BC_BOOT_HTTPS,
@@ -75,6 +76,19 @@ async function collectOneSample(
   await applyThrottling(cdp, network, cpu);
 
   await page.goto("/");
+  // Story 4.6: a first boot is the name prompt. The player "types" for
+  // `typingMs` after first contentful paint and submits; the bundle, the
+  // defs and the flat have been streaming behind it the whole time.
+  await page.waitForFunction(
+    () =>
+      performance.getEntriesByType("paint").some((e) => e.name === "first-contentful-paint") &&
+      document.querySelector('[data-bc-surface="name-prompt"] input') !== null,
+    undefined,
+    { timeout: 30_000 },
+  );
+  if (typingMs > 0) await page.waitForTimeout(typingMs);
+  await page.locator('[data-bc-surface="name-prompt"] input').fill("Sam");
+  await page.keyboard.press("Enter");
   await page.waitForFunction(
     () => performance.getEntriesByName("bc-boot:player-controllable").length > 0,
     undefined,
@@ -108,7 +122,70 @@ async function collectOneSample(
   return computeSampleTerms(raw);
 }
 
-for (const network of NETWORK_PROFILES as readonly NetworkProfile[]) {
+// --- Story 4.6's first-boot gate (NFR1 / FR145) ----------------------
+//
+// Pre-registered before any number was read: `name-submitted` ->
+// `player-controllable`, production build over HTTP/2, cold context,
+// `domestic` network, 4x CPU, the player taking `GATE_TYPING_MS` after first
+// contentful paint to type a short name. The verdict is the p75 of
+// `GATE_SAMPLES` samples against `GATE_BUDGET_MS`. A miss is fixed on the
+// critical path -- never with a longer typing window, a looser bound or
+// fewer samples. The submit-at-first-paint (0 ms) leg is recorded, not
+// gated.
+const GATE_TYPING_MS = 2000;
+const GATE_BUDGET_MS = 1000;
+const GATE_SAMPLES = Number(process.env.BC_BOOT_GATE_SAMPLES ?? 10);
+const GATE_ONLY = Boolean(process.env.BC_BOOT_GATE_ONLY);
+
+/** Nearest-rank percentile of `values` (ms). */
+function percentile(values: number[], p: number): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.ceil((p / 100) * sorted.length);
+  return sorted[Math.max(0, rank - 1)] as number;
+}
+
+if (GATE_ONLY || process.env.BC_BOOT_GATE) {
+  test(`first boot gate: submit -> controllable p75 < ${GATE_BUDGET_MS} ms (domestic, 4x CPU, ${GATE_TYPING_MS} ms typing, n=${GATE_SAMPLES})`, async ({
+    browser,
+  }) => {
+    test.setTimeout(GATE_SAMPLES * 2 * 30_000 + 60_000);
+    const network = (NETWORK_PROFILES as readonly NetworkProfile[]).find(
+      (n) => n.name === "domestic",
+    ) as NetworkProfile;
+    const cpu = (CPU_PROFILES as readonly CpuProfile[]).find(
+      (c) => c.name === "throttled",
+    ) as CpuProfile;
+
+    const gated: number[] = [];
+    const atFirstPaint: number[] = [];
+    for (let i = 0; i < GATE_SAMPLES; i++) {
+      const typed = await collectOneSample(browser, network, cpu, GATE_TYPING_MS);
+      gated.push(typed.submitToControllableMs as number);
+    }
+    for (let i = 0; i < GATE_SAMPLES; i++) {
+      const instant = await collectOneSample(browser, network, cpu, 0);
+      atFirstPaint.push(instant.submitToControllableMs as number);
+    }
+
+    const verdict = {
+      budgetMs: GATE_BUDGET_MS,
+      typingMs: GATE_TYPING_MS,
+      samples: GATE_SAMPLES,
+      gatedSubmitToControllableMs: gated,
+      gatedP75Ms: percentile(gated, 75),
+      submitAtFirstPaintMs: atFirstPaint,
+      submitAtFirstPaintP75Ms: percentile(atFirstPaint, 75),
+    };
+    writeFileSync(
+      path.join(OUT_DIR, "first-boot-gate.json"),
+      `${JSON.stringify(verdict, null, 2)}\n`,
+      "utf-8",
+    );
+    expect(verdict.gatedP75Ms).toBeLessThan(GATE_BUDGET_MS);
+  });
+}
+
+for (const network of GATE_ONLY ? [] : (NETWORK_PROFILES as readonly NetworkProfile[])) {
   for (const cpu of CPU_PROFILES as readonly CpuProfile[]) {
     test(`milestones -- ${network.name} network, ${cpu.name} CPU (n=${SAMPLES})`, async ({
       browser,

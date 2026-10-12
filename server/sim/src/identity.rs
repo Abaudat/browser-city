@@ -4,6 +4,8 @@
 //! The reducers in `../src/tables/identity.rs` read, call these, and write.
 //! Nothing here merges characters or removes a mapping.
 
+use crate::generated::defs::NAME_MAX_CHARS;
+
 /// `character_identity.issuer_id` for a server-issued anonymous identity.
 pub const ANONYMOUS_ISSUER: u64 = 0;
 
@@ -21,6 +23,59 @@ pub fn plan_create(caller_character: Option<u64>) -> CreatePlan {
         Some(id) => CreatePlan::Existing(id),
         None => CreatePlan::New,
     }
+}
+
+/// Why a character name is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameError {
+    /// Nothing is left once trimmed.
+    Empty,
+    /// More than `NAME_MAX_CHARS` scalar values.
+    TooLong,
+    /// A control character or an invisible format character (zero-width,
+    /// bidirectional override, BOM).
+    ForbiddenCharacter,
+}
+
+impl NameError {
+    pub fn message(self) -> &'static str {
+        match self {
+            NameError::Empty => "a name cannot be empty",
+            NameError::TooLong => "that name is too long",
+            NameError::ForbiddenCharacter => "that name has a character a name cannot have",
+        }
+    }
+}
+
+fn is_invisible_format(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}' | '\u{061C}' | '\u{180E}'
+        | '\u{200B}'..='\u{200F}'
+        | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}'
+        | '\u{2066}'..='\u{206F}'
+        | '\u{FEFF}')
+}
+
+/// The name rule: trimmed, 1..=`NAME_MAX_CHARS` scalar values, no control or
+/// invisible format characters. Returns the name to store. Idempotent.
+/// `client/src/identity/name-rule.ts` mirrors it from the same case table
+/// (`fixtures/character-names.v1.tsv`).
+pub fn plan_name(raw: &str) -> Result<String, NameError> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err(NameError::Empty);
+    }
+    if name
+        .chars()
+        .any(|c| c.is_control() || is_invisible_format(c))
+    {
+        return Err(NameError::ForbiddenCharacter);
+    }
+    if name.chars().count() > NAME_MAX_CHARS as usize {
+        return Err(NameError::TooLong);
+    }
+    Ok(name.to_string())
 }
 
 /// What `complete_link` writes.

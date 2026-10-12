@@ -1,9 +1,10 @@
 // Story 4.8: whether the player's body is this page's to drive. One gate,
 // read by everything the player acts through (movement and intents); looking
 // and changing settings are not driving and never read it. A reason is a
-// name; the body is driveable while no reason is active. Today there is one
-// reason: the connection is down after having been up -- steps the city
-// never receives have no author in the city. Pure: no DOM, no `net/`.
+// name; the body is driveable while no reason is active. Two reasons: the
+// connection is down after having been up -- steps the city never receives
+// have no author in the city -- and the name prompt is still up (story
+// 4.6). Pure: no DOM, no `net/`.
 
 export interface BodyControl {
   /** Whether the body answers the player right now. */
@@ -24,6 +25,9 @@ export function createBodyControl(): BodyControl {
 }
 
 export const CONNECTION_DOWN = "connection-down";
+
+/** The name prompt is still up: nobody is in the body yet (story 4.6). */
+export const AWAITING_NAME = "awaiting-name";
 
 /** Feeds the gate the connection's status: closed from a drop until the next
  * `connected`, and never on a page that has not yet connected (its boot
