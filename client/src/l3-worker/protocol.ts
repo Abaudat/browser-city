@@ -83,6 +83,11 @@ export type FromWorker =
 export interface Port<In, Out> {
   postMessage(message: Out, transfer?: Transferable[]): void;
   onmessage: ((event: { data: In }) => void) | null;
+  /** The worker threw, or sent what could not be cloned. */
+  onerror?: ((event: unknown) => void) | null;
+  onmessageerror?: ((event: unknown) => void) | null;
+  /** Stops a failed worker. */
+  terminate?(): void;
 }
 
 // ---- the tick buffer: one ArrayBuffer, header then one record per slot ----
@@ -147,27 +152,32 @@ export function slotsIn(byteLength: number): number {
   return Math.max(0, Math.floor((byteLength - HEADER_DOUBLES * 8) / BYTES_PER_SLOT));
 }
 
-export interface Tick {
-  readonly head: Float64Array;
-  readonly xy: Float64Array;
-  readonly heading: Float32Array;
-  readonly bytes: Uint8Array;
-  readonly slots: number;
+/** Where a record's fields sit in a buffer of `slots` records. One `DataView`
+ * reads and writes the whole buffer (little endian), so a buffer that has just
+ * crossed a thread costs one view, not four. */
+export const HEAD_BYTES = HEADER_DOUBLES * 8;
+
+/** The byte offset of `XY_*` field `k` of `slot`. */
+export function xyOffset(_slots: number, slot: number, k: number): number {
+  return HEAD_BYTES + (slot * XY_PER_SLOT + k) * 8;
 }
 
-/** Typed views over the runs of a tick buffer. */
-export function viewTick(buf: ArrayBuffer): Tick {
-  const slots = slotsIn(buf.byteLength);
-  const head = HEADER_DOUBLES * 8;
-  return {
-    head: new Float64Array(buf, 0, HEADER_DOUBLES),
-    xy: new Float64Array(buf, head, slots * XY_PER_SLOT),
-    heading: new Float32Array(buf, head + slots * XY_PER_SLOT * 8, slots * HEADING_PER_SLOT),
-    bytes: new Uint8Array(
-      buf,
-      head + slots * (XY_PER_SLOT * 8 + HEADING_PER_SLOT * 4),
-      slots * BYTES_PER_SLOT_FIELDS,
-    ),
-    slots,
-  };
+/** The byte offset of heading component `k` (0 x, 1 y) of `slot`. */
+export function headingOffset(slots: number, slot: number, k: number): number {
+  return HEAD_BYTES + slots * XY_PER_SLOT * 8 + (slot * HEADING_PER_SLOT + k) * 4;
+}
+
+/** The byte offset of `B_*` field `field` of `slot`. */
+export function byteOffset(slots: number, slot: number, field: number): number {
+  return (
+    HEAD_BYTES +
+    slots * (XY_PER_SLOT * 8 + HEADING_PER_SLOT * 4) +
+    slot * BYTES_PER_SLOT_FIELDS +
+    field
+  );
+}
+
+/** The byte offset of header double `i`. */
+export function headOffset(i: number): number {
+  return i * 8;
 }

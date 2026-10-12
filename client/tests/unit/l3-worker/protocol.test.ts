@@ -4,7 +4,7 @@
 // leads required: the same body states as the in-process solve, transferred
 // buffers, no blocking, stale frames counted, buffers growing with the street.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CitizenBody } from "../../../src/l3/citizen";
 import { pathConfigOf, walkFramesPerCycle } from "../../../src/l3/config";
 import { L3Client } from "../../../src/l3-worker/client";
@@ -41,7 +41,8 @@ const SMALL = crowd.fixtures.slice(0, 60);
 
 /** A loopback: messages are structured-cloned (buffers transferred) and
  * delivered synchronously, or held until `flush`. */
-function loopback(hold = false) {
+function loopback(initialHold = false) {
+  let hold = initialHold;
   let solver: L3Solver | undefined;
   const toWorker: ToWorker[] = [];
   const toMain: { message: FromWorker; transfer: Transferable[] }[] = [];
@@ -70,7 +71,16 @@ function loopback(hold = false) {
     },
     now: () => (clock += 0.25),
   });
-  return { port: main, flush, deliverToMain, toWorker, solver };
+  return {
+    port: main,
+    flush,
+    deliverToMain,
+    toWorker,
+    solver,
+    hold: (on: boolean) => {
+      hold = on;
+    },
+  };
 }
 
 function initsOf(walk: ReturnType<typeof withStagingKerb>, fixtures = SMALL): CitizenInit[] {
@@ -121,7 +131,7 @@ function inProcess(walk: ReturnType<typeof withStagingKerb>, inits: readonly Cit
 function connected(hold = false, inits?: readonly CitizenInit[]) {
   const { walk, feed } = street();
   const lb = loopback(hold);
-  const client = new L3Client(lb.port, 0);
+  const client = new L3Client(() => lb.port, 0);
   const list = inits ?? initsOf(walk);
   client.init(cfg);
   client.declare(list);
@@ -207,7 +217,7 @@ describe("the L3 worker protocol", () => {
       post(message, transfer);
     };
     const { walk } = street();
-    const client = new L3Client(lb.port, 0);
+    const client = new L3Client(() => lb.port, 0);
     const list = initsOf(walk);
     client.init(cfg);
     client.declare(list);
@@ -225,8 +235,8 @@ describe("the L3 worker protocol", () => {
   it("never blocks: with every buffer out the request is skipped and counted", () => {
     const { client, lb, list } = connected(true);
     for (const c of list) client.add(c.id);
-    for (let i = 0; i < 4; i++) expect(client.request(i, undefined)).toBe(true);
-    expect(client.request(5, undefined)).toBe(false);
+    for (let i = 0; i < 6; i++) expect(client.request(i, undefined)).toBe(true);
+    expect(client.request(7, undefined)).toBe(false);
     expect(client.stats.skipped).toBe(1);
     lb.flush();
     lb.deliverToMain();
@@ -291,7 +301,7 @@ describe("the L3 worker protocol", () => {
       onmessage: null,
       postMessage: (m) => void sent.push(m),
     };
-    const client = new L3Client(port, 0);
+    const client = new L3Client(() => port, 0);
     for (let i = 0; i < 600; i++) client.add(`c${i}`);
     client.request(1, undefined);
     const tick = sent.find((m) => m.type === "tick");
@@ -337,7 +347,7 @@ describe("the L3 worker protocol", () => {
   it("with a lookahead, draws each result on the frame it was solved for", () => {
     const lb = loopback();
     const { walk } = street();
-    const client = new L3Client(lb.port, 2);
+    const client = new L3Client(() => lb.port, 2);
     const list = initsOf(walk);
     client.init(cfg);
     client.declare(list);
@@ -357,7 +367,7 @@ describe("the L3 worker protocol", () => {
   it("counts the frame whose result is late as stale, then skips to the newest due result", () => {
     const lb = loopback(true);
     const { walk } = street();
-    const client = new L3Client(lb.port, 1);
+    const client = new L3Client(() => lb.port, 1);
     const list = initsOf(walk);
     client.init(cfg);
     client.declare(list);
@@ -424,5 +434,125 @@ describe("the L3 worker protocol", () => {
     expect(watched.frame.distance).toBe(r.frame.distance);
     const other = members.find((_m, i) => i !== walkerIndex && reference.members[i]?.frame.legKey);
     expect(other?.frame.legKey ?? 0).toBe(0);
+  });
+
+  it("replaces a worker that errors, and the body states after the replay are byte-identical", async () => {
+    const index = streetWorldIndex();
+    const walk = withStagingKerb(npcWalkability(index));
+    const b = stagingBounds();
+    const feed = new WalkFeed(walk, index, [{ x0: b.x0, y0: b.y1, x1: b.x1, y1: b.y1, floor: 0 }]);
+    const list = initsOf(walk);
+    const reference = inProcess(walk, list);
+    // Each spawn is a new worker over a new loopback.
+    const loops: ReturnType<typeof loopback>[] = [];
+    const spawn = () => {
+      const lb = loopback();
+      loops.push(lb);
+      return lb.port;
+    };
+    const client = new L3Client(spawn, 0);
+    client.setWalkSnapshot(() => feed.collectAll());
+    client.init(cfg);
+    client.declare(list);
+    client.feedWalk(feed.collect());
+    const members = list.map((c) => client.add(c.id));
+    const step = 1000 / 60 / (cfg.realMsPerCityMinute / 1000);
+    const mismatches: string[] = [];
+    const check = (t: number): void => {
+      client.request(t, undefined);
+      expect(client.apply()).toBe(true);
+      reference.s.solve(t);
+      members.forEach((m, i) => {
+        const r = reference.members[i];
+        if (!r) throw new Error("no reference member");
+        if (
+          !m.solved ||
+          m.frame.x !== r.frame.x ||
+          m.frame.y !== r.frame.y ||
+          m.offsetX !== reference.s.offsetX(r) ||
+          m.offsetY !== reference.s.offsetY(r)
+        ) {
+          mismatches.push(`${m.id}@${t}`);
+        }
+      });
+    };
+    for (let k = 0; k < 5; k++) check(40_000 + k * step * 25);
+    // A question is in flight when the worker dies: it is rejected, not hung.
+    loops[0]?.hold(true);
+    const pending = client.agreementAt(1);
+    const killed = loops[0];
+    killed?.port.onerror?.({});
+    await expect(pending).rejects.toThrow(/replaced/);
+    expect(client.stats.restarts).toBe(1);
+    expect(loops).toHaveLength(2);
+    // Nothing waits on a buffer the dead worker held.
+    for (let k = 5; k < 10; k++) check(40_000 + k * step * 25);
+    expect(mismatches).toEqual([]);
+    // A second failure is replaced again.
+    loops[1]?.port.onmessageerror?.({});
+    expect(client.stats.restarts).toBe(2);
+    check(60_000);
+    expect(mismatches).toEqual([]);
+  });
+
+  it("ignores an error from a worker it has already replaced", () => {
+    const loops: ReturnType<typeof loopback>[] = [];
+    const client = new L3Client(() => {
+      const lb = loopback();
+      loops.push(lb);
+      return lb.port;
+    }, 0);
+    client.init(cfg);
+    loops[0]?.port.onerror?.({});
+    const first = loops[0]?.port;
+    expect(client.stats.restarts).toBe(1);
+    first?.onerror?.({});
+    expect(client.stats.restarts).toBe(1);
+  });
+
+  it("makes no typed-array view in a steady request and apply, and one DataView per buffer back", () => {
+    const { client, list, lb } = connected(true);
+    for (const c of list) client.add(c.id);
+    client.request(1_000, undefined);
+    lb.flush();
+    lb.deliverToMain();
+    client.apply();
+    const made: string[] = [];
+    const stub = (name: "DataView" | "Float64Array" | "Float32Array" | "Uint8Array") => {
+      const Real = globalThis[name] as unknown as new (...a: unknown[]) => object;
+      vi.stubGlobal(
+        name,
+        class extends Real {
+          constructor(...a: unknown[]) {
+            super(...a);
+            made.push(name);
+          }
+        },
+      );
+    };
+    const names = ["DataView", "Float64Array", "Float32Array", "Uint8Array"] as const;
+    const cycles = 10;
+    let received = 0;
+    for (let k = 0; k < cycles; k++) {
+      for (const n of names) stub(n);
+      try {
+        client.request(2_000 + k, undefined);
+        client.apply();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      expect(made).toEqual([]);
+      // The worker answers, the buffer lands: one view of it, no more.
+      lb.flush();
+      for (const n of names) stub(n);
+      try {
+        lb.deliverToMain();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      received += made.length;
+      made.length = 0;
+    }
+    expect(received).toBeLessThanOrEqual(cycles);
   });
 });

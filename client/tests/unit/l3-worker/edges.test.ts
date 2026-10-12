@@ -7,16 +7,16 @@ import { L3Client } from "../../../src/l3-worker/client";
 import {
   B_FALLBACKS,
   B_FLAGS,
-  BYTES_PER_SLOT_FIELDS,
+  byteOffset,
   type CitizenInit,
   F_PRESENT,
   type FromWorker,
   H_T,
   H_WANT_DIAG,
   type Port,
+  slotsIn,
   type ToWorker,
   tickBytes,
-  viewTick,
 } from "../../../src/l3-worker/protocol";
 import { L3Solver } from "../../../src/l3-worker/solver";
 import { buildRushCrowd } from "../../../src/test-street/rush-crowd";
@@ -63,9 +63,9 @@ function solverWithLog() {
 
 function tickBuffer(slots: number, t: number, wantDiag = false): ArrayBuffer {
   const buf = new ArrayBuffer(tickBytes(slots));
-  const f = viewTick(buf).head;
-  f[H_T] = t;
-  f[H_WANT_DIAG] = wantDiag ? 1 : 0;
+  const dv = new DataView(buf);
+  dv.setFloat64(H_T * 8, t, true);
+  dv.setFloat64(H_WANT_DIAG * 8, wantDiag ? 1 : 0, true);
   return buf;
 }
 
@@ -106,9 +106,10 @@ describe("L3Solver with a street", () => {
     solver.handle({ type: "tick", buf });
     const result = out.find((m) => m.type === "result");
     if (result?.type !== "result") throw new Error("no result");
-    const { bytes } = viewTick(result.buf);
-    expect((bytes[B_FLAGS] as number) & F_PRESENT).toBe(F_PRESENT);
-    expect((bytes[BYTES_PER_SLOT_FIELDS + B_FLAGS] as number) & F_PRESENT).toBe(0);
+    const dv = new DataView(result.buf);
+    const total = slotsIn(dv.byteLength);
+    expect(dv.getUint8(byteOffset(total, 0, B_FLAGS)) & F_PRESENT).toBe(F_PRESENT);
+    expect(dv.getUint8(byteOffset(total, 1, B_FLAGS)) & F_PRESENT).toBe(0);
     expect(result.names?.length).toBeGreaterThan(0);
   });
 
@@ -121,7 +122,8 @@ describe("L3Solver with a street", () => {
     expect(results).toHaveLength(2);
     for (const r of results) {
       if (r.type !== "result") continue;
-      expect(viewTick(r.buf).bytes[B_FALLBACKS]).toBe(0);
+      const dv = new DataView(r.buf);
+      expect(dv.getUint8(byteOffset(slotsIn(dv.byteLength), 0, B_FALLBACKS))).toBe(0);
     }
   });
 
@@ -144,7 +146,7 @@ describe("L3Client edges", () => {
       onmessage: null,
       postMessage: (m) => void sent.push(m),
     };
-    return { sent, port, client: new L3Client(port, 0) };
+    return { sent, port, client: new L3Client(() => port, 0) };
   }
 
   it("does not post an empty walkability feed and ignores a foreign member", () => {
@@ -161,7 +163,7 @@ describe("L3Client edges", () => {
 
   it("settles at once when no buffer is free, and ignores a reply nobody asked for", async () => {
     const { client, port } = pair();
-    for (let i = 0; i < 4; i++) client.request(i, undefined);
+    for (let i = 0; i < 6; i++) client.request(i, undefined);
     await client.settle(10, undefined);
     port.onmessage?.({ data: { type: "calibrated", id: 999, ms: 1 } });
     expect(client.stats.skipped).toBe(1);
@@ -178,6 +180,6 @@ describe("L3Client edges", () => {
     client.request(1, undefined);
     const tick = sent.find((m) => m.type === "tick");
     if (tick?.type !== "tick") throw new Error("no tick");
-    expect(viewTick(tick.buf).head[H_WANT_DIAG]).toBe(1);
+    expect(new DataView(tick.buf).getFloat64(H_WANT_DIAG * 8, true)).toBe(1);
   });
 });

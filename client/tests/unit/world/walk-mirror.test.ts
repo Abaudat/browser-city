@@ -103,4 +103,26 @@ describe("WalkMirror", () => {
     expect(mirror.walkable(0, 41, 3)).toBe(true);
     expect(feed.collect()).toEqual([]);
   });
+
+  it("collectAll reads every chunk that holds anything, whatever has been drained", () => {
+    const grid = new CollisionGrid(16, new Map([[1, DEF]]));
+    const live = npcWalkability(grid);
+    grid.insert(row(1n, 3, 3));
+    grid.insert(row(2n, 70, -5));
+    const feed = new WalkFeed(live, grid, [{ x0: 40, y0: 3, x1: 41, y1: 3, floor: 0 }]);
+    const first = feed.collect();
+    expect(feed.collect()).toEqual([]);
+    const all = feed.collectAll();
+    // The two collider chunks and the seeded rect's chunk (empty there: no
+    // chunk is read for it unless the walkability blocks a cell of it).
+    expect(all.map((c) => `${c.floor},${c.cx},${c.cy}`).sort()).toEqual(["0,0,0", "0,2,-1"]);
+    const mirror = new WalkMirror();
+    for (const c of all) mirror.setChunk(c.floor, c.cx, c.cy, c.blocked);
+    for (let y = -40; y < 40; y++) {
+      for (let x = -10; x < 90; x++) {
+        expect(mirror.walkable(0, x, y)).toBe(live.walkable(0, x, y));
+      }
+    }
+    expect(first.length).toBeGreaterThan(0);
+  });
 });

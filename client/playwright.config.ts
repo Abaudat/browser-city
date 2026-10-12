@@ -61,6 +61,7 @@ export default defineConfig({
       testIgnore: [
         /street-perf\.spec\.ts/,
         /l3-budget\.spec\.ts/,
+        /l3-low-end\.spec\.ts/,
         /boot-budget\.spec\.ts/,
         /deploy-smoke\.spec\.ts/,
       ],
@@ -73,6 +74,13 @@ export default defineConfig({
       name: "perf",
       use: { ...devices["Desktop Chrome"] },
       testMatch: /(street-perf|l3-budget)\.spec\.ts/,
+    },
+    {
+      // Story 5.24 (D-L3): the one-core figure for the L3 solve, reported
+      // from `perf-soak.yml` under `taskset -c 0`; never part of a PR's gate.
+      name: "low-end",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /l3-low-end\.spec\.ts/,
     },
     {
       // Story 1.14 (NFR1): the boot-budget harness and its regression

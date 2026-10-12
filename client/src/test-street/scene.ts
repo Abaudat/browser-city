@@ -1504,9 +1504,11 @@ export async function mountStreetScene(
   // walkers and standers -- is posed, and sidestepped, through this one object.
   // The solve runs in a worker (D-L3): this side posts deltas and the next
   // instant, and draws the latest completed result.
-  const l3Client = new L3Client(spawnL3Worker());
+  const l3Client = new L3Client(spawnL3Worker);
   l3Client.init(l3Config);
   const walkFeed = new WalkFeed(npcWalk, worldIndex, [stagingKerbRect()]);
+  // A replacement worker is given the whole walkability, not what changed.
+  l3Client.setWalkSnapshot(() => walkFeed.collectAll());
   const walkFeedOnce = (): void => l3Client.feedWalk(walkFeed.collect());
   let updateCommuter: (cityMilli: number | undefined) => void = () => {};
   let commuterDrawn: () => CommuterDrawn | undefined = () => undefined;

@@ -128,6 +128,17 @@ export class CollisionGrid implements CollisionGridQuery {
     for (const c of drained) fn(c.floor, c.cx, c.cy);
   }
 
+  /** Calls `fn` once for every chunk that holds at least one collider. */
+  allChunks(fn: (floor: number, cx: number, cy: number) => void): void {
+    for (const [floor, byChunk] of this.floors) {
+      for (const key of byChunk.keys()) {
+        // `chunkKey`'s layout: x in [55:32], y in [31:8], both 24-bit signed.
+        const signed = (v: bigint): number => Number(BigInt.asIntN(24, v));
+        fn(floor, signed((key >> 32n) & 0xffffffn), signed((key >> 8n) & 0xffffffn));
+      }
+    }
+  }
+
   private markChanged(floor: number, cellX: number, cellY: number): void {
     const cx = Math.floor(cellX / CHUNK_SIZE);
     const cy = Math.floor(cellY / CHUNK_SIZE);

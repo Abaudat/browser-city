@@ -26,6 +26,7 @@ const GOOD: L3Measurement = {
   solveMs: distribution(Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01)),
   staleFrames: 0,
   maxLagFrames: 0,
+  restarts: 0,
   sweepMs: distribution(
     Array.from({ length: MIN_MEASURED_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01),
   ),
@@ -53,7 +54,7 @@ const GOOD: L3Measurement = {
 
 describe("L3 budget verdict (NFR11)", () => {
   it("is met by a healthy run", () => {
-    expect(verdict(GOOD)).toEqual({ met: true, failures: [], gateFailures: [] });
+    expect(verdict(GOOD)).toEqual({ met: true, failures: [], risks: [], gateFailures: [] });
   });
 
   it("records a budget miss within the recorded finding as MISSED without failing the gate", () => {
@@ -123,12 +124,10 @@ describe("L3 budget verdict (NFR11)", () => {
   });
 
   it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
-    // A major collection that stays under the tail budget is reported, not red.
-    const brief = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 3.3 };
-    expect(verdict({ ...GOOD, gc: brief }).met).toBe(true);
-    const long = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 9 };
-    expect(verdict({ ...GOOD, gc: long }).met).toBe(false);
-    expect(verdict({ ...GOOD, workerGc: long }).gateFailures.join()).toContain("worker major GC");
+    // One major, however short, on either thread is red.
+    const brief = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 1 };
+    expect(verdict({ ...GOOD, gc: brief }).gateFailures.join()).toContain("main-thread major GC");
+    expect(verdict({ ...GOOD, workerGc: brief }).gateFailures.join()).toContain("worker major GC");
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);
     const slowScavenges = { ...GOOD.gc, minorPausesMs: [4.5, 5], longestMinorPauseMs: 9 };
     expect(verdict({ ...GOOD, gc: slowScavenges }).met).toBe(true);
@@ -145,22 +144,34 @@ describe("L3 budget verdict (NFR11)", () => {
     expect(v.met).toBe(false);
     expect(v.failures.join()).toContain("worker solve p95");
     expect(v.gateFailures.join()).toContain("worker solve p95 / calibration");
+    // Absolute and red on a machine as fast as the reference, whatever the ratio.
+    const quick = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.2));
+    expect(verdict({ ...GOOD, solveMs: quick, calibrationMs: 5 }).gateFailures.join()).toContain(
+      "worker solve p95 2.200 ms over 2 ms",
+    );
   });
 
-  it("holds the margin: a p95 over 1.6 ms is not MET though it is under the 2 ms budget", () => {
+  it("reports a solve with no margin as a risk, not as a miss", () => {
     const v = verdict({
       ...GOOD,
-      calibrationMs: 10,
-      l3Ms: distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 1.8)),
+      calibrationMs: 6,
+      solveMs: distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 1.9)),
     });
-    expect(v.met).toBe(false);
-    expect(v.failures.join()).toContain("margin");
+    expect(v.met).toBe(true);
+    expect(v.risks.join()).toContain("worker solve p95 1.900 ms has no margin");
+    expect(verdict(GOOD).risks).toEqual([]);
   });
 
   it("FAILS any stale frame: a worker that falls behind is a bug whatever the timings say", () => {
     const v = verdict({ ...GOOD, staleFrames: 1 });
     expect(v.met).toBe(false);
     expect(v.gateFailures.join()).toContain("stale");
+  });
+
+  it("FAILS a worker that had to be replaced", () => {
+    const v = verdict({ ...GOOD, restarts: 1 });
+    expect(v.met).toBe(false);
+    expect(v.gateFailures.join()).toContain("replaced");
   });
 
   it("FAILS a result drawn more than one frame after its instant", () => {

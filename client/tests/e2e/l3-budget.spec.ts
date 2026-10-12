@@ -182,16 +182,27 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   let cappedMax = 0;
 
   /** One lap's samples, and what the crowd was doing through it. */
+  async function takeCensus(): Promise<void> {
+    const c = await census(page);
+    liveMin = Math.min(liveMin, c.live);
+    walkingMin = Math.min(walkingMin, c.walking);
+    sidesteppingMax = Math.max(sidesteppingMax, c.sidestepping);
+    cappedMax = Math.max(cappedMax, c.capped);
+  }
+
+  /** A lap: with a trace running nothing else touches the page in it -- the
+   * census is taken beside it, so the window holds the ticker and the trace
+   * alone. */
   async function lap(durationMs: number, trace?: Awaited<ReturnType<typeof startGcTrace>>) {
     await startTimings(page);
     const end = Date.now() + durationMs;
     while (Date.now() < end) {
-      await page.waitForTimeout(1_000);
-      const c = await census(page);
-      liveMin = Math.min(liveMin, c.live);
-      walkingMin = Math.min(walkingMin, c.walking);
-      sidesteppingMax = Math.max(sidesteppingMax, c.sidestepping);
-      cappedMax = Math.max(cappedMax, c.capped);
+      if (trace) {
+        await page.waitForTimeout(Math.max(0, end - Date.now()));
+      } else {
+        await page.waitForTimeout(1_000);
+        await takeCensus();
+      }
     }
     const batch = await stopTimings(page);
     const traced = trace ? await trace.finish() : undefined;
@@ -312,6 +323,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     Date.now() - startedAt < RUN_MS ||
     (l3Samples.length < MIN_TICKER_FRAMES && Date.now() - startedAt < 3 * RUN_MS)
   ) {
+    await takeCensus();
     const { batch, gc: lapGc, workerGc: lapWorkerGc } = await lap(LAP_MS, await startGcTrace(cdp));
     l3Samples.push(...batch.l3);
     solveSamples.push(...batch.solve);
@@ -324,6 +336,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   const staleFrames = (statsAfter?.stale ?? Number.NaN) - (statsBefore?.stale ?? 0);
   const skippedRequests = (statsAfter?.skipped ?? Number.NaN) - (statsBefore?.skipped ?? 0);
   const maxLagFrames = statsAfter?.maxLagFrames ?? Number.NaN;
+  const restarts = (statsAfter?.restarts ?? Number.NaN) - (statsBefore?.restarts ?? 0);
   const lagEvents = statsAfter?.lagEvents ?? [];
 
   // The same ticker window with no trace running: reported beside the verdict
@@ -420,6 +433,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     solveMs,
     staleFrames,
     maxLagFrames,
+    restarts,
     sweepMs,
     allocBytesPerFrame,
     mainAllocBytesPerFrame,
@@ -456,6 +470,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     budget: { p95Ms: L3_P95_BUDGET_MS, p99Ms: L3_P99_BUDGET_MS },
     verdict: result.met ? "MET" : "MISSED",
     failures: result.failures,
+    risks: result.risks,
     calibrationMs,
     l3Ratios: {
       p95: l3Ms.p95 / calibrationMs,
@@ -470,7 +485,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
       l3Ms: distribution(untraced.l3),
       l3SolveMs: distribution(untraced.solve),
     },
-    solveStale: { staleFrames, skippedRequests, maxLagFrames, lagEvents },
+    solveStale: { staleFrames, skippedRequests, maxLagFrames, restarts, lagEvents },
     workerCalibrationMs,
     l3SweepMs: sweepMs,
     frameWorkMs: frameMs,

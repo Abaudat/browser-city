@@ -43,10 +43,10 @@ export function buildL3Labels(view: DebugWorldView): L3Label[] {
       view.zoom,
       0,
     );
-    const behind = stats.stale > 0 || stats.skipped > 0;
+    const behind = stats.stale > 0 || stats.skipped > 0 || stats.restarts > 0;
     labels.push({
       id: "solver",
-      text: `solver stale ${stats.stale} skipped ${stats.skipped}`,
+      text: `solver stale ${stats.stale} skipped ${stats.skipped} restarts ${stats.restarts}`,
       x: anchor.x,
       y: anchor.y,
       fill: behind ? DEBUG_STYLE.palette.playerBody : DEBUG_STYLE.palette.sortLabel,

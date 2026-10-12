@@ -21,7 +21,7 @@ import {
   B_FLAVOUR,
   B_FLOOR,
   B_FRAME_INDEX,
-  BYTES_PER_SLOT_FIELDS,
+  byteOffset,
   type CitizenInit,
   F_BLOCKED,
   F_CAPPED,
@@ -39,15 +39,14 @@ import {
   H_STOREY,
   H_T,
   H_WANT_DIAG,
-  HEADING_PER_SLOT,
-  type Tick,
+  headingOffset,
+  slotsIn,
   type ToWorker,
-  viewTick,
   XY_OFFSET_X,
   XY_OFFSET_Y,
-  XY_PER_SLOT,
   XY_X,
   XY_Y,
+  xyOffset,
 } from "./protocol";
 
 /** Ticks between diagnostic refreshes. */
@@ -213,22 +212,23 @@ export class L3Solver {
     return i;
   }
 
-  #readZone(f: Float64Array): BodyZone | undefined {
-    if (f[H_HAS_ZONE] === 0) {
+  #readZone(dv: DataView): BodyZone | undefined {
+    const h = (i: number): number => dv.getFloat64(i * 8, true);
+    if (h(H_HAS_ZONE) === 0) {
       this.#hasZone = false;
       return undefined;
     }
     const z = this.#zone;
-    z.spawn.x0 = f[H_SPAWN] as number;
-    z.spawn.y0 = f[H_SPAWN + 1] as number;
-    z.spawn.x1 = f[H_SPAWN + 2] as number;
-    z.spawn.y1 = f[H_SPAWN + 3] as number;
-    z.despawn.x0 = f[H_DESPAWN] as number;
-    z.despawn.y0 = f[H_DESPAWN + 1] as number;
-    z.despawn.x1 = f[H_DESPAWN + 2] as number;
-    z.despawn.y1 = f[H_DESPAWN + 3] as number;
-    z.storeyCells = f[H_STOREY] as number;
-    z.band = (f[H_BAND] as number) === 1 ? 1 : 0;
+    z.spawn.x0 = h(H_SPAWN);
+    z.spawn.y0 = h(H_SPAWN + 1);
+    z.spawn.x1 = h(H_SPAWN + 2);
+    z.spawn.y1 = h(H_SPAWN + 3);
+    z.despawn.x0 = h(H_DESPAWN);
+    z.despawn.y0 = h(H_DESPAWN + 1);
+    z.despawn.x1 = h(H_DESPAWN + 2);
+    z.despawn.y1 = h(H_DESPAWN + 3);
+    z.storeyCells = h(H_STOREY);
+    z.band = h(H_BAND) === 1 ? 1 : 0;
     this.#hasZone = true;
     return z;
   }
@@ -240,62 +240,65 @@ export class L3Solver {
       this.#host.post({ type: "result", buf });
       return;
     }
-    const tick: Tick = viewTick(buf);
-    const f = tick.head;
-    const zone = this.#readZone(f);
+    const dv = new DataView(buf);
+    const slots = slotsIn(buf.byteLength);
+    const zone = this.#readZone(dv);
     const start = this.#host.now();
-    life.solve(f[H_T] as number, zone);
-    f[H_SOLVE_MS] = this.#host.now() - start;
+    life.solve(dv.getFloat64(H_T * 8, true), zone);
+    dv.setFloat64(H_SOLVE_MS * 8, this.#host.now() - start, true);
 
     // Diagnostics walk each body's segments: refreshed on request, at most
     // twice a second, never in the frame's critical path every frame.
     this.#ticks++;
-    const wantDiag = f[H_WANT_DIAG] === 1 && this.#ticks % DIAGNOSTIC_EVERY === 0;
+    const wantDiag =
+      dv.getFloat64(H_WANT_DIAG * 8, true) === 1 && this.#ticks % DIAGNOSTIC_EVERY === 0;
     const msPerMilliminute = config.realMsPerCityMinute / 1000;
     if (this.#diag.length < this.#slots.length * 2) {
       const grown = new Float64Array(this.#slots.length * 2);
       grown.set(this.#diag);
       this.#diag = grown;
     }
-    const detail = f[H_DETAIL_SLOT] as number;
-    const { xy, heading, bytes } = tick;
-    for (let slot = 0; slot < tick.slots; slot++) {
-      const o = slot * BYTES_PER_SLOT_FIELDS;
+    const detail = dv.getFloat64(H_DETAIL_SLOT * 8, true);
+    for (let slot = 0; slot < slots; slot++) {
       const member = this.#slots[slot];
       if (!member) {
-        bytes[o + B_FLAGS] = 0;
+        dv.setUint8(byteOffset(slots, slot, B_FLAGS), 0);
         continue;
       }
       const frame = member.frame;
-      const x = slot * XY_PER_SLOT;
-      xy[x + XY_X] = frame.x;
-      xy[x + XY_Y] = frame.y;
-      xy[x + XY_OFFSET_X] = life.offsetX(member);
-      xy[x + XY_OFFSET_Y] = life.offsetY(member);
-      heading[slot * HEADING_PER_SLOT] = frame.headingX;
-      heading[slot * HEADING_PER_SLOT + 1] = frame.headingY;
+      dv.setFloat64(xyOffset(slots, slot, XY_X), frame.x, true);
+      dv.setFloat64(xyOffset(slots, slot, XY_Y), frame.y, true);
+      dv.setFloat64(xyOffset(slots, slot, XY_OFFSET_X), life.offsetX(member), true);
+      dv.setFloat64(xyOffset(slots, slot, XY_OFFSET_Y), life.offsetY(member), true);
+      dv.setFloat32(headingOffset(slots, slot, 0), frame.headingX, true);
+      dv.setFloat32(headingOffset(slots, slot, 1), frame.headingY, true);
       if (wantDiag) {
         const report = member.body.diagnostics(msPerMilliminute, config);
         this.#diag[slot * 2] = report?.fallbacks ?? 0;
         this.#diag[slot * 2 + 1] = report?.paceOutOfBand ? 1 : 0;
       }
-      bytes[o + B_FLAGS] =
+      dv.setUint8(
+        byteOffset(slots, slot, B_FLAGS),
         F_PRESENT |
-        (frame.moving ? F_MOVING : 0) |
-        (life.field.capped(member.index) ? F_CAPPED : 0) |
-        (life.field.blocked(member.index) ? F_BLOCKED : 0) |
-        (this.#diag[slot * 2 + 1] ? F_PACE_OUT : 0);
-      bytes[o + B_FLOOR] = frame.floor + 128;
-      bytes[o + B_ANIMATION] = this.#intern(frame.animation);
-      bytes[o + B_DIRECTION] = this.#intern(frame.direction);
-      bytes[o + B_FLAVOUR] = this.#intern(frame.flavour);
-      bytes[o + B_FRAME_INDEX] = frame.frameIndex;
-      bytes[o + B_FALLBACKS] = Math.min(255, this.#diag[slot * 2] as number);
+          (frame.moving ? F_MOVING : 0) |
+          (life.field.capped(member.index) ? F_CAPPED : 0) |
+          (life.field.blocked(member.index) ? F_BLOCKED : 0) |
+          (this.#diag[slot * 2 + 1] ? F_PACE_OUT : 0),
+      );
+      dv.setUint8(byteOffset(slots, slot, B_FLOOR), frame.floor + 128);
+      dv.setUint8(byteOffset(slots, slot, B_ANIMATION), this.#intern(frame.animation));
+      dv.setUint8(byteOffset(slots, slot, B_DIRECTION), this.#intern(frame.direction));
+      dv.setUint8(byteOffset(slots, slot, B_FLAVOUR), this.#intern(frame.flavour));
+      dv.setUint8(byteOffset(slots, slot, B_FRAME_INDEX), frame.frameIndex);
+      dv.setUint8(
+        byteOffset(slots, slot, B_FALLBACKS),
+        Math.min(255, this.#diag[slot * 2] as number),
+      );
       if (slot === detail) {
-        f[H_DETAIL] = frame.legKey;
-        f[H_DETAIL + 1] = frame.departAt;
-        f[H_DETAIL + 2] = frame.arriveAt;
-        f[H_DETAIL + 3] = frame.distance;
+        dv.setFloat64(H_DETAIL * 8, frame.legKey, true);
+        dv.setFloat64((H_DETAIL + 1) * 8, frame.departAt, true);
+        dv.setFloat64((H_DETAIL + 2) * 8, frame.arriveAt, true);
+        dv.setFloat64((H_DETAIL + 3) * 8, frame.distance, true);
       }
     }
     if (this.#names.length > this.#namesSent) {

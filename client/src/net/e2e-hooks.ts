@@ -49,8 +49,6 @@ declare global {
       stopFrameTimings?: () => number[];
       /** Story 5.4 (NFR11): per-frame L3 window in ms, same pattern as
        * `frameTimings`; recorded only between start and stop. */
-      l3Timings?: number[];
-      l3SolveTimings?: number[];
       startL3Timings?: () => void;
       stopL3Timings?: () => number[];
       /** The worker's own solve time at each `l3Timings` frame. */
@@ -74,6 +72,7 @@ declare global {
         applied: number;
         stale: number;
         skipped: number;
+        restarts: number;
         lastSolveMs: number;
         maxLagFrames: number;
         lagEvents: readonly { frame: number; due: number; ready: number; inFlight: number }[];
@@ -373,34 +372,50 @@ export function recordFrameWorkForE2e(ms: number): void {
   window.__bc = bucket;
 }
 
-/** Story 5.4 (NFR11): the L3 window recorder the budget spec drives, the
- * same idiom as `recordFrameWorkForE2e`: nothing is kept, and nothing
- * allocated, unless a caller has started it. */
+/** Samples for one recorded window, in a buffer allocated when the window
+ * starts and written in place, so the recorder itself adds no garbage to the
+ * window it measures. */
+class SampleWindow {
+  #buf = new Float64Array(0);
+  #n = 0;
+  #on = false;
+
+  start(): void {
+    if (this.#buf.length === 0) this.#buf = new Float64Array(1 << 15);
+    this.#n = 0;
+    this.#on = true;
+  }
+
+  push(v: number): void {
+    if (this.#on && this.#n < this.#buf.length) this.#buf[this.#n++] = v;
+  }
+
+  stop(): number[] {
+    this.#on = false;
+    const out = Array.from(this.#buf.subarray(0, this.#n));
+    this.#n = 0;
+    return out;
+  }
+}
+
+const l3Window = new SampleWindow();
+const l3SolveWindow = new SampleWindow();
+
+/** Story 5.4 (NFR11): the L3 window recorder the budget spec drives: nothing
+ * is kept, and nothing allocated per sample, unless a caller has started it.
+ * `solveMs` is the worker's own time for the frame's solve. */
 export function recordL3WorkForE2e(ms: number, solveMs = 0): void {
   if (!import.meta.env.DEV) return;
+  l3Window.push(ms);
+  l3SolveWindow.push(solveMs);
   const bucket = window.__bc ?? { pings: [] };
-  if (bucket.l3Timings) bucket.l3Timings.push(ms);
-  if (bucket.l3SolveTimings) bucket.l3SolveTimings.push(solveMs);
   if (bucket.startL3Timings) return;
   bucket.startL3Timings = () => {
-    const current = window.__bc;
-    if (current) {
-      current.l3Timings = [];
-      current.l3SolveTimings = [];
-    }
+    l3Window.start();
+    l3SolveWindow.start();
   };
-  bucket.stopL3SolveTimings = () => {
-    const current = window.__bc;
-    const samples = current?.l3SolveTimings ?? [];
-    if (current) current.l3SolveTimings = undefined;
-    return samples;
-  };
-  bucket.stopL3Timings = () => {
-    const current = window.__bc;
-    const samples = current?.l3Timings ?? [];
-    if (current) current.l3Timings = undefined;
-    return samples;
-  };
+  bucket.stopL3SolveTimings = () => l3SolveWindow.stop();
+  bucket.stopL3Timings = () => l3Window.stop();
   window.__bc = bucket;
 }
 

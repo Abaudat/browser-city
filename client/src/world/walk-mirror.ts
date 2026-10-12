@@ -53,6 +53,8 @@ export class WalkMirror implements MirroredWalkability {
 export interface ChangedChunks {
   /** Calls `fn` once per chunk changed since the last drain, then forgets them. */
   drainChangedChunks(fn: (floor: number, cx: number, cy: number) => void): void;
+  /** Calls `fn` once for every chunk that holds anything now. */
+  allChunks(fn: (floor: number, cx: number, cy: number) => void): void;
 }
 
 /** One chunk of change for the mirror. */
@@ -69,6 +71,7 @@ const NONE: FedChunk[] = [];
 export class WalkFeed {
   readonly #walk: MirroredWalkability;
   readonly #source: ChangedChunks;
+  readonly #seedRects: readonly { x0: number; y0: number; x1: number; y1: number; floor: number }[];
   /** Chunks the source does not know to be non-empty, sent once at start. */
   readonly #seed: { floor: number; cx: number; cy: number }[] = [];
 
@@ -81,6 +84,7 @@ export class WalkFeed {
   ) {
     this.#walk = walk;
     this.#source = source;
+    this.#seedRects = seedRects;
     const seen = new Set<number>();
     for (const r of seedRects) {
       for (let cy = Math.floor(r.y0 / CHUNK_SIZE); cy <= Math.floor(r.y1 / CHUNK_SIZE); cy++) {
@@ -94,31 +98,64 @@ export class WalkFeed {
     }
   }
 
-  /** The chunks that changed since the last call; empty most frames. */
-  collect(): FedChunk[] {
-    let out: FedChunk[] | undefined;
-    let seen: Set<number> | undefined;
-    const read = (floor: number, cx: number, cy: number): void => {
+  /** Every chunk that holds anything, read now: what a new solver is given in
+   * full where a running one gets deltas. Does not touch the changed set. */
+  collectAll(): FedChunk[] {
+    const out: FedChunk[] = [];
+    const seen = new Set<number>();
+    const add = (floor: number, cx: number, cy: number): void => {
       const key = chunkId(floor, cx, cy);
-      out ??= [];
-      seen ??= new Set();
       if (seen.has(key)) return;
       seen.add(key);
-      const blocked = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
-      let any = false;
-      for (let ly = 0; ly < CHUNK_SIZE; ly++) {
-        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-          if (!this.#walk.walkable(floor, cx * CHUNK_SIZE + lx, cy * CHUNK_SIZE + ly)) {
-            blocked[ly * CHUNK_SIZE + lx] = 1;
-            any = true;
-          }
+      const chunk = this.#readChunk(floor, cx, cy);
+      if (chunk) out.push(chunk);
+    };
+    for (const r of this.#seedRects) {
+      for (let cy = Math.floor(r.y0 / CHUNK_SIZE); cy <= Math.floor(r.y1 / CHUNK_SIZE); cy++) {
+        for (let cx = Math.floor(r.x0 / CHUNK_SIZE); cx <= Math.floor(r.x1 / CHUNK_SIZE); cx++) {
+          add(r.floor, cx, cy);
         }
       }
-      out.push({ floor, cx, cy, blocked: any ? blocked : null });
-    };
-    for (const s of this.#seed) read(s.floor, s.cx, s.cy);
+    }
+    this.#source.allChunks(add);
+    return out;
+  }
+
+  #readChunk(floor: number, cx: number, cy: number): FedChunk | undefined {
+    const blocked = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    let any = false;
+    for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        if (!this.#walk.walkable(floor, cx * CHUNK_SIZE + lx, cy * CHUNK_SIZE + ly)) {
+          blocked[ly * CHUNK_SIZE + lx] = 1;
+          any = true;
+        }
+      }
+    }
+    return any ? { floor, cx, cy, blocked } : undefined;
+  }
+
+  /** The chunks that changed since the last call; empty most frames, and then
+   * no allocation at all. */
+  collect(): FedChunk[] {
+    this.#out = undefined;
+    for (const s of this.#seed) this.#note(s.floor, s.cx, s.cy);
     this.#seed.length = 0;
-    this.#source.drainChangedChunks(read);
-    return out ?? NONE;
+    this.#source.drainChangedChunks(this.#noteChanged);
+    const out = this.#out ?? NONE;
+    this.#out = undefined;
+    return out;
+  }
+
+  #out: FedChunk[] | undefined;
+  readonly #noteChanged = (floor: number, cx: number, cy: number): void =>
+    this.#note(floor, cx, cy);
+
+  #note(floor: number, cx: number, cy: number): void {
+    const out = this.#out ?? [];
+    this.#out = out;
+    for (const c of out) if (c.floor === floor && c.cx === cx && c.cy === cy) return;
+    const blocked = this.#readChunk(floor, cx, cy);
+    out.push({ floor, cx, cy, blocked: blocked ? blocked.blocked : null });
   }
 }

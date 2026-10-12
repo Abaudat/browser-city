@@ -61,29 +61,40 @@ out(
   `- the main-thread window (\`apply\`, \`request\`, \`CitizensLayer.update\`): p95 <= ${record.budget.p95Ms} ms, p99 <= ${record.budget.p99Ms} ms;`,
 );
 out(
-  `- the worker's own solve time per instant (\`StreetLife.solve\`, timed inside the worker): the same budget, and "with margin": p95 <= ${MARGIN_MS} ms, so the recorded figure plus the tripwire's 25% sits under the budget.`,
+  `- the worker's own solve time per instant (\`StreetLife.solve\`, timed inside the worker): the same budget, as a red gate in \`e2e-perf\`. The margin the story set -- p95 <= ${MARGIN_MS} ms, so the recorded figure plus the tripwire's 25% sits under the budget -- is reported as a risk where it is not there.`,
 );
 out();
 out(
-  "Also gated: zero stale frames (a frame drawn with its result still in flight), a result drawn at most one frame after its instant, no major GC pause over the tail budget on either thread, allocation under a stamped ceiling on each thread, and each statistic against the recorded finding +25% so L3 cannot get slower unnoticed. The 4x CPU throttle is reported, never gated. Gated by `client/tests/e2e/l3-budget.spec.ts` in `e2e-perf`.",
+  "Also gated: zero stale frames (a frame drawn with its result still in flight), a result drawn at most one frame after its instant, no worker restarts, zero major GCs on either thread, allocation under a stamped ceiling on each thread, and each statistic against the recorded finding +25% so L3 cannot get slower unnoticed. The 4x CPU throttle is reported, never gated. Gated by `client/tests/e2e/l3-budget.spec.ts` in `e2e-perf`.",
 );
 out();
 out(`## Verdict: **${record.verdict}**`);
 out();
 const solve95 = record.l3SolveMs.p95;
-const verdictLine =
+out(
   record.verdict === "MET"
-    ? `The worker's solve p95 is ${ms(solve95)} and the main-thread window p95 is ${ms(record.l3Ms.p95)}, inside the ${record.budget.p95Ms} ms budget and the ${MARGIN_MS} ms margin.`
-    : `On the verdict-of-record machine the main-thread window p95 is ${ms(record.l3Ms.p95)} (story 5.4 measured ${ms(baseline.l3Ms.p95)} for the same work on the main thread) and the worker's own solve p95 is ${ms(solve95)} against the ${record.budget.p95Ms} ms budget and the ${MARGIN_MS} ms margin.`;
-out(verdictLine);
+    ? `The frame's thread pays ${ms(record.l3Ms.p95)} p95 (story 5.4 measured ${ms(baseline.l3Ms.p95)} for the same work on the main thread) and the worker's own solve is ${ms(solve95)} p95 / ${ms(record.l3SolveMs.p99)} p99, inside the ${record.budget.p95Ms} ms / ${record.budget.p99Ms} ms budget on both threads.`
+    : `The frame's thread pays ${ms(record.l3Ms.p95)} p95 and the worker's own solve is ${ms(solve95)} p95 against the ${record.budget.p95Ms} ms budget.`,
+);
 out();
-// Budget and margin misses decide the verdict; the tripwire items in the same
-// list are relative to the constants of the run's own commit.
-const missed = record.failures.filter((f) => /over (the )?\d/.test(f));
+// The tripwire items in the failure list are relative to the constants of the
+// run's own commit; what is left is what decides the verdict.
+const missed = record.failures.filter((f) => !/regressed past/.test(f));
 if (missed.length > 0) {
   out("What the run holds against the verdict:");
   out();
   for (const f of missed) out(`- ${f}`);
+  out();
+}
+const risks = record.risks ?? [];
+if (risks.length > 0) {
+  out("**Risk the next L3 story inherits: the worker's solve has no margin.**");
+  out();
+  for (const r of risks) out(`- ${r}`);
+  out();
+  out(
+    "The budget holds on both threads at the line. The worker's absolute 2 ms p95 is a red gate in `e2e-perf`, so creep past it fails CI; the next story that adds per-body path work spends from nothing.",
+  );
   out();
 }
 out(
@@ -124,7 +135,7 @@ out(
 );
 out();
 out(
-  `Delivery: ${record.solveStale.staleFrames} stale frames and ${record.solveStale.skippedRequests} skipped requests over the verdict window; the most frames a result was drawn after its instant: ${record.solveStale.maxLagFrames}.`,
+  `Delivery: ${record.solveStale.staleFrames} stale frames, ${record.solveStale.skippedRequests} skipped requests and ${record.solveStale.restarts ?? 0} worker restarts over the verdict window; the most frames a result was drawn after its instant: ${record.solveStale.maxLagFrames}.`,
 );
 out();
 out("## Runs of the final code");
@@ -134,12 +145,12 @@ out(
 );
 out();
 out(
-  "| Run | CPU | Calibration | Main window p95 / p99 | Worker solve p95 / p99 | Worker solve, no trace p95 | Sweep p95 | Stale / lag | Majors main / worker |",
+  "| Run | CPU | Calibration | Main window p95 / p99 | Worker solve p95 / p99 | Worker solve, no trace p95 | Sweep p95 | Stale / lag / restarts | Majors main / worker |",
 );
 out("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
 for (const r of runs) {
   out(
-    `| ${r.environment.runId} (${r.environment.runner.replace(/^GitHub Actions /, "")}) | ${r.environment.cpu.replace(/ \d+-Core Processor/, "")} | ${r.calibrationMs.toFixed(1)} ms | ${ms(r.l3Ms.p95)} / ${ms(r.l3Ms.p99)} | ${ms(r.l3SolveMs.p95)} / ${ms(r.l3SolveMs.p99)} | ${ms(r.untraced.l3SolveMs.p95)} | ${ms(r.l3SweepMs.p95)} | ${r.solveStale.staleFrames} / ${r.solveStale.maxLagFrames} | ${r.gc.majorCount} / ${r.workerGc.majorCount} |`,
+    `| ${r.environment.runId} (${r.environment.runner.replace(/^GitHub Actions /, "")}) | ${r.environment.cpu.replace(/ \d+-Core Processor/, "")} | ${r.calibrationMs.toFixed(1)} ms | ${ms(r.l3Ms.p95)} / ${ms(r.l3Ms.p99)} | ${ms(r.l3SolveMs.p95)} / ${ms(r.l3SolveMs.p99)} | ${ms(r.untraced.l3SolveMs.p95)} | ${ms(r.l3SweepMs.p95)} | ${r.solveStale.staleFrames} / ${r.solveStale.maxLagFrames} / ${r.solveStale.restarts ?? 0} | ${r.gc.majorCount} / ${r.workerGc.majorCount} |`,
   );
 }
 out();
