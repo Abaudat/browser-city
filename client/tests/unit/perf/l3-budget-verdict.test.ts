@@ -168,12 +168,16 @@ describe("L3 budget verdict (NFR11)", () => {
     );
     // The rendered windows' pauses are reported, not gated; the quiet one is.
     expect(verdict({ ...GOOD, workerGc: some(1, 40) }).met).toBe(true);
-    expect(verdict({ ...GOOD, quietGc: some(1, 5.3) }).gateFailures.join()).toContain(
-      "paused 5.30 ms",
+    // GOOD calibrates at 6 ms: the quiet frame thread may pause 1.27 x that.
+    expect(verdict({ ...GOOD, quietGc: some(1, 7.5) }).met).toBe(true);
+    expect(verdict({ ...GOOD, quietGc: some(1, 7.7) }).gateFailures.join()).toContain(
+      "paused 7.70 ms",
     );
-    expect(verdict({ ...GOOD, quietWorkerGc: some(1, 2.3) }).gateFailures.join()).toContain(
-      "worker verdict window: a major GC paused 2.30 ms",
+    expect(verdict({ ...GOOD, quietWorkerGc: some(1, 2.7) }).gateFailures.join()).toContain(
+      "worker verdict window: a major GC paused 2.70 ms",
     );
+    // A slower instance gets its pause in proportion: 5.3 ms on a 6 ms calibration is green.
+    expect(verdict({ ...GOOD, quietGc: some(2, 5.3) }).met).toBe(true);
     expect(verdict({ ...GOOD, workerGc: some(4, 3) }).gateFailures.join()).toContain(
       "worker rendered window: 4 major GCs",
     );
