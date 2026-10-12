@@ -235,10 +235,10 @@ const gcRow = (label, g) =>
 const gated = record.gcRenderedWindow ?? record.gc;
 const gatedWorker = record.workerGcRenderedWindow ?? record.workerGc;
 const types = (g) => [...new Set(g.majorTypes ?? [])].join(", ") || "none";
-out(gcRow("Frame's thread, rendered window (held at zero)", gated));
-out(gcRow("Worker, rendered window (held at zero)", gatedWorker));
-out(gcRow("Frame's thread, verdict window (render off, a quiet page: at most 3, each at most 6.9 ms)", record.gc));
-out(gcRow("Worker, verdict window (held at zero)", record.workerGc));
+out(gcRow("Frame's thread, rendered window (kind and count gated; the pause is reported)", gated));
+out(gcRow("Worker, rendered window (kind and count gated; the pause is reported)", gatedWorker));
+out(gcRow("Frame's thread, verdict window (render off, a quiet page: at most 3, each at most 5.2 ms)", record.gc));
+out(gcRow("Worker, verdict window (kind, count and pause gated)", record.workerGc));
 out(
   `- Kinds of major seen in the verdict window: frame's thread ${types(record.gc)}; worker ${types(record.workerGc)}. Only incremental-marking finalisations pass.`,
 );

@@ -40,22 +40,28 @@ export const ABSOLUTE_GATE_CPUS: readonly { readonly match: RegExp; readonly run
  * cause, and is red. */
 export const INCREMENTAL_FINALISATION = /^finalize incremental marking via (task|stack guard)$/;
 /** What each window may show of major collections, stamped at the worst of
- * the final code's seventeen runner runs (`l3-repeat.yml`, run 38255150301, and
- * the head's `e2e-perf`, run 38260474297) plus 25%, the counts rounded up: lowered, never raised. The pauses of the
- * rendered windows are wall time and carry the software rasteriser's
- * contention for the runner's four cores; what a late result costs is gated
- * separately (stale, lag, both zero in every run). The control (an idle page,
- * no L3) shows 2 majors of at most 1.5 ms in the same 60 s of every run. */
+ * the final code's runner runs (`l3-repeat.yml`, run 38255150301, and the
+ * head's `e2e-perf`, run 38260474297) plus 25%, the counts rounded up:
+ * lowered, never raised. The pause is held in the quiet windows only: in the
+ * rendered windows it is wall time inflated by the software rasteriser's
+ * contention for the runner's four cores (as the rendered L3 window is, which
+ * is why 5.4 does not take it as the verdict), so there it is reported and
+ * the kind and count are gated. What a late result costs is gated separately
+ * (stale, lag, both zero in every run). The control (an idle page, no L3)
+ * shows 2 majors of at most 1.5 ms in the same 60 s of every run.
+ *
+ * A future red on one of these is investigated -- the major's kind, the heap
+ * at the time, what was promoted -- and never restamped on sight. */
 export const MAJOR_LIMITS: Readonly<
   Record<
     "frameRendered" | "workerRendered" | "frameQuiet" | "workerQuiet",
-    { count: number; pauseMs: number }
+    { count: number; pauseMs: number | null }
   >
 > = {
-  // worst recorded: 2 majors, 7.2 ms (17 runs)
-  frameRendered: { count: 2, pauseMs: 9 },
-  // 2 majors, 22.5 ms
-  workerRendered: { count: 3, pauseMs: 28.2 },
+  // worst recorded: 2 majors
+  frameRendered: { count: 2, pauseMs: null },
+  // 2 majors
+  workerRendered: { count: 3, pauseMs: null },
   // 2 majors, 4.1 ms
   frameQuiet: { count: 3, pauseMs: 5.2 },
   // 1 major, 1.7 ms
@@ -428,7 +434,7 @@ export function verdict(m: L3Measurement): Verdict {
   // it shows the same); a collection of any other kind is the one L3's own
   // garbage would cause. Count and pause are held to the recorded figures, and
   // the frame thread's quiet window to what the idle control showed.
-  const majors: [string, GcSummary, { count: number; pauseMs: number }][] = [
+  const majors: [string, GcSummary, { count: number; pauseMs: number | null }][] = [
     ["frame-thread rendered window", m.gc, MAJOR_LIMITS.frameRendered],
     ["worker rendered window", m.workerGc, MAJOR_LIMITS.workerRendered],
     ["frame-thread verdict window", m.quietGc, MAJOR_LIMITS.frameQuiet],
@@ -443,7 +449,7 @@ export function verdict(m: L3Measurement): Verdict {
     if (g.majorCount > limit.count) {
       gate.push(`${where}: ${g.majorCount} major GCs, ${limit.count} allowed`);
     }
-    if (!(g.longestMajorPauseMs <= limit.pauseMs)) {
+    if (limit.pauseMs !== null && !(g.longestMajorPauseMs <= limit.pauseMs)) {
       gate.push(`${where}: a major GC paused ${g.longestMajorPauseMs.toFixed(2)} ms`);
     }
   }
