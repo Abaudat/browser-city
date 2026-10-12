@@ -432,6 +432,10 @@ export interface StreetSceneHandle {
    * instants from the current city time, timing each. No render, so a
    * GPU-less runner that draws few frames still yields thousands of samples. */
   l3Sweep(frames: number): number[];
+  /** Story 5.4 (an e2e switch): draws nothing while off, leaving every ticker
+   * listener, and so L3, running -- the runner's software rasteriser is not
+   * what NFR11 measures. */
+  setRender(on: boolean): void;
   /** The viewport in floor-0 cells (an e2e read), or none before a camera. */
   viewportCells(): { x0: number; y0: number; x1: number; y1: number } | undefined;
   /** Removes every listener this scene attached (keyboard and pointer). */
@@ -2024,6 +2028,9 @@ export async function mountStreetScene(
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
     commuterDrawn: () => commuterDrawn(),
     l3Bodies: () => [...commuterDiagnostics(), ...citizensLayer.l3Bodies()],
+    setRender: (on) => {
+      world.renderable = on;
+    },
     viewportCells: () => viewportRect(),
     l3Sweep: (frames) => {
       const start = cityMilliminutes?.();

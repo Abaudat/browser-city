@@ -60,6 +60,9 @@ declare global {
         avoidance?: { offsetCells: number; capped: boolean; blocked: boolean };
         activity?: string;
       }[];
+      /** Story 5.4: draws nothing while off; L3 and every ticker listener
+       * keep running. */
+      setRender?: (on: boolean) => void;
       /** Story 5.4: times `frames` render-free L3 frames (NFR11). */
       l3Sweep?: (frames: number) => number[];
       /** Story 5.4: how many bodies are drawn right now. */
@@ -335,6 +338,7 @@ export function exposeL3BodiesForE2e(
   count: NonNullable<NonNullable<Window["__bc"]>["bodyCount"]>,
   live: NonNullable<NonNullable<Window["__bc"]>["l3Live"]>,
   sweep: NonNullable<NonNullable<Window["__bc"]>["l3Sweep"]>,
+  setRender: NonNullable<NonNullable<Window["__bc"]>["setRender"]>,
 ): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
@@ -342,6 +346,7 @@ export function exposeL3BodiesForE2e(
   bucket.bodyCount = count;
   bucket.l3Live = live;
   bucket.l3Sweep = sweep;
+  bucket.setRender = setRender;
   window.__bc = bucket;
 }
 

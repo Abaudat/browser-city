@@ -35,204 +35,211 @@
   "verdict": "MET",
   "failures": [],
   "l3Ms": {
-    "frames": 3736,
+    "frames": 3678,
+    "p50": 0.8999999994412065,
+    "p95": 1.300000000745058,
+    "p99": 1.5,
+    "max": 1.7000000001862645
+  },
+  "l3RenderedMs": {
+    "frames": 1754,
     "p50": 0.7999999998137355,
-    "p95": 1,
-    "p99": 1.1000000005587935,
-    "max": 1.6000000005587935
+    "p95": 1.400000000372529,
+    "p99": 1.5,
+    "max": 1.7999999998137355
   },
   "l3SweepMs": {
     "frames": 4000,
     "p50": 0.6000000005587935,
-    "p95": 0.7000000001862645,
-    "p99": 0.8000000007450581,
-    "max": 1.2000000001862645
+    "p95": 0.8999999994412065,
+    "p99": 1,
+    "max": 1.5
   },
   "frameWorkMs": {
-    "frames": 3736,
+    "frames": 1754,
     "p50": 1.2999999998137355,
-    "p95": 1.400000000372529,
-    "p99": 1.7000000001862645,
-    "max": 2.5
+    "p95": 2.2999999998137355,
+    "p99": 2.5,
+    "max": 3.2000000001862645
   },
   "throttled4x": {
     "rate": 4,
     "l3Ms": {
-      "frames": 428,
-      "p50": 3.7999999998137355,
-      "p95": 4.3999999994412065,
-      "p99": 5,
-      "max": 7.2999999998137355
+      "frames": 509,
+      "p50": 5.599999999627471,
+      "p95": 6.900000000372529,
+      "p99": 7.7000000001862645,
+      "max": 8.700000000186265
     },
     "frameWorkMs": {
-      "frames": 428,
-      "p50": 5.8999999994412065,
-      "p95": 6.699999999254942,
-      "p99": 7.2999999998137355,
-      "max": 10.199999999254942
+      "frames": 509,
+      "p50": 6.2000000001862645,
+      "p95": 7.6000000005587935,
+      "p99": 8.699999999254942,
+      "max": 9.300000000745058
     }
   },
   "allocation": {
     "windowMs": 15000,
-    "frames": 902,
-    "l3Bytes": 13890468,
-    "l3BytesPerFrame": 15399.631929046564,
-    "ceilingBytesPerFrame": 204800,
+    "frames": 4000,
+    "l3Bytes": 62738032,
+    "l3BytesPerFrame": 15684.508,
+    "ceilingBytesPerFrame": 20480,
     "top": [
       {
         "fn": "#ensurePaths",
         "url": "http://127.0.0.1:5173/src/l3/body.ts",
-        "bytes": 7319532
+        "bytes": 32286768
       },
       {
         "fn": "planBodies",
         "url": "http://127.0.0.1:5173/src/world/body-zone.ts",
-        "bytes": 3143020
+        "bytes": 13992648
       },
       {
         "fn": "#roomOn",
         "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
-        "bytes": 1016880
+        "bytes": 4523448
       },
       {
         "fn": "findMicroPath",
         "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
-        "bytes": 681516
-      },
-      {
-        "fn": "flavourKindOf",
-        "url": "http://127.0.0.1:5173/src/l3/flavour.ts",
-        "bytes": 329712
-      },
-      {
-        "fn": "seedOf",
-        "url": "http://127.0.0.1:5173/src/l3/seed.ts",
-        "bytes": 310824
+        "bytes": 3265080
       },
       {
         "fn": "pullTaut",
         "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
-        "bytes": 267804
+        "bytes": 1876860
+      },
+      {
+        "fn": "flavourKindOf",
+        "url": "http://127.0.0.1:5173/src/l3/flavour.ts",
+        "bytes": 1516976
+      },
+      {
+        "fn": "seedOf",
+        "url": "http://127.0.0.1:5173/src/l3/seed.ts",
+        "bytes": 1437516
       },
       {
         "fn": "frameAt",
         "url": "http://127.0.0.1:5173/src/l3/citizen.ts",
-        "bytes": 211468
+        "bytes": 953924
       },
       {
         "fn": "walkable",
         "url": "http://127.0.0.1:5173/src/test-street/citizens.ts",
-        "bytes": 204160
+        "bytes": 854248
       },
       {
         "fn": "apply",
         "url": "http://127.0.0.1:5173/src/world/body-lifecycle.ts",
-        "bytes": 85248
+        "bytes": 351880
       }
     ]
   },
   "gc": {
-    "minorCount": 114,
+    "minorCount": 55,
     "majorCount": 0,
-    "totalPauseMs": 32.094,
-    "longestMinorPauseMs": 0.671,
+    "totalPauseMs": 22.822000000000003,
+    "longestMinorPauseMs": 0.737,
     "longestMajorPauseMs": 0,
-    "minorP99PauseMs": 0.449
+    "minorP99PauseMs": 0.737
   },
   "cpuTopSelf": [
     {
       "fn": "(program) ",
-      "share": 0.7652040030792918
+      "share": 0.774168600154679
     },
     {
       "fn": "(idle) ",
-      "share": 0.20958429561200922
-    },
-    {
-      "fn": "#resolveBody src/l3/avoidance.ts",
-      "share": 0.005388760585065435
+      "share": 0.20320959010054138
     },
     {
       "fn": "#roomOn src/l3/avoidance.ts",
-      "share": 0.003849114703618168
+      "share": 0.00580046403712297
     },
     {
       "fn": "collectRenderablesSimple http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=bf58eda8",
-      "share": 0.0032717474980754426
+      "share": 0.005607115235885538
     },
     {
-      "fn": "#closestApproach src/l3/avoidance.ts",
-      "share": 0.0013471901462663587
+      "fn": "#resolveBody src/l3/avoidance.ts",
+      "share": 0.004640371229698376
     },
     {
       "fn": "packQuadAttributes http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=bf58eda8",
-      "share": 0.000962278675904542
+      "share": 0.0013534416086620263
     },
     {
-      "fn": "bufferSubData ",
-      "share": 0.000962278675904542
+      "fn": "(garbage collector) ",
+      "share": 0.0009667440061871616
     },
     {
-      "fn": "update src/test-street/citizens-layer.ts",
-      "share": 0.0007698229407236335
-    },
-    {
-      "fn": "clear ",
-      "share": 0.0005773672055427252
-    },
-    {
-      "fn": "(anonymous) src/test-street/scene.ts",
-      "share": 0.0005773672055427252
+      "fn": "#closestApproach src/l3/avoidance.ts",
+      "share": 0.0007733952049497294
     },
     {
       "fn": "resolve src/l3/avoidance.ts",
-      "share": 0.0005773672055427252
-    },
-    {
-      "fn": "update http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=bf58eda8",
-      "share": 0.00038491147036181676
-    },
-    {
-      "fn": "render http://127.0.0.1:5173/node_modules/.vite/deps/pixi__js.js?v=bf58eda8",
-      "share": 0.00038491147036181676
+      "share": 0.000580046403712297
     },
     {
       "fn": "render http://127.0.0.1:5173/node_modules/.vite/deps/RenderTargetSystem-BredZz1o.js?v=bf58eda8",
-      "share": 0.00038491147036181676
+      "share": 0.0003866976024748647
+    },
+    {
+      "fn": "update src/test-street/citizens-layer.ts",
+      "share": 0.0003866976024748647
+    },
+    {
+      "fn": "visitNode ",
+      "share": 0.00019334880123743234
+    },
+    {
+      "fn": "sortChildren http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=bf58eda8",
+      "share": 0.00019334880123743234
+    },
+    {
+      "fn": "break http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=bf58eda8",
+      "share": 0.00019334880123743234
+    },
+    {
+      "fn": "updateRenderGroupTransforms http://127.0.0.1:5173/node_modules/.vite/deps/RenderTargetSystem-BredZz1o.js?v=bf58eda8",
+      "share": 0.00019334880123743234
     }
   ],
   "heap": {
     "samples": [
       {
         "atMs": 0,
-        "usedHeapBytes": 19117884
+        "usedHeapBytes": 19525128
       },
       {
-        "atMs": 10621,
-        "usedHeapBytes": 19302360
+        "atMs": 10309,
+        "usedHeapBytes": 19502304
       },
       {
-        "atMs": 21229,
-        "usedHeapBytes": 19295116
+        "atMs": 20519,
+        "usedHeapBytes": 19538752
       },
       {
-        "atMs": 31823,
-        "usedHeapBytes": 19347452
+        "atMs": 30754,
+        "usedHeapBytes": 19535968
       },
       {
-        "atMs": 42403,
-        "usedHeapBytes": 19360700
+        "atMs": 41816,
+        "usedHeapBytes": 19560436
       },
       {
-        "atMs": 52863,
-        "usedHeapBytes": 19351304
+        "atMs": 52764,
+        "usedHeapBytes": 19609968
       },
       {
-        "atMs": 63408,
-        "usedHeapBytes": 19377668
+        "atMs": 63097,
+        "usedHeapBytes": 19583500
       }
     ],
-    "growthRatio": 1.0039014918383038,
+    "growthRatio": 1.004163405513523,
     "bound": 1.5
   }
 }

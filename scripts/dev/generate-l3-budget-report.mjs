@@ -83,13 +83,22 @@ out("## Distributions");
 out();
 out("| Window | Frames | p50 | p95 | p99 | max |");
 out("| --- | --- | --- | --- | --- | --- |");
-out(row("L3, unthrottled, real ticker (verdict figure)", after.l3Ms));
+out(row("L3, unthrottled, real ticker, rasteriser off (verdict figure)", after.l3Ms));
+out(row("L3, unthrottled, real ticker, rendered (reported)", after.l3RenderedMs));
 out(row("L3, unthrottled, render-free sweep (supplementary, same gate)", after.l3SweepMs));
-out(row("whole frame work, unthrottled", after.frameWorkMs));
+out(row("whole frame work, rendered, unthrottled", after.frameWorkMs));
 out(row(`L3, ${after.throttled4x.rate}x CPU throttle (reported)`, after.throttled4x.l3Ms));
 out(row(`whole frame, ${after.throttled4x.rate}x CPU throttle (reported)`, after.throttled4x.frameWorkMs));
 out();
-out("The sweep runs the same window over successive 60 Hz instants with no render, so no render contention or scavenge lands inside it: it is the optimistic figure and never the headline.");
+out(
+  "The verdict window is the real ticker with the render suppressed (`setRender(false)`): the same window, GC and crowd, minus the software rasteriser a GPU-less runner emulates on its few cores. The rendered window is reported beside it, and the CPU profile of that window (below) shows where its time goes. The sweep runs the same window over successive 60 Hz instants with no ticker and is supplementary.",
+);
+out();
+out("Self time of the rendered window, top entries:");
+out();
+for (const t of after.cpuTopSelf.slice(0, 6)) {
+  out(`- ${(t.share * 100).toFixed(1)}% \`${t.fn.replace(/ http\S*/, "")}\``);
+}
 out();
 out("## Allocation and GC");
 out();
