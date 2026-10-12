@@ -228,7 +228,7 @@ WATCH_CODE=$?
 grep -qF "estimated total" "$WATCH_LOG" && grep -qF "class scheduled calls_total=" "$WATCH_LOG"   || fail "storage-report.sh did not print the storage total and the scheduled class's figures" "$WATCH_LOG"
 grep -q "BREACH" "$WATCH_LOG" && fail "storage-report.sh reported a breach on a fresh world" "$WATCH_LOG"
 ok "the watcher's reader exits 0 with no breach against the live instance and prints the per-class calls"
-grep -qE "cadence 2: last fired -?[0-9]+s ago" "$WATCH_LOG" || fail "storage-report.sh did not print the METRICS cadence's liveness" "$WATCH_LOG"
+grep -qE "cadence 2: last fired (-?[0-9]+s ago|fired during this read)" "$WATCH_LOG" || fail "storage-report.sh did not print the METRICS cadence's liveness" "$WATCH_LOG"
 
 # The stale branch against the real schema: --now four sampler periods past
 # the newest sample (the only live proof of the liveness query shape).
@@ -236,13 +236,31 @@ NEWEST_AT="$(sql_json "SELECT * FROM storage_sample" >"$DATA_DIR/newest.json"; b
 [ -n "$NEWEST_AT" ] || fail "no storage_sample row to age"
 STALE_FINDINGS="$DATA_DIR/stale-findings.tsv"
 STALE_LOG="$DATA_DIR/watch-stale.log"
-bash "$REPO_ROOT/scripts/ops/storage-report.sh" "$DB_NAME" "${SERVER_ARGS[@]}" --now $((NEWEST_AT + 4 * 3600 * 1000000)) --findings "$STALE_FINDINGS" >"$STALE_LOG" 2>&1
+bash "$REPO_ROOT/scripts/ops/storage-report.sh" "$DB_NAME" "${SERVER_ARGS[@]}" --now $((NEWEST_AT + 4 * 3600 * 1000000)) --settle 0 --findings "$STALE_FINDINGS" >"$STALE_LOG" 2>&1
 STALE_CODE=$?
 [ "$STALE_CODE" -eq 1 ] || fail "storage-report.sh exited $STALE_CODE on a sample four periods old, expected 1" "$STALE_LOG"
 [ "$(grep -c '^watcher: sampler stale' "$STALE_FINDINGS")" -eq 1 ] || fail "expected exactly one 'watcher: sampler stale' finding" "$STALE_FINDINGS"
 grep -qF "cadence 2: last fired" "$STALE_FINDINGS" || fail "the stale finding carries no liveness entry for cadence 2 (METRICS)" "$STALE_FINDINGS"
 grep -qF "cadence liveness unreadable" "$STALE_FINDINGS" && fail "the stale finding's liveness read failed against the live instance" "$STALE_LOG"
 ok "a stale sample files one finding carrying the live cadence liveness"
+
+# --- (c2) `missed` counts skipped grid points, never periods since the epoch --
+# Two more consecutive on-time METRICS fires: the cumulative `missed` of the
+# METRICS cadence (code 2) must still be 0 (it summed whole periods since the
+# epoch on every fire before story #446).
+BEFORE_FIRES="$(rows_of storage_sample)"
+clock speed "$MAX_SPEED" >"$DATA_DIR/speed-up2.log" 2>&1 || fail "set_clock_speed $MAX_SPEED failed" "$DATA_DIR/speed-up2.log"
+WAITED=0
+until [ "$(rows_of storage_sample)" -ge $((BEFORE_FIRES + 2)) ]; do
+  [ "$WAITED" -lt $((2 * FIRST_FIRE_DEADLINE_S)) ] || fail "two more sampler fires did not land within $((2 * FIRST_FIRE_DEADLINE_S))s at ${MAX_SPEED}x"
+  sleep 1
+  WAITED=$((WAITED + 1))
+done
+clock speed 1 >"$DATA_DIR/speed-down2.log" 2>&1 || fail "set_clock_speed 1 failed" "$DATA_DIR/speed-down2.log"
+resp="$DATA_DIR/liveness.json"
+sql_json "SELECT * FROM cadence_liveness WHERE cadence = 2" >"$resp"
+[ "$(bc_wb column-values "$resp" missed)" = "0" ]   || fail "the METRICS cadence's missed is [$(bc_wb column-values "$resp" missed)] after consecutive on-time fires, expected 0" "$resp"
+ok "consecutive on-time METRICS fires leave missed at 0"
 
 # --- (h) a host restart leaves no stale connection row -----------------------
 # The subscriber stays attached while the server is stopped under it, so the

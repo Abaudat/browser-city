@@ -192,6 +192,58 @@ pub fn next_target(origin_micros: i64, period_ms: i64, speed: u32, now_micros: i
     (target, missed)
 }
 
+/// One cadence fire: `(next_target, missed)`. The next target is the
+/// next grid point after `now_micros` of the cadence anchored at
+/// `grid_origin_micros`; `missed` is the whole periods this fire skipped,
+/// measured from `fired_target_micros` (the target this fire satisfies), so
+/// it is `0` for an on-time fire whatever the grid origin. The one place
+/// both cadences' liveness is derived, so they cannot drift apart.
+pub fn fire(
+    grid_origin_micros: i64,
+    fired_target_micros: i64,
+    period_ms: i64,
+    speed: u32,
+    now_micros: i64,
+) -> (i64, u64) {
+    let (target, _) = next_target(grid_origin_micros, period_ms, speed, now_micros);
+    let (_, missed) = next_target(fired_target_micros, period_ms, speed, now_micros);
+    (target, missed)
+}
+
+#[cfg(test)]
+mod fire_tests {
+    use super::*;
+
+    const P: i64 = METRICS_PERIOD_MS;
+    const PM: i64 = P * 1000;
+
+    #[test]
+    fn an_on_time_fire_records_zero() {
+        let (t, m) = fire(0, PM, P, 1, PM + 5);
+        assert_eq!((t, m), (2 * PM, 0));
+    }
+
+    #[test]
+    fn a_fire_n_whole_periods_late_records_n() {
+        let (t, m) = fire(0, PM, P, 1, PM + 7 * PM + 5);
+        assert_eq!(m, 7);
+        assert_eq!(t, 9 * PM);
+    }
+
+    #[test]
+    fn an_epoch_anchored_fire_hundreds_of_periods_in_records_zero() {
+        let fired = 300 * PM;
+        let (t, m) = fire(0, fired, P, 1, fired + 3);
+        assert_eq!((t, m), (301 * PM, 0));
+    }
+
+    #[test]
+    fn both_cadences_agree_when_anchored_at_the_fired_target() {
+        let (t, m) = fire(5 * PM, 5 * PM, P, 1, 5 * PM + 2 * PM + 1);
+        assert_eq!((t, m), (8 * PM, 2));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
