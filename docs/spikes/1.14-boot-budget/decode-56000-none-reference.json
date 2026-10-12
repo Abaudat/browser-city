@@ -10,102 +10,102 @@
   },
   "samples": [
     {
-      "decodeMs": 101.80000000004657,
+      "decodeMs": 61.59999999997672,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 92.80000000004657,
+      "decodeMs": 57.10000000009313,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 91,
+      "decodeMs": 59.79999999993015,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 88.19999999995343,
+      "decodeMs": 59.79999999993015,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 94.90000000002328,
+      "decodeMs": 63.40000000002328,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 97.90000000002328,
+      "decodeMs": 62.199999999953434,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 96.09999999997672,
+      "decodeMs": 60.90000000002328,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 88.69999999995343,
+      "decodeMs": 63.199999999953434,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 101.70000000006985,
+      "decodeMs": 57.800000000046566,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 90.09999999997672,
+      "decodeMs": 54.90000000002328,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 92.5,
+      "decodeMs": 63.40000000002328,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 101.5,
+      "decodeMs": 64.5,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 100.90000000002328,
+      "decodeMs": 60.199999999953434,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 95.59999999997672,
+      "decodeMs": 59.60000000009313,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 90.79999999993015,
+      "decodeMs": 56.29999999993015,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 90.40000000002328,
+      "decodeMs": 56.39999999990687,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 100,
+      "decodeMs": 57.59999999997672,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 98,
+      "decodeMs": 60.59999999997672,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 94.80000000004657,
+      "decodeMs": 66.19999999995343,
       "rowCount": 56000,
       "bytesOnWire": 0
     },
     {
-      "decodeMs": 89.80000000004657,
+      "decodeMs": 58,
       "rowCount": 56000,
       "bytesOnWire": 0
     }
