@@ -17,11 +17,10 @@
 // built on one would be flaky by construction -- which is exactly why the
 // FPS half of NFR2 belongs to spike 1.14 and to a real machine.
 //
-// NFR2 is only partly served by this: "a busy street at rush hour" needs
-// NPC crowds (Epic 5), which do not exist yet. `docs/trace-matrix.md`
-// marks NFR2 `partial` and names story 5.4 for the rest. What this file
-// closes is the regression half -- the frame path that exists today must
-// not get slower, and a session must not leak.
+// NFR2's "busy street at rush hour" half is `l3-budget.spec.ts`, which holds
+// the same whole-frame window under a 200-body crowd (story 5.4). What this
+// file closes is the regression half -- the frame path of the walked street
+// must not get slower, and a session must not leak.
 //
 // The heap is sampled through a CDP session (`HeapProfiler.collectGarbage`
 // then `Runtime.getHeapUsage().usedSize`), once per lap, never
@@ -47,19 +46,17 @@ import {
 } from "../../src/test-street/fixture";
 import { binReachRoute, committedDefs, streetWalkInputs } from "../unit/test-street/street-world";
 import { canvasOffsetForWorldPx } from "./camera-test-support";
+import { median, percentile } from "./l3-budget-verdict";
 import { walkSyntheticSegment } from "./walk-support";
 
 /** The frame budget the scene's own work must fit inside. A 60 FPS frame
  * is 16.7 ms end to end; the app's own work getting half of that leaves
  * the other half for the renderer, the browser and everything else. This
- * now covers the whole frame (see the module doc above), not a fraction
- * of it -- measured locally (a Windows development machine) at p95
- * 0.6 ms / max 1.4 ms, and on the CI runner itself (`ubuntu-latest`,
- * `.github/workflows/ci.yml`'s `e2e` job, run 34937513478) at p95 0.8 ms
- * / max 3 ms -- comfortably inside both numbers with the render
- * included, on the machine this budget actually has to hold on. Only an
- * 8-13x margin today; NFR2's own budget, and story 5.4 tightens it under
- * real crowd load. */
+ * covers the whole frame (see the module doc above), not a fraction of it
+ * -- measured locally (a Windows development machine) at p95 0.6 ms / max
+ * 1.4 ms, and on the CI runner itself (`ubuntu-latest`, `.github/workflows/
+ * ci.yml`'s `e2e` job, run 34937513478) at p95 0.8 ms / max 3 ms. Under the
+ * 200-body rush-hour crowd the same window is gated by `l3-budget.spec.ts`. */
 const P95_FRAME_WORK_MS = 8;
 const MAX_FRAME_WORK_MS = 16.7;
 
@@ -84,18 +81,6 @@ const MAX_HEAP_GROWTH_RATIO_SOAK = 1.2;
  * a bound wide enough to survive ordinary noise while still catching a
  * gross regression on every PR rather than only on the soak. */
 const MAX_HEAP_GROWTH_RATIO_SHORT = 1.5;
-
-function percentile(sorted: readonly number[], p: number): number {
-  if (sorted.length === 0) return Number.NaN;
-  const index = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
-  return sorted[index] ?? Number.NaN;
-}
-
-function median(values: readonly number[]): number {
-  if (values.length === 0) return Number.NaN;
-  const sorted = [...values].sort((a, b) => a - b);
-  return percentile(sorted, 50);
-}
 
 /** How long a single segment is allowed. */
 const SEGMENT_TIMEOUT_MS = 60_000;

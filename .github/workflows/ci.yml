@@ -119,6 +119,8 @@ jobs:
               # budget.md from exactly these paths.
               - 'docs/spikes/1.14-boot-budget/**'
               - 'docs/spikes/1.14-boot-budget.md'
+              - 'docs/spikes/5.4-l3-frame-budget/**'
+              - 'docs/spikes/5.4-l3-frame-budget.md'
             e2e:
               - 'server/**'
               - 'client/**'
@@ -670,6 +672,8 @@ jobs:
         run: bash ../scripts/ci/check-debug-boundary.sh
       - name: story 1.14, docs/spikes/1.14-boot-budget.md is exactly the generator's own output
         run: bash ../scripts/ci/check-boot-budget-report-current.sh
+      - name: story 5.4, docs/spikes/5.4-l3-frame-budget.md is exactly the generator's own output
+        run: bash ../scripts/ci/check-l3-budget-report-current.sh
       - name: story 4.2 AC2, no reducer call under render/, world/ or test-street/, or inside any ticker.add callback
         run: bash ../scripts/ci/check-no-frame-rate-reducers.sh
       - name: story 4.4 FR138, one home for the player_position accessor and for the position reducer call
@@ -983,7 +987,12 @@ jobs:
       # GPU-less headless runner would be noise and therefore flaky. The
       # full ten-minute soak is `perf-soak.yml`, deliberately not part of
       # this gate.
-      - name: the frame path stays inside its work budget (NFR2, partial)
+      # NFR11's falsification gate (story 5.4), the same `perf` project:
+      # `l3-budget.spec.ts` bodies 200 rush-hour citizens in one bubble and
+      # gates the per-frame cost of L3 (p95 <= 2 ms, p99 <= 4 ms), its
+      # allocation and its GC. A change to an `l3.*` dial in `defs/**`
+      # triggers it through the same `e2e` filter.
+      - name: the frame path and L3 stay inside their work budgets (NFR2, NFR11)
         working-directory: client
         run: npm run test:e2e:perf
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -993,6 +1002,13 @@ jobs:
           path: client/test-results/story-1.13-perf
           if-no-files-found: warn
           retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: story-5.4-l3-budget
+          path: client/test-results/story-5.4-l3-budget
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

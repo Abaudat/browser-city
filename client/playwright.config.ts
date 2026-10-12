@@ -58,7 +58,12 @@ export default defineConfig({
       // Story 1.13/1.14/deploy: the perf, boot-budget and deploy-smoke
       // harnesses are their own projects below, and the functional run
       // never pays for (or accidentally runs) any of them.
-      testIgnore: [/street-perf\.spec\.ts/, /boot-budget\.spec\.ts/, /deploy-smoke\.spec\.ts/],
+      testIgnore: [
+        /street-perf\.spec\.ts/,
+        /l3-budget\.spec\.ts/,
+        /boot-budget\.spec\.ts/,
+        /deploy-smoke\.spec\.ts/,
+      ],
     },
     {
       // NFR2's measurement harness and regression gate. Never part of
@@ -67,7 +72,7 @@ export default defineConfig({
       // 10-minute soak.
       name: "perf",
       use: { ...devices["Desktop Chrome"] },
-      testMatch: /street-perf\.spec\.ts/,
+      testMatch: /(street-perf|l3-budget)\.spec\.ts/,
     },
     {
       // Story 1.14 (NFR1): the boot-budget harness and its regression

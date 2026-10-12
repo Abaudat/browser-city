@@ -11,9 +11,9 @@ name: perf-soak
 # `performance.memory.usedJSHeapSize` per lap and fails if the last
 # minute's median has grown more than 20% over the second minute's.
 #
-# NFR2 is only partly served either way: "a busy street at rush hour"
-# needs NPC crowds (Epic 5). `docs/trace-matrix.md` marks NFR2 `partial`
-# and names story 5.4 for the rest.
+# The same run also holds the 200-body rush-hour crowd (story 5.4,
+# `l3-budget.spec.ts`, NFR11): the ten minutes are the sustained session
+# its allocation and GC figures are taken over.
 
 on:
   workflow_dispatch:
@@ -57,7 +57,7 @@ jobs:
         run: npm ci
       - working-directory: client
         run: npx playwright install --with-deps chromium
-      - name: ten minutes of walking, at 1080p, with the heap sampled
+      - name: ten minutes of walking and of a 200-body crowd, at 1080p, with the heap sampled
         working-directory: client
         env:
           BC_SOAK_MS: "600000"
@@ -67,5 +67,12 @@ jobs:
         with:
           name: story-1.13-soak
           path: client/test-results/story-1.13-perf
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: story-5.4-soak
+          path: client/test-results/story-5.4-l3-budget
           if-no-files-found: warn
           retention-days: 14

@@ -244,7 +244,7 @@ function pickAccessoryId(
  * `accessory_none_chance`, `hair_rare_chance`) over a deterministic hash
  * instead of `sim::rng` -- see this module's own doc comment for why that
  * is the right amount of fidelity here. */
-function tupleFor(defs: Defs, family: Family, index: number): AppearanceTuple {
+export function tupleFor(defs: Defs, family: Family, index: number): AppearanceTuple {
   const bodies = civilianOf(defs.bodies, family);
   const eyes = civilianOf(defs.eyes, family);
   const outfits = civilianOf(defs.outfits, family);

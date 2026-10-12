@@ -119,6 +119,7 @@ import {
   type RemotePlayersLayer,
   type RemotePlayersSource,
 } from "./remote-players-layer";
+import { buildRushCrowd } from "./rush-crowd";
 import { lifeDialsFor, StreetLife } from "./street-life";
 import { Timetable } from "./timetable";
 
@@ -247,6 +248,15 @@ export interface MountStreetSceneOptions {
    * gates on, never a rAF interval. One call per frame into a sink that
    * does nothing unless a perf run has asked for samples. */
   readonly onFrameWork?: (ms: number) => void;
+  /** Story 5.4 (NFR11): how long L3 took this frame, in ms -- the pose,
+   * avoidance and flavour solve plus the crowd's body zone and sprite writes,
+   * never Pixi's render. Called every frame the crowd ticks; the sink does
+   * nothing unless a perf run has asked for samples. `l3/` itself reads no
+   * clock: the bracket is here. */
+  readonly onL3Work?: (ms: number) => void;
+  /** Story 5.4: the dev-only rush-hour load (`rush-crowd.ts`) added to the
+   * street. Absent in every production path. */
+  readonly rushCrowd?: boolean;
   /** Called once at mount and then every time visibility is actually
    * re-applied (story 1.7's e2e proof, `enclosure.spec.ts`) -- a map from
    * decimal `stableId` string to its current FR120/FR121/FR122 state,
@@ -825,6 +835,8 @@ export async function mountStreetScene(
     onWorldReady,
     onHighlightChange,
     startWithCrowdFrozen,
+    onL3Work,
+    rushCrowd,
     cityMilliminutes,
     crowdIdenticalTuples,
     highlightStrength,
@@ -1472,7 +1484,16 @@ export async function mountStreetScene(
     commuterDiagnostics = () => {
       const report = citizen.diagnostics(msPerMilliminute, l3Config);
       if (!report || !drawn) return [];
-      return [{ id: COMMUTER_ID, x: drawn.x, y: drawn.y, floor: drawn.floor, ...report }];
+      return [
+        {
+          id: COMMUTER_ID,
+          x: drawn.x,
+          y: drawn.y,
+          floor: drawn.floor,
+          moving: frame.moving,
+          ...report,
+        },
+      ];
     };
     let lastSortY = drawable.y;
     let lastSortX = drawable.x;
@@ -1861,7 +1882,13 @@ export async function mountStreetScene(
     textureFor("sidewalk", textures),
     atlasBaseUrl,
     crowdIdenticalTuples ?? false,
-    { walk: npcWalk, config: l3Config, life: streetLife, frozen: crowdFrozen },
+    {
+      walk: npcWalk,
+      config: l3Config,
+      life: streetLife,
+      frozen: crowdFrozen,
+      rush: rushCrowd && !crowdFrozen ? buildRushCrowd(defs) : undefined,
+    },
     // A frozen crowd is staged whole for a screenshot.
     crowdFrozen ? {} : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
   );
@@ -1904,8 +1931,13 @@ export async function mountStreetScene(
     if (!crowdFrozen) {
       const cityMilli = cityMilliminutes?.();
       if (cityMilli !== undefined) {
-        streetLife.solve(cityMilli);
-        citizensLayer.update(cityMilli, bodyZone());
+        // The L3 window: exactly the work L3 asks of the frame, nothing of
+        // the render or of test plumbing (`onCitizenBodies` is outside it).
+        const l3Start = onL3Work ? performance.now() : 0;
+        const zone = bodyZone();
+        streetLife.solve(cityMilli, zone);
+        citizensLayer.update(cityMilli, zone);
+        onL3Work?.(performance.now() - l3Start);
         onCitizenBodies?.(citizensLayer.bodyBounds(), app.screen, citizensLayer.citizenCount);
       }
       updateCommuter(cityMilli);

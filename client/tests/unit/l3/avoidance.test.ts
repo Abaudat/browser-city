@@ -592,6 +592,27 @@ describe("local avoidance (FR64)", () => {
     expect(two.walkableCalls).toBeLessThanOrEqual(2 * side * side);
   });
 
+  it("shares one wall scan per cell and grid revision, and answers as a fresh field does", () => {
+    const grid = new TestGrid();
+    grid.block(12, 10);
+    grid.block(10, 12);
+    const crowd = [walker("w", 10.2, 10.5, 1, 0), walker("v", 10.8, 10.4, 0, 1)];
+    for (let k = 0; k < 6; k++) crowd.push(stander(`s${k}`, 11 + k * 0.3, 10.5));
+    const shared = new AvoidanceField();
+    const first = run(crowd, ALL_HELD, grid, shared);
+    expect(first.field.walkableCalls).toBeGreaterThan(0);
+    // The same cells again: nothing is asked of the grid, and nothing moves.
+    const again = run(crowd, ALL_HELD, grid, shared);
+    expect(again.field.walkableCalls).toBe(0);
+    expect(again.out).toEqual(first.out);
+    expect(run(crowd, ALL_HELD, grid, new AvoidanceField()).out).toEqual(first.out);
+    // A grid change retires every scan: the wall that appeared is seen.
+    grid.block(11, 10);
+    const changed = run(crowd, ALL_HELD, grid, shared);
+    expect(changed.field.walkableCalls).toBeGreaterThan(0);
+    expect(changed.out).toEqual(run(crowd, ALL_HELD, grid, new AvoidanceField()).out);
+  });
+
   it("never grows its buffers once it has room", () => {
     const field = new AvoidanceField();
     const bodies = withIds(

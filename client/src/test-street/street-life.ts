@@ -18,10 +18,11 @@ import {
 import { framesByAnimation, type L3Config } from "../l3/config";
 import type { Facing } from "../l3/gait";
 import type { Walkability } from "../l3/micro-path";
+import { type BodyZone, zoneHoldsChunk } from "../world/body-zone";
 import { CHUNK_SIZE } from "../world/chunk";
 
-/** Every fixture is local data held whole, so every chunk counts as held. The
- * L2 caller (story 5.5) passes the subscription's held chunks instead. */
+/** No body zone (an agreement sample, a frozen crowd): every chunk counts as
+ * held, the whole street being local data. */
 const ALL_CHUNKS_HELD: HeldPredicate = () => true;
 
 /** What a citizen's ledger says at a city time. */
@@ -63,6 +64,9 @@ export interface LifeSample {
   readonly facing: string;
   readonly offsetX: number;
   readonly offsetY: number;
+  /** Whether the offset is one every client agrees on (see
+   * `AvoidanceField.agreed`): only those are compared between bubbles. */
+  readonly agreed: boolean;
   /** The look: what must be identical on every client and every respawn. */
   readonly look: string;
 }
@@ -73,6 +77,15 @@ export function standState(node: { x: number; y: number }, floor: number, facing
 
 export class StreetLife {
   readonly #dials: AvoidDials;
+  /** The same dials with chunks as small as a sidestep's reach, so "held"
+   * is judged against the body zone to within a few cells. */
+  readonly #zoneDials: AvoidDials;
+  /** How far a pose strays from its ledger position: the micro path's box. */
+  readonly #strayCells: number;
+  #zone: BodyZone | undefined;
+  readonly #zoneHeld: HeldPredicate = (floor, cx, cy) =>
+    this.#zone === undefined ||
+    zoneHoldsChunk(this.#zone, floor, cx, cy, this.#zoneDials.chunkSize, this.#strayCells);
   readonly #walk: Walkability;
   /** Citizens with a body: what `solve` poses and sidesteps. */
   readonly #members: LifeMember[] = [];
@@ -92,6 +105,8 @@ export class StreetLife {
       halfWidthCells: config.bodyHalfWidthCells,
       chunkSize: CHUNK_SIZE,
     };
+    this.#strayCells = config.marginCells;
+    this.#zoneDials = { ...this.#dials, chunkSize: Math.ceil(config.avoidRadiusCells) };
   }
 
   /** Registers a citizen with a body; returns it. It is also declared. */
@@ -136,9 +151,22 @@ export class StreetLife {
     return this.#field;
   }
 
-  /** Poses every citizen at city time `t` and resolves every sidestep. */
-  solve(t: number): void {
-    solveAll(this.#members, t, this.#field, this.#dials, this.#walk);
+  /** Poses every citizen at city time `t` and resolves every sidestep. With
+   * a body `zone`, only a body whose whole neighbourhood is inside the zone's
+   * spawn rect sidesteps -- there every neighbour has a body on every client,
+   * so the offset does not depend on the bubble; outside it the body walks
+   * its ledger line (off screen, in the margin). */
+  solve(t: number, zone?: BodyZone): void {
+    this.#zone = zone;
+    this.#run(this.#members, t, this.#field);
+  }
+
+  #run(members: readonly LifeMember[], t: number, field: AvoidanceField): void {
+    if (this.#zone) {
+      solveAll(members, t, field, this.#zoneDials, this.#walk, this.#zoneHeld);
+    } else {
+      solveAll(members, t, field, this.#dials, this.#walk, ALL_CHUNKS_HELD);
+    }
   }
 
   /** The sidestep of `member` as of the last `solve`. */
@@ -148,6 +176,14 @@ export class StreetLife {
 
   offsetY(member: LifeMember): number {
     return this.#field.offsetY(member.index);
+  }
+
+  /** The bodies this client holds, solved at `t` as they are (the ticker
+   * solves again next frame), sorted by id. What the e2e divergence check
+   * compares between two clients whose bubbles differ. */
+  liveAt(t: number): readonly LifeSample[] {
+    this.#run(this.#members, t, this.#field);
+    return sampleOf(this.#members, this.#field);
   }
 
   /** Every citizen's agreed state at `t`, computed from scratch with fresh
@@ -166,21 +202,26 @@ export class StreetLife {
       };
     }
     const { members, field } = this.#scratch;
-    solveAll(members, t, field, this.#dials, this.#walk);
-    return [...members]
-      .sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0))
-      .map((m) => ({
-        id: m.id,
-        x: m.frame.x,
-        y: m.frame.y,
-        activity: m.frame.animation === "walk" ? "walk" : m.frame.flavour || "idle",
-        frameIndex: m.frame.frameIndex,
-        facing: m.frame.direction,
-        offsetX: field.offsetX(m.index),
-        offsetY: field.offsetY(m.index),
-        look: m.look,
-      }));
+    solveAll(members, t, field, this.#dials, this.#walk, ALL_CHUNKS_HELD);
+    return sampleOf(members, field);
   }
+}
+
+function sampleOf(members: readonly LifeMember[], field: AvoidanceField): readonly LifeSample[] {
+  return [...members]
+    .sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0))
+    .map((m) => ({
+      id: m.id,
+      x: m.frame.x,
+      y: m.frame.y,
+      activity: m.frame.animation === "walk" ? "walk" : m.frame.flavour || "idle",
+      frameIndex: m.frame.frameIndex,
+      facing: m.frame.direction,
+      offsetX: field.offsetX(m.index),
+      offsetY: field.offsetY(m.index),
+      agreed: field.agreed(m.index),
+      look: m.look,
+    }));
 }
 
 function poseMember(m: LifeMember, t: number): void {
@@ -204,6 +245,7 @@ function solveAll(
   field: AvoidanceField,
   dials: AvoidDials,
   walk: Walkability,
+  held: HeldPredicate,
 ): void {
   field.reset();
   for (const m of members) {
@@ -223,7 +265,7 @@ function solveAll(
       f.anchorY,
     );
   }
-  field.resolve(dials, walk, ALL_CHUNKS_HELD);
+  field.resolve(dials, walk, held);
 }
 
 /** The life dials of a citizen of `family`: flavour rows, the frames each of

@@ -76,6 +76,8 @@ const MERGE_BACK = 0.55;
 const MERGE_BACK_WIDTH = 0.1;
 const CAPPED = 1;
 const BLOCKED = 2;
+/** The body was resolved: its neighbourhood was wholly held. */
+const RESOLVED = 4;
 
 /** 0 at 0 and 1 at 1, flat at both ends. */
 function smooth(s: number): number {
@@ -138,6 +140,10 @@ export class AvoidanceField {
   #cells: number[] = [];
   /** Blocked tiles round the body being resolved, as offsets of their centres
    * from its centre; scanned once per body per frame. */
+  #wallCache = new Map<number, Int32Array>();
+  #wallWalk: Walkability | undefined;
+  #wallRevision = Number.NaN;
+  #wallSpan = -1;
   #wallDx = new Float64Array(0);
   #wallDy = new Float64Array(0);
   #walls = 0;
@@ -269,6 +275,14 @@ export class AvoidanceField {
     return this.#offY[i] as number;
   }
 
+  /** Whether body `i`'s offset is one every client agrees on: it was resolved
+   * with its neighbourhood wholly held, or it never sidesteps (standing, or
+   * no ramp). Only such offsets are compared between bubbles. */
+  agreed(i: number): boolean {
+    if (!this.#moving[i] || (this.#ramp[i] as number) <= 0) return true;
+    return ((this.#flags[i] as number) & RESOLVED) !== 0;
+  }
+
   /** Whether body `i`'s neighbours were cut at the cap. */
   capped(i: number): boolean {
     return ((this.#flags[i] as number) & CAPPED) !== 0;
@@ -361,6 +375,7 @@ export class AvoidanceField {
       if (!heldWhole(isHeld, floor, this.#x[i] as number, this.#y[i] as number, dials.chunkSize)) {
         continue;
       }
+      this.#flags[i] = (this.#flags[i] as number) | RESOLVED;
       this.#resolveBody(i, dials, walk);
     }
   }
@@ -374,24 +389,48 @@ export class AvoidanceField {
     const x = this.#x[i] as number;
     const y = this.#y[i] as number;
     const floor = this.#floor[i] as number;
-    const x0 = Math.floor(x) - span;
-    const y0 = Math.floor(y) - span;
-    const side = 2 * span + 1;
-    if (this.#wallDx.length < side * side) {
-      this.#wallDx = new Float64Array(side * side);
-      this.#wallDy = new Float64Array(side * side);
+    const cellX = Math.floor(x);
+    const cellY = Math.floor(y);
+    // The blocked tiles within `span` of a cell are a function of the grid
+    // alone, so every body in the cell, this frame and every later one,
+    // shares one scan; a grid change (its revision) retires them all.
+    const revision = walk.revision();
+    if (this.#wallWalk !== walk || this.#wallRevision !== revision || this.#wallSpan !== span) {
+      this.#wallCache.clear();
+      this.#wallWalk = walk;
+      this.#wallRevision = revision;
+      this.#wallSpan = span;
     }
-    let walls = 0;
+    const key = wallKey(floor, cellX, cellY);
+    let tiles = this.#wallCache.get(key);
+    if (!tiles) {
+      tiles = this.#scanTiles(floor, cellX - span, cellY - span, 2 * span + 1, walk);
+      if (this.#wallCache.size >= WALL_CACHE_CELLS) this.#wallCache.clear();
+      this.#wallCache.set(key, tiles);
+    }
+    const n = tiles.length >> 1;
+    if (this.#wallDx.length < n) {
+      this.#wallDx = new Float64Array(n);
+      this.#wallDy = new Float64Array(n);
+    }
+    for (let k = 0; k < n; k++) {
+      this.#wallDx[k] = (tiles[2 * k] as number) + 0.5 - x;
+      this.#wallDy[k] = (tiles[2 * k + 1] as number) + 0.5 - y;
+    }
+    this.#walls = n;
+  }
+
+  /** The blocked tiles of the `side` x `side` square at `(x0, y0)`, as
+   * `x, y` pairs. */
+  #scanTiles(floor: number, x0: number, y0: number, side: number, walk: Walkability): Int32Array {
+    const found: number[] = [];
     for (let ty = y0; ty < y0 + side; ty++) {
       for (let tx = x0; tx < x0 + side; tx++) {
         this.walkableCalls++;
-        if (walk.walkable(floor, tx, ty)) continue;
-        this.#wallDx[walls] = tx + 0.5 - x;
-        this.#wallDy[walls] = ty + 0.5 - y;
-        walls++;
+        if (!walk.walkable(floor, tx, ty)) found.push(tx, ty);
       }
     }
-    this.#walls = walls;
+    return Int32Array.from(found);
   }
 
   #resolveBody(i: number, dials: AvoidDials, walk: Walkability): void {
@@ -657,6 +696,13 @@ export class AvoidanceField {
     }
     return room < 0 ? 0 : room;
   }
+}
+
+/** Cells whose wall scans are kept before the cache starts over. */
+const WALL_CACHE_CELLS = 4096;
+
+function wallKey(floor: number, cellX: number, cellY: number): number {
+  return (floor + 128) * 2 ** 40 + (cellX + 2 ** 19) * 2 ** 20 + (cellY + 2 ** 19);
 }
 
 /** Cells round a body that its wall scan covers: a limit reaches the clearance

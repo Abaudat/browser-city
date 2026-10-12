@@ -51,6 +51,7 @@ import {
   WALKER_SPECS,
 } from "./citizens";
 import { comparePipelineVsStack } from "./compare-pipeline-vs-stack";
+import type { RushCrowd } from "./rush-crowd";
 import {
   type LifeMember,
   type LifeSample,
@@ -69,6 +70,8 @@ export interface WalkerSource {
   /** A frozen crowd (a screenshot test) is staged with no avoidance
    * fixtures and never animated. */
   readonly frozen?: boolean;
+  /** Story 5.4: the dev-only rush-hour load, added to the street's citizens. */
+  readonly rush?: RushCrowd;
 }
 
 /** A body's sprite bounds on the renderer, in pixels. */
@@ -86,6 +89,8 @@ export interface L3BodyReport {
   readonly x: number;
   readonly y: number;
   readonly floor: number;
+  /** The body is walking: on a leg and advancing, not standing or gesturing. */
+  readonly moving: boolean;
   /** Segments walked straight for want of a path. */
   readonly fallbacks: number;
   /** Some segment is walked outside the walking-pace band. */
@@ -133,6 +138,9 @@ export interface CitizensLayerHandle {
   /** Every citizen's agreed state at city time `cityMilliminutes`, computed
    * from scratch -- what the e2e agreement spec compares between clients. */
   agreementAt(cityMilliminutes: number): readonly LifeSample[];
+  /** The bodies this client holds, solved at `cityMilliminutes` as they are:
+   * what the divergence check compares between two different bubbles. */
+  liveAt(cityMilliminutes: number): readonly LifeSample[];
 }
 
 /** A citizen the layer draws: its sprite and its place in the street's life. */
@@ -215,6 +223,7 @@ export async function mountCitizensLayer(
     buildWalkerFixture(defs),
     buildUniformedWalkerFixture(defs),
     ...(l3.frozen ? [] : buildAvoidanceFixtures(defs)),
+    ...(l3.rush?.fixtures ?? []),
   ];
   const layoutByFamily = new Map(defs.appearanceLayouts.map((l) => [l.family, l]));
 
@@ -242,7 +251,8 @@ export async function mountCitizensLayer(
     if (!layoutByFamily.get(body.family)) {
       throw new Error(`citizens-layer: no appearance layout for family '${body.family}'`);
     }
-    const spec = WALKER_SPECS[fixture.id] ?? AVOIDANCE_SPECS[fixture.id];
+    const spec =
+      WALKER_SPECS[fixture.id] ?? AVOIDANCE_SPECS[fixture.id] ?? l3.rush?.specs[fixture.id];
     const life = lifeDialsFor(defs, l3.config, body.family);
     const make = (): { body: CitizenBody; timetable?: Timetable } => ({
       timetable: spec ? new Timetable(spec, l3.config, l3.walk, path) : undefined,
@@ -471,6 +481,7 @@ export async function mountCitizensLayer(
     compareForE2e,
     update,
     agreementAt: (t) => l3.life.agreementAt(t),
+    liveAt: (t) => l3.life.liveAt(t),
     l3Bodies: () => {
       const out: L3BodyReport[] = [];
       const msPerMilliminute = l3.config.realMsPerCityMinute / 1000;
@@ -486,6 +497,7 @@ export async function mountCitizensLayer(
           x: m.frame.x + ox,
           y: m.frame.y + oy,
           floor: m.frame.floor,
+          moving: m.frame.moving,
           fallbacks: report?.fallbacks ?? 0,
           paceOutOfBand: report?.paceOutOfBand ?? false,
           avoidance: {

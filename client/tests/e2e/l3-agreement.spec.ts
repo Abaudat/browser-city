@@ -5,7 +5,7 @@
 // e2e hook (a pure function of the ledger, ids and time, never of what was
 // drawn); no sleeps, nothing waits on a wall clock. The math lives in the
 // unit properties; this guards the wiring.
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 // Pulls in `declare global { interface Window { __bc } }` -- types only.
 import type {} from "../../src/net/e2e-hooks";
@@ -89,6 +89,125 @@ test("two clients with different views agree on every citizen's L3 state", async
     expect(new Set(all.map((s) => s.frameIndex)).size).toBeGreaterThan(3);
     // The look is part of what the clients agree on, and none is empty.
     expect(all.every((s) => s.look !== "")).toBe(true);
+  } finally {
+    await a.close();
+    await b.close();
+  }
+});
+
+/** Bodies each client must hold before the divergence sweep: a small
+ * viewport's bubble holds only part of the 200-body crowd. */
+const DENSE_BODIES = 120;
+
+/** The rush-hour crowd at density, two different bubbles (story 5.4, AC4):
+ * the bodies both clients hold, with an offset both resolved on a wholly held
+ * neighbourhood, must agree on every must-agree field across a sweep that
+ * includes peak density. Compared on the live field each client solved from
+ * the bodies it holds -- what a bubble can change -- not on the from-scratch
+ * sample above. Disagreement is written to the report; any is a defect. */
+test("two clients with different bubbles agree on every shared body of the 200-body crowd", async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const a = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const b = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  try {
+    const pageA = await a.newPage();
+    const pageB = await b.newPage();
+    for (const page of [pageA, pageB]) {
+      await page.goto("/?rushCrowd");
+      await page.waitForFunction(() => window.__bc?.playerPosition !== undefined, undefined, {
+        timeout: 60_000,
+      });
+      // To the street's south edge, where the crowd is in view and held.
+      await page.keyboard.down("ArrowDown");
+      await page.waitForFunction(
+        (y) => (window.__bc?.playerPosition?.y ?? 0) > y,
+        PAVEMENT_EDGE_PLAYER_Y,
+        { timeout: 20_000 },
+      );
+      await page.keyboard.up("ArrowDown");
+      await page.waitForFunction(
+        (n) => (window.__bc?.bodyCount?.() ?? 0) >= n && window.__bc?.l3Live !== undefined,
+        DENSE_BODIES,
+        { timeout: 60_000 },
+      );
+    }
+    // Client B's camera, and so its bubble, follows its player elsewhere.
+    const before = await pageB.evaluate(() => window.__bc?.viewTransform?.offsetX ?? 0);
+    await pageB.keyboard.down("ArrowRight");
+    await pageB.waitForFunction(
+      (x0) => Math.abs((window.__bc?.viewTransform?.offsetX ?? x0) - x0) > 250,
+      before,
+      { timeout: 30_000 },
+    );
+    await pageB.keyboard.up("ArrowRight");
+    await pageB.waitForTimeout(1_000);
+
+    const sweep = (page: Page) =>
+      page.evaluate((instants) => {
+        const hook = window.__bc?.l3Live;
+        if (!hook) throw new Error("no l3Live hook");
+        return instants.map((t) => ({ t, bodies: hook(t).map((s) => ({ ...s })) }));
+      }, INSTANTS as number[]);
+    const [fromA, fromB] = await Promise.all([sweep(pageA), sweep(pageB)]);
+
+    let compared = 0;
+    let disagreements = 0;
+    let maxOffsetDisagreementCells = 0;
+    let onlyInOne = 0;
+    let sidestepping = 0;
+    const examples: string[] = [];
+    for (let k = 0; k < fromA.length; k++) {
+      const inB = new Map((fromB[k]?.bodies ?? []).map((s) => [s.id, s]));
+      const sampleA = fromA[k]?.bodies ?? [];
+      onlyInOne += sampleA.filter((s) => !inB.has(s.id)).length;
+      for (const sa of sampleA) {
+        const sb = inB.get(sa.id);
+        // Only an offset resolved on a wholly held neighbourhood is agreed on.
+        if (!sb || !sa.agreed || !sb.agreed) continue;
+        compared++;
+        if (sa.offsetX !== 0 || sa.offsetY !== 0) sidestepping++;
+        const same =
+          sa.x === sb.x &&
+          sa.y === sb.y &&
+          sa.activity === sb.activity &&
+          sa.frameIndex === sb.frameIndex &&
+          sa.facing === sb.facing &&
+          sa.offsetX === sb.offsetX &&
+          sa.offsetY === sb.offsetY;
+        if (same) continue;
+        disagreements++;
+        maxOffsetDisagreementCells = Math.max(
+          maxOffsetDisagreementCells,
+          Math.hypot(sa.offsetX - sb.offsetX, sa.offsetY - sb.offsetY),
+        );
+        if (examples.length < 5) examples.push(`${sa.id}@${fromA[k]?.t}`);
+      }
+    }
+    const report = {
+      instants: INSTANTS.length,
+      compared,
+      sidestepping,
+      heldByOneOnly: onlyInOne,
+      disagreements,
+      maxOffsetDisagreementCells,
+      maxOffsetDisagreementPx: maxOffsetDisagreementCells * TILE_SIZE_PX,
+      examples,
+    };
+    mkdirSync("test-results/story-5.4-l3-budget", { recursive: true });
+    writeFileSync(
+      "test-results/story-5.4-l3-budget/divergence.json",
+      `${JSON.stringify(report, null, 2)}
+`,
+      "utf-8",
+    );
+
+    // Not vacuous: dense, sidestepping, and the two bubbles really differ.
+    expect(compared).toBeGreaterThan(INSTANTS.length * 50);
+    expect(sidestepping).toBeGreaterThan(INSTANTS.length * 10);
+    expect(onlyInOne).toBeGreaterThan(0);
+    expect(report).toMatchObject({ disagreements: 0, maxOffsetDisagreementPx: 0 });
   } finally {
     await a.close();
     await b.close();

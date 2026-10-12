@@ -1,0 +1,227 @@
+{
+  "story": "5.4",
+  "nfr": "NFR11",
+  "environment": {
+    "platform": "win32",
+    "cpu": "Intel(R) Core(TM) i9-14900KF",
+    "cores": 32,
+    "chromium": "153.0.8010.12",
+    "ci": false
+  },
+  "runMs": 60000,
+  "soak": false,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "crowd": {
+    "size": 200,
+    "pileCell": {
+      "x": 10,
+      "y": 18
+    },
+    "liveBodiesMin": 259,
+    "walkingMin": 125,
+    "sidesteppingMax": 107,
+    "cappedMax": 97
+  },
+  "budget": {
+    "p95Ms": 2,
+    "p99Ms": 4
+  },
+  "verdict": "MET",
+  "failures": [],
+  "l3Ms": {
+    "frames": 3715,
+    "p50": 0.7999999999883585,
+    "p95": 0.9000000000232831,
+    "p99": 1,
+    "max": 1.599999999976717
+  },
+  "frameWorkMs": {
+    "frames": 3715,
+    "p50": 1.2000000000116415,
+    "p95": 1.400000000023283,
+    "p99": 1.5,
+    "max": 2.599999999976717
+  },
+  "throttled4x": {
+    "rate": 4,
+    "l3Ms": {
+      "frames": 434,
+      "p50": 3.7000000000116415,
+      "p95": 4.699999999953434,
+      "p99": 5.5,
+      "max": 7.100000000034925
+    },
+    "frameWorkMs": {
+      "frames": 434,
+      "p50": 5.599999999976717,
+      "p95": 6.900000000023283,
+      "p99": 8.400000000023283,
+      "max": 9.200000000011642
+    }
+  },
+  "allocation": {
+    "windowMs": 15000,
+    "frames": 902,
+    "l3Bytes": 82654064,
+    "l3BytesPerFrame": 91634.21729490023,
+    "ceilingBytesPerFrame": 204800,
+    "top": [
+      {
+        "fn": "update",
+        "url": "http://127.0.0.1:5173/src/test-street/citizens-layer.ts",
+        "bytes": 21265600
+      },
+      {
+        "fn": "#resolveBody",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 21141060
+      },
+      {
+        "fn": "#byPosition",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 15080700
+      },
+      {
+        "fn": "#ensurePaths",
+        "url": "http://127.0.0.1:5173/src/l3/body.ts",
+        "bytes": 7298768
+      },
+      {
+        "fn": "#roomOn",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 7049268
+      },
+      {
+        "fn": "sort",
+        "url": "",
+        "bytes": 5336032
+      },
+      {
+        "fn": "planBodies",
+        "url": "http://127.0.0.1:5173/src/world/body-zone.ts",
+        "bytes": 3151496
+      },
+      {
+        "fn": "findMicroPath",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 693796
+      },
+      {
+        "fn": "flavourKindOf",
+        "url": "http://127.0.0.1:5173/src/l3/flavour.ts",
+        "bytes": 338544
+      },
+      {
+        "fn": "seedOf",
+        "url": "http://127.0.0.1:5173/src/l3/seed.ts",
+        "bytes": 284388
+      }
+    ]
+  },
+  "gc": {
+    "minorCount": 281,
+    "majorCount": 0,
+    "totalPauseMs": 67.406,
+    "longestMinorPauseMs": 1.17,
+    "longestMajorPauseMs": 0
+  },
+  "cpuTopSelf": [
+    {
+      "fn": "(program) ",
+      "share": 0.7576110141555168
+    },
+    {
+      "fn": "(idle) ",
+      "share": 0.2237735117316269
+    },
+    {
+      "fn": "#roomOn src/l3/avoidance.ts",
+      "share": 0.0060112468489431845
+    },
+    {
+      "fn": "#resolveBody src/l3/avoidance.ts",
+      "share": 0.003684312584836145
+    },
+    {
+      "fn": "collectRenderablesSimple http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=bf58eda8",
+      "share": 0.0017452006980802793
+    },
+    {
+      "fn": "#keepNearest src/l3/avoidance.ts",
+      "share": 0.0011634671320535194
+    },
+    {
+      "fn": "(garbage collector) ",
+      "share": 0.0009695559433779329
+    },
+    {
+      "fn": "packQuadAttributes http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=bf58eda8",
+      "share": 0.0007756447547023463
+    },
+    {
+      "fn": "bufferSubData ",
+      "share": 0.0005817335660267597
+    },
+    {
+      "fn": "#byCell src/l3/avoidance.ts",
+      "share": 0.00038782237735117316
+    },
+    {
+      "fn": "render http://127.0.0.1:5173/node_modules/.vite/deps/RenderTargetSystem-BredZz1o.js?v=bf58eda8",
+      "share": 0.00038782237735117316
+    },
+    {
+      "fn": "updateRenderGroupTransforms http://127.0.0.1:5173/node_modules/.vite/deps/RenderTargetSystem-BredZz1o.js?v=bf58eda8",
+      "share": 0.00038782237735117316
+    },
+    {
+      "fn": "requestAnimationFrame ",
+      "share": 0.00038782237735117316
+    },
+    {
+      "fn": "resolve src/l3/avoidance.ts",
+      "share": 0.00019391118867558658
+    },
+    {
+      "fn": "offsetPx src/world/flights.ts",
+      "share": 0.00019391118867558658
+    }
+  ],
+  "heap": {
+    "samples": [
+      {
+        "atMs": 0,
+        "usedHeapBytes": 19096120
+      },
+      {
+        "atMs": 10540,
+        "usedHeapBytes": 19288508
+      },
+      {
+        "atMs": 21031,
+        "usedHeapBytes": 19306512
+      },
+      {
+        "atMs": 31524,
+        "usedHeapBytes": 19381340
+      },
+      {
+        "atMs": 41996,
+        "usedHeapBytes": 19348560
+      },
+      {
+        "atMs": 52466,
+        "usedHeapBytes": 19382640
+      },
+      {
+        "atMs": 62950,
+        "usedHeapBytes": 19389080
+      }
+    ],
+    "growthRatio": 1.0052140891353545,
+    "bound": 1.5
+  }
+}
