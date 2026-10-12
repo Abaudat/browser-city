@@ -3,6 +3,8 @@
 //! (`pub(crate)` otherwise): production reaches the generator through
 //! `create` alone.
 
+use crate::routing::graph::MacroGraph;
+
 use super::{
     District, GenerationConfig, GenerationContent, GenerationError, Skeleton, building_types,
     envelopes, interiors, land_use, plots, props, streets,
@@ -54,13 +56,14 @@ pub fn plan_skeleton(
 
 /// The one entry point production calls: [`plan`], then
 /// [`District::check`] -- a seed whose district fails any verdict is a
-/// world that fails to create.
+/// world that fails to create. Returns the macro routing graph the gate
+/// validated with the district, so what is written is what was checked.
 pub fn generate(
     city_seed: u64,
     cfg: &GenerationConfig,
     content: &GenerationContent,
-) -> Result<District, GenerationError> {
+) -> Result<(District, MacroGraph), GenerationError> {
     let district = plan(city_seed, cfg, content)?;
-    district.check(cfg, content)?;
-    Ok(district)
+    let graph = district.check(cfg, content)?;
+    Ok((district, graph))
 }

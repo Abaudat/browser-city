@@ -27,3 +27,12 @@ key = "routing.floor_change_penalty_milliminutes"
 value = 1000
 min = 0
 max = 600000
+
+[[balance]]
+# Macro routing graph (story 3.9, FR134): a building whose interior net
+# floor area is at or over this many cells gets an internal node beyond
+# its entrance node.
+key = "routing.graph.internal_node_min_interior_cells"
+value = 100
+min = 1
+max = 100000

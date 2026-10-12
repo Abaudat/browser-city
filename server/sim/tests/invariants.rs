@@ -63,6 +63,19 @@ fn the_proptest_persistence_path_is_the_committed_regressions_file() {
     support::assert_persistence_reads_committed_file(REGRESSIONS_PATH, file!());
 }
 
+pub const INV_ROUTING_GRAPH_SIZE_IS_A_FEW_THOUSAND_NODES: &str = "the macro routing graph's node and edge counts sit inside the bands declared in sim::routing::graph (FR130)";
+pub const INV_ROUTING_NODE_HAS_FLOOR_POSITION_AND_SOURCE_HAS_ONE_BUSINESS: &str = "every graph node has a floor in range on a free tile, and every source node is the entrance of exactly one enterable building (FR130)";
+pub const INV_ROUTING_EDGE_COST_IS_MINUTES_AND_ADMISSIBLE: &str = "every edge cost is a positive Milliminutes equal to the estimate between its endpoints (FR130)";
+pub const INV_ROUTING_INTERIOR_COLLAPSES_TO_ENTRANCE_AND_ONE_INTERNAL_NODE: &str = "an enterable building has one entrance node and an internal node iff its interior reaches the balance threshold (FR134)";
+pub const INV_ROUTING_ONLY_PORTAL_EDGES_CROSS_FLOORS: &str =
+    "every edge whose endpoints differ in floor is a portal edge between portal nodes (FR130)";
+pub const INV_ROUTING_FIXTURE_WORLD_PORTALS_VALIDATE: &str = "the conformance world's floor transitions become portal nodes and cross-floor edges that pass the graph check (FR130)";
+pub const INV_ROUTING_GRAPH_IS_ONE_CONNECTED_COMPONENT: &str =
+    "every node of the macro routing graph is reachable from every other";
+pub const INV_ROUTING_GRAPH_IS_DETERMINISTIC: &str =
+    "two builds of the macro routing graph from one seed are identical (FR129)";
+pub const INV_ROUTING_GRAPH_EDGE_COUNT_IS_LINEAR_IN_NODE_COUNT: &str =
+    "the graph's edge count is at most a constant times its node count";
 pub const INV_NO_MATTER_STARVES: &str = "no matter starves indefinitely";
 pub const INV_INVENTORY_SUPERSET_AFTER_ABSENCE: &str = "inventory is a superset after any absence";
 pub const INV_NO_OWNED_ITEM_DEGRADES_DURING_ABSENCE: &str = "no owned item degrades during absence";
@@ -2552,7 +2565,7 @@ proptest! {
             prop_assert!(
                 matches!(r, Err(GenerationError::SiteAlreadyGenerated { .. })),
                 "a record sharing a cell must refuse, got {:?}",
-                r.map(|(rec, _)| rec)
+                r.map(|(rec, _, _)| rec)
             );
         }
     }
@@ -3843,7 +3856,7 @@ fn seed_16021368561388801292_holds_its_commercial_share_and_workplace_band() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let content = GenerationContent::committed();
     let seed = 16021368561388801292u64;
-    let d = sim::generation::generate(seed, &cfg, &content)
+    let (d, _) = sim::generation::generate(seed, &cfg, &content)
         .unwrap_or_else(|e| panic!("seed {seed}: generate is no longer Ok: {e:?}"));
     d.skeleton
         .check_workplace_count(&cfg, &content)
@@ -6654,6 +6667,8 @@ struct PooledCity {
     rules: Result<(), String>,
     /// `District::check`, the chain `generate` runs.
     generated: Result<(), String>,
+    /// Story 3.9: the district's macro routing graph.
+    graph: Result<sim::routing::graph::MacroGraph, String>,
 }
 
 fn pooled_city(seed: u64) -> PooledCity {
@@ -6661,12 +6676,15 @@ fn pooled_city(seed: u64) -> PooledCity {
     let content = GenerationContent::committed();
     let district = sim::generation::plan(seed, &cfg, &content).unwrap();
     let rules = district.check_rules(&content).map_err(|e| format!("{e:?}"));
-    let generated = district.check(&cfg, &content).map_err(|e| format!("{e:?}"));
+    let checked = district.check(&cfg, &content).map_err(|e| format!("{e:?}"));
+    let generated = checked.as_ref().map(|_| ()).map_err(|e| e.clone());
+    let graph = checked;
     PooledCity {
         seed,
         district,
         rules,
         generated,
+        graph,
     }
 }
 
@@ -8543,7 +8561,7 @@ fn the_depot_is_laid_out_on_the_seeds_that_once_rejected_it() {
             Ok(()),
             "seed {seed}: a distributed institution is not enterable"
         );
-        assert_eq!(d.check(&cfg, &content), Ok(()), "seed {seed}");
+        assert!(d.check(&cfg, &content).is_ok(), "seed {seed}");
     }
 }
 
@@ -8830,5 +8848,358 @@ fn inv_world_repaint_writes_only_the_words_of_its_rect() {
             &[]
         ),
         0
+    );
+}
+
+// ---------------------------------------------------------------------
+// Story 3.9: the macro routing graph (FR129, FR130, FR134).
+// ---------------------------------------------------------------------
+
+fn pooled_graph(c: &PooledCity) -> Result<&sim::routing::graph::MacroGraph, String> {
+    c.graph.as_ref().map_err(|e| format!("graph: {e}"))
+}
+
+/// `inv_routing_graph_size_is_a_few_thousand_nodes` (story 3.9 AC1): the
+/// counts sit inside the measured band declared once in
+/// `sim::routing::graph` (the `macro graph` block of `docs/generation.md`
+/// plus or minus its percent); a topology change trips it and the block
+/// is re-stamped.
+#[test]
+fn inv_routing_graph_size_is_a_few_thousand_nodes() {
+    use sim::routing::graph::{EDGE_COUNT_BAND_512, NODE_COUNT_BAND_512};
+    over_pool("inv_routing_graph_size_is_a_few_thousand_nodes", |c| {
+        let g = pooled_graph(c)?;
+        let (n, e) = (g.nodes().len() as u64, g.edges().len() as u64);
+        ensure!(
+            (NODE_COUNT_BAND_512.0..=NODE_COUNT_BAND_512.1).contains(&n),
+            "{n} nodes outside {NODE_COUNT_BAND_512:?}"
+        );
+        ensure!(
+            (EDGE_COUNT_BAND_512.0..=EDGE_COUNT_BAND_512.1).contains(&e),
+            "{e} edges outside {EDGE_COUNT_BAND_512:?}"
+        );
+        Ok(())
+    });
+}
+
+/// `inv_routing_node_has_floor_position_and_source_has_one_business`
+/// (story 3.9 AC2): every node has a floor in range and stands on a tile
+/// that floor's walkability grid leaves free; every source node is the
+/// entrance of exactly one laid building, no two share one, and its
+/// workplace flag is the building type's own.
+#[test]
+fn inv_routing_node_has_floor_position_and_source_has_one_business() {
+    use sim::routing::graph::NodeKind;
+    over_pool(
+        "inv_routing_node_has_floor_position_and_source_has_one_business",
+        |c| {
+            let g = pooled_graph(c)?;
+            let d = &c.district;
+            for n in g.nodes() {
+                ensure!(
+                    (defs::MIN_FLOOR..=defs::MAX_FLOOR).contains(&(n.floor as i32)),
+                    "node {n:?}: floor out of range"
+                );
+                ensure!(
+                    d.walkability(n.floor).is_standable(n.x, n.y),
+                    "node {n:?}: not on a free tile"
+                );
+            }
+            let types: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+                defs::BUILDING_TYPES.iter().map(|b| (b.id, b)).collect();
+            let mut seen = std::collections::BTreeSet::new();
+            let mut sources = 0;
+            for n in g.nodes().iter().filter(|n| n.kind == NodeKind::Source) {
+                sources += 1;
+                let src = n.source.ok_or("a source node names no building")?;
+                ensure!(seen.insert(src.plot), "two sources share plot {}", src.plot);
+                let (_, ty, i) = d
+                    .interiors
+                    .laid()
+                    .find(|(p, _, _)| *p == src.plot)
+                    .ok_or("a source names a building that is not laid")?;
+                let e = i.entrance().ok_or("a laid building has no door")?;
+                ensure!((e.x, e.y) == (n.x, n.y), "source is not on the door");
+                ensure!(
+                    src.workplace == !types[&ty].professions.is_empty(),
+                    "plot {}: workplace flag disagrees with its type",
+                    src.plot
+                );
+            }
+            ensure!(
+                sources as i64 == d.interiors.enterable_count(),
+                "{sources} sources for {} enterable buildings",
+                d.interiors.enterable_count()
+            );
+            Ok(())
+        },
+    );
+}
+
+/// `inv_routing_edge_cost_is_minutes_and_admissible` (story 3.9 AC3): the
+/// edge's cost is a strictly positive `Milliminutes` that equals the
+/// travel-time estimate between its endpoints in walking mode -- so the
+/// estimate never exceeds it.
+#[test]
+fn inv_routing_edge_cost_is_minutes_and_admissible() {
+    over_pool("inv_routing_edge_cost_is_minutes_and_admissible", |c| {
+        let g = pooled_graph(c)?;
+        for e in g.edges() {
+            let (a, b) = (g.nodes()[e.a as usize], g.nodes()[e.b as usize]);
+            let cost: sim::routing::Milliminutes = e.cost;
+            ensure!(cost.0 > 0, "edge {e:?}: cost is not positive");
+            let h = estimate(
+                &rates(),
+                a.point(),
+                b.point(),
+                TransportMode::Walk,
+                Correction::NONE,
+            );
+            ensure!(
+                h <= cost,
+                "edge {e:?}: estimate {h:?} exceeds cost {cost:?}"
+            );
+        }
+        Ok(())
+    });
+}
+
+/// `inv_routing_interior_collapses_to_entrance_and_one_internal_node`
+/// (story 3.9 AC4): every enterable building has exactly one entrance
+/// node on its door; it has an internal node iff its interior floor area
+/// reaches the balance threshold; no other node lies inside a footprint.
+#[test]
+fn inv_routing_interior_collapses_to_entrance_and_one_internal_node() {
+    use sim::routing::graph::{NodeKind, has_internal_node, interior_cells};
+    let min = GenerationConfig::from_balance(defs::BALANCE)
+        .unwrap()
+        .graph_internal_node_min_interior_cells;
+    over_pool(
+        "inv_routing_interior_collapses_to_entrance_and_one_internal_node",
+        |c| {
+            let g = pooled_graph(c)?;
+            let d = &c.district;
+            let at: std::collections::BTreeMap<(i8, i32, i32), NodeKind> = g
+                .nodes()
+                .iter()
+                .map(|n| ((n.floor, n.x, n.y), n.kind))
+                .collect();
+            ensure!(at.len() == g.nodes().len(), "two nodes share a cell");
+            let mut stray = 0usize;
+            for (plot, _, i) in d.interiors.laid() {
+                let e = i.entrance().ok_or("no door")?;
+                ensure!(
+                    at.get(&(0, e.x, e.y)) == Some(&NodeKind::Source),
+                    "plot {plot}: no entrance node on the door"
+                );
+                let rooms: Vec<Rect> = i.rooms.iter().map(|r| r.rect).collect();
+                let want = has_internal_node(interior_cells(&rooms), min);
+                let f = i.footprint;
+                let mut internals = 0usize;
+                let mut others = 0usize;
+                for y in f.y0..f.y1 {
+                    for x in f.x0..f.x1 {
+                        // Interiors are ground floor.
+                        match at.get(&(0, x, y)) {
+                            Some(NodeKind::Internal) => internals += 1,
+                            Some(NodeKind::Source) if (x, y) == (e.x, e.y) => {}
+                            Some(_) => others += 1,
+                            None => {}
+                        }
+                    }
+                }
+                ensure!(
+                    internals == usize::from(want),
+                    "plot {plot}: {internals} internal nodes, threshold says {want}"
+                );
+                stray += others;
+            }
+            ensure!(
+                stray == 0,
+                "{stray} nodes inside footprints beyond entrance/internal"
+            );
+            Ok(())
+        },
+    );
+}
+
+/// `inv_routing_only_portal_edges_cross_floors` (story 3.9 AC5): over the
+/// pool, every edge whose endpoints differ in floor is a portal edge
+/// between portal nodes, and the validator `generate` runs accepts the
+/// graph.
+#[test]
+fn inv_routing_only_portal_edges_cross_floors() {
+    use sim::routing::graph::{EdgeKind, NodeKind};
+    over_pool("inv_routing_only_portal_edges_cross_floors", |c| {
+        let g = pooled_graph(c)?;
+        for e in g.edges() {
+            let (a, b) = (g.nodes()[e.a as usize], g.nodes()[e.b as usize]);
+            if a.floor != b.floor {
+                ensure!(
+                    e.kind == EdgeKind::Portal
+                        && a.kind == NodeKind::Portal
+                        && b.kind == NodeKind::Portal,
+                    "edge {e:?} crosses floors and is not a portal"
+                );
+            }
+        }
+        // `generate`'s own gate: the district's check returned the graph.
+        ensure!(c.generated.is_ok(), "the district check failed");
+        Ok(())
+    });
+}
+
+/// `inv_routing_graph_is_one_connected_component` (story 3.9): every node
+/// is reachable from every other; no agent is stranded.
+#[test]
+fn inv_routing_graph_is_one_connected_component() {
+    over_pool("inv_routing_graph_is_one_connected_component", |c| {
+        let g = pooled_graph(c)?;
+        let n = g.nodes().len();
+        let mut parent: Vec<usize> = (0..n).collect();
+        fn find(p: &mut [usize], mut i: usize) -> usize {
+            while p[i] != i {
+                p[i] = p[p[i]];
+                i = p[i];
+            }
+            i
+        }
+        for e in g.edges() {
+            let (a, b) = (
+                find(&mut parent, e.a as usize),
+                find(&mut parent, e.b as usize),
+            );
+            parent[a] = b;
+        }
+        let root = find(&mut parent, 0);
+        for i in 0..n {
+            ensure!(
+                find(&mut parent, i) == root,
+                "node {i} is in another component"
+            );
+        }
+        Ok(())
+    });
+}
+
+/// `inv_routing_graph_is_deterministic` (story 3.9): two builds from one
+/// seed are identical, node order and edge order included.
+#[test]
+fn inv_routing_graph_is_deterministic() {
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    let content = GenerationContent::committed();
+    for seed in [1u64, 2, 3] {
+        let a = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let b = sim::generation::plan(seed, &cfg, &content).unwrap();
+        let ga = a.graph(&cfg, &content).unwrap();
+        assert_eq!(ga, b.graph(&cfg, &content).unwrap(), "seed {seed}");
+        assert_eq!(ga, a.graph(&cfg, &content).unwrap(), "seed {seed}");
+    }
+}
+
+/// `inv_routing_fixture_world_portals_validate` (story 3.9 AC5): the
+/// conformance world's real floor transitions (bridge, manhole,
+/// staircase) become portal nodes and cross-floor edges that pass
+/// `check`; the generated cities alone only ever see floor 0.
+#[test]
+fn inv_routing_fixture_world_portals_validate() {
+    use sim::routing::graph::{BuildInput, EdgeKind, MacroGraph, NodeKind, PortalPair};
+    let spec = fixture::canonical_world_spec();
+    let floors: sim::routing::graph::Floors = spec
+        .floors
+        .iter()
+        .map(|f| {
+            (
+                f.floor,
+                FloorCollision::build(f.bounds, &f.colliders).unwrap(),
+            )
+        })
+        .collect();
+    let portals: Vec<PortalPair> = spec
+        .transitions
+        .iter()
+        .map(|t| PortalPair {
+            from: Point {
+                x: t.x,
+                y: t.y,
+                floor: t.floor,
+            },
+            to: Point {
+                x: t.target_x,
+                y: t.target_y,
+                floor: t.target_floor,
+            },
+        })
+        .collect();
+    assert!(portals.iter().any(|p| p.from.floor != p.to.floor));
+    let site = spec.floors[0].bounds;
+    let net = streets::StreetNetwork::test_fixture(site, Vec::new(), Vec::new());
+    // One walking node per floor, on its first free tile: each portal
+    // joins the network of its own floor, so the graph is one component.
+    let floor_nodes: Vec<Point> = spec
+        .floors
+        .iter()
+        .map(|f| {
+            let b = f.bounds;
+            let (x, y) = (b.y0..b.y1)
+                .flat_map(|y| (b.x0..b.x1).map(move |x| (x, y)))
+                .find(|&(x, y)| floors[&f.floor].is_standable(x, y))
+                .expect("a fixture floor has a free tile");
+            Point {
+                x,
+                y,
+                floor: f.floor,
+            }
+        })
+        .collect();
+    let g = MacroGraph::build(&BuildInput {
+        streets: &net,
+        buildings: &[],
+        portals: &portals,
+        floor_nodes: &floor_nodes,
+        rates: rates(),
+        internal_node_min_floor_area: 100,
+        walkability: &floors,
+    })
+    .unwrap();
+    // Every portal is reachable from a non-portal node on its own floor.
+    for n in g.nodes().iter().filter(|n| n.kind == NodeKind::Portal) {
+        assert!(
+            g.nodes()
+                .iter()
+                .any(|m| m.kind == NodeKind::Street && m.floor == n.floor),
+            "no walking node on floor {}",
+            n.floor
+        );
+    }
+    assert!(g.edges().iter().any(|e| e.kind == EdgeKind::PortalLink));
+    let crossing: Vec<_> = g
+        .edges()
+        .iter()
+        .filter(|e| g.nodes()[e.a as usize].floor != g.nodes()[e.b as usize].floor)
+        .collect();
+    assert!(!crossing.is_empty());
+    assert!(crossing.iter().all(|e| e.kind == EdgeKind::Portal));
+    assert_eq!(g.check(&floors), Ok(()));
+}
+
+/// `inv_routing_graph_edge_count_is_linear_in_node_count` (story 3.9): the
+/// edge count is at most three times the node count. This checks the
+/// output's shape; that the builder has no all-pairs scan is argued in its
+/// doc comment and held by `generation_perf.rs`'s 1024 ceiling.
+#[test]
+fn inv_routing_graph_edge_count_is_linear_in_node_count() {
+    over_pool(
+        "inv_routing_graph_edge_count_is_linear_in_node_count",
+        |c| {
+            let g = pooled_graph(c)?;
+            let n = g.nodes().len();
+            ensure!(
+                g.edges().len() <= 3 * n,
+                "{} edges for {n} nodes is not linear",
+                g.edges().len()
+            );
+            Ok(())
+        },
     );
 }

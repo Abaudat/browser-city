@@ -1572,8 +1572,11 @@ AC4's workplace-count verdict, the same two-band shape as building count;
 `District::check_enterable_count(&cfg)` and
 `District::check_institutions_enterable(&content)` hold pass 6's two
 verdicts; `District::check_reachability(&content)` holds pass 7's.
-`generation::generate` is `plan` plus all six, in that order; production
-calls `generation::create`, which wraps it. `generate` and `plan` are
+`District::check` is the one ordered list of verdicts, the routing graph's
+last; it returns the validated `MacroGraph`. `generation::generate` is
+`plan` plus `check` and returns `(District, MacroGraph)`; production
+calls `generation::create`, which wraps it and returns
+`(DistrictRecord, District, MacroGraph)`. `generate` and `plan` are
 reachable outside `sim` only with the `test-fixtures` feature, which
 `browser_city` never enables. `scripts/ci/check-generation-entry-point.sh` fails
 the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`/`interiors::run(`/`props::run(` call under `server/sim/tests/` or `server/bounds/` not marked `//
@@ -1801,8 +1804,9 @@ them once into `District::walkability(floor) -> &FloorCollision`:
 tile-granular, a tile blocked iff a placed collider touches it.
 Nothing outside `generation::`/`world::` builds a collision grid or
 rasterises placements (`scripts/ci/check-no-runtime-collision-
-inference.sh`); `create_district` still discards the plan and writes no
-row. The rows are walls, every pass-6 fixture resolved to a def carrying
+inference.sh`); `create_district` writes the `district` record, one
+`business` row per workplace and the macro routing graph (see
+Routing). The rows are walls, every pass-6 fixture resolved to a def carrying
 its tag, one shopfront per building holding a counter, and the street's
 lamps, ambient furniture and bins. Which side of the door a def stands is
 the two `[[coherence]]` rows over `indoor`/`outdoor`; the street's rows
@@ -1852,7 +1856,8 @@ the build if the committed files and a fresh render ever disagree.
   to the generator: it refuses with `SiteAlreadyGenerated` when
   `cfg.site()` overlaps any recorded site, whatever versions the record
   carries; otherwise it runs `generate` and stamps
-  `RuleSetVersion::current()`.
+  `RuleSetVersion::current()`, returning the validated routing graph with
+  the record and the district.
 - The `district` table (private) has one row per generated district: seed,
   world-absolute site, the three versions, `generated_at`. Rows are
   inserted once, read back as stored and never rewritten; restore writes
@@ -1869,6 +1874,13 @@ the build if the committed files and a fresh render ever disagree.
 - The estimate is Manhattan distance x the derived walking rate x the mode percent, plus a per-floor penalty: pure, cache-free and table-free, enforced by `scripts/ci/check-routing-estimate-purity.sh`.
 - `sim::time::REAL_MS_PER_CITY_MINUTE` is the one server-side FR1 constant.
 - Transport modes are `routing.speed_percent.*` multipliers on `movement.walk_speed_millicells_per_s`, never absolute speeds.
+- `routing::graph` is pure and derived by `District::graph`; `District::check` returns the validated graph `create_district` writes.
+- An edge's cost is `estimate` over its endpoints in walking mode, in `Milliminutes`; no cell unit exists in the graph or its tables (`check-routing-one-unit.sh`).
+- Only portal edges, between portal nodes, cross floors; `MacroGraph::check` enforces it.
+- A building collapses to one entrance node, plus one internal node when its interior reaches `routing.graph.internal_node_min_interior_cells`.
+- `route_node` and `route_edge` are private, written only by `create_district` and the restore reducers, and never cached in module state.
+- `server/src` keeps no state outside a table: no `static` item, `thread_local!`, `OnceLock`, `OnceCell`, `LazyLock` or `lazy_static!` (`check-server-src-bans.sh`).
+- `MacroGraph::check` holds the graph to one connected component over every node kind; each portal endpoint links to the nearest walking node on its own floor.
 
 ## L3 (client)
 

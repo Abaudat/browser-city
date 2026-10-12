@@ -56,6 +56,7 @@ import RestoreCitizenStateReducer from "./restore_citizen_state_reducer";
 import RestoreContainerKindReducer from "./restore_container_kind_reducer";
 import RestoreDemoPingReducer from "./restore_demo_ping_reducer";
 import RestoreDistrictReducer from "./restore_district_reducer";
+import RestoreEdgeKindReducer from "./restore_edge_kind_reducer";
 import RestoreFloorTransitionReducer from "./restore_floor_transition_reducer";
 import RestoreGameplayMetricSampleReducer from "./restore_gameplay_metric_sample_reducer";
 import RestoreHolderKindReducer from "./restore_holder_kind_reducer";
@@ -76,6 +77,8 @@ import RestoreReducerClassCounterReducer from "./restore_reducer_class_counter_r
 import RestoreReducerClassSampleReducer from "./restore_reducer_class_sample_reducer";
 import RestoreRoomReducer from "./restore_room_reducer";
 import RestoreRoomAreaReducer from "./restore_room_area_reducer";
+import RestoreRouteEdgeReducer from "./restore_route_edge_reducer";
+import RestoreRouteNodeReducer from "./restore_route_node_reducer";
 import RestoreStockReducer from "./restore_stock_reducer";
 import RestoreStorageSampleReducer from "./restore_storage_sample_reducer";
 import RestoreTableSampleReducer from "./restore_table_sample_reducer";
@@ -297,6 +300,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_container_kind", RestoreContainerKindReducer),
   __reducerSchema("restore_demo_ping", RestoreDemoPingReducer),
   __reducerSchema("restore_district", RestoreDistrictReducer),
+  __reducerSchema("restore_edge_kind", RestoreEdgeKindReducer),
   __reducerSchema("restore_floor_transition", RestoreFloorTransitionReducer),
   __reducerSchema("restore_gameplay_metric_sample", RestoreGameplayMetricSampleReducer),
   __reducerSchema("restore_holder_kind", RestoreHolderKindReducer),
@@ -317,6 +321,8 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_reducer_class_sample", RestoreReducerClassSampleReducer),
   __reducerSchema("restore_room", RestoreRoomReducer),
   __reducerSchema("restore_room_area", RestoreRoomAreaReducer),
+  __reducerSchema("restore_route_edge", RestoreRouteEdgeReducer),
+  __reducerSchema("restore_route_node", RestoreRouteNodeReducer),
   __reducerSchema("restore_stock", RestoreStockReducer),
   __reducerSchema("restore_storage_sample", RestoreStorageSampleReducer),
   __reducerSchema("restore_table_sample", RestoreTableSampleReducer),

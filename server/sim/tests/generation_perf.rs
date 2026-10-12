@@ -41,7 +41,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // pairwise cost the generator pays, bucketed rather than all-pairs
     // (`sim::rules::mod.rs`), so this growth-target run is itself the
     // structural proof that stays linear too.
-    let d = generate(7, &cfg, &content)
+    let (d, _) = generate(7, &cfg, &content)
         .unwrap_or_else(|e| panic!("the 1024 growth target must still generate: {e}"));
     let lu = &d.skeleton.land_use;
     let net = &d.skeleton.streets;
@@ -362,4 +362,35 @@ fn placement_search_stays_within_its_own_node_budget_at_a_few_hundred_candidates
         "the search used {nodes} nodes, past its own {}-node budget",
         sim::generation::building_types::PLACEMENT_SEARCH_NODE_BUDGET
     );
+}
+
+/// Story 3.9 (AC1, structural): at the 1024 growth target the macro
+/// routing graph's node and edge counts stay under the ceilings the 512
+/// bands scale to linearly with site area -- the same constants
+/// `TABLE_BOUNDS` derives its `max_rows` from. The builder has no
+/// pairwise all-nodes loop: its edges come from street adjacency and
+/// each building's own door, so the edge count is linear in the node
+/// count, which is also asserted. Counts are printed for the measured
+/// block of `docs/generation.md`.
+#[test]
+fn macro_graph_at_the_1024_growth_target_stays_linear_in_site_area() {
+    use sim::routing::graph::{max_edges_for_side, max_nodes_for_side};
+    let mut cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    cfg.site_extent_cells = 1024;
+    let content = GenerationContent::committed();
+    let (_, g) = generate(7, &cfg, &content).unwrap();
+    let (n, e) = (g.nodes().len() as u64, g.edges().len() as u64);
+    println!("macro graph at 1024: {n} nodes, {e} edges");
+    let side = cfg.site_extent_cells as u64;
+    assert!(
+        n <= max_nodes_for_side(side),
+        "{n} nodes exceed the linear ceiling {}",
+        max_nodes_for_side(side)
+    );
+    assert!(
+        e <= max_edges_for_side(side),
+        "{e} edges exceed the linear ceiling {}",
+        max_edges_for_side(side)
+    );
+    assert!(e <= 3 * n, "{e} edges for {n} nodes is not linear");
 }

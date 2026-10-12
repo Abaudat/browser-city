@@ -2107,7 +2107,7 @@ pub fn build_all() -> Vec<EvidenceSvgs> {
     EVIDENCE_SEEDS
         .iter()
         .map(|&seed| {
-            let d = sim::generation::generate(seed, &cfg, &content)
+            let (d, _) = sim::generation::generate(seed, &cfg, &content)
                 .expect("the live committed config must generate every evidence seed");
             EvidenceSvgs {
                 seed,

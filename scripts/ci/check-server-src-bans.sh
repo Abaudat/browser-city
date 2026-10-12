@@ -15,6 +15,12 @@
 #   - `ctx.timestamp`, `world_clock`, `read_clock` -- banned in
 #     tables/cadences.rs (a cadence body knows its city minute, never
 #     real time).
+#   - any `static` item, `thread_local!`, `OnceLock`, `OnceCell`,
+#     `LazyLock`, `lazy_static!` -- module-global state (story 3.9): the macro routing
+#     graph lives in tables so a reducer that aborts rolls it back and a
+#     restart or republish finds it; a global cache of it would not be
+#     rolled back and would not survive. Nothing under server/src/ keeps
+#     state outside a table.
 #   - `unwrap(`, `expect(`, `panic!`, `todo!`, `unimplemented!`,
 #     `unreachable!` -- banned across server/src/**, excluding
 #     `generated/` (defs-build's own emitted code, never hand-written).
@@ -68,6 +74,14 @@ if [ -n "$PANIC_MATCHES" ]; then
   FAILED=1
 fi
 
+GLOBAL_PATTERN='^[[:space:]]*(pub(\([^)]*\))?[[:space:]]+)?static[[:space:]]|thread_local!|OnceLock|OnceCell|LazyLock|lazy_static!'
+GLOBAL_MATCHES="$(grep -rnE "$GLOBAL_PATTERN" "$SRC_DIR" --include='*.rs' --exclude-dir=generated 2>/dev/null | not_a_comment_line || true)"
+if [ -n "$GLOBAL_MATCHES" ]; then
+  echo "check-server-src-bans: FAIL -- module-global state under server/src/ (a static item, thread_local!, OnceLock/OnceCell/LazyLock, lazy_static!): the macro routing graph and everything else lives in tables, so an aborted reducer rolls it back and a restart or republish finds it (story 3.9):" >&2
+  echo "$GLOBAL_MATCHES" >&2
+  FAILED=1
+fi
+
 # A cadence body (tables/cadences.rs) is a function of the city minute it
 # fires for, never of real time -- a live tick and a jump's replayed tick
 # must be the same code path, so `ctx.timestamp`, `world_clock` and
@@ -87,5 +101,5 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-server-src-bans: no ScheduleAt::Interval and no unwrap/expect/panic!/todo!/unimplemented!/unreachable! under server/src/ (story 4.2, NFR41)" >&2
+echo "check-server-src-bans: no ScheduleAt::Interval, no module-global state and no unwrap/expect/panic!/todo!/unimplemented!/unreachable! under server/src/ (story 4.2, NFR41, story 3.9)" >&2
 exit 0

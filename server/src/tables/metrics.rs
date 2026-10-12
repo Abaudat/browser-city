@@ -50,6 +50,7 @@ use super::item_instance::{item_held, item_instance, item_placed};
 use super::ops::module_owner;
 use super::player_position::player_position;
 use super::restore::restore_state;
+use super::routing::{edge_kind, route_edge, route_node};
 use super::schedules::{
     budget_review_schedule, cadence_liveness, citizen_transition_schedule, economy_schedule,
     growth_schedule, maintenance_schedule, metrics_sample_schedule, world_clock_schedule,
@@ -492,6 +493,9 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(room);
     sample!(building_area);
     sample!(district);
+    sample!(route_node);
+    sample!(route_edge);
+    sample!(edge_kind);
     sample!(room_area);
     sample!(citizen_transition_schedule);
     sample!(metrics_sample_schedule);

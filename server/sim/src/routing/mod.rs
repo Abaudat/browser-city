@@ -2,6 +2,7 @@
 //! and search that share its cost unit.
 
 pub mod estimate;
+pub mod graph;
 
 /// In-city time in thousandths of an in-city minute -- the one cost unit
 /// of everything under `routing/` (FR130: no second distance unit).

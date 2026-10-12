@@ -123,6 +123,53 @@ check "a call whose enclosing fn cannot be determined fails" 1 bash "$CHECK" "$d
 d="$(plant lib.rs 'use sim::generation as g;')"
 check "naming the generation module outside district.rs fails" 1 bash "$CHECK" "$d"
 
+# Story 3.9: the routing graph's rows have the same single writer.
+d="$(plant tables/other.rs 'fn f(ctx: &ReducerContext) { ctx.db.route_node().insert(x); }')"
+check "another file calling the route_node accessor fails" 1 bash "$CHECK" "$d"
+check_contains "names the file and the accessor" "route_node" "$(bash "$CHECK" "$d" 2>&1)"
+
+d="$(plant tables/other.rs 'fn f(ctx: &ReducerContext) { ctx.db.route_edge().iter(); }')"
+check "another file calling the route_edge accessor fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::routing::{RouteEdge, route_edge};')"
+check "importing the route_edge accessor fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::routing::*;')"
+check "a routing glob import fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/other.rs 'use super::routing::{EdgeKind, edge_kind};')"
+check "importing the edge_kind code table passes" 0 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s
+' 'fn write_graph(ctx: &ReducerContext) { ctx.db.route_node().insert(x); ctx.db.route_edge().insert(y); }' >> "$d/tables/district.rs"
+check "the graph writer inside district.rs passes" 0 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s
+' 'fn regen_graph(ctx: &ReducerContext) { ctx.db.route_edge().insert(y); }' >> "$d/tables/district.rs"
+check "another graph writer inside district.rs fails" 1 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s
+' 'pub fn restore_route_node(ctx: &ReducerContext) { ctx.db.route_node().insert(s); }' >> "$d/tables/restore.rs"
+check "restore_route_node inserting route_node passes" 0 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s
+' 'pub fn restore_route_node(ctx: &ReducerContext) { ctx.db.route_edge().insert(s); }' >> "$d/tables/restore.rs"
+check "restore_route_node touching route_edge fails" 1 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s
+' 'fn sneaky(ctx: &ReducerContext) { ctx.db.route_node().iter(); }' >> "$d/tables/metrics.rs"
+check "a route_node call in metrics.rs fails" 1 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s
+' 'fn wipe(ctx: &ReducerContext) { ctx.db.route_node().node_id().delete(1); }' >> "$d/tables/district.rs"
+check "a graph delete in district.rs fails" 1 bash "$CHECK" "$d"
+
 check "the real server/src passes" 0 bash "$CHECK"
 
 summary
