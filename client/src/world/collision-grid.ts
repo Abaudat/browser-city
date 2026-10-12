@@ -82,6 +82,9 @@ export class CollisionGrid implements CollisionGridQuery {
   private memoCy = 0;
   private memoChanges = -1;
   private memoChunk: Chunk | undefined;
+  /** Chunks touched by an insert or delete since the last drain, keyed by
+   * `floor,cx,cy`: what a mirror of the grid on another thread must refresh. */
+  private readonly changed = new Map<string, { floor: number; cx: number; cy: number }>();
 
   /** `subcellsPerCell` is `defs/`'s own generated
    * `COLLIDER_SUBCELLS_PER_CELL`, never a literal here. `objectDefs` is
@@ -116,6 +119,22 @@ export class CollisionGrid implements CollisionGridQuery {
     return this.memoChunk?.cells[localIndex(cellX, cellY)] ?? NO_ENTRIES;
   }
 
+  /** Calls `fn` once for each chunk an insert or delete touched since the
+   * last drain, then forgets them. */
+  drainChangedChunks(fn: (floor: number, cx: number, cy: number) => void): void {
+    if (this.changed.size === 0) return;
+    const drained = [...this.changed.values()];
+    this.changed.clear();
+    for (const c of drained) fn(c.floor, c.cx, c.cy);
+  }
+
+  private markChanged(floor: number, cellX: number, cellY: number): void {
+    const cx = Math.floor(cellX / CHUNK_SIZE);
+    const cy = Math.floor(cellY / CHUNK_SIZE);
+    const key = `${floor},${cx},${cy}`;
+    if (!this.changed.has(key)) this.changed.set(key, { floor, cx, cy });
+  }
+
   /** How many dense chunk arrays are allocated right now, across every
    * floor. Storage shape, not a query result: an `insert`/`delete` pair
    * must leave this exactly where it started, and a grid must never
@@ -133,6 +152,7 @@ export class CollisionGrid implements CollisionGridQuery {
   insert(row: PlacedObject): void {
     this.forEachCoveredCell(row, (cellX, cellY, entry) => {
       this.changes++;
+      this.markChanged(row.floor, cellX, cellY);
       let byChunk = this.floors.get(row.floor);
       if (!byChunk) {
         byChunk = new Map();
@@ -164,6 +184,7 @@ export class CollisionGrid implements CollisionGridQuery {
   delete(row: PlacedObject): void {
     this.forEachCoveredCell(row, (cellX, cellY) => {
       this.changes++;
+      this.markChanged(row.floor, cellX, cellY);
       const byChunk = this.floors.get(row.floor);
       const key = chunkKey(cellX, cellY, row.floor);
       const chunk = byChunk?.get(key);

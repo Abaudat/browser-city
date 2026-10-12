@@ -53,7 +53,7 @@ declare global {
       l3SolveTimings?: number[];
       startL3Timings?: () => void;
       stopL3Timings?: () => number[];
-      /** The solve share of each `l3Timings` window (the rest is the layer's update). */
+      /** The worker's own solve time at each `l3Timings` frame. */
       stopL3SolveTimings?: () => number[];
       /** Story 5.4: every drawn L3 body as the debug overlay reads it. */
       l3Bodies?: () => readonly {
@@ -66,8 +66,21 @@ declare global {
       /** Story 5.4: draws nothing while off; L3 and every ticker listener
        * keep running. */
       setRender?: (on: boolean) => void;
-      /** Story 5.4: times `frames` render-free L3 frames (NFR11). */
-      l3Sweep?: (frames: number) => number[];
+      /** Story 5.4: the worker's solve time for `frames` successive instants,
+       * each timed inside the worker (NFR11). */
+      l3Sweep?: (frames: number) => Promise<number[]>;
+      /** D-L3: the worker's counters (stale draws, skipped requests). */
+      l3SolveStats?: () => {
+        applied: number;
+        stale: number;
+        skipped: number;
+        lastSolveMs: number;
+        maxLagFrames: number;
+      };
+      /** D-L3: the calibration workload's median, on the main thread and
+       * inside the worker. */
+      l3Calibrate?: (runs: number) => number;
+      l3WorkerCalibrate?: (runs: number) => Promise<number>;
       /** Story 5.4: how many bodies are drawn right now. */
       bodyCount?: () => number;
       /** Story 2.8 (FR147): how many ticker frames the mounted street
@@ -208,20 +221,22 @@ declare global {
       playerDrawnPoint?: () => { x: number; y: number };
       /** Story 5.2: every street citizen's agreed L3 state at a given city
        * time, computed from scratch -- never read from what was drawn. */
-      l3Agreement?: (cityMilli: number) => readonly {
-        id: string;
-        x: number;
-        y: number;
-        activity: string;
-        frameIndex: number;
-        facing: string;
-        offsetX: number;
-        offsetY: number;
-        look: string;
-      }[];
+      l3Agreement?: (cityMilli: number) => Promise<
+        readonly {
+          id: string;
+          x: number;
+          y: number;
+          activity: string;
+          frameIndex: number;
+          facing: string;
+          offsetX: number;
+          offsetY: number;
+          look: string;
+        }[]
+      >;
       /** Story 5.4: the L3 state of the bodies this client holds, at a
        * given city time -- what differs between two bubbles. */
-      l3Live?: (cityMilli: number) => {
+      l3Live?: (cityMilli: number) => Promise<{
         /** The viewport in floor-0 cells. */
         viewport: { x0: number; y0: number; x1: number; y1: number } | undefined;
         bodies: readonly {
@@ -235,7 +250,7 @@ declare global {
           offsetY: number;
           agreed: boolean;
         }[];
-      };
+      }>;
       /** Story 5.1: the L3 commuter as last drawn -- a callable read fresh
        * each call, `undefined` while it is not on screen. */
       commuterDrawn?: () =>
@@ -366,6 +381,11 @@ export function exposeL3BodiesForE2e(
   live: NonNullable<NonNullable<Window["__bc"]>["l3Live"]>,
   sweep: NonNullable<NonNullable<Window["__bc"]>["l3Sweep"]>,
   setRender: NonNullable<NonNullable<Window["__bc"]>["setRender"]>,
+  solve: {
+    stats: NonNullable<NonNullable<Window["__bc"]>["l3SolveStats"]>;
+    calibrate: NonNullable<NonNullable<Window["__bc"]>["l3Calibrate"]>;
+    workerCalibrate: NonNullable<NonNullable<Window["__bc"]>["l3WorkerCalibrate"]>;
+  },
 ): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
@@ -374,6 +394,9 @@ export function exposeL3BodiesForE2e(
   bucket.l3Live = live;
   bucket.l3Sweep = sweep;
   bucket.setRender = setRender;
+  bucket.l3SolveStats = solve.stats;
+  bucket.l3Calibrate = solve.calibrate;
+  bucket.l3WorkerCalibrate = solve.workerCalibrate;
   window.__bc = bucket;
 }
 

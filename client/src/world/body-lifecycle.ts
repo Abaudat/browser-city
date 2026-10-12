@@ -22,6 +22,9 @@ export interface BodyHooks<Frames, Body> {
   destroy(id: string, body: Body): void;
 }
 
+/** What a frame with nothing to spawn returns: shared, never grown. */
+const NO_SPAWNS: Promise<void>[] = [];
+
 export class BodyLifecycle<Frames, Body> {
   readonly #hooks: BodyHooks<Frames, Body>;
   readonly #onError: (id: string, error: unknown) => void;
@@ -61,9 +64,9 @@ export class BodyLifecycle<Frames, Body> {
     count: number,
     zone: BodyZone,
   ): Promise<void>[] {
-    const plan = planBodies(this.#live, candidates, zone, this.#plan, count);
+    const plan = planBodies(this.#live, candidates, zone, this.#plan, count, false);
     for (const id of plan.despawn) this.#despawn(id);
-    if (plan.spawn.length === 0) return [];
+    if (plan.spawn.length === 0) return NO_SPAWNS;
     return plan.spawn.map((id) => this.#spawn(id, t));
   }
 

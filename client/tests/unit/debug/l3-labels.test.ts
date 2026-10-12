@@ -58,4 +58,21 @@ describe("buildL3Labels", () => {
     const [ok, bad] = buildL3Labels(view);
     expect(ok?.fill).not.toBe(bad?.fill);
   });
+
+  it("reports the worker's stale draws and skipped requests, in the warning fill when any", () => {
+    const quiet = {
+      ...conformanceView(),
+      l3SolveStats: () => ({ stale: 0, skipped: 0 }),
+    };
+    const [calm] = buildL3Labels(quiet);
+    expect(calm?.text).toBe("solver stale 0 skipped 0");
+    const behind = { ...conformanceView(), l3SolveStats: () => ({ stale: 3, skipped: 1 }) };
+    const [late] = buildL3Labels(behind);
+    expect(late?.text).toBe("solver stale 3 skipped 1");
+    expect(late?.fill).not.toBe(calm?.fill);
+  });
+
+  it("shows no solver readout when the view has none", () => {
+    expect(buildL3Labels(conformanceView())).toEqual([]);
+  });
 });

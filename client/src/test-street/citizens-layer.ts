@@ -16,11 +16,13 @@
 
 import { Container, Sprite, type Texture } from "pixi.js";
 import type { Defs, Family } from "../defs/types";
-import { type AtState, CitizenBody } from "../l3/citizen";
+import type { AtState } from "../l3/citizen";
 import { type L3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
 import type { Facing } from "../l3/gait";
 import { type LedgerPoint, ledgerPositionAt } from "../l3/ledger-position";
 import type { Walkability } from "../l3/micro-path";
+import type { ClientMember, L3Client } from "../l3-worker/client";
+import type { CitizenInit } from "../l3-worker/protocol";
 import type {
   AppearanceTextureCache,
   CompositeFrames,
@@ -52,21 +54,16 @@ import {
 } from "./citizens";
 import { comparePipelineVsStack } from "./compare-pipeline-vs-stack";
 import type { RushCrowd } from "./rush-crowd";
-import {
-  type LifeMember,
-  type LifeSample,
-  lifeDialsFor,
-  type StreetLife,
-  standState,
-} from "./street-life";
+import { type LifeSample, lifeDialsFor, standState } from "./street-life";
 import { Timetable, type TimetableSpec } from "./timetable";
 
 /** What the walking citizens need from L3: tile walkability and the dials. */
 export interface WalkerSource {
   readonly walk: Walkability;
   readonly config: L3Config;
-  /** Every ledger-driven citizen on the street, the layer's own included. */
-  readonly life: StreetLife;
+  /** The worker that solves every ledger-driven citizen on the street, the
+   * layer's own included. */
+  readonly client: L3Client;
   /** A frozen crowd (a screenshot test) is staged with no avoidance
    * fixtures and never animated. */
   readonly frozen?: boolean;
@@ -137,19 +134,21 @@ export interface CitizensLayerHandle {
   l3Bodies(): readonly L3BodyReport[];
   /** Every citizen's agreed state at city time `cityMilliminutes`, computed
    * from scratch -- what the e2e agreement spec compares between clients. */
-  agreementAt(cityMilliminutes: number): readonly LifeSample[];
+  agreementAt(cityMilliminutes: number): Promise<readonly LifeSample[]>;
   /** The bodies this client holds, solved at `cityMilliminutes` as they are:
    * what the divergence check compares between two different bubbles. */
-  liveAt(cityMilliminutes: number): readonly LifeSample[];
+  liveAt(cityMilliminutes: number): Promise<readonly LifeSample[]>;
 }
 
 /** A citizen the layer draws: its sprite and its place in the street's life. */
 interface Drawn {
   readonly sprite: Sprite;
   readonly frames: CompositeFrames;
-  readonly member: LifeMember;
+  readonly member: ClientMember;
   /** Standing citizens keep their drawn position; walkers move. */
   readonly walks: boolean;
+  /** Placed where its first solved frame says; until then it is not drawn. */
+  placed: boolean;
 }
 
 /** A citizen of the street: its data, with or without a body. */
@@ -160,7 +159,6 @@ interface Citizen {
   readonly spec: TimetableSpec | undefined;
   /** The ledger: a walker's legs. Absent for a standing citizen. */
   readonly ledger: Timetable | undefined;
-  readonly make: () => { body: CitizenBody; timetable?: Timetable };
   readonly stand: AtState | undefined;
   readonly standAt: { readonly x: number; readonly y: number } | undefined;
 }
@@ -244,6 +242,9 @@ export async function mountCitizensLayer(
   let rankDirty = true;
 
   const citizens = new Map<string, Citizen>();
+  /** Declared to the worker in one message, for the agreement sample of every
+   * citizen, with a body or not. */
+  const declared: CitizenInit[] = [];
   for (const fixture of fixtures) {
     const override = fixture.professionKey ? resolveUniform(defs, fixture.professionKey) : null;
     const body = defs.bodies.find((b) => b.id === fixture.tuple.body);
@@ -254,19 +255,6 @@ export async function mountCitizensLayer(
     const spec =
       WALKER_SPECS[fixture.id] ?? AVOIDANCE_SPECS[fixture.id] ?? l3.rush?.specs[fixture.id];
     const life = lifeDialsFor(defs, l3.config, body.family);
-    const make = (): { body: CitizenBody; timetable?: Timetable } => ({
-      timetable: spec ? new Timetable(spec, l3.config, l3.walk, path) : undefined,
-      body: new CitizenBody(
-        l3.walk,
-        path,
-        {
-          strideCells: l3.config.strideCells,
-          framesPerCycle: walkFramesPerCycle(defs, body.family),
-        },
-        fixture.id,
-        life,
-      ),
-    });
     const stand = spec
       ? undefined
       : standState(
@@ -278,14 +266,18 @@ export async function mountCitizensLayer(
         );
     const standAt = spec ? undefined : { x: fixture.gridX, y: fixture.gridY };
     const ledger = spec ? new Timetable(spec, l3.config, l3.walk, path) : undefined;
-    // Agreement samples every citizen, with a body or not.
-    l3.life.declare({
+    declared.push({
       id: fixture.id,
-      timetable: ledger,
+      spec,
+      walkMilli: ledger?.walkMilli,
       stand,
       standAt,
       look: appearanceCacheKey(fixture.tuple, override),
-      remake: make,
+      life,
+      gait: {
+        strideCells: l3.config.strideCells,
+        framesPerCycle: walkFramesPerCycle(defs, body.family),
+      },
     });
     citizens.set(fixture.id, {
       fixture,
@@ -293,47 +285,24 @@ export async function mountCitizensLayer(
       family: body.family,
       spec,
       ledger,
-      make,
       stand,
       standAt,
     });
   }
 
-  /** Builds a body from resolved frames, posed once at the spawn instant
-   * `t` -- where its ledger says it is, never its fixture's home cell -- so
-   * it is never drawn anywhere else. */
-  function createBody(id: string, frames: CompositeFrames, t: number): Drawn {
+  l3.client.declare(declared);
+
+  /** Builds a body from resolved frames. It is not drawn until the worker's
+   * first result carries it, so it is never drawn anywhere but where its
+   * ledger says it is at that instant. */
+  function createBody(id: string, frames: CompositeFrames, _t: number): Drawn {
     const c = citizens.get(id) as Citizen;
-    const { fixture, override } = c;
     textureIdsById[id] = idFor(frames);
-    const member = l3.life.add({
-      id,
-      ...c.make(),
-      stand: c.stand,
-      standAt: c.standAt,
-      look: appearanceCacheKey(fixture.tuple, override),
-      remake: c.make,
-    });
-    l3.life.pose(member, t);
+    const member = l3.client.add(id);
     const sprite = newBodySprite(frames, member.frame);
-    const walks = c.spec !== undefined;
-    // A standing citizen never moves, so it keeps its whole-world-pixel
-    // placement (zoom 1, itself a whole screen pixel): its scatter
-    // position is fractional, and a finer snap would only shift it.
-    const px = worldPointPx(
-      member.frame.x,
-      member.frame.y,
-      CROWD_FLOOR,
-      tileSizePx,
-      storeyHeightPx,
-      walks ? zoom : 1,
-      0,
-    );
-    sprite.x = px.x;
-    sprite.y = px.y;
-    sprite.zIndex = member.frame.y;
+    sprite.visible = false;
     layer.addChild(sprite);
-    const d: Drawn = { sprite, frames, member, walks };
+    const d: Drawn = { sprite, frames, member, walks: c.spec !== undefined, placed: false };
     drawn.set(id, d);
     rankDirty = true;
     return d;
@@ -343,7 +312,7 @@ export async function mountCitizensLayer(
   function destroyBody(id: string, d: Drawn): void {
     layer.removeChild(d.sprite);
     d.sprite.destroy();
-    l3.life.remove(d.member);
+    l3.client.remove(d.member);
     drawn.delete(id);
     rankDirty = true;
   }
@@ -414,10 +383,30 @@ export async function mountCitizensLayer(
     }
     for (const d of drawn.values()) {
       const { frame } = d.member;
+      if (!d.member.solved) continue;
       setBodyFrame(d.sprite, d.frames, frame);
-      if (!d.walks) continue;
-      const ox = l3.life.offsetX(d.member);
-      const oy = l3.life.offsetY(d.member);
+      if (!d.placed) {
+        d.placed = true;
+        d.sprite.visible = true;
+        // A standing citizen never moves, so it keeps its whole-world-pixel
+        // placement (zoom 1, itself a whole screen pixel): its scatter
+        // position is fractional, and a finer snap would only shift it.
+        const first = worldPointPx(
+          frame.x,
+          frame.y,
+          CROWD_FLOOR,
+          tileSizePx,
+          storeyHeightPx,
+          d.walks ? zoom : 1,
+          0,
+        );
+        d.sprite.x = first.x;
+        d.sprite.y = first.y;
+        d.sprite.zIndex = frame.y;
+      }
+      if (!d.walks || l3.frozen) continue;
+      const ox = d.member.offsetX;
+      const oy = d.member.offsetY;
       const px = worldPointPxInto(
         placed,
         frame.x + ox,
@@ -482,31 +471,32 @@ export async function mountCitizensLayer(
       }),
     compareForE2e,
     update,
-    agreementAt: (t) => l3.life.agreementAt(t),
-    liveAt: (t) => l3.life.liveAt(t),
+    agreementAt: (t) => l3.client.agreementAt(t),
+    liveAt: (t) => l3.client.liveAt(t),
     l3Bodies: () => {
       const out: L3BodyReport[] = [];
-      const msPerMilliminute = l3.config.realMsPerCityMinute / 1000;
+      l3.client.wantDiagnostics();
       for (const d of drawn.values()) {
         const m = d.member;
-        const report = m.body.diagnostics(msPerMilliminute, l3.config);
+        if (!m.solved) continue;
+        const onLeg = m.frame.arriveAt > m.frame.departAt;
         const flavour = m.frame.flavour;
-        if (!report && !flavour) continue;
-        const ox = l3.life.offsetX(m);
-        const oy = l3.life.offsetY(m);
+        if (!onLeg && !flavour) continue;
+        const ox = m.offsetX;
+        const oy = m.offsetY;
         out.push({
           id: m.id,
           x: m.frame.x + ox,
           y: m.frame.y + oy,
           floor: m.frame.floor,
           moving: m.frame.moving,
-          fallbacks: report?.fallbacks ?? 0,
-          paceOutOfBand: report?.paceOutOfBand ?? false,
+          fallbacks: m.fallbacks,
+          paceOutOfBand: m.paceOutOfBand,
           avoidance: {
             // Positive to the right of the heading.
             offsetCells: ox * -m.frame.headingY + oy * m.frame.headingX,
-            capped: l3.life.field.capped(m.index),
-            blocked: l3.life.field.blocked(m.index),
+            capped: m.capped,
+            blocked: m.blocked,
           },
           activity: flavour || undefined,
         });

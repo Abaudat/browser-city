@@ -145,5 +145,52 @@ check "net/ dynamically importing l3/" 1 bash "$CHECK" "$REAL_L3" "$d"
 d="$(plant_net 'import { connect } from "./bindings";')"
 check "net/ importing its own modules" 0 bash "$CHECK" "$REAL_L3" "$d"
 
+# Story 5.24 (D-L3): the worker adapter's own boundary.
+plant_adapter() { # <file> <content> -- a fake adapter dir with one module
+  local d
+  d="$(fake_dir)"
+  printf '%s\n' "$2" > "$d/$1"
+  printf '%s' "$d"
+}
+REAL_NET="$REPO_ROOT/client/src/net"
+check "the real adapter conforms" 0 bash "$CHECK" "$REAL_L3" "$REAL_NET" "$REPO_ROOT/client/src/l3-worker"
+
+while IFS= read -r spec; do
+  d="$(plant_adapter solver.ts "$spec")"
+  check "adapter allowed import: $spec" 0 bash "$CHECK" "$REAL_L3" "$REAL_NET" "$d"
+done <<'ADAPTER_OK'
+import { StreetLife } from "../test-street/street-life";
+import { Timetable } from "../test-street/timetable";
+import type { BodyZone } from "../world/body-zone";
+import { WalkMirror } from "../world/walk-mirror";
+import { CitizenBody } from "../l3/citizen";
+import type { Defs } from "../defs/types";
+import { solve } from "./protocol";
+ADAPTER_OK
+
+while IFS= read -r spec; do
+  d="$(plant_adapter solver.ts "$spec")"
+  check "adapter banned import: $spec" 1 bash "$CHECK" "$REAL_L3" "$REAL_NET" "$d"
+done <<'ADAPTER_BAD'
+import { Sprite } from "pixi.js";
+import { DbConnection } from "../net/connection";
+import { draw } from "../render/body-sprite";
+import { mountCitizensLayer } from "../test-street/citizens-layer";
+import { CollisionGrid } from "../world/collision-grid";
+import { overlay } from "../debug/overlays";
+const m = await import("../net/connection");
+ADAPTER_BAD
+
+d="$(plant_adapter solver.ts 'export const t = performance.now();')"
+check "adapter: the clock outside worker.ts" 1 bash "$CHECK" "$REAL_L3" "$REAL_NET" "$d"
+d="$(plant_adapter worker.ts 'export const t = performance.now(); export const s = self;')"
+check "adapter: the clock and self in worker.ts" 0 bash "$CHECK" "$REAL_L3" "$REAL_NET" "$d"
+d="$(plant_adapter worker.ts 'export const t = Date.now();')"
+check "adapter: Date even in worker.ts" 1 bash "$CHECK" "$REAL_L3" "$REAL_NET" "$d"
+d="$(plant_adapter client.ts 'export const w = window.innerWidth; export const r = Math.random();')"
+check "adapter: the DOM and randomness" 1 bash "$CHECK" "$REAL_L3" "$REAL_NET" "$d"
+d="$(plant_net 'import { spawnL3Worker } from "../l3-worker/spawn";')"
+check "net/ importing l3-worker/" 1 bash "$CHECK" "$REAL_L3" "$d"
+
 summary
 exit $?

@@ -82,4 +82,7 @@ export interface DebugWorldView extends CollisionGridQuery {
   orderOf(stableId: bigint): number | undefined;
   /** Every live L3 body: what each says about itself, never recomputed here. */
   l3Bodies(): readonly L3BodyView[];
+  /** D-L3: the worker's counters -- frames drawn on a stale result and
+   * requests skipped for want of a buffer. Absent when no worker solves. */
+  l3SolveStats?(): { readonly stale: number; readonly skipped: number };
 }

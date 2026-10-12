@@ -35,8 +35,10 @@ import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { type BodyDials, type BodyFrame, createBodyMotion, poseBody } from "../l3/body-pose";
-import { CitizenBody } from "../l3/citizen";
 import { framesByAnimation, loadL3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
+import { calibrationWorkload } from "../l3-worker/calibration";
+import { L3Client, LOOKAHEAD_FRAMES, type SolveStats } from "../l3-worker/client";
+import { spawnL3Worker } from "../l3-worker/spawn";
 import { type ActorPlacement, placeActorAt } from "../render/actor-placement";
 import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
 import { type AppearanceTuple, appearanceCacheKey } from "../render/appearance/composite";
@@ -78,6 +80,7 @@ import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { bandOf } from "../world/region";
 import { isBodyClear, isCellStandable } from "../world/standable";
 import { TransitionIndex } from "../world/transitions";
+import { WalkFeed } from "../world/walk-mirror";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
 import { ASSET_URLS, type PixelRect } from "./assets";
@@ -85,6 +88,7 @@ import {
   buildCommuterAppearanceTuple,
   buildPlayerAppearanceTuple,
   CROWD_FLOOR,
+  stagingKerbRect,
   withStagingKerb,
 } from "./citizens";
 import {
@@ -123,7 +127,7 @@ import {
   type RemotePlayersSource,
 } from "./remote-players-layer";
 import type { RushCrowd } from "./rush-crowd";
-import { lifeDialsFor, StreetLife } from "./street-life";
+import { lifeDialsFor } from "./street-life";
 import { Timetable } from "./timetable";
 
 /** A plain, single-tile interior floor swatch cropped from the same
@@ -432,11 +436,16 @@ export interface StreetSceneHandle {
   commuterDrawn(): CommuterDrawn | undefined;
   /** What each live L3 body says about itself, for the debug tooling. */
   l3Bodies(): readonly L3BodyReport[];
-  /** Story 5.4 (NFR11): runs the L3 frame -- solve and the layer's update,
-   * the same window `onL3Work` brackets -- for `frames` successive 60 Hz
-   * instants from the current city time, timing each. No render, so a
-   * GPU-less runner that draws few frames still yields thousands of samples. */
-  l3Sweep(frames: number): number[];
+  /** Story 5.4 (NFR11): the worker's solve for `frames` successive 60 Hz
+   * instants from the current city time, each timed inside the worker. No
+   * render, so a GPU-less runner still yields thousands of samples. */
+  l3Sweep(frames: number): Promise<number[]>;
+  /** The worker's counters: results applied, stale frames, skipped requests. */
+  l3SolveStats(): SolveStats;
+  /** The calibration workload's median in ms, on the main thread. */
+  l3Calibrate(runs: number): number;
+  /** The same workload's median inside the L3 worker. */
+  l3WorkerCalibrate(runs: number): Promise<number>;
   /** Story 5.4 (an e2e switch): draws nothing while off, leaving every ticker
    * listener, and so L3, running -- the runner's software rasteriser is not
    * what NFR11 measures. */
@@ -1493,31 +1502,30 @@ export async function mountStreetScene(
   const msPerMilliminute = l3Config.realMsPerCityMinute / 1000;
   // Every ledger-driven citizen on the street -- the commuter and the crowd's
   // walkers and standers -- is posed, and sidestepped, through this one object.
-  const streetLife = new StreetLife(l3Config, npcWalk);
+  // The solve runs in a worker (D-L3): this side posts deltas and the next
+  // instant, and draws the latest completed result.
+  const l3Client = new L3Client(spawnL3Worker());
+  l3Client.init(l3Config);
+  const walkFeed = new WalkFeed(npcWalk, worldIndex, [stagingKerbRect()]);
+  const walkFeedOnce = (): void => l3Client.feedWalk(walkFeed.collect());
   let updateCommuter: (cityMilli: number | undefined) => void = () => {};
   let commuterDrawn: () => CommuterDrawn | undefined = () => undefined;
   let commuterDiagnostics: () => readonly L3BodyReport[] = () => [];
   if (commuterFrames) {
-    const makeCommuter = () => ({
-      timetable: new Timetable(COMMUTER_SPEC, l3Config, npcWalk, l3Path),
-      body: new CitizenBody(
-        npcWalk,
-        l3Path,
-        {
+    l3Client.declare([
+      {
+        id: COMMUTER_ID,
+        spec: COMMUTER_SPEC,
+        walkMilli: new Timetable(COMMUTER_SPEC, l3Config, npcWalk, l3Path).walkMilli,
+        look: appearanceCacheKey(buildCommuterAppearanceTuple(defs), null),
+        life: lifeDialsFor(defs, l3Config, "adult"),
+        gait: {
           strideCells: l3Config.strideCells,
           framesPerCycle: walkFramesPerCycle(defs, "adult"),
         },
-        COMMUTER_ID,
-        lifeDialsFor(defs, l3Config, "adult"),
-      ),
-    });
-    const commuterMember = streetLife.add({
-      id: COMMUTER_ID,
-      ...makeCommuter(),
-      look: appearanceCacheKey(buildCommuterAppearanceTuple(defs), null),
-      remake: makeCommuter,
-    });
-    const citizen = commuterMember.body;
+      },
+    ]);
+    const commuterMember = l3Client.add(COMMUTER_ID);
     const frame = commuterMember.frame;
     const lamppostId = STREET_PROPS.find(
       (prop) => isDefStreetProp(prop) && prop.defId === LAMPPOST_DEF_ID,
@@ -1554,8 +1562,9 @@ export async function mountStreetScene(
       };
     };
     commuterDiagnostics = () => {
-      const report = citizen.diagnostics(msPerMilliminute, l3Config);
-      if (!report || !drawn) return [];
+      l3Client.wantDiagnostics();
+      const onLeg = frame.arriveAt > frame.departAt;
+      if (!onLeg || !drawn) return [];
       return [
         {
           id: COMMUTER_ID,
@@ -1563,25 +1572,28 @@ export async function mountStreetScene(
           y: drawn.y,
           floor: drawn.floor,
           moving: frame.moving,
-          ...report,
+          fallbacks: commuterMember.fallbacks,
+          paceOutOfBand: commuterMember.paceOutOfBand,
         },
       ];
     };
     updateCommuter = (cityMilli) => {
-      sprite.renderable = cityMilli !== undefined;
-      if (cityMilli === undefined) {
+      sprite.renderable = cityMilli !== undefined && commuterMember.solved;
+      if (cityMilli === undefined || !commuterMember.solved) {
         drawn = undefined;
         return;
       }
-      // Posed by `streetLife.solve` this tick; drawn where its sidestep puts it.
-      const ox = streetLife.offsetX(commuterMember);
-      const oy = streetLife.offsetY(commuterMember);
+      // Solved by the worker; drawn where its sidestep puts it.
+      const ox = commuterMember.offsetX;
+      const oy = commuterMember.offsetY;
       const drawX = frame.x + ox;
       const drawY = frame.y + oy;
       setBodyFrame(sprite, commuterFrames, frame);
       placeActor(entry, drawX, drawY, frame.floor);
       drawn = {
-        cityMilli,
+        // The instant the worker solved this pose for: the frame's own time
+        // was asked ahead, and a pose is a function of its instant alone.
+        cityMilli: Number.isNaN(l3Client.drawnInstant) ? cityMilli : l3Client.drawnInstant,
         legKey: frame.legKey,
         departAt: frame.departAt,
         arriveAt: frame.arriveAt,
@@ -1902,13 +1914,19 @@ export async function mountStreetScene(
     {
       walk: npcWalk,
       config: l3Config,
-      life: streetLife,
+      client: l3Client,
       frozen: crowdFrozen,
       rush: crowdFrozen ? undefined : rushCrowd,
     },
     // A frozen crowd is staged whole for a screenshot.
     crowdFrozen ? {} : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
   );
+  if (crowdFrozen) {
+    // No ticker drives a frozen crowd: its one solve pins every citizen.
+    walkFeedOnce();
+    await l3Client.settle(0, undefined);
+    citizensLayer.update(undefined);
+  }
   // Story 4.4/4.9: the other players. Each is a pool member of the floor it
   // stands on, kept out of the reported order, placed by `placeActor` like
   // the local player and the commuter, and a visibility member -- so what
@@ -1980,6 +1998,7 @@ export async function mountStreetScene(
   // `startWithCrowdFrozen`) is the one exception: a screenshot test needs
   // every citizen pinned at its initial pose, never this scene's own
   // concern otherwise.
+  let lastCityMilli: number | undefined;
   app.ticker.add(() => {
     if (!crowdFrozen) {
       const cityMilli = cityMilliminutes?.();
@@ -1988,10 +2007,15 @@ export async function mountStreetScene(
         // the render or of test plumbing (`onCitizenBodies` is outside it).
         const l3Start = onL3Work ? performance.now() : 0;
         const zone = bodyZone();
-        streetLife.solve(cityMilli, zone);
-        const solved = onL3Work ? performance.now() : 0;
+        // Draw the result due this frame, then ask for the instant the frame
+        // LOOKAHEAD_FRAMES on will draw: a result is a pure function of it.
+        l3Client.feedWalk(walkFeed.collect());
+        l3Client.apply();
+        const step = lastCityMilli === undefined ? 0 : Math.max(0, cityMilli - lastCityMilli);
+        lastCityMilli = cityMilli;
+        l3Client.request(cityMilli + step * LOOKAHEAD_FRAMES, zone);
         citizensLayer.update(cityMilli, zone);
-        onL3Work?.(performance.now() - l3Start, solved - l3Start);
+        onL3Work?.(performance.now() - l3Start, l3Client.stats.lastSolveMs);
         onCitizenBodies?.(citizensLayer.bodyBounds(), app.screen, citizensLayer.citizenCount);
       }
       updateCommuter(cityMilli);
@@ -2078,21 +2102,15 @@ export async function mountStreetScene(
       world.renderable = on;
     },
     viewportCells: () => viewportRect(),
-    l3Sweep: (frames) => {
+    l3Sweep: async (frames) => {
       const start = cityMilliminutes?.();
       if (start === undefined) return [];
       const step = 1000 / 60 / msPerMilliminute;
-      const out: number[] = [];
-      for (let k = 0; k < frames; k++) {
-        const t = start + k * step;
-        const at = performance.now();
-        const zone = bodyZone();
-        streetLife.solve(t, zone);
-        citizensLayer.update(t, zone);
-        out.push(performance.now() - at);
-      }
-      return out;
+      return [...(await l3Client.sweep(start, step, frames))];
     },
+    l3SolveStats: () => l3Client.stats,
+    l3Calibrate: (runs) => calibrationWorkload(runs, () => performance.now()),
+    l3WorkerCalibrate: (runs) => l3Client.calibrate(runs),
     playerDrawnPoint: () => ({ x: playerSprite.x, y: playerSprite.y }),
     playerScreenBounds: () => {
       const b = playerSprite.getBounds();

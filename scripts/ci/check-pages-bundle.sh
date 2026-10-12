@@ -78,6 +78,15 @@ for name in "${NAMES[@]}"; do
   fi
 done
 
+# --- D-L3 (story 5.24): the L3 solve ships as its own worker chunk. Vite
+# emits `assets/worker-<hash>.js` for `src/l3-worker/worker.ts`; without it
+# the client would have no solver at all. The worker is held to the same
+# root-absolute and localhost rules above (they scan every built JS file). ---
+if ! ls "$DIST_DIR"/assets/worker-*.js >/dev/null 2>&1; then
+  echo "check-pages-bundle: FAIL -- no L3 worker chunk (assets/worker-*.js) in '$DIST_DIR': the client has no solver" >&2
+  FAILED=1
+fi
+
 # --- the production URI actually reached the build (positive) --------------
 if ! grep -rqF "$EXPECTED_URI" "$DIST_DIR" --include='*.js' 2>/dev/null; then
   echo "check-pages-bundle: FAIL -- expected production URI '$EXPECTED_URI' was not found anywhere in the built JS -- VITE_SPACETIME_URI did not reach the build" >&2

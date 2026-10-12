@@ -10,6 +10,9 @@
 export const L3_P95_BUDGET_MS = 2;
 /** The tail, where GC shows up. */
 export const L3_P99_BUDGET_MS = 4;
+/** "Fits with margin": the recorded figure plus the tripwire's 25% must sit
+ * under the budget, so the p95 must be at most this (D-L3, story 5.24). */
+export const L3_P95_MARGIN_MS = 1.6;
 
 /** The finding as the tripwire holds it. `ubuntu-latest` is a mixed pool of
  * CPUs, so an absolute figure would go red on a slower SKU with no code change.
@@ -24,6 +27,12 @@ export const RECORDED_P95_RATIO = 0.43;
 export const RECORDED_P99_RATIO = 0.48;
 export const RECORDED_SWEEP_P95_RATIO = 0.23;
 export const RECORDED_SWEEP_P99_RATIO = 0.3;
+/** A rendered result may trail the instant it was solved for by this many frames. */
+export const MAX_RESULT_LAG_FRAMES = 1;
+
+/** The worker's own solve time per instant, in the real ticker. */
+export const RECORDED_WORKER_P95_RATIO = 0.23;
+export const RECORDED_WORKER_P99_RATIO = 0.3;
 export const REGRESSION_MARGIN = 1.25;
 
 /** Frames the in-situ window (the real ticker, render interleaved) must
@@ -39,6 +48,11 @@ export const MIN_MEASURED_FRAMES = 3_000;
  * is the micro-path search each leg start runs. Restamp it when the figure
  * moves, never above measured + 25%. */
 export const MAX_L3_ALLOC_BYTES_PER_FRAME = 18_432;
+
+/** The main thread's share of the same allocation, bytes per ticker frame,
+ * through the real ticker with the render off: the apply, the post and the
+ * layer's update. Stamped at the runner's measured figure plus 25%. */
+export const MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME = 4_096;
 
 /** Retained heap, last window against the first, after a forced GC at each
  * end -- the same method and bound as `street-perf.spec.ts`. */
@@ -82,6 +96,9 @@ export interface TraceEvent {
   readonly ph?: string;
   /** Microseconds. */
   readonly dur?: number;
+  readonly pid?: number;
+  readonly tid?: number;
+  readonly args?: { readonly name?: string };
 }
 
 export interface GcSummary {
@@ -92,6 +109,26 @@ export interface GcSummary {
   readonly totalPauseMs: number;
   readonly longestMinorPauseMs: number;
   readonly longestMajorPauseMs: number;
+}
+
+/** Splits a trace's events into the dedicated workers' threads and the rest,
+ * by the thread-name metadata the trace carries. The solve's garbage is the
+ * worker's own heap: its collections run off the frame's thread and are
+ * reported apart from the main thread's, which the gate holds at zero majors. */
+export function splitByThread(events: readonly TraceEvent[]): {
+  main: TraceEvent[];
+  worker: TraceEvent[];
+} {
+  const workers = new Set<string>();
+  for (const e of events) {
+    if (e.ph === "M" && e.name === "thread_name" && /worker/i.test(e.args?.name ?? "")) {
+      workers.add(`${e.pid}:${e.tid}`);
+    }
+  }
+  const main: TraceEvent[] = [];
+  const worker: TraceEvent[] = [];
+  for (const e of events) (workers.has(`${e.pid}:${e.tid}`) ? worker : main).push(e);
+  return { main, worker };
 }
 
 /** Counts the GC events of one trace. Only complete events with a duration
@@ -149,7 +186,8 @@ export interface SamplingNode {
 
 /** Which frames count as L3: the `l3/` modules and the two crowd adapters
  * that run inside the L3 window. */
-export const L3_FRAME_URL = /\/src\/(l3\/|test-street\/(street-life|citizens-layer))/;
+export const L3_FRAME_URL =
+  /\/src\/(l3\/|l3-worker\/|world\/walk-mirror|test-street\/(street-life|citizens-layer))/;
 
 /** Bytes sampled under any frame whose url matches `isL3`: a sample counts
  * once, for the stack that allocated it. */
@@ -198,11 +236,22 @@ export interface L3Measurement {
   readonly walkingMin: number;
   readonly requiredBodies: number;
   readonly requiredWalking: number;
-  /** The in-situ figure: L3's window in the real ticker, render interleaved. */
+  /** The main thread's L3 window in the real ticker: apply the latest result,
+   * post the next instant, update the layer. */
   readonly l3Ms: Distribution;
-  /** The supplementary render-free sweep, gated at the same budget. */
+  /** The solve as timed inside the worker, per ticker frame: moving work to
+   * another thread must not hollow out the budget. */
+  readonly solveMs: Distribution;
+  /** Ticker frames that drew with a request in flight and no new result. */
+  readonly staleFrames: number;
+  /** The most frames a result was drawn after the frame it was solved for. */
+  readonly maxLagFrames: number;
+  /** The supplementary render-free sweep (the worker's solve per instant),
+   * gated at the same budget. */
   readonly sweepMs: Distribution;
   readonly allocBytesPerFrame: number;
+  /** The main thread's bytes per ticker frame (the worker's are above). */
+  readonly mainAllocBytesPerFrame: number;
   /** The calibration workload's median time in this page, in ms. */
   readonly calibrationMs: number;
   readonly gc: GcSummary;
@@ -233,12 +282,22 @@ export function verdict(m: L3Measurement): Verdict {
   if (!(m.l3Ms.frames >= MIN_TICKER_FRAMES)) {
     gate.push(`${m.l3Ms.frames} ticker frames measured, ${MIN_TICKER_FRAMES} required`);
   }
+  if (!(m.solveMs.frames >= MIN_TICKER_FRAMES)) {
+    gate.push(`${m.solveMs.frames} worker solve samples measured, ${MIN_TICKER_FRAMES} required`);
+  }
+  if (!(m.staleFrames === 0)) {
+    gate.push(`${m.staleFrames} frames drew a stale result (the gate holds zero)`);
+  }
+  if (!(m.maxLagFrames <= MAX_RESULT_LAG_FRAMES)) {
+    gate.push(`a result was drawn ${m.maxLagFrames} frames late, ${MAX_RESULT_LAG_FRAMES} allowed`);
+  }
   if (!(m.sweepMs.frames >= MIN_MEASURED_FRAMES)) {
     gate.push(`${m.sweepMs.frames} sweep frames measured, ${MIN_MEASURED_FRAMES} required`);
   }
   if (!(m.calibrationMs > 0)) gate.push("no calibration time");
   const windows: [string, Distribution, number, number][] = [
     ["L3", m.l3Ms, RECORDED_P95_RATIO, RECORDED_P99_RATIO],
+    ["worker solve", m.solveMs, RECORDED_WORKER_P95_RATIO, RECORDED_WORKER_P99_RATIO],
     ["sweep", m.sweepMs, RECORDED_SWEEP_P95_RATIO, RECORDED_SWEEP_P99_RATIO],
   ];
   for (const [name, d, recorded95, recorded99] of windows) {
@@ -247,6 +306,9 @@ export function verdict(m: L3Measurement): Verdict {
     }
     if (!(d.p99 <= L3_P99_BUDGET_MS)) {
       missed.push(`${name} p99 ${d.p99.toFixed(3)} ms over ${L3_P99_BUDGET_MS} ms`);
+    }
+    if (!(d.p95 <= L3_P95_MARGIN_MS)) {
+      missed.push(`${name} p95 ${d.p95.toFixed(3)} ms over the ${L3_P95_MARGIN_MS} ms margin`);
     }
     const ratio95 = d.p95 / m.calibrationMs;
     const ratio99 = d.p99 / m.calibrationMs;
@@ -264,6 +326,11 @@ export function verdict(m: L3Measurement): Verdict {
   if (!(m.allocBytesPerFrame <= MAX_L3_ALLOC_BYTES_PER_FRAME)) {
     gate.push(
       `L3 allocates ${m.allocBytesPerFrame.toFixed(0)} B/frame over ${MAX_L3_ALLOC_BYTES_PER_FRAME}`,
+    );
+  }
+  if (!(m.mainAllocBytesPerFrame <= MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME)) {
+    gate.push(
+      `the main thread allocates ${m.mainAllocBytesPerFrame.toFixed(0)} B/frame over ${MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME}`,
     );
   }
   if (m.gc.majorCount > 0) gate.push(`${m.gc.majorCount} major GCs in the window`);

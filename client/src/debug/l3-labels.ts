@@ -29,6 +29,29 @@ function notes(body: L3BodyView): string {
 export function buildL3Labels(view: DebugWorldView): L3Label[] {
   const floor = view.viewerFloor();
   const labels: L3Label[] = [];
+  const stats = view.l3SolveStats?.();
+  if (stats) {
+    // Beside the bodies, at the window's corner: a worker that falls behind
+    // is a defect nothing else would show.
+    const corner = view.viewportCells();
+    const anchor = worldPointPx(
+      corner.cellX0 + 0.5,
+      corner.cellY0 + 0.5,
+      floor,
+      view.tileSizePx,
+      view.storeyHeightPx,
+      view.zoom,
+      0,
+    );
+    const behind = stats.stale > 0 || stats.skipped > 0;
+    labels.push({
+      id: "solver",
+      text: `solver stale ${stats.stale} skipped ${stats.skipped}`,
+      x: anchor.x,
+      y: anchor.y,
+      fill: behind ? DEBUG_STYLE.palette.playerBody : DEBUG_STYLE.palette.sortLabel,
+    });
+  }
   for (const body of view.l3Bodies()) {
     if (body.floor !== floor) continue;
     const defects: string[] = [];

@@ -9,7 +9,10 @@ import {
   MIN_TICKER_FRAMES,
   median,
   percentile,
+  RECORDED_P95_RATIO,
+  RECORDED_P99_RATIO,
   type SamplingNode,
+  splitByThread,
   summariseGc,
   verdict,
 } from "../../e2e/l3-budget-verdict";
@@ -20,10 +23,14 @@ const GOOD: L3Measurement = {
   requiredBodies: 200,
   requiredWalking: 120,
   l3Ms: distribution(Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01)),
+  solveMs: distribution(Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01)),
+  staleFrames: 0,
+  maxLagFrames: 0,
   sweepMs: distribution(
     Array.from({ length: MIN_MEASURED_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01),
   ),
   allocBytesPerFrame: 0,
+  mainAllocBytesPerFrame: 0,
   calibrationMs: 2,
   gc: {
     minorPausesMs: [0.5, 0.7, 0.9, 1],
@@ -53,13 +60,25 @@ describe("L3 budget verdict (NFR11)", () => {
     const at = (p95: number, p99: number) =>
       distribution(Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => (i % 20 === 0 ? p99 : p95)));
     // The recorded ratio: L3 4.3 ms on a 10 ms calibration.
-    const recorded = { ...GOOD, l3Ms: at(4.3, 4.8), calibrationMs: 10 };
+    const recorded = {
+      ...GOOD,
+      l3Ms: at(RECORDED_P95_RATIO * 10, RECORDED_P99_RATIO * 10),
+      calibrationMs: 10,
+    };
     expect(verdict(recorded).gateFailures).toEqual([]);
     // The same L3 on a 1.5x slower CPU: both times scale, the ratio holds.
-    const slower = { ...GOOD, l3Ms: at(6.45, 7.2), calibrationMs: 15 };
+    const slower = {
+      ...GOOD,
+      l3Ms: at(RECORDED_P95_RATIO * 15, RECORDED_P99_RATIO * 15),
+      calibrationMs: 15,
+    };
     expect(verdict(slower).gateFailures).toEqual([]);
     // 1.5x the L3 on the same calibration is a regression.
-    const regressed = { ...GOOD, l3Ms: at(6.45, 7.2), calibrationMs: 10 };
+    const regressed = {
+      ...GOOD,
+      l3Ms: at(RECORDED_P95_RATIO * 15, RECORDED_P99_RATIO * 15),
+      calibrationMs: 10,
+    };
     expect(verdict(regressed).gateFailures.join()).toContain("calibration");
   });
 
@@ -89,6 +108,11 @@ describe("L3 budget verdict (NFR11)", () => {
     expect(v.gateFailures.join()).toContain("B/frame");
   });
 
+  it("FAILS a main thread that allocates per frame", () => {
+    const v = verdict({ ...GOOD, mainAllocBytesPerFrame: 1_000_000 });
+    expect(v.gateFailures.join()).toContain("main thread allocates");
+  });
+
   it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
     expect(verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1 } }).met).toBe(false);
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);
@@ -99,6 +123,35 @@ describe("L3 budget verdict (NFR11)", () => {
   it("FAILS a render-free sweep over budget even when the ticker is green", () => {
     const slow = distribution(Array.from({ length: MIN_MEASURED_FRAMES }, () => 2.5));
     expect(verdict({ ...GOOD, sweepMs: slow }).gateFailures).not.toEqual([]);
+  });
+
+  it("FAILS a worker whose own solve is over budget while the main-thread window is green", () => {
+    const slow = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.4));
+    const v = verdict({ ...GOOD, solveMs: slow });
+    expect(v.met).toBe(false);
+    expect(v.failures.join()).toContain("worker solve p95");
+    expect(v.gateFailures.join()).toContain("worker solve p95 / calibration");
+  });
+
+  it("holds the margin: a p95 over 1.6 ms is not MET though it is under the 2 ms budget", () => {
+    const v = verdict({
+      ...GOOD,
+      calibrationMs: 10,
+      l3Ms: distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 1.8)),
+    });
+    expect(v.met).toBe(false);
+    expect(v.failures.join()).toContain("margin");
+  });
+
+  it("FAILS any stale frame: a worker that falls behind is a bug whatever the timings say", () => {
+    const v = verdict({ ...GOOD, staleFrames: 1 });
+    expect(v.met).toBe(false);
+    expect(v.gateFailures.join()).toContain("stale");
+  });
+
+  it("FAILS a result drawn more than one frame after its instant", () => {
+    const v = verdict({ ...GOOD, maxLagFrames: 2 });
+    expect(v.gateFailures.join()).toContain("frames late");
   });
 
   it("FAILS a vacuous run: too few bodies, too few walking, too few frames", () => {
@@ -122,6 +175,26 @@ describe("percentiles", () => {
     expect(median([5, 1, 3])).toBe(3);
     expect(percentile([], 50)).toBeNaN();
     expect(distribution([3, 1, 2]).max).toBe(3);
+  });
+});
+
+describe("GC by thread", () => {
+  it("keeps a worker's collections out of the main thread's count", () => {
+    const events = [
+      { name: "thread_name", ph: "M", pid: 1, tid: 7, args: { name: "DedicatedWorker thread" } },
+      { name: "thread_name", ph: "M", pid: 1, tid: 1, args: { name: "CrRendererMain" } },
+      { name: "MajorGC", ph: "X", dur: 1000, pid: 1, tid: 7 },
+      { name: "MinorGC", ph: "X", dur: 500, pid: 1, tid: 1 },
+    ];
+    const { main, worker } = splitByThread(events);
+    expect(summariseGc(main).majorCount).toBe(0);
+    expect(summariseGc(main).minorCount).toBe(1);
+    expect(summariseGc(worker).majorCount).toBe(1);
+  });
+
+  it("counts a major on the main thread", () => {
+    const { main } = splitByThread([{ name: "MajorGC", ph: "X", dur: 1000, pid: 1, tid: 1 }]);
+    expect(summariseGc(main).majorCount).toBe(1);
   });
 });
 

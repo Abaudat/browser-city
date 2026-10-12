@@ -50,11 +50,11 @@ async function ready(page: Page): Promise<void> {
 }
 
 async function sampleAt(page: Page): Promise<Record<number, Sample[]>> {
-  return page.evaluate((instants) => {
+  return page.evaluate(async (instants) => {
     const hook = window.__bc?.l3Agreement;
     if (!hook) throw new Error("no l3Agreement hook");
     const out: Record<number, Sample[]> = {};
-    for (const t of instants) out[t] = hook(t).map((s) => ({ ...s }));
+    for (const t of instants) out[t] = (await hook(t)).map((s) => ({ ...s }));
     return out;
   }, INSTANTS as number[]);
 }
@@ -146,15 +146,17 @@ test("two clients with different bubbles agree on every shared body of the 200-b
     await pageB.waitForTimeout(1_000);
 
     const sweep = (page: Page) =>
-      page.evaluate((instants) => {
+      page.evaluate(async (instants) => {
         const hook = window.__bc?.l3Live;
         if (!hook) throw new Error("no l3Live hook");
-        // One synchronous read, between frames: the hook puts the live poses
-        // back to the last solved frame itself.
-        return instants.map((t) => {
-          const live = hook(t);
-          return { t, viewport: live.viewport, bodies: live.bodies.map((s) => ({ ...s })) };
-        });
+        // Each read is the worker's, at the bodies it holds, and puts its live
+        // poses back to the last solved frame itself.
+        const out = [];
+        for (const t of instants) {
+          const live = await hook(t);
+          out.push({ t, viewport: live.viewport, bodies: live.bodies.map((s) => ({ ...s })) });
+        }
+        return out;
       }, INSTANTS as number[]);
     const [fromA, fromB] = await Promise.all([sweep(pageA), sweep(pageB)]);
 
