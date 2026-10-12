@@ -122,6 +122,9 @@ test("after submit nothing new is fetched before the player is controllable, and
 
   // ...and the authority agrees: once the sender has sent, the server's own
   // row for this character is in the flat (not the client's belief).
+  await page.waitForFunction(() => window.__bc?.character?.characterId !== undefined, undefined, {
+    timeout: 10_000,
+  });
   const characterId = await page.evaluate(() => window.__bc?.character?.characterId);
   await expect
     .poll(
