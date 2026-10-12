@@ -236,7 +236,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   const workerCalibrationMs = await page.evaluate(
     async () => (await window.__bc?.l3WorkerCalibrate?.(21)) ?? 0,
   );
-  const statsBefore = await page.evaluate(() => window.__bc?.l3SolveStats?.());
+  const statsBefore = await page.evaluate(() => window.__bc?.l3SolveStats?.(true));
   const heapSamples: { atMs: number; usedHeapBytes: number }[] = [];
   const l3Samples: number[] = [];
   const solveSamples: number[] = [];
@@ -337,13 +337,15 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   const throttled = await stopTimings(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
   await worker.send("Emulation.setCPUThrottlingRate", { rate: 1 }).catch(() => undefined);
+  // The sweep: the worker's solve over successive 60 Hz instants, no ticker --
+  // supplementary, gated at the same budget. Taken before the render is back
+  // on: the software rasteriser competes with the worker for the runner's few
+  // cores, and what is measured here is the solve.
+  const sweep = await page.evaluate((n) => window.__bc?.l3Sweep?.(n) ?? [], SWEEP_FRAMES);
   await page.evaluate(() => window.__bc?.setRender?.(true));
 
   const first = heapSamples[1]?.usedHeapBytes ?? Number.NaN;
   const last = heapSamples[heapSamples.length - 1]?.usedHeapBytes ?? Number.NaN;
-  // The sweep: the same window over successive 60 Hz instants, no ticker --
-  // supplementary, gated at the same budget.
-  const sweep = await page.evaluate((n) => window.__bc?.l3Sweep?.(n) ?? [], SWEEP_FRAMES);
   const sweepMs = distribution(sweep);
   const l3Ms = distribution(l3Samples);
   // The solve as the worker timed it, one sample per ticker frame: recorded

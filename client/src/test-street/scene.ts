@@ -441,7 +441,7 @@ export interface StreetSceneHandle {
    * render, so a GPU-less runner still yields thousands of samples. */
   l3Sweep(frames: number): Promise<number[]>;
   /** The worker's counters: results applied, stale frames, skipped requests. */
-  l3SolveStats(): SolveStats;
+  l3SolveStats(resetLag?: boolean): SolveStats;
   /** The calibration workload's median in ms, on the main thread. */
   l3Calibrate(runs: number): number;
   /** The same workload's median inside the L3 worker. */
@@ -2108,7 +2108,11 @@ export async function mountStreetScene(
       const step = 1000 / 60 / msPerMilliminute;
       return [...(await l3Client.sweep(start, step, frames))];
     },
-    l3SolveStats: () => l3Client.stats,
+    l3SolveStats: (resetLag) => {
+      const stats = l3Client.stats;
+      if (resetLag) l3Client.resetLag();
+      return stats;
+    },
     l3Calibrate: (runs) => calibrationWorkload(runs, () => performance.now()),
     l3WorkerCalibrate: (runs) => l3Client.calibrate(runs),
     playerDrawnPoint: () => ({ x: playerSprite.x, y: playerSprite.y }),

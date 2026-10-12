@@ -128,6 +128,15 @@ export class L3Solver {
         this.#host.post({ type: "reply", id: message.id, samples });
         return;
       }
+      case "queryMany": {
+        const life = this.#life;
+        if (!life) return;
+        const samples = message.ts.map((t) =>
+          message.kind === "live" ? life.liveAt(t) : life.agreementAt(t),
+        );
+        this.#host.post({ type: "replyMany", id: message.id, samples });
+        return;
+      }
       case "sweep":
         this.#sweep(message.id, message.start, message.step, message.frames);
         return;

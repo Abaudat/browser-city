@@ -631,4 +631,35 @@ describe("local avoidance (FR64)", () => {
     for (let k = 0; k < 20; k++) run(bodies, ALL_HELD, open, field);
     expect(field.capacity).toBe(capacity);
   });
+
+  it("is unchanged by blocked tiles too far off its line to limit a sidestep", () => {
+    // Two walkers meeting head on in a lane with a wall one cell to the side
+    // of it: the walls decide the room. Blocked tiles further off than the
+    // clearance and the body's reach never can, whatever their number or side.
+    const bodies = [
+      walker("a", 10.5, 10.5, 1, 0),
+      walker("b", 12.5, 10.7, -1, 0),
+      { ...walker("s", 11.5, 10.5, 0, 0), moving: false, ramp: 0, speed: 0 },
+    ];
+    const near = new TestGrid();
+    for (let x = 5; x < 18; x++) {
+      near.block(x, 11);
+      near.block(x, 9);
+    }
+    const far = new TestGrid();
+    for (let x = 5; x < 18; x++) {
+      far.block(x, 11);
+      far.block(x, 9);
+    }
+    const reach = dials.clearanceCells + 1 + dials.halfWidthCells + 1;
+    for (let k = 0; k < 40; k++) {
+      far.block(3 + k, 10 - Math.ceil(reach) - 3);
+      far.block(3 + k, 10 + Math.ceil(reach) + 6);
+    }
+    const a = run(bodies, ALL_HELD, near).out;
+    const b = run(bodies, ALL_HELD, far).out;
+    expect(b).toEqual(a);
+    // The near wall did limit something, or the test proves nothing.
+    expect(run(bodies, ALL_HELD, open).out).not.toEqual(a);
+  });
 });

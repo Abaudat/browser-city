@@ -47,6 +47,13 @@ export type ToWorker =
       readonly id: number;
       readonly t: number;
     }
+  /** `query` for many instants in one round trip. */
+  | {
+      readonly type: "queryMany";
+      readonly kind: "live" | "agreement";
+      readonly id: number;
+      readonly ts: readonly number[];
+    }
   | {
       readonly type: "sweep";
       readonly id: number;
@@ -64,6 +71,11 @@ export type FromWorker =
       readonly names?: readonly string[];
     }
   | { readonly type: "reply"; readonly id: number; readonly samples: readonly LifeSample[] }
+  | {
+      readonly type: "replyMany";
+      readonly id: number;
+      readonly samples: readonly (readonly LifeSample[])[];
+    }
   | { readonly type: "swept"; readonly id: number; readonly solveMs: Float64Array }
   | { readonly type: "calibrated"; readonly id: number; readonly ms: number };
 

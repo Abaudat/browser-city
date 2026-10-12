@@ -134,6 +134,11 @@ export class L3Client {
     return this.#drawnInstant;
   }
 
+  /** Forgets the peak lag, to measure a window. */
+  resetLag(): void {
+    this.#maxLag = 0;
+  }
+
   get stats(): SolveStats {
     return {
       applied: this.#applied,
@@ -210,7 +215,9 @@ export class L3Client {
     for (let i = 0; i < take; i++) this.#free.push((this.#ready[i] as { buf: ArrayBuffer }).buf);
     const { buf, due } = this.#ready[take] as { buf: ArrayBuffer; due: number };
     this.#ready.splice(0, take + 1);
-    this.#maxLag = Math.max(this.#maxLag, this.#frame - due);
+    // The first result lands after the worker boots, however many frames on:
+    // that is warming up, not lag.
+    if (this.#applied > 0) this.#maxLag = Math.max(this.#maxLag, this.#frame - due);
     const f = this.#viewOf(buf);
     const names = this.#names;
     const slots = Math.min(this.#members.length, slotsIn(f.length));
@@ -315,6 +322,16 @@ export class L3Client {
     return this.#ask((id) => ({ type: "query", kind: "agreement", id, t }));
   }
 
+  /** `liveAt` for many instants in one round trip. */
+  liveAtMany(ts: readonly number[]): Promise<readonly (readonly LifeSample[])[]> {
+    return this.#ask((id) => ({ type: "queryMany", kind: "live", id, ts }));
+  }
+
+  /** `agreementAt` for many instants in one round trip. */
+  agreementAtMany(ts: readonly number[]): Promise<readonly (readonly LifeSample[])[]> {
+    return this.#ask((id) => ({ type: "queryMany", kind: "agreement", id, ts }));
+  }
+
   /** The worker's solve time for each of `frames` successive instants. */
   sweep(start: number, step: number, frames: number): Promise<Float64Array> {
     return this.#ask((id) => ({ type: "sweep", id, start, step, frames }));
@@ -374,6 +391,9 @@ export class L3Client {
         return;
       }
       case "reply":
+        this.#settle(message.id, message.samples);
+        return;
+      case "replyMany":
         this.#settle(message.id, message.samples);
         return;
       case "swept":

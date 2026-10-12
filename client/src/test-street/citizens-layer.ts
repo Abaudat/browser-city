@@ -138,6 +138,9 @@ export interface CitizensLayerHandle {
   /** The bodies this client holds, solved at `cityMilliminutes` as they are:
    * what the divergence check compares between two different bubbles. */
   liveAt(cityMilliminutes: number): Promise<readonly LifeSample[]>;
+  /** The same two reads for many instants in one round trip to the worker. */
+  agreementAtMany(cityMilliminutes: readonly number[]): Promise<readonly (readonly LifeSample[])[]>;
+  liveAtMany(cityMilliminutes: readonly number[]): Promise<readonly (readonly LifeSample[])[]>;
 }
 
 /** A citizen the layer draws: its sprite and its place in the street's life. */
@@ -472,6 +475,8 @@ export async function mountCitizensLayer(
     update,
     agreementAt: (t) => l3.client.agreementAt(t),
     liveAt: (t) => l3.client.liveAt(t),
+    agreementAtMany: (ts) => l3.client.agreementAtMany(ts),
+    liveAtMany: (ts) => l3.client.liveAtMany(ts),
     l3Bodies: () => {
       const out: L3BodyReport[] = [];
       l3.client.wantDiagnostics();

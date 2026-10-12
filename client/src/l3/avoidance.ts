@@ -429,11 +429,25 @@ export class AvoidanceField {
       this.#wallDx = new Float64Array(n);
       this.#wallDy = new Float64Array(n);
     }
+    // A tile limits a sidestep only when it is within the clearance plus the
+    // reach to the side (`across - reach` is its lower bound, and no limit
+    // below `want <= clearance` is ever taken from beyond that); one further
+    // off, on either side, never moves a room, so it is not kept. The margin of
+    // one cell dwarfs any rounding. Order is kept; `room` is a minimum.
+    const hx = this.#hx[i] as number;
+    const hy = this.#hy[i] as number;
+    const band = dials.clearanceCells + TILE_RADIUS_CELLS + dials.halfWidthCells + 1;
+    let kept = 0;
     for (let k = 0; k < n; k++) {
-      this.#wallDx[k] = (tiles[2 * k] as number) + 0.5 - x;
-      this.#wallDy[k] = (tiles[2 * k + 1] as number) + 0.5 - y;
+      const wdx = (tiles[2 * k] as number) + 0.5 - x;
+      const wdy = (tiles[2 * k + 1] as number) + 0.5 - y;
+      const lateral = wdx * -hy + wdy * hx;
+      if (lateral > band || lateral < -band) continue;
+      this.#wallDx[kept] = wdx;
+      this.#wallDy[kept] = wdy;
+      kept++;
     }
-    this.#walls = n;
+    this.#walls = kept;
   }
 
   /** The blocked tiles of the `side` x `side` square at `(x0, y0)`, as

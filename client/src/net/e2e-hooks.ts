@@ -70,7 +70,7 @@ declare global {
        * each timed inside the worker (NFR11). */
       l3Sweep?: (frames: number) => Promise<number[]>;
       /** D-L3: the worker's counters (stale draws, skipped requests). */
-      l3SolveStats?: () => {
+      l3SolveStats?: (resetLag?: boolean) => {
         applied: number;
         stale: number;
         skipped: number;
@@ -234,6 +234,35 @@ declare global {
           look: string;
         }[]
       >;
+      /** `l3Agreement` for many instants in one round trip to the worker. */
+      l3AgreementMany?: (cityMillis: readonly number[]) => Promise<
+        readonly (readonly {
+          id: string;
+          x: number;
+          y: number;
+          activity: string;
+          frameIndex: number;
+          facing: string;
+          offsetX: number;
+          offsetY: number;
+          look: string;
+        }[])[]
+      >;
+      /** `l3Live` for many instants in one round trip to the worker. */
+      l3LiveMany?: (cityMillis: readonly number[]) => Promise<{
+        viewport: { x0: number; y0: number; x1: number; y1: number } | undefined;
+        bodies: readonly (readonly {
+          id: string;
+          x: number;
+          y: number;
+          activity: string;
+          frameIndex: number;
+          facing: string;
+          offsetX: number;
+          offsetY: number;
+          agreed: boolean;
+        }[])[];
+      }>;
       /** Story 5.4: the L3 state of the bodies this client holds, at a
        * given city time -- what differs between two bubbles. */
       l3Live?: (cityMilli: number) => Promise<{
@@ -385,6 +414,7 @@ export function exposeL3BodiesForE2e(
     stats: NonNullable<NonNullable<Window["__bc"]>["l3SolveStats"]>;
     calibrate: NonNullable<NonNullable<Window["__bc"]>["l3Calibrate"]>;
     workerCalibrate: NonNullable<NonNullable<Window["__bc"]>["l3WorkerCalibrate"]>;
+    liveMany: NonNullable<NonNullable<Window["__bc"]>["l3LiveMany"]>;
   },
 ): void {
   if (!import.meta.env.DEV) return;
@@ -397,6 +427,7 @@ export function exposeL3BodiesForE2e(
   bucket.l3SolveStats = solve.stats;
   bucket.l3Calibrate = solve.calibrate;
   bucket.l3WorkerCalibrate = solve.workerCalibrate;
+  bucket.l3LiveMany = solve.liveMany;
   window.__bc = bucket;
 }
 
@@ -584,10 +615,12 @@ export function exposePlayerDrawnPointForE2e(
 /** Story 5.2: the same idiom, for the L3 agreement sample. */
 export function exposeL3AgreementForE2e(
   getter: NonNullable<NonNullable<Window["__bc"]>["l3Agreement"]>,
+  many: NonNullable<NonNullable<Window["__bc"]>["l3AgreementMany"]>,
 ): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.l3Agreement = getter;
+  bucket.l3AgreementMany = many;
   window.__bc = bucket;
 }
 

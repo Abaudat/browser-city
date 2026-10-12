@@ -365,4 +365,24 @@ describe("the L3 worker protocol", () => {
     // The late result and the one after it land together: the newer is due now.
     expect(client.stats.maxLagFrames).toBe(0);
   });
+
+  it("answers many instants in one round trip, as one by one", async () => {
+    const { walk, client, list, lb } = connected(true);
+    const reference = inProcess(walk, list);
+    for (const c of list) client.add(c.id);
+    lb.flush();
+    const ts = [10_000, 10_500, 31_000];
+    const strip = (xs: readonly LifeSample[]) => xs.map((s) => ({ ...s }));
+    const agreement = client.agreementAtMany(ts);
+    const live = client.liveAtMany(ts);
+    lb.flush();
+    lb.deliverToMain();
+    const [a, l] = [await agreement, await live];
+    expect(a).toHaveLength(3);
+    expect(lb.toWorker.filter((m) => m.type === "queryMany")).toHaveLength(2);
+    ts.forEach((t, i) => {
+      expect(strip(a[i] ?? [])).toEqual(strip(reference.s.agreementAt(t)));
+      expect(strip(l[i] ?? [])).toEqual(strip(reference.s.liveAt(t)));
+    });
+  });
 });
