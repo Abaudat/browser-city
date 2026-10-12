@@ -1801,8 +1801,9 @@ them once into `District::walkability(floor) -> &FloorCollision`:
 tile-granular, a tile blocked iff a placed collider touches it.
 Nothing outside `generation::`/`world::` builds a collision grid or
 rasterises placements (`scripts/ci/check-no-runtime-collision-
-inference.sh`); `create_district` still discards the plan and writes no
-row. The rows are walls, every pass-6 fixture resolved to a def carrying
+inference.sh`); `create_district` writes the `district` record, one
+`business` row per workplace and the macro routing graph (see
+Routing). The rows are walls, every pass-6 fixture resolved to a def carrying
 its tag, one shopfront per building holding a counter, and the street's
 lamps, ambient furniture and bins. Which side of the door a def stands is
 the two `[[coherence]]` rows over `indoor`/`outdoor`; the street's rows
@@ -1869,6 +1870,11 @@ the build if the committed files and a fresh render ever disagree.
 - The estimate is Manhattan distance x the derived walking rate x the mode percent, plus a per-floor penalty: pure, cache-free and table-free, enforced by `scripts/ci/check-routing-estimate-purity.sh`.
 - `sim::time::REAL_MS_PER_CITY_MINUTE` is the one server-side FR1 constant.
 - Transport modes are `routing.speed_percent.*` multipliers on `movement.walk_speed_millicells_per_s`, never absolute speeds.
+- `routing::graph` is pure and derived by `District::graph`; `MacroGraph::check` runs in `District::check`.
+- An edge's cost is `estimate` over its endpoints in walking mode, in `Milliminutes`; no cell unit exists in the graph or its tables (`check-routing-estimate-purity.sh`).
+- Only portal edges, between portal nodes, cross floors; `MacroGraph::check` enforces it.
+- A building collapses to one entrance node, plus one internal node when its interior reaches `routing.graph.internal_node_min_interior_cells`.
+- `route_node` and `route_edge` are private, written only by `create_district` and the restore reducers, and never cached in module state (`check-server-src-bans.sh`).
 
 ## L3 (client)
 

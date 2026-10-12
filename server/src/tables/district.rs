@@ -14,10 +14,13 @@ use sim::generation::{
     DistrictRecord, GenerationConfig, GenerationContent, RuleSetVersion, SiteBounds, create,
 };
 use sim::reducer_classes::ReducerClass;
+use sim::routing::graph::{MacroGraph, NodeKind};
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
 use super::metrics::count_call;
 use super::ops::require_owner;
+use super::routing::{RouteEdge, RouteNode, route_edge, route_node};
+use super::stock::{Business, business};
 
 #[derive(Clone)]
 #[spacetimedb::table(accessor = district)]
@@ -64,8 +67,9 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
         })
         .collect();
     let cfg = GenerationConfig::from_balance(defs::BALANCE).map_err(|e| e.to_string())?;
-    let (record, _district) = create(&existing, seed, &cfg, &GenerationContent::committed())
-        .map_err(|e| e.to_string())?;
+    let content = GenerationContent::committed();
+    let (record, district) = create(&existing, seed, &cfg, &content).map_err(|e| e.to_string())?;
+    let graph = district.graph(&cfg, &content).map_err(|e| e.to_string())?;
     ctx.db.district().insert(District {
         district_id: 0,
         seed: record.seed,
@@ -78,5 +82,70 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
         defs_version: record.version.defs,
         generated_at: ctx.timestamp,
     });
+    write_graph(ctx, &graph);
     Ok(())
+}
+
+/// The one graph writer: one `business` row per workplace source node,
+/// then every node in graph order (the ids the table assigns are kept),
+/// then every edge through those ids. Inside the caller's transaction, so
+/// a later `Err` rolls the graph back with everything else.
+fn write_graph(ctx: &ReducerContext, graph: &MacroGraph) {
+    let business_ids: Vec<Option<u64>> = graph
+        .nodes()
+        .iter()
+        .map(|n| match (n.kind, n.source) {
+            (NodeKind::Source, Some(s)) if s.workplace => Some(
+                ctx.db
+                    .business()
+                    .insert(Business {
+                        business_id: 0,
+                        created_at: ctx.timestamp,
+                    })
+                    .business_id,
+            ),
+            _ => None,
+        })
+        .collect();
+    let node_ids: Vec<u64> = graph
+        .node_rows(&business_ids)
+        .into_iter()
+        .map(|r| {
+            ctx.db
+                .route_node()
+                .insert(RouteNode {
+                    node_id: 0,
+                    kind: r.kind,
+                    x: r.x,
+                    y: r.y,
+                    floor: r.floor,
+                    business_id: r.business_id,
+                })
+                .node_id
+        })
+        .collect();
+    for r in graph.edge_rows(&node_ids) {
+        ctx.db.route_edge().insert(RouteEdge {
+            edge_id: 0,
+            node_a: r.node_a,
+            node_b: r.node_b,
+            kind: r.kind,
+            cost_milliminutes: r.cost_milliminutes,
+        });
+    }
+}
+
+/// Test-only (`time-control` flavour, never deployed): generates a graph
+/// for `seed`, writes it through [`write_graph`] -- on top of whatever is
+/// there -- and returns `Err`. The rehearsal proves the rows roll back.
+#[cfg(feature = "time-control")]
+#[spacetimedb::reducer]
+pub fn debug_write_graph_then_fail(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    let cfg = GenerationConfig::from_balance(defs::BALANCE).map_err(|e| e.to_string())?;
+    let content = GenerationContent::committed();
+    let (_, district) = create(&[], seed, &cfg, &content).map_err(|e| e.to_string())?;
+    let graph = district.graph(&cfg, &content).map_err(|e| e.to_string())?;
+    write_graph(ctx, &graph);
+    Err("debug_write_graph_then_fail: rolled back on purpose".to_string())
 }

@@ -212,6 +212,19 @@ pub const INTERIORS_SWEEP: MeasuredBlock = MeasuredBlock {
     ],
 };
 
+/// Story 3.9: the macro routing graph's size, a deterministic fact at
+/// fixed seeds. It bounds no `generation.*` key; the bands it is read
+/// against are `sim::routing::graph`'s constants.
+pub const MACRO_GRAPH: MeasuredBlock = MeasuredBlock {
+    label: "macro graph",
+    subcommand: "graph",
+    rerun_args: "",
+    kind: BlockKind::FixedSeed,
+    ci_cases: CI_PROPTEST_CASES,
+    ci_coverage_cases: 0,
+    ceilings: &[],
+};
+
 /// Every block `docs/generation.md` carries a stamped copy of.
 pub const MEASURED_BLOCKS: &[MeasuredBlock] = &[
     DETOUR_SWEEP,
@@ -221,6 +234,7 @@ pub const MEASURED_BLOCKS: &[MeasuredBlock] = &[
     REGION_LOSS_SWEEP,
     POOLED_EVIDENCE,
     INTERIORS_SWEEP,
+    MACRO_GRAPH,
 ];
 
 const AUTHORED: &str = "authored input, not a measured ceiling";

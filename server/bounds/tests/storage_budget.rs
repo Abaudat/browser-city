@@ -104,3 +104,17 @@ fn reducer_class_sample_alert_covers_the_retention_window() {
         Some(bound("reducer_class_sample").max_rows)
     );
 }
+
+/// Story 3.9: the routing graph's rows are priced in the totals above like
+/// any table; its ceilings are the 512 bands scaled to the 1024 growth
+/// target (`sim::routing::graph`), never separate literals, and cover the
+/// "roughly ten thousand edges" of AC1 with room.
+#[test]
+fn the_routing_graph_tables_are_bounded_by_the_graph_bands_and_hold_ten_thousand_edges() {
+    use sim::routing::graph::{max_edges_for_side, max_nodes_for_side};
+    assert_eq!(bound("route_node").max_rows, max_nodes_for_side(1024));
+    assert_eq!(bound("route_edge").max_rows, max_edges_for_side(1024));
+    assert!(bound("route_edge").max_rows >= 10_000);
+    assert!(bound("route_edge").expected_rows <= bound("route_edge").max_rows);
+    assert!(bound("route_node").expected_rows <= bound("route_node").max_rows);
+}

@@ -54,6 +54,14 @@ const GOLDEN: &str = include_str!("goldens/generation_v13.golden");
 fn frozen_config() -> GenerationConfig {
     GenerationConfig {
         site_extent_cells: 512,
+        routing_rates: sim::routing::estimate::Rates {
+            walk_speed_millicells_per_s: 2200,
+            walk_percent: 100,
+            bike_percent: 200,
+            transit_percent: 300,
+            floor_change_penalty_milliminutes: 1000,
+        },
+        graph_internal_node_min_interior_cells: 100,
         coarse_cell_size_cells: 16,
         land_use_min_leaf_cells: 4,
         land_use_max_leaf_cells: 10,
@@ -858,6 +866,69 @@ fn walkability_matches_committed_digests() {
     for ((seed, digest, lines), (want_seed, want)) in got.iter().zip(WALKABILITY_DIGESTS) {
         assert_eq!(*seed, want_seed);
         assert_eq!(*digest, want, "seed {seed}'s walkability moved:\n{lines}");
+    }
+}
+
+/// One line per node and per edge, in the graph's own order: exactly the
+/// rows `create_district` writes (`route_node`, `route_edge` minus the ids
+/// the table assigns).
+fn graph_lines(g: &sim::routing::graph::MacroGraph) -> String {
+    let mut out = String::new();
+    for r in g.node_rows(&vec![None; g.nodes().len()]) {
+        out.push_str(&format!(
+            "node kind={} x={} y={} floor={}
+",
+            r.kind, r.x, r.y, r.floor
+        ));
+    }
+    let ids: Vec<u64> = (0..g.nodes().len() as u64).collect();
+    for r in g.edge_rows(&ids) {
+        out.push_str(&format!(
+            "edge {}-{} kind={} cost_milliminutes={}
+",
+            r.node_a, r.node_b, r.kind, r.cost_milliminutes
+        ));
+    }
+    out
+}
+
+/// `fnv1a` of [`graph_lines`] per seed. A list of constants, not a
+/// `*.golden`, like [`WALKABILITY_DIGESTS`]: the graph is derived from
+/// rows that have not moved. Regenerate with `GENERATION_PRINT_GOLDEN=1`.
+const GRAPH_DIGESTS: [(u64, u64); 5] = [
+    (1, 0xbc351d5a7f3b4994),
+    (2, 0xb4d77cc91add5afa),
+    (3, 0x257b706bd62aae87),
+    (42, 0x3d4a5ad8e45407c1),
+    (123_456_789, 0x44cb87ba86103d6a),
+];
+
+#[test]
+fn macro_graph_matches_committed_digests() {
+    let cfg = frozen_config();
+    let content = frozen_content();
+    let mut got = Vec::new();
+    for seed in SEEDS {
+        let d = plan(seed, &cfg, &content).expect("frozen_config's own site is always valid");
+        let g = d
+            .graph(&cfg, &content)
+            .expect("a frozen district's graph builds");
+        let lines = graph_lines(&g);
+        if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
+            println!("graph-digest ({seed}, 0x{:016x}),", fnv1a(&lines));
+        }
+        got.push((seed, fnv1a(&lines), g.nodes().len(), g.edges().len()));
+    }
+    if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
+        return;
+    }
+    assert_eq!(got.len(), GRAPH_DIGESTS.len());
+    for ((seed, digest, nodes, edges), (want_seed, want)) in got.iter().zip(GRAPH_DIGESTS) {
+        assert_eq!(*seed, want_seed);
+        assert_eq!(
+            *digest, want,
+            "seed {seed}'s graph moved ({nodes} nodes, {edges} edges)"
+        );
     }
 }
 

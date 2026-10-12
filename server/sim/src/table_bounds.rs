@@ -170,6 +170,32 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 48,
         kind: BoundKind::Mechanical,
     },
+    // Story 3.9: the macro routing graph, written once per district.
+    // `max_rows` is the ceiling the 512 band scales to at the 1024 growth
+    // target (`sim::routing::graph`); `expected_rows` is the measured
+    // 1024 figure (`tests/generation_perf.rs`).
+    TableBound {
+        accessor: "route_node",
+        max_rows: crate::routing::graph::max_nodes_for_side(1024),
+        expected_rows: 7_400,
+        alert_rows: crate::routing::graph::max_nodes_for_side(1024) * 3 / 4,
+        kind: BoundKind::Engineering,
+    },
+    TableBound {
+        accessor: "route_edge",
+        max_rows: crate::routing::graph::max_edges_for_side(1024),
+        expected_rows: 7_600,
+        alert_rows: crate::routing::graph::max_edges_for_side(1024) * 3 / 4,
+        kind: BoundKind::Engineering,
+    },
+    // The edge kinds of `sim::codes::edge_kind`, one row per code.
+    TableBound {
+        accessor: "edge_kind",
+        max_rows: 64,
+        expected_rows: 4,
+        alert_rows: 48,
+        kind: BoundKind::Mechanical,
+    },
     // Story 6.2: holders and stock (FR87).
     TableBound {
         accessor: "holder_kind",

@@ -18,6 +18,8 @@
 //! - `regions <n>`: `region-loss sweep` -- regions carried by no block.
 //! - `pooled`: `pooled evidence` -- seeds 0..256 pooled ratio and chopped
 //!   share, and the evidence seeds' own ratios.
+//! - `graph`: `macro graph` -- the macro routing graph's node and edge
+//!   counts at the committed site and at 1024.
 //! - `p99 <seed>`: traces one seed's p99 detour fill (no stamped block).
 //!
 //! Every seed is drawn through `sim::rng::seed_from_ids` with a salt of the
@@ -29,6 +31,7 @@ mod bands;
 mod common;
 mod detour;
 mod exhaustive;
+mod graph;
 mod interiors;
 mod pooled;
 mod regions;
@@ -36,8 +39,8 @@ mod rows;
 mod trace;
 
 use bounds::generation_stamp::{
-    BAND_SWEEP, DETOUR_SWEEP, EXHAUSTIVE_LOOP, INTERIORS_SWEEP, MeasuredBlock, POOLED_EVIDENCE,
-    REGION_LOSS_SWEEP, ROWS_SWEEP,
+    BAND_SWEEP, DETOUR_SWEEP, EXHAUSTIVE_LOOP, INTERIORS_SWEEP, MACRO_GRAPH, MeasuredBlock,
+    POOLED_EVIDENCE, REGION_LOSS_SWEEP, ROWS_SWEEP,
 };
 use common::*;
 use sim::generated::defs;
@@ -53,11 +56,12 @@ enum Sweep {
     Regions,
     Pooled,
     Interiors,
+    Graph,
 }
 
 /// Each registered block and the sweep that prints it: the one table
 /// `main` dispatches through.
-const SWEEPS: [(&MeasuredBlock, Sweep); 7] = [
+const SWEEPS: [(&MeasuredBlock, Sweep); 8] = [
     (&EXHAUSTIVE_LOOP, Sweep::Exhaustive),
     (&DETOUR_SWEEP, Sweep::Detour),
     (&BAND_SWEEP, Sweep::Bands),
@@ -65,6 +69,7 @@ const SWEEPS: [(&MeasuredBlock, Sweep); 7] = [
     (&REGION_LOSS_SWEEP, Sweep::Regions),
     (&POOLED_EVIDENCE, Sweep::Pooled),
     (&INTERIORS_SWEEP, Sweep::Interiors),
+    (&MACRO_GRAPH, Sweep::Graph),
 ];
 
 fn sweep_for(subcommand: &str) -> Option<Sweep> {
@@ -102,6 +107,7 @@ fn main() {
         Sweep::Bands => bands::band_sweep(&cfg, &content, count(BAND_SEED_COUNT_DEFAULT)),
         Sweep::Rows => rows::rows_sweep(&cfg, &content, count(rows::ROWS_SEED_COUNT_DEFAULT)),
         Sweep::Pooled => pooled::pooled_sweep(&cfg),
+        Sweep::Graph => graph::graph_sweep(&cfg, &content),
         Sweep::Interiors => interiors::interiors_sweep(
             &cfg,
             &content,

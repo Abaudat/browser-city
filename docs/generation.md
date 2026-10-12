@@ -896,6 +896,19 @@ and the unit tests on hand-built samples, not by the proptest.
   collider hatched) and a legend of every def shown; same regen-and-diff
   guard as the rows above.
 
+### Macro routing graph
+
+`District::graph` derives it from the finished district (`sim::routing::graph`), once, and
+`District::check` validates it. Transit nodes are the street network's junctions and dead ends plus
+a split on a street's centreline where a building's approach meets it. Each enterable building adds
+one entrance node on its door and, when its interior floor area (the sum of its rooms) reaches
+`routing.graph.internal_node_min_interior_cells`, one internal node at the centre of its largest
+room snapped to a free tile. Edges join consecutive nodes along a street, an entrance to its split,
+and an entrance to its internal node; each costs the walking estimate between its endpoints, and
+nothing else. Portal nodes and edges come from floor transitions, which generation emits none of
+yet. The size is stamped in the `macro graph` block below, against the bands in
+`sim::routing::graph`.
+
 ## Measured ceilings
 
 Every measured figure lives only in a stamped block below, whose label is
@@ -1256,6 +1269,16 @@ pooled_enterable_share_x1000_per_96_city_pool: min=97360 p1=97414 p50=97680 p99=
 pooled_enterable_share_x1000_per_8_city_pool: min=96042 p1=96691 p50=97683 p99=98588 max=99082 mean=97678.1 stddev=415.5
   pooled enterable share within [94.536, 101.464]% (8-city pools; enterable_target_percent = 98% +- 1% at 96): 0 of 3750 misses (rate 0.000000%), implied 1-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 3750 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.080000% (implied 1-case CI failure probability <= 0.0800%)
+```
+
+### macro graph
+
+`cargo run -p bounds --release --bin measure-generation -- graph`
+
+```text
+macro graph at GENERATION_VERSION=13 fingerprint=4009cf20f2108cf8: seeds 0..32 at the committed site, 0..4 at 1024
+committed site (512 x 512, 32 seeds): nodes min 1697 mean 1843 max 1963; edges min 1744 mean 1895 max 2016; internal nodes 13% of entrances
+growth target (1024 x 1024, 4 seeds): nodes min 7086 mean 7371 max 7730; edges min 7309 mean 7604 max 8002; internal nodes 13% of entrances
 ```
 
 ## Density is per screen

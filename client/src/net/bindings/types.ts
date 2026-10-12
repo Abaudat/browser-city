@@ -148,6 +148,12 @@ export const EconomySchedule = __t.object("EconomySchedule", {
 });
 export type EconomySchedule = __Infer<typeof EconomySchedule>;
 
+export const EdgeKind = __t.object("EdgeKind", {
+  code: __t.u32(),
+  name: __t.string(),
+});
+export type EdgeKind = __Infer<typeof EdgeKind>;
+
 export const FloorTransition = __t.object("FloorTransition", {
   transitionId: __t.u64(),
   x: __t.i32(),
@@ -358,6 +364,25 @@ export const RoomArea = __t.object("RoomArea", {
   chunkKey: __t.u64(),
 });
 export type RoomArea = __Infer<typeof RoomArea>;
+
+export const RouteEdge = __t.object("RouteEdge", {
+  edgeId: __t.u64(),
+  nodeA: __t.u64(),
+  nodeB: __t.u64(),
+  kind: __t.u32(),
+  costMilliminutes: __t.i64(),
+});
+export type RouteEdge = __Infer<typeof RouteEdge>;
+
+export const RouteNode = __t.object("RouteNode", {
+  nodeId: __t.u64(),
+  kind: __t.u32(),
+  x: __t.i32(),
+  y: __t.i32(),
+  floor: __t.i32(),
+  businessId: __t.option(__t.u64()),
+});
+export type RouteNode = __Infer<typeof RouteNode>;
 
 export const Stock = __t.object("Stock", {
   stockId: __t.u64(),

@@ -253,22 +253,63 @@ pub mod unit {
 pub mod node_kind {
     use super::Code;
 
+    pub const ENTRANCE: u32 = 0;
+    pub const INTERNAL: u32 = 1;
+    pub const STREET: u32 = 2;
+    pub const TRANSIT_STOP: u32 = 3;
+    /// A floor transition's anchor or target.
+    pub const PORTAL: u32 = 4;
+
     pub const CODES: &[Code] = &[
         Code {
-            code: 0,
+            code: ENTRANCE,
             name: "entrance",
         },
         Code {
-            code: 1,
+            code: INTERNAL,
             name: "internal",
         },
         Code {
-            code: 2,
+            code: STREET,
             name: "street",
         },
         Code {
-            code: 3,
+            code: TRANSIT_STOP,
             name: "transit_stop",
+        },
+        Code {
+            code: PORTAL,
+            name: "portal",
+        },
+    ];
+}
+
+/// A macro-graph edge's kind (FR130). Every edge is priced in minutes
+/// whatever its kind; the kind says what it joins.
+pub mod edge_kind {
+    use super::Code;
+
+    pub const STREET: u32 = 0;
+    pub const ENTRANCE: u32 = 1;
+    pub const INTERNAL: u32 = 2;
+    pub const PORTAL: u32 = 3;
+
+    pub const CODES: &[Code] = &[
+        Code {
+            code: STREET,
+            name: "street",
+        },
+        Code {
+            code: ENTRANCE,
+            name: "entrance",
+        },
+        Code {
+            code: INTERNAL,
+            name: "internal",
+        },
+        Code {
+            code: PORTAL,
+            name: "portal",
         },
     ];
 }
