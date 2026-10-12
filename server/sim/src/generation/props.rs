@@ -921,6 +921,22 @@ fn dress_building(
             .filter(|d| Catalogue::area(d) != max_area)
             .collect();
         rest.sort_by_key(|d| (std::cmp::Reverse(Catalogue::area(d)), d.id));
+        // Equal-area variants are drawn like the naturals: a shuffle
+        // within each area tier, the tiers staying descending.
+        let mut lo = 0;
+        while lo < rest.len() {
+            let tier = Catalogue::area(rest[lo]);
+            let hi = lo
+                + rest[lo..]
+                    .iter()
+                    .take_while(|d| Catalogue::area(d) == tier)
+                    .count();
+            for i in (lo + 1..hi).rev() {
+                let j = lo + rng.below((i - lo) as u64 + 1) as usize;
+                rest.swap(i, j);
+            }
+            lo = hi;
+        }
         let order: Vec<&defs::ObjectDef> = if compact_only {
             let mut v = rest.clone();
             v.extend(natural.iter().copied());
@@ -2697,6 +2713,45 @@ mod tests {
         assert!(whole_cells_open(window, (0, 0), &rows, defs::OBJECTS));
         let (enclosed, narrow) = window_findings(window, (0, 0), &rows, defs::OBJECTS).unwrap();
         assert!(enclosed.is_empty() && narrow.is_empty());
+    }
+
+    #[test]
+    fn equal_area_compact_variants_are_both_drawn() {
+        // A tag with two compact variants of one area stands each of them
+        // across seeds, not only the lowest id.
+        let cat = catalogue();
+        let mut checked = 0;
+        for t in defs::TAGS {
+            let c = cat.carrying(t.id, Place::Floor);
+            let max = c.iter().map(|d| Catalogue::area(d)).max().unwrap_or(0);
+            let compact: Vec<u32> = c
+                .iter()
+                .filter(|d| Catalogue::area(d) == 1)
+                .map(|d| d.id)
+                .collect();
+            // The role tag every fixture def carries is no anchor.
+            if max <= 1 || compact.len() < 2 || c.len() > 8 {
+                continue;
+            }
+            let i = interior(&[(101, 101, t.id)]);
+            let mut seen: BTreeSet<u32> = BTreeSet::new();
+            for seed in 0..64 {
+                for p in dress(&cat, seed, &i, true).unwrap() {
+                    if matches!(p.role, Role::Fixture { .. }) {
+                        seen.insert(p.row.def_id);
+                    }
+                }
+            }
+            for id in &compact {
+                assert!(
+                    seen.contains(id),
+                    "compact def {id} of tag {} never drawn (seen {seen:?})",
+                    t.id
+                );
+            }
+            checked += 1;
+        }
+        assert!(checked >= 1, "no tag has two compact variants");
     }
 
     // --- dress_one's search -------------------------------------------
