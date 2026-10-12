@@ -1,0 +1,28 @@
+{
+  "instants": 340,
+  "compared": 50370,
+  "sidestepping": 10677,
+  "heldByOneOnly": 1020,
+  "disagreements": 0,
+  "maxOffsetDisagreementCells": 0,
+  "maxOffsetDisagreementPx": 0,
+  "unresolvedOnScreen": 0,
+  "allSharedBodies": {
+    "onBothScreens": {
+      "shared": 4837,
+      "disagreements": 0,
+      "maxPx": 0
+    },
+    "onOneScreen": {
+      "shared": 30334,
+      "disagreements": 9532,
+      "maxPx": 43.2
+    },
+    "offBothScreens": {
+      "shared": 52209,
+      "disagreements": 12258,
+      "maxPx": 43.2
+    }
+  },
+  "examples": []
+}

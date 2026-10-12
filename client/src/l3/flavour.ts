@@ -64,7 +64,8 @@ export function flavourBucketOf(id: string, t: number, dials: FlavourDials): num
 export function flavourKindOf(id: string, bucket: number, dials: FlavourDials): string {
   const draw = unitOf(id, SALTS.flavour, bucket) * PERCENT;
   let upTo = 0;
-  for (const row of dials.rows) {
+  for (let r = 0; r < dials.rows.length; r++) {
+    const row = dials.rows[r] as FlavourRow;
     if (dials.frames[row.animation] === undefined) continue;
     upTo += row.weightPercent;
     if (draw < upTo) return row.id;
@@ -102,7 +103,14 @@ export function flavourAt(
   const bucket = flavourBucketOf(id, t, dials);
   const kind = flavourKindOf(id, bucket, dials);
   if (kind === NO_FLAVOUR) return;
-  const row = dials.rows.find((r) => r.id === kind);
+  let row: FlavourRow | undefined;
+  for (let r = 0; r < dials.rows.length; r++) {
+    const candidate = dials.rows[r] as FlavourRow;
+    if (candidate.id === kind) {
+      row = candidate;
+      break;
+    }
+  }
   if (!row) return;
   const room = Math.max(0, dials.bucketMilliminutes - row.durationMilliminutes);
   const bucketStart = bucket * dials.bucketMilliminutes - bucketOffset(id, dials);
@@ -115,7 +123,8 @@ export function flavourAt(
   out.flavour = row.id;
   if (row.facing === "rest") return;
   let pick = seedOf(id, SALTS.glanceFacing, bucket) % (FACINGS.length - 1);
-  for (const facing of FACINGS) {
+  for (let f = 0; f < FACINGS.length; f++) {
+    const facing = FACINGS[f] as Facing;
     if (facing === rest) continue;
     if (pick === 0) {
       out.direction = facing;

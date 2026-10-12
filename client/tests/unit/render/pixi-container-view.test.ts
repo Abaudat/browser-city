@@ -123,7 +123,7 @@ describe("ContainerViewController lifecycle", () => {
       storeyHeightPx: 64,
       textureOf: () => Texture.EMPTY,
       bulkOf: () => ({ width: 1, height: 1 }),
-      subscribe: (containerId, onRows) => {
+      watchRows: (containerId, onRows) => {
         rowsFor.set(containerId, onRows);
         return {
           release: () => {

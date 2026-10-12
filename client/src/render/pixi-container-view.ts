@@ -126,7 +126,7 @@ export interface ContainerViewControllerOptions {
   readonly bulkOf: (defId: number) => Bulk | undefined;
   /** Subscribes to one container's rows; `onRows` is called with the held
    * set whenever it changes. */
-  readonly subscribe: (
+  readonly watchRows: (
     containerId: bigint,
     onRows: (rows: readonly HeldRow[]) => void,
   ) => ContainerRelease;
@@ -185,7 +185,7 @@ export class ContainerViewController {
     this.view = view;
     this.objectId = object.objectId;
     this.closeWhen = args.closeWhen;
-    this.release = this.options.subscribe(object.objectId, (rows) => {
+    this.release = this.options.watchRows(object.objectId, (rows) => {
       if (this.view !== view) return;
       this.rects = layoutRects(rows, this.options.bulkOf);
       view.setRects(this.rects);

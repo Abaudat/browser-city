@@ -47,6 +47,26 @@ declare global {
       frameTimings?: number[];
       startFrameTimings?: () => void;
       stopFrameTimings?: () => number[];
+      /** Story 5.4 (NFR11): per-frame L3 window in ms, same pattern as
+       * `frameTimings`; recorded only between start and stop. */
+      l3Timings?: number[];
+      startL3Timings?: () => void;
+      stopL3Timings?: () => number[];
+      /** Story 5.4: every drawn L3 body as the debug overlay reads it. */
+      l3Bodies?: () => readonly {
+        id: string;
+        moving: boolean;
+        fallbacks: number;
+        avoidance?: { offsetCells: number; capped: boolean; blocked: boolean };
+        activity?: string;
+      }[];
+      /** Story 5.4: draws nothing while off; L3 and every ticker listener
+       * keep running. */
+      setRender?: (on: boolean) => void;
+      /** Story 5.4: times `frames` render-free L3 frames (NFR11). */
+      l3Sweep?: (frames: number) => number[];
+      /** Story 5.4: how many bodies are drawn right now. */
+      bodyCount?: () => number;
       /** Story 2.8 (FR147): how many ticker frames the mounted street
        * scene has drawn, ever -- unlike `frameTimings`, never gated
        * behind `startFrameTimings`, so `defs-handshake.spec.ts` can prove
@@ -213,6 +233,23 @@ declare global {
         offsetY: number;
         look: string;
       }[];
+      /** Story 5.4: the L3 state of the bodies this client holds, at a
+       * given city time -- what differs between two bubbles. */
+      l3Live?: (cityMilli: number) => {
+        /** The viewport in floor-0 cells. */
+        viewport: { x0: number; y0: number; x1: number; y1: number } | undefined;
+        bodies: readonly {
+          id: string;
+          x: number;
+          y: number;
+          activity: string;
+          frameIndex: number;
+          facing: string;
+          offsetX: number;
+          offsetY: number;
+          agreed: boolean;
+        }[];
+      };
       /** Story 5.1: the L3 commuter as last drawn -- a callable read fresh
        * each call, `undefined` while it is not on screen. */
       commuterDrawn?: () =>
@@ -302,6 +339,45 @@ export function recordFrameWorkForE2e(ms: number): void {
     if (current) current.frameTimings = undefined;
     return samples;
   };
+  window.__bc = bucket;
+}
+
+/** Story 5.4 (NFR11): the L3 window recorder the budget spec drives, the
+ * same idiom as `recordFrameWorkForE2e`: nothing is kept, and nothing
+ * allocated, unless a caller has started it. */
+export function recordL3WorkForE2e(ms: number): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  if (bucket.l3Timings) bucket.l3Timings.push(ms);
+  if (bucket.startL3Timings) return;
+  bucket.startL3Timings = () => {
+    const current = window.__bc;
+    if (current) current.l3Timings = [];
+  };
+  bucket.stopL3Timings = () => {
+    const current = window.__bc;
+    const samples = current?.l3Timings ?? [];
+    if (current) current.l3Timings = undefined;
+    return samples;
+  };
+  window.__bc = bucket;
+}
+
+/** Story 5.4: the L3 bodies and the body count, read fresh each call. */
+export function exposeL3BodiesForE2e(
+  bodies: NonNullable<NonNullable<Window["__bc"]>["l3Bodies"]>,
+  count: NonNullable<NonNullable<Window["__bc"]>["bodyCount"]>,
+  live: NonNullable<NonNullable<Window["__bc"]>["l3Live"]>,
+  sweep: NonNullable<NonNullable<Window["__bc"]>["l3Sweep"]>,
+  setRender: NonNullable<NonNullable<Window["__bc"]>["setRender"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.l3Bodies = bodies;
+  bucket.bodyCount = count;
+  bucket.l3Live = live;
+  bucket.l3Sweep = sweep;
+  bucket.setRender = setRender;
   window.__bc = bucket;
 }
 

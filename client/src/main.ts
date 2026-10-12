@@ -29,6 +29,7 @@ import {
   exposeContainerViewForE2e,
   exposeIdentityActionsForE2e,
   exposeL3AgreementForE2e,
+  exposeL3BodiesForE2e,
   exposePlayerDrawnPointForE2e,
   exposePlayerScreenBoundsForE2e,
   exposeRegionForE2e,
@@ -45,6 +46,7 @@ import {
   recordIdentityForE2e,
   recordIgnoredIntentForE2e,
   recordIntentForE2e,
+  recordL3WorkForE2e,
   recordLinkOfferForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
@@ -79,6 +81,7 @@ import { resolveStorage as resolveSessionStorage } from "./settings/settings-sto
 import { PLAYER_START } from "./test-street/fixture";
 import { placeLinkCarrier } from "./test-street/link-carrier";
 import type { RemotePlayersSource } from "./test-street/remote-players-layer";
+import { buildRushCrowd } from "./test-street/rush-crowd";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
@@ -645,6 +648,17 @@ async function startStreetScene(
   const identicalCrowdForE2e =
     import.meta.env.DEV && new URLSearchParams(window.location.search).has("identicalCrowd");
 
+  // Story 5.4: `bodyWatch` reads every body's bounds every frame
+  // (`getBounds()` and an allocation each), so it runs only for the spec that
+  // asked (`?watchBodies`) and never pollutes the L3 timing and allocation
+  // figures with test plumbing. `?rushCrowd` adds the NFR11 load.
+  const watchBodiesForE2e =
+    import.meta.env.DEV && new URLSearchParams(window.location.search).has("watchBodies");
+  const rushCrowdForE2e =
+    import.meta.env.DEV && new URLSearchParams(window.location.search).has("rushCrowd")
+      ? buildRushCrowd(defs)
+      : undefined;
+
   // Story 1.12 (FR165/FR168): set only inside the DEV branch below, and
   // only after the scene has mounted. Every callback that notifies it is
   // a no-op until then, and in a production build there is nothing for it
@@ -681,7 +695,9 @@ async function startStreetScene(
     remotePlayers,
     playerCharacterId: players.characterId,
     onPlayerBody: import.meta.env.DEV ? recordPlayerBodyForE2e : undefined,
-    onCitizenBodies: import.meta.env.DEV ? recordCitizenBodiesForE2e : undefined,
+    onCitizenBodies: watchBodiesForE2e ? recordCitizenBodiesForE2e : undefined,
+    onL3Work: import.meta.env.DEV ? recordL3WorkForE2e : undefined,
+    rushCrowd: rushCrowdForE2e,
     onPlayerMove: (x, y, floor) => {
       recordPlayerPositionForE2e(x, y, floor);
       players.onPlayerMove(x, y, floor);
@@ -766,6 +782,13 @@ async function startStreetScene(
   exposePlayerDrawnPointForE2e(handle.playerDrawnPoint);
   exposeCommuterDrawnForE2e(handle.commuterDrawn);
   exposeL3AgreementForE2e((t) => handle.citizensLayer.agreementAt(t));
+  exposeL3BodiesForE2e(
+    () => handle.l3Bodies(),
+    () => handle.citizensLayer.bodyCount(),
+    (t) => ({ viewport: handle.viewportCells(), bodies: handle.citizensLayer.liveAt(t) }),
+    (frames) => handle.l3Sweep(frames),
+    (on) => handle.setRender(on),
+  );
 
   // Story 1.12 (FR165/FR168): the whole of the debug tooling's gate, and
   // the only import of `client/src/debug/` that exists (enforced by
