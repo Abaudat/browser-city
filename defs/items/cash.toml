@@ -4,6 +4,7 @@ key = "coin_1"
 unit = "piece"
 shelf_life_minutes = 0
 bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_82.png", x = 0, y = 0, w = 16, h = 16 }
 
 [[item]]
 id = 4
@@ -11,6 +12,7 @@ key = "coin_2"
 unit = "piece"
 shelf_life_minutes = 0
 bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_83.png", x = 0, y = 0, w = 16, h = 16 }
 
 [[item]]
 id = 5
@@ -18,6 +20,7 @@ key = "coin_5"
 unit = "piece"
 shelf_life_minutes = 0
 bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_84.png", x = 0, y = 0, w = 16, h = 16 }
 
 [[item]]
 id = 6
@@ -25,6 +28,7 @@ key = "note_10"
 unit = "piece"
 shelf_life_minutes = 0
 bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_85.png", x = 0, y = 0, w = 16, h = 16 }
 
 [[item]]
 id = 7
@@ -32,6 +36,7 @@ key = "note_20"
 unit = "piece"
 shelf_life_minutes = 0
 bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_86.png", x = 0, y = 0, w = 16, h = 16 }
 
 [[item]]
 id = 8
@@ -39,3 +44,4 @@ key = "note_50"
 unit = "piece"
 shelf_life_minutes = 0
 bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_87.png", x = 0, y = 0, w = 16, h = 16 }

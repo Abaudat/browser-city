@@ -31,7 +31,7 @@ fn unknown_key_is_named_with_its_own_line() {
     let err = build_err("unknown-key");
     assert_eq!(
         err.to_string(),
-        "defs/items/sanitation.toml:7:1: unknown field `bogus`, expected one of `id`, `key`, `unit`, `shelf_life_minutes`, `bulk`"
+        "defs/items/sanitation.toml:7:1: unknown field `bogus`, expected one of `id`, `key`, `unit`, `shelf_life_minutes`, `bulk`, `sprite`"
     );
 }
 
@@ -1163,6 +1163,7 @@ fn every_known_category_has_a_fixture_directory() {
         "item-missing-shelf-life",
         "item-missing-bulk",
         "item-bulk-zero",
+        "item-sprite-size-mismatch",
         "denomination-face-value-duplicate",
         "denomination-face-value-over-cap",
         "denomination-face-value-wrong-type",
@@ -1441,6 +1442,20 @@ fn an_item_bulk_height_over_the_footprint_cap_is_refused_at_the_value() {
     );
 }
 
+/// FR94: an item's sprite is exactly its bulk in tiles, so the item in a
+/// grid is the item on the floor.
+#[test]
+fn an_item_sprite_that_disagrees_with_its_bulk_is_refused() {
+    let err = build_err("item-sprite-size-mismatch");
+    assert!(
+        err.message.contains(
+            "item 'bottle' sprite is 16x16px but its bulk 2x1 * tile_size_px 16 is 32x16px"
+        ),
+        "{}",
+        err.message
+    );
+}
+
 #[test]
 fn an_item_shelf_life_over_the_cap_is_refused_at_the_value() {
     assert_item_error(
@@ -1494,7 +1509,7 @@ fn a_fully_authored_item_reaches_both_emitted_artefacts() {
         "ItemDef { id: 3, key: \"milk\", unit: 2, shelf_life_minutes: 4320, width: 1, height: 2 }"
     ));
     assert!(out.json.contains(
-        "{ \"id\": 3, \"key\": \"milk\", \"unit\": 2, \"shelf_life_minutes\": 4320, \"width\": 1, \"height\": 2 }"
+        "{ \"id\": 3, \"key\": \"milk\", \"unit\": 2, \"shelf_life_minutes\": 4320, \"width\": 1, \"height\": 2, \"sprite\": null, \"atlas\": null }"
     ));
 }
 

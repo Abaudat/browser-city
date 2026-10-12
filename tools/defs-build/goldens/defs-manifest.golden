@@ -35,6 +35,12 @@ item 5 coin_5
 item 6 note_10
 item 7 note_20
 item 8 note_50
+item 9 tin
+item 10 loaf
+item 11 biscuits
+item 12 flour_sack
+item 13 tin_stack
+item 14 produce_trolley
 denomination 1 coin_1
 denomination 2 coin_2
 denomination 5 coin_5

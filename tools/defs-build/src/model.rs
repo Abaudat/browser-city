@@ -86,6 +86,11 @@ pub const INTERACT_AT_MAX_REACH_CELLS: i64 = 2;
 /// reaches `sim::generated::defs` (see `emit.rs`).
 pub const MAX_FOOTPRINT_CELLS: i64 = 8;
 
+/// An item's sprite is packed into the atlas as a synthetic object with
+/// this offset added to its id, so the one packer and the one id space
+/// cover both and no item id can collide with an object id.
+pub const ITEM_ATLAS_ID_BASE: u32 = 1_000_000;
+
 /// FR94: a container grid's width and height are each held to this. The
 /// largest grid we need is a pallet (8x6); `sim::item_instance` reads the
 /// generated copy.
@@ -432,6 +437,12 @@ pub struct RawItem {
     pub shelf_life_minutes: Spanned<u32>,
     /// The item's world footprint, in whole cells.
     pub bulk: RawBulk,
+    /// Story 6.10 (FR94): what the item looks like in a container's grid --
+    /// exactly `bulk.width * tile` by `bulk.height * tile` pixels, so the
+    /// item in the cupboard is the item on the floor. Optional in the
+    /// schema; every shipped item has one.
+    #[serde(default)]
+    pub sprite: Option<Spanned<RawSpriteRect>>,
 }
 
 /// `defs/denominations/*.toml`: an item that plays the role of money.
@@ -1277,6 +1288,7 @@ pub struct ItemEntry {
     pub shelf_life_minutes: Located<u32>,
     pub bulk_width: Located<u32>,
     pub bulk_height: Located<u32>,
+    pub sprite: Option<Located<RawSpriteRect>>,
 }
 
 #[derive(Debug)]
@@ -1644,6 +1656,8 @@ pub struct ItemDef {
     pub shelf_life_minutes: u32,
     pub width: u32,
     pub height: u32,
+    /// Client-only (`defs.json`, never `sim::generated::defs`).
+    pub sprite: Option<SpriteRect>,
 }
 
 /// An item that is money: its id and face value.

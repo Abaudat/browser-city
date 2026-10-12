@@ -2697,6 +2697,57 @@ fn check_object_footprint_cap(entries: &[LoweredObjectEntry]) -> Result<(), Defs
     Ok(())
 }
 
+/// Story 6.10 (FR94): an item's sprite lives under the allowed root, names
+/// a sheet whose dimensions were read, lies inside it, and is exactly
+/// `bulk * tile_size_px` -- the same agreement FR126 holds an object's
+/// sprite to its footprint.
+fn check_item_sprites(
+    items: &[ItemEntry],
+    sheet_dims: &BTreeMap<String, (u32, u32)>,
+    allowed_root: &str,
+    tile_size_px: Option<u32>,
+) -> Result<(), DefsError> {
+    for i in items {
+        let Some(spr) = &i.sprite else { continue };
+        let sprite = &spr.value;
+        let at = |message: String| DefsError::new(&i.path, spr.line, spr.col, message);
+        if !sheet_is_under_root(&sprite.sheet, allowed_root) {
+            return Err(at(format!(
+                "item '{}' sprite sheet '{}' is not under the allowed root '{allowed_root}'",
+                i.key.value, sprite.sheet
+            )));
+        }
+        let Some(&(sheet_w, sheet_h)) = sheet_dims.get(&sprite.sheet) else {
+            return Err(at(format!(
+                "item '{}' names sheet '{}' but its dimensions were never read",
+                i.key.value, sprite.sheet
+            )));
+        };
+        let x1 = sprite.x as u64 + sprite.w as u64;
+        let y1 = sprite.y as u64 + sprite.h as u64;
+        if sprite.w == 0 || sprite.h == 0 || x1 > sheet_w as u64 || y1 > sheet_h as u64 {
+            return Err(at(format!(
+                "item '{}' sprite rect ({}, {})-({x1}, {y1}) is empty or does not fit inside sheet '{}' ({sheet_w}x{sheet_h}px)",
+                i.key.value, sprite.x, sprite.y, sprite.sheet
+            )));
+        }
+        let Some(tile) = tile_size_px else {
+            return Err(at(format!(
+                "item '{}' has a sprite but defs/ declares no 'render.tile_size_px' balance key",
+                i.key.value
+            )));
+        };
+        let (want_w, want_h) = (i.bulk_width.value * tile, i.bulk_height.value * tile);
+        if sprite.w != want_w || sprite.h != want_h {
+            return Err(at(format!(
+                "item '{}' sprite is {}x{}px but its bulk {}x{} * tile_size_px {tile} is {want_w}x{want_h}px",
+                i.key.value, sprite.w, sprite.h, i.bulk_width.value, i.bulk_height.value
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Story 6.10 (FR94/FR95): a container grid's axes are each `1..=MAX_GRID_EXTENT`.
 /// `model.rs` asserts at compile time that the largest such grid is within
 /// `MAX_ITEMS_PER_CONTAINER`, so a count cap can never be what makes a
@@ -3241,6 +3292,12 @@ pub fn validate(
     check_id_key_dupes(&raw.objects, "object")?;
     check_id_key_dupes(&raw.items, "item")?;
     check_item_fields(&raw.items, code_tables)?;
+    check_item_sprites(
+        &raw.items,
+        sheet_dims,
+        sprite_sheet_allowed_root,
+        find_tile_size_px(&raw.balance),
+    )?;
     check_denominations(raw)?;
     check_id_key_dupes(&raw.recipes, "recipe")?;
     check_id_key_dupes(&raw.professions, "profession")?;
@@ -3547,6 +3604,13 @@ pub fn validate(
             shelf_life_minutes: i.shelf_life_minutes.value,
             width: i.bulk_width.value,
             height: i.bulk_height.value,
+            sprite: i.sprite.as_ref().map(|s| SpriteRect {
+                sheet: s.value.sheet.clone(),
+                x: s.value.x,
+                y: s.value.y,
+                w: s.value.w,
+                h: s.value.h,
+            }),
         })
         .collect();
     items.sort_by(|a, b| a.key.cmp(&b.key));

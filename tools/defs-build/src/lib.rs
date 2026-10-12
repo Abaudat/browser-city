@@ -70,12 +70,13 @@ pub fn build(
     // packer share the result.
     let mut object_sheets: std::collections::BTreeMap<String, atlas::image::DecodedSheet> =
         std::collections::BTreeMap::new();
-    for (o, sprite) in defs
+    let item_sprites = defs.items.iter().filter_map(|i| i.sprite.as_ref());
+    for sprite in defs
         .objects
         .iter()
-        .filter_map(|o| o.sprite.as_ref().map(|s| (o, s)))
+        .filter_map(|o| o.sprite.as_ref())
+        .chain(item_sprites)
     {
-        let _ = o;
         if object_sheets.contains_key(&sprite.sheet) {
             continue;
         }
@@ -108,8 +109,28 @@ pub fn build(
         &defs.outfits,
         &defs.accessories,
     );
+    // An item's sprite is packed as a synthetic object with an offset id
+    // (`model::ITEM_ATLAS_ID_BASE`): one packer, one page list.
+    let mut atlas_objects: Vec<model::ObjectDef> = defs.objects.clone();
+    for it in defs.items.iter().filter(|i| i.sprite.is_some()) {
+        atlas_objects.push(model::ObjectDef {
+            id: model::ITEM_ATLAS_ID_BASE + it.id,
+            key: format!("item:{}", it.key),
+            name: it.key.clone(),
+            layer: 0,
+            sprite: it.sprite.clone(),
+            width: it.width,
+            height: it.height,
+            collider: None,
+            interact_at: None,
+            grid: None,
+            window: false,
+            tags: Vec::new(),
+            flight: None,
+        });
+    }
     let atlas = atlas::build::build_atlas(
-        &defs.objects,
+        &atlas_objects,
         &object_sheets,
         &page_groups,
         &character_parts,
@@ -189,6 +210,9 @@ pub fn appearance_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
 pub fn object_sprite_sheet_paths(raw: &model::RawDefs) -> Vec<String> {
     let mut paths: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for sprite in raw.objects.iter().filter_map(|o| o.sprite.as_ref()) {
+        paths.insert(sprite.value.sheet.clone());
+    }
+    for sprite in raw.items.iter().filter_map(|i| i.sprite.as_ref()) {
         paths.insert(sprite.value.sheet.clone());
     }
     paths.into_iter().collect()

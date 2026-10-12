@@ -146,6 +146,12 @@ export interface ItemDef {
   /** The item's world footprint, in whole cells (FR94). */
   readonly width: number;
   readonly height: number;
+  /** What the item looks like in a container's grid: exactly
+   * `width * tile` by `height * tile` pixels (Story 6.10). Absent only in
+   * fixtures; every shipped item has one. */
+  readonly sprite?: SpriteRect;
+  /** Where the packer put `sprite` on its page; present with `sprite`. */
+  readonly atlas?: AtlasRect;
 }
 
 export interface RecipeDef {

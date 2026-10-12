@@ -159,6 +159,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         shelf_life_minutes: located(text, &i.shelf_life_minutes),
                         bulk_width: located(text, &i.bulk.width),
                         bulk_height: located(text, &i.bulk.height),
+                        sprite: i.sprite.as_ref().map(|s| located(text, s)),
                     });
                 }
             }

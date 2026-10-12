@@ -303,7 +303,12 @@ function parseTag(value: unknown, path: string): TagDef {
 
 function parseItem(value: unknown, path: string): ItemDef {
   const obj = expectRecord(value, path);
-  checkKnownKeys(obj, ["id", "key", "unit", "shelf_life_minutes", "width", "height"], path);
+  checkKnownKeys(
+    obj,
+    ["id", "key", "unit", "shelf_life_minutes", "width", "height", "sprite", "atlas"],
+    path,
+  );
+  const hasSprite = obj.sprite !== null && obj.sprite !== undefined;
   return {
     id: expectU32(obj.id, `${path}.id`),
     key: expectString(obj.key, `${path}.key`),
@@ -311,6 +316,12 @@ function parseItem(value: unknown, path: string): ItemDef {
     shelfLifeMinutes: expectU32(obj.shelf_life_minutes, `${path}.shelf_life_minutes`),
     width: expectU32(obj.width, `${path}.width`),
     height: expectU32(obj.height, `${path}.height`),
+    ...(hasSprite
+      ? {
+          sprite: parseSpriteRect(obj.sprite, `${path}.sprite`),
+          atlas: parseAtlasRect(obj.atlas, `${path}.atlas`),
+        }
+      : {}),
   };
 }
 

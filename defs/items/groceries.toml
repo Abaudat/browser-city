@@ -1,0 +1,52 @@
+# Story 6.10 (FR94): the groceries a shopping basket is made of -- one item
+# of every footprint the cupboard's grid is tuned against. A sprite is
+# exactly `bulk * tile` pixels, so the loaf in the cupboard is the loaf on
+# the pavement.
+
+[[item]]
+id = 9
+key = "tin"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_238.png", x = 0, y = 0, w = 16, h = 16 }
+
+[[item]]
+id = 10
+key = "loaf"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_210.png", x = 0, y = 0, w = 16, h = 16 }
+
+[[item]]
+id = 11
+key = "biscuits"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_212.png", x = 0, y = 0, w = 16, h = 16 }
+
+[[item]]
+id = 12
+key = "flour_sack"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 2 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_241.png", x = 0, y = 0, w = 16, h = 32 }
+
+[[item]]
+id = 13
+key = "tin_stack"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 2 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_123.png", x = 0, y = 0, w = 16, h = 32 }
+
+[[item]]
+id = 14
+key = "produce_trolley"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 2, height = 2 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_4.png", x = 0, y = 0, w = 32, h = 32 }

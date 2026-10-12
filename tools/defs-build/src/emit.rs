@@ -867,13 +867,19 @@ pub fn emit_json(
     for (i, it) in defs.items.iter().enumerate() {
         let comma = if i + 1 < defs.items.len() { "," } else { "" };
         out.push_str(&format!(
-            "    {{ \"id\": {}, \"key\": {}, \"unit\": {}, \"shelf_life_minutes\": {}, \"width\": {}, \"height\": {} }}{comma}\n",
+            "    {{ \"id\": {}, \"key\": {}, \"unit\": {}, \"shelf_life_minutes\": {}, \"width\": {}, \"height\": {}, \"sprite\": {}, \"atlas\": {} }}{comma}\n",
             it.id,
             json_escape(&it.key),
             it.unit,
             it.shelf_life_minutes,
             it.width,
-            it.height
+            it.height,
+            fmt_sprite_json(&it.sprite),
+            match atlas_by_object_id.get(&(crate::model::ITEM_ATLAS_ID_BASE + it.id)) {
+                Some(rect) => fmt_atlas_rect_json(rect),
+                None if it.sprite.is_none() => "null".to_string(),
+                None => panic!("item '{}' (id {}) has no packed atlas rect", it.key, it.id),
+            }
         ));
     }
     out.push_str("  ],\n");
@@ -1280,6 +1286,7 @@ mod tests {
                 shelf_life_minutes: 0,
                 width: 1,
                 height: 1,
+                sprite: None,
             }],
             recipes: vec![RecipeDef {
                 id: 1,
