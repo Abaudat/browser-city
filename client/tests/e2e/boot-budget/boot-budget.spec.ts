@@ -144,14 +144,16 @@ async function collectOneSample(
 // The raw milliseconds swing about 30% across shared runners (1 145 to
 // 1 501 ms on one boot path), the ratio is what can be ratcheted: lower the
 // constant when recorded runs improve it, never raise it. It is set from the
-// recorded gate artifacts of the runs named beside it.
+// recorded gate artifacts of the run named beside it.
 const GATE_TYPING_MS = 2000;
 const GATE_BUDGET_MS = 1000;
 const GATE_SAMPLES = Number(process.env.BC_BOOT_GATE_SAMPLES ?? 10);
 const GATE_ZERO_SAMPLES = Number(process.env.BC_BOOT_GATE_ZERO_SAMPLES ?? 20);
-/** p75 of the 0 ms leg over the calibration workload's median, recorded
- * from the gate artifacts named in the comment above (0 until recorded). */
-const ZERO_LEG_RATIO_RECORDED = 0;
+/** p75 of the 0 ms leg over the calibration workload's median, recorded from
+ * `boot-budget.yml` run 38279321515's three gate repeats (n=20 each, domestic,
+ * 4x CPU): 58.3, 58.7 and 57.1 (p75 1 352, 1 362 and 1 303 ms over a
+ * calibration of 23.2, 23.2 and 22.8 ms). The highest is the constant. */
+const ZERO_LEG_RATIO_RECORDED = 58.7;
 const RATCHET_SLACK = 1.25;
 /** Records the artifact without gating the ratio (the recording runs that
  * set `ZERO_LEG_RATIO_RECORDED`). Never set in `ci.yml`. */

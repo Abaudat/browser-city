@@ -1928,8 +1928,9 @@ typed leg measures about one frame; the `first-boot-gate` job
 (`boot-budget.spec.ts`, `BC_BOOT_GATE_ONLY`; every client or server change)
 holds, on a production build over HTTP/2, 4x CPU and the domestic network,
 the p75 of `NAME_SUBMITTED` to `PLAYER_CONTROLLABLE` and every single sample
-under 1000 ms with a fixed 2000 ms typing window, and ratchets the 0 ms leg
-(submit at first paint), the leg that really moves;
+under 1000 ms with a fixed 2000 ms typing window, and ratchets the 0 ms leg (submit at first paint, the leg that really moves)
+as a ratio over a fixed calibration workload run under the same throttle,
+recorded and never raised;
 `scripts/ci/check-boot-shell.sh` holds the built shell to inline markup
 and CSS with nothing render-blocking and nothing that reads as loading.
 
