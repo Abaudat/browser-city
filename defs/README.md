@@ -67,7 +67,22 @@ row: permanent `id`/`key`; `unit` (a name from `sim::codes::unit`'s golden
 (whole minutes until an instance spoils, `0` = never, at most
 `MAX_SHELF_LIFE_MINUTES`); `bulk = { width = <n>, height = <n> }` (world
 footprint in cells, each 1 to `MAX_FOOTPRINT_CELLS`). All five are
-required; there are no defaults.
+required; there are no defaults. An item may also carry `sprite = { sheet,
+x, y, w, h }`, its picture in a container's grid, exactly `bulk` x
+`render.tile_size_px` pixels (story 6.10, FR94); every shipped item has one.
+
+## Containers
+
+An `[[object]]` with `grid = { width = <n>, height = <n> }` (story 6.10,
+FR94: whole cells, each 1 to `MAX_GRID_EXTENT`) is a container, and the
+grid is the only thing that makes it one -- there is no flag. Its reach is
+its `interact_at`, like any interactable's. A grid is the tedium dial: a
+larger one packs more forgivingly, and `packing_forced` (the gameplay
+metrics registry) is what to read before changing one. An item's footprint
+in a grid is its `bulk`, rotated a quarter turn on an odd orientation; a
+shipped container's grid is held by `server/sim/tests/container_grid.rs`
+(the reference shopping basket must still pack into the cupboard in one
+first-fit pass).
 
 ## Denominations
 

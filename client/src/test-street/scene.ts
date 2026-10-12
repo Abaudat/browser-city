@@ -1767,14 +1767,14 @@ export async function mountStreetScene(
     const source = objectSources.get(intent.defId);
     const grid = source?.grid;
     if (!source || !grid) return;
-    const drawable = propDrawables.find((d) => d.stableId === intent.objectId);
-    if (!drawable) return;
+    const placed = placedRows.find((r) => r.objectId === intent.objectId);
+    if (!placed) return;
     const object = {
       objectId: intent.objectId,
       defId: intent.defId,
-      anchorX: fromSortUnits(drawable.x),
-      anchorY: fromSortUnits(drawable.y),
-      floor: drawable.floor,
+      anchorX: placed.x,
+      anchorY: placed.y,
+      floor: placed.floor,
       width: source.width,
       height: source.height,
       spriteHeightPx: source.spriteHeightPx ?? tileSizePx * source.height,

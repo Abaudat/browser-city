@@ -420,11 +420,13 @@ and an OIDC identity on the same character.
 
 - An item instance is one row in `item_instance` (identity: `instance_id` auto_inc, `def_id`, `created_at`) and exactly one row in one of two form tables. A move never touches `item_instance`; anything keyed by `instance_id` travels with it.
 - `item_placed` is the world form: `instance_id` (primary key, not auto_inc), `x`, `y`, `floor`, `offset_x`, `offset_y`, `orientation`, `chunk_key` (btree index, as on `placed_object`). It references nothing.
-- `item_held` is the container form: `instance_id` (primary key, not auto_inc), `container_kind`, `container_id`, `slot_x`, `slot_y`, `orientation`; one index `by_container` on (`container_kind`, `container_id`).
+- `item_held` is the container form: `instance_id` (primary key, not auto_inc), `container_kind`, `container_id`, `slot_x`, `slot_y`, `orientation`; one single-column btree index on `container_id` (the engine shares and prunes only single-column equalities; a reader also filters on `container_kind`). `item_held` and `item_instance` are public so a client can subscribe to one open container's rows and their instances' defs.
 - A container is `(container_kind, container_id)`: a `sim::codes::container_kind` code (`object`, whose id is a `placed_object.object_id`) plus the id in that kind's own table. It is not `holder_kind`: a holder owns stock, a container has a grid. A further kind is a code append.
 - No foreign key and no cascade, and no `parent`/`supported_by` column on any item table: a `container_id` whose object is gone is a dangling reference.
 - Mutable per-instance state is its own table keyed by `instance_id`, never columns on a form.
-- `sim::item_instance` holds the types (`Placed`, `Held`, `Placement`, `ContainerRef`) and `plan_move`: across forms one delete and one insert, within a form an update. Out-of-range values are errors, never clamped. The sub-cell offset is `0..COLLIDER_SUBCELLS_PER_CELL`; a slot is `0..MAX_GRID_EXTENT`; `MAX_GRID_EXTENT` and `MAX_ITEMS_PER_CONTAINER` are declared only there. `Placed::chunk_key` is the one place `item_placed.chunk_key` is derived.
+- `sim::item_instance` holds the types (`Placed`, `Held`, `Placement`, `ContainerRef`) and `plan_move`: across forms one delete and one insert, within a form an update. Out-of-range values are errors, never clamped. The sub-cell offset is `0..COLLIDER_SUBCELLS_PER_CELL`; a slot is `0..MAX_GRID_EXTENT`; `MAX_GRID_EXTENT` (8) and `MAX_ITEMS_PER_CONTAINER` (64) are declared in `tools/defs-build/src/model.rs` and generated into `sim::generated::defs` and `defs.json`; `sim::item_instance` re-exports them. `Placed::chunk_key` is the one place `item_placed.chunk_key` is derived.
+- `sim::container_grid` is the one fit rule (FR94): an item's footprint in a grid is its `[[item]].bulk`, width and height swapped on odd orientations; a placement fits when every cell is inside the container object's `grid` and no other held item covers one. `fits` returns `OutOfGrid`, `Overlaps { instance_id }` or `NeverFits`, never clamps and reads no count or volume: full is a shape. `first_fit` scans slots row-major, orientation 0 then 1. `plan_store` is the only code that builds a `Held` meant for a write, and a store that does not fit is `Store::DoesNotFit`, an outcome, never an `Err`. `scripts/ci/check-held-construction.sh` holds that nothing under `server/src/` builds a `Held` or names the `item_held` accessor outside `restore.rs`, whose `finish_restore` audits every held row against its container's grid (`first_misfit`).
+- `packing_forced` is the tedium dial: a `GAMEPLAY_METRICS` proportion of store attempts refused for fit or fitting only rotated, over all store attempts. `sim::container_grid::packing_forced` is the per-attempt verdict, `Period::on_store` folds it, and the sampler emits it; `tables::metrics::record_store_attempt` is what a store writer calls (none exists until Epic 8's interaction model).
 - `item_held`'s `max_rows` is `placed_object`'s times `MAX_ITEMS_PER_CONTAINER`; `item_placed`'s is `placed_object`'s; `item_instance`'s is their sum.
 
 ## World addressing
@@ -588,7 +590,8 @@ The client holds only the world around the player. Subscriptions are client-issu
 - A citizen has one pending scheduled event: its next arrival or its next chunk crossing, whichever is sooner. A crossing does one thing: `place_actor`, then schedule the next event. `sim::actor_location::crossings(route, t_depart, t_arrive, start)` is the pure plan: instants from L3's waypoint rule (`leg_instants`, pinned with the client by `fixtures/leg-instants.v1.json`), placements from `plan_move`. Crossing calls count under `ReducerClass::Scheduled`.
 - A table is split by how often it is written, not by the entity it describes: anything rewritten more often than a chunk change is its own table, joined through `actor_id`.
 - `placed_object`, `floor_transition`, `building_area` and `room_area` are public; `item_placed`, `building` and `room` stay private until a client reader exists.
-- `scripts/ci/check-subscription-shape.sh` holds the query shape (`.subscribe(` only in `net/connection.ts` and `net/region-subscription.ts`, no `SELECT` literal under `client/src`, the whole-table set exactly the three singletons); `scripts/ci/check-interest-region.sh` proves it against a real instance.
+- An open container's contents are a per-view handle, never part of the region: `net/container-subscription.ts` issues `item_held WHERE container_id = <id>` and a typed-builder semijoin from those rows onto `item_instance` (for each row's `def_id`) when a view opens and releases the one handle when it closes (`unsubscribe()` only once applied). It is the third file allowed to call `.subscribe(`.
+- `scripts/ci/check-subscription-shape.sh` holds the query shape (`.subscribe(` only in `net/connection.ts`, `net/region-subscription.ts` and `net/container-subscription.ts`, no `SELECT` literal under `client/src`, the whole-table set exactly the three singletons); `scripts/ci/check-interest-region.sh` proves it against a real instance.
 
 ## Connection
 
@@ -936,6 +939,10 @@ read the raw-import way either: they are packed, at build time, into
 sparse or `client/`-only checkout -- for as long as any client code reads
 assets from outside `client/`.
 
+### Container view
+
+A container's view (FR94) is a piece of the world: `world/container-view.ts` (pure, no `pixi.js`) holds the cell rects, the anchor and the close rule; `render/pixi-container-view.ts` is the only code that builds its display objects. One grid cell is one world tile, the view is centred on the object's footprint with its bottom edge one tile above the object's sprite, and it is attached to that object's own floor stack (`FloorStacks.attachTransient`, accepted by `assertManaged`), so it scrolls with the camera and `app.stage` holds the world root and nothing else. There is one slot: opening another container replaces it. It closes with no timer and no pointer input: the feet leave the object's `interact_at` (`isWithinReach`), a floor change, the object gone or hidden, the body closed (which a lost connection does), or Escape. It draws no text, count or readout, and the ticker is subscribed only while a view is open. `scripts/ci/check-container-view-path.sh` holds the one-module rule; a click opens it through the existing `Intent`, routed by `main.ts`'s `onIntent` in one call.
+
 ### Visibility
 
 FR120-FR122's enclosure visibility is decided by one pure function,
@@ -1161,6 +1168,10 @@ never spoils, capped at `MAX_SHELF_LIFE_MINUTES`. `bulk = { width, height
 generated `ITEMS` / `defs.json` pair; there is no item database table
 until a server reader needs one. An item instance's storage is under
 "Item instances".
+
+An `[[item]]` may carry `sprite = { sheet, x, y, w, h }`: what it looks like in a container's grid, exactly `bulk * tile_size_px` pixels. It is packed into the atlas like an object's and reaches `defs.json` only (`sprite`, `atlas`), never `sim::generated::defs`. Every shipped item has one.
+
+An `[[object]]` that declares `grid = { width, height }` (whole cells, each `1..=MAX_GRID_EXTENT`) is a container; the grid is the only thing that makes it one, as an absent `collider` is what makes an object walkable. `MAX_GRID_EXTENT * MAX_GRID_EXTENT` is held at compile time within `MAX_ITEMS_PER_CONTAINER`, so a count is never what makes a container full. Grid sizes live in `defs/objects` only: they are the tedium dial. Both parsers refuse a zero or over-extent axis and the shared canonical dump carries `grid=`.
 
 A `[[denomination]]` (FR92) is `item` (an item key) and `face_value`, with no
 id of its own. Both artefacts carry a `denominations` table, largest face
