@@ -1206,7 +1206,20 @@ container, and nothing else.
 | FR95: a prop with mutable state keeps its state row byte-identical across a cross-form move | deferred | the first story that gives an item instance mutable state |
 | Every `item_placed.chunk_key` equals `chunk_key(x, y, floor)` (`Placed::chunk_key` derives it; the seeded backup row's key is deliberately arbitrary) | deferred | the story that first writes an `item_placed` row through a reducer |
 | FR95: the placed item survives the live deletion of the placed object beneath it | deferred | the first story that deletes a placed object |
-| FR95: a held item's grid position is validated against its container's real grid | deferred | FR94's container grid story |
+| FR95: a held item's grid position is validated against its container's real grid | covered | `server/sim/tests/container_grid.rs` -- `the_audit_names_the_first_row_that_leaves_the_grid_or_overlaps`, `a_store_that_does_not_fit_writes_nothing_and_says_why`; `server/sim/tests/invariants.rs` -- `inv_container_never_overlaps`; `scripts/ci/check-held-construction.sh`, tested by `scripts/ci/tests/test-check-held-construction.sh` |
+
+Story 6.10 (FR94): a container is an object with a grid, one fit rule decides what goes in, and its view is a transient piece of the world.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| FR94: a grid with rotation -- a 3x2 item covers 3x2 cells and 2x3 rotated; the edge fits and one cell further does not; one shared cell is an overlap naming the occupant | covered | `server/sim/tests/container_grid.rs` -- `a_three_by_two_item_covers_three_by_two_cells_and_two_by_three_when_rotated`, `an_item_at_the_grid_edge_fits_and_one_cell_further_is_out_of_the_grid`, `two_items_overlapping_by_a_single_cell_are_refused_naming_the_occupant`; `server/sim/tests/invariants.rs` -- `inv_container_fit_matches_oracle`; `client/tests/unit/world/container-view.test.ts` -- `a 3x2 item at a slot is a 3x2 rect there, and 2x3 when rotated a quarter turn` |
+| FR94: the view is object-bound, transient and world-space: built when opened, destroyed on close, one at a time, and `app.stage` holds the world root alone | covered | `client/tests/unit/render/pixi-container-view.test.ts` -- `opened and closed 50 times it ends at the baseline, ticker unsubscribed while closed`, `opening another container replaces the first: one view at a time`, `the view takes its object at construction and is destroyed on close`; `client/tests/unit/render/floor-stacks.test.ts` -- `attaches above the floor's pool, is accepted by assertManaged and detaches cleanly`; `client/tests/e2e/container.spec.ts`; `scripts/ci/check-container-view-path.sh`, tested by `scripts/ci/tests/test-check-container-view-path.sh` |
+| FR94: the view closes on walking out of the object's reach, a floor change, the object gone or hidden, the body closed -- never a timer or the pointer | covered | `client/tests/unit/world/container-view.test.ts` -- `stays open while the feet are inside the reach, and closes on the first sub-cell outside`, `closes on a floor change`, `closes when the object is gone, hidden, the body closed or the connection lost`; `client/tests/e2e/container.spec.ts` |
+| FR94: an item's footprint in a grid is its world `bulk`, unchanged; the item def has no container-specific size; a thing too large for the grid never fits (the car in a cupboard) | covered | `server/sim/tests/container_grid.rs` -- `an_item_larger_than_the_grid_in_both_orientations_never_fits`, `the_item_def_carries_no_container_specific_size`; `tools/defs-build/tests/failure_fixtures.rs` -- `an_item_sprite_that_disagrees_with_its_bulk_is_refused` |
+| FR94: each container has its own dimensions from `defs/`, both parsers refuse a zero or over-extent axis, and no grid size is a Rust or TypeScript literal | covered | `server/sim/tests/container_grid.rs` -- `the_shipped_containers_each_have_their_own_dimensions`, `every_shipped_container_grid_is_within_the_extent_and_the_count_cap`; `tools/defs-build/tests/shared_malformed_cases.rs` and `client/tests/unit/defs/malformed.test.ts` -- `object-grid-zero`, `object-grid-extent-exceeded`; `client/tests/unit/defs/dump-golden.test.ts` and `server/sim/tests/defs_dump.rs` |
+| FR94: capacity is spatial -- free cells that do not hold the shape are full, one large item is full at a count of one, and no count is ever the binding constraint | covered | `server/sim/tests/container_grid.rs` -- `full_by_shape_not_by_count_fragmented_free_cells_refuse_a_large_item`, `a_grid_holding_one_large_item_is_full_with_a_count_of_one`, `the_fit_path_reads_no_count`, `the_rule_reads_no_count_a_grid_of_one_by_one_items_fills_to_its_area` |
+| FR94, FR172: the tedium dial is instrumented (the `packing_forced` row above), and its proxy's proxy: a reference shopping basket packs into the shipped cupboard in one first-fit pass | covered | `server/sim/tests/container_grid.rs` -- `a_reference_shopping_basket_fits_the_shipped_cupboard_in_one_first_fit_pass` |
+| FR94: opening a container streams only its own rows, released on close; the region never streams held rows | covered | `scripts/ci/check-subscription-shape.sh`, tested by `scripts/ci/tests/test-check-subscription-shape.sh`; `server/bounds/tests/item_instance_bounds.rs` -- `the_held_form_has_a_container_and_a_slot_and_no_world_position` |
 
 ## Cash
 
@@ -1238,7 +1251,7 @@ Story 6.8 (FR92, NFR43): cash is stock. A denomination is an item that plays the
 | Hand-picked and wrong change | deferred | the Epic 7 till job |
 | A till's contents are legible on the prop | deferred | the client story that shows a till |
 | No till receives an opening float except by an authored write | deferred | the story that first stocks a till (the first shop story); this story seeds nothing |
-| Per-drawer cash: a till against a safe, two tills in one shop | deferred | 6.10 to 6.12, the container stories |
+| Per-drawer cash: a till against a safe, two tills in one shop | deferred | the first story that stores cash into a container (Epic 8's interaction model) |
 
 ## Identity
 

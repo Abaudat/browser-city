@@ -129,6 +129,13 @@ The epics already name this as something a UX specification would own. It applie
 | Concurrency | **One container view at a time.** Two open grids invite a drag-between-panels interaction that would read as inventory management rather than handling |
 | Grid | The container's own grid from `object_def` — cupboard 4×3, bag 3×2, crate 4×4. Item footprints are reused unchanged from world footprints (D2) |
 | Rotation | Supported, as D19 requires |
+| Scale | One grid cell is exactly one world tile (16px native), at the same 3x integer scale as everything else: an item in a cupboard is drawn at the size it has on the pavement, and a thing too large visibly cannot go in. Cells are never shrunk to fit |
+| Anchor | World space, horizontally centred on the object's footprint, its bottom edge one tile above the top of the object's sprite. It scrolls with the camera; it is never fixed to the screen or moved to stay visible |
+| Chrome | The inside of the container and nothing more: a flat backing, one-pixel cell separators and a one-pixel edge, square corners, tones from `palette_interiors.png`. No title, close button, capacity bar, count, name or text of any kind |
+| Items | Drawn as themselves from the item's own sprite, exactly its footprint; rotation is a quarter-turn of the sprite, nearest-neighbour. Not drawn: labels or coloured rectangles |
+| Ghost | While an item is in hand, a ghost follows the pointer snapped to the cell grid: full alpha where it fits, half alpha where it does not. A refusal changes nothing; no tint, shake, cross or message |
+| Open variant | The container's own world sprite shows its open variant while open, where the tileset has one, so others see it standing open. No tint or overlay fakes one |
+| Dismissal | Walking out of the object's `interact_at` reach, Escape, or opening another container. Instant, no fade or slide, and independent of the pointer |
 | Failure to fit | Shown by the item not fitting. No error text, no message — the grid is the explanation |
 | Capacity display | **None.** Spatial capacity is its own readout; a "12/20 slots" counter would be exactly the abstract, persistent overlay D17 forbids |
 | Bulk contents | A sack occupying 1×2 and holding 340 g reads as a sack. Quantity is a property of the discrete item, shown when that item is examined, never as a global tally |
@@ -240,4 +247,4 @@ Deferring accessibility is a legitimate call for a solo passion project. **Defer
 | **U1** | Affordance treatment strength — brightening amount | Settled (§1): 50% additive alpha as the ceiling (the default dial's own effective brighten is 30%), a `[20, 100]` player dial defaulted at 60%, judged on full-viewport marked-vs-unmarked screenshots of the densest street the test scene produces |
 | **U2** | Whether hands should hold more than one item | Starts at one. Revisit only if the civic-verb loop or a procedure demonstrably needs two |
 | **U3** | A1, the procedure interaction model | Unchanged — prototyped in Epic 8, under the two constraints in §6 |
-| **U4** | Container view dismissal on walking away — distance and whether it is animated | Falls out of the Epic 6 implementation; no decision needed in advance |
+| **U4** | Container view dismissal on walking away — distance and whether it is animated | Settled (§3): the distance is the object's own `interact_at` reach, the rule that let it open; closing is instant, never animated |
