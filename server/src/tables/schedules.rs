@@ -74,8 +74,7 @@ fn schedule_at_micros(at: ScheduleAt) -> Result<i64, String> {
 /// missed)`.
 fn arm_cadence(
     ctx: &ReducerContext,
-    grid_origin_micros: i64,
-    fired_target_micros: i64,
+    (grid_origin_micros, fired_target_micros): (i64, i64),
     period_ms: i64,
     speed: u32,
     mut iter_ids: impl FnMut() -> Vec<u64>,
@@ -260,8 +259,7 @@ macro_rules! arm_schedule {
         ) -> (i64, u64) {
             arm_cadence(
                 ctx,
-                grid_origin_micros,
-                fired_target_micros,
+                (grid_origin_micros, fired_target_micros),
                 $period_ms,
                 speed,
                 || ctx.db.$accessor().iter().map(|r| r.scheduled_id).collect(),
@@ -343,7 +341,8 @@ pub fn run_maintenance(ctx: &ReducerContext, row: MaintenanceSchedule) -> Result
         ctx,
         sim::cadence::city_minute_of(epoch_micros, speed, origin_micros),
     );
-    let (_next_target_micros, missed) = arm_maintenance_schedule(ctx, origin_micros, origin_micros, speed);
+    let (_next_target_micros, missed) =
+        arm_maintenance_schedule(ctx, origin_micros, origin_micros, speed);
     record_cadence_fire(ctx, cadence_code::MAINTENANCE, origin_micros, missed);
     Ok(())
 }
@@ -358,7 +357,8 @@ pub fn sample_metrics(ctx: &ReducerContext, row: MetricsSampleSchedule) -> Resul
     // Infallible by construction: nothing between the clock read and the
     // re-arm may abort, or the cadence would stop.
     metrics::run_sampler(ctx);
-    let (_next_target_micros, missed) = arm_metrics_schedule(ctx, epoch_micros, origin_micros, speed);
+    let (_next_target_micros, missed) =
+        arm_metrics_schedule(ctx, epoch_micros, origin_micros, speed);
     record_cadence_fire(ctx, cadence_code::METRICS, origin_micros, missed);
     Ok(())
 }
