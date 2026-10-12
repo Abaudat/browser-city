@@ -6745,14 +6745,22 @@ fn oracle(
     if !eroded.is_passable(start.0, start.1) {
         return Err(format!("the body does not fit at the seed {seed:?}"));
     }
-    let flood = |passable: &dyn Fn(i32, i32) -> bool| -> BTreeSet<(i32, i32)> {
-        let mut seen: BTreeSet<(i32, i32)> = BTreeSet::new();
+    // Dense bitmaps over the window: a chunk is a million sub-cells, and
+    // the sweep floods it twice per chunk per city.
+    let (w, h) = (
+        (bounds.x1 - bounds.x0) as usize,
+        (bounds.y1 - bounds.y0) as usize,
+    );
+    let at = |x: i32, y: i32| (y - bounds.y0) as usize * w + (x - bounds.x0) as usize;
+    let flood = |passable: &dyn Fn(i32, i32) -> bool| -> Vec<bool> {
+        let mut seen = vec![false; w * h];
         let mut q = VecDeque::new();
-        seen.insert(start);
+        seen[at(start.0, start.1)] = true;
         q.push_back(start);
         while let Some((x, y)) = q.pop_front() {
             for n in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
-                if bounds.contains(n.0, n.1) && passable(n.0, n.1) && seen.insert(n) {
+                if bounds.contains(n.0, n.1) && !seen[at(n.0, n.1)] && passable(n.0, n.1) {
+                    seen[at(n.0, n.1)] = true;
                     q.push_back(n);
                 }
             }
@@ -6774,26 +6782,27 @@ fn oracle(
     }
     let mut cut: BTreeSet<(i32, i32)> = BTreeSet::new();
     let (mut enclosed, mut narrow) = (0usize, 0usize);
-    let mut seen: BTreeSet<(i32, i32)> = BTreeSet::new();
+    let mut seen = vec![false; w * h];
     for y in bounds.y0..bounds.y1 {
         for x in bounds.x0..bounds.x1 {
-            if !eroded.is_passable(x, y) || body_reach.contains(&(x, y)) || seen.contains(&(x, y)) {
+            let i = at(x, y);
+            if seen[i] || body_reach[i] || !eroded.is_passable(x, y) {
                 continue;
             }
             // One cut-off component of body-passable origins.
             let mut comp: Vec<(i32, i32)> = Vec::new();
             let mut q = VecDeque::new();
-            seen.insert((x, y));
+            seen[i] = true;
             q.push_back((x, y));
             while let Some((cx, cy)) = q.pop_front() {
                 comp.push((cx, cy));
                 for n in [(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)] {
-                    if bounds.contains(n.0, n.1)
-                        && eroded.is_passable(n.0, n.1)
-                        && !body_reach.contains(&n)
-                        && seen.insert(n)
-                    {
-                        q.push_back(n);
+                    if bounds.contains(n.0, n.1) {
+                        let k = at(n.0, n.1);
+                        if !seen[k] && !body_reach[k] && eroded.is_passable(n.0, n.1) {
+                            seen[k] = true;
+                            q.push_back(n);
+                        }
                     }
                 }
             }
@@ -6809,7 +6818,7 @@ fn oracle(
             if touches_edge || prop_only {
                 continue;
             }
-            if raw_reach.contains(&comp[0]) {
+            if raw_reach[at(comp[0].0, comp[0].1)] {
                 narrow += 1;
             } else {
                 enclosed += 1;
