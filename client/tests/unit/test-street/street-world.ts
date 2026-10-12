@@ -16,6 +16,7 @@ import {
   BRIDGE_UNDER_CURB_X,
   BRIDGE_UNDER_EXIT_Y,
   BRIDGE_UNDER_PILLAR_X,
+  CUPBOARD_PROP_ID,
   isDefStreetProp,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
@@ -538,6 +539,43 @@ export function binReachRoute(): readonly StreetWalkSegment[] {
   return streetWalkRoute(streetWalkInputs()).slice(0, 1);
 }
 
+function cupboardProp() {
+  const prop = STREET_PROPS.find((p) => p.id === CUPBOARD_PROP_ID);
+  if (!prop) throw new Error("the street no longer places the cupboard");
+  return prop;
+}
+
+/** Story 6.10: out of the shop and past the lamppost, east along the
+ * pavement to the cupboard's west edge, then up into its reach. */
+export function cupboardReachRoute(): readonly StreetWalkSegment[] {
+  const prop = cupboardProp();
+  return [
+    ...streetWalkRoute(streetWalkInputs()).slice(0, 4),
+    {
+      label: "east-to-the-cupboard",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: prop.x - 0.1 },
+    },
+    {
+      label: "up-into-reach",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: prop.y + 1.1 },
+    },
+  ];
+}
+
+/** From inside the cupboard's reach, west and out of it. */
+export function cupboardLeaveRoute(): readonly StreetWalkSegment[] {
+  const prop = cupboardProp();
+  return [
+    {
+      label: "west-out-of-reach",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: prop.x - 2 },
+    },
+  ];
+}
+
 /** The subway approach to the entrance, then west along the pavement to the
  * top railing's middle column and south onto its foot. */
 export function railingFootRoute(): readonly StreetWalkSegment[] {
@@ -669,6 +707,10 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     const out = simulateStreetWalk(streetWalkRoute(inputs));
     return out[out.length - 1]?.state;
   };
+  const afterCupboardReach = (): FloorWalkResult | undefined => {
+    const out = simulateStreetWalk(cupboardReachRoute());
+    return out[out.length - 1]?.state;
+  };
   return [
     { name: "street-walk", segments: streetWalkRoute(inputs), start: fresh },
     { name: "subway-approach", segments: streetSubwayApproachRoute(inputs), start: fresh },
@@ -681,6 +723,8 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     },
     { name: "bridge-lap", segments: streetBridgeLapRoute(), start: afterStreetWalk },
     { name: "bin-reach", segments: binReachRoute(), start: fresh },
+    { name: "cupboard-reach", segments: cupboardReachRoute(), start: fresh },
+    { name: "cupboard-leave", segments: cupboardLeaveRoute(), start: afterCupboardReach },
     { name: "west-open-spot", segments: westOpenSpotRoute(), start: fresh },
     { name: "player-body-square", segments: playerBodySquareRoute(), start: fresh },
     { name: "railing-foot", segments: railingFootRoute(), start: fresh },

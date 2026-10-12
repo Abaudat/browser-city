@@ -372,31 +372,28 @@ pub fn finish_restore(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 /// Refuses to finish a restore in which a held item sits outside its
-/// container's grid, overlaps another, names a placed object that is not a
-/// container, or names an item with no instance or def. A container whose
-/// object is gone (a dangling reference) is left alone.
+/// container's grid or overlaps another. Only rows that resolve are held to
+/// the rule: a container whose object is gone or is not a container, and an
+/// item with no instance or no def, are dangling references (a legal state)
+/// with nothing to measure a footprint against.
 fn audit_held_rows(ctx: &ReducerContext) -> Result<(), String> {
     use sim::container_grid::{Occupant, first_misfit};
     use sim::generated::defs::{ITEMS, OBJECTS};
     use std::collections::BTreeMap;
 
-    let mut by_container: BTreeMap<(u32, u64), Vec<Occupant>> = BTreeMap::new();
+    let mut by_container: BTreeMap<u64, Vec<Occupant>> = BTreeMap::new();
     for row in ctx.db.item_held().iter() {
-        let def_id = ctx
-            .db
-            .item_instance()
-            .instance_id()
-            .find(row.instance_id)
-            .map(|i| i.def_id)
-            .ok_or_else(|| format!("held item {} has no item_instance row", row.instance_id))?;
-        let item = ITEMS.iter().find(|i| i.id == def_id).ok_or_else(|| {
-            format!(
-                "held item {} names unknown item def {def_id}",
-                row.instance_id
-            )
-        })?;
+        if row.container_kind != sim::codes::container_kind::OBJECT {
+            continue;
+        }
+        let Some(instance) = ctx.db.item_instance().instance_id().find(row.instance_id) else {
+            continue;
+        };
+        let Some(item) = ITEMS.iter().find(|i| i.id == instance.def_id) else {
+            continue;
+        };
         by_container
-            .entry((row.container_kind, row.container_id))
+            .entry(row.container_id)
             .or_default()
             .push(Occupant {
                 instance_id: row.instance_id,
@@ -405,28 +402,20 @@ fn audit_held_rows(ctx: &ReducerContext) -> Result<(), String> {
                 orientation: row.orientation,
             });
     }
-    for ((kind, id), mut rows) in by_container {
-        // A container whose object is gone is a dangling reference, which
-        // is a legal state: there is no grid to hold its rows to.
-        let placed = (kind == sim::codes::container_kind::OBJECT)
-            .then(|| ctx.db.placed_object().object_id().find(id))
-            .flatten();
-        let Some(placed) = placed else {
-            if kind == sim::codes::container_kind::OBJECT {
-                continue;
-            }
-            return Err(format!("held items name unknown container kind {kind}"));
-        };
-        let grid = OBJECTS
-            .iter()
-            .find(|d| d.id == placed.def_id)
-            .and_then(|d| d.grid)
-            .ok_or_else(|| format!("held items name object {id}, which is not a container"))?;
+    for (id, mut rows) in by_container {
+        let grid = ctx
+            .db
+            .placed_object()
+            .object_id()
+            .find(id)
+            .and_then(|o| OBJECTS.iter().find(|d| d.id == o.def_id))
+            .and_then(|d| d.grid);
+        let Some(grid) = grid else { continue };
         rows.sort_by_key(|r| r.instance_id);
         if let Some((instance_id, why)) = first_misfit((grid.width as u8, grid.height as u8), &rows)
         {
             return Err(format!(
-                "held item {instance_id} does not fit container ({kind}, {id}): {why:?}"
+                "held item {instance_id} does not fit container {id}: {why:?}"
             ));
         }
     }

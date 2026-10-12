@@ -18,9 +18,12 @@ import {
   CUPBOARD_PROP_ID,
   isDefStreetProp,
   STREET_PROPS,
-  streetWalkRoute,
 } from "../../src/test-street/fixture";
-import { committedDefs, streetWalkInputs } from "../unit/test-street/street-world";
+import {
+  committedDefs,
+  cupboardLeaveRoute,
+  cupboardReachRoute,
+} from "../unit/test-street/street-world";
 import { waitForPlayerControllable } from "./boot-test-support";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
 import { E2E_CUPBOARD } from "./spacetime-harness.mjs";
@@ -87,20 +90,9 @@ test("clicking the cupboard from within reach opens its view; walking away close
   // Out of shop A and along the pavement, past the lamppost, then east and
   // up into the cupboard's reach (its `interact_at`, from `defs/`).
   const prop = cupboardProp();
-  const inputs = streetWalkInputs();
-  for (const segment of streetWalkRoute(inputs).slice(0, 4)) {
+  for (const segment of cupboardReachRoute()) {
     await walkRealSegment(page, segment);
   }
-  await walkRealSegment(page, {
-    label: "east-to-the-cupboard",
-    key: "ArrowRight",
-    until: { kind: "x-at-least", value: prop.x - 0.1 },
-  });
-  await walkRealSegment(page, {
-    label: "up-into-reach",
-    key: "ArrowUp",
-    until: { kind: "y-at-most", value: prop.y + 1.1 },
-  });
 
   // Standing in reach, the cupboard is closed: nothing is drawn above it.
   await page.screenshot({ path: `${SHOT_DIR}/cupboard-closed.png` });
@@ -138,11 +130,9 @@ test("clicking the cupboard from within reach opens its view; walking away close
   await page.screenshot({ path: `${SHOT_DIR}/cupboard-open.png` });
 
   // Walking out of reach closes it, with the pointer left where it was.
-  await walkRealSegment(page, {
-    label: "west-out-of-reach",
-    key: "ArrowLeft",
-    until: { kind: "x-at-most", value: prop.x - 2 },
-  });
+  for (const segment of cupboardLeaveRoute()) {
+    await walkRealSegment(page, segment);
+  }
   await page.waitForFunction(() => window.__bc?.containerView?.() == null, undefined, {
     timeout: 10_000,
   });
