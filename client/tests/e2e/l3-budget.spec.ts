@@ -206,7 +206,21 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   // Where the time goes, with the render on: a CPU profile, top self-time.
   await cdp.send("Profiler.enable");
   await cdp.send("Profiler.start");
+  // The worker's own profile alongside: the solve's self time is its alone.
+  await worker.send("Profiler.enable");
+  await worker.send("Profiler.setSamplingInterval", { interval: 200 });
+  await worker.send("Profiler.start");
   await page.waitForTimeout(8_000);
+  const workerCpu = (await worker.send("Profiler.stop")) as {
+    profile: {
+      nodes: {
+        id: number;
+        callFrame: { functionName: string; url: string };
+        positionTicks?: { line: number; ticks: number }[];
+      }[];
+      samples: number[];
+    };
+  };
   const cpu = (await cdp.send("Profiler.stop")) as {
     profile: {
       nodes: { id: number; callFrame: { functionName: string; url: string } }[];
@@ -225,6 +239,29 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     .sort((a, b) => b[1] - a[1])
     .slice(0, 15)
     .map(([fn, n]) => ({ fn, share: n / total }));
+
+  const workerHits = new Map<number, number>();
+  for (const id of workerCpu.profile.samples) workerHits.set(id, (workerHits.get(id) ?? 0) + 1);
+  const workerSelf = new Map<string, number>();
+  const workerLines = new Map<string, number>();
+  for (const node of workerCpu.profile.nodes) {
+    const file = node.callFrame.url.replace(/^.*\/src\//, "src/");
+    const key = `${node.callFrame.functionName || "(anonymous)"} ${file}`;
+    workerSelf.set(key, (workerSelf.get(key) ?? 0) + (workerHits.get(node.id) ?? 0));
+    for (const t of node.positionTicks ?? []) {
+      const at = `${file}:${t.line}`;
+      workerLines.set(at, (workerLines.get(at) ?? 0) + t.ticks);
+    }
+  }
+  const workerTotal = workerCpu.profile.samples.length || 1;
+  const workerCpuTop = [...workerSelf.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([fn, n]) => ({ fn, share: n / workerTotal }));
+  const workerLinesTop = [...workerLines.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([at, n]) => ({ at, share: n / workerTotal }));
 
   // Phase 2, the verdict: the same real ticker -- the same window, the same
   // GC, the same crowd -- with the rasteriser taken out, so what is measured
@@ -448,6 +485,8 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
       minorP99PauseMs: distribution(workerGc.minorPausesMs).p99,
     },
     cpuTopSelf: cpuTop,
+    workerCpuTopSelf: workerCpuTop,
+    workerCpuTopLines: workerLinesTop,
     heap: { samples: heapSamples, growthRatio: last / first, bound: MAX_L3_HEAP_GROWTH_RATIO },
   };
   mkdirSync(REPORT_DIR, { recursive: true });

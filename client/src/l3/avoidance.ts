@@ -134,6 +134,8 @@ export class AvoidanceField {
   #rank = new Int32Array(0);
   #candD = new Float64Array(0);
   #candMiss = new Float64Array(0);
+  /** Each candidate's signed lateral miss as a stander (`#approach[0]`). */
+  #candSide = new Float64Array(0);
   #candJ = new Int32Array(0);
   #found = 0;
   #order = new Int32Array(0);
@@ -224,6 +226,7 @@ export class AvoidanceField {
     this.#offY = f64(this.#offY);
     this.#candD = f64(this.#candD);
     this.#candMiss = f64(this.#candMiss);
+    this.#candSide = f64(this.#candSide);
     this.#floor = i32(this.#floor);
     this.#cellX = i32(this.#cellX);
     this.#cellY = i32(this.#cellY);
@@ -532,11 +535,11 @@ export class AvoidanceField {
       const j = this.#candJ[a] as number;
       this.#closestApproach(i, j, true);
       this.#candMiss[a] = this.#approach[1] as number;
+      this.#candSide[a] = this.#approach[0] as number;
     }
     let acc = 0;
     for (let a = 0; a < found; a++) {
       const j = this.#candJ[a] as number;
-      const weight = smooth(1 - (this.#candD[a] as number) / radius);
       // A walking neighbour mid-edge shares the clearance by its own motion; one
       // easing into or out of a corner or an end is treated as standing there
       // (its anchor) in proportion to how little its ramp has come in, so what
@@ -577,8 +580,7 @@ export class AvoidanceField {
         if (shortfall > 0) {
           const dpx = (this.#anchorX[j] as number) - xi;
           const dpy = (this.#anchorY[j] as number) - yi;
-          this.#closestApproach(i, j, true);
-          let dir = directionFor(this.#approach[0] as number, 1, dials.tieBandCells);
+          let dir = directionFor(this.#candSide[a] as number, 1, dials.tieBandCells);
           // Pass on the side with room for the clearance, decided at the point
           // abeam of the stander, which holds for the whole pass.
           const along = dpx * hx + dpy * hy;
@@ -601,6 +603,9 @@ export class AvoidanceField {
           asStander = dir * shortfall;
         }
       }
+      // A neighbour that asks for nothing adds nothing: no weight to find.
+      if (asWalker === 0 && asStander === 0) continue;
+      const weight = smooth(1 - (this.#candD[a] as number) / radius);
       acc += weight * (settled * asWalker + (1 - settled) * asStander);
     }
     if (acc === 0) return;

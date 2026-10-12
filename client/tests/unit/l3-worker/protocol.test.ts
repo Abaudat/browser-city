@@ -135,29 +135,47 @@ describe("the L3 worker protocol", () => {
     const reference = inProcess(walk, list);
     const members = list.map((c) => client.add(c.id));
     const step = 1000 / 60 / (cfg.realMsPerCityMinute / 1000);
+    const frames = 40;
+    const mismatches: string[] = [];
     let compared = 0;
-    for (let k = 0; k < 120; k++) {
-      const t = 40_000 + k * step;
+    for (let k = 0; k < frames; k++) {
+      const t = 40_000 + k * step * 25;
       client.request(t, undefined);
       expect(client.apply()).toBe(true);
       reference.s.solve(t);
       members.forEach((m, i) => {
         const r = reference.members[i];
         if (!r) throw new Error("no reference member");
-        if (k === 0 && !m.solved) throw new Error("a member was not solved");
-        expect(m.frame.x).toBe(r.frame.x);
-        expect(m.frame.y).toBe(r.frame.y);
-        expect(m.frame.animation).toBe(r.frame.animation);
-        expect(m.frame.direction).toBe(r.frame.direction);
-        expect(m.frame.frameIndex).toBe(r.frame.frameIndex);
-        expect(m.frame.flavour).toBe(r.frame.flavour);
-        expect(m.frame.moving).toBe(r.frame.moving);
-        expect(m.offsetX).toBe(reference.s.offsetX(r));
-        expect(m.offsetY).toBe(reference.s.offsetY(r));
+        const got = [
+          m.solved,
+          m.frame.x,
+          m.frame.y,
+          m.frame.animation,
+          m.frame.direction,
+          m.frame.frameIndex,
+          m.frame.flavour,
+          m.frame.moving,
+          m.offsetX,
+          m.offsetY,
+        ];
+        const want = [
+          true,
+          r.frame.x,
+          r.frame.y,
+          r.frame.animation,
+          r.frame.direction,
+          r.frame.frameIndex,
+          r.frame.flavour,
+          r.frame.moving,
+          reference.s.offsetX(r),
+          reference.s.offsetY(r),
+        ];
+        if (got.some((v, n) => !Object.is(v, want[n]))) mismatches.push(`${m.id}@${k}`);
         compared++;
       });
     }
-    expect(compared).toBe(120 * list.length);
+    expect(mismatches).toEqual([]);
+    expect(compared).toBe(frames * list.length);
     expect(client.stats.stale).toBe(0);
   });
 
