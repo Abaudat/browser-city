@@ -126,7 +126,7 @@ sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_So
 width = 2
 height = 2
 collider = { x0 = 4, y0 = 8, x1 = 28, y1 = 32 }
-tags = ["table_set", "indoor", "fixture"]
+tags = ["table_set", "seated_table", "indoor", "fixture"]
 
 [[object]]
 id = 37
@@ -137,7 +137,7 @@ sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_So
 width = 2
 height = 2
 collider = { x0 = 4, y0 = 8, x1 = 28, y1 = 32 }
-tags = ["table_set", "indoor", "fixture"]
+tags = ["table_set", "seated_table", "indoor", "fixture"]
 
 [[object]]
 id = 38
@@ -293,8 +293,7 @@ layer = "furniture"
 sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_79.png", x = 0, y = 0, w = 16, h = 48 }
 width = 1
 height = 1
-collider = { x0 = 0, y0 = 0, x1 = 15, y1 = 9 }
-tags = ["indoor", "fixture"]
+tags = ["lighting", "indoor", "underfoot", "fixture"]
 
 [[object]]
 id = 52
@@ -304,8 +303,7 @@ layer = "furniture"
 sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_81.png", x = 0, y = 0, w = 16, h = 48 }
 width = 1
 height = 1
-collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 9 }
-tags = ["indoor", "fixture"]
+tags = ["lighting", "indoor", "underfoot", "fixture"]
 
 [[object]]
 id = 59
@@ -315,7 +313,7 @@ layer = "furniture"
 sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_12.png", x = 0, y = 0, w = 32, h = 16 }
 width = 2
 height = 1
-tags = ["lighting", "indoor", "underfoot", "fixture"]
+tags = ["indoor", "underfoot", "fixture"]
 
 [[object]]
 id = 60

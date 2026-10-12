@@ -137,3 +137,9 @@ key = "footway"
 [[tag]]
 id = 60
 key = "chair"
+
+# A table drawn with seats: the round tables, never the stool. Pass 7 stands
+# chairs beside each one, as the distribution rows over it ask.
+[[tag]]
+id = 61
+key = "seated_table"

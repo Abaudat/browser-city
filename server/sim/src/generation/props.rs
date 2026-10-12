@@ -110,9 +110,13 @@ pub struct PropSkips {
     /// A fixture whose natural footprint did not fit and stood at the
     /// tag's compact variant instead.
     pub compact_fallbacks: u32,
-    /// A building re-placed entirely at compact footprints because the
-    /// natural ones left a pocket the player body could not reach.
+    /// A building re-placed with some of its fixtures at compact
+    /// footprints because the natural ones left a pocket the player body
+    /// could not reach.
     pub buildings_replaced: u32,
+    /// A def owed beside another (a table's chair) with no free floor
+    /// cell within its row's reach.
+    pub attendants_unplaced: u32,
     /// A building owed a shopfront that had no fitting stretch of
     /// street wall.
     pub shopfronts_unplaced: u32,
@@ -731,12 +735,7 @@ pub fn run(
     for (env, outcome) in skeleton.envelopes.envelopes().zip(interiors.outcomes()) {
         match outcome {
             InteriorOutcome::Laid { interior, .. } => {
-                let mut b = dress_building(seed, &cat, cfg, interior, false, &mut skips)?;
-                if needs_compact(interior, &b, &cat) {
-                    skips.buildings_replaced += 1;
-                    b = dress_building(seed, &cat, cfg, interior, true, &mut skips)?;
-                }
-                props.extend(b);
+                props.extend(dress_one(seed, &cat, cfg, interior, &mut skips)?);
             }
             InteriorOutcome::Shell { .. } | InteriorOutcome::Rejected { .. } => {
                 // Solid: the whole footprint is wall.
@@ -773,6 +772,71 @@ pub fn run(
     })
 }
 
+/// One laid building, dressed. When its natural placement leaves a free
+/// cell unreachable, the fixtures that stand on more than a cell go
+/// compact one at a time -- the one whose compacting alone clears it,
+/// else each in turn until it is clear -- so a single awkward bed does not
+/// turn the whole house compact.
+fn dress_one(
+    seed: u64,
+    cat: &Catalogue,
+    cfg: &GenerationConfig,
+    interior: &Interior,
+    skips: &mut PropSkips,
+) -> Result<Vec<Prop>, GenerationError> {
+    let mut first = *skips;
+    let b = dress_building(seed, cat, cfg, interior, &BTreeSet::new(), &mut first)?;
+    if !needs_compact(interior, &b, cat) {
+        *skips = first;
+        return Ok(b);
+    }
+    skips.buildings_replaced += 1;
+    // What stood at its natural footprint (a candidate to go compact) and
+    // what had already fallen back (kept compact, so that compacting a
+    // neighbour never frees room for it to grow into a new pocket).
+    let mut natural: Vec<(i32, i32)> = Vec::new();
+    let mut pinned: BTreeSet<(i32, i32)> = BTreeSet::new();
+    for p in &b {
+        let Role::Fixture { cell, tag, .. } = p.role else {
+            continue;
+        };
+        let Some(d) = def_of(cat.objects, p.row.def_id) else {
+            continue;
+        };
+        let largest = cat
+            .carrying(tag, Place::Floor)
+            .iter()
+            .map(|c| Catalogue::area(c))
+            .max()
+            .unwrap_or(1);
+        if Catalogue::area(d) < largest {
+            pinned.insert(cell);
+        } else if largest > 1 {
+            natural.push(cell);
+        }
+    }
+    // The one fixture whose compact variant alone clears the building.
+    for &c in &natural {
+        let mut one = pinned.clone();
+        one.insert(c);
+        let t = dress_building(seed, cat, cfg, interior, &one, &mut PropSkips::default())?;
+        if !needs_compact(interior, &t, cat) {
+            return dress_building(seed, cat, cfg, interior, &one, skips);
+        }
+    }
+    // Else each in turn, until clear; every fixture compact is the last
+    // resort, the placement pass 6 proved a lane through.
+    let mut forced = pinned;
+    for &c in &natural {
+        forced.insert(c);
+        let t = dress_building(seed, cat, cfg, interior, &forced, &mut PropSkips::default())?;
+        if !needs_compact(interior, &t, cat) {
+            break;
+        }
+    }
+    dress_building(seed, cat, cfg, interior, &forced, skips)
+}
+
 fn wall_prop(cat: &Catalogue, building: Rect, x: i32, y: i32) -> Prop {
     Prop {
         row: PlacedRow {
@@ -798,7 +862,7 @@ fn dress_building(
     cat: &Catalogue,
     cfg: &GenerationConfig,
     interior: &Interior,
-    compact_only: bool,
+    forced_compact: &BTreeSet<(i32, i32)>,
     skips: &mut PropSkips,
 ) -> Result<Vec<Prop>, GenerationError> {
     let fp = interior.footprint;
@@ -835,6 +899,7 @@ fn dress_building(
                 tag: f.tag,
             });
         }
+        let compact_only = forced_compact.contains(&(f.x, f.y));
         let max_area = cands.iter().map(|d| Catalogue::area(d)).max().unwrap_or(1);
         let mut rng = Rng::new(seed_from_ids(seed, seed_from_ids(key, pack(f.x, f.y))));
         // Natural variants in a seeded order, then the rest by area
@@ -973,47 +1038,34 @@ fn dress_building(
                     ),
                 ));
                 // Beside the footprint first; failing that, any free floor
-                // cell of the room inside the row's own reach of it.
-                // A chair is underfoot, so when no free cell is left within
-                // reach it stands on a solid prop's own cell rather than
-                // leave the table unseated; never beside a doorway.
-                let free_strict = |c: (i32, i32)| {
+                // cell of the room inside the row's own reach of it; never
+                // on another prop's cell, never beside a doorway.
+                let free = |c: (i32, i32)| {
                     room_rect.contains(c.0, c.1)
                         && !taken.cells.contains(&c)
                         && !reserved.contains(&c)
                         && !fixture_cells.contains(&c)
                 };
-                let free_lenient =
-                    |c: (i32, i32)| room_rect.contains(c.0, c.1) && !reserved.contains(&c);
                 let mut spots: Vec<(i32, i32)> = Vec::new();
-                for strict in [true, false] {
-                    let free = |c: (i32, i32)| {
-                        if strict {
-                            free_strict(c)
-                        } else {
-                            free_lenient(c)
-                        }
-                    };
-                    for ring in 1..=reach.max(1) {
-                        let mut layer: Vec<(i32, i32)> = Vec::new();
-                        for y in (e.y0 - ring)..(e.y1 + ring) {
-                            for x in (e.x0 - ring)..(e.x1 + ring) {
-                                // Chebyshev distance from the footprint.
-                                let dx = (e.x0 - x).max(x - (e.x1 - 1)).max(0);
-                                let dy = (e.y0 - y).max(y - (e.y1 - 1)).max(0);
-                                // Orthogonally beside it at ring 1.
-                                let beside = ring > 1 || dx == 0 || dy == 0;
-                                if dx.max(dy) == ring && beside && free((x, y)) {
-                                    layer.push((x, y));
-                                }
+                for ring in 1..=reach.max(1) {
+                    let mut layer: Vec<(i32, i32)> = Vec::new();
+                    for y in (e.y0 - ring)..(e.y1 + ring) {
+                        for x in (e.x0 - ring)..(e.x1 + ring) {
+                            // Chebyshev distance from the footprint.
+                            let dx = (e.x0 - x).max(x - (e.x1 - 1)).max(0);
+                            let dy = (e.y0 - y).max(y - (e.y1 - 1)).max(0);
+                            // Orthogonally beside it at ring 1.
+                            let beside = ring > 1 || dx == 0 || dy == 0;
+                            if dx.max(dy) == ring && beside && free((x, y)) {
+                                layer.push((x, y));
                             }
                         }
-                        for k in (1..layer.len()).rev() {
-                            let j = rng.below(k as u64 + 1) as usize;
-                            layer.swap(k, j);
-                        }
-                        spots.extend(layer);
                     }
+                    for k in (1..layer.len()).rev() {
+                        let j = rng.below(k as u64 + 1) as usize;
+                        layer.swap(k, j);
+                    }
+                    spots.extend(layer);
                 }
                 let def_c = cands[rng.below(cands.len() as u64) as usize];
                 let row_at = |c: (i32, i32)| PlacedRow {
@@ -1025,8 +1077,12 @@ fn dress_building(
                     orientation: 0,
                 };
                 // Chairs are underfoot (no collider), so any free cell
-                // will do and none can seal a pocket.
+                // will do and none can seal a pocket. None free within
+                // reach is a counted skip, never a chair on a fixture.
                 let pick = spots.first().copied();
+                if pick.is_none() {
+                    skips.attendants_unplaced += 1;
+                }
                 if let Some(c) = pick {
                     taken.cells.insert(c);
                     out.push(Prop {
@@ -2248,7 +2304,12 @@ mod tests {
         compact: bool,
     ) -> Result<Vec<Prop>, GenerationError> {
         let mut skips = PropSkips::default();
-        dress_building(seed, cat, &cfg(), interior, compact, &mut skips)
+        let forced: BTreeSet<(i32, i32)> = if compact {
+            interior.fixtures.iter().map(|f| (f.x, f.y)).collect()
+        } else {
+            BTreeSet::new()
+        };
+        dress_building(seed, cat, &cfg(), interior, &forced, &mut skips)
     }
 
     fn def(id: u32) -> &'static defs::ObjectDef {

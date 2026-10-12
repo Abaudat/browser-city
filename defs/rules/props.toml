@@ -63,9 +63,9 @@ container = "shopfront"
 requires = "counter"
 min = 1
 
-# A table set is drawn with seats beside it: a chair on a free cell next to
-# every table set pass 7 places, twice over (two rows, so two seats). A
-# distribution row, not a requirement: the layout pass judges every kind
+# A seated table is drawn with seats beside it: a chair on a free cell next
+# to every seated table pass 7 places (a stool owes none), twice over (two
+# rows, so two seats). A distribution row, not a requirement: the layout pass judges every kind
 # but this one over its own building before any chair stands, and the
 # chairs are pass 7's. `max_distance` is the table's own reach; the ratio
 # band is as wide as it gets because a table may have no free cell beside it.
@@ -73,7 +73,7 @@ min = 1
 id = 43
 key = "table_set_has_a_chair"
 subject = "chair"
-per = "table_set"
+per = "seated_table"
 ratio = 1
 tolerance_percent = 100
 min_spacing = 1
@@ -83,7 +83,7 @@ max_distance = 3
 id = 44
 key = "table_set_has_a_second_chair"
 subject = "chair"
-per = "table_set"
+per = "seated_table"
 ratio = 1
 tolerance_percent = 100
 min_spacing = 1

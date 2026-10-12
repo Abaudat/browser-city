@@ -2045,9 +2045,16 @@ pub fn props_svg(d: &sim::generation::District, content: &GenerationContent) -> 
         y += rows * slot_h + 24;
     }
 
-    // The legend: every def shown, tint and key.
+    // The legend: every def shown, tint, key and how many the district
+    // places (so a fallback's share of its anchor reads off the sheet).
+    let mut count: std::collections::BTreeMap<u32, usize> = Default::default();
+    for p in d.props.props() {
+        if p.role != sim::generation::Role::Wall {
+            *count.entry(p.row.def_id).or_insert(0) += 1;
+        }
+    }
     body.push_str(&format!(
-        "<text x=\"8\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" font-weight=\"bold\">props (footprint tinted by def, collider hatched; walls dark, doorway white, street door yellow)</text>\n",
+        "<text x=\"8\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" font-weight=\"bold\">props (footprint tinted by def, collider hatched; walls dark, doorway white, street door yellow; the number is how many the district places)</text>\n",
         y + 10
     ));
     y += 18;
@@ -2055,10 +2062,11 @@ pub fn props_svg(d: &sim::generation::District, content: &GenerationContent) -> 
         let key = def_of(*id).map_or("?", |o| o.key);
         let (cx, cy) = (8 + (i as i64 % 5) * 250, y + 14 + (i as i64 / 5) * 18);
         body.push_str(&format!(
-            "<rect x=\"{cx}\" y=\"{}\" width=\"12\" height=\"12\" fill=\"{}\" fill-opacity=\"0.75\" stroke=\"#000\" stroke-width=\"0.5\"/><text x=\"{}\" y=\"{cy}\" font-family=\"sans-serif\" font-size=\"11\">{key}</text>\n",
+            "<rect x=\"{cx}\" y=\"{}\" width=\"12\" height=\"12\" fill=\"{}\" fill-opacity=\"0.75\" stroke=\"#000\" stroke-width=\"0.5\"/><text x=\"{}\" y=\"{cy}\" font-family=\"sans-serif\" font-size=\"11\">{key} ({})</text>\n",
             cy - 11,
             tint(*id),
-            cx + 16
+            cx + 16,
+            count.get(id).copied().unwrap_or(0)
         ));
     }
     y += 14 + ((shown.len() as i64 + 4) / 5) * 18 + 10;

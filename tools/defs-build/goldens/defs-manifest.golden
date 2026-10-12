@@ -768,6 +768,7 @@ tag 57 toilet
 tag 58 street_light
 tag 59 footway
 tag 60 chair
+tag 61 seated_table
 rule 1 lighting_ground_floor_only
 rule 2 waste_per_three_seating
 rule 3 no_counter_in_a_stairwell
