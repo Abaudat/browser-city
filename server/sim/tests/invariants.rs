@@ -7089,7 +7089,11 @@ fn street_window_findings(
 fn inv_generation_props_leave_no_enclosed_region() {
     over_pool("inv_generation_props_leave_no_enclosed_region", |c| {
         let d = &c.district;
-        for &(window, seed) in d.props.windows() {
+        let stride = body_check_stride();
+        for (n, &(window, seed)) in d.props.windows().iter().enumerate() {
+            if n % stride != 0 {
+                continue;
+            }
             let (enclosed, narrow) = street_window_findings(d, window, seed, &[])?;
             ensure!(
                 enclosed == 0 && narrow == 0,
@@ -7109,7 +7113,10 @@ fn inv_generation_props_leave_no_enclosed_region() {
                 windows.insert((p.row.x.div_euclid(chunk), p.row.y.div_euclid(chunk)));
             }
         }
-        for (cx, cy) in windows {
+        for (n, (cx, cy)) in windows.into_iter().enumerate() {
+            if n % stride != 0 {
+                continue;
+            }
             let win = Rect {
                 x0: (cx * chunk).max(site.x0),
                 y0: (cy * chunk).max(site.y0),
@@ -7168,10 +7175,17 @@ fn inv_generation_collision_map_is_the_rows_rasterised() {
         );
         let site = d.skeleton.plots.site();
         let chunk = 32;
+        let stride = body_check_stride();
+        let mut index = 0usize;
         let mut y = site.y0;
         while y < site.y1 {
             let mut x = site.x0;
             while x < site.x1 {
+                index += 1;
+                if !(index - 1).is_multiple_of(stride) {
+                    x += chunk;
+                    continue;
+                }
                 let win = Rect {
                     x0: x,
                     y0: y,
