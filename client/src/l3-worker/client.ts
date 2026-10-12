@@ -84,6 +84,8 @@ export interface SolveStats {
   readonly lastSolveMs: number;
   /** The most frames a result was drawn after the frame it was solved for. */
   readonly maxLagFrames: number;
+  /** The first few frames that drew a result late, for a report to show. */
+  readonly lagEvents: readonly { frame: number; due: number; ready: number; inFlight: number }[];
 }
 
 const MIN_CAPACITY = 256;
@@ -106,6 +108,7 @@ export class L3Client {
   readonly #lookahead: number;
   #frame = 0;
   #maxLag = 0;
+  readonly #lagEvents: { frame: number; due: number; ready: number; inFlight: number }[] = [];
   #capacity = 0;
   readonly #members: (ClientMember | undefined)[] = [];
   readonly #freeSlots: number[] = [];
@@ -137,6 +140,7 @@ export class L3Client {
   /** Forgets the peak lag, to measure a window. */
   resetLag(): void {
     this.#maxLag = 0;
+    this.#lagEvents.length = 0;
   }
 
   get stats(): SolveStats {
@@ -146,6 +150,7 @@ export class L3Client {
       skipped: this.#skipped,
       lastSolveMs: this.#lastSolveMs,
       maxLagFrames: this.#maxLag,
+      lagEvents: this.#lagEvents,
     };
   }
 
@@ -217,7 +222,17 @@ export class L3Client {
     this.#ready.splice(0, take + 1);
     // The first result lands after the worker boots, however many frames on:
     // that is warming up, not lag.
-    if (this.#applied > 0) this.#maxLag = Math.max(this.#maxLag, this.#frame - due);
+    if (this.#applied > 0) {
+      this.#maxLag = Math.max(this.#maxLag, this.#frame - due);
+      if (this.#frame - due > 1 && this.#lagEvents.length < 8) {
+        this.#lagEvents.push({
+          frame: this.#frame,
+          due,
+          ready: this.#ready.length,
+          inFlight: this.#inFlight(),
+        });
+      }
+    }
     const f = this.#viewOf(buf);
     const names = this.#names;
     const slots = Math.min(this.#members.length, slotsIn(f.length));

@@ -51,6 +51,9 @@ import {
   type ToWorker,
 } from "./protocol";
 
+/** Ticks between diagnostic refreshes. */
+const DIAGNOSTIC_EVERY = 30;
+
 export interface SolverHost {
   post(message: FromWorker, transfer?: Transferable[]): void;
   /** Milliseconds, monotonic: the only clock the solver has. */
@@ -92,6 +95,7 @@ export class L3Solver {
     band: 0,
   };
   #hasZone = false;
+  #ticks = 0;
 
   constructor(host: SolverHost) {
     this.#host = host;
@@ -254,7 +258,10 @@ export class L3Solver {
     life.solve(t, zone);
     f[H_SOLVE_MS] = this.#host.now() - start;
 
-    const wantDiag = f[H_WANT_DIAG] === 1;
+    // Diagnostics walk each body's segments: refreshed on request, at most
+    // twice a second, never in the frame's critical path every frame.
+    this.#ticks++;
+    const wantDiag = f[H_WANT_DIAG] === 1 && this.#ticks % DIAGNOSTIC_EVERY === 0;
     const msPerMilliminute = config.realMsPerCityMinute / 1000;
     const slots = Math.min(this.#slots.length, slotsIn(f.length));
     if (this.#diag.length < this.#slots.length * 2) {

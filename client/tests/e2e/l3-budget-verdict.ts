@@ -98,7 +98,7 @@ export interface TraceEvent {
   readonly dur?: number;
   readonly pid?: number;
   readonly tid?: number;
-  readonly args?: { readonly name?: string };
+  readonly args?: { readonly name?: string; readonly [key: string]: unknown };
 }
 
 export interface GcSummary {

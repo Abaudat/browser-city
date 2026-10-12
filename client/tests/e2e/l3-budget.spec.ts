@@ -115,6 +115,8 @@ async function census(
   });
 }
 
+const majorEvents: { thread: string; name: string; dur?: number; args?: unknown }[] = [];
+
 async function startGcTrace(
   cdp: Cdp,
 ): Promise<{ finish(): Promise<{ main: GcSummary; worker: GcSummary }> }> {
@@ -135,6 +137,12 @@ async function startGcTrace(
       await cdp.send("Tracing.end");
       await complete;
       const { main, worker } = splitByThread(events);
+      for (const e of main) {
+        if (e.name === "MajorGC") majorEvents.push({ thread: "main", ...e });
+      }
+      for (const e of worker) {
+        if (e.name === "MajorGC") majorEvents.push({ thread: "worker", ...e });
+      }
       return { main: summariseGc(main), worker: summariseGc(worker) };
     },
   };
@@ -313,6 +321,14 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   const staleFrames = (statsAfter?.stale ?? Number.NaN) - (statsBefore?.stale ?? 0);
   const skippedRequests = (statsAfter?.skipped ?? Number.NaN) - (statsBefore?.skipped ?? 0);
   const maxLagFrames = statsAfter?.maxLagFrames ?? Number.NaN;
+  const lagEvents = statsAfter?.lagEvents ?? [];
+
+  // The same ticker window with no trace running: reported beside the verdict
+  // figure, never gated -- the trace's own cost is part of what the verdict
+  // pre-registered, so it stays in the verdict figure.
+  await startTimings(page);
+  await page.waitForTimeout(10_000);
+  const untraced = await stopTimings(page);
 
   // Allocation, per 60 Hz frame of city time and so independent of how fast
   // the runner draws: the render-free sweep under the sampling profiler (its
@@ -446,7 +462,11 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     l3Ms,
     l3RenderedMs: renderedMs,
     l3SolveMs: solveMs,
-    solveStale: { staleFrames, skippedRequests, maxLagFrames },
+    untraced: {
+      l3Ms: distribution(untraced.l3),
+      l3SolveMs: distribution(untraced.solve),
+    },
+    solveStale: { staleFrames, skippedRequests, maxLagFrames, lagEvents },
     workerCalibrationMs,
     l3SweepMs: sweepMs,
     frameWorkMs: frameMs,
@@ -479,6 +499,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
       minorPausesMs: undefined,
       minorP99PauseMs: distribution(gc.minorPausesMs).p99,
     },
+    majorEvents,
     workerGc: {
       ...workerGc,
       minorPausesMs: undefined,

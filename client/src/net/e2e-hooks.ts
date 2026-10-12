@@ -76,6 +76,7 @@ declare global {
         skipped: number;
         lastSolveMs: number;
         maxLagFrames: number;
+        lagEvents: readonly { frame: number; due: number; ready: number; inFlight: number }[];
       };
       /** D-L3: the calibration workload's median, on the main thread and
        * inside the worker. */

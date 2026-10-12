@@ -662,4 +662,32 @@ describe("local avoidance (FR64)", () => {
     // The near wall did limit something, or the test proves nothing.
     expect(run(bodies, ALL_HELD, open).out).not.toEqual(a);
   });
+
+  it("gives a field kept across frames the offsets a fresh one gives", () => {
+    // One field kept across frames (it reuses last frame's order when its
+    // members are unchanged) against a fresh field every frame: bodies drift,
+    // some cross, one frame teleports them all, one drops a member.
+    fc.assert(
+      fc.property(
+        fc.array(body(24), { minLength: 6, maxLength: 40 }),
+        fc.integer({ min: 0, max: 5 }),
+        (raw, dropAt) => {
+          const kept = new AvoidanceField();
+          let frame = withIds(raw);
+          for (let f = 0; f < 6; f++) {
+            frame = frame.map((b, k) => {
+              if (f === 3) return { ...b, x: 24 - b.x, y: (b.y * 7 + k) % 24 }; // a teleport
+              return { ...b, x: b.x + b.hx * WALK * 40, y: b.y + b.hy * WALK * 40 };
+            });
+            const shown = f === dropAt ? frame.slice(1) : frame;
+            const a = run(shown, ALL_HELD, open, kept).out;
+            const b = run(shown, ALL_HELD, open, new AvoidanceField()).out;
+            if (JSON.stringify([...a]) !== JSON.stringify([...b])) return false;
+          }
+          return true;
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
 });
