@@ -2610,26 +2610,21 @@ mod tests {
         // CI's minimal counterexample of the differential below: a bridge
         // abutment, a workbench, a bed and a bush leave a body-sized
         // pocket whose every covered cell is one of their own footprints.
-        let by_key = |k: &str| defs::OBJECTS.iter().find(|o| o.key == k).unwrap();
-        let rows: Vec<PlacedRow> = [
-            ("bridge_stairs_abutment", 4, 2),
-            ("workbench_table_orange", 5, 2),
-            ("bed_single_blue", 6, 5),
-            ("flower_bush_small", 7, 2),
-        ]
-        .iter()
-        .map(|&(k, x, y)| {
-            let d = by_key(k);
-            PlacedRow {
-                floor: 0,
-                y,
-                x,
-                def_id: d.id,
-                layer: d.layer,
-                orientation: 0,
-            }
-        })
-        .collect();
+        let by_id = |id: u32| defs::OBJECTS.iter().find(|o| o.id == id).unwrap();
+        let rows: Vec<PlacedRow> = [(22, 4, 2), (43, 5, 2), (26, 6, 5), (58, 7, 2)]
+            .iter()
+            .map(|&(id, x, y)| {
+                let d = by_id(id);
+                PlacedRow {
+                    floor: 0,
+                    y,
+                    x,
+                    def_id: d.id,
+                    layer: d.layer,
+                    orientation: 0,
+                }
+            })
+            .collect();
         let window = Rect {
             x0: 0,
             y0: 0,
