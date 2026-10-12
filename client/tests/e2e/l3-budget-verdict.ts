@@ -384,6 +384,7 @@ export function verdict(m: L3Measurement): Verdict {
     gate.push(`${m.sweepMs.frames} sweep frames measured, ${MIN_MEASURED_FRAMES} required`);
   }
   if (!(m.calibrationMs > 0)) gate.push("no calibration time");
+  if (!(m.workerCalibrationMs > 0)) gate.push("no worker calibration time");
   const admitted = ABSOLUTE_GATE_CPUS.some((c) => c.match.test(m.cpu));
   const absoluteGate = admitted || m.calibrationMs <= REFERENCE_CALIBRATION_MS * CALIBRATION_SPREAD;
   if (!absoluteGate) {

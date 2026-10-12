@@ -255,6 +255,39 @@ describe("L3 budget verdict (NFR11)", () => {
     expect(fast.failures.join()).toContain("worker solve p95 2.400 ms over 2 ms");
   });
 
+  it("judges each thread's major pause against that thread's own calibration", () => {
+    const task = "finalize incremental marking via task";
+    const pause = (ms: number) => ({
+      ...GOOD.quietGc,
+      majorCount: 1,
+      longestMajorPauseMs: ms,
+      majorTypes: [task],
+    });
+    // Frame thread slow (6 ms), worker fast (3 ms): the worker limit is 0.38 x 3.
+    const slowFrame = { ...GOOD, calibrationMs: 6, workerCalibrationMs: 3 };
+    expect(verdict({ ...slowFrame, quietWorkerGc: pause(1.5) }).gateFailures.join()).toContain(
+      "worker verdict window: a major GC paused 1.50 ms",
+    );
+    expect(verdict({ ...slowFrame, quietGc: pause(1.5) }).gateFailures.join()).not.toContain(
+      "major GC",
+    );
+    // The reverse: the worker has the room, the frame thread (limit 1.27 x 3) has not.
+    const slowWorker = { ...GOOD, calibrationMs: 3, workerCalibrationMs: 6 };
+    expect(verdict({ ...slowWorker, quietWorkerGc: pause(2) }).gateFailures.join()).not.toContain(
+      "major GC",
+    );
+    expect(verdict({ ...slowWorker, quietGc: pause(4) }).gateFailures.join()).toContain(
+      "frame-thread verdict window: a major GC paused 4.00 ms",
+    );
+  });
+
+  it("fails a run with no worker calibration by name, not by a NaN comparison", () => {
+    for (const bad of [0, Number.NaN]) {
+      const v = verdict({ ...GOOD, workerCalibrationMs: bad });
+      expect(v.gateFailures).toContain("no worker calibration time");
+    }
+  });
+
   it("reports a solve with no margin as a risk, not as a miss", () => {
     const v = verdict({
       ...GOOD,
