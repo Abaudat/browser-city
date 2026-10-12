@@ -51,6 +51,32 @@ import {
  * measured figure with the runner's slowness and a margin on top. */
 const P95_CROWD_FRAME_WORK_MS = 6;
 
+/** The fixed, committed calibration workload: pure JS (typed-array sort and
+ * arithmetic, string-keyed map traffic), not L3 code, so it does not move with
+ * what it calibrates. Run in the page; returns the median of `runs` in ms. It
+ * is the denominator the regression tripwire divides by, so a slower runner
+ * CPU does not read as L3 getting slower. */
+function calibrationWorkload(runs: number): number {
+  const times: number[] = [];
+  for (let r = 0; r < runs; r++) {
+    const start = performance.now();
+    let acc = 0;
+    const values = new Float64Array(4096);
+    for (let rep = 0; rep < 12; rep++) {
+      for (let i = 0; i < values.length; i++) values[i] = Math.sin(i * 12.9898 + rep) * 1e3;
+      values.sort();
+      for (let i = 0; i < values.length; i++) acc += Math.sqrt(Math.abs(values[i] as number));
+    }
+    const map = new Map<string, number>();
+    for (let i = 0; i < 2048; i++) map.set(`key-${i % 512}-${i & 7}`, i);
+    for (let i = 0; i < 2048; i++) acc += map.get(`key-${i % 512}-${i & 7}`) ?? 0;
+    if (acc === -1) console.log(acc);
+    times.push(performance.now() - start);
+  }
+  times.sort((a, b) => a - b);
+  return times[times.length >> 1] as number;
+}
+
 /** The street pavement's south edge: the lamppost row is 8, the body rests
  * just short of it. */
 const PAVEMENT_EDGE_PLAYER_Y = 7.3;
@@ -217,6 +243,9 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   // GC, the same crowd -- with the rasteriser taken out, so what is measured
   // is L3's own work and its own garbage, the runner's GPU emulation aside.
   await page.evaluate(() => window.__bc?.setRender?.(false));
+  // The tripwire's denominator, taken with the same page and CPU the window
+  // runs on, immediately before it.
+  const calibrationMs = await page.evaluate(calibrationWorkload, 21);
   const heapSamples: { atMs: number; usedHeapBytes: number }[] = [];
   const l3Samples: number[] = [];
   let gc: GcSummary = {
@@ -284,6 +313,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     l3Ms,
     sweepMs,
     allocBytesPerFrame,
+    calibrationMs,
     gc,
     heapGrowthRatio: last / first,
   });
@@ -315,6 +345,13 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     budget: { p95Ms: L3_P95_BUDGET_MS, p99Ms: L3_P99_BUDGET_MS },
     verdict: result.met ? "MET" : "MISSED",
     failures: result.failures,
+    calibrationMs,
+    l3Ratios: {
+      p95: l3Ms.p95 / calibrationMs,
+      p99: l3Ms.p99 / calibrationMs,
+      sweepP95: sweepMs.p95 / calibrationMs,
+      sweepP99: sweepMs.p99 / calibrationMs,
+    },
     l3Ms,
     l3RenderedMs: renderedMs,
     l3SweepMs: sweepMs,
