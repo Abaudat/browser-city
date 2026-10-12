@@ -43,7 +43,7 @@ describe("L3 budget verdict (NFR11)", () => {
 
   it("records a budget miss within the recorded finding as MISSED without failing the gate", () => {
     const recorded = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.2));
-    const v = verdict({ ...GOOD, l3Ms: recorded });
+    const v = verdict({ ...GOOD, l3Ms: recorded, calibrationMs: 6 });
     expect(v.met).toBe(false);
     expect(v.failures.join()).toContain("p95");
     expect(v.gateFailures).toEqual([]);
