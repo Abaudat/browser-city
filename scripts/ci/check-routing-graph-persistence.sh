@@ -95,7 +95,14 @@ BUSINESSES="$(count_of "$STATE" business)"
 [ "$EDGES" -ge "$NODES" ] || fail "route_edge has $EDGES rows for $NODES nodes -- fewer edges than nodes is not a connected graph"
 [ "$BUSINESSES" -ge 1 ] || fail "create_district wrote no business rows"
 [ "$(count_of "$STATE" district)" -eq 1 ] || fail "create_district did not write exactly one district row"
-ok "create_district wrote $NODES nodes, $EDGES edges and $BUSINESSES businesses"
+# Every source node's business id resolves to exactly one generated business,
+# and every business is some source node's: the two id sets are equal.
+NODE_BUSINESS_IDS="$(grep '^route_node:.*(some=' <<<"$STATE" | sed -E 's/.*\(some=([0-9]+)\).*/\1/' | sort -n)"
+BUSINESS_IDS="$(grep '^business:' <<<"$STATE" | sed -E 's/^business:([0-9]+).*/\1/' | sort -n)"
+[ -n "$BUSINESS_IDS" ] || fail "could not read the business ids out of the business table"
+[ "$NODE_BUSINESS_IDS" = "$BUSINESS_IDS" ]   || fail "the route_node business ids are not exactly the business rows' ids (a source node names no business, one twice, or a business has no node)"
+[ "$(sort -u <<<"$NODE_BUSINESS_IDS" | wc -l)" -eq "$BUSINESSES" ] || fail "two source nodes share a business id"
+ok "create_district wrote $NODES nodes, $EDGES edges and $BUSINESSES businesses, each the business of exactly one source node"
 
 # --- (c) rollback on a populated world -----------------------------------
 if spacetime call "$DB" "${SERVER_ARGS[@]}" -y debug_write_graph_then_fail 8 >"$DATA_DIR/rollback-2.log" 2>&1; then
