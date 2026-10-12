@@ -179,12 +179,14 @@ out(
 out(
   `- Main-thread allocation through the real ticker: ${kb(record.allocation.mainBytesPerFrame)} per frame (the ceiling of that run: ${kb(record.allocation.mainCeilingBytesPerFrame)}).`,
 );
-out(
-  `- Main thread: ${record.gc.minorCount} minor GCs (total pause ${ms(record.gc.totalPauseMs)}, longest ${ms(record.gc.longestMinorPauseMs)}), ${record.gc.majorCount} major GCs (longest ${ms(record.gc.longestMajorPauseMs)}).`,
-);
-out(
-  `- Worker: ${record.workerGc.minorCount} minor GCs (longest ${ms(record.workerGc.longestMinorPauseMs)}), ${record.workerGc.majorCount} major GCs (longest ${ms(record.workerGc.longestMajorPauseMs)}).`,
-);
+const gcRow = (label, g) =>
+  `- ${label}: ${g.minorCount} minor GCs (longest ${ms(g.longestMinorPauseMs)}), ${g.majorCount} major GCs (longest ${ms(g.longestMajorPauseMs)}).`;
+const gated = record.gcRenderedWindow ?? record.gc;
+const gatedWorker = record.workerGcRenderedWindow ?? record.workerGc;
+out(gcRow("Frame's thread, rendered window (gated at zero majors)", gated));
+out(gcRow("Worker, rendered window (gated at zero majors)", gatedWorker));
+out(gcRow("Frame's thread, verdict window (render off, a quiet page: reported)", record.gc));
+out(gcRow("Worker, verdict window (reported)", record.workerGc));
 out(`- Retained heap, last lap against the first: ${record.heap.growthRatio.toFixed(3)}x (bound ${record.heap.bound}x).`);
 out();
 out("Largest allocators under the worker's solve:");

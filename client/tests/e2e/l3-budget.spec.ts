@@ -115,6 +115,17 @@ async function census(
   });
 }
 
+function emptyGc(): GcSummary {
+  return {
+    minorPausesMs: [],
+    minorCount: 0,
+    majorCount: 0,
+    totalPauseMs: 0,
+    longestMinorPauseMs: 0,
+    longestMajorPauseMs: 0,
+  };
+}
+
 const majorEvents: { thread: string; name: string; dur?: number; args?: unknown }[] = [];
 
 async function startGcTrace(
@@ -214,10 +225,19 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   // few cores, so L3 measured here is inflated by the rasteriser, not by L3
   // (the profile below shows where the samples go). Reported, and the whole
   // frame work is gated (NFR2's busy street); never the L3 verdict.
+  // The collections are counted here, in the window a player's machine runs:
+  // the verdict window below has the render off, and a frame thread that
+  // allocates next to nothing is a quiet page, which V8 collects on its own
+  // account (an idle page with no L3 at all shows the same majors).
   const renderedL3: number[] = [];
   const frameSamples: number[] = [];
+  let renderedGc: GcSummary = emptyGc();
+  let renderedWorkerGc: GcSummary = emptyGc();
   for (let spent = 0; spent < RENDERED_MS; spent += LAP_MS) {
-    const { batch } = await lap(LAP_MS);
+    await takeCensus();
+    const { batch, gc: lapGc, workerGc: lapWorkerGc } = await lap(LAP_MS, await startGcTrace(cdp));
+    if (lapGc) renderedGc = addGc(renderedGc, lapGc);
+    if (lapWorkerGc) renderedWorkerGc = addGc(renderedWorkerGc, lapWorkerGc);
     renderedL3.push(...batch.l3);
     frameSamples.push(...batch.frame);
   }
@@ -299,22 +319,8 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   const heapSamples: { atMs: number; usedHeapBytes: number }[] = [];
   const l3Samples: number[] = [];
   const solveSamples: number[] = [];
-  let workerGc: GcSummary = {
-    minorPausesMs: [],
-    minorCount: 0,
-    majorCount: 0,
-    totalPauseMs: 0,
-    longestMinorPauseMs: 0,
-    longestMajorPauseMs: 0,
-  };
-  let gc: GcSummary = {
-    minorPausesMs: [],
-    minorCount: 0,
-    majorCount: 0,
-    totalPauseMs: 0,
-    longestMinorPauseMs: 0,
-    longestMajorPauseMs: 0,
-  };
+  let workerGc: GcSummary = emptyGc();
+  let gc: GcSummary = emptyGc();
   heapSamples.push({ atMs: 0, usedHeapBytes: await heapBytes(cdp) });
   const startedAt = Date.now();
   // Laps run until the time is up and the window holds its floor of frames,
@@ -438,8 +444,8 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     allocBytesPerFrame,
     mainAllocBytesPerFrame,
     calibrationMs,
-    gc,
-    workerGc,
+    gc: renderedGc,
+    workerGc: renderedWorkerGc,
     heapGrowthRatio: last / first,
   });
 
@@ -512,6 +518,16 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
       mainCeilingBytesPerFrame: MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME,
       mainTop: topAllocators(mainProfile.profile.head),
       top: topAllocators(profile.profile.head),
+    },
+    gcRenderedWindow: {
+      ...renderedGc,
+      minorPausesMs: undefined,
+      minorP99PauseMs: distribution(renderedGc.minorPausesMs).p99,
+    },
+    workerGcRenderedWindow: {
+      ...renderedWorkerGc,
+      minorPausesMs: undefined,
+      minorP99PauseMs: distribution(renderedWorkerGc.minorPausesMs).p99,
     },
     gc: {
       ...gc,
