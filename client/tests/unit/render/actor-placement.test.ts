@@ -97,7 +97,7 @@ describe("a remote player is placed exactly as the local player (FR124, FR182)",
     expect(flights.length).toBeGreaterThan(0);
   });
 
-  it("inv_remote_drawn_point_equals_local_drawn_point: on every flight, across its floor change, every tick", () => {
+  it("inv_remote_drawn_point_equals_local_drawn_point", () => {
     for (const flight of flights) {
       const poses = walkAlong(flight);
       expect(

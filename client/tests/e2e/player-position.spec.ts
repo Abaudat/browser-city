@@ -84,6 +84,8 @@ async function createCharacter(page: Page): Promise<string> {
 test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a standing player costs nothing", async ({
   browser,
 }) => {
+  // Two walks, one each way, on two pages: over the 30 s default on a CI runner.
+  test.setTimeout(120_000);
   const a = await countedPage(browser);
   const b = await countedPage(browser);
   await b.page.bringToFront();
