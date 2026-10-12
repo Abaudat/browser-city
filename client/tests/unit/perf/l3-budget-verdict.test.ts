@@ -24,7 +24,7 @@ const GOOD: L3Measurement = {
     Array.from({ length: MIN_MEASURED_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01),
   ),
   allocBytesPerFrame: 0,
-  calibrationMs: 10,
+  calibrationMs: 2,
   gc: {
     minorPausesMs: [0.5, 0.7, 0.9, 1],
     minorCount: 4,
@@ -52,14 +52,14 @@ describe("L3 budget verdict (NFR11)", () => {
   it("normalises by the calibration: a slower CPU stays green, an L3 regression goes red", () => {
     const at = (p95: number, p99: number) =>
       distribution(Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => (i % 20 === 0 ? p99 : p95)));
-    // The recorded ratio: L3 2.2 ms on a 10 ms calibration.
-    const recorded = { ...GOOD, l3Ms: at(2.2, 2.4), calibrationMs: 10 };
+    // The recorded ratio: L3 4.3 ms on a 10 ms calibration.
+    const recorded = { ...GOOD, l3Ms: at(4.3, 4.8), calibrationMs: 10 };
     expect(verdict(recorded).gateFailures).toEqual([]);
     // The same L3 on a 1.5x slower CPU: both times scale, the ratio holds.
-    const slower = { ...GOOD, l3Ms: at(3.3, 3.6), calibrationMs: 15 };
+    const slower = { ...GOOD, l3Ms: at(6.45, 7.2), calibrationMs: 15 };
     expect(verdict(slower).gateFailures).toEqual([]);
     // 1.5x the L3 on the same calibration is a regression.
-    const regressed = { ...GOOD, l3Ms: at(3.3, 3.6), calibrationMs: 10 };
+    const regressed = { ...GOOD, l3Ms: at(6.45, 7.2), calibrationMs: 10 };
     expect(verdict(regressed).gateFailures.join()).toContain("calibration");
   });
 

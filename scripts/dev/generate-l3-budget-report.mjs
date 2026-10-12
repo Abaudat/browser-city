@@ -27,6 +27,7 @@ const after = read("l3-budget.json");
 const before = read("pre-fix.json");
 const divergence = read("divergence.json");
 const divergenceBefore = read("divergence-before.json");
+const second = read("l3-budget-second-sku.json");
 
 const ms = (v) => `${v.toFixed(2)} ms`;
 const kb = (v) => `${(v / 1024).toFixed(0)} KB`;
@@ -99,6 +100,21 @@ out();
 for (const t of after.cpuTopSelf.slice(0, 6)) {
   out(`- ${(t.share * 100).toFixed(1)}% \`${t.fn.replace(/ http\S*/, "")}\``);
 }
+out();
+out("## Another runner of the pool");
+out();
+out(
+  `\`ubuntu-latest\` is a mixed pool of CPUs. The same code, in a later run (${machine(second.environment)}), measured:`,
+);
+out();
+out("| | Frames | p50 | p95 | p99 | max |");
+out("| --- | --- | --- | --- | --- | --- |");
+out(row("L3, real ticker, rasteriser off", second.l3Ms));
+out(row("L3, render-free sweep", second.l3SweepMs));
+out();
+out(
+  `The calibration workload (fixed pure JS, not L3) took ${second.calibrationMs} ms there, so L3 p95 / calibration is ${second.l3Ratios.p95.toFixed(2)} and p99 ${second.l3Ratios.p99.toFixed(2)} (sweep ${second.l3Ratios.sweepP95.toFixed(2)} and ${second.l3Ratios.sweepP99.toFixed(2)}): the tripwire's recorded ratios are stamped from this run, +25%. Verdict on this machine: ${second.l3Ms.p95 <= second.budget.p95Ms && second.l3Ms.p99 <= second.budget.p99Ms ? "inside the budget" : "MISSED"}. The verdict of record is the worse machine's.`,
+);
 out();
 out("## Allocation and GC");
 out();
