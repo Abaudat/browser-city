@@ -6,9 +6,11 @@
 
 use super::{
     District, GENERATION_VERSION, GenerationConfig, GenerationContent, GenerationError, SiteBounds,
+    generate,
 };
 use crate::generated::defs::DEFS_VERSION;
 use crate::rng::RNG_VERSION;
+use crate::routing::graph::MacroGraph;
 
 /// Every version a generated district's output depends on. Three typed
 /// fields, never folded into one string or hash.
@@ -44,29 +46,19 @@ pub struct DistrictRecord {
 /// [`GenerationError::SiteAlreadyGenerated`] when `cfg.site()` overlaps any
 /// recorded site -- whatever versions that record carries -- otherwise runs
 /// [`generate`] and stamps [`RuleSetVersion::current`]. A record exists
-/// only for a seed whose generation succeeded.
+/// only for a seed whose generation succeeded; the validated routing
+/// graph comes back with it.
 pub fn create(
     existing: &[DistrictRecord],
     seed: u64,
     cfg: &GenerationConfig,
     content: &GenerationContent,
-) -> Result<(DistrictRecord, District), GenerationError> {
-    create_with_graph(existing, seed, cfg, content).map(|(record, district, _)| (record, district))
-}
-
-/// [`create`], also handing back the macro routing graph the gate
-/// validated: the one value `create_district` writes.
-pub fn create_with_graph(
-    existing: &[DistrictRecord],
-    seed: u64,
-    cfg: &GenerationConfig,
-    content: &GenerationContent,
-) -> Result<(DistrictRecord, District, crate::routing::graph::MacroGraph), GenerationError> {
+) -> Result<(DistrictRecord, District, MacroGraph), GenerationError> {
     let site = cfg.site();
     if existing.iter().any(|r| r.site.overlaps(&site)) {
         return Err(GenerationError::SiteAlreadyGenerated { site });
     }
-    let (district, graph) = super::generate_with_graph(seed, cfg, content)?;
+    let (district, graph) = generate(seed, cfg, content)?;
     let record = DistrictRecord {
         seed,
         site,
@@ -77,7 +69,6 @@ pub fn create_with_graph(
 
 #[cfg(test)]
 mod tests {
-    use super::super::generate;
     use super::*;
     use crate::generated::defs;
 
@@ -121,7 +112,7 @@ mod tests {
     #[test]
     fn create_with_no_record_stamps_the_current_versions_and_site() {
         let cfg = cfg();
-        let (rec, _) = create(&[], 7, &cfg, &GenerationContent::committed()).unwrap();
+        let (rec, _, _) = create(&[], 7, &cfg, &GenerationContent::committed()).unwrap();
         assert_eq!(rec.seed, 7);
         assert_eq!(rec.site, cfg.site());
         assert_eq!(rec.version, RuleSetVersion::current());
@@ -131,8 +122,8 @@ mod tests {
     fn the_returned_district_is_the_generated_one_for_the_recorded_seed() {
         let cfg = cfg();
         let content = GenerationContent::committed();
-        let (rec, district) = create(&[], 7, &cfg, &content).unwrap();
-        let direct = generate(7, &cfg, &content).unwrap();
+        let (rec, district, _) = create(&[], 7, &cfg, &content).unwrap();
+        let (direct, _) = generate(7, &cfg, &content).unwrap();
         assert_eq!(rec.seed, 7);
         assert_eq!(
             district.skeleton.plots.plots(),

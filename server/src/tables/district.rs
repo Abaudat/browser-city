@@ -11,8 +11,7 @@
 
 use sim::generated::defs;
 use sim::generation::{
-    DistrictRecord, GenerationConfig, GenerationContent, RuleSetVersion, SiteBounds,
-    create_with_graph,
+    DistrictRecord, GenerationConfig, GenerationContent, RuleSetVersion, SiteBounds, create,
 };
 use sim::reducer_classes::ReducerClass;
 use sim::routing::graph::{MacroGraph, NodeKind};
@@ -70,7 +69,7 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).map_err(|e| e.to_string())?;
     let content = GenerationContent::committed();
     let (record, _district, graph) =
-        create_with_graph(&existing, seed, &cfg, &content).map_err(|e| e.to_string())?;
+        create(&existing, seed, &cfg, &content).map_err(|e| e.to_string())?;
     ctx.db.district().insert(District {
         district_id: 0,
         seed: record.seed,
@@ -145,7 +144,7 @@ pub fn debug_write_graph_then_fail(ctx: &ReducerContext, seed: u64) -> Result<()
     count_call(ctx, ReducerClass::Operator);
     let cfg = GenerationConfig::from_balance(defs::BALANCE).map_err(|e| e.to_string())?;
     let content = GenerationContent::committed();
-    let (_, _, graph) = create_with_graph(&[], seed, &cfg, &content).map_err(|e| e.to_string())?;
+    let (_, _, graph) = create(&[], seed, &cfg, &content).map_err(|e| e.to_string())?;
     write_graph(ctx, &graph);
     Err("debug_write_graph_then_fail: rolled back on purpose".to_string())
 }

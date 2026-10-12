@@ -2565,7 +2565,7 @@ proptest! {
             prop_assert!(
                 matches!(r, Err(GenerationError::SiteAlreadyGenerated { .. })),
                 "a record sharing a cell must refuse, got {:?}",
-                r.map(|(rec, _)| rec)
+                r.map(|(rec, _, _)| rec)
             );
         }
     }
@@ -3856,7 +3856,7 @@ fn seed_16021368561388801292_holds_its_commercial_share_and_workplace_band() {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     let content = GenerationContent::committed();
     let seed = 16021368561388801292u64;
-    let d = sim::generation::generate(seed, &cfg, &content)
+    let (d, _) = sim::generation::generate(seed, &cfg, &content)
         .unwrap_or_else(|e| panic!("seed {seed}: generate is no longer Ok: {e:?}"));
     d.skeleton
         .check_workplace_count(&cfg, &content)
@@ -6676,8 +6676,9 @@ fn pooled_city(seed: u64) -> PooledCity {
     let content = GenerationContent::committed();
     let district = sim::generation::plan(seed, &cfg, &content).unwrap();
     let rules = district.check_rules(&content).map_err(|e| format!("{e:?}"));
-    let generated = district.check(&cfg, &content).map_err(|e| format!("{e:?}"));
-    let graph = district.graph(&cfg, &content).map_err(|e| format!("{e:?}"));
+    let checked = district.check(&cfg, &content).map_err(|e| format!("{e:?}"));
+    let generated = checked.as_ref().map(|_| ()).map_err(|e| e.clone());
+    let graph = checked;
     PooledCity {
         seed,
         district,
@@ -8560,7 +8561,7 @@ fn the_depot_is_laid_out_on_the_seeds_that_once_rejected_it() {
             Ok(()),
             "seed {seed}: a distributed institution is not enterable"
         );
-        assert_eq!(d.check(&cfg, &content), Ok(()), "seed {seed}");
+        assert!(d.check(&cfg, &content).is_ok(), "seed {seed}");
     }
 }
 
@@ -9029,7 +9030,6 @@ fn inv_routing_interior_collapses_to_entrance_and_one_internal_node() {
 #[test]
 fn inv_routing_only_portal_edges_cross_floors() {
     use sim::routing::graph::{EdgeKind, NodeKind};
-    let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     over_pool("inv_routing_only_portal_edges_cross_floors", |c| {
         let g = pooled_graph(c)?;
         for e in g.edges() {
@@ -9043,9 +9043,9 @@ fn inv_routing_only_portal_edges_cross_floors() {
                 );
             }
         }
-        c.district
-            .check_graph(&cfg, &GenerationContent::committed())
-            .map_err(|e| format!("{e}"))
+        // `generate`'s own gate: the district's check returned the graph.
+        ensure!(c.generated.is_ok(), "the district check failed");
+        Ok(())
     });
 }
 

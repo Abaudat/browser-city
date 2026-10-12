@@ -78,17 +78,15 @@ pub use interiors::{Interior, InteriorMap, InteriorOutcome};
 pub use land_use::{LandUse, LandUseCell, LandUseMap, Neighbourhood, NeighbourhoodParams, Region};
 pub use plots::{Plot, PlotMap};
 pub use props::{PlacedRow, Prop, PropMap, Role};
-pub use record::{DistrictRecord, RuleSetVersion, create, create_with_graph};
+pub use record::{DistrictRecord, RuleSetVersion, create};
 
 // `plan` and `generate` are reachable outside this crate only with
 // `test-fixtures`: production (`browser_city`) never enables it, so a reducer
 // naming either is a compile error and `create` is its only way in.
-#[cfg(all(test, not(feature = "test-fixtures")))]
-pub(crate) use entry::generate;
 #[cfg(not(feature = "test-fixtures"))]
-pub(crate) use entry::generate_with_graph;
+pub(crate) use entry::generate;
 #[cfg(feature = "test-fixtures")]
-pub use entry::{generate, generate_with_graph, plan, plan_skeleton};
+pub use entry::{generate, plan, plan_skeleton};
 pub use site::DistrictSite;
 pub use streets::{Axis, Block, Side, Sides, StreetClass, StreetEdge, StreetNetwork, block_sides};
 
@@ -527,42 +525,20 @@ impl District {
 
     /// Every verdict [`generate`] holds a finished plan to, in its order:
     /// the building count, the rules, the workplace count, the enterable
-    /// floor, then every distributed institution enterable.
+    /// floor, every distributed institution enterable, reachability, then
+    /// the macro routing graph, built once and validated. Returns that
+    /// graph: the value `create_district` writes.
     pub fn check(
         &self,
         cfg: &GenerationConfig,
         content: &GenerationContent,
-    ) -> Result<(), GenerationError> {
+    ) -> Result<crate::routing::graph::MacroGraph, GenerationError> {
         self.skeleton.check_building_count(cfg)?;
         self.check_rules(content)?;
         self.skeleton.check_workplace_count(cfg, content)?;
         self.check_enterable_count(cfg)?;
         self.check_institutions_enterable(content)?;
         self.check_reachability(content)?;
-        self.check_graph(cfg, content)
-    }
-
-    /// Every verdict [`Self::check`] holds the plan to except the graph's,
-    /// which [`Self::checked_graph`] gives with the graph itself.
-    pub fn check_without_graph(
-        &self,
-        cfg: &GenerationConfig,
-        content: &GenerationContent,
-    ) -> Result<(), GenerationError> {
-        self.skeleton.check_building_count(cfg)?;
-        self.check_rules(content)?;
-        self.skeleton.check_workplace_count(cfg, content)?;
-        self.check_enterable_count(cfg)?;
-        self.check_institutions_enterable(content)?;
-        self.check_reachability(content)
-    }
-
-    /// The graph, built once and validated: what `create_district` writes.
-    pub fn checked_graph(
-        &self,
-        cfg: &GenerationConfig,
-        content: &GenerationContent,
-    ) -> Result<crate::routing::graph::MacroGraph, GenerationError> {
         let graph = self.graph(cfg, content)?;
         graph
             .check(&self.walkability)
@@ -616,16 +592,6 @@ impl District {
             walkability: &self.walkability,
         })
         .map_err(GenerationError::Graph)
-    }
-
-    /// Story 3.9's verdict: the graph builds and passes
-    /// [`crate::routing::graph::MacroGraph::check`].
-    pub fn check_graph(
-        &self,
-        cfg: &GenerationConfig,
-        content: &GenerationContent,
-    ) -> Result<(), GenerationError> {
-        self.checked_graph(cfg, content).map(|_| ())
     }
 
     /// Builds this district's own [`DistrictSite`] -- the one adapter
@@ -2412,7 +2378,7 @@ mod tests {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
         let planned = plan(11, &cfg, &content).unwrap();
-        let generated = generate(11, &cfg, &content).unwrap();
+        let (generated, _) = generate(11, &cfg, &content).unwrap();
         assert_eq!(
             planned.skeleton.plots.plots(),
             generated.skeleton.plots.plots()

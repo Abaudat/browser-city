@@ -15,11 +15,8 @@ struct Counts {
 
 fn measure(cfg: &GenerationConfig, content: &GenerationContent, n: u64) -> Vec<Counts> {
     par_map_in_seed_order(n, threads(), |seed| {
-        let d = sim::generation::generate(seed, cfg, content)
+        let (_, g) = sim::generation::generate(seed, cfg, content)
             .expect("the committed config generates every measured seed");
-        let g = d
-            .graph(cfg, content)
-            .expect("a generated district's graph builds");
         let count = |k: NodeKind| g.nodes().iter().filter(|n| n.kind == k).count() as u64;
         Counts {
             nodes: g.nodes().len() as u64,

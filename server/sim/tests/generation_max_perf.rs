@@ -34,7 +34,7 @@ fn generate_at_the_balance_max_extent_stays_inside_its_ceiling() {
     let content = GenerationContent::committed();
 
     let t = Instant::now();
-    let d = generate(7, &cfg, &content)
+    let (d, _) = generate(7, &cfg, &content)
         .unwrap_or_else(|e| panic!("the balance max extent must still generate: {e}"));
     let secs = t.elapsed().as_secs();
     assert!(

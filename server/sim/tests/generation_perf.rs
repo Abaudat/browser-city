@@ -41,7 +41,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // pairwise cost the generator pays, bucketed rather than all-pairs
     // (`sim::rules::mod.rs`), so this growth-target run is itself the
     // structural proof that stays linear too.
-    let d = generate(7, &cfg, &content)
+    let (d, _) = generate(7, &cfg, &content)
         .unwrap_or_else(|e| panic!("the 1024 growth target must still generate: {e}"));
     let lu = &d.skeleton.land_use;
     let net = &d.skeleton.streets;
@@ -378,8 +378,7 @@ fn macro_graph_at_the_1024_growth_target_stays_linear_in_site_area() {
     let mut cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     cfg.site_extent_cells = 1024;
     let content = GenerationContent::committed();
-    let d = generate(7, &cfg, &content).unwrap();
-    let g = d.graph(&cfg, &content).unwrap();
+    let (_, g) = generate(7, &cfg, &content).unwrap();
     let (n, e) = (g.nodes().len() as u64, g.edges().len() as u64);
     println!("macro graph at 1024: {n} nodes, {e} edges");
     let side = cfg.site_extent_cells as u64;
