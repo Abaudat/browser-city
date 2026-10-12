@@ -1967,7 +1967,7 @@
         },
         {
           "name": "floor",
-          "ty": "i32",
+          "ty": "i8",
           "primary_key": false,
           "auto_inc": false,
           "unique": false,

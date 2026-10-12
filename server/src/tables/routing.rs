@@ -18,7 +18,7 @@ pub struct RouteNode {
     pub kind: u32,
     pub x: i32,
     pub y: i32,
-    pub floor: i32,
+    pub floor: i8,
     /// The generated business a source node is the entrance of.
     pub business_id: Option<u64>,
 }

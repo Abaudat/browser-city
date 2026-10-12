@@ -52,15 +52,27 @@ pub fn plan_skeleton(
     })
 }
 
-/// The one entry point production calls: [`plan`], then
-/// [`District::check`] -- a seed whose district fails any verdict is a
-/// world that fails to create.
+/// The one entry point production calls: [`plan`], then every verdict
+/// of [`District::check`] -- a seed whose district fails any verdict is a
+/// world that fails to create. Also hands back the macro routing graph the
+/// gate validated, so what is written is what was checked.
+pub fn generate_with_graph(
+    city_seed: u64,
+    cfg: &GenerationConfig,
+    content: &GenerationContent,
+) -> Result<(District, crate::routing::graph::MacroGraph), GenerationError> {
+    let district = plan(city_seed, cfg, content)?;
+    district.check_without_graph(cfg, content)?;
+    let graph = district.checked_graph(cfg, content)?;
+    Ok((district, graph))
+}
+
+/// [`generate_with_graph`] without the graph.
+#[cfg(any(test, feature = "test-fixtures"))]
 pub fn generate(
     city_seed: u64,
     cfg: &GenerationConfig,
     content: &GenerationContent,
 ) -> Result<District, GenerationError> {
-    let district = plan(city_seed, cfg, content)?;
-    district.check(cfg, content)?;
-    Ok(district)
+    generate_with_graph(city_seed, cfg, content).map(|(d, _)| d)
 }

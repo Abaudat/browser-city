@@ -906,7 +906,8 @@ one entrance node on its door and, when its interior floor area (the sum of its 
 room snapped to a free tile. Edges join consecutive nodes along a street, an entrance to its split,
 and an entrance to its internal node; each costs the walking estimate between its endpoints, and
 nothing else. Portal nodes and edges come from floor transitions, which generation emits none of
-yet. The size is stamped in the `macro graph` block below, against the bands in
+yet; each portal endpoint links to the nearest walking node on its floor, and the check
+holds the whole graph to one connected component. The size is stamped in the `macro graph` block below, against the bands in
 `sim::routing::graph`.
 
 ## Measured ceilings

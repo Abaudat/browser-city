@@ -17,11 +17,26 @@ use crate::codes::{edge_kind, node_kind};
 use crate::generation::{Axis, Side, StreetNetwork};
 use crate::world::{FloorCollision, Rect};
 
-/// AC1: the 512 x 512 district's node count is "a few thousand".
-pub const NODE_COUNT_BAND_512: (u64, u64) = (1_000, 9_000);
-/// AC1: the 512 x 512 district's edge count is "roughly ten thousand".
-pub const EDGE_COUNT_BAND_512: (u64, u64) = (1_500, 16_000);
-/// The side, in cells, the two bands above are declared at.
+/// The measured size of a 512 x 512 district's graph: the means over the
+/// seeds of the `macro graph` block of `docs/generation.md`. AC1 says "a few
+/// thousand nodes and roughly ten thousand edges"; one undirected edge per
+/// street segment and per door lands near 1,900, which the block records.
+pub const NODE_COUNT_MEASURED_512: u64 = 1_850;
+pub const EDGE_COUNT_MEASURED_512: u64 = 1_900;
+/// How far either count may drift from its measurement, in percent, before
+/// a test trips and the block must be re-stamped.
+pub const COUNT_BAND_PERCENT: u64 = 30;
+/// The 512 x 512 bands: the measurement plus or minus [`COUNT_BAND_PERCENT`].
+/// The upper bounds are also the ceilings `TABLE_BOUNDS` scales to a site.
+pub const NODE_COUNT_BAND_512: (u64, u64) = (
+    NODE_COUNT_MEASURED_512 * (100 - COUNT_BAND_PERCENT) / 100,
+    NODE_COUNT_MEASURED_512 * (100 + COUNT_BAND_PERCENT) / 100,
+);
+pub const EDGE_COUNT_BAND_512: (u64, u64) = (
+    EDGE_COUNT_MEASURED_512 * (100 - COUNT_BAND_PERCENT) / 100,
+    EDGE_COUNT_MEASURED_512 * (100 + COUNT_BAND_PERCENT) / 100,
+);
+/// The side, in cells, the bands above are declared at.
 pub const BAND_SITE_SIDE_CELLS: u64 = 512;
 
 /// The most nodes a site of `side` cells may hold: the band's ceiling
@@ -39,11 +54,12 @@ pub const fn max_edges_for_side(side: u64) -> u64 {
 /// Each floor's tile grid, by floor.
 pub type Floors = BTreeMap<i8, FloorCollision>;
 
-/// What a node is. `Source` is a building's entrance; `Internal` the one
-/// node a large building adds beyond it.
+/// What a node is. `Street` is a junction, dead end or door split, or a
+/// walking node on another floor; `Source` is a building's entrance;
+/// `Internal` the one node a large building adds beyond it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NodeKind {
-    Transit,
+    Street,
     Source,
     Internal,
     Portal,
@@ -52,7 +68,7 @@ pub enum NodeKind {
 impl NodeKind {
     pub fn code(self) -> u32 {
         match self {
-            NodeKind::Transit => node_kind::STREET,
+            NodeKind::Street => node_kind::STREET,
             NodeKind::Source => node_kind::ENTRANCE,
             NodeKind::Internal => node_kind::INTERNAL,
             NodeKind::Portal => node_kind::PORTAL,
@@ -61,7 +77,7 @@ impl NodeKind {
 
     pub fn from_code(code: u32) -> Option<NodeKind> {
         [
-            NodeKind::Transit,
+            NodeKind::Street,
             NodeKind::Source,
             NodeKind::Internal,
             NodeKind::Portal,
@@ -78,6 +94,8 @@ pub enum EdgeKind {
     Entrance,
     Internal,
     Portal,
+    /// A portal endpoint to the nearest walking node on its own floor.
+    PortalLink,
 }
 
 impl EdgeKind {
@@ -87,6 +105,7 @@ impl EdgeKind {
             EdgeKind::Entrance => edge_kind::ENTRANCE,
             EdgeKind::Internal => edge_kind::INTERNAL,
             EdgeKind::Portal => edge_kind::PORTAL,
+            EdgeKind::PortalLink => edge_kind::PORTAL_LINK,
         }
     }
 
@@ -96,6 +115,7 @@ impl EdgeKind {
             EdgeKind::Entrance,
             EdgeKind::Internal,
             EdgeKind::Portal,
+            EdgeKind::PortalLink,
         ]
         .into_iter()
         .find(|k| k.code() == code)
@@ -165,7 +185,8 @@ pub enum GraphError {
     NonPositiveCost {
         edge: u32,
     },
-    /// A node no street node can reach.
+    /// A node the search from node 0 cannot reach: the graph is not one
+    /// connected component.
     Disconnected {
         node: u32,
     },
@@ -201,7 +222,7 @@ pub struct NodeRow {
     pub kind: u32,
     pub x: i32,
     pub y: i32,
-    pub floor: i32,
+    pub floor: i8,
     pub business_id: Option<u64>,
 }
 
@@ -259,6 +280,10 @@ pub struct BuildInput<'a> {
     pub portals: &'a [PortalPair],
     pub rates: Rates,
     pub internal_node_min_floor_area: i64,
+    /// Walking nodes on floors the street network does not cover (floor
+    /// transitions' own floors); generation emits none yet. Those of one
+    /// floor are chained in cell order.
+    pub floor_nodes: &'a [Point],
     /// Every floor's tile grid.
     pub walkability: &'a Floors,
 }
@@ -303,7 +328,7 @@ impl MacroGraph {
         };
         for &n in input.streets.nodes() {
             let (x, y) = inside(n);
-            put(x, y, 0, NodeKind::Transit, None);
+            put(x, y, 0, NodeKind::Street, None);
         }
         // Street edges by fixed coordinate, to find the one a door meets.
         let mut horizontal: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
@@ -376,7 +401,7 @@ impl MacroGraph {
         }
         for p in &placed {
             let (sx, sy) = inside(p.split);
-            put(sx, sy, 0, NodeKind::Transit, None);
+            put(sx, sy, 0, NodeKind::Street, None);
             put(
                 p.entrance.0,
                 p.entrance.1,
@@ -390,6 +415,9 @@ impl MacroGraph {
             if let Some((x, y)) = p.internal {
                 put(x, y, 0, NodeKind::Internal, None);
             }
+        }
+        for p in input.floor_nodes {
+            put(p.x, p.y, p.floor, NodeKind::Street, None);
         }
         for pp in input.portals {
             put(pp.from.x, pp.from.y, pp.from.floor, NodeKind::Portal, None);
@@ -470,6 +498,35 @@ impl MacroGraph {
                 EdgeKind::Portal,
             );
         }
+        // Walking nodes of a floor the network does not cover: chained in
+        // cell order, one component per floor.
+        let mut chain: Vec<&Point> = input.floor_nodes.iter().collect();
+        chain.sort_by_key(|p| (p.floor, p.y, p.x));
+        for w in chain.windows(2) {
+            if w[0].floor == w[1].floor {
+                link(
+                    at(w[0].x, w[0].y, w[0].floor),
+                    at(w[1].x, w[1].y, w[1].floor),
+                    EdgeKind::Street,
+                );
+            }
+        }
+        // Each portal endpoint joins the walking network of its own floor
+        // at the nearest walking node (cost, then node order). Portals are
+        // few: this is the one scan of the node list, and it is per portal.
+        for (i, n) in nodes.iter().enumerate() {
+            if n.kind != NodeKind::Portal {
+                continue;
+            }
+            let nearest = nodes
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| m.floor == n.floor && m.kind != NodeKind::Portal)
+                .min_by_key(|(j, m)| (cost(rates, n.point(), m.point()), *j));
+            if let Some((j, _)) = nearest {
+                link(i as u32, j as u32, EdgeKind::PortalLink);
+            }
+        }
         let edges: Vec<Edge> = pairs
             .into_iter()
             .map(|((a, b), kind)| {
@@ -487,7 +544,8 @@ impl MacroGraph {
 
     /// Every verdict on the graph's shape: no dangling or self-looping or
     /// duplicate edge, positive costs, only portal edges cross floors,
-    /// every node walkable, and every node reachable from a street node.
+    /// every node walkable, and one connected component over every node
+    /// kind, portals included.
     pub fn check(&self, walkability: &Floors) -> Result<(), GraphError> {
         let n = self.nodes.len() as u32;
         let mut prev: Option<(u32, u32)> = None;
@@ -524,22 +582,22 @@ impl MacroGraph {
         self.check_connected()
     }
 
-    /// Every non-transit-and-non-portal node reaches a transit node: one
-    /// breadth-first search over the edges from every transit node at once.
+    /// One component: every node, portals included, is reachable from
+    /// node 0. A street network split in two, a source with no path to the
+    /// streets and a staircase tied to no floor's walking network are all
+    /// `Disconnected`, naming the first node the search misses.
     fn check_connected(&self) -> Result<(), GraphError> {
+        if self.nodes.is_empty() {
+            return Ok(());
+        }
         let mut adj: Vec<Vec<u32>> = vec![Vec::new(); self.nodes.len()];
         for e in &self.edges {
             adj[e.a as usize].push(e.b);
             adj[e.b as usize].push(e.a);
         }
         let mut seen = vec![false; self.nodes.len()];
-        let mut queue: Vec<u32> = Vec::new();
-        for (i, node) in self.nodes.iter().enumerate() {
-            if node.kind == NodeKind::Transit {
-                seen[i] = true;
-                queue.push(i as u32);
-            }
-        }
+        let mut queue: Vec<u32> = vec![0];
+        seen[0] = true;
         while let Some(i) = queue.pop() {
             for &j in &adj[i as usize] {
                 if !seen[j as usize] {
@@ -548,12 +606,10 @@ impl MacroGraph {
                 }
             }
         }
-        for (i, node) in self.nodes.iter().enumerate() {
-            if matches!(node.kind, NodeKind::Source | NodeKind::Internal) && !seen[i] {
-                return Err(GraphError::Disconnected { node: i as u32 });
-            }
+        match seen.iter().position(|s| !s) {
+            Some(i) => Err(GraphError::Disconnected { node: i as u32 }),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     /// The node table rows, in node order. `business_ids[i]` is node `i`'s
@@ -567,7 +623,7 @@ impl MacroGraph {
                 kind: n.kind.code(),
                 x: n.x,
                 y: n.y,
-                floor: n.floor as i32,
+                floor: n.floor,
                 business_id: business_ids.get(i).copied().flatten(),
             })
             .collect()
@@ -604,12 +660,11 @@ impl MacroGraph {
             }
             let kind =
                 NodeKind::from_code(r.kind).ok_or(GraphError::UnknownKind { code: r.kind })?;
-            let floor = i8::try_from(r.floor).map_err(|_| GraphError::BadRows)?;
             out_nodes.push(Node {
                 kind,
                 x: r.x,
                 y: r.y,
-                floor,
+                floor: r.floor,
                 source: None,
             });
             business.push(r.business_id);

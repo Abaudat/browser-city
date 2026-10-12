@@ -74,8 +74,8 @@ pub const INV_ROUTING_GRAPH_IS_ONE_CONNECTED_COMPONENT: &str =
     "every node of the macro routing graph is reachable from every other";
 pub const INV_ROUTING_GRAPH_IS_DETERMINISTIC: &str =
     "two builds of the macro routing graph from one seed are identical (FR129)";
-pub const INV_ROUTING_GRAPH_HAS_NO_PAIRWISE_CONSTRUCTION: &str =
-    "the graph's edge count is linear in its node count: no all-pairs scan builds an edge";
+pub const INV_ROUTING_GRAPH_EDGE_COUNT_IS_LINEAR_IN_NODE_COUNT: &str =
+    "the graph's edge count is at most a constant times its node count";
 pub const INV_NO_MATTER_STARVES: &str = "no matter starves indefinitely";
 pub const INV_INVENTORY_SUPERSET_AFTER_ABSENCE: &str = "inventory is a superset after any absence";
 pub const INV_NO_OWNED_ITEM_DEGRADES_DURING_ABSENCE: &str = "no owned item degrades during absence";
@@ -8859,7 +8859,10 @@ fn pooled_graph(c: &PooledCity) -> Result<&sim::routing::graph::MacroGraph, Stri
 }
 
 /// `inv_routing_graph_size_is_a_few_thousand_nodes` (story 3.9 AC1): the
-/// counts sit inside the bands declared once in `sim::routing::graph`.
+/// counts sit inside the measured band declared once in
+/// `sim::routing::graph` (the `macro graph` block of `docs/generation.md`
+/// plus or minus its percent); a topology change trips it and the block
+/// is re-stamped.
 #[test]
 fn inv_routing_graph_size_is_a_few_thousand_nodes() {
     use sim::routing::graph::{EDGE_COUNT_BAND_512, NODE_COUNT_BAND_512};
@@ -8975,14 +8978,17 @@ fn inv_routing_interior_collapses_to_entrance_and_one_internal_node() {
         |c| {
             let g = pooled_graph(c)?;
             let d = &c.district;
-            let at: std::collections::BTreeMap<(i32, i32), NodeKind> =
-                g.nodes().iter().map(|n| ((n.x, n.y), n.kind)).collect();
+            let at: std::collections::BTreeMap<(i8, i32, i32), NodeKind> = g
+                .nodes()
+                .iter()
+                .map(|n| ((n.floor, n.x, n.y), n.kind))
+                .collect();
             ensure!(at.len() == g.nodes().len(), "two nodes share a cell");
             let mut stray = 0usize;
             for (plot, _, i) in d.interiors.laid() {
                 let e = i.entrance().ok_or("no door")?;
                 ensure!(
-                    at.get(&(e.x, e.y)) == Some(&NodeKind::Source),
+                    at.get(&(0, e.x, e.y)) == Some(&NodeKind::Source),
                     "plot {plot}: no entrance node on the door"
                 );
                 let rooms: Vec<Rect> = i.rooms.iter().map(|r| r.rect).collect();
@@ -8992,7 +8998,8 @@ fn inv_routing_interior_collapses_to_entrance_and_one_internal_node() {
                 let mut others = 0usize;
                 for y in f.y0..f.y1 {
                     for x in f.x0..f.x1 {
-                        match at.get(&(x, y)) {
+                        // Interiors are ground floor.
+                        match at.get(&(0, x, y)) {
                             Some(NodeKind::Internal) => internals += 1,
                             Some(NodeKind::Source) if (x, y) == (e.x, e.y) => {}
                             Some(_) => others += 1,
@@ -9127,16 +9134,45 @@ fn inv_routing_fixture_world_portals_validate() {
     assert!(portals.iter().any(|p| p.from.floor != p.to.floor));
     let site = spec.floors[0].bounds;
     let net = streets::StreetNetwork::test_fixture(site, Vec::new(), Vec::new());
+    // One walking node per floor, on its first free tile: each portal
+    // joins the network of its own floor, so the graph is one component.
+    let floor_nodes: Vec<Point> = spec
+        .floors
+        .iter()
+        .map(|f| {
+            let b = f.bounds;
+            let (x, y) = (b.y0..b.y1)
+                .flat_map(|y| (b.x0..b.x1).map(move |x| (x, y)))
+                .find(|&(x, y)| floors[&f.floor].is_standable(x, y))
+                .expect("a fixture floor has a free tile");
+            Point {
+                x,
+                y,
+                floor: f.floor,
+            }
+        })
+        .collect();
     let g = MacroGraph::build(&BuildInput {
         streets: &net,
         buildings: &[],
         portals: &portals,
+        floor_nodes: &floor_nodes,
         rates: rates(),
         internal_node_min_floor_area: 100,
         walkability: &floors,
     })
     .unwrap();
-    assert!(g.nodes().iter().all(|n| n.kind == NodeKind::Portal));
+    // Every portal is reachable from a non-portal node on its own floor.
+    for n in g.nodes().iter().filter(|n| n.kind == NodeKind::Portal) {
+        assert!(
+            g.nodes()
+                .iter()
+                .any(|m| m.kind == NodeKind::Street && m.floor == n.floor),
+            "no walking node on floor {}",
+            n.floor
+        );
+    }
+    assert!(g.edges().iter().any(|e| e.kind == EdgeKind::PortalLink));
     let crossing: Vec<_> = g
         .edges()
         .iter()
@@ -9147,19 +9183,23 @@ fn inv_routing_fixture_world_portals_validate() {
     assert_eq!(g.check(&floors), Ok(()));
 }
 
-/// `inv_routing_graph_has_no_pairwise_construction` (story 3.9): edges are
-/// created from street adjacency and each building's own door, never an
-/// O(n^2) scan, so the edge count stays linear in the node count.
+/// `inv_routing_graph_edge_count_is_linear_in_node_count` (story 3.9): the
+/// edge count is at most three times the node count. This checks the
+/// output's shape; that the builder has no all-pairs scan is argued in its
+/// doc comment and held by `generation_perf.rs`'s 1024 ceiling.
 #[test]
-fn inv_routing_graph_has_no_pairwise_construction() {
-    over_pool("inv_routing_graph_has_no_pairwise_construction", |c| {
-        let g = pooled_graph(c)?;
-        let n = g.nodes().len();
-        ensure!(
-            g.edges().len() <= 3 * n,
-            "{} edges for {n} nodes is not linear",
-            g.edges().len()
-        );
-        Ok(())
-    });
+fn inv_routing_graph_edge_count_is_linear_in_node_count() {
+    over_pool(
+        "inv_routing_graph_edge_count_is_linear_in_node_count",
+        |c| {
+            let g = pooled_graph(c)?;
+            let n = g.nodes().len();
+            ensure!(
+                g.edges().len() <= 3 * n,
+                "{} edges for {n} nodes is not linear",
+                g.edges().len()
+            );
+            Ok(())
+        },
+    );
 }

@@ -15,8 +15,8 @@
 #   - `ctx.timestamp`, `world_clock`, `read_clock` -- banned in
 #     tables/cadences.rs (a cadence body knows its city minute, never
 #     real time).
-#   - `static mut`, `thread_local!`, `OnceLock`, `OnceCell`, `LazyLock`,
-#     `lazy_static!` -- module-global state (story 3.9): the macro routing
+#   - any `static` item, `thread_local!`, `OnceLock`, `OnceCell`,
+#     `LazyLock`, `lazy_static!` -- module-global state (story 3.9): the macro routing
 #     graph lives in tables so a reducer that aborts rolls it back and a
 #     restart or republish finds it; a global cache of it would not be
 #     rolled back and would not survive. Nothing under server/src/ keeps
@@ -74,10 +74,10 @@ if [ -n "$PANIC_MATCHES" ]; then
   FAILED=1
 fi
 
-GLOBAL_PATTERN='static[[:space:]]+mut|thread_local!|OnceLock|OnceCell|LazyLock|lazy_static!'
+GLOBAL_PATTERN='^[[:space:]]*(pub(\([^)]*\))?[[:space:]]+)?static[[:space:]]|thread_local!|OnceLock|OnceCell|LazyLock|lazy_static!'
 GLOBAL_MATCHES="$(grep -rnE "$GLOBAL_PATTERN" "$SRC_DIR" --include='*.rs' --exclude-dir=generated 2>/dev/null | not_a_comment_line || true)"
 if [ -n "$GLOBAL_MATCHES" ]; then
-  echo "check-server-src-bans: FAIL -- module-global state under server/src/ (static mut, thread_local!, OnceLock/OnceCell/LazyLock, lazy_static!): the macro routing graph and everything else lives in tables, so an aborted reducer rolls it back and a restart or republish finds it (story 3.9):" >&2
+  echo "check-server-src-bans: FAIL -- module-global state under server/src/ (a static item, thread_local!, OnceLock/OnceCell/LazyLock, lazy_static!): the macro routing graph and everything else lives in tables, so an aborted reducer rolls it back and a restart or republish finds it (story 3.9):" >&2
   echo "$GLOBAL_MATCHES" >&2
   FAILED=1
 fi

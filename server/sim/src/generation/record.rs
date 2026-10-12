@@ -6,7 +6,6 @@
 
 use super::{
     District, GENERATION_VERSION, GenerationConfig, GenerationContent, GenerationError, SiteBounds,
-    generate,
 };
 use crate::generated::defs::DEFS_VERSION;
 use crate::rng::RNG_VERSION;
@@ -52,21 +51,33 @@ pub fn create(
     cfg: &GenerationConfig,
     content: &GenerationContent,
 ) -> Result<(DistrictRecord, District), GenerationError> {
+    create_with_graph(existing, seed, cfg, content).map(|(record, district, _)| (record, district))
+}
+
+/// [`create`], also handing back the macro routing graph the gate
+/// validated: the one value `create_district` writes.
+pub fn create_with_graph(
+    existing: &[DistrictRecord],
+    seed: u64,
+    cfg: &GenerationConfig,
+    content: &GenerationContent,
+) -> Result<(DistrictRecord, District, crate::routing::graph::MacroGraph), GenerationError> {
     let site = cfg.site();
     if existing.iter().any(|r| r.site.overlaps(&site)) {
         return Err(GenerationError::SiteAlreadyGenerated { site });
     }
-    let district = generate(seed, cfg, content)?;
+    let (district, graph) = super::generate_with_graph(seed, cfg, content)?;
     let record = DistrictRecord {
         seed,
         site,
         version: RuleSetVersion::current(),
     };
-    Ok((record, district))
+    Ok((record, district, graph))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::generate;
     use super::*;
     use crate::generated::defs;
 

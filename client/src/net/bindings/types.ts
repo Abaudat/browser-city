@@ -379,7 +379,7 @@ export const RouteNode = __t.object("RouteNode", {
   kind: __t.u32(),
   x: __t.i32(),
   y: __t.i32(),
-  floor: __t.i32(),
+  floor: __t.i8(),
   businessId: __t.option(__t.u64()),
 });
 export type RouteNode = __Infer<typeof RouteNode>;

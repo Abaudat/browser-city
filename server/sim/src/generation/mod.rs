@@ -78,15 +78,17 @@ pub use interiors::{Interior, InteriorMap, InteriorOutcome};
 pub use land_use::{LandUse, LandUseCell, LandUseMap, Neighbourhood, NeighbourhoodParams, Region};
 pub use plots::{Plot, PlotMap};
 pub use props::{PlacedRow, Prop, PropMap, Role};
-pub use record::{DistrictRecord, RuleSetVersion, create};
+pub use record::{DistrictRecord, RuleSetVersion, create, create_with_graph};
 
 // `plan` and `generate` are reachable outside this crate only with
 // `test-fixtures`: production (`browser_city`) never enables it, so a reducer
 // naming either is a compile error and `create` is its only way in.
-#[cfg(not(feature = "test-fixtures"))]
+#[cfg(all(test, not(feature = "test-fixtures")))]
 pub(crate) use entry::generate;
+#[cfg(not(feature = "test-fixtures"))]
+pub(crate) use entry::generate_with_graph;
 #[cfg(feature = "test-fixtures")]
-pub use entry::{generate, plan, plan_skeleton};
+pub use entry::{generate, generate_with_graph, plan, plan_skeleton};
 pub use site::DistrictSite;
 pub use streets::{Axis, Block, Side, Sides, StreetClass, StreetEdge, StreetNetwork, block_sides};
 
@@ -540,6 +542,34 @@ impl District {
         self.check_graph(cfg, content)
     }
 
+    /// Every verdict [`Self::check`] holds the plan to except the graph's,
+    /// which [`Self::checked_graph`] gives with the graph itself.
+    pub fn check_without_graph(
+        &self,
+        cfg: &GenerationConfig,
+        content: &GenerationContent,
+    ) -> Result<(), GenerationError> {
+        self.skeleton.check_building_count(cfg)?;
+        self.check_rules(content)?;
+        self.skeleton.check_workplace_count(cfg, content)?;
+        self.check_enterable_count(cfg)?;
+        self.check_institutions_enterable(content)?;
+        self.check_reachability(content)
+    }
+
+    /// The graph, built once and validated: what `create_district` writes.
+    pub fn checked_graph(
+        &self,
+        cfg: &GenerationConfig,
+        content: &GenerationContent,
+    ) -> Result<crate::routing::graph::MacroGraph, GenerationError> {
+        let graph = self.graph(cfg, content)?;
+        graph
+            .check(&self.walkability)
+            .map_err(GenerationError::Graph)?;
+        Ok(graph)
+    }
+
     /// Story 3.9: the macro routing graph, derived from this finished
     /// district. Pure: the same district and config always give the same
     /// graph, so `create_district` writes what `check` validated.
@@ -580,6 +610,7 @@ impl District {
             streets: &self.skeleton.streets,
             buildings: &buildings,
             portals: &[],
+            floor_nodes: &[],
             rates: cfg.routing_rates,
             internal_node_min_floor_area: cfg.graph_internal_node_min_interior_cells,
             walkability: &self.walkability,
@@ -594,10 +625,7 @@ impl District {
         cfg: &GenerationConfig,
         content: &GenerationContent,
     ) -> Result<(), GenerationError> {
-        let graph = self.graph(cfg, content)?;
-        graph
-            .check(&self.walkability)
-            .map_err(GenerationError::Graph)
+        self.checked_graph(cfg, content).map(|_| ())
     }
 
     /// Builds this district's own [`DistrictSite`] -- the one adapter

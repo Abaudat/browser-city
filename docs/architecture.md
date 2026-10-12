@@ -1871,10 +1871,12 @@ the build if the committed files and a fresh render ever disagree.
 - `sim::time::REAL_MS_PER_CITY_MINUTE` is the one server-side FR1 constant.
 - Transport modes are `routing.speed_percent.*` multipliers on `movement.walk_speed_millicells_per_s`, never absolute speeds.
 - `routing::graph` is pure and derived by `District::graph`; `MacroGraph::check` runs in `District::check`.
-- An edge's cost is `estimate` over its endpoints in walking mode, in `Milliminutes`; no cell unit exists in the graph or its tables (`check-routing-estimate-purity.sh`).
+- An edge's cost is `estimate` over its endpoints in walking mode, in `Milliminutes`; no cell unit exists in the graph or its tables (`check-routing-one-unit.sh`).
 - Only portal edges, between portal nodes, cross floors; `MacroGraph::check` enforces it.
 - A building collapses to one entrance node, plus one internal node when its interior reaches `routing.graph.internal_node_min_interior_cells`.
-- `route_node` and `route_edge` are private, written only by `create_district` and the restore reducers, and never cached in module state (`check-server-src-bans.sh`).
+- `route_node` and `route_edge` are private, written only by `create_district` and the restore reducers, and never cached in module state.
+- `server/src` keeps no state outside a table: no `static` item, `thread_local!`, `OnceLock`, `OnceCell`, `LazyLock` or `lazy_static!` (`check-server-src-bans.sh`).
+- `MacroGraph::check` holds the graph to one connected component over every node kind; each portal endpoint links to the nearest walking node on its own floor.
 
 ## L3 (client)
 

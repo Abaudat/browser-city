@@ -38,3 +38,4 @@ edge_kind 0 street
 edge_kind 1 entrance
 edge_kind 2 internal
 edge_kind 3 portal
+edge_kind 4 portal_link

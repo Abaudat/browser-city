@@ -55,10 +55,19 @@ fn building(plot: u32, x: i32, room_w: i32) -> BuildingInput {
 fn build(buildings: &[BuildingInput], portals: &[PortalPair], min: i64) -> MacroGraph {
     let streets = network();
     let f = floors();
+    // The street network covers floor 0; a portal elsewhere needs a
+    // walking node on its own floor to join.
+    let floor_nodes: Vec<Point> = portals
+        .iter()
+        .flat_map(|p| [p.from, p.to])
+        .filter(|p| p.floor != 0)
+        .map(|p| Point { x: p.x + 1, ..p })
+        .collect();
     MacroGraph::build(&BuildInput {
         streets: &streets,
         buildings,
         portals,
+        floor_nodes: &floor_nodes,
         rates: rates(),
         internal_node_min_floor_area: min,
         walkability: &f,
@@ -76,7 +85,7 @@ fn a_building_collapses_to_one_entrance_and_a_split_on_its_street() {
     assert_eq!(count(&g, NodeKind::Source), 1);
     assert_eq!(count(&g, NodeKind::Internal), 0);
     // Two street ends and the split.
-    assert_eq!(count(&g, NodeKind::Transit), 3);
+    assert_eq!(count(&g, NodeKind::Street), 3);
     assert_eq!(g.edges().len(), 3);
     assert_eq!(g.check(&floors()), Ok(()));
 }
@@ -143,7 +152,7 @@ fn every_edge_costs_the_estimate_between_its_endpoints() {
 #[test]
 fn two_doors_on_one_cell_of_street_share_its_split_node() {
     let g = build(&[building(0, 20, 6), building(1, 20, 6)], &[], 1_000);
-    assert_eq!(count(&g, NodeKind::Transit), 3);
+    assert_eq!(count(&g, NodeKind::Street), 3);
 }
 
 #[test]
@@ -162,6 +171,13 @@ fn a_portal_pair_makes_two_portal_nodes_and_one_floor_crossing_edge() {
     };
     let g = build(&[], &[pair], 1_000);
     assert_eq!(count(&g, NodeKind::Portal), 2);
+    // Each endpoint joins its own floor's walking network.
+    let links = g
+        .edges()
+        .iter()
+        .filter(|e| e.kind == EdgeKind::PortalLink)
+        .count();
+    assert_eq!(links, 2);
     let portal: Vec<&Edge> = g
         .edges()
         .iter()
@@ -206,9 +222,9 @@ fn edge(a: u32, b: u32, kind: EdgeKind) -> Edge {
 fn a_cross_floor_edge_that_is_not_a_portal_names_that_edge() {
     let g = MacroGraph::from_parts(
         vec![
-            node(NodeKind::Transit, 1, 0),
-            node(NodeKind::Transit, 2, 0),
-            node(NodeKind::Transit, 3, 1),
+            node(NodeKind::Street, 1, 0),
+            node(NodeKind::Street, 2, 0),
+            node(NodeKind::Street, 3, 1),
         ],
         vec![edge(0, 1, EdgeKind::Street), edge(1, 2, EdgeKind::Street)],
     );
@@ -221,7 +237,7 @@ fn a_cross_floor_edge_that_is_not_a_portal_names_that_edge() {
 #[test]
 fn a_portal_edge_between_non_portal_nodes_or_one_floor_is_malformed() {
     let on_two_floors = MacroGraph::from_parts(
-        vec![node(NodeKind::Transit, 1, 0), node(NodeKind::Transit, 2, 1)],
+        vec![node(NodeKind::Street, 1, 0), node(NodeKind::Street, 2, 1)],
         vec![edge(0, 1, EdgeKind::Portal)],
     );
     assert_eq!(
@@ -241,7 +257,7 @@ fn a_portal_edge_between_non_portal_nodes_or_one_floor_is_malformed() {
 #[test]
 fn an_edge_to_a_missing_node_names_that_edge() {
     let g = MacroGraph::from_parts(
-        vec![node(NodeKind::Transit, 1, 0), node(NodeKind::Transit, 2, 0)],
+        vec![node(NodeKind::Street, 1, 0), node(NodeKind::Street, 2, 0)],
         vec![edge(0, 1, EdgeKind::Street), edge(1, 7, EdgeKind::Street)],
     );
     assert_eq!(
@@ -252,7 +268,7 @@ fn an_edge_to_a_missing_node_names_that_edge() {
 
 #[test]
 fn self_loops_duplicates_and_zero_costs_are_refused() {
-    let two = vec![node(NodeKind::Transit, 1, 0), node(NodeKind::Transit, 2, 0)];
+    let two = vec![node(NodeKind::Street, 1, 0), node(NodeKind::Street, 2, 0)];
     assert_eq!(
         MacroGraph::from_parts(two.clone(), vec![edge(1, 1, EdgeKind::Street)]).check(&floors()),
         Err(GraphError::SelfLoop { edge: 0 })
@@ -283,16 +299,16 @@ fn a_node_on_a_blocked_tile_or_off_the_grid_is_refused() {
     };
     let mut f = floors();
     f.insert(0, FloorCollision::build(SITE, &[blocked]).unwrap()); // collision-inference: allow (a hand-laid test grid)
-    let g = MacroGraph::from_parts(vec![node(NodeKind::Transit, 2, 0)], Vec::new());
+    let g = MacroGraph::from_parts(vec![node(NodeKind::Street, 2, 0)], Vec::new());
     assert_eq!(g.check(&f), Err(GraphError::NodeNotWalkable { node: 0 }));
-    let off = MacroGraph::from_parts(vec![node(NodeKind::Transit, 90, 0)], Vec::new());
+    let off = MacroGraph::from_parts(vec![node(NodeKind::Street, 90, 0)], Vec::new());
     assert_eq!(off.check(&f), Err(GraphError::NodeNotWalkable { node: 0 }));
 }
 
 #[test]
 fn a_source_with_no_path_to_a_transit_node_is_refused() {
     let g = MacroGraph::from_parts(
-        vec![node(NodeKind::Transit, 1, 0), node(NodeKind::Source, 2, 0)],
+        vec![node(NodeKind::Street, 1, 0), node(NodeKind::Source, 2, 0)],
         Vec::new(),
     );
     assert_eq!(
@@ -351,25 +367,31 @@ fn the_node_and_edge_ceilings_scale_linearly_with_area() {
 fn an_isolated_portal_pair_is_disconnected() {
     let g = MacroGraph::from_parts(
         vec![
-            node(NodeKind::Transit, 1, 0),
+            node(NodeKind::Street, 1, 0),
             node(NodeKind::Portal, 2, 0),
             node(NodeKind::Portal, 2, 1),
         ],
         vec![edge(1, 2, EdgeKind::Portal)],
     );
-    assert_eq!(g.check(&floors()), Err(GraphError::Disconnected { node: 1 }));
+    assert_eq!(
+        g.check(&floors()),
+        Err(GraphError::Disconnected { node: 1 })
+    );
 }
 
 #[test]
 fn two_street_components_with_no_link_are_disconnected() {
     let g = MacroGraph::from_parts(
         vec![
-            node(NodeKind::Transit, 1, 0),
-            node(NodeKind::Transit, 2, 0),
-            node(NodeKind::Transit, 5, 0),
-            node(NodeKind::Transit, 6, 0),
+            node(NodeKind::Street, 1, 0),
+            node(NodeKind::Street, 2, 0),
+            node(NodeKind::Street, 5, 0),
+            node(NodeKind::Street, 6, 0),
         ],
         vec![edge(0, 1, EdgeKind::Street), edge(2, 3, EdgeKind::Street)],
     );
-    assert_eq!(g.check(&floors()), Err(GraphError::Disconnected { node: 2 }));
+    assert_eq!(
+        g.check(&floors()),
+        Err(GraphError::Disconnected { node: 2 })
+    );
 }

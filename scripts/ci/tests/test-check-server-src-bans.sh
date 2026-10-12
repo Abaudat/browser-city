@@ -64,8 +64,14 @@ check "lazy_static! is banned" 1 bash "$CHECK" "$d"
 d="$(plant '//! never a OnceLock or a thread_local! graph cache -- tables only.')"
 check "module-global state named only in a comment passes" 0 bash "$CHECK" "$d"
 
-d="$(plant 'const SIZE: u32 = 4; static NAMES: [&str; 1] = ["a"];')"
-check "an immutable static table passes" 0 bash "$CHECK" "$d"
+d="$(plant 'static CACHE: Mutex<Option<Vec<u32>>> = Mutex::new(None);')"
+check "a static Mutex is banned" 1 bash "$CHECK" "$d"
+
+d="$(plant 'pub(crate) static COUNT: AtomicU64 = AtomicU64::new(0);')"
+check "a static atomic is banned" 1 bash "$CHECK" "$d"
+
+d="$(plant 'const SIZE: u32 = 4; fn f(x: &'"'"'static str) {}')"
+check "const items and the 'static lifetime pass" 0 bash "$CHECK" "$d"
 
 d="$(plant 'debug_assert!(x > 0, "x must be positive");')"
 check "debug_assert! stays allowed" 0 bash "$CHECK" "$d"

@@ -293,6 +293,8 @@ pub mod edge_kind {
     pub const ENTRANCE: u32 = 1;
     pub const INTERNAL: u32 = 2;
     pub const PORTAL: u32 = 3;
+    /// A portal endpoint's link to its own floor's walking network.
+    pub const PORTAL_LINK: u32 = 4;
 
     pub const CODES: &[Code] = &[
         Code {
@@ -310,6 +312,10 @@ pub mod edge_kind {
         Code {
             code: PORTAL,
             name: "portal",
+        },
+        Code {
+            code: PORTAL_LINK,
+            name: "portal_link",
         },
     ];
 }
