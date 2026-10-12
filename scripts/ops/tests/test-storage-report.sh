@@ -203,35 +203,38 @@ echo
 echo "a cadence that fired during this read says so, never a negative age"
 SKEW=$((10 * 1000000))
 N=$((100 + STALE))
-OUT="$(LIVENESS="[[1,[$((N + 2000000))],[$((N + 2000000))],5,0],[2,[$((N - SKEW - 1000000))],[$((N - SKEW - 1000000))],5,0]]" NOW=$N run_report "[[1,$((N - 100)),5000,false,false,1,2]]" '[]' 2>&1)"
+LV="[[1,[$((N + 5000000))],[$((N + 2000000))],5,0],[2,[$((N - SKEW - 1000000))],[$((N - SKEW - 1000000))],5,0],[3,[$((N - SKEW))],[$((N - SKEW))],5,0]]"
+OUT="$(LIVENESS="$LV" NOW=$N run_report "[[1,$((N - 100)),5000,false,false,1,2]]" '[]' 2>&1)"
 check_contains "a fire after --now is flagged" "cadence 1: last fired fired during this read" "$OUT"
+check_contains "a future target prints as in Ns, never negative" "last target in 5s" "$OUT"
 check "no negative age is printed" 0 lacks "$OUT" "-2s"
+check "a target is never said to have fired" 0 lacks "$OUT" "last target fired"
 check_contains "a fire just before the allowance is a plain age" "cadence 2: last fired 11s ago" "$OUT"
+check_contains "a fire exactly at START - skew is flagged" "cadence 3: last fired fired during this read, last target 10s ago" "$OUT"
 
 echo
-echo "gap history: a healed gap is still reported"
+echo "gap history is printed, never a breach"
 H=3600000000
 N=$((100 * H))
-FOURH=$((4 * H))
-S1="[[1,$((N - 5 * H - FOURH)),1,false,false,1,2],[2,$((N - 5 * H)),1,false,false,1,2],[3,$((N - H)),1,false,false,1,2]]"
+S1="[[1,$((N - 8 * H)),1,false,false,1,2],[2,$N,1,false,false,1,2]]"
 OUT="$(NOW=$N run_report "$S1" '[]' 2>&1)"; CODE=$?
-check "a healed 4h gap inside the window -> exit 1" 1 bash -c "exit $CODE"
-check "exactly one finding" 0 line_count_is "$FINDINGS" 1
-check_contains "same stable title" "watcher: sampler stale$TAB" "$(cat "$FINDINGS")"
-check_contains "prints the largest gap" "largest between samples 14400s" "$OUT"
-S2="[[1,$((N - 40 * H - FOURH)),1,false,false,1,2],[2,$((N - 40 * H)),1,false,false,1,2]"
-for k in $(seq 39 -1 1); do S2="$S2,[$((100 - k)),$((N - k * H)),1,false,false,1,2]"; done
-S2="$S2]"
-OUT="$(NOW=$N run_report "$S2" '[]' 2>&1)"; CODE=$?
-check "an equal gap older than the window -> exit 0" 0 bash -c "exit $CODE"
-S3="[[1,$((N - 4 * H - 3 * H)),1,false,false,1,2],[2,$((N - 4 * H)),1,false,false,1,2],[3,$((N - H)),1,false,false,1,2]]"
-OUT="$(NOW=$N run_report "$S3" '[]' 2>&1)"; CODE=$?
-check "a gap of exactly three periods -> exit 0" 0 bash -c "exit $CODE"
-S4="[[1,$((N - 4 * H - 3 * H - 1)),1,false,false,1,2],[2,$((N - 4 * H)),1,false,false,1,2],[3,$((N - H)),1,false,false,1,2]]"
-OUT="$(NOW=$N run_report "$S4" '[]' 2>&1)"; CODE=$?
-check "one microsecond more than three periods -> exit 1" 1 bash -c "exit $CODE"
+check "an 8h gap healed by a fresh sample -> exit 0" 0 bash -c "exit $CODE"
+check "and writes no finding" 0 is_empty "$FINDINGS"
+check_contains "prints the largest gap" "largest between samples 28800s" "$OUT"
 OUT="$(NOW=$N run_report '[[1,"x",1,false,false,1,2]]' '[]' 2>&1)"; CODE=$?
 check "an unreadable series -> exit 2" 2 bash -c "exit $CODE"
+
+echo
+echo "issue 446: a sleeping database woken by this read is healthy"
+# Replays run 38210789893: the last pre-sleep sample 8 h old, both cadences
+# overdue by 7+ h, the first schedule read past, the wake fire's sample fresh.
+INC="[[1,[$((N - 7 * H))],[$((N + 1000000))],900,40],[2,[$((N - 7 * H - 1800000000))],[$((N + 1000000))],3000,1060]]"
+OUT="$(SCHED_SEQ="[[1,[1,[$((N - 7 * H))]]]] [[1,[1,[$((N + H))]]]]" LIVENESS="$INC" NOW=$N run_report "$S1" '[]' 2>&1)"; CODE=$?
+check "a woken database -> exit 0" 0 bash -c "exit $CODE"
+check "and writes no finding" 0 is_empty "$FINDINGS"
+check_contains "the metrics cadence fired during this read" "cadence 2: last fired fired during this read" "$OUT"
+check_contains "the other cadence fired during this read" "cadence 1: last fired fired during this read" "$OUT"
+check_contains "the 8h gap is printed" "largest between samples 28800s" "$OUT"
 
 echo
 echo "settle: the first read wakes the database; the report waits for the overdue fire"

@@ -27,9 +27,8 @@
 # still past, or no pending row, is a scheduler that is not dispatching:
 # `watcher: sampler stale`. Cadences that fired within WAKE_SKEW_MICROS of
 # the report's start are printed as `fired during this read`. The report also
-# prints the largest gap between samples over the last poll window and
-# raises the same `watcher: sampler stale` finding for any gap over three
-# periods, so an outage that healed before this run is still reported.
+# prints the largest gap between samples over the last poll window; a gap is
+# evidence, never a breach (an idle database sleeps, which is normal).
 #
 # Usage: storage-report.sh <database> [--server <server>] [--now <micros>]
 #        [--findings <file>] [--settle <seconds>]
@@ -207,11 +206,18 @@ fi
 # `cadence_code` in server/src/tables/schedules.rs), ages in seconds against
 # the same clock as the stale check. Best effort: a failed read changes the
 # text, never the verdict; its reason reaches the job log.
-age_of() { # <timestamp> -- seconds before NOW_MICROS, or "?"
+fired_text() { # <timestamp> -- "fired during this read", or seconds before NOW_MICROS
   local m
   m="$(micros_of "$1")"
   if [ -z "$m" ]; then echo "?"
   elif [ "$m" -ge $((START_MICROS - WAKE_SKEW_MICROS)) ]; then echo "fired during this read"
+  else echo "$(((NOW_MICROS - m) / 1000000))s ago"; fi
+}
+target_text() { # <timestamp> -- an age, or "in Ns" for a future target
+  local m
+  m="$(micros_of "$1")"
+  if [ -z "$m" ]; then echo "?"
+  elif [ "$m" -gt "$NOW_MICROS" ]; then echo "in $(((m - NOW_MICROS) / 1000000))s"
   else echo "$(((NOW_MICROS - m) / 1000000))s ago"; fi
 }
 LIVENESS_LINES=""
@@ -226,7 +232,7 @@ if ( bc_sql_json "storage-report" "$DB" "${SERVER_ARGS[@]}" "SELECT * FROM caden
     <(column "$TMP/liveness.json" missed) >"$TMP/liveness.rows"
   while IFS='|' read -r c t f n m; do
     [ -n "$c" ] || continue
-    LIVENESS_LINES="${LIVENESS_LINES:+$LIVENESS_LINES; }cadence $c: last fired $(age_of "$f"), last target $(age_of "$t"), fires=$n missed=$m"
+    LIVENESS_LINES="${LIVENESS_LINES:+$LIVENESS_LINES; }cadence $c: last fired $(fired_text "$f"), last target $(target_text "$t"), fires=$n missed=$m"
   done <"$TMP/liveness.rows"
   [ -n "$LIVENESS_LINES" ] || LIVENESS_LINES="no rows"
 else
@@ -241,9 +247,8 @@ if [ -n "$SAMPLED_MICROS" ] && [ $((NOW_MICROS - SAMPLED_MICROS)) -gt "$STALE_MI
   STALE_REASONS+=("the newest sample is $(((NOW_MICROS - SAMPLED_MICROS) / 1000000))s old, over three sampler periods ($((STALE_MICROS / 1000000))s): the sampler has stopped")
 fi
 
-# Gap history: every gap between consecutive samples inside the poll window,
-# and the newest sample to the start of this read. The same three-period
-# rule as the head check, applied to history.
+# Gap history: the largest gap between consecutive samples inside the poll
+# window, printed and never judged (an idle database sleeps).
 WINDOW_START=$((START_MICROS - GAP_WINDOW_MICROS))
 SAMPLE_TIMES="$(column "$TMP/storage.json" sampled_at | while IFS= read -r v; do
   m="$(micros_of "$v")"
@@ -260,14 +265,7 @@ while IFS= read -r m; do
   fi
   PREV="$m"
 done <<<"$SAMPLE_TIMES"
-TAIL_GAP=$((START_MICROS - PREV))
-[ "$TAIL_GAP" -ge 0 ] || TAIL_GAP=0
-echo "storage-report: sample gaps over the last $((GAP_WINDOW_MICROS / 3600000000))h: largest between samples $((LARGEST / 1000000))s, newest sample to start of read ${TAIL_GAP}s"
-if [ "$LARGEST" -gt "$STALE_MICROS" ]; then
-  STALE_REASONS+=("a gap of $((LARGEST / 1000000))s between samples inside the last $((GAP_WINDOW_MICROS / 3600000000))h is over three sampler periods ($((STALE_MICROS / 1000000))s): the sampler stopped and healed before this run")
-elif [ "$TAIL_GAP" -gt "$STALE_MICROS" ]; then
-  STALE_REASONS+=("the newest sample is ${TAIL_GAP}s older than the start of this read, over three sampler periods ($((STALE_MICROS / 1000000))s): the sampler stopped")
-fi
+echo "storage-report: sample gaps over the last $((GAP_WINDOW_MICROS / 3600000000))h: largest between samples $((LARGEST / 1000000))s"
 if [ "${#STALE_REASONS[@]}" -gt 0 ]; then
   REASONS="$(printf '%s; ' "${STALE_REASONS[@]}")"
   finding "watcher: sampler stale" "STALE -- ${REASONS%; }. $LIVENESS_TEXT"

@@ -238,7 +238,7 @@ mod fire_tests {
     }
 
     #[test]
-    fn both_cadences_agree_when_anchored_at_the_fired_target() {
+    fn a_fire_anchored_at_its_own_target_counts_skipped_points() {
         let (t, m) = fire(5 * PM, 5 * PM, P, 1, 5 * PM + 2 * PM + 1);
         assert_eq!((t, m), (8 * PM, 2));
     }

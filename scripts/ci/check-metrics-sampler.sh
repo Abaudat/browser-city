@@ -228,7 +228,7 @@ WATCH_CODE=$?
 grep -qF "estimated total" "$WATCH_LOG" && grep -qF "class scheduled calls_total=" "$WATCH_LOG"   || fail "storage-report.sh did not print the storage total and the scheduled class's figures" "$WATCH_LOG"
 grep -q "BREACH" "$WATCH_LOG" && fail "storage-report.sh reported a breach on a fresh world" "$WATCH_LOG"
 ok "the watcher's reader exits 0 with no breach against the live instance and prints the per-class calls"
-grep -qE "cadence 2: last fired (-?[0-9]+s ago|fired during this read)" "$WATCH_LOG" || fail "storage-report.sh did not print the METRICS cadence's liveness" "$WATCH_LOG"
+grep -qE "cadence 2: last fired ([0-9]+s ago|fired during this read)" "$WATCH_LOG" || fail "storage-report.sh did not print the METRICS cadence's liveness" "$WATCH_LOG"
 
 # The stale branch against the real schema: --now four sampler periods past
 # the newest sample (the only live proof of the liveness query shape).

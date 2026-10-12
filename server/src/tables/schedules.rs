@@ -72,9 +72,12 @@ fn schedule_at_micros(at: ScheduleAt) -> Result<i64, String> {
 /// shared trait across SpacetimeDB's per-table generated accessors to
 /// abstract this genuinely generically. Returns `(target_micros,
 /// missed)`.
+// The two instants stay positional beside the closures they sit with.
+#[allow(clippy::too_many_arguments)]
 fn arm_cadence(
     ctx: &ReducerContext,
-    (grid_origin_micros, fired_target_micros): (i64, i64),
+    grid_origin_micros: i64,
+    fired_target_micros: i64,
     period_ms: i64,
     speed: u32,
     mut iter_ids: impl FnMut() -> Vec<u64>,
@@ -259,7 +262,8 @@ macro_rules! arm_schedule {
         ) -> (i64, u64) {
             arm_cadence(
                 ctx,
-                (grid_origin_micros, fired_target_micros),
+                grid_origin_micros,
+                fired_target_micros,
                 $period_ms,
                 speed,
                 || ctx.db.$accessor().iter().map(|r| r.scheduled_id).collect(),
