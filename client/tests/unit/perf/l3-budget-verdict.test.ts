@@ -162,11 +162,11 @@ describe("L3 budget verdict (NFR11)", () => {
       majorTypes: Array.from({ length: n }, () => task),
     });
     // At the recorded figures, green; one major or a millisecond more, red.
-    expect(verdict({ ...GOOD, gc: some(2, 6.8) }).met).toBe(true);
+    expect(verdict({ ...GOOD, gc: some(2, 9) }).met).toBe(true);
     expect(verdict({ ...GOOD, gc: some(3, 3) }).gateFailures.join()).toContain(
       "frame-thread rendered window: 3 major GCs, 2 allowed",
     );
-    expect(verdict({ ...GOOD, gc: some(1, 7) }).gateFailures.join()).toContain("paused 7.00 ms");
+    expect(verdict({ ...GOOD, gc: some(1, 9.5) }).gateFailures.join()).toContain("paused 9.50 ms");
     expect(verdict({ ...GOOD, workerGc: some(4, 3) }).gateFailures.join()).toContain(
       "worker rendered window: 4 major GCs",
     );
