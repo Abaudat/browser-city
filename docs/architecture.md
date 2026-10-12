@@ -445,14 +445,21 @@ layer's `rank` is as permanent as its `code` number and pinned by the same
 codes golden. See "Rendering" below for the ladder itself.
 
 There is no dense per-cell table, and there never will be: cell facts are
-always derived from placed content, never stored per cell.
+always derived from placed content, never stored per cell. A collision or
+walkability grid is never a table, a column or a wire message
+(`scripts/ci/check-no-grid-table.sh`).
 
 - Walkability is the absence of a collider (FR128): computed by
   rasterising the colliders the placed objects on an entity's floor
   contribute, never a stored walkable/collision column. The server's
   `FloorCollision` (below) is tile-granular, for citizen routing; sub-tile
   collider precision is client-only (FR137), and the server never
-  consumes a `collider`. The two are not required to agree cell for cell.
+  consumes a `collider`. The client derives its own walkability from the
+  streamed `placed_object` rows. A tile is blocked iff any collider
+  touches it, half-open, on both sides, pinned by the `raster` case of
+  `fixtures/world-conformance.v1.json`; the two are not required to agree
+  at sub-tile precision, and a tile the server leaves free is free to
+  the client.
 - Building and room ownership (FR119) is areas, not per-cell: `building`
   and `room` rows carry a surrogate id; `building_area`/`room_area` rows
   hold the axis-aligned rectangles that belong to one such id. A
@@ -535,7 +542,17 @@ dense storage sized to its extent, indexed by arithmetic (never a map
 lookup per cell, never a scan), so a query costs one bounded access
 regardless of world size. `FloorCollision::build` rejects an invalid
 extent or one over `sim::world::MAX_CELLS_PER_FLOOR`, rather than
-allocating unboundedly.
+allocating unboundedly. `FloorCollision::repaint(dirty, colliders)` is
+the one rasterisation loop and the only patch path: it sets every tile of
+`dirty` to the union of the given colliders over it, which the caller
+takes from the rows still touching `dirty`, and writes only the words
+covering that rect. `build` is an empty grid plus a repaint of its
+bounds. `sim::world::floor_grids` is the one rasteriser of placed rows:
+one `FloorCollision` per floor `MIN_FLOOR..=MAX_FLOOR`, empty or not,
+bounded by the site exactly; a collider leaving the site is an error.
+Runtime code never builds a whole grid, it repaints a window
+(`scripts/ci/check-no-runtime-collision-inference.sh`). `WalkabilityGrid`
+(below) is a generation post-condition, never read by routing.
 
 `sim::world::fixture` (the hand-authored conformance world) is compiled
 only behind `sim`'s `test-fixtures` Cargo feature, which `bounds` enables
@@ -1779,9 +1796,9 @@ sorted list of `PlacedRow { floor, y, x, def_id, layer, orientation }` --
 `placed_object`'s columns minus the surrogate id and chunk key, anchor =
 the footprint's south-west cell, extent only ever read from
 `ObjectDef.width/height` -- each carried with its owner (`Prop`, `Role`),
-plus the street's cells (`StreetGrid`) and `collision: BTreeMap<i8,
-FloorCollision>`, the one per-district cache: tile-granular, a cell
-blocked iff a placed collider touches it, built once inside `run`.
+plus the street's cells (`StreetGrid`). `District::new` rasterises
+them once into `District::walkability(floor) -> &FloorCollision`:
+tile-granular, a tile blocked iff a placed collider touches it.
 Nothing outside `generation::`/`world::` builds a collision grid or
 rasterises placements (`scripts/ci/check-no-runtime-collision-
 inference.sh`); `create_district` still discards the plan and writes no

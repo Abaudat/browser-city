@@ -82,10 +82,26 @@ pub fn cell_index(bounds: Rect, x: i32, y: i32) -> Option<usize> {
 /// collider is known for that cell", which is exactly FR128's rule
 /// (walkability is the absence of a collider) applied to the absence of
 /// any data at all.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FloorCollision {
     bounds: Rect,
     blocked: Vec<u64>,
+}
+
+/// Sets or clears the bits `first..=last` of a dense bitset, a word at a
+/// time.
+fn set_bits(words: &mut [u64], first: usize, last: usize, on: bool) {
+    let (fw, lw) = (first / 64, last / 64);
+    for (w, word) in words.iter_mut().enumerate().take(lw + 1).skip(fw) {
+        let lo = if w == fw { first % 64 } else { 0 };
+        let hi = if w == lw { last % 64 } else { 63 };
+        let mask = (u64::MAX >> (63 - (hi - lo))) << lo;
+        if on {
+            *word |= mask;
+        } else {
+            *word &= !mask;
+        }
+    }
 }
 
 fn words_for(bit_count: u64) -> usize {
@@ -123,22 +139,58 @@ impl FloorCollision {
             ));
         }
 
-        let mut blocked = vec![0u64; words_for(cell_count)];
-        for collider in colliders {
-            let x0 = collider.x0.max(bounds.x0);
-            let y0 = collider.y0.max(bounds.y0);
-            let x1 = collider.x1.min(bounds.x1);
-            let y1 = collider.y1.min(bounds.y1);
-            for y in y0..y1 {
-                for x in x0..x1 {
-                    let Some(idx) = cell_index(bounds, x, y) else {
-                        continue;
-                    };
-                    blocked[idx / 64] |= 1u64 << (idx % 64);
-                }
+        let mut grid = FloorCollision {
+            bounds,
+            blocked: vec![0u64; words_for(cell_count)],
+        };
+        grid.repaint(bounds, colliders);
+        Ok(grid)
+    }
+
+    /// Sets every tile of `dirty` (clipped to the bounds) to exactly the
+    /// union of `colliders` over it, and writes nothing outside it. The
+    /// caller supplies every collider that touches `dirty`; a removal is a
+    /// repaint of the removed rect from the colliders still covering it,
+    /// never a clear of bits. Returns the number of dense-storage words
+    /// written, bounded by the rect's rows and width, never by the floor.
+    /// This is the only rasterisation loop: [`Self::build`] is an empty
+    /// grid plus one repaint of its bounds.
+    pub fn repaint(&mut self, dirty: Rect, colliders: &[Rect]) -> usize {
+        let b = self.bounds;
+        let (x0, y0) = (dirty.x0.max(b.x0), dirty.y0.max(b.y0));
+        let (x1, y1) = (dirty.x1.min(b.x1), dirty.y1.min(b.y1));
+        if x0 >= x1 || y0 >= y1 {
+            return 0;
+        }
+        let mut written = 0;
+        for y in y0..y1 {
+            let row = cell_index(b, x0, y).expect("a clipped row start is in bounds");
+            let last = row + (x1 - x0) as usize - 1;
+            set_bits(&mut self.blocked, row, last, false);
+            written += last / 64 - row / 64 + 1;
+        }
+        for c in colliders {
+            let (cx0, cy0) = (c.x0.max(x0), c.y0.max(y0));
+            let (cx1, cy1) = (c.x1.min(x1), c.y1.min(y1));
+            if cx0 >= cx1 || cy0 >= cy1 {
+                continue;
+            }
+            for y in cy0..cy1 {
+                let row = cell_index(b, cx0, y).expect("a clipped collider is in bounds");
+                set_bits(&mut self.blocked, row, row + (cx1 - cx0) as usize - 1, true);
             }
         }
-        Ok(FloorCollision { bounds, blocked })
+        written
+    }
+
+    /// The extent the grid covers.
+    pub fn bounds(&self) -> Rect {
+        self.bounds
+    }
+
+    /// How many tiles are blocked.
+    pub fn blocked_count(&self) -> usize {
+        self.blocked.iter().map(|w| w.count_ones() as usize).sum()
     }
 
     /// `(x, y)` is inside the floor's known extent at all.

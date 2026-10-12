@@ -185,6 +185,10 @@ pub const INV_GENERATION_INTERIOR_RETRIES_ARE_BOUNDED: &str = "in every city of 
 pub const INV_GENERATION_EVERY_PLACEMENT_IS_ONE_ROW_AT_ITS_ANCHOR: &str = "in every city of the shared pool, every pass-7 placement is one row -- def id, anchor, floor -- whose claimed cells are the anchor plus the def's own extent, each on a floor cell of its own room, inside its building, or off the carriageway and outside every footprint on the street, and no two solid props claim one cell (story 3.6 AC1, FR110, FR126)";
 pub const INV_GENERATION_PROPS_NEVER_NARROW_A_DOORWAY_BELOW_THE_BODY: &str = "in every city of the shared pool, every building's rows -- walls, fixtures and shopfront -- rasterised through their real ObjectDef colliders leave no region past a passage the player body cannot fit, with the street approach as the seed (story 3.6 AC3, FR128)";
 pub const INV_GENERATION_PROPS_LEAVE_NO_ENCLOSED_REGION: &str = "in every city of the shared pool, no pavement band carrying street furniture holds an enclosed or too-narrow region, and no chunk window of the district has more cut-off regions with every row than with the walls alone (story 3.6 AC3, FR128)";
+pub const INV_GENERATION_WALKABILITY_IS_ONE_EXACT_GRID_PER_FLOOR: &str = "in every city of the shared pool, every floor MIN_FLOOR..=MAX_FLOOR has one grid bounded by the site exactly, and a tile is blocked iff some placed row's collider touches it, against a brute-force oracle over the rows (story 3.8 AC1, FR135)";
+pub const INV_WORLD_REPAINT_EQUALS_REBUILD: &str = "for any collider set and any sequence of adds and removals (overlapping, coincident, partly outside bounds), repainting the touched rect from the colliders still overlapping it leaves the grid bit-for-bit equal to FloorCollision::build over the final set, outside the rect included (story 3.8 AC3)";
+pub const INV_WORLD_REPAINT_OF_ANY_RECT_EQUALS_REBUILD: &str = "repainting any rect from the colliders overlapping it changes nothing a full rebuild would not (story 3.8 AC3)";
+pub const INV_WORLD_REPAINT_WRITES_ONLY_THE_WORDS_OF_ITS_RECT: &str = "a repaint writes only the words covering its rect, never a number bounded by the floor (story 3.8 AC3)";
 pub const INV_GENERATION_COLLISION_MAP_IS_THE_ROWS_RASTERISED: &str = "in every city of the shared pool, the cached per-district collision map equals a reference rasterisation of every row's real collider chunk by chunk, and the accessor returns the one allocation each time (story 3.6 AC2, FR128)";
 pub const INV_GENERATION_ENTERABLE_INTERIOR_COUNT_MEETS_THE_FLOOR: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), generation succeeds and the count of buildings whose own cells make them enterable (every room reachable from the street, every owed fixture present) is at least min_enterable_count (story 3.5 AC3, FR114)";
 pub const INV_GENERATION_ENTERABLE_SET_SPANS_EVERY_REQUIRED_KIND: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), the enterable set holds dwellings, shops, cafes and institutional back rooms, each kind enterable for at least its committed percent of what pass 5 placed of it and none over max_kind_share_percent of the enterable set, and an enterable dwelling exists in the lowest density band (story 3.5 AC3, FR114)";
@@ -3052,13 +3056,14 @@ fn the_catchment_floor_bites_for_every_scoped_row_over_seeds_0_to_256() {
                 building_type: a.building_type,
             })
             .collect();
-        let props =
-            sim::generation::PropMap::test_fixture(skeleton.plots.site(), Vec::new(), &[]).unwrap();
-        let d = sim::generation::District {
+        let props = sim::generation::PropMap::test_fixture(skeleton.plots.site(), Vec::new());
+        let d = sim::generation::District::new(
             skeleton,
-            interiors: sim::generation::InteriorMap::test_fixture(shells),
+            sim::generation::InteriorMap::test_fixture(shells),
             props,
-        };
+            content.objects,
+        )
+        .unwrap();
         let site = d.site(&content);
         for (row, (biting, pairs)) in rows.iter().zip(tally.iter_mut()) {
             let (b, p) = sim::generation::guards::catchment_bite(&site, row);
@@ -3579,8 +3584,8 @@ fn planted_district(
     assignments: Vec<sim::generation::TypeAssignment>,
     blocks: Vec<sim::generation::Block>,
 ) -> sim::generation::District {
-    sim::generation::District {
-        skeleton: sim::generation::Skeleton {
+    sim::generation::District::new(
+        sim::generation::Skeleton {
             land_use: land_use::LandUseMap::test_fixture(
                 site,
                 512,
@@ -3598,7 +3603,7 @@ fn planted_district(
             envelopes: envelopes::EnvelopeMap::test_fixture(outcomes),
             building_types: sim::generation::BuildingTypeMap::test_fixture(assignments.clone()),
         },
-        interiors: sim::generation::InteriorMap::test_fixture(
+        sim::generation::InteriorMap::test_fixture(
             assignments
                 .iter()
                 .map(|a| sim::generation::InteriorOutcome::Shell {
@@ -3607,8 +3612,10 @@ fn planted_district(
                 })
                 .collect(),
         ),
-        props: sim::generation::PropMap::test_fixture(site, Vec::new(), &[]).unwrap(),
-    }
+        sim::generation::PropMap::test_fixture(site, Vec::new()),
+        defs::OBJECTS,
+    )
+    .expect("an empty district rasterises")
 }
 
 /// Quentin's direction (PR #317 cycle 2): a hand-built district per
@@ -6837,12 +6844,7 @@ fn oracle(
     };
     let placements: Vec<Placement> = rows
         .iter()
-        .map(|r| Placement {
-            def_id: r.def_id,
-            anchor_x: r.x,
-            anchor_y: r.y,
-            floor: r.floor,
-        })
+        .map(sim::world::walkability::Placement::from)
         .collect();
     let raw = rasterise(bounds, 0, &placements, defs::OBJECTS)?;
     let eroded = erode(&raw, bw, bh);
@@ -7413,11 +7415,7 @@ fn inv_generation_collision_map_is_the_rows_rasterised() {
     let s = defs::COLLIDER_SUBCELLS_PER_CELL;
     over_pool("inv_generation_collision_map_is_the_rows_rasterised", |c| {
         let d = &c.district;
-        let fc = d.props.collision(0).ok_or("no floor-0 collision")?;
-        ensure!(
-            std::ptr::eq(fc, d.props.collision(0).unwrap()),
-            "the collision map is rebuilt on each read"
-        );
+        let fc = d.walkability(0);
         let site = d.skeleton.plots.site();
         let chunk = 32;
         let stride = body_check_stride();
@@ -7449,12 +7447,7 @@ fn inv_generation_collision_map_is_the_rows_rasterised() {
                                 sim::generation::props::extent(&p.row, def).overlaps(&win)
                             })
                     })
-                    .map(|p| Placement {
-                        def_id: p.row.def_id,
-                        anchor_x: p.row.x,
-                        anchor_y: p.row.y,
-                        floor: p.row.floor,
-                    })
+                    .map(|p| sim::world::walkability::Placement::from(&p.row))
                     .collect();
                 let grid = rasterise(
                     Rect {
@@ -7637,16 +7630,20 @@ fn check_reachability_names_a_prop_planted_in_a_doorway_as_a_typed_error() {
         .map(|(x, y)| wall_row(x, y))
         .collect();
     let district = |props: Vec<Prop>| {
-        let mut d = planted_district(site, Vec::new(), Vec::new(), Vec::new(), Vec::new());
-        d.interiors = sim::generation::InteriorMap::test_fixture(vec![InteriorOutcome::Laid {
-            plot: 0,
-            building_type: 0,
-            interior: interior.clone(),
-            attempts: 1,
-            work: Default::default(),
-        }]);
-        d.props = PropMap::test_fixture(site, props, defs::OBJECTS).unwrap();
-        d
+        let d = planted_district(site, Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        sim::generation::District::new(
+            d.skeleton,
+            sim::generation::InteriorMap::test_fixture(vec![InteriorOutcome::Laid {
+                plot: 0,
+                building_type: 0,
+                interior: interior.clone(),
+                attempts: 1,
+                work: Default::default(),
+            }]),
+            PropMap::test_fixture(site, props),
+            defs::OBJECTS,
+        )
+        .unwrap()
     };
     assert_eq!(
         district(walls.clone()).check_reachability(&content),
@@ -8548,4 +8545,290 @@ fn the_depot_is_laid_out_on_the_seeds_that_once_rejected_it() {
         );
         assert_eq!(d.check(&cfg, &content), Ok(()), "seed {seed}");
     }
+}
+
+/// `inv_generation_walkability_is_one_exact_grid_per_floor` (story 3.8
+/// AC1): every floor has a grid bounded by the site exactly, and its
+/// blocked tiles are what a brute-force oracle -- re-derived here from the
+/// rows and the defs, never through the rasteriser -- says. No collider
+/// lies outside the site.
+#[test]
+fn inv_generation_walkability_is_one_exact_grid_per_floor() {
+    let s = defs::COLLIDER_SUBCELLS_PER_CELL;
+    over_pool(
+        "inv_generation_walkability_is_one_exact_grid_per_floor",
+        |c| {
+            let d = &c.district;
+            let site = d.skeleton.plots.site();
+            let mut oracle: std::collections::BTreeSet<(i8, i32, i32)> = Default::default();
+            for r in d.props.rows() {
+                let def = defs::OBJECTS
+                    .iter()
+                    .find(|o| o.id == r.def_id)
+                    .ok_or("a row names an unknown def")?;
+                let Some(col) = def.collider else { continue };
+                let ox = r.x;
+                let oy = r.y - (def.height as i32 - 1);
+                for y in (oy + col.y0.div_euclid(s))..(oy + (col.y1 + s - 1).div_euclid(s)) {
+                    for x in (ox + col.x0.div_euclid(s))..(ox + (col.x1 + s - 1).div_euclid(s)) {
+                        ensure!(
+                            site.contains(x, y),
+                            "a collider cell ({x}, {y}) on floor {} lies outside the site {site:?}",
+                            r.floor
+                        );
+                        oracle.insert((r.floor, x, y));
+                    }
+                }
+            }
+            let mut total = 0;
+            for floor in defs::MIN_FLOOR..=defs::MAX_FLOOR {
+                let grid = d.walkability(floor as i8);
+                ensure!(
+                    grid.bounds() == site,
+                    "floor {floor}: bounds are not the site"
+                );
+                total += grid.blocked_count();
+            }
+            ensure!(
+                total == oracle.len(),
+                "the grids block {total} tiles, the oracle {}",
+                oracle.len()
+            );
+            for &(floor, x, y) in &oracle {
+                ensure!(
+                    d.walkability(floor).is_blocked(x, y),
+                    "oracle tile ({x}, {y}) on floor {floor} is open"
+                );
+            }
+            Ok(())
+        },
+    );
+}
+
+fn repaint_rect(max: i32) -> impl Strategy<Value = Rect> {
+    (-max..max, -max..max, 1i32..24, 1i32..24).prop_map(|(x0, y0, w, h)| Rect {
+        x0,
+        y0,
+        x1: x0 + w,
+        y1: y0 + h,
+    })
+}
+
+/// The touched-rect repaint, as a caller would drive it: every collider
+/// that overlaps the dirty rect.
+fn patch(grid: &mut FloorCollision, dirty: Rect, colliders: &[Rect]) {
+    let near: Vec<Rect> = colliders
+        .iter()
+        .copied()
+        .filter(|c| c.overlaps(&dirty))
+        .collect();
+    grid.repaint(dirty, &near);
+}
+
+proptest! {
+    #![proptest_config(persisted())]
+    /// `inv_world_repaint_equals_rebuild` (story 3.8 AC3).
+    #[test]
+    fn inv_world_repaint_equals_rebuild(
+        x0 in -20i32..20,
+        y0 in -20i32..20,
+        w in 1i32..150,
+        h in 1i32..40,
+        initial in proptest::collection::vec(repaint_rect(60), 0..12),
+        ops in proptest::collection::vec((any::<bool>(), repaint_rect(60), any::<usize>()), 0..24),
+    ) {
+        let bounds = Rect { x0, y0, x1: x0 + w, y1: y0 + h };
+        let mut colliders = initial.clone();
+        let mut grid = FloorCollision::build(bounds, &colliders).unwrap();
+        for (add, rect, pick) in ops {
+            let dirty = if add || colliders.is_empty() {
+                colliders.push(rect);
+                rect
+            } else {
+                colliders.remove(pick % colliders.len())
+            };
+            patch(&mut grid, dirty, &colliders);
+            prop_assert_eq!(&grid, &FloorCollision::build(bounds, &colliders).unwrap());
+        }
+    }
+
+    /// An arbitrary dirty rect, repainted from the colliders overlapping
+    /// it, changes nothing a rebuild would not.
+    #[test]
+    fn inv_world_repaint_of_any_rect_equals_rebuild(
+        initial in proptest::collection::vec(repaint_rect(40), 0..12),
+        dirty in repaint_rect(60),
+    ) {
+        let bounds = Rect { x0: -20, y0: -20, x1: 70, y1: 30 };
+        let mut grid = FloorCollision::build(bounds, &initial).unwrap();
+        patch(&mut grid, dirty, &initial);
+        prop_assert_eq!(&grid, &FloorCollision::build(bounds, &initial).unwrap());
+    }
+}
+
+/// The trap the property guards: clearing a removed collider's bits
+/// un-blocks a cell another collider still covers.
+#[test]
+fn a_naive_clear_of_a_removed_overlapping_collider_is_not_a_rebuild() {
+    let bounds = Rect {
+        x0: 0,
+        y0: 0,
+        x1: 16,
+        y1: 16,
+    };
+    let a = Rect {
+        x0: 2,
+        y0: 2,
+        x1: 6,
+        y1: 6,
+    };
+    let b = Rect {
+        x0: 4,
+        y0: 4,
+        x1: 8,
+        y1: 8,
+    };
+    let mut naive = FloorCollision::build(bounds, &[a, b]).unwrap();
+    naive.repaint(a, &[]);
+    let rebuilt = FloorCollision::build(bounds, &[b]).unwrap();
+    assert_ne!(naive, rebuilt, "the naive clear must lose b's cells");
+    let mut patched = FloorCollision::build(bounds, &[a, b]).unwrap();
+    patched.repaint(a, &[b]);
+    assert_eq!(patched, rebuilt);
+}
+
+/// Repainting writes inside its clipped rect and nowhere else, observed
+/// on the grid itself: the dirty rects straddle the bounds and cross a
+/// 64-bit word.
+fn locality_rects() -> Vec<Rect> {
+    vec![
+        Rect {
+            x0: 60,
+            y0: 3,
+            x1: 70,
+            y1: 9,
+        },
+        Rect {
+            x0: -4,
+            y0: -3,
+            x1: 5,
+            y1: 4,
+        },
+        Rect {
+            x0: 120,
+            y0: 30,
+            x1: 140,
+            y1: 50,
+        },
+        Rect {
+            x0: 63,
+            y0: 0,
+            x1: 65,
+            y1: 40,
+        },
+    ]
+}
+
+#[test]
+fn a_repaint_frees_exactly_its_clipped_rect_of_a_blocked_grid() {
+    let bounds = Rect {
+        x0: 0,
+        y0: 0,
+        x1: 130,
+        y1: 40,
+    };
+    for dirty in locality_rects() {
+        let mut grid = FloorCollision::build(bounds, &[bounds]).unwrap();
+        grid.repaint(dirty, &[]);
+        for y in bounds.y0..bounds.y1 {
+            for x in bounds.x0..bounds.x1 {
+                assert_eq!(
+                    grid.is_blocked(x, y),
+                    !dirty.contains(x, y),
+                    "({x}, {y}) {dirty:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_repaint_blocks_exactly_its_clipped_rect_of_a_free_grid() {
+    let bounds = Rect {
+        x0: 0,
+        y0: 0,
+        x1: 130,
+        y1: 40,
+    };
+    let whole = Rect {
+        x0: -50,
+        y0: -50,
+        x1: 300,
+        y1: 300,
+    };
+    for dirty in locality_rects() {
+        let mut grid = FloorCollision::build(bounds, &[]).unwrap();
+        grid.repaint(dirty, &[whole]);
+        for y in bounds.y0..bounds.y1 {
+            for x in bounds.x0..bounds.x1 {
+                assert_eq!(
+                    grid.is_blocked(x, y),
+                    dirty.contains(x, y),
+                    "({x}, {y}) {dirty:?}"
+                );
+            }
+        }
+    }
+}
+
+/// `inv_world_repaint_writes_only_the_words_of_its_rect` (story 3.8 AC3):
+/// a structural count, no timing.
+#[test]
+fn inv_world_repaint_writes_only_the_words_of_its_rect() {
+    let side = 8192;
+    assert_eq!(side as u64 * side as u64, sim::world::MAX_CELLS_PER_FLOOR);
+    let bounds = Rect {
+        x0: 0,
+        y0: 0,
+        x1: side,
+        y1: side,
+    };
+    let mut grid = FloorCollision::build(bounds, &[]).unwrap();
+    let words_in_floor = grid.dense_storage_bytes() / 8;
+    let one = Rect {
+        x0: 4000,
+        y0: 4000,
+        x1: 4001,
+        y1: 4001,
+    };
+    assert_eq!(grid.repaint(one, &[one]), 1);
+    let three = Rect {
+        x0: 63,
+        y0: 10,
+        x1: 66,
+        y1: 13,
+    };
+    let words = grid.repaint(three, &[three]);
+    assert!(words <= 3 * 2, "a 3x3 rect wrote {words} words");
+    assert!(words * 1000 < words_in_floor);
+    // A rect partly outside the bounds writes only its inside.
+    let straddle = Rect {
+        x0: -5,
+        y0: -5,
+        x1: 2,
+        y1: 2,
+    };
+    assert!(grid.repaint(straddle, &[straddle]) <= 2);
+    assert_eq!(
+        grid.repaint(
+            Rect {
+                x0: -9,
+                y0: -9,
+                x1: -2,
+                y1: -2
+            },
+            &[]
+        ),
+        0
+    );
 }

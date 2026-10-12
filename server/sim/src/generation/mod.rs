@@ -158,6 +158,13 @@ pub enum GenerationError {
     /// a floor, or none of them fits its cell even at its smallest
     /// footprint -- an owed fixture is never quietly left out.
     FixtureUnplaceable { x: i32, y: i32, tag: u32 },
+    /// A placed row's collider leaves the site: a generator defect, the
+    /// grid would read its off-site tiles as walkable.
+    ColliderOffSite {
+        def_id: u32,
+        floor: i8,
+        cells: SiteBounds,
+    },
     /// Pass 7's verdict could not rasterise a window of placed rows (an
     /// unknown def id, a window over the grid ceiling): the rows are not
     /// readable, which is not a balance-config error.
@@ -226,6 +233,14 @@ impl std::fmt::Display for GenerationError {
             GenerationError::FixtureUnplaceable { x, y, tag } => write!(
                 f,
                 "generation::props: no object def carrying tag {tag} stands on the fixture cell ({x}, {y})"
+            ),
+            GenerationError::ColliderOffSite {
+                def_id,
+                floor,
+                cells,
+            } => write!(
+                f,
+                "generation::props: the collider of def {def_id} on floor {floor} covers {cells:?}, outside the site"
             ),
             GenerationError::WindowUnreadable { window, reason } => write!(
                 f,
@@ -453,11 +468,57 @@ impl Skeleton {
 pub struct District {
     pub skeleton: Skeleton,
     pub interiors: InteriorMap,
-    /// Pass 7: every placed row and the collision they composite to.
+    /// Pass 7: every placed row.
     pub props: PropMap,
+    /// One tile grid per floor `MIN_FLOOR..=MAX_FLOOR`, rasterised from
+    /// `props` over the site, once.
+    walkability: std::collections::BTreeMap<i8, crate::world::FloorCollision>,
 }
 
 impl District {
+    /// Assembles a district and rasterises its walkability: `Err` for a
+    /// row naming an unknown def or a collider that leaves the site.
+    pub fn new(
+        skeleton: Skeleton,
+        interiors: InteriorMap,
+        props: PropMap,
+        objects: &[defs::ObjectDef],
+    ) -> Result<Self, GenerationError> {
+        let placements: Vec<crate::world::walkability::Placement> = props
+            .rows()
+            .map(crate::world::walkability::Placement::from)
+            .collect();
+        let walkability = crate::world::floor_grids(skeleton.plots.site(), &placements, objects)
+            .map_err(|e| match e {
+                crate::world::FloorGridError::ColliderOffSite {
+                    def_id,
+                    floor,
+                    cells,
+                } => GenerationError::ColliderOffSite {
+                    def_id,
+                    floor,
+                    cells,
+                },
+                other => GenerationError::InvalidConfig(format!("walkability: {other:?}")),
+            })?;
+        Ok(District {
+            skeleton,
+            interiors,
+            props,
+            walkability,
+        })
+    }
+
+    /// The tile grid of `floor`: blocked iff a placed collider touches the
+    /// tile, bounded by the site. Every floor in range has one.
+    ///
+    /// # Panics
+    /// If `floor` is outside `MIN_FLOOR..=MAX_FLOOR`; every caller
+    /// range-checks a floor upstream.
+    pub fn walkability(&self, floor: i8) -> &crate::world::FloorCollision {
+        &self.walkability[&floor]
+    }
+
     /// Every verdict [`generate`] holds a finished plan to, in its order:
     /// the building count, the rules, the workplace count, the enterable
     /// floor, then every distributed institution enterable.

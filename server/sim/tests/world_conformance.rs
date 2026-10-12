@@ -43,3 +43,92 @@ fn every_conformance_case_matches_the_real_world_queries() {
         );
     }
 }
+
+/// Story 3.8 AC2 (FR135, NFR30): the tile rasterisation rule -- a tile is
+/// blocked iff any collider touches it, half-open -- against the shared,
+/// hand-typed `raster` case. The client suite asserts the same case;
+/// no code is shared.
+#[test]
+fn the_floor_grids_block_exactly_the_hand_typed_tiles_of_the_raster_case() {
+    use sim::generated::defs::{ColliderRect, ObjectDef};
+    use sim::world::fixture::raster_case;
+    use sim::world::floor_grids;
+    use sim::world::walkability::Placement;
+
+    let case = raster_case();
+    assert_eq!(
+        case.subcells_per_cell,
+        sim::generated::defs::COLLIDER_SUBCELLS_PER_CELL
+    );
+    let objects: Vec<ObjectDef> = case
+        .defs
+        .iter()
+        .map(|d| ObjectDef {
+            id: d.id,
+            key: "",
+            name: "",
+            layer: 0,
+            sprite: None,
+            width: d.width,
+            height: d.height,
+            collider: d
+                .collider
+                .map(|(x0, y0, x1, y1)| ColliderRect { x0, y0, x1, y1 }),
+            interact_at: None,
+            grid: None,
+            window: false,
+            tags: &[],
+        })
+        .collect();
+    let placements: Vec<Placement> = case
+        .rows
+        .iter()
+        .map(|r| Placement {
+            def_id: r.def_id,
+            anchor_x: r.x,
+            anchor_y: r.y,
+            floor: r.floor,
+        })
+        .collect();
+    let grids = floor_grids(case.bounds, &placements, &objects).unwrap();
+    for floor in sim::generated::defs::MIN_FLOOR..=sim::generated::defs::MAX_FLOOR {
+        let floor = floor as i8;
+        let grid = &grids[&floor];
+        for y in case.bounds.y0..case.bounds.y1 {
+            for x in case.bounds.x0..case.bounds.x1 {
+                assert_eq!(
+                    grid.is_blocked(x, y),
+                    case.blocked.contains(&(floor, x, y)),
+                    "tile ({x}, {y}) on floor {floor}"
+                );
+            }
+        }
+    }
+}
+
+/// A collider leaving the site is a typed error, never a grid that reads
+/// its off-site tiles as walkable.
+#[test]
+fn a_collider_off_the_site_is_a_typed_error() {
+    use sim::generated::defs::OBJECTS;
+    use sim::world::walkability::Placement;
+    use sim::world::{FloorGridError, Rect, floor_grids};
+
+    let def = OBJECTS.iter().find(|o| o.collider.is_some()).unwrap();
+    let bounds = Rect {
+        x0: 0,
+        y0: 0,
+        x1: 8,
+        y1: 8,
+    };
+    let rows = [Placement {
+        def_id: def.id,
+        anchor_x: 100,
+        anchor_y: 100,
+        floor: 0,
+    }];
+    assert!(matches!(
+        floor_grids(bounds, &rows, OBJECTS),
+        Err(FloorGridError::ColliderOffSite { floor: 0, .. })
+    ));
+}
