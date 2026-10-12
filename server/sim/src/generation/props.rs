@@ -1158,17 +1158,19 @@ pub fn building_window(interior: &Interior) -> Option<(Rect, (i32, i32))> {
     ))
 }
 
-/// Whether `props` (one building's rows) leave an enclosed pocket or a
-/// passage the body cannot pass.
+/// Whether `props` (one building's rows) fail to leave every free cell of
+/// the building's window reachable over whole cells -- the cheap reading
+/// [`window_findings`] opens with. A building that fails it is placed
+/// again at compact footprints, which stand inside the whole cells pass 6
+/// already proved a lane through, rather than judged at sub-cell
+/// resolution; the district verdict ([`check_reachability`]) still judges
+/// whatever stands.
 fn reach_findings(interior: &Interior, props: &[Prop], cat: &Catalogue, _body: (i32, i32)) -> bool {
     let Some((window, seed)) = building_window(interior) else {
         return true;
     };
     let rows: Vec<PlacedRow> = props.iter().map(|p| p.row).collect();
-    match window_findings(window, seed, &rows, cat.objects) {
-        Ok((enclosed, narrow)) => !enclosed.is_empty() || !narrow.is_empty(),
-        Err(_) => true,
-    }
+    !whole_cells_open(window, seed, &rows, cat.objects)
 }
 
 // --- street furniture --------------------------------------------------
