@@ -10,7 +10,7 @@
 #      every table, `item_held` included;
 #   3. exports the world (`scripts/ops/export-world.sh`), publishes HEAD's
 #      `server/` over it with neither `--delete-data` nor a clear flag,
-#      exports again, and asserts every table's rows are identical.
+#      exports again, and asserts every seeded row is still there, unchanged.
 # If the migrator refuses, or a row changes, this fails: clearing data is
 # not an option, and a table's access or index may change under it.
 #
@@ -85,14 +85,23 @@ echo "check-publish-over-base: publishing HEAD over it, without --delete-data" >
 publish "$REPO_ROOT/server" "$DATA_DIR/head.log"   || fail "HEAD's server/ was refused over the base's world" "$DATA_DIR/head.log"
 
 export_to "$DATA_DIR/after"
-# The manifest names the schema and a time; a publish re-arms the scheduled
-# tables by design. Every other table's rows are the world.
-EXCLUDE=(--exclude=manifest.json)
+# Every row the base world held must be present, byte for byte. The
+# manifest names the schema and a time, a publish re-arms the scheduled
+# tables by design, and a publish may add rows (a cadence a newer module
+# arms), so only a lost or changed row fails.
+SKIP=" manifest.json "
 while IFS= read -r table; do
-  [ -n "$table" ] && EXCLUDE+=("--exclude=$table.jsonl")
+  [ -n "$table" ] && SKIP="$SKIP$table.jsonl "
 done <<<"$(bc_table_names "$BC_SNAPSHOT" scheduled)"
-if ! diff -ru "${EXCLUDE[@]}" "$DATA_DIR/before" "$DATA_DIR/after" >"$DATA_DIR/diff.txt"; then
-  fail "the world changed across the publish" "$DATA_DIR/diff.txt"
+: >"$DATA_DIR/lost.txt"
+for f in "$DATA_DIR"/before/*; do
+  name="$(basename "$f")"
+  case "$SKIP" in *" $name "*) continue ;; esac
+  [ -f "$DATA_DIR/after/$name" ] || { echo "$name: table is gone" >>"$DATA_DIR/lost.txt"; continue; }
+  comm -23 <(sort "$f") <(sort "$DATA_DIR/after/$name") | sed "s|^|$name: |" >>"$DATA_DIR/lost.txt"
+done
+if [ -s "$DATA_DIR/lost.txt" ]; then
+  fail "the world lost or changed rows across the publish" "$DATA_DIR/lost.txt"
 fi
 
-echo "check-publish-over-base: ok -- every table of the base world survived the publish of HEAD over $BASE unchanged" >&2
+echo "check-publish-over-base: ok -- every row of the base world survived the publish of HEAD over $BASE unchanged" >&2

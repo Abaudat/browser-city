@@ -229,7 +229,7 @@ loud failure instead, never a silent no-op.
 - `publish-module` calls `finish_publish` after publishing (NFR36/NFR38,
   above) and ends with `scripts/ops/assert-world-invariants.sh` against
   Maincloud, so a deploy is red the instant the live world is inconsistent
-  (`scripts/ci/check-publish-over-base.sh` publishes HEAD over the merge base's seeded world and asserts every table unchanged; `scripts/ci/check-deploy-rehearsal.sh` rehearses the same sequence over a
+  (`scripts/ci/check-publish-over-base.sh` publishes HEAD over the merge base's seeded world and asserts every seeded row still present and unchanged; `scripts/ci/check-deploy-rehearsal.sh` rehearses the same sequence over a
   world born at the live database's first deploy). NFR33 (an additive-only schema, enforced at PR time) is what
   makes this publish forward-only: there is no schema rollback, only fix
   and republish -- `server/README.md`'s own recovery section.
