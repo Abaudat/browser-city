@@ -63,7 +63,7 @@ out(
   `- the main-thread window (\`apply\`, \`request\`, \`CitizensLayer.update\`): p95 <= ${record.budget.p95Ms} ms, p99 <= ${record.budget.p99Ms} ms;`,
 );
 out(
-  `- the worker's own solve time per instant (\`StreetLife.solve\`, timed inside the worker): the same budget, as a red gate in \`e2e-perf\`. The margin the story set -- p95 <= ${MARGIN_MS} ms, so the recorded figure plus the tripwire's 25% sits under the budget -- is reported as a risk where it is not there.`,
+  `- the worker's own solve time per instant (\`StreetLife.solve\`, timed inside the worker): the same budget. The margin the story set -- p95 <= ${MARGIN_MS} ms, so the recorded figure plus the tripwire's 25% sits under the budget -- is reported as a risk where it is not there.`,
 );
 out();
 out(
@@ -107,8 +107,8 @@ if (risks.length > 0) {
   out();
   out(
     verdict === "MET"
-      ? "The budget holds on both threads at the line. The worker's absolute 2 ms p95 is a red gate in `e2e-perf`, so creep past it fails CI; the next story that adds per-body path work spends from nothing."
-      : "The worker's absolute 2 ms p95 is a red gate in `e2e-perf` on the SKUs that hold it: with no margin, a run on the verdict-of-record machine crosses it by a measuring step (0.1 ms) now and then.",
+      ? "The budget holds on both threads at the line; the next story that adds per-body path work spends from nothing."
+      : "With no margin, a run on the verdict-of-record machine crosses the budget by a measuring step (0.1 ms) now and then. The absolute budget is the verdict's and not a CI gate (it would go red on a slowest-SKU run in four with no code change); `e2e-perf` holds the recorded ratio +25%, which a real regression crosses.",
   );
   out();
 }

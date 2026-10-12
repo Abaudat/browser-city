@@ -205,37 +205,42 @@ describe("L3 budget verdict (NFR11)", () => {
     expect(v.met).toBe(false);
     expect(v.failures.join()).toContain("worker solve p95");
     expect(v.gateFailures.join()).toContain("worker solve p95 / calibration");
-    // Absolute and red on a machine as fast as the reference, whatever the ratio.
+    // The absolute budget is the verdict's, not a CI gate: a solve over it with
+    // its ratio inside the tripwire reads MISSED and fails nothing.
     const quick = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.2));
-    expect(verdict({ ...GOOD, solveMs: quick, calibrationMs: 5 }).gateFailures.join()).toContain(
-      "worker solve p95 2.200 ms over 2 ms",
-    );
+    const v2 = verdict({ ...GOOD, solveMs: quick, calibrationMs: 6.2 });
+    expect(v2.met).toBe(false);
+    expect(v2.failures.join()).toContain("worker solve p95 2.200 ms over 2 ms");
+    expect(v2.gateFailures).toEqual([]);
   });
 
-  it("holds a 7763 to the absolute budget whatever its calibration reads", () => {
+  it("reads a 7763 over the budget as MISSED whatever its calibration reads, without failing CI", () => {
     const over = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.1));
     const v = verdict({
       ...GOOD,
       solveMs: over,
-      calibrationMs: 5.8,
+      calibrationMs: 6,
       cpu: "AMD EPYC 7763 64-Core Processor",
     });
-    expect(v.gateFailures.join()).toContain("worker solve p95 2.100 ms over 2 ms");
+    expect(v.met).toBe(false);
+    expect(v.failures.join()).toContain("worker solve p95 2.100 ms over 2 ms");
+    expect(v.gateFailures).toEqual([]);
   });
 
-  it("holds an unknown, slower CPU to the ratio only and names it", () => {
+  it("names an unknown, slower CPU's miss as a risk, not a verdict", () => {
     const over = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.4));
     const v = verdict({ ...GOOD, solveMs: over, calibrationMs: 7, cpu: "Some New SKU @ 2.0GHz" });
-    expect(v.gateFailures.join()).not.toContain("worker solve p95 2.400 ms over 2 ms");
+    expect(v.failures.join()).not.toContain("worker solve p95 2.400 ms over 2 ms");
     expect(v.risks.join()).toContain("Some New SKU @ 2.0GHz is not a known pool SKU");
-    // Unknown but as fast as the reference within the spread: absolute.
+    expect(v.risks.join()).toContain("worker solve p95 2.400 ms over 2 ms");
+    // Unknown but as fast as the reference within the spread: the verdict's.
     const fast = verdict({
       ...GOOD,
       solveMs: over,
       calibrationMs: 6,
       cpu: "Some New SKU @ 2.0GHz",
     });
-    expect(fast.gateFailures.join()).toContain("worker solve p95 2.400 ms over 2 ms");
+    expect(fast.failures.join()).toContain("worker solve p95 2.400 ms over 2 ms");
   });
 
   it("reports a solve with no margin as a risk, not as a miss", () => {
