@@ -14,7 +14,7 @@ import {
 } from "../../../src/render/pixi-container-view";
 import type { CellRect, HeldRow } from "../../../src/world/container-view";
 
-function fakeTicker(): ContainerViewTicker & { listenerCount(): number } {
+function fakeTicker(): ContainerViewTicker & { listenerCount(): number; fire(): void } {
   const listeners = new Set<() => void>();
   return {
     add: (fn) => {
@@ -24,6 +24,9 @@ function fakeTicker(): ContainerViewTicker & { listenerCount(): number } {
       listeners.delete(fn);
     },
     listenerCount: () => listeners.size,
+    fire: () => {
+      for (const fn of [...listeners]) fn();
+    },
   };
 }
 
@@ -116,6 +119,7 @@ describe("ContainerViewController lifecycle", () => {
     const ticker = fakeTicker();
     const released: bigint[] = [];
     const rowsFor = new Map<bigint, (rows: readonly HeldRow[]) => void>();
+    const errorFor = new Map<bigint, () => void>();
     const c = new ContainerViewController({
       stacks,
       ticker,
@@ -123,8 +127,9 @@ describe("ContainerViewController lifecycle", () => {
       storeyHeightPx: 64,
       textureOf: () => Texture.EMPTY,
       bulkOf: () => ({ width: 1, height: 1 }),
-      watchRows: (containerId, onRows) => {
+      watchRows: (containerId, onRows, onError) => {
         rowsFor.set(containerId, onRows);
+        errorFor.set(containerId, onError);
         return {
           release: () => {
             released.push(containerId);
@@ -132,7 +137,7 @@ describe("ContainerViewController lifecycle", () => {
         };
       },
     });
-    return { world, stacks, ticker, released, rowsFor, c };
+    return { world, stacks, ticker, released, rowsFor, errorFor, c };
   }
 
   const object = {
@@ -206,5 +211,56 @@ describe("ContainerViewController lifecycle", () => {
     expect(c.drawnRects()).toHaveLength(1);
     c.close();
     expect(c.drawnRects()).toEqual([]);
+  });
+
+  it("a failed subscription closes the view", () => {
+    const { c, errorFor, released } = controller();
+    c.open({ object, grid: { width: 4, height: 3 } });
+    errorFor.get(82n)?.();
+    expect(c.isOpen()).toBe(false);
+    expect(released).toEqual([82n]);
+  });
+
+  it("closes itself on the frame the close rule says so", () => {
+    const { c, ticker } = controller();
+    let leave = false;
+    c.open({ object, grid: { width: 4, height: 3 }, closeWhen: () => leave });
+    expect(c.isOpen()).toBe(true);
+    leave = true;
+    ticker.fire();
+    expect(c.isOpen()).toBe(false);
+    expect(ticker.listenerCount()).toBe(0);
+  });
+
+  it("skips rows outside the grid and crops textures only when rows arrive", async () => {
+    const prepared: number[][] = [];
+    const { world, stacks } = build();
+    const rowsFor: ((rows: readonly HeldRow[]) => void)[] = [];
+    const c = new ContainerViewController({
+      stacks,
+      ticker: fakeTicker(),
+      tileSizePx: 16,
+      storeyHeightPx: 64,
+      textureOf: () => Texture.EMPTY,
+      prepare: async (ids) => {
+        prepared.push([...ids]);
+      },
+      bulkOf: () => ({ width: 1, height: 1 }),
+      watchRows: (_id, onRows) => {
+        rowsFor.push(onRows);
+        return { release: () => {} };
+      },
+    });
+    expect(prepared).toEqual([]);
+    c.open({ object, grid: { width: 2, height: 2 } });
+    rowsFor[0]([
+      { instanceId: 1n, defId: 9, slotX: 0, slotY: 0, orientation: 0 },
+      { instanceId: 2n, defId: 9, slotX: 5, slotY: 0, orientation: 0 },
+    ]);
+    await Promise.resolve();
+    expect(c.drawnRects().map((r) => r.instanceId)).toEqual([1n]);
+    expect(prepared).toEqual([[9]]);
+    expect(world.children.length).toBe(1);
+    c.close();
   });
 });

@@ -26,9 +26,11 @@ import {
   type ContainerObject,
   type HeldRow,
   layoutRects,
+  rectsInGrid,
   viewOriginPx,
 } from "../world/container-view";
 import type { FloorStacks } from "./floor-stacks";
+import { floorOffsetPx } from "./screen-position";
 
 // `palette_interiors.png`'s shadowed interior tones: the backing, one step
 // lighter for the cell separators, one more for the edge.
@@ -46,7 +48,7 @@ export interface PixiContainerViewOptions {
   readonly originPx: { readonly x: number; readonly y: number };
   /** The floor's own vertical offset (`render/screen-position.ts`). */
   readonly floorOffsetPx: number;
-  /** An item def's texture, or `undefined` while it is not known. */
+  /** An item def's texture, or `undefined` while it is not cropped yet. */
   readonly textureOf: (defId: number) => Texture | undefined;
 }
 
@@ -123,12 +125,17 @@ export interface ContainerViewControllerOptions {
   readonly tileSizePx: number;
   readonly storeyHeightPx: number;
   readonly textureOf: (defId: number) => Texture | undefined;
+  /** Crops the textures of `defIds` that are not cropped yet, when a view
+   * has rows to draw: boot never pays for the item catalogue. An item
+   * draws nothing until its crop resolves. */
+  readonly prepare?: (defIds: readonly number[]) => Promise<void>;
   readonly bulkOf: (defId: number) => Bulk | undefined;
   /** Subscribes to one container's rows; `onRows` is called with the held
-   * set whenever it changes. */
+   * set whenever it changes, `onError` once if the subscription fails. */
   readonly watchRows: (
     containerId: bigint,
     onRows: (rows: readonly HeldRow[]) => void,
+    onError: () => void,
   ) => ContainerRelease;
 }
 
@@ -179,17 +186,33 @@ export class ContainerViewController {
       grid,
       tileSizePx,
       originPx: viewOriginPx(object, grid, tileSizePx),
-      floorOffsetPx: -object.floor * storeyHeightPx + 0,
+      floorOffsetPx: floorOffsetPx(object.floor, storeyHeightPx),
       textureOf: this.options.textureOf,
     });
     this.view = view;
     this.objectId = object.objectId;
     this.closeWhen = args.closeWhen;
-    this.release = this.options.watchRows(object.objectId, (rows) => {
+    const redraw = (rows: readonly HeldRow[]): void => {
       if (this.view !== view) return;
-      this.rects = layoutRects(rows, this.options.bulkOf);
+      this.rects = rectsInGrid(layoutRects(rows, this.options.bulkOf), grid);
       view.setRects(this.rects);
-    });
+    };
+    this.release = this.options.watchRows(
+      object.objectId,
+      (rows) => {
+        redraw(rows);
+        const prepare = this.options.prepare;
+        if (!prepare || this.view !== view) return;
+        const ids = [...new Set(this.rects.map((r) => r.defId))];
+        prepare(ids).then(
+          () => redraw(rows),
+          () => {},
+        );
+      },
+      () => {
+        if (this.view === view) this.close();
+      },
+    );
     this.options.ticker.add(this.onTick);
   }
 

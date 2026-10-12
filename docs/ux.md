@@ -135,7 +135,7 @@ The epics already name this as something a UX specification would own. It applie
 | Items | Drawn as themselves from the item's own sprite, exactly its footprint; rotation is a quarter-turn of the sprite, nearest-neighbour. Not drawn: labels or coloured rectangles |
 | Ghost | While an item is in hand, a ghost follows the pointer snapped to the cell grid: full alpha where it fits, half alpha where it does not. A refusal changes nothing; no tint, shake, cross or message |
 | Open variant | The container's own world sprite shows its open variant while open, where the tileset has one, so others see it standing open. No tint or overlay fakes one |
-| Dismissal | Walking out of the object's `interact_at` reach, Escape, or opening another container. Instant, no fade or slide, and independent of the pointer |
+| Dismissal | Walking out of the object's `interact_at` reach, or opening another container (Escape arrives with the handling grammar, through `input/`). Instant, no fade or slide, and independent of the pointer |
 | Failure to fit | Shown by the item not fitting. No error text, no message — the grid is the explanation |
 | Capacity display | **None.** Spatial capacity is its own readout; a "12/20 slots" counter would be exactly the abstract, persistent overlay D17 forbids |
 | Bulk contents | A sack occupying 1×2 and holding 340 g reads as a sack. Quantity is a property of the discrete item, shown when that item is examined, never as a global tally |

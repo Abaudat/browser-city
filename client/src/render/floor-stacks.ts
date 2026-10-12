@@ -175,6 +175,16 @@ export class FloorStacks {
   }
 }
 
+/** Throws unless `stage` holds `world` and nothing else: no screen-space
+ * layer exists for a view to be drawn in (story 6.10). Run at mount. */
+export function assertStageIsWorld(stage: Container, world: Container): void {
+  if (stage.children.length !== 1 || stage.children[0] !== world) {
+    throw new Error(
+      `assertStageIsWorld: the stage must hold the world root and nothing else, found ${stage.children.length} child(ren)`,
+    );
+  }
+}
+
 /**
  * The order every drawable in a multi-floor scene is drawn in: grouped by
  * floor ascending; within a floor, every flat-layer drawable (rank below

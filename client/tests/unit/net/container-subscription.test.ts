@@ -11,7 +11,7 @@ import {
   containerQueries,
   sdkContainerBackend,
 } from "../../../src/net/container-subscription";
-import type { HeldRow, RowChange } from "../../../src/world/container-view";
+import type { HeldRow } from "../../../src/world/container-view";
 
 interface Held {
   instanceId: bigint;
@@ -68,8 +68,9 @@ function fakeConnection() {
         subscribe: () => {
           subscribed++;
           return {
-            unsubscribe: () => {
+            unsubscribeThen: (cb: () => void) => {
               unsubscribed++;
+              cb();
             },
           };
         },
@@ -117,10 +118,10 @@ const held = (id: bigint, container: bigint, slotX = 0, kind = CONTAINER_KIND_OB
 });
 
 function open(fake: ReturnType<typeof fakeConnection>, id: bigint) {
-  const reports: { rows: readonly HeldRow[]; change: RowChange | undefined }[] = [];
+  const reports: { rows: readonly HeldRow[] }[] = [];
   const errors: string[] = [];
   const handle = sdkContainerBackend(fake.conn).open(id, {
-    onRows: (rows, change) => reports.push({ rows, change }),
+    onRows: (rows) => reports.push({ rows }),
     onError: (m) => errors.push(m),
   });
   return { reports, errors, handle };
@@ -166,7 +167,7 @@ describe("sdkContainerBackend", () => {
     fake.updateHeld(held(1n, 5n, 3));
     fake.deleteHeld(1n);
     const last = reports[reports.length - 1];
-    expect(reports.map((r) => r.change?.kind)).toEqual([undefined, "insert", "update", "delete"]);
+    expect(reports).toHaveLength(4);
     expect(last.rows).toEqual([]);
   });
 
@@ -219,5 +220,19 @@ describe("sdkContainerBackend", () => {
     }
     expect(errors).toEqual(["boom"]);
     expect(fake.listeners()).toBe(0);
+  });
+
+  it("a release after an error does not unsubscribe the ended handle", () => {
+    const fake = fakeConnection();
+    const { handle } = open(fake, 5n);
+    const spy = console.error;
+    console.error = () => {};
+    try {
+      fake.fail("boom");
+    } finally {
+      console.error = spy;
+    }
+    handle.release();
+    expect(fake.counts().unsubscribed).toBe(0);
   });
 });

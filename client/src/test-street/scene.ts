@@ -47,7 +47,7 @@ import {
 } from "../render/atlas-pages";
 import { newBodySprite, setBodyFrame } from "../render/body-sprite";
 import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "../render/camera";
-import { FloorStacks } from "../render/floor-stacks";
+import { assertStageIsWorld, FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName, passOfLayer } from "../render/layer-table";
 import { ContainerViewController } from "../render/pixi-container-view";
 import { HighlightApplier } from "../render/pixi-highlight";
@@ -341,7 +341,11 @@ export interface MountStreetSceneOptions {
   readonly containerRows?: (
     containerId: bigint,
     onRows: (rows: readonly HeldRow[]) => void,
+    onError: () => void,
   ) => { release(): void };
+  /** Whether a server-backed container's object still exists (its
+   * streamed `placed_object` row is in the cache). Absent means it does. */
+  readonly containerPresent?: (objectId: bigint) => boolean;
   /** Story 1.13: starts the street crowd's own walk-cycle ticker paused
    * -- every citizen stays at its initial, fixed-fixture pose, forever,
    * rather than animating. Exists solely so `test-street.spec.ts`'s
@@ -993,6 +997,10 @@ export async function mountStreetScene(
   applyCamera();
 
   app.stage.addChild(world);
+  // No screen-space layer exists for a view to be drawn in: the stage holds
+  // the world root and nothing else (container views are floor-stack
+  // children, `FloorStacks.attachTransient`).
+  assertStageIsWorld(app.stage, world);
   onWorldReady?.(() => ({
     scaleX: world.scale.x,
     scaleY: world.scale.y,
@@ -1773,18 +1781,21 @@ export async function mountStreetScene(
     onHighlightChange: setHighlight,
   });
 
-  // Story 6.10 (FR94): the one open container view. Its item textures are
-  // cropped from the atlas once, here; the view itself is built per open and
+  // Story 6.10 (FR94): the one open container view, built per open and
   // destroyed on close (`render/pixi-container-view.ts`), bound to its
-  // object, parented to that object's floor stack.
+  // object, parented to that object's floor stack. An item's texture is
+  // cropped from the atlas the first time a view has a row for it.
   const itemTextures = new Map<number, Texture>();
-  await Promise.all(
-    defs.items
-      .filter((item) => item.atlas !== undefined)
-      .map(async (item) => {
-        itemTextures.set(item.id, await atlasPageLoader.itemTexture(defs, item));
+  const itemById = new Map(defs.items.map((i) => [i.id, i]));
+  async function prepareItemTextures(defIds: readonly number[]): Promise<void> {
+    await Promise.all(
+      defIds.map(async (id) => {
+        const item = itemById.get(id);
+        if (!item || item.atlas === undefined || itemTextures.has(id)) return;
+        itemTextures.set(id, await atlasPageLoader.itemTexture(defs, item));
       }),
-  );
+    );
+  }
   const itemBulk = new Map(defs.items.map((i) => [i.id, { width: i.width, height: i.height }]));
   const containerController = new ContainerViewController({
     stacks,
@@ -1793,8 +1804,9 @@ export async function mountStreetScene(
     storeyHeightPx,
     textureOf: (defId) => itemTextures.get(defId),
     bulkOf: (defId) => itemBulk.get(defId),
-    watchRows: (containerId, onRows) =>
-      options.containerRows?.(containerId, onRows) ?? { release: () => {} },
+    prepare: prepareItemTextures,
+    watchRows: (containerId, onRows, onError) =>
+      options.containerRows?.(containerId, onRows, onError) ?? { release: () => {} },
   });
   function openContainer(intent: Intent): void {
     const source = objectSources.get(intent.defId);
@@ -1822,12 +1834,9 @@ export async function mountStreetScene(
           def,
           subcellsPerCell: movementConfig.subcellsPerCell,
           player: { x: walk.x, y: walk.y, floor: walk.floor },
-          present: true,
+          present: options.containerPresent?.(intent.objectId) !== false,
           visible: !hiddenObjectIds.has(intent.objectId),
           bodyOpen: options.bodyControl?.isOpen() !== false,
-          // A lost connection closes the body (`input/body-control.ts`),
-          // which closes the view above.
-          connected: true,
         }),
     });
   }

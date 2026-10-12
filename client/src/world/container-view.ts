@@ -24,12 +24,6 @@ export interface HeldRow {
   readonly orientation: number;
 }
 
-/** What a row does to the held set. */
-export type RowChange =
-  | { readonly kind: "insert"; readonly row: HeldRow }
-  | { readonly kind: "update"; readonly row: HeldRow }
-  | { readonly kind: "delete"; readonly row: HeldRow };
-
 /** One held item's cells in grid space (whole cells, origin at the grid's
  * north-west cell). `quarterTurns` is the orientation modulo four: the
  * sprite is turned that many quarter turns, nearest-neighbour. */
@@ -82,11 +76,19 @@ export function layoutRects(
   return out;
 }
 
-/** The held set after one row change; an update for a row never seen is an
- * insert, a delete for one is a no-op. */
-export function rowsAfter(rows: readonly HeldRow[], change: RowChange): readonly HeldRow[] {
-  const others = rows.filter((r) => r.instanceId !== change.row.instanceId);
-  return change.kind === "delete" ? others : [...others, change.row];
+/** The rects that lie wholly inside `grid`. A row the grid does not hold
+ * (a defs retune left it outside, or two overlapping) is a legal state, so
+ * it is skipped rather than drawn off the panel or thrown on. */
+export function rectsInGrid(rects: readonly CellRect[], grid: GridDef): CellRect[] {
+  return rects.filter(
+    (r) =>
+      Number.isFinite(r.x) &&
+      Number.isFinite(r.y) &&
+      r.x >= 0 &&
+      r.y >= 0 &&
+      r.x + r.w <= grid.width &&
+      r.y + r.h <= grid.height,
+  );
 }
 
 /** The placed object a view hangs over. `anchorX`/`anchorY` is the
@@ -147,21 +149,22 @@ export interface CloseInputs {
   readonly subcellsPerCell: number;
   /** The player's feet, in world cells. */
   readonly player: { readonly x: number; readonly y: number; readonly floor: number };
-  /** The object's `placed_object` row still exists. */
+  /** The object still exists: for a server-backed container, its streamed
+   * `placed_object` row is still in the cache. */
   readonly present: boolean;
   /** The object is currently visible (a retracted wall hides what is on it). */
   readonly visible: boolean;
-  /** The player's body answers the player (`input/body-control.ts`). */
+  /** The player's body answers the player (`input/body-control.ts`); a
+   * lost connection closes it, which is how a drop closes the view. */
   readonly bodyOpen: boolean;
-  readonly connected: boolean;
 }
 
 /** Whether the open view closes this frame: the feet left the object's
  * `interact_at` (the rule that let it open -- `isWithinReach`, integers and
  * half-open comparisons), the floor changed, the object is gone or hidden,
- * the body closed, or the connection was lost. */
+ * or the body closed. */
 export function shouldClose(inputs: CloseInputs): boolean {
-  if (!inputs.present || !inputs.visible || !inputs.bodyOpen || !inputs.connected) return true;
+  if (!inputs.present || !inputs.visible || !inputs.bodyOpen) return true;
   return !isWithinReach(
     inputs.object,
     inputs.def,

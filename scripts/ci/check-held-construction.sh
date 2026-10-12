@@ -2,19 +2,23 @@
 # Story 6.10 (FR94, FR95): a held item's slot is validated against its
 # container's real grid, so nothing under server/src/ may build a `Held` or
 # touch the `item_held` accessor except the operator restore path (which is
-# audited at `finish_restore`). Every later writer goes through
+# restore is by value, like `restore_stock`). Every later writer goes through
 # `sim::container_grid::plan_store`, the one code that builds a `Held` meant
 # for a write and only after `fits` said yes.
 #
 #   - tables/item_instance.rs declares the table; carries no `.item_held()`
 #                       call or `Held::new` of its own.
-#   - tables/restore.rs the restore reducers and the finish_restore audit.
+#   - tables/restore.rs the restore reducers.
 #   - tables/metrics.rs imports the accessor to sample row counts and never
 #                       calls it.
 #
 # Any other file fails when it calls `Held::new(`, names `.item_held()`, or
 # reaches the accessor by path (`item_instance::item_held(`). Comment lines
 # are skipped. `sim::` is not scanned: sim is pure and builds no row.
+#
+# A file that calls `plan_store(` is a store writer, and must also call
+# `record_store_attempt(`: the `packing_forced` series (FR172) is only as
+# true as its writers, and the first one adds the emitter in the same PR.
 #
 # Usage: check-held-construction.sh [src-dir]   (default: server/src)
 set -euo pipefail
@@ -44,6 +48,13 @@ while IFS= read -r f; do
   esac
   if flat "$f" | grep -Eq "$CONSTRUCT"; then note "$rel: builds a Held outside plan_store"; fi
   if flat "$f" | grep -Eq "$ACCESSOR"; then note "$rel: names the item_held accessor"; fi
+done < <(find "$SRC_DIR" -name '*.rs' -not -path '*/generated/*' | sort)
+
+while IFS= read -r f; do
+  rel="${f#"$SRC_DIR"/}"
+  if flat "$f" | grep -Eq '(^|[^_[:alnum:]])plan_store[[:space:]]*\('     && ! flat "$f" | grep -Eq '(^|[^_[:alnum:]])record_store_attempt[[:space:]]*\('; then
+    note "$rel: calls plan_store but never record_store_attempt (every store attempt feeds packing_forced)"
+  fi
 done < <(find "$SRC_DIR" -name '*.rs' -not -path '*/generated/*' | sort)
 
 if [ -n "$BAD" ]; then

@@ -529,20 +529,20 @@ hairstyle kid_hairstyle_kid_6_2 id=227 family=kid sheet=ModernTileset/moderninte
 hairstyle kid_hairstyle_kid_6_3 id=228 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_3.png style=6 color=3 rare=false
 hairstyle kid_hairstyle_kid_6_4 id=229 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_4.png style=6 color=4 rare=false
 hairstyle kid_hairstyle_kid_6_5 id=230 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_5.png style=6 color=5 rare=true
-item biscuits id=11 unit=0 shelf_life_minutes=0 width=1 height=1
+item apron id=13 unit=0 shelf_life_minutes=0 width=1 height=2
 item bottle id=1 unit=0 shelf_life_minutes=0 width=1 height=1
 item coin_1 id=3 unit=0 shelf_life_minutes=0 width=1 height=1
 item coin_2 id=4 unit=0 shelf_life_minutes=0 width=1 height=1
 item coin_5 id=5 unit=0 shelf_life_minutes=0 width=1 height=1
-item flour_sack id=12 unit=0 shelf_life_minutes=0 width=1 height=2
-item loaf id=10 unit=0 shelf_life_minutes=0 width=1 height=1
+item flower_pot id=9 unit=0 shelf_life_minutes=0 width=1 height=1
+item honeycomb id=10 unit=0 shelf_life_minutes=0 width=1 height=1
 item note_10 id=6 unit=0 shelf_life_minutes=0 width=1 height=1
 item note_20 id=7 unit=0 shelf_life_minutes=0 width=1 height=1
 item note_50 id=8 unit=0 shelf_life_minutes=0 width=1 height=1
-item produce_trolley id=14 unit=0 shelf_life_minutes=0 width=2 height=2
+item potted_flower id=11 unit=0 shelf_life_minutes=0 width=1 height=1
+item produce_crate id=14 unit=0 shelf_life_minutes=4320 width=2 height=2
 item recycled_glass id=2 unit=0 shelf_life_minutes=0 width=1 height=1
-item tin id=9 unit=0 shelf_life_minutes=0 width=1 height=1
-item tin_stack id=13 unit=0 shelf_life_minutes=0 width=1 height=2
+item seed_sack id=12 unit=0 shelf_life_minutes=0 width=1 height=2
 object bag id=29 name=Bag layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Brown_Baggage_1.png:0,0,16,16 height=1 width=1 collider=0,1,15,15 interact_at=-4,-4,20,20 grid=3x2 window=false tags=[15]
 object bridge_deck id=7 name=Bridge Deck layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png:0,0,16,16 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[7,9,15]
 object bridge_stairs_abutment id=22 name=Bridge Stairs Abutment layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png:0,29,32,16 height=1 width=2 collider=0,0,32,16 interact_at=none grid=none window=false tags=[7,8,15]

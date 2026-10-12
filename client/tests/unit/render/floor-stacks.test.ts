@@ -6,7 +6,11 @@
 // between whole stacks, never between two pool members.
 import { Container, Sprite, Texture } from "pixi.js";
 import { describe, expect, it } from "vitest";
-import { FloorStacks, sortAcrossFloors } from "../../../src/render/floor-stacks";
+import {
+  assertStageIsWorld,
+  FloorStacks,
+  sortAcrossFloors,
+} from "../../../src/render/floor-stacks";
 
 function childIndexOf(parent: Container, child: Container): number {
   return parent.children.indexOf(child);
@@ -183,5 +187,17 @@ describe("FloorStacks transient views (story 6.10)", () => {
     // A stray container on the root is still refused.
     stack.root.addChild(new Container());
     expect(() => stacks.assertManaged(new Set())).toThrow();
+  });
+});
+
+describe("assertStageIsWorld", () => {
+  it("accepts a stage holding only the world root and refuses any other child", () => {
+    const stage = new Container();
+    const world = new Container();
+    stage.addChild(world);
+    expect(() => assertStageIsWorld(stage, world)).not.toThrow();
+    stage.addChild(new Container());
+    expect(() => assertStageIsWorld(stage, world)).toThrow(/world root/);
+    expect(() => assertStageIsWorld(new Container(), world)).toThrow();
   });
 });

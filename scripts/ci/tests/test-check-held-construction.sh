@@ -66,6 +66,13 @@ d="$(fake_dir)"
 mkdir -p "$d/tables"
 check "a tree without the declaration fails loudly" 1 bash "$CHECK" "$d"
 
+d="$(plant tables/writer.rs 'fn store(ctx: &ReducerContext) { let p = plan_store(a, b, c, d, e, f, g, h); }')"
+check "a store writer that never records the attempt fails" 1 bash "$CHECK" "$d"
+check_contains "names the missing emitter" "record_store_attempt" "$(bash "$CHECK" "$d" 2>&1)"
+
+d="$(plant tables/writer.rs 'fn store(ctx: &ReducerContext) { let p = plan_store(a, b, c, d, e, f, g, h); record_store_attempt(ctx, true); }')"
+check "a store writer that records the attempt passes" 0 bash "$CHECK" "$d"
+
 check "the real server/src passes" 0 bash "$CHECK"
 
 summary

@@ -360,66 +360,11 @@ pub fn finish_restore(ctx: &ReducerContext) -> Result<(), String> {
     count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     require_restore_open(ctx)?;
-    // FR95: every held row fits its container's real grid, now that every
-    // table is in (the tables restore in no fixed order, so this is the
-    // one point the whole picture exists).
-    audit_held_rows(ctx)?;
     ctx.db
         .restore_state()
         .id()
         .update(RestoreState { id: 0, open: false });
     super::schedules::arm_every_cadence(ctx)
-}
-
-/// Refuses to finish a restore in which a held item sits outside its
-/// container's grid or overlaps another. Only rows that resolve are held to
-/// the rule: a container whose object is gone or is not a container, and an
-/// item with no instance or no def, are dangling references (a legal state)
-/// with nothing to measure a footprint against.
-fn audit_held_rows(ctx: &ReducerContext) -> Result<(), String> {
-    use sim::container_grid::{Occupant, first_misfit};
-    use sim::generated::defs::{ITEMS, OBJECTS};
-    use std::collections::BTreeMap;
-
-    let mut by_container: BTreeMap<u64, Vec<Occupant>> = BTreeMap::new();
-    for row in ctx.db.item_held().iter() {
-        if row.container_kind != sim::codes::container_kind::OBJECT {
-            continue;
-        }
-        let Some(instance) = ctx.db.item_instance().instance_id().find(row.instance_id) else {
-            continue;
-        };
-        let Some(item) = ITEMS.iter().find(|i| i.id == instance.def_id) else {
-            continue;
-        };
-        by_container
-            .entry(row.container_id)
-            .or_default()
-            .push(Occupant {
-                instance_id: row.instance_id,
-                slot: (row.slot_x, row.slot_y),
-                bulk: (item.width as u8, item.height as u8),
-                orientation: row.orientation,
-            });
-    }
-    for (id, mut rows) in by_container {
-        let grid = ctx
-            .db
-            .placed_object()
-            .object_id()
-            .find(id)
-            .and_then(|o| OBJECTS.iter().find(|d| d.id == o.def_id))
-            .and_then(|d| d.grid);
-        let Some(grid) = grid else { continue };
-        rows.sort_by_key(|r| r.instance_id);
-        if let Some((instance_id, why)) = first_misfit((grid.width as u8, grid.height as u8), &rows)
-        {
-            return Err(format!(
-                "held item {instance_id} does not fit container {id}: {why:?}"
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// An auto_inc table's row, reduced to what [`restore_autoinc_rows`]

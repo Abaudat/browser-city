@@ -5,8 +5,8 @@
 
 use sim::codes::container_kind;
 use sim::container_grid::{
-    FitError, Occupant, Store, can_ever_fit, first_fit, first_misfit, fits, footprint,
-    needs_rotation, occupied, packing_forced, plan_store,
+    FitError, Occupant, Store, can_ever_fit, first_fit, fits, footprint, needs_rotation, occupied,
+    packing_forced, plan_store,
 };
 use sim::generated::defs::{ITEMS, MAX_FOOTPRINT_CELLS, OBJECTS};
 use sim::item_instance::{
@@ -236,11 +236,20 @@ fn the_shipped_containers_each_have_their_own_dimensions() {
 
 #[test]
 fn the_item_def_carries_no_container_specific_size() {
-    // An item's footprint in a grid is its world bulk: the def has exactly
-    // width and height, and the fit rule is handed those unchanged.
+    // An item's footprint in a grid is its world bulk: the exhaustive
+    // destructure (no `..`) fails to compile the day the item def gains a
+    // field, so a container-specific size cannot be added unnoticed.
     for i in ITEMS {
-        assert!(i.width >= 1 && i.height >= 1);
-        assert!(i.width as i64 <= MAX_FOOTPRINT_CELLS as i64);
+        let sim::generated::defs::ItemDef {
+            id: _,
+            key: _,
+            unit: _,
+            shelf_life_minutes: _,
+            width,
+            height,
+        } = *i;
+        assert!(width >= 1 && height >= 1);
+        assert!(i64::from(width) <= i64::from(MAX_FOOTPRINT_CELLS));
     }
 }
 
@@ -261,11 +270,17 @@ fn the_fit_path_reads_no_count() {
     }
 }
 
-/// The reference shopping basket (Derek): a box, a loaf, a bottle crate
-/// and three tins, largest first -- authored as data here, since no basket
-/// item exists yet. It must pack into the shipped cupboard in one
-/// first-fit pass with no rearrangement.
-const SHOPPING_BASKET: &[(u8, u8)] = &[(2, 2), (2, 1), (1, 2), (1, 1), (1, 1), (1, 1)];
+/// The reference shopping basket (Derek): shipped items by key, largest
+/// first, their bulk read from `ITEMS` -- so retuning an item or the
+/// cupboard turns the proxy red.
+const SHOPPING_BASKET: &[&str] = &[
+    "produce_crate",
+    "seed_sack",
+    "apron",
+    "honeycomb",
+    "flower_pot",
+    "potted_flower",
+];
 
 #[test]
 fn a_reference_shopping_basket_fits_the_shipped_cupboard_in_one_first_fit_pass() {
@@ -273,10 +288,15 @@ fn a_reference_shopping_basket_fits_the_shipped_cupboard_in_one_first_fit_pass()
     let g = cupboard.grid.unwrap();
     let grid = (g.width as u8, g.height as u8);
     let mut held: Vec<Occupant> = Vec::new();
-    for (i, bulk) in SHOPPING_BASKET.iter().enumerate() {
-        let (slot, o) = first_fit(grid, &held, *bulk)
-            .unwrap_or_else(|| panic!("item {i} {bulk:?} did not fit: retune the grid"));
-        held.push(occ(i as u64 + 1, slot, *bulk, o));
+    for (i, key) in SHOPPING_BASKET.iter().enumerate() {
+        let item = ITEMS
+            .iter()
+            .find(|d| d.key == *key)
+            .unwrap_or_else(|| panic!("the basket names item '{key}', which is no longer shipped"));
+        let bulk = (item.width as u8, item.height as u8);
+        let (slot, o) = first_fit(grid, &held, bulk)
+            .unwrap_or_else(|| panic!("'{key}' {bulk:?} did not fit: retune the grid"));
+        held.push(occ(i as u64 + 1, slot, bulk, o));
     }
     assert_eq!(held.len(), SHOPPING_BASKET.len());
 }
@@ -298,20 +318,6 @@ fn packing_is_forced_by_a_refusal_or_by_needing_a_rotation_and_by_nothing_else()
     let held = [occ(3, (0, 0), (1, 1), 0)];
     let refused = plan_store(world, container(), grid, 9, &held, (1, 1), (0, 0), 0).unwrap();
     assert!(packing_forced(grid, 9, &held, (1, 1), &refused));
-}
-
-#[test]
-fn the_audit_names_the_first_row_that_leaves_the_grid_or_overlaps() {
-    let grid = (4, 3);
-    let ok = [occ(1, (0, 0), (2, 2), 0), occ(2, (2, 0), (2, 1), 0)];
-    assert_eq!(first_misfit(grid, &ok), None);
-    let out = [occ(1, (0, 0), (2, 2), 0), occ(2, (3, 0), (2, 1), 0)];
-    assert_eq!(first_misfit(grid, &out), Some((2, FitError::OutOfGrid)));
-    let over = [occ(1, (0, 0), (2, 2), 0), occ(2, (1, 1), (1, 1), 0)];
-    assert_eq!(
-        first_misfit(grid, &over),
-        Some((2, FitError::Overlaps { instance_id: 1 }))
-    );
 }
 
 #[test]

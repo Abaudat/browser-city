@@ -214,8 +214,8 @@ pub const GAMEPLAY_METRICS: &[Metric] = &[
         code: 9,
         name: "packing_forced",
         unit: Unit::Proportion,
-        emitting_epic: 6,
-        emission_point: "each attempt to store an item into a container's grid (story 6.10's fit rule)",
+        emitting_epic: 8,
+        emission_point: "each attempt to store an item into a container's grid, by the first store writer (Epic 8's interaction model)",
         method: Method::Instrumented,
         blind_spot: concat!(
             "whether a refusal or a rotation felt like a puzzle or like a chore, and ",

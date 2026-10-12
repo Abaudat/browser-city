@@ -545,21 +545,20 @@ function cupboardProp() {
   return prop;
 }
 
-/** Story 6.10: out of the shop and past the lamppost, east along the
- * pavement to the cupboard's west edge, then up into its reach. */
+/** Story 6.10: inside shop A, up to the row south of the cupboard and east
+ * into its reach (clear of the table, south of the cupboard's collider). */
 export function cupboardReachRoute(): readonly StreetWalkSegment[] {
   const prop = cupboardProp();
   return [
-    ...streetWalkRoute(streetWalkInputs()).slice(0, 4),
     {
-      label: "east-to-the-cupboard",
-      key: "ArrowRight",
-      until: { kind: "x-at-least", value: prop.x - 0.1 },
+      label: "up-to-the-cupboard-row",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: prop.y + 0.9 },
     },
     {
-      label: "up-into-reach",
-      key: "ArrowUp",
-      until: { kind: "y-at-most", value: prop.y + 1.1 },
+      label: "east-into-reach",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: prop.x },
     },
   ];
 }
@@ -571,7 +570,7 @@ export function cupboardLeaveRoute(): readonly StreetWalkSegment[] {
     {
       label: "west-out-of-reach",
       key: "ArrowLeft",
-      until: { kind: "x-at-most", value: prop.x - 2 },
+      until: { kind: "x-at-most", value: prop.x - 1.5 },
     },
   ];
 }

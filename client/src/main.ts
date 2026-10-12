@@ -18,9 +18,10 @@ import { type BodyControl, connectionReason, createBodyControl } from "./input/b
 import type { Intent } from "./input/intent";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
+import type { DbConnection } from "./net/bindings";
 import { OIDC_CONFIG } from "./net/config";
 import type { CharacterReport, IdentityReport } from "./net/connection";
-import { sdkContainerBackend } from "./net/container-subscription";
+import { isStreamedObject, sdkContainerBackend } from "./net/container-subscription";
 import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
@@ -113,7 +114,9 @@ interface ContainersWiring {
   readonly rows: (
     containerId: bigint,
     onRows: (rows: readonly HeldRow[]) => void,
+    onError: () => void,
   ) => { release(): void };
+  readonly present: (objectId: bigint) => boolean;
 }
 
 /** Story 4.4: the street scene's touch points with the other players and
@@ -420,13 +423,7 @@ async function main(): Promise<void> {
           syncSender();
         },
       },
-      {
-        rows: (containerId, onRows) =>
-          sdkContainerBackend(conn.current()).open(containerId, {
-            onRows: (rows) => onRows(rows),
-            onError: () => {},
-          }),
-      },
+      containerWiring(() => conn.current()),
     );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
@@ -472,6 +469,29 @@ async function main(): Promise<void> {
  * ticker` does not exist until then either, so `stopDrawing` is
  * null-safe.
  */
+/** Story 6.10 (FR94): a container's contents are subscribed only for an
+ * object the server streamed to this client; a fixture-only prop opens an
+ * empty view and never subscribes. A streamed object whose row later leaves
+ * the cache is gone, which closes its view. */
+function containerWiring(current: () => DbConnection): ContainersWiring {
+  const backed = new Set<bigint>();
+  return {
+    rows: (containerId, onRows, onError) => {
+      const conn = current();
+      if (!isStreamedObject(conn, containerId)) return { release: () => {} };
+      backed.add(containerId);
+      const handle = sdkContainerBackend(conn).open(containerId, { onRows, onError });
+      return {
+        release: () => {
+          backed.delete(containerId);
+          handle.release();
+        },
+      };
+    },
+    present: (objectId) => !backed.has(objectId) || isStreamedObject(current(), objectId),
+  };
+}
+
 async function startStreetScene(
   latch: HandshakeLatch,
   onDegrade: () => void,
@@ -721,6 +741,7 @@ async function startStreetScene(
     keyboard,
     bodyControl,
     containerRows: containers.rows,
+    containerPresent: containers.present,
     // FR148: the intent sink. Nothing consumes an intent yet -- the
     // procedure interaction model is Epic 8's, deliberately unresolved --
     // so the only consumer today is the e2e observation hook. Swapping
@@ -747,10 +768,6 @@ async function startStreetScene(
     onHighlightChange: recordHighlightForE2e,
   });
   sceneHandle = handle;
-  // Escape closes an open container view, like walking away does.
-  window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") handle.closeContainer();
-  });
   exposeContainerViewForE2e({
     containerView: () => {
       const view = handle.containerView();

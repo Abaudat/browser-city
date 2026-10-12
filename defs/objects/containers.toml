@@ -4,6 +4,9 @@
 # (`interact_at`) is the footprint plus a quarter-cell skirt; the open view
 # stays open exactly while the player stands inside it.
 
+# The Kitchen sheet has no open-door variant of this sideboard (singles
+# 119-122), so a future open-sprite state needs a different pair or the
+# cupboard stays as it is.
 [[object]]
 id = 26
 key = "cupboard"

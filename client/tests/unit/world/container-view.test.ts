@@ -8,7 +8,7 @@ import {
   type HeldRow,
   layoutRects,
   openView,
-  rowsAfter,
+  rectsInGrid,
   shouldClose,
   viewOriginPx,
 } from "../../../src/world/container-view";
@@ -47,25 +47,34 @@ describe("layoutRects", () => {
   });
 });
 
-describe("rowsAfter", () => {
-  it("follows insert, update and delete, so another player's change shows while open", () => {
-    let rows: readonly HeldRow[] = [];
-    rows = rowsAfter(rows, { kind: "insert", row: row(1n, 9, 0, 0) });
-    rows = rowsAfter(rows, { kind: "insert", row: row(2n, 12, 1, 0) });
-    expect(rows.map((r) => r.instanceId)).toEqual([1n, 2n]);
-    rows = rowsAfter(rows, { kind: "update", row: row(1n, 9, 3, 2, 1) });
-    expect(rows.find((r) => r.instanceId === 1n)).toMatchObject({
-      slotX: 3,
-      slotY: 2,
-      orientation: 1,
-    });
-    rows = rowsAfter(rows, { kind: "delete", row: row(2n, 12, 1, 0) });
-    expect(rows.map((r) => r.instanceId)).toEqual([1n]);
+describe("rectsInGrid", () => {
+  const grid = { width: 4, height: 3 };
+
+  it("keeps rects wholly inside the grid", () => {
+    const rects = layoutRects([row(1n, 14, 1, 0), row(2n, 9, 3, 2)], bulkOf);
+    expect(rectsInGrid(rects, grid)).toEqual(rects);
   });
 
-  it("an update for a row never seen is an insert, and a delete for one is a no-op", () => {
-    expect(rowsAfter([], { kind: "update", row: row(5n, 9, 0, 0) })).toHaveLength(1);
-    expect(rowsAfter([], { kind: "delete", row: row(5n, 9, 0, 0) })).toEqual([]);
+  it("skips a rect a defs retune left outside the grid, never throwing or yielding NaN", () => {
+    const rects = layoutRects(
+      [row(1n, 14, 2, 0), row(2n, 9, 4, 0), row(3n, 12, 0, 2), row(4n, 9, -1, 0), row(5n, 9, 0, 0)],
+      bulkOf,
+    );
+    const kept = rectsInGrid(rects, grid);
+    expect(kept.map((r) => r.instanceId)).toEqual([5n]);
+    for (const r of kept) {
+      for (const v of [r.x, r.y, r.w, r.h]) expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("draws overlapping rects as they stand, one over the other", () => {
+    const rects = layoutRects([row(1n, 14, 0, 0), row(2n, 9, 1, 1)], bulkOf);
+    expect(rectsInGrid(rects, grid)).toHaveLength(2);
+  });
+
+  it("skips a rect with a non-finite position", () => {
+    const rects = layoutRects([row(1n, 9, Number.NaN, 0)], bulkOf);
+    expect(rectsInGrid(rects, grid)).toEqual([]);
   });
 });
 
@@ -126,7 +135,6 @@ const STILL_OPEN = {
   present: true,
   visible: true,
   bodyOpen: true,
-  connected: true,
 };
 
 describe("shouldClose", () => {
@@ -152,13 +160,12 @@ describe("shouldClose", () => {
     expect(shouldClose(at(11, 5.5, 1))).toBe(true);
   });
 
-  it("closes when the object is gone, hidden, the body closed or the connection lost", () => {
+  it("closes when the object is gone, hidden or the body closed", () => {
     const inside = at(11, 5.5);
     expect(shouldClose(inside)).toBe(false);
     expect(shouldClose({ ...inside, present: false })).toBe(true);
     expect(shouldClose({ ...inside, visible: false })).toBe(true);
     expect(shouldClose({ ...inside, bodyOpen: false })).toBe(true);
-    expect(shouldClose({ ...inside, connected: false })).toBe(true);
   });
 
   it("does not depend on the pointer: the rule has no pointer input", () => {

@@ -87,8 +87,8 @@ test("clicking the cupboard from within reach opens its view; walking away close
   await ready(page);
   expect(await page.evaluate(() => window.__bc?.containerView?.() ?? null)).toBeNull();
 
-  // Out of shop A and along the pavement, past the lamppost, then east and
-  // up into the cupboard's reach (its `interact_at`, from `defs/`).
+  // Inside shop A, up and east into the cupboard's reach (its
+  // `interact_at`, from `defs/`).
   const prop = cupboardProp();
   for (const segment of cupboardReachRoute()) {
     await walkRealSegment(page, segment);

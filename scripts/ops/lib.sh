@@ -6,7 +6,7 @@
 
 BC_OPS_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BC_REPO_ROOT="$(cd -- "$BC_OPS_DIR/../.." && pwd)"
-BC_SNAPSHOT="$BC_REPO_ROOT/server/schema.snapshot.json"
+BC_SNAPSHOT="${BC_SNAPSHOT:-$BC_REPO_ROOT/server/schema.snapshot.json}"
 
 bc_ops_die() { # <script-name> <message>
   echo "$1: FAIL -- $2" >&2

@@ -86,8 +86,9 @@ fn a_deferred_metric_names_an_epic_after_4_and_a_live_one_an_epic_that_has_lande
                 m.emitting_epic
             );
         } else {
-            // Epic 4 (the technical metrics) and epic 6 (`packing_forced`).
-            assert!([4, 6].contains(&m.emitting_epic), "{} is live", m.name);
+            // Epic 4 (the technical metrics) and epic 8 (`packing_forced`'s
+            // first store writer).
+            assert!([4, 8].contains(&m.emitting_epic), "{} is live", m.name);
         }
     }
 }
