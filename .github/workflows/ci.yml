@@ -627,9 +627,9 @@ jobs:
         run: bash ../scripts/ci/check-one-walk-helper.sh
       - name: story 5.3 NFR24, a character's frame is chosen in one place for the player, remote players and citizens
         run: bash ../scripts/ci/check-one-body-path.sh
-      - name: story 4.5 FR120-FR122, only VisibilityApplier writes a sprite's visible or alpha
+      - name: story 4.9 FR120-FR122, only VisibilityApplier writes a sprite's visible or alpha
         run: bash ../scripts/ci/check-visibility-writer.sh
-      - name: story 4.5 FR124/FR182, the remote players layer places, sorts and shows nothing itself
+      - name: story 4.9 FR124/FR182, the remote players layer places, sorts and shows nothing itself
         run: bash ../scripts/ci/check-remote-actor-path.sh
       - name: story 5.1 FR63/NFR23, L3 reaches only itself and the defs types; net/ never reaches l3/
         run: bash ../scripts/ci/check-l3-boundary.sh

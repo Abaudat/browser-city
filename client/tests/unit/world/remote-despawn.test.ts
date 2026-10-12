@@ -1,7 +1,7 @@
-// Story 4.5 (FR139): a remote player is held exactly while its chunk column
-// is a held handle of the viewer's interest region (4.3), so it is despawned
-// only beyond the keep radius and never thrashes at a boundary. The held set
-// is the only despawn mechanism; there is no timer.
+// Story 4.9 (FR139): the region's hold, seen from a remote player's column and
+// band: held inside the keep radius, not held beyond it, and never thrashing
+// at a boundary. That the sprite goes away through the handle release is the
+// e2e's (`player-position.spec.ts`); there is no timer.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { REMOTE_STABLE_ID_BASE } from "../../../src/test-street/drawables";

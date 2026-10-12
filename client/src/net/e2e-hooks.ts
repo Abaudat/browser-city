@@ -89,8 +89,6 @@ declare global {
             stackFloor: number | undefined;
           }
         >;
-        /** How many remote sprites each floor's pool holds. */
-        countsByFloor: () => Record<number, number>;
         /** Records every frame's poses until `stopTrace` returns them. */
         startTrace: () => void;
         /** What was drawn each frame, and the samples received meanwhile. */
@@ -461,7 +459,7 @@ export function exposePlayerScreenBoundsForE2e(
   window.__bc = bucket;
 }
 
-/** Story 4.5: the local player's drawn point, read live. */
+/** Story 4.9: the local player's drawn point, read live. */
 export function exposePlayerDrawnPointForE2e(
   getter: NonNullable<NonNullable<Window["__bc"]>["playerDrawnPoint"]>,
 ): void {
@@ -725,7 +723,6 @@ let remoteDrawn: Record<
   string,
   { screenX: number; screenY: number; visible: boolean; stackFloor: number | undefined }
 > = {};
-let remoteCounts: Record<number, number> = {};
 
 export function recordRemotePlayersForE2e(
   poses: Readonly<
@@ -742,7 +739,6 @@ export function recordRemotePlayersForE2e(
       }
     >
   >,
-  countsByFloor: Readonly<Record<number, number>> = {},
 ): void {
   if (!import.meta.env.DEV) return;
   remotePoses = {};
@@ -758,7 +754,6 @@ export function recordRemotePlayersForE2e(
       };
     }
   }
-  remoteCounts = { ...countsByFloor };
   if (!remoteTrace) return;
   const t = performance.now();
   for (const [id, p] of Object.entries(poses)) {
@@ -785,7 +780,6 @@ export function exposeRemotePlayersForE2e(): void {
   bucket.remotePlayers = {
     poses: () => remotePoses,
     drawn: () => remoteDrawn,
-    countsByFloor: () => remoteCounts,
     startTrace: () => {
       remoteTrace = {};
       remoteSamples = {};

@@ -34,6 +34,49 @@ check "a container of its own that sorts" 1 bash "$CHECK" "$d"
 d="$(plant 'd.sprite.zIndex = pose.y;')"
 check "a sort key of its own" 1 bash "$CHECK" "$d"
 
+plant_scene() { # <content> -- a clean layer plus a scene.ts with that content
+  local d
+  d="$(plant 'd.handle.place(pose.x, pose.y, pose.floor);')"
+  printf '%s
+' "$1" > "$d/src/test-street/scene.ts"
+  printf '%s' "$d"
+}
+
+d="$(plant_scene 'positionSprite(
+  sprite,
+  fromSortUnits(drawable.x),
+  drawable.floor,
+  tileSizePx,
+  storeyHeightPx,
+  assetNudgePx(drawable),
+  0,
+);')"
+check "a prop placed with positionSprite passes" 0 bash "$CHECK" "$d"
+
+d="$(plant_scene 'positionSprite(
+  playerSprite,
+  walk.x,
+  walk.y,
+  walk.floor,
+  tileSizePx,
+  storeyHeightPx,
+  0,
+  0,
+);')"
+check "the player's sprite placed with positionSprite" 1 bash "$CHECK" "$d"
+
+d="$(plant_scene 'positionSprite(
+  sprite,
+  drawX,
+  drawY,
+  frame.floor,
+  tileSizePx,
+  storeyHeightPx,
+  0,
+  flights.offsetPx(drawX, drawY, frame.floor),
+);')"
+check "an actor placed with positionSprite and a flight offset" 1 bash "$CHECK" "$d"
+
 d="$(fake_dir)"
 check "a missing layer file" 1 bash "$CHECK" "$d"
 

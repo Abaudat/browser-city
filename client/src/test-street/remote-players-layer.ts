@@ -2,9 +2,10 @@
 // position `world/remote-motion.ts` reports for the server clock minus the
 // interpolation delay. They wear the default player look; facing and
 // walk/idle are read from the motion, never from a stored column. This is
-// the motion -> pose -> `poseBody` driver only: the scene's `ActorHost` owns
-// the sprite's pool, position, sorting and visibility (a remote player is a
-// pool member of its floor, placed like the local player), and the layer is
+// the motion -> pose -> `poseBody` driver only: the scene's `placeActor`
+// (reached through the `ActorHost` it is given) owns the sprite's pool,
+// position, sorting and visibility -- a remote player is a pool member of
+// its floor, placed like the local player -- and the layer is
 // advanced from the scene's own ticker (one driver of frame-by-frame state).
 // Excluded from `client/vitest.config.ts`'s coverage gate alongside the
 // other real-Pixi adapters.
@@ -39,12 +40,8 @@ export interface RemotePlayersWiring {
    * (story 15.21): the walk frame is fed it, so legs keep walking cadence on
    * a flight. Required: a wiring that forgets it would slide feet on stairs. */
   readonly drawnDistance: (x: number, y: number, floor: number, dx: number, dy: number) => number;
-  /** Every frame: where each drawn remote player is and how it is drawn,
-   * and how many remote sprites each floor's pool holds. */
-  readonly onFrame?: (
-    reports: Readonly<Record<string, RemoteDrawnReport>>,
-    countsByFloor: Readonly<Record<number, number>>,
-  ) => void;
+  /** Every frame: where each drawn remote player is and how it is drawn. */
+  readonly onFrame?: (reports: Readonly<Record<string, RemoteDrawnReport>>) => void;
 }
 
 /** What a frame drew of one remote player (the DEV e2e hook's report). */
@@ -60,15 +57,13 @@ export interface RemoteDrawnReport extends RemotePose {
 export interface ActorHandle {
   place(x: number, y: number, floor: number): void;
   remove(): void;
-  /** The floor whose pool holds the sprite right now. */
+  /** The floor whose pool is the sprite's parent right now. */
   stackFloor(): number | undefined;
 }
 
 /** What the scene gives the layer to put an actor on screen. */
 export interface ActorHost {
   add(sprite: Sprite, x: number, y: number, floor: number): ActorHandle;
-  /** How many remote sprites each floor's pool holds. */
-  countsByFloor(): Record<number, number>;
 }
 
 /** What a caller supplies; the scene adds the flights' `drawnDistance`. */
@@ -158,7 +153,7 @@ export async function mountRemotePlayersLayer(
         };
       }
     }
-    if (reports) wiring.onFrame?.(reports, host.countsByFloor());
+    if (reports) wiring.onFrame?.(reports);
   }
 
   return { update, count: () => drawn.size };

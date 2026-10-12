@@ -27,6 +27,9 @@ export interface ActorPlacement {
   readonly point: { readonly x: number; readonly y: number };
   /** The floor whose stack the sprite belongs to: `pose.floor`. */
   readonly stackFloor: number;
+  /** The flight offset (screen px) the point includes: the one value the
+   * camera anchor of the local player reads. */
+  readonly flightOffsetPx: number;
   /** The floor whose stack it must leave this frame; none when it stays. */
   readonly leavesFloor: number | undefined;
 }
@@ -38,6 +41,7 @@ export function placeActorAt(
   previousFloor: number | undefined,
   dims: PlacementDims,
 ): ActorPlacement {
+  const flightOffsetPx = offsetOf(pose.x, pose.y, pose.floor);
   const point = worldPointPx(
     pose.x,
     pose.y,
@@ -45,10 +49,11 @@ export function placeActorAt(
     dims.tileSizePx,
     dims.storeyHeightPx,
     dims.zoom,
-    offsetOf(pose.x, pose.y, pose.floor),
+    flightOffsetPx,
   );
   return {
     point,
+    flightOffsetPx,
     stackFloor: pose.floor,
     leavesFloor:
       previousFloor !== undefined && previousFloor !== pose.floor ? previousFloor : undefined,

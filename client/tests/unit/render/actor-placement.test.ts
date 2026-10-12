@@ -1,4 +1,4 @@
-// Story 4.5 amendment (FR120-FR122, FR124, FR182, FR139): a remote player is
+// Story 4.9 amendment (FR120-FR122, FR124, FR182, FR139): a remote player is
 // an actor like the local player and the commuter -- it lands at the same
 // screen pixel at the same pose, in the stack of its own floor, with the
 // visibility the viewer's floor gives it. Property over every flight of the

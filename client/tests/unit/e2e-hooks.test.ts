@@ -336,21 +336,17 @@ describe("the remote players' hook", () => {
     expect(hook?.stopTrace()).toEqual({ frames: {}, samples: {} });
   });
 
-  it("reports how each remote is drawn and how many sprites each floor's pool holds", () => {
+  it("reports how each remote is drawn", () => {
     exposeRemotePlayersForE2e();
     const hook = window.__bc?.remotePlayers;
-    recordRemotePlayersForE2e(
-      {
-        "7": { x: 1, y: 2, floor: 1, screenX: 16, screenY: 32, visible: true, stackFloor: 1 },
-        "8": { x: 3, y: 2, floor: 0 },
-      },
-      { 0: 1, 1: 1 },
-    );
+    recordRemotePlayersForE2e({
+      "7": { x: 1, y: 2, floor: 1, screenX: 16, screenY: 32, visible: true, stackFloor: 1 },
+      "8": { x: 3, y: 2, floor: 0 },
+    });
     expect(hook?.drawn()).toEqual({
       "7": { screenX: 16, screenY: 32, visible: true, stackFloor: 1 },
     });
     expect(hook?.poses()["7"]).toEqual({ x: 1, y: 2, floor: 1 });
-    expect(hook?.countsByFloor()).toEqual({ 0: 1, 1: 1 });
   });
 
   it("is absent from a production build", () => {

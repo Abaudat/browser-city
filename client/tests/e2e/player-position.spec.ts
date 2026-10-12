@@ -16,6 +16,8 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
 import { BRIDGE_FLOOR, STREET_FLOOR, streetWalkRoute } from "../../src/test-street/fixture";
+import { CHUNK_SIZE } from "../../src/world/chunk";
+import { REGION_LEAVE_RADIUS_CHUNKS, REGION_RADIUS_CHUNKS } from "../../src/world/region";
 import { streetWalkInputs } from "../unit/test-street/street-world";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
 import { walkRealCells, walkRealSegment } from "./walk-support";
@@ -200,7 +202,74 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
     expect(bDrawn[i]?.x ?? 0).toBeGreaterThanOrEqual(bDrawn[i - 1]?.x ?? 0);
   }
 
+  // Lazy despawn (AC2), through the real handle release: with B's region
+  // centred where A's column is inside the leave radius but outside the enter
+  // radius, A is still drawn; one column past the leave radius A is gone; back
+  // inside the enter radius A is drawn again. No timer, no viewport test.
+  const aRest = await a.page.evaluate(() => window.__bc?.playerPosition);
+  if (!aRest) throw new Error("no rest position for A");
+  const aColumn = Math.floor(aRest.x / CHUNK_SIZE);
+  const centreAt = (columns: number) => (aColumn + columns) * CHUNK_SIZE + 1;
+  const regionAt = (page: Page, x: number) =>
+    page.evaluate(([cx, cy, floor]) => window.__bc?.region?.moveTo(cx, cy, floor), [
+      x,
+      aRest.y,
+      STREET_FLOOR,
+    ] as [number, number, number]);
+  const drawnByB = (cid: string) =>
+    b.page.evaluate((id) => window.__bc?.remotePlayers?.poses()[id] !== undefined, cid);
+  await b.page.bringToFront();
+  await regionAt(b.page, centreAt(REGION_LEAVE_RADIUS_CHUNKS));
+  expect(REGION_LEAVE_RADIUS_CHUNKS).toBeGreaterThan(REGION_RADIUS_CHUNKS);
+  for (let i = 0; i < 6; i++) {
+    await frames(b.page, 10);
+    expect(await drawnByB(characterId), "A vanished inside the keep radius").toBe(true);
+  }
+  await regionAt(b.page, centreAt(REGION_LEAVE_RADIUS_CHUNKS + 1));
+  await b.page.waitForFunction(
+    (cid) => window.__bc?.remotePlayers?.poses()[cid] === undefined,
+    characterId,
+    { timeout: 20_000 },
+  );
+  await regionAt(b.page, centreAt(0));
+  await b.page.waitForFunction(
+    (cid) => window.__bc?.remotePlayers?.poses()[cid] !== undefined,
+    characterId,
+    { timeout: 20_000 },
+  );
+
+  // A player who has left is still drawn where they stopped: the row is never
+  // deleted, there is no presence. A's page closes; B keeps drawing A at its
+  // rest position well past the interpolation delay and the sender period.
+  await b.page.waitForFunction(
+    ({ id, x, y, q }) => {
+      const p = window.__bc?.remotePlayers?.poses()[id];
+      return p !== undefined && Math.abs(p.x - x) <= q && Math.abs(p.y - y) <= q;
+    },
+    { id: characterId, x: aRest.x, y: aRest.y, q: QUANTUM },
+    { timeout: 20_000 },
+  );
+  const before = await b.page.evaluate(
+    (cid) => window.__bc?.remotePlayers?.drawn()[cid],
+    characterId,
+  );
   await a.page.context().close();
+  // About 2.5 s of the page's own frames: past the delay and the period.
+  await frames(b.page, 150);
+  const after = await b.page.evaluate(
+    (cid) => ({
+      pose: window.__bc?.remotePlayers?.poses()[cid],
+      drawn: window.__bc?.remotePlayers?.drawn()[cid],
+    }),
+    characterId,
+  );
+  expect(after.pose, "B stopped drawing A after A left").toBeDefined();
+  expect(Math.abs((after.pose?.x ?? 0) - aRest.x)).toBeLessThanOrEqual(QUANTUM);
+  expect(Math.abs((after.pose?.y ?? 0) - aRest.y)).toBeLessThanOrEqual(QUANTUM);
+  expect(after.drawn?.visible).toBe(true);
+  expect(after.drawn?.screenX).toBe(before?.screenX);
+  expect(after.drawn?.screenY).toBe(before?.screenY);
+
   await b.page.context().close();
 });
 
@@ -217,12 +286,6 @@ test("a player on the footbridge deck is drawn on floor 1, in the deck's stack, 
     id,
     { timeout: 20_000 },
   );
-  // Other tests' players share the instance: pin what changes, not the totals.
-  const before = await b.page.evaluate(() => window.__bc?.remotePlayers?.countsByFloor() ?? {});
-  const onStreet = before[STREET_FLOOR] ?? 0;
-  const onDeck = before[BRIDGE_FLOOR] ?? 0;
-  expect(onStreet).toBeGreaterThan(0);
-
   // Out of the shop, under the bridge, up the flight and a little along the deck.
   const route = streetWalkRoute(streetWalkInputs());
   const alongTheDeck = route.findIndex((segment) => segment.label === "along-the-deck");
@@ -244,21 +307,17 @@ test("a player on the footbridge deck is drawn on floor 1, in the deck's stack, 
   );
 
   const seen = await b.page.evaluate(
-    (cid) => ({
-      drawn: window.__bc?.remotePlayers?.drawn()[cid],
-      counts: window.__bc?.remotePlayers?.countsByFloor() ?? {},
-    }),
+    (cid) => ({ drawn: window.__bc?.remotePlayers?.drawn()[cid] }),
     id,
   );
   const own = await a.page.evaluate(() => window.__bc?.playerDrawnPoint?.());
   if (!seen.drawn || !own) throw new Error("nothing drawn to compare");
   expect(seen.drawn.visible, "the remote is hidden on the deck").toBe(true);
+  // The sprite's real parent is the deck floor's pool (re-parented on the
+  // floor change), not merely listed under it.
   expect(seen.drawn.stackFloor).toBe(BRIDGE_FLOOR);
   expect(Math.abs(seen.drawn.screenX - own.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(seen.drawn.screenY - own.y)).toBeLessThanOrEqual(1);
-  // Re-parented: the street's pool let go of it and the deck's took it.
-  expect(seen.counts[STREET_FLOOR] ?? 0).toBe(onStreet - 1);
-  expect(seen.counts[BRIDGE_FLOOR] ?? 0).toBe(onDeck + 1);
 
   await a.page.context().close();
   await b.page.context().close();
