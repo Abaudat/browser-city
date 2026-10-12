@@ -510,7 +510,7 @@ describe("the L3 worker protocol", () => {
     expect(client.stats.restarts).toBe(1);
   });
 
-  it("makes no typed-array view in a steady request and apply, and one DataView per buffer back", () => {
+  it("makes no typed-array view in a steady request and apply, and two per buffer back", () => {
     const { client, list, lb } = connected(true);
     for (const c of list) client.add(c.id);
     client.request(1_000, undefined);
@@ -553,6 +553,8 @@ describe("the L3 worker protocol", () => {
       received += made.length;
       made.length = 0;
     }
-    expect(received).toBeLessThanOrEqual(cycles);
+    // A Float64Array and a Uint8Array over the buffer that came back, the
+    // worker's own two excluded (it ran outside the counted calls).
+    expect(received).toBeLessThanOrEqual(2 * cycles);
   });
 });

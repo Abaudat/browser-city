@@ -92,10 +92,10 @@ export interface Port<In, Out> {
 
 // ---- the tick buffer: one ArrayBuffer, header then one record per slot ----
 //
-// Header (`HEADER_DOUBLES` doubles), then per slot, in three runs: four doubles
-// (x, y, offsetX, offsetY -- exact), two float32 (heading) and eight bytes (the
-// `B_*` fields). 48 bytes a body: the buffer crosses threads every frame, so
-// its size is the traffic.
+// Two runs, read through two views: doubles (the header, then x, y, offsetX,
+// offsetY per slot -- exact) and bytes (ten a slot: see `B_*`). 42 bytes a
+// body: the buffer crosses threads every frame, so its size is the traffic,
+// and typed-array reads, unlike `DataView`'s, box nothing.
 
 export const HEADER_DOUBLES = 20;
 export const H_T = 0;
@@ -114,15 +114,13 @@ export const H_DETAIL_SLOT = 14;
 /** Out: leg key, depart instant, arrive instant, distance walked. */
 export const H_DETAIL = 16;
 
-/** Per slot, in `Tick.xy`. */
+/** Doubles per slot, after the header: x, y, offsetX, offsetY. */
 export const XY_X = 0;
 export const XY_Y = 1;
 export const XY_OFFSET_X = 2;
 export const XY_OFFSET_Y = 3;
 export const XY_PER_SLOT = 4;
-/** Per slot, in `Tick.heading`. */
-export const HEADING_PER_SLOT = 2;
-/** Per slot, in `Tick.bytes`. */
+/** Bytes per slot. */
 export const B_FLAGS = 0;
 /** The floor plus 128. */
 export const B_FLOOR = 1;
@@ -131,7 +129,10 @@ export const B_DIRECTION = 3;
 export const B_FLAVOUR = 4;
 export const B_FRAME_INDEX = 5;
 export const B_FALLBACKS = 6;
-export const BYTES_PER_SLOT_FIELDS = 8;
+/** The heading components times 127, as signed bytes (a debug readout). */
+export const B_HEADING_X = 7;
+export const B_HEADING_Y = 8;
+export const BYTES_PER_SLOT_FIELDS = 10;
 /** `B_FLAGS` bits. */
 export const F_PRESENT = 1;
 export const F_MOVING = 2;
@@ -139,8 +140,8 @@ export const F_CAPPED = 4;
 export const F_BLOCKED = 8;
 export const F_PACE_OUT = 16;
 
-/** Bytes per slot, the three runs together. */
-export const BYTES_PER_SLOT = XY_PER_SLOT * 8 + HEADING_PER_SLOT * 4 + BYTES_PER_SLOT_FIELDS;
+/** Bytes per slot, both runs together. */
+export const BYTES_PER_SLOT = XY_PER_SLOT * 8 + BYTES_PER_SLOT_FIELDS;
 
 /** Bytes a buffer needs to hold `slots` records. */
 export function tickBytes(slots: number): number {
@@ -152,32 +153,17 @@ export function slotsIn(byteLength: number): number {
   return Math.max(0, Math.floor((byteLength - HEADER_DOUBLES * 8) / BYTES_PER_SLOT));
 }
 
-/** Where a record's fields sit in a buffer of `slots` records. One `DataView`
- * reads and writes the whole buffer (little endian), so a buffer that has just
- * crossed a thread costs one view, not four. */
-export const HEAD_BYTES = HEADER_DOUBLES * 8;
-
-/** The byte offset of `XY_*` field `k` of `slot`. */
-export function xyOffset(_slots: number, slot: number, k: number): number {
-  return HEAD_BYTES + (slot * XY_PER_SLOT + k) * 8;
+/** The doubles of a buffer: header, then `XY_PER_SLOT` a slot. */
+export function viewDoubles(buf: ArrayBuffer): Float64Array {
+  return new Float64Array(buf, 0, HEADER_DOUBLES + slotsIn(buf.byteLength) * XY_PER_SLOT);
 }
 
-/** The byte offset of heading component `k` (0 x, 1 y) of `slot`. */
-export function headingOffset(slots: number, slot: number, k: number): number {
-  return HEAD_BYTES + slots * XY_PER_SLOT * 8 + (slot * HEADING_PER_SLOT + k) * 4;
-}
-
-/** The byte offset of `B_*` field `field` of `slot`. */
-export function byteOffset(slots: number, slot: number, field: number): number {
-  return (
-    HEAD_BYTES +
-    slots * (XY_PER_SLOT * 8 + HEADING_PER_SLOT * 4) +
-    slot * BYTES_PER_SLOT_FIELDS +
-    field
+/** The bytes of a buffer: `BYTES_PER_SLOT_FIELDS` a slot. */
+export function viewBytes(buf: ArrayBuffer): Uint8Array {
+  const slots = slotsIn(buf.byteLength);
+  return new Uint8Array(
+    buf,
+    (HEADER_DOUBLES + slots * XY_PER_SLOT) * 8,
+    slots * BYTES_PER_SLOT_FIELDS,
   );
-}
-
-/** The byte offset of header double `i`. */
-export function headOffset(i: number): number {
-  return i * 8;
 }

@@ -9,7 +9,7 @@
 // frames on will draw -- so a result has that many frames to come back before
 // it is drawn, and a hiccup of the worker or the main thread does not become a
 // stale frame. Transferred buffers cycle through preallocated slots; a steady
-// frame allocates one `DataView` (the buffer that came back) and nothing else.
+// frame allocates the two views of the buffer that came back and nothing else.
 //
 // A worker that throws is replaced: the client holds everything the worker was
 // told (config, declared citizens, the walkability, every live body) and
@@ -28,7 +28,9 @@ import {
   B_FLAVOUR,
   B_FLOOR,
   B_FRAME_INDEX,
-  byteOffset,
+  B_HEADING_X,
+  B_HEADING_Y,
+  BYTES_PER_SLOT_FIELDS,
   type CitizenInit,
   F_BLOCKED,
   F_CAPPED,
@@ -46,16 +48,18 @@ import {
   H_STOREY,
   H_T,
   H_WANT_DIAG,
-  headingOffset,
+  HEADER_DOUBLES,
   type Port,
   slotsIn,
   type ToWorker,
   tickBytes,
+  viewBytes,
+  viewDoubles,
   XY_OFFSET_X,
   XY_OFFSET_Y,
+  XY_PER_SLOT,
   XY_X,
   XY_Y,
-  xyOffset,
 } from "./protocol";
 
 /** A body the worker solves: its frame and sidestep as of the last result
@@ -115,11 +119,13 @@ interface Pending {
 export class L3Client {
   readonly #spawn: () => Port<FromWorker, ToWorker>;
   #port: Port<FromWorker, ToWorker>;
-  /** Buffers (as views) not out with the worker and not waiting to be drawn. */
-  readonly #free: DataView[] = [];
+  /** Buffers (as their doubles) not out with the worker and not waiting to be
+   * drawn. */
+  readonly #free: Float64Array[] = [];
   /** Results back from the worker, oldest first, in a ring; each with the
    * frame it is due to be drawn on. */
-  readonly #readyView: (DataView | undefined)[] = new Array(BUFFERS);
+  readonly #readyF64: (Float64Array | undefined)[] = new Array(BUFFERS);
+  readonly #readyU8: (Uint8Array | undefined)[] = new Array(BUFFERS);
   readonly #readyDue = new Int32Array(BUFFERS);
   #readyHead = 0;
   #readyCount = 0;
@@ -275,14 +281,17 @@ export class L3Client {
       return false;
     }
     for (let i = 0; i < take; i++) {
-      const old = this.#readyView[(this.#readyHead + i) % BUFFERS] as DataView;
-      this.#readyView[(this.#readyHead + i) % BUFFERS] = undefined;
-      this.#free.push(old);
+      const k = (this.#readyHead + i) % BUFFERS;
+      this.#free.push(this.#readyF64[k] as Float64Array);
+      this.#readyF64[k] = undefined;
+      this.#readyU8[k] = undefined;
     }
     const at = (this.#readyHead + take) % BUFFERS;
-    const dv = this.#readyView[at] as DataView;
+    const f = this.#readyF64[at] as Float64Array;
+    const bytes = this.#readyU8[at] as Uint8Array;
     const due = this.#readyDue[at] as number;
-    this.#readyView[at] = undefined;
+    this.#readyF64[at] = undefined;
+    this.#readyU8[at] = undefined;
     this.#readyHead = (this.#readyHead + take + 1) % BUFFERS;
     this.#readyCount -= take + 1;
     // The first result lands after the worker boots, however many frames on:
@@ -299,83 +308,82 @@ export class L3Client {
         });
       }
     }
-    const total = slotsIn(dv.byteLength);
-    const slots = Math.min(this.#members.length, total);
+    const slots = Math.min(this.#members.length, slotsIn(f.buffer.byteLength));
     const names = this.#names;
     for (let slot = 0; slot < slots; slot++) {
       const m = this.#members[slot];
       if (!m) continue;
-      const flags = dv.getUint8(byteOffset(total, slot, B_FLAGS));
+      const o = slot * BYTES_PER_SLOT_FIELDS;
+      const flags = bytes[o + B_FLAGS] as number;
       if ((flags & F_PRESENT) === 0) continue;
       const fr = m.frame;
-      fr.x = dv.getFloat64(xyOffset(total, slot, XY_X), true);
-      fr.y = dv.getFloat64(xyOffset(total, slot, XY_Y), true);
-      fr.floor = dv.getUint8(byteOffset(total, slot, B_FLOOR)) - 128;
-      fr.animation = names[dv.getUint8(byteOffset(total, slot, B_ANIMATION))] as string;
-      fr.direction = names[
-        dv.getUint8(byteOffset(total, slot, B_DIRECTION))
-      ] as CitizenFrame["direction"];
-      fr.frameIndex = dv.getUint8(byteOffset(total, slot, B_FRAME_INDEX));
-      fr.headingX = dv.getFloat32(headingOffset(total, slot, 0), true);
-      fr.headingY = dv.getFloat32(headingOffset(total, slot, 1), true);
+      const x = HEADER_DOUBLES + slot * XY_PER_SLOT;
+      fr.x = f[x + XY_X] as number;
+      fr.y = f[x + XY_Y] as number;
+      fr.floor = (bytes[o + B_FLOOR] as number) - 128;
+      fr.animation = names[bytes[o + B_ANIMATION] as number] as string;
+      fr.direction = names[bytes[o + B_DIRECTION] as number] as CitizenFrame["direction"];
+      fr.frameIndex = bytes[o + B_FRAME_INDEX] as number;
+      fr.headingX = (((bytes[o + B_HEADING_X] as number) << 24) >> 24) / 127;
+      fr.headingY = (((bytes[o + B_HEADING_Y] as number) << 24) >> 24) / 127;
       fr.moving = (flags & F_MOVING) !== 0;
-      fr.flavour = names[dv.getUint8(byteOffset(total, slot, B_FLAVOUR))] as string;
-      m.offsetX = dv.getFloat64(xyOffset(total, slot, XY_OFFSET_X), true);
-      m.offsetY = dv.getFloat64(xyOffset(total, slot, XY_OFFSET_Y), true);
+      fr.flavour = names[bytes[o + B_FLAVOUR] as number] as string;
+      m.offsetX = f[x + XY_OFFSET_X] as number;
+      m.offsetY = f[x + XY_OFFSET_Y] as number;
       m.capped = (flags & F_CAPPED) !== 0;
       m.blocked = (flags & F_BLOCKED) !== 0;
-      m.fallbacks = dv.getUint8(byteOffset(total, slot, B_FALLBACKS));
+      m.fallbacks = bytes[o + B_FALLBACKS] as number;
       m.paceOutOfBand = (flags & F_PACE_OUT) !== 0;
       if (slot === this.#detailSlot) {
-        fr.legKey = dv.getFloat64(H_DETAIL * 8, true);
-        fr.departAt = dv.getFloat64((H_DETAIL + 1) * 8, true);
-        fr.arriveAt = dv.getFloat64((H_DETAIL + 2) * 8, true);
-        fr.distance = dv.getFloat64((H_DETAIL + 3) * 8, true);
+        fr.legKey = f[H_DETAIL] as number;
+        fr.departAt = f[H_DETAIL + 1] as number;
+        fr.arriveAt = f[H_DETAIL + 2] as number;
+        fr.distance = f[H_DETAIL + 3] as number;
       }
       m.solved = true;
     }
-    this.#lastSolveMs = dv.getFloat64(H_SOLVE_MS * 8, true);
-    this.#drawnInstant = dv.getFloat64(H_T * 8, true);
+    this.#lastSolveMs = f[H_SOLVE_MS] as number;
+    this.#drawnInstant = f[H_T] as number;
     this.#applied++;
-    this.#free.push(dv);
+    this.#free.push(f);
     return true;
   }
 
   /** Posts the instant to solve, with the zone to solve it under. Returns
    * false when every buffer is out (the request is skipped and counted). */
   request(t: number, zone: BodyZone | undefined): boolean {
-    let dv = this.#free.pop();
-    if (dv === undefined) {
+    let f = this.#free.pop();
+    if (f === undefined) {
       this.#skipped++;
       return false;
     }
-    if (dv.byteLength < tickBytes(this.#capacity)) {
-      dv = new DataView(new ArrayBuffer(tickBytes(this.#capacity)));
+    if (f.buffer.byteLength < tickBytes(this.#capacity)) {
+      f = viewDoubles(new ArrayBuffer(tickBytes(this.#capacity)));
     }
-    dv.setFloat64(H_T * 8, t, true);
+    f[H_T] = t;
     if (zone) {
-      dv.setFloat64(H_HAS_ZONE * 8, 1, true);
-      dv.setFloat64(H_SPAWN * 8, zone.spawn.x0, true);
-      dv.setFloat64((H_SPAWN + 1) * 8, zone.spawn.y0, true);
-      dv.setFloat64((H_SPAWN + 2) * 8, zone.spawn.x1, true);
-      dv.setFloat64((H_SPAWN + 3) * 8, zone.spawn.y1, true);
-      dv.setFloat64(H_DESPAWN * 8, zone.despawn.x0, true);
-      dv.setFloat64((H_DESPAWN + 1) * 8, zone.despawn.y0, true);
-      dv.setFloat64((H_DESPAWN + 2) * 8, zone.despawn.x1, true);
-      dv.setFloat64((H_DESPAWN + 3) * 8, zone.despawn.y1, true);
-      dv.setFloat64(H_STOREY * 8, zone.storeyCells, true);
-      dv.setFloat64(H_BAND * 8, zone.band, true);
+      f[H_HAS_ZONE] = 1;
+      f[H_SPAWN] = zone.spawn.x0;
+      f[H_SPAWN + 1] = zone.spawn.y0;
+      f[H_SPAWN + 2] = zone.spawn.x1;
+      f[H_SPAWN + 3] = zone.spawn.y1;
+      f[H_DESPAWN] = zone.despawn.x0;
+      f[H_DESPAWN + 1] = zone.despawn.y0;
+      f[H_DESPAWN + 2] = zone.despawn.x1;
+      f[H_DESPAWN + 3] = zone.despawn.y1;
+      f[H_STOREY] = zone.storeyCells;
+      f[H_BAND] = zone.band;
     } else {
-      dv.setFloat64(H_HAS_ZONE * 8, 0, true);
+      f[H_HAS_ZONE] = 0;
     }
-    dv.setFloat64(H_DETAIL_SLOT * 8, this.#detailSlot, true);
-    dv.setFloat64(H_WANT_DIAG * 8, this.#diagnosticFrames > 0 ? 1 : 0, true);
+    f[H_DETAIL_SLOT] = this.#detailSlot;
+    f[H_WANT_DIAG] = this.#diagnosticFrames > 0 ? 1 : 0;
     if (this.#diagnosticFrames > 0) this.#diagnosticFrames--;
     this.#posted++;
     this.#dueRing[(this.#dueHead + this.#dueCount) % BUFFERS] = this.#frame + this.#lookahead;
     this.#dueCount++;
-    this.#tickMessage.buf = dv.buffer as ArrayBuffer;
-    this.#transfer[0] = dv.buffer;
+    this.#tickMessage.buf = f.buffer as ArrayBuffer;
+    this.#transfer[0] = f.buffer;
     this.#port.postMessage(this.#tickMessage, this.#transfer);
     return true;
   }
@@ -442,7 +450,8 @@ export class L3Client {
   #resetPipeline(capacity: number): void {
     this.#capacity = Math.max(capacity, this.#capacity);
     this.#free.length = 0;
-    this.#readyView.fill(undefined);
+    this.#readyF64.fill(undefined);
+    this.#readyU8.fill(undefined);
     this.#readyHead = 0;
     this.#readyCount = 0;
     this.#dueHead = 0;
@@ -450,7 +459,7 @@ export class L3Client {
     this.#posted = 0;
     this.#returned = 0;
     for (let i = 0; i < BUFFERS; i++) {
-      this.#free.push(new DataView(new ArrayBuffer(tickBytes(this.#capacity))));
+      this.#free.push(viewDoubles(new ArrayBuffer(tickBytes(this.#capacity))));
     }
   }
 
@@ -498,12 +507,13 @@ export class L3Client {
         }
         if (this.#readyCount === BUFFERS) {
           // Cannot happen with a spare buffer always out; drop the oldest.
-          this.#free.push(this.#readyView[this.#readyHead] as DataView);
+          this.#free.push(this.#readyF64[this.#readyHead] as Float64Array);
           this.#readyHead = (this.#readyHead + 1) % BUFFERS;
           this.#readyCount--;
         }
         const at = (this.#readyHead + this.#readyCount) % BUFFERS;
-        this.#readyView[at] = new DataView(message.buf);
+        this.#readyF64[at] = viewDoubles(message.buf);
+        this.#readyU8[at] = viewBytes(message.buf);
         this.#readyDue[at] = due;
         this.#readyCount++;
         if (this.#onResult) {
