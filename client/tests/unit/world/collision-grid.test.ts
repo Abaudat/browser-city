@@ -72,6 +72,27 @@ describe("CollisionGrid", () => {
     expect(grid.entriesInCell(0, 2, 2)).toEqual([]);
   });
 
+  it("a repeated lookup never reads past a change: the last-chunk memo is retired by insert, delete and a new floor/chunk", () => {
+    const wholeCell: ColliderSource = {
+      width: 1,
+      height: 1,
+      collider: { x0: 0, y0: 0, x1: 16, y1: 16 },
+    };
+    const grid = gridWith(new Map([[1, wholeCell]]));
+    // Warm the memo on an empty chunk, then fill it, then empty it again.
+    expect(grid.entriesInCell(0, 3, 2)).toEqual([]);
+    const r = row({ objectId: 5n, x: 3, y: 2 });
+    grid.insert(r);
+    expect(grid.entriesInCell(0, 3, 2)).toHaveLength(1);
+    expect(grid.entriesInCell(0, 3, 2)).toHaveLength(1);
+    expect(grid.entriesInCell(1, 3, 2)).toEqual([]);
+    expect(grid.entriesInCell(0, 3, 2)).toHaveLength(1);
+    expect(grid.entriesInCell(0, -1, 2)).toEqual([]);
+    expect(grid.entriesInCell(0, 3, 2)).toHaveLength(1);
+    grid.delete(r);
+    expect(grid.entriesInCell(0, 3, 2)).toEqual([]);
+  });
+
   it("the lamppost worked example: a sub-cell collider only occupies its own cell, with a rect narrower than the cell", () => {
     const grid = gridWith(new Map([[1, DEF_WITH_COLLIDER]]));
     grid.insert(row({ objectId: 1n, x: 5, y: 5 }));

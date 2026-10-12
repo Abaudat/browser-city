@@ -85,6 +85,32 @@ export function inRect(r: Rect, x: number, y: number): boolean {
   return x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
 }
 
+/** Whether the square chunk `(cx, cy)` of `size` cells on `floor` lies wholly
+ * inside the spawn rect (shrunk by `inset` cells) and the zone's band: every
+ * citizen whose ledger position is inside the rect has a body, so a body whose
+ * neighbourhood of such chunks is complete has all its neighbours, and its
+ * avoidance does not depend on the bubble. `inset` is how far a pose strays
+ * from its ledger position (the micro path's box margin). Outside the spawn
+ * rect a body may or may not exist, by history. */
+export function zoneHoldsChunk(
+  zone: BodyZone,
+  floor: number,
+  cx: number,
+  cy: number,
+  size: number,
+  inset = 0,
+): boolean {
+  if (bandOf(floor) !== zone.band) return false;
+  const lift = floor * zone.storeyCells;
+  const r = zone.spawn;
+  return (
+    cx * size >= r.x0 + inset &&
+    (cx + 1) * size <= r.x1 - inset &&
+    cy * size - lift >= r.y0 + inset &&
+    (cy + 1) * size - lift <= r.y1 - inset
+  );
+}
+
 /** What to spawn, keep and discard, given the ids that hold a body and every
  * candidate's ledger position, written into `out` (cleared first; reuse one to
  * allocate nothing in steady state). A held id that is not a candidate any

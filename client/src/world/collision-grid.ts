@@ -73,6 +73,15 @@ const NO_ENTRIES: readonly GridEntry[] = [];
 export class CollisionGrid implements CollisionGridQuery {
   private readonly floors = new Map<number, Map<bigint, Chunk>>();
   private changes = 0;
+  /** The chunk the last lookup resolved, keyed by its coordinates and the
+   * revision it was read at: a wall scan asks for a few hundred cells in a
+   * row, nearly all in one chunk, and the key is a `bigint`. Any change
+   * moves `changes`, which retires the memo. */
+  private memoFloor = Number.NaN;
+  private memoCx = 0;
+  private memoCy = 0;
+  private memoChanges = -1;
+  private memoChunk: Chunk | undefined;
 
   /** `subcellsPerCell` is `defs/`'s own generated
    * `COLLIDER_SUBCELLS_PER_CELL`, never a literal here. `objectDefs` is
@@ -90,8 +99,21 @@ export class CollisionGrid implements CollisionGridQuery {
   }
 
   entriesInCell(floor: number, cellX: number, cellY: number): readonly GridEntry[] {
-    const chunk = this.floors.get(floor)?.get(chunkKey(cellX, cellY, floor));
-    return chunk?.cells[localIndex(cellX, cellY)] ?? NO_ENTRIES;
+    const cx = Math.floor(cellX / CHUNK_SIZE);
+    const cy = Math.floor(cellY / CHUNK_SIZE);
+    if (
+      this.memoChanges !== this.changes ||
+      this.memoFloor !== floor ||
+      this.memoCx !== cx ||
+      this.memoCy !== cy
+    ) {
+      this.memoChunk = this.floors.get(floor)?.get(chunkKey(cellX, cellY, floor));
+      this.memoFloor = floor;
+      this.memoCx = cx;
+      this.memoCy = cy;
+      this.memoChanges = this.changes;
+    }
+    return this.memoChunk?.cells[localIndex(cellX, cellY)] ?? NO_ENTRIES;
   }
 
   /** How many dense chunk arrays are allocated right now, across every

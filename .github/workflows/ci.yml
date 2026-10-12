@@ -119,6 +119,8 @@ jobs:
               # budget.md from exactly these paths.
               - 'docs/spikes/1.14-boot-budget/**'
               - 'docs/spikes/1.14-boot-budget.md'
+              - 'docs/spikes/5.4-l3-frame-budget/**'
+              - 'docs/spikes/5.4-l3-frame-budget.md'
             e2e:
               - 'server/**'
               - 'client/**'
@@ -678,6 +680,8 @@ jobs:
         run: bash ../scripts/ci/check-debug-boundary.sh
       - name: story 1.14, docs/spikes/1.14-boot-budget.md is exactly the generator's own output
         run: bash ../scripts/ci/check-boot-budget-report-current.sh
+      - name: story 5.4, docs/spikes/5.4-l3-frame-budget.md is exactly the generator's own output
+        run: bash ../scripts/ci/check-l3-budget-report-current.sh
       - name: story 4.2 AC2, no reducer call under render/, world/ or test-street/, or inside any ticker.add callback
         run: bash ../scripts/ci/check-no-frame-rate-reducers.sh
       - name: story 4.4 FR138, one home for the player_position accessor and for the position reducer call
@@ -814,13 +818,13 @@ jobs:
       - name: base path and production URI both check out
         run: bash ../scripts/ci/check-pages-bundle.sh dist-pages /browser-city/ wss://dummy.invalid
 
-  # NFR49: the functional specs run as 4 Playwright shards, one runner and
+  # NFR49: the functional specs run as 6 Playwright shards, one runner and
   # one harness each (`workers: 1` stays inside a shard). About 8 minutes of
   # serial specs is about 2 per shard, leaving Epics 4-5 room to grow before
   # a shard's tests pass 6 minutes; then N goes up, never the timeout.
   # check-e2e-shards.sh pins N, `fail-fast: false` and the budgets.
   e2e:
-    name: e2e (shard ${{ matrix.shard }}/4)
+    name: e2e (shard ${{ matrix.shard }}/6)
     needs: [changes, client-build]
     # Spans the boundary the other jobs don't -- runs whenever either half
     # changed, and is the slowest thing in the repo, so it must never be
@@ -838,7 +842,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -873,7 +877,7 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
       - working-directory: client
-        run: npm run test:e2e -- --shard=${{ matrix.shard }}/4
+        run: npm run test:e2e -- --shard=${{ matrix.shard }}/6
       # Review evidence the e2e specs leave behind on every run, pass or
       # fail. The affordance grammar is a judgement call about what the
       # player sees, and a pixel count is no substitute for looking at it.
@@ -991,7 +995,12 @@ jobs:
       # GPU-less headless runner would be noise and therefore flaky. The
       # full ten-minute soak is `perf-soak.yml`, deliberately not part of
       # this gate.
-      - name: the frame path stays inside its work budget (NFR2, partial)
+      # NFR11's falsification gate (story 5.4), the same `perf` project:
+      # `l3-budget.spec.ts` bodies 200 rush-hour citizens in one bubble and
+      # gates the per-frame cost of L3 (p95 <= 2 ms, p99 <= 4 ms), its
+      # allocation and its GC. A change to an `l3.*` dial in `defs/**`
+      # triggers it through the same `e2e` filter.
+      - name: the frame path and L3 stay inside their work budgets (NFR2, NFR11)
         working-directory: client
         run: npm run test:e2e:perf
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -1001,6 +1010,13 @@ jobs:
           path: client/test-results/story-1.13-perf
           if-no-files-found: warn
           retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: story-5.4-l3-budget
+          path: client/test-results/story-5.4-l3-budget
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

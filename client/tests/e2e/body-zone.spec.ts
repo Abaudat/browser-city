@@ -14,7 +14,7 @@ test.describe("the body zone in a real browser", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 640, height: 800 });
-    await page.goto("/");
+    await page.goto("/?watchBodies");
     await page.waitForFunction(() => window.__bc?.bodyWatch !== undefined, undefined, {
       timeout: 60_000,
     });

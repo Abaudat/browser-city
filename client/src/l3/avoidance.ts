@@ -76,6 +76,8 @@ const MERGE_BACK = 0.55;
 const MERGE_BACK_WIDTH = 0.1;
 const CAPPED = 1;
 const BLOCKED = 2;
+/** The body was resolved: its neighbourhood was wholly held. */
+const RESOLVED = 4;
 
 /** 0 at 0 and 1 at 1, flat at both ends. */
 function smooth(s: number): number {
@@ -134,20 +136,25 @@ export class AvoidanceField {
   #candMiss = new Float64Array(0);
   #candJ = new Int32Array(0);
   #found = 0;
-  #order: number[] = [];
-  #cells: number[] = [];
+  #order = new Int32Array(0);
+  #cells = new Int32Array(0);
   /** Blocked tiles round the body being resolved, as offsets of their centres
    * from its centre; scanned once per body per frame. */
+  #wallCache = new Map<number, Int32Array>();
+  #wallWalk: Walkability | undefined;
+  #wallRevision = Number.NaN;
+  #wallSpan = -1;
   #wallDx = new Float64Array(0);
   #wallDy = new Float64Array(0);
   #walls = 0;
   /** Written by `#closestApproach`: the side (positive: right of the heading)
    * and size of the miss, and how much of the relative motion crosses the line. */
-  #gap = 0;
-  #miss = 0;
-  #cross = 0;
-  /** The squared relative speed of the last `#closestApproach`. */
-  #relSq = 0;
+  /** One typed buffer, so a result is never boxed: gap, miss, cross, then the
+   * squared relative speed of the last `#closestApproach`. */
+  readonly #approach = new Float64Array(4);
+  /** `#roomOn`'s `along`, `side` and `want` in, its room out: slots 0-2 in,
+   * 3 out, so no double is boxed to cross the call. */
+  readonly #room = new Float64Array(4);
   /** Pair distances examined in the last `resolve`. */
   pairChecks = 0;
   /** Bodies whose neighbours were cut at the cap in the last `resolve`. */
@@ -160,10 +167,11 @@ export class AvoidanceField {
   /** Position first, then id: the order every client sums in. */
   readonly #byPosition = (a: number, b: number): number => {
     const d = (this.#x[a] as number) - (this.#x[b] as number);
-    if (d !== 0) return d;
+    // A sign, never `d`: a returned double is boxed.
+    if (d !== 0) return d < 0 ? -1 : 1;
     const ia = this.#ids[a] as string;
     const ib = this.#ids[b] as string;
-    return ia < ib ? -1 : ia > ib ? 1 : 0;
+    return ia < ib ? -1 : ia > ib ? 1 : a < b ? -1 : a > b ? 1 : 0;
   };
 
   /** Floor, then row, then column of its cell, then position rank. */
@@ -221,6 +229,8 @@ export class AvoidanceField {
     this.#cellY = i32(this.#cellY);
     this.#rank = i32(this.#rank);
     this.#candJ = i32(this.#candJ);
+    this.#order = i32(this.#order);
+    this.#cells = i32(this.#cells);
     this.#moving = u8(this.#moving);
     this.#flags = u8(this.#flags);
   }
@@ -269,6 +279,14 @@ export class AvoidanceField {
     return this.#offY[i] as number;
   }
 
+  /** Whether body `i`'s offset is one every client agrees on: it was resolved
+   * with its neighbourhood wholly held, or it never sidesteps (standing, or
+   * no ramp). Only such offsets are compared between bubbles. */
+  agreed(i: number): boolean {
+    if (!this.#moving[i] || (this.#ramp[i] as number) <= 0) return true;
+    return ((this.#flags[i] as number) & RESOLVED) !== 0;
+  }
+
   /** Whether body `i`'s neighbours were cut at the cap. */
   capped(i: number): boolean {
     return ((this.#flags[i] as number) & CAPPED) !== 0;
@@ -298,34 +316,48 @@ export class AvoidanceField {
     return lo;
   }
 
-  /** Where two bodies at constant velocities pass: `dp` is the other's position
-   * from this body, `dv` its velocity from this body's. The miss is the
-   * separation at closest approach, held for the whole pass; its side is along
-   * `(rx, ry)`. With no relative motion, the lateral gap. */
-  #closestApproach(
-    dpx: number,
-    dpy: number,
-    dvx: number,
-    dvy: number,
-    rx: number,
-    ry: number,
-  ): void {
+  /** Where body `j` passes body `i`, both at constant velocities. With
+   * `standing`, `j` is taken at its anchor and at rest; otherwise at its own
+   * position and velocity. The miss is the separation at closest approach,
+   * held for the whole pass; its side is along the right of `i`'s heading.
+   * With no relative motion, the lateral gap. Indices, not coordinates, so no
+   * double is boxed to cross the call. */
+  #closestApproach(i: number, j: number, standing: boolean): void {
+    const rx = -(this.#hy[i] as number);
+    const ry = this.#hx[i] as number;
+    const vix = (this.#hx[i] as number) * (this.#speed[i] as number);
+    const viy = (this.#hy[i] as number) * (this.#speed[i] as number);
+    let dpx: number;
+    let dpy: number;
+    let dvx: number;
+    let dvy: number;
+    if (standing) {
+      dpx = (this.#anchorX[j] as number) - (this.#x[i] as number);
+      dpy = (this.#anchorY[j] as number) - (this.#y[i] as number);
+      dvx = -vix;
+      dvy = -viy;
+    } else {
+      dpx = (this.#x[j] as number) - (this.#x[i] as number);
+      dpy = (this.#y[j] as number) - (this.#y[i] as number);
+      dvx = (this.#hx[j] as number) * (this.#speed[j] as number) - vix;
+      dvy = (this.#hy[j] as number) * (this.#speed[j] as number) - viy;
+    }
     const vv = dvx * dvx + dvy * dvy;
     if (vv < 1e-18) {
-      this.#gap = dpx * rx + dpy * ry;
-      this.#miss = this.#gap < 0 ? -this.#gap : this.#gap;
-      this.#cross = 0;
-      this.#relSq = 0;
+      this.#approach[0] = dpx * rx + dpy * ry;
+      this.#approach[1] = this.#approach[0] < 0 ? -this.#approach[0] : this.#approach[0];
+      this.#approach[2] = 0;
+      this.#approach[3] = 0;
       return;
     }
-    this.#relSq = vv;
+    this.#approach[3] = vv;
     const across = dvx * rx + dvy * ry;
-    this.#cross = (across < 0 ? -across : across) / Math.sqrt(vv);
+    this.#approach[2] = (across < 0 ? -across : across) / Math.sqrt(vv);
     const t = -(dpx * dvx + dpy * dvy) / vv;
     const px = dpx + dvx * t;
     const py = dpy + dvy * t;
-    this.#gap = px * rx + py * ry;
-    this.#miss = Math.sqrt(px * px + py * py);
+    this.#approach[0] = px * rx + py * ry;
+    this.#approach[1] = Math.sqrt(px * px + py * py);
   }
 
   /** Resolves every held body's sidestep. `isHeld` says which chunks the
@@ -339,17 +371,15 @@ export class AvoidanceField {
     const radius = dials.radiusCells;
     const order = this.#order;
     const cells = this.#cells;
-    order.length = n;
-    cells.length = n;
     for (let i = 0; i < n; i++) order[i] = i;
-    order.sort(this.#byPosition);
+    sortIndices(order, n, this.#byPosition);
     for (let p = 0; p < n; p++) this.#rank[order[p] as number] = p;
     for (let i = 0; i < n; i++) {
       cells[i] = i;
       this.#cellX[i] = Math.floor((this.#x[i] as number) / radius);
       this.#cellY[i] = Math.floor((this.#y[i] as number) / radius);
     }
-    cells.sort(this.#byCell);
+    sortIndices(cells, n, this.#byCell);
     this.pairChecks = 0;
     this.capHits = 0;
     this.blockedSteps = 0;
@@ -361,6 +391,7 @@ export class AvoidanceField {
       if (!heldWhole(isHeld, floor, this.#x[i] as number, this.#y[i] as number, dials.chunkSize)) {
         continue;
       }
+      this.#flags[i] = (this.#flags[i] as number) | RESOLVED;
       this.#resolveBody(i, dials, walk);
     }
   }
@@ -374,24 +405,48 @@ export class AvoidanceField {
     const x = this.#x[i] as number;
     const y = this.#y[i] as number;
     const floor = this.#floor[i] as number;
-    const x0 = Math.floor(x) - span;
-    const y0 = Math.floor(y) - span;
-    const side = 2 * span + 1;
-    if (this.#wallDx.length < side * side) {
-      this.#wallDx = new Float64Array(side * side);
-      this.#wallDy = new Float64Array(side * side);
+    const cellX = Math.floor(x);
+    const cellY = Math.floor(y);
+    // The blocked tiles within `span` of a cell are a function of the grid
+    // alone, so every body in the cell, this frame and every later one,
+    // shares one scan; a grid change (its revision) retires them all.
+    const revision = walk.revision();
+    if (this.#wallWalk !== walk || this.#wallRevision !== revision || this.#wallSpan !== span) {
+      this.#wallCache.clear();
+      this.#wallWalk = walk;
+      this.#wallRevision = revision;
+      this.#wallSpan = span;
     }
-    let walls = 0;
+    const key = wallKey(floor, cellX, cellY);
+    let tiles = this.#wallCache.get(key);
+    if (!tiles) {
+      tiles = this.#scanTiles(floor, cellX - span, cellY - span, 2 * span + 1, walk);
+      if (this.#wallCache.size >= WALL_CACHE_CELLS) this.#wallCache.clear();
+      this.#wallCache.set(key, tiles);
+    }
+    const n = tiles.length >> 1;
+    if (this.#wallDx.length < n) {
+      this.#wallDx = new Float64Array(n);
+      this.#wallDy = new Float64Array(n);
+    }
+    for (let k = 0; k < n; k++) {
+      this.#wallDx[k] = (tiles[2 * k] as number) + 0.5 - x;
+      this.#wallDy[k] = (tiles[2 * k + 1] as number) + 0.5 - y;
+    }
+    this.#walls = n;
+  }
+
+  /** The blocked tiles of the `side` x `side` square at `(x0, y0)`, as
+   * `x, y` pairs. */
+  #scanTiles(floor: number, x0: number, y0: number, side: number, walk: Walkability): Int32Array {
+    const found: number[] = [];
     for (let ty = y0; ty < y0 + side; ty++) {
       for (let tx = x0; tx < x0 + side; tx++) {
         this.walkableCalls++;
-        if (walk.walkable(floor, tx, ty)) continue;
-        this.#wallDx[walls] = tx + 0.5 - x;
-        this.#wallDy[walls] = ty + 0.5 - y;
-        walls++;
+        if (!walk.walkable(floor, tx, ty)) found.push(tx, ty);
       }
     }
-    this.#walls = walls;
+    return Int32Array.from(found);
   }
 
   #resolveBody(i: number, dials: AvoidDials, walk: Walkability): void {
@@ -458,20 +513,11 @@ export class AvoidanceField {
 
     this.#found = found;
     this.#walls = -1;
-    const vix = hx * (this.#speed[i] as number);
-    const viy = hy * (this.#speed[i] as number);
     // How each neighbour passes, if it stood at its anchor: its miss.
     for (let a = 0; a < found; a++) {
       const j = this.#candJ[a] as number;
-      this.#closestApproach(
-        (this.#anchorX[j] as number) - xi,
-        (this.#anchorY[j] as number) - yi,
-        -vix,
-        -viy,
-        rx,
-        ry,
-      );
-      this.#candMiss[a] = this.#miss;
+      this.#closestApproach(i, j, true);
+      this.#candMiss[a] = this.#approach[1] as number;
     }
     let acc = 0;
     for (let a = 0; a < found; a++) {
@@ -484,36 +530,30 @@ export class AvoidanceField {
       const settled = this.#ramp[j] as number;
       let asWalker = 0;
       if (settled > 0) {
-        const vjx = (this.#hx[j] as number) * (this.#speed[j] as number);
-        const vjy = (this.#hy[j] as number) * (this.#speed[j] as number);
-        this.#closestApproach(
-          (this.#x[j] as number) - xi,
-          (this.#y[j] as number) - yi,
-          vjx - vix,
-          vjy - viy,
-          rx,
-          ry,
-        );
+        this.#closestApproach(i, j, false);
         // Alongside on one line: the id decides; crossing: the right hand.
         let tie = 1;
         const same = hx * (this.#hx[j] as number) + hy * (this.#hy[j] as number) > 0;
         if (same && (this.#ids[i] as string) > (this.#ids[j] as string)) {
-          tie = 1 - 2 * (1 - smooth(this.#cross / ALONGSIDE_CROSS));
+          tie = 1 - 2 * (1 - smooth((this.#approach[2] as number) / ALONGSIDE_CROSS));
         }
         // Walking the same way and converging only shallowly, lateral steps move
         // two bodies together as much as apart: do nothing there.
         let merge = 1;
         if (same) {
           const speed = this.#speed[i] as number;
-          const lateral = speed > 0 ? (this.#cross * Math.sqrt(this.#relSq)) / speed : 0;
+          const lateral =
+            speed > 0
+              ? ((this.#approach[2] as number) * Math.sqrt(this.#approach[3] as number)) / speed
+              : 0;
           merge =
             1 -
             smooth((lateral - MERGE_FROM) / (MERGE_TO - MERGE_FROM)) *
               (1 - smooth((lateral - MERGE_BACK) / MERGE_BACK_WIDTH));
         }
         asWalker =
-          directionFor(this.#gap, tie, dials.tieBandCells) *
-          Math.max(0, clearance - this.#miss) *
+          directionFor(this.#approach[0] as number, tie, dials.tieBandCells) *
+          Math.max(0, clearance - (this.#approach[1] as number)) *
           0.5 *
           merge;
       }
@@ -523,14 +563,20 @@ export class AvoidanceField {
         if (shortfall > 0) {
           const dpx = (this.#anchorX[j] as number) - xi;
           const dpy = (this.#anchorY[j] as number) - yi;
-          this.#closestApproach(dpx, dpy, -vix, -viy, rx, ry);
-          let dir = directionFor(this.#gap, 1, dials.tieBandCells);
+          this.#closestApproach(i, j, true);
+          let dir = directionFor(this.#approach[0] as number, 1, dials.tieBandCells);
           // Pass on the side with room for the clearance, decided at the point
           // abeam of the stander, which holds for the whole pass.
           const along = dpx * hx + dpy * hy;
-          const here = this.#roomOn(i, along, dir, shortfall, dials, walk, j, 0);
+          this.#room[0] = along;
+          this.#room[1] = dir;
+          this.#room[2] = shortfall;
+          this.#roomOn(i, dials, walk, j, 0);
+          const here = this.#room[3] as number;
           if (here < shortfall) {
-            const other = this.#roomOn(i, along, -dir, shortfall, dials, walk, j, 0);
+            this.#room[1] = -dir;
+            this.#roomOn(i, dials, walk, j, 0);
+            const other = this.#room[3] as number;
             // Go the other way as the room there beats the room here, and as
             // the room here falls short of the clearance: a smooth swing, so
             // rooms that tie never flip the side from one frame to the next.
@@ -546,7 +592,11 @@ export class AvoidanceField {
     if (acc === 0) return;
     const side = acc < 0 ? -1 : 1;
     const want = Math.min(clearance, side * acc) * (this.#ramp[i] as number);
-    const allowed = this.#roomOn(i, 0, side, want, dials, walk, -1, 1);
+    this.#room[0] = 0;
+    this.#room[1] = side;
+    this.#room[2] = want;
+    this.#roomOn(i, dials, walk, -1, 1);
+    const allowed = this.#room[3] as number;
     const used = Math.min(want, allowed);
     if (used < want) {
       this.blockedSteps++;
@@ -585,21 +635,16 @@ export class AvoidanceField {
 
   /** How far body `i`, moved `along` its heading, may sidestep to `side` (+1
    * its right, -1 its left) before its edge meets a blocked tile or a standing
-   * body, at most `want`. Every obstacle limits it by its distance across,
+   * body, at most `want` (`along`, `side` and `want` in `#room[0..2]`, the room
+   * out in `#room[3]`). Every obstacle limits it by its distance across,
    * rising with a slope along the walk, so the limit moves continuously as the
    * body passes a wall's end. The walls are scanned once per body; `skip` is a
    * neighbour not to count (the one being passed); `mode` 1 counts only
    * standing bodies the walker already clears. */
-  #roomOn(
-    i: number,
-    along: number,
-    side: number,
-    want: number,
-    dials: AvoidDials,
-    walk: Walkability,
-    skip: number,
-    mode: number,
-  ): number {
+  #roomOn(i: number, dials: AvoidDials, walk: Walkability, skip: number, mode: number): void {
+    const along = this.#room[0] as number;
+    const side = this.#room[1] as number;
+    const want = this.#room[2] as number;
     if (this.#walls < 0) this.#scanWalls(i, dials, walk);
     const hx = this.#hx[i] as number;
     const hy = this.#hy[i] as number;
@@ -655,8 +700,40 @@ export class AvoidanceField {
       const weighted = limit * standing + (want + 1) * (1 - standing);
       if (weighted < room) room = weighted;
     }
-    return room < 0 ? 0 : room;
+    this.#room[3] = room < 0 ? 0 : room;
   }
+}
+
+/** Sorts `a[0..n)` in place by `cmp`, a total order (a heap sort: no scratch
+ * array per call, unlike `Array.prototype.sort`). */
+function sortIndices(a: Int32Array, n: number, cmp: (x: number, y: number) => number): void {
+  const sift = (start: number, end: number): void => {
+    let root = start;
+    for (;;) {
+      let child = 2 * root + 1;
+      if (child >= end) return;
+      if (child + 1 < end && cmp(a[child] as number, a[child + 1] as number) < 0) child++;
+      if (cmp(a[root] as number, a[child] as number) >= 0) return;
+      const t = a[root] as number;
+      a[root] = a[child] as number;
+      a[child] = t;
+      root = child;
+    }
+  };
+  for (let s = (n >> 1) - 1; s >= 0; s--) sift(s, n);
+  for (let end = n - 1; end > 0; end--) {
+    const t = a[0] as number;
+    a[0] = a[end] as number;
+    a[end] = t;
+    sift(0, end);
+  }
+}
+
+/** Cells whose wall scans are kept before the cache starts over. */
+const WALL_CACHE_CELLS = 4096;
+
+function wallKey(floor: number, cellX: number, cellY: number): number {
+  return (floor + 128) * 2 ** 40 + (cellX + 2 ** 19) * 2 ** 20 + (cellY + 2 ** 19);
 }
 
 /** Cells round a body that its wall scan covers: a limit reaches the clearance

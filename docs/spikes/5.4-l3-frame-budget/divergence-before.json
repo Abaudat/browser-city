@@ -1,0 +1,16 @@
+{
+  "instants": 340,
+  "compared": 56100,
+  "sidestepping": 31220,
+  "heldByOneOnly": 10880,
+  "disagreements": 10606,
+  "maxOffsetDisagreementCells": 1.8,
+  "maxOffsetDisagreementPx": 28.8,
+  "examples": [
+    "rush-column-119@100",
+    "rush-column-79@100",
+    "rush-column-93@100",
+    "rush-lane-4@100",
+    "rush-lane-53@100"
+  ]
+}

@@ -82,12 +82,29 @@ export class CompositeFrames {
     this.frames = frames;
   }
 
+  /** `frame` answered without building a key string: animation, direction,
+   * then index, filled on first use. */
+  readonly #byName = new Map<string, Map<string, Texture[]>>();
+
   frame(animation: string, direction: string, frameIndex: number): Texture {
+    const known = this.#byName.get(animation)?.get(direction)?.[frameIndex];
+    if (known) return known;
     const key = frameKey(animation, direction, frameIndex);
     const found = this.frames.get(key);
     if (!found) {
       throw new Error(`appearance-texture: no pre-built frame for '${key}'`);
     }
+    let byDirection = this.#byName.get(animation);
+    if (!byDirection) {
+      byDirection = new Map();
+      this.#byName.set(animation, byDirection);
+    }
+    let byIndex = byDirection.get(direction);
+    if (!byIndex) {
+      byIndex = [];
+      byDirection.set(direction, byIndex);
+    }
+    byIndex[frameIndex] = found;
     return found;
   }
 }
