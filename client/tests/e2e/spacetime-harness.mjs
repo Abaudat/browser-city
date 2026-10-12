@@ -207,6 +207,25 @@ export const E2E_WORLD = {
   },
 };
 
+const E2E_WORLD_COUNT = (2 * E2E_WORLD.span + 1) ** 2;
+
+/** Story 6.10: the seeded cupboard and what is in it (`defs/items`:
+ * flower_pot 9 and honeycomb 10 (1x1), seed_sack 12 and apron 13 (1x2)).
+ * `objectId` is the street's own prop id for it (`CUPBOARD_PROP_ID`) and
+ * the `placed_object` id the module gives it. */
+export const E2E_CUPBOARD = {
+  objectId: 82,
+  x: 7,
+  y: 2,
+  items: [
+    { defId: 9, slotX: 0, slotY: 0, orientation: 0 },
+    { defId: 10, slotX: 1, slotY: 0, orientation: 0 },
+    { defId: 12, slotX: 3, slotY: 0, orientation: 0 },
+    { defId: 12, slotX: 0, slotY: 1, orientation: 1 },
+    { defId: 13, slotX: 2, slotY: 1, orientation: 0 },
+  ],
+};
+
 function seedWorld(handle) {
   const placed = [];
   const actors = [];
@@ -218,10 +237,30 @@ function seedWorld(handle) {
       actors.push(`[${id},0,${id},${key},0]`);
     }
   }
+  // Story 6.10: shop A's cupboard (def 71, a 4x3 grid) is a real
+  // placed_object -- the one after the chunk objects, so the restore's
+  // gap-free ids hold -- and holds five known items: two 1x1, a 1x2
+  // standing at the east edge, another turned a quarter turn (2x1)
+  // beneath them, and a 1x2 (see `E2E_CUPBOARD`).
+  const cupboardId = E2E_CUPBOARD.objectId;
+  placed.push(
+    `[${cupboardId},71,${E2E_CUPBOARD.x},${E2E_CUPBOARD.y},0,2,0,${chunkKey(E2E_CUPBOARD.x, E2E_CUPBOARD.y, 0)}]`,
+  );
   const count = placed.length;
   callReducer(handle, "begin_restore");
   callReducer(handle, "restore_placed_object", `[${placed.join(",")}]`, String(count));
-  callReducer(handle, "restore_actor_location", `[${actors.join(",")}]`, String(count));
+  callReducer(handle, "restore_actor_location", `[${actors.join(",")}]`, String(E2E_WORLD_COUNT));
+  const instances = E2E_CUPBOARD.items.map((it, i) => `[${i + 1},${it.defId},[0]]`);
+  const held = E2E_CUPBOARD.items.map(
+    (it, i) => `[${i + 1},0,${cupboardId},${it.slotX},${it.slotY},${it.orientation}]`,
+  );
+  callReducer(
+    handle,
+    "restore_item_instance",
+    `[${instances.join(",")}]`,
+    String(instances.length),
+  );
+  callReducer(handle, "restore_item_held", `[${held.join(",")}]`);
   callReducer(handle, "finish_restore");
 }
 

@@ -330,6 +330,7 @@ mod tests {
             height: 1,
             collider: None,
             interact_at: None,
+            grid: None,
             window: false,
             tags: vec![],
             flight: None,

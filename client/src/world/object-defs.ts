@@ -4,7 +4,7 @@
 // reaches the running client through here -- nothing hand-types a rect
 // that `defs/objects` already declares.
 
-import type { Defs, FlightDef, ObjectDef } from "../defs/types";
+import type { Defs, FlightDef, GridDef, ObjectDef } from "../defs/types";
 import type { ColliderRectSubcells, ColliderSource } from "./collision-grid";
 
 /** Everything the derived indexes and a pick need from one `defs/`
@@ -22,6 +22,8 @@ export interface ObjectSource extends ColliderSource {
   readonly undrawn?: true;
   /** The sprite's own height in source pixels (absent when undrawn). */
   readonly spriteHeightPx?: number;
+  /** Story 6.10 (FR94): present exactly when the object is a container. */
+  readonly grid?: GridDef;
 }
 
 /** Keyed by `ObjectDef.id`, which is what a `placed_object` row's `defId`
@@ -40,6 +42,7 @@ export function objectDefsById(defs: Defs): ReadonlyMap<number, ObjectSource> {
         ...(object.collider ? { collider: object.collider } : {}),
         ...(object.interactAt ? { interactAt: object.interactAt } : {}),
         ...(object.flight ? { flight: object.flight } : {}),
+        ...(object.grid ? { grid: object.grid } : {}),
         ...(object.sprite ? { spriteHeightPx: object.sprite.h } : { undrawn: true as const }),
       },
     ]),

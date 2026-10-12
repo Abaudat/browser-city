@@ -9,6 +9,8 @@ function validPayload(version: string): Record<string, unknown> {
     position_units_per_cell: 256,
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
+    max_grid_extent: 8,
+    max_items_per_container: 64,
     min_floor: -1,
     max_floor: 7,
     max_shelf_life_minutes: 525_600,

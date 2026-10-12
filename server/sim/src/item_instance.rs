@@ -17,13 +17,9 @@ use crate::world::{ORIENTATIONS, chunk_key};
 /// Sub-cell resolution of a placed item's offset: the collider's own.
 pub const OFFSET_SUBCELLS: u8 = COLLIDER_SUBCELLS_PER_CELL as u8;
 
-/// The widest a container grid may be per axis, pending each container's
-/// own grid (FR94).
-pub const MAX_GRID_EXTENT: u8 = 64;
-
-/// The most items one container holds. `item_held`'s row bound is this
-/// times `placed_object`'s.
-pub const MAX_ITEMS_PER_CONTAINER: u64 = 64;
+/// The widest a container grid may be per axis, and the most cells one
+/// holds: generated from `defs-build`'s own declarations (FR94, FR95).
+pub use crate::generated::defs::{MAX_GRID_EXTENT, MAX_ITEMS_PER_CONTAINER};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemError {

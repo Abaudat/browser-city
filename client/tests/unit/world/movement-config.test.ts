@@ -9,6 +9,8 @@ function defsWith(balance: readonly { key: string; value: number }[]): Defs {
     positionUnitsPerCell: 256,
     interactAtMaxReachCells: 2,
     maxFootprintCells: 8,
+    maxGridExtent: 8,
+    maxItemsPerContainer: 64,
     minFloor: -1,
     maxFloor: 7,
     maxShelfLifeMinutes: 525_600,
