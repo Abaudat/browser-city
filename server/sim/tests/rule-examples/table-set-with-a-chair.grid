@@ -1,0 +1,6 @@
+rules: table_set_has_a_chair table_set_has_a_second_chair
+expect: pass
+floor: 0
+legend: T=seated_table C=chair
+grid:
+TC

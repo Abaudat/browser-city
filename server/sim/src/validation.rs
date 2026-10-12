@@ -406,7 +406,8 @@ pub fn validate(candidate: &Candidate) -> Result<Vec<Defect>, ValidationError> {
 
     let (body_w, body_h) = walkability::player_body_subcells(defs::BALANCE);
     for fw in candidate.floors {
-        let grid = walkability::rasterise(fw.bounds, fw.floor, candidate.placements, defs::OBJECTS)
+        // A candidate block a caller hands in, never generated placements.
+        let grid = walkability::rasterise(fw.bounds, fw.floor, candidate.placements, defs::OBJECTS) // collision-inference: allow
             .map_err(ValidationError::Unreadable)?;
         for finding in walkability::enclosed_regions(&grid, fw.seed_x, fw.seed_y)
             .map_err(ValidationError::Unreadable)?

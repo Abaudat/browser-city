@@ -509,7 +509,7 @@ fn correct_block_validates_with_no_defects() {
 /// Quentin's direction: an explicit, named assertion of which committed
 /// rules the correct block gives a real subject to, so a future defs
 /// edit that silently stops exercising one of them fails loudly rather
-/// than an ever-green `[] == []`. Only three of today's rows qualify --
+/// than an ever-green `[] == []`. Only five of today's rows qualify --
 /// every other row's own subject/container tag (`wall`, `counter`,
 /// `floor`, `road`, `ground`, `pavement`, `threshold`, `entrance`) is either unplaceable today or, once placed (`wall`,
 /// `counter`), always trips an unrelated already-committed rule too (see
@@ -534,6 +534,8 @@ fn the_correct_block_gives_every_achievable_rule_at_least_one_subject_cell() {
 
     let mut expected = vec![
         "lighting_ground_floor_only",
+        "outdoor_props_never_indoors",
+        "street_is_lit",
         "waste_per_three_seating",
         "walled_room_has_waste_bin",
     ];

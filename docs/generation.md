@@ -647,7 +647,7 @@ and the unit tests on hand-built samples, not by the proptest.
   coordinates on the street's own tilemap: the interior of a building at
   `(x, y)` is found at `(x, y)`. Ground floor only: upper storeys and
   back doors are later additions. Tags and cells, never an object or a
-  sprite -- which sprite dresses a room is the theme pass's.
+  sprite -- which def stands a fixture, and so its sprite, is the prop pass's.
 - **Reads:** the type's room program, the footprint and its own front,
   the plot's front edge, and the committed requirement rows. Not
   affluence: no pass has authored it on the field yet, and this one
@@ -704,7 +704,7 @@ and the unit tests on hand-built samples, not by the proptest.
 | --- | --- |
 | sleeping | a bed |
 | cooking | a cooker |
-| washing | a basin |
+| washing | a basin, a toilet |
 | dining | a table set |
 | trading (a public floor that sells, serves or receives) | a till or service counter |
 | seated service | two table sets |
@@ -722,7 +722,7 @@ and the unit tests on hand-built samples, not by the proptest.
 - **Fixture placement.** Each anchor tag carries a placement class
   (`defs/tags/*.toml`'s `placement`), and the pass places by class, never
   two fixtures in adjacent cells where the room allows. *Wall-backed*
-  (bed, cooker, basin, desk, workbench, stock): along the north wall,
+  (bed, cooker, basin, toilet, desk, workbench, stock): along the north wall,
   then the side walls, centred first, in a corner only in a room two
   cells wide. *Free-standing* (table set): on the open floor away from
   every wall, nearest the centre, in a room three or more cells each way.
@@ -742,9 +742,9 @@ and the unit tests on hand-built samples, not by the proptest.
   falls back through the shorter programs, down to the required core, so
   a footprint whose longest program no randomised plan realises still
   gets its core rather than a missing institution.
-- **Owed to the prop pass:** a `washing` room holds only a basin here,
-  which does not read as a bathroom at 16 px -- the prop pass places a
-  toilet or bath in every one.
+- **Toilet.** A `washing` room owes a toilet beside its basin (a
+  requirement row over the function tag, like every other anchor), so a
+  bathroom reads as one at 16 px. Pass 7 stands it.
 - **Ownership.** Each building's footprint is a `building_area` (walls
   included) and each room's floor plus the doorway it owns a `room_area`
   (several rects sharing one room id; never a wall), emitted through
@@ -763,10 +763,138 @@ and the unit tests on hand-built samples, not by the proptest.
 
 ### Prop placement
 
-- **Receives:** a finished interior or exterior cell set.
-- **Hands down:** the placed props a player actually walks past.
-- **Reads:** density, affluence, building age.
-- **Evidence:** (added when the pass lands.)
+- **Receives:** every earlier pass: each envelope's interior (pass 6), the
+  street network (pass 2, for the pavement) and the committed rule rows
+  and object defs. A pure function of those and the seed.
+- **Hands down:** one row per placed object -- a def id at an anchor cell
+  (the footprint's south-west corner) on a floor, with its layer and
+  orientation: exactly the columns of `placed_object` minus the surrogate
+  id and the chunk key, so a later story that makes a district live maps
+  them one to one. Never a width, a height or a collider: a row's extent
+  and collision are its def's. The list is walls (a building's footprint
+  minus its rooms and thresholds; a whole solid cell for a shell or a
+  rejected building), every pass-6 fixture resolved from its tag to a def
+  carrying it, the glazing a counter owes on its street wall, and the
+  street furniture. One emitter, one list; this story does not write
+  `placed_object` (`create_district` still discards the plan).
+- **One collision map.** The district's collision is the rasterisation of
+  those rows' def colliders: one tile-granular `FloorCollision` per floor,
+  a cell blocked iff a collider touches it, composited once at the end of
+  the pass and cached on the `PropMap`. A def with no collider contributes
+  nothing (FR128). No later pass, reducer or test infers blocking from a
+  key, a layer or a sprite (`scripts/ci/check-no-runtime-collision-
+  inference.sh`). Per-floor materialisation and patching are story 3.8's.
+- **Reads:** which side of the door a def belongs to (the
+  `indoor_props_never_on_the_street` / `outdoor_props_never_indoors`
+  coherence rows: a def only ever stands where neither bars it, and only
+  if it carries one of the two), what each room and the street owe (the
+  requirement and distribution rows), `density` on the street (props per
+  screen), and the `generation.props.*` dials. Not affluence and not
+  building age: age is the facade's, and a prop carries no state to show
+  it; which candidate stands is a seeded draw, never a theme branch.
+- **Defs by tag, never by key.** A fixture's tag is resolved to a seeded
+  draw among the defs that carry it and may stand on a floor. Each anchor
+  tag has two variants of its natural footprint and, where that is more
+  than one cell, a compact 1x1 variant; the natural ones are tried
+  first, anchored so the whole footprint stands on its room's floor,
+  clear of every doorway and the cell either side, the approach and every
+  other fixture -- refused or moved, never clipped -- and at most
+  `generation.props.max_solid_percent_of_room_floor` of a room's floor is
+  solid. A building whose natural footprints leave a region the player
+  body cannot reach has its fixtures go compact one at a time -- the one
+  whose compact variant alone clears it, else each in turn until it is
+  clear -- those that had already fallen back staying compact. A tag no
+  def carries is a
+  typed `FixtureUnplaceable`, never a fixture left out.
+- **The street.** Pavement is each edge's two bands
+  (`generation.props.*_pavement_cells`), the rest carriageway; a crossing
+  street's carriageway keeps its cells. Every cell of it carries
+  `pavement` and `footway` (a doorstep carries `pavement` alone), so the
+  lighting row is stated over the street's own pavement. Furniture stands only on
+  pavement, never on a building's footprint, the approach or a cell
+  beside it, and leaves a walkable pavement cell in every cross-section
+  (a lamp may stand on a one-cell lane pavement: the carriageway beside it
+  is walkable). Three sources of density, each a rule, so clustering is a
+  consequence and never a mechanism: *cadence* (the `street_is_lit` row:
+  lamps every `generation.props.lamp_cadence_cells` on the kerb-side row
+  of each side of a street, the two sides staggered half a cadence, kept
+  `min_spacing` apart; then any footway cell still out of `max_distance`
+  of a lamp gets one on the nearest free footway cell, judged exactly as
+  the row judges -- site-wide, catchment lines ignored -- and a cell no
+  footway cell can cover is a counted skip, never a lamp in a yard);
+  *ambient* (singles, and now and then a pair: benches, trees, planters,
+  offered per 100 cells of building-side run from
+  `generation.props.ambient_per_100_cells_at_density_min` at the periphery
+  to `..._max` at the core -- provisional, to be re-judged the day the
+  city is walkable); *companions* (the `waste_per_three_seating` row,
+  allocated the way pass 5 places a distributed institution: every seat
+  within `max_distance` of a bin in its own block, each bin where it covers
+  the most uncovered seats and `min_spacing` from the others, and when the
+  count would pass the row's upper bound the bins covering the fewest
+  seats go with the seats nothing else covers). A def that carries a tag
+  any row names as a subject or a required fixture is never ambient: it
+  stands only where its row owes it.
+- **Seats at a table.** A seated table (the round tables; the stool owes
+  none) owes chairs beside it (`table_set_has_a_chair`,
+  `..._second_chair`: distribution rows over the `seated_table` tag, judged district-wide because the layout pass judges
+  every other kind per building before any chair stands). A chair is
+  underfoot (no collider), on a free floor cell next to the table, or on
+  the nearest free cell within the row's reach, never beside a doorway
+  and never on another prop's cell; a table with no free cell in reach is
+  a counted skip (`attendants_unplaced`), and the row then fires in
+  `check_rules` rather than a chair stand on a fixture. A room's light is
+  a standing lamp or a glass lamp, underfoot with no collider: a
+  wall-hung light is a wall-layer row, which this pass cannot stand
+  without moving `room_has_a_light` off the room area.
+- **Carriers, never consequence.** Every prop is placed in its empty,
+  default state: an empty bin, a till holding no cash, bare shelves, no
+  litter, no poster, no boarded window. Those states have authors in the
+  sim. A dressing def never carries a pass-6 anchor tag, so a room never
+  gains a second till or a bed nobody's program owed.
+- **Reachability.** `District::check` appends `check_reachability`: each
+  building's rows over its footprint and the first approach cell, and each
+  pavement band that carries furniture over its band, the face row behind
+  it and the first carriageway row. A window whose every free cell is
+  reachable over whole cells passes (sound while the player body fits a
+  cell and no collider leaves its own footprint -- both tested, with a
+  differential against the exact check); any other window is rasterised
+  through the real colliders and `enclosed_regions` (on the body-eroded
+  grid, so a sliver a collider leaves beside a wall is not a region) and
+  `narrow_passages` at the player body must report nothing. The
+  invariants judge with their own oracle, never the shortcut. Never the
+  whole district at sub-cell resolution.
+- **Skips are typed and counted** (`PropSkips`): a compact fallback, a
+  building re-placed with compact fixtures, a table with no free cell for
+  its chair, a shopfront with no clear stretch of
+  street wall, a street piece with no fitting cell. None fails generation.
+- **Known debt, for the story that makes a district live:** a bed is 1x3
+  over 16x48 art because the atlas loader refuses a several-row sprite
+  that is not exactly its footprint tall; a 1x2 bed with the headboard
+  overhanging the wall needs that overhang supported client-side.
+- **Not in this story:** upper storeys and anything above floor 0, dressing
+  beyond the toilet and a table's chairs (a fridge, a wardrobe, a sofa, a
+  bath), litter and every other consequence state, named signage and
+  tenancy, back gardens, seasonal or time-of-day dressing, anything on the
+  subway floor, and a client consuming the rows (placements do not reach
+  the client here). **Owed to the story that makes a district live:** the
+  ground, floor and threshold objects -- the rows are walls, fixtures,
+  shopfronts and furniture, so a district written from them alone has no
+  floor under its rooms and no doorway arch; and the rows per chunk are to
+  be measured before any are written (a shell or rejected building is one
+  wall row per footprint cell, the largest single contributor).
+  **Known debt:** a glazing unit is drawn along `x`, so a building fronting
+  east or west gets none: about 31% of the buildings holding a counter
+  over seeds 0..7, and with the few whose street wall has no clear
+  stretch, roughly a third of shops (2002 counters, 1352 shopfronts)
+  do not read as shops from the pavement.
+- **Evidence:** [`docs/generation/props-seed-1.svg`](generation/props-seed-1.svg),
+  [`-seed-2`](generation/props-seed-2.svg), [`-seed-3`](generation/props-seed-3.svg)
+  -- a core street window and a periphery street window at viewport scale
+  (40x22 cells: pavement, carriageway, footprints, every prop as its
+  footprint rect tinted by def with its collider hatched), then a contact
+  sheet of dressed interiors by kind (each prop's footprint tinted by def,
+  collider hatched) and a legend of every def shown; same regen-and-diff
+  guard as the rows above.
 
 ## Measured ceilings
 
@@ -839,7 +967,7 @@ block is reproducible bar thread count and wall-clock.
 `cargo run -p bounds --release --bin measure-generation -- detour 1000000`
 
 ```text
-detour-bounds sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, 32 threads, passes 1-2 only
+detour-bounds sweep at GENERATION_VERSION=13 fingerprint=4009cf20f2108cf8: 1000000 seeds, 32 threads, passes 1-2 only
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
@@ -880,7 +1008,7 @@ detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worst
   171% at seed 4929245716913353663
   178% at seed 4832727318219098284
   189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 231.3s (0.231ms/seed)
+detour-bounds sweep wall-clock: 195.5s (0.195ms/seed)
 ```
 
 ### band sweep
@@ -888,7 +1016,7 @@ detour-bounds sweep wall-clock: 231.3s (0.231ms/seed)
 `cargo run -p bounds --release --bin measure-generation -- bands 1000000`
 
 ```text
-band sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, all five passes (salt 0xb0f05ee4)
+band sweep at GENERATION_VERSION=13 fingerprint=4009cf20f2108cf8: 1000000 seeds, all five passes (salt 0xb0f05ee4)
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
 land_use_share_commercial deviation from its key (18%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.6 stddev=6.0
   5.5-sigma share tolerance implied: 3.32 percentage points
@@ -931,7 +1059,7 @@ largest_institutional_pocket_share_basis_points: min=87 p1=117 p50=205 p99=234 m
 profession_depth_per_city: min=44 p1=55 p50=61 p99=67 max=67 mean=61.4 stddev=2.3
   profession_count_per_city_min = 36: 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-band sweep wall-clock: 147.4s (0.147ms/seed)
+band sweep wall-clock: 150.5s (0.150ms/seed)
 ```
 
 ### exhaustive loop
@@ -939,7 +1067,7 @@ band sweep wall-clock: 147.4s (0.147ms/seed)
 `cargo run -p bounds --release --bin measure-generation`
 
 ```text
-exhaustive loop at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 50000 seeds at 512x512 cells
+exhaustive loop at GENERATION_VERSION=13 fingerprint=4009cf20f2108cf8: 50000 seeds at 512x512 cells
 building_count: min=778 p1=829 p50=889 p99=949 max=990 mean=889.2 stddev=25.6
 building_count extremes: min 778 at seed 11805315485014167829, max 990 at seed 11123925265906853341 (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)
 rejected_percent: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
@@ -1036,7 +1164,7 @@ ad hoc presence tags (never distributed) -- seeds with 0 placed:
 `cargo run -p bounds --release --bin measure-generation -- rows 1000000`
 
 ```text
-rows sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, 32 threads
+rows sweep at GENERATION_VERSION=13 fingerprint=4009cf20f2108cf8: 1000000 seeds, 32 threads
 CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
   committed rules hold (inv_generation_committed_rules_hold_for_any_seed): 0 of 1000000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 96-case CI failure probability <= 0.0288%)
@@ -1053,7 +1181,7 @@ CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 `cargo run -p bounds --release --bin measure-generation -- regions 1000000`
 
 ```text
-region-loss sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
+region-loss sweep at GENERATION_VERSION=13 fingerprint=4009cf20f2108cf8: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   seeds with any region carried by no block: 20769 of 1000000 (first: Some(11091164158115210688)) -- by design, a block takes its majority use
   every institutional region carried by no block (inv_generation_an_institutional_region_is_carried_by_a_block): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
@@ -1065,7 +1193,7 @@ CI judges these ceilings at 4096 cases in the test job and 256 in the coverage j
 `cargo run -p bounds --release --bin measure-generation -- pooled`
 
 ```text
-pooled evidence at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: seeds 0..256 pooled, evidence seeds 1, 2, 3
+pooled evidence at GENERATION_VERSION=13 fingerprint=4009cf20f2108cf8: seeds 0..256 pooled, evidence seeds 1, 2, 3
 pooled low-band / high-band mean block area over seeds 0..256: 289% (peripheral_pooled_min_ratio_percent = 150%)
 pooled chopped share of low-band blocks over seeds 0..256: 1886 of 5600 (33%)
 evidence seed 1: low-band / high-band mean block area 2.65x (Artie's bar 2x)
@@ -1083,14 +1211,14 @@ pooled core over city mean screen: 190% (busy_core_over_city_min_percent = 150%)
 `cargo run -p bounds --release --bin measure-generation -- interiors`
 
 ```text
-interiors sweep at GENERATION_VERSION=12 fingerprint=ca764a5f05098cbc: 30000 seeds, 32 threads (salt 0xb0f05ee7)
+interiors sweep at GENERATION_VERSION=13 fingerprint=4009cf20f2108cf8: 30000 seeds, 32 threads (salt 0xb0f05ee7)
 CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 enterable_count: min=766 p1=805 p50=868 p99=932 max=973 mean=868.5 stddev=27.3
 enterable_share_percent: min=92 p1=95 p50=97 p99=99 max=100 mean=97.2 stddev=1.2
 shell_count: min=0 p1=3 p50=20 p99=44 max=61 mean=20.6 stddev=10.4
 rejected_count: min=0 p1=0 p50=0 p99=0 max=1 mean=0.0 stddev=0.0
 rejected_percent_of_attempted: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
-max_layout_attempts_used: min=4 p1=7 p50=8 p99=8 max=8 mean=7.9 stddev=0.3
+max_layout_attempts_used: min=4 p1=6 p50=8 p99=8 max=8 mean=7.9 stddev=0.4
 max_room_aspect_x100: min=300 p1=300 p50=300 p99=300 max=300 mean=300.0 stddev=0.0
 dwelling_enterable_percent_of_placed: min=99 p1=100 p50=100 p99=100 max=100 mean=100.0 stddev=0.0
 dwelling_percent_of_enterable_set: min=50 p1=56 p50=63 p99=70 max=75 mean=62.7 stddev=2.9
@@ -1100,13 +1228,13 @@ cafe_enterable_percent_of_placed: min=100 p1=100 p50=100 p99=100 max=100 mean=10
 cafe_percent_of_enterable_set: min=0 p1=1 p50=1 p99=1 max=1 mean=1.0 stddev=0.0
 back_room_enterable_percent_of_placed: min=100 p1=100 p50=100 p99=100 max=100 mean=100.0 stddev=0.0
 back_room_percent_of_enterable_set: min=2 p1=4 p50=7 p99=10 max=13 mean=7.3 stddev=1.4
-wall_cells_per_city: min=39144 p1=42391 p50=47093 p99=51266 max=53815 mean=47038.2 stddev=1905.1
-floor_cells_per_city: min=45646 p1=50713 p50=57593 p99=63693 max=67587 mean=57506.0 stddev=2811.5
-threshold_cells_per_city: min=3201 p1=3473 p50=3886 p99=4251 max=4504 mean=3880.6 stddev=167.4
-fixture_cells_per_city: min=7502 p1=8088 p50=8987 p99=9797 max=10355 mean=8978.0 stddev=366.9
-layout attempts needed (u32::MAX = rejected): {1: 23292358, 2: 1334735, 3: 628107, 4: 341075, 5: 192792, 6: 112084, 7: 64379, 8: 90167, 4294967295: 2}
+wall_cells_per_city: min=39113 p1=42377 p50=47077 p99=51252 max=53747 mean=47020.5 stddev=1905.7
+floor_cells_per_city: min=45667 p1=50780 p50=57694 p99=63777 max=67731 mean=57601.3 stddev=2815.3
+threshold_cells_per_city: min=3162 p1=3422 p50=3807 p99=4155 max=4403 mean=3802.9 stddev=157.3
+fixture_cells_per_city: min=7892 p1=8489 p50=9379 p99=10190 max=10797 mean=9371.8 stddev=365.5
+layout attempts needed (u32::MAX = rejected): {1: 23646369, 2: 1202362, 3: 547904, 4: 286316, 5: 158236, 6: 90868, 7: 51550, 8: 72092, 4294967295: 2}
 check-chain failures by verdict: {}
-buildings laid with a program shorter than the longest that fit, by type (of laid): {"bottling_plant": 35, "builders_yard": 40, "clinic": 35, "condo_block": 4806, "corner_shop": 29, "cottage": 11523, "depot": 47, "fire_station": 451, "food_plant": 35, "market_hall": 1, "police_station": 413, "print_works": 18, "recycling_facility": 38, "terrace_house": 25560, "transit_office": 488, "vehicle_repair_garage": 26, "villa": 8804, "warehouse": 190, "welfare_office": 1, "workshop": 22} of {"bakery": 304085, "bank_branch": 139940, "bookshop": 140286, "bottling_plant": 358074, "builders_yard": 429241, "butcher": 304450, "cafe": 314739, "cinema": 315041, "clinic": 283919, "clothes_shop": 163106, "condo_block": 1775470, "corner_shop": 690317, "cottage": 3339704, "council": 30001, "depot": 30001, "fire_station": 283606, "food_plant": 393850, "general_retail": 507954, "greengrocer": 303759, "gym": 116090, "hairdresser": 305948, "hardware_shop": 227505, "hospital": 30001, "hotel": 144552, "launderette": 146405, "library": 281999, "market_hall": 199992, "office_block": 304326, "pharmacy": 228774, "police_station": 284134, "post_office": 252848, "print_works": 250522, "pub": 180935, "recycling_facility": 428587, "restaurant": 116298, "school": 283885, "shelter": 159589, "supermarket": 315662, "terrace_house": 8360021, "transit_office": 283443, "vehicle_repair_garage": 267069, "villa": 2306992, "warehouse": 80809, "welfare_office": 105674, "workshop": 286094}
+buildings laid with a program shorter than the longest that fit, by type (of laid): {"bottling_plant": 35, "builders_yard": 40, "clinic": 35, "condo_block": 2491, "cottage": 10855, "depot": 47, "fire_station": 451, "food_plant": 35, "market_hall": 1, "police_station": 413, "print_works": 18, "recycling_facility": 38, "terrace_house": 18502, "transit_office": 488, "vehicle_repair_garage": 26, "villa": 8293, "warehouse": 190, "welfare_office": 1, "workshop": 22} of {"bakery": 304085, "bank_branch": 139940, "bookshop": 140286, "bottling_plant": 358074, "builders_yard": 429241, "butcher": 304450, "cafe": 314739, "cinema": 315041, "clinic": 283919, "clothes_shop": 163106, "condo_block": 1775470, "corner_shop": 690317, "cottage": 3339704, "council": 30001, "depot": 30001, "fire_station": 283606, "food_plant": 393850, "general_retail": 507954, "greengrocer": 303759, "gym": 116090, "hairdresser": 305948, "hardware_shop": 227505, "hospital": 30001, "hotel": 144552, "launderette": 146405, "library": 281999, "market_hall": 199992, "office_block": 304326, "pharmacy": 228774, "police_station": 284134, "post_office": 252848, "print_works": 250522, "pub": 180935, "recycling_facility": 428587, "restaurant": 116298, "school": 283885, "shelter": 159589, "supermarket": 315662, "terrace_house": 8360021, "transit_office": 283443, "vehicle_repair_garage": 267069, "villa": 2306992, "warehouse": 80809, "welfare_office": 105674, "workshop": 286094}
 buildings rejected, by type: {"corner_shop": 2}
   generate succeeds (check chain): 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
@@ -1140,14 +1268,16 @@ as *props visible per screen of street* along the centre-to-periphery
 axis, a consequence of the Density parameter above, never a city-wide
 ratio and never a second meaning of "density". The numbers themselves
 arrive with the pass that consumes them, settled against full-viewport
-screenshots -- not invented here. Two constraints on the curve are about
+screenshots -- not invented here (`generation.props.ambient_per_100_cells_*`,
+provisional: about 8 street props per core screen, lamps excluded, fewer
+at the edge). Two constraints on the curve are about
 look, not tuning, and hold from this document on:
 
 - The periphery gets *fewer* props, never missing ground or broken
   joins -- sparse reads as quiet, a gap reads as a bug.
-- Density is clustered with purpose (bins by benches, clutter by
-  shopfronts, lamps and trees on a regular cadence), never uniform
-  scatter -- noise reads as generated, rhythm reads as real.
+- Density is clustered with purpose (bins by benches, lamps on a regular
+  cadence), never uniform scatter -- noise reads as generated, rhythm
+  reads as real.
 
 ## Targets
 
@@ -1306,16 +1436,26 @@ disagree.
 | generation.interiors.cafe_min_enterable_percent | committed | Interior layout | the same minimum for cafes |
 | generation.interiors.back_room_min_enterable_percent | committed | Interior layout | the same minimum for institutional back rooms (a staff room in a type sited on institutional land use) |
 | generation.interiors.max_kind_share_percent | committed | Interior layout | no required kind may exceed this share of the enterable set |
+| generation.props.arterial_pavement_cells | committed | Prop placement | an arterial's pavement band on each side, in cells; the rest of its width is carriageway |
+| generation.props.street_pavement_cells | committed | Prop placement | the same for a street-tier segment |
+| generation.props.lane_pavement_cells | committed | Prop placement | the same for a lane-tier segment (one cell: furniture other than a lamp never stands on it) |
+| generation.props.lamp_cadence_cells | committed | Prop placement | the distance between lamps along one side of a street, the two sides staggered half a cadence; the `street_is_lit` row's `min_spacing` keeps the ones that would crowd a junction out |
+| generation.props.ambient_per_100_cells_at_density_min | committed | Prop placement | **provisional** -- ambient street furniture offered per 100 cells of building-side run at the periphery |
+| generation.props.ambient_per_100_cells_at_density_max | committed | Prop placement | **provisional** -- the same at the core, interpolated by density; re-judged the day the city is walkable |
+| generation.props.max_solid_percent_of_room_floor | committed | Prop placement | the most of a room's floor solid colliders may cover; past it a fixture stands at its compact footprint |
 
 ## placement
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| lighting_ground_floor_only | committed | Prop placement | cell | - | **placeholder** -- a street lamp standing on an upper-storey ledge instead of at street level |
+| lighting_ground_floor_only | committed | Prop placement | cell | - | a lamp -- a street lamp or a room's light -- standing on an upper-storey ledge instead of at street level; pass 7 places on floor 0 only, so it holds by construction and is judged over every placed lamp |
 
 ## distribution
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| waste_per_three_seating | committed | Prop placement | site | - | **placeholder** -- seating with no bin anywhere nearby, or every bin clumped in one corner while the rest of the street collects litter; scoped `site` because distribution's own coverage math already is -- "Does not fit"'s distribution gap below is this row's own answer to how it behaves when the site grows |
+| waste_per_three_seating | committed | Prop placement | site | - | seating with no bin anywhere nearby, or every bin clumped in one corner while the rest of the street collects litter; pass 7 stands benches as ambient singles and pairs and allocates a bin to every seat within `max_distance`, in the same block, under the row's own ratio band; scoped `site` because distribution's own coverage math already is -- "Does not fit"'s distribution gap below is this row's own answer to how it behaves when the site grows |
+| table_set_has_a_chair | committed | Prop placement | site | - | a seated table with no chair within `max_distance` -- a dining room nobody can sit in; stated as a distribution, not a requirement, because the layout pass judges every other kind over its own building before any chair stands |
+| table_set_has_a_second_chair | committed | Prop placement | site | - | the same row again: two rows, two seats ("Does not fit", "N of X beside every Y") |
+| street_is_lit | committed | Prop placement | site | - | a street with no lighting at all, or lamps at irregular spacing: every footway cell (a cell of the street's own pavement, never a doorstep) has a street lamp within `max_distance`, no two closer than `min_spacing`, and the count sits in the ratio band; stated over the `street_light` tag, so a room's own light never counts as street lighting |
 | depot_present | committed | Building type | site | - | a depot per roughly `ratio` dwellings, never clustered with another depot -- "the district has a depot" (AC2); one per district is what a depot is, so a district that grows past the next multiple of `ratio` is owed another, built by the development chain; no coverage ceiling (the walk to one is content) |
 | council_present | committed | Building type | site | - | same shape, the council |
 | hospital_present | committed | Building type | site | - | same shape, the hospital |
@@ -1326,13 +1466,14 @@ disagree.
 ## coherence
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
+| indoor_props_never_on_the_street | committed | Prop placement | room | - | an interior-sheet prop (an object carrying `indoor`) standing in an area that has street pavement in it; pass 7 also reads the pair to know which side of the door each def is on |
+| outdoor_props_never_indoors | committed | Prop placement | room | - | an exterior-sheet prop (an object carrying `outdoor`) standing in an area that has a floor in it |
 | no_counter_in_a_stairwell | committed | Interior layout | room | - | a till or service counter sharing an area with a stairwell; the pass lays out the ground floor only, so no stairwell exists for it to fire on yet |
 | no_high_rise_within_a_low_rise_block | committed | Building type | building | - | AC1, "no skyscraper among villas": a `form_high` building never shares a block with a `form_low` one -- the form-class scale is `defs/tags/generation.toml`'s own vocabulary, never a type key |
 
 ## adjacency
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| counter_faces_a_shopfront | committed | Prop placement | cell | - | **placeholder** -- a shopfront with no counter on any side of it; nothing emits a shopfront until the prop pass, so it cannot fire on an interior layout |
 | door_never_blocked_by_a_fixture | committed | Interior layout | cell | - | a fixture standing on any cell beside a threshold, inside or out -- a door a prop blocks |
 | road_never_touches_wall | committed | Building envelope | cell | - | the carriageway running straight into a building wall with no pavement between them |
 | road_never_touches_ground | committed | Building envelope | cell | - | asphalt bleeding directly into bare ground with no pavement edge |
@@ -1346,7 +1487,9 @@ disagree.
 ## requirement
 | key | status | pass | scope | reads | intent |
 | --- | --- | --- | --- | --- | --- |
-| walled_room_has_waste_bin | committed | Prop placement | room | - | **placeholder** -- a room holding seating with no waste bin; stays on `seating`, so it cannot fire on anything the interior-layout pass emits, and the prop-placement pass makes it real |
+| walled_room_has_waste_bin | committed | Prop placement | room | - | an area holding seating with no waste bin in it: a block's street furniture, since pass 7 stands no indoor seating, and a cluster of benches is never stood without its bin |
+| counter_faces_a_shopfront | committed | Prop placement | building | - | a shopfront with no counter behind it: pass 7 stands one glazing unit on the street wall of every building holding a counter, so a shop reads as a shop from the pavement; was an adjacency row, stated over the building because the counter stands against the far wall, not the glass |
+| bathroom_has_a_toilet | committed | Prop placement | room | - | a washing room with a basin and no toilet -- the dressing debt story 3.5 recorded |
 | room_has_a_door | committed | Interior layout | room | - | a sealed room a player can see into but never enter |
 | building_has_an_entrance | committed | Building envelope | building | - | a building with no door anywhere on its own perimeter |
 | footprint_sized_for_interior_usability | committed | Interior layout | room | - | a laid-out room too cramped to use: fewer than four floor cells, two walkable cells either way; the static half (a type whose own minimum interior cannot hold its program) is refused at defs build |
@@ -1382,12 +1525,12 @@ names; `unclaimed` otherwise -- checked mechanically, not by eye.
 | Pavement furniture leaving less than one walkable cell of pavement | adjacency | | unclaimed |
 | The same facade repeated side by side with no variation, beyond what a real terrace would do | distribution | | unclaimed |
 | The same prop sprite repeated side by side with no variation | distribution | | unclaimed |
-| A shopfront with no counter behind it | requirement | shop_floor_has_a_counter | claimed |
+| A shopfront with no counter behind it | requirement | shop_floor_has_a_counter + counter_faces_a_shopfront | claimed |
 | A building with no entrance anywhere on its own perimeter | requirement | building_has_an_entrance | claimed |
-| Interior-sheet props placed on the street | coherence | | unclaimed |
-| Exterior-sheet props placed indoors | coherence | | unclaimed |
-| A street with no lighting at all | distribution | | unclaimed |
-| Lamps at irregular spacing along a street | distribution | | unclaimed |
+| Interior-sheet props placed on the street | coherence | indoor_props_never_on_the_street | claimed |
+| Exterior-sheet props placed indoors | coherence | outdoor_props_never_indoors | claimed |
+| A street with no lighting at all | distribution | street_is_lit | claimed |
+| Lamps at irregular spacing along a street | distribution | street_is_lit | claimed |
 | A land-use boundary cutting through the middle of a block, rather than running along a street | adjacency | | unclaimed |
 | Two parallel streets close enough to leave a sliver block no plot can use | adjacency | | unclaimed |
 | A street that jogs sideways within less than a minimum block length | coherence | | unclaimed |
@@ -1406,7 +1549,7 @@ names; `unclaimed` otherwise -- checked mechanically, not by eye.
 | Character alternating block by block, with no patch of one character larger than a screen | distribution | | unclaimed |
 | An entire commercial block face of shuttered units inside the dense core | distribution | | unclaimed |
 
-The five `defs/rules/city.toml` rows and the `defs/rules/grammar.toml`
+The `defs/rules/city.toml` rows and the `defs/rules/grammar.toml`
 rows above are placeholders and grammar primitives, not a claim on this
 catalogue: `entrance_opens_onto_pavement` and `doorway_formed_between_walls`
 guard individual room/building composition, not a whole generated
@@ -1445,6 +1588,15 @@ smallest) by `inv_generation_envelope_size_within_its_class_band`.
   reachable only through the room graph. It holds by construction --
   the pass keeps every fixture's lane to the doorway -- and is checked by
   `inv_generation_every_emitted_interior_validates_clean`.
+
+- **"N of X beside every Y" is two copies of one row.** A table set owes
+  two chairs: `table_set_has_a_chair` and `table_set_has_a_second_chair`,
+  the same distribution row twice. A ratio counts `per` cells per subject
+  and cannot say "N subjects per one `per`"; and a requirement row has no
+  owner pass, so a row pass 7 owes cannot be a requirement without pass 6
+  refusing every building before any chair stands. The two chair rows are
+  the stopgap: the next "two of X beside every Y" is a signal to fix the
+  engine, not a third copy.
 
 A rule that cannot be expressed as one of the five kinds over tags for
 any other reason is written here too, with why -- a signal that a

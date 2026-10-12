@@ -237,14 +237,14 @@ function seedWorld(handle) {
       actors.push(`[${id},0,${id},${key},0]`);
     }
   }
-  // Story 6.10: shop A's cupboard (def 26, a 4x3 grid) is a real
+  // Story 6.10: shop A's cupboard (def 71, a 4x3 grid) is a real
   // placed_object -- the one after the chunk objects, so the restore's
   // gap-free ids hold -- and holds five known items: two 1x1, a 1x2
   // standing at the east edge, another turned a quarter turn (2x1)
   // beneath them, and a 1x2 (see `E2E_CUPBOARD`).
   const cupboardId = E2E_CUPBOARD.objectId;
   placed.push(
-    `[${cupboardId},26,${E2E_CUPBOARD.x},${E2E_CUPBOARD.y},0,2,0,${chunkKey(E2E_CUPBOARD.x, E2E_CUPBOARD.y, 0)}]`,
+    `[${cupboardId},71,${E2E_CUPBOARD.x},${E2E_CUPBOARD.y},0,2,0,${chunkKey(E2E_CUPBOARD.x, E2E_CUPBOARD.y, 0)}]`,
   );
   const count = placed.length;
   callReducer(handle, "begin_restore");

@@ -34,7 +34,7 @@ land_uses = ["residential"]
 density_min = 35
 density_max = 75
 min_interior_width_cells = 5
-min_interior_depth_cells = 5
+min_interior_depth_cells = 6
 weight = 40
 
 [[building_type]]
@@ -47,7 +47,7 @@ land_uses = ["residential"]
 density_min = 60
 density_max = 100
 min_interior_width_cells = 5
-min_interior_depth_cells = 5
+min_interior_depth_cells = 6
 weight = 25
 
 # The mixed-use row Derek's direction asks for: shop below, flat above --
@@ -83,5 +83,5 @@ density_min = 0
 density_max = 45
 affluence_max = 55
 min_interior_width_cells = 5
-min_interior_depth_cells = 5
+min_interior_depth_cells = 6
 weight = 30

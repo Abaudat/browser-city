@@ -425,6 +425,8 @@ impl DistrictSite {
         assignments: &[super::building_types::TypeAssignment],
         building_types_by_id: &BTreeMap<u32, &defs::BuildingTypeDef>,
         interiors: &InteriorMap,
+        props: &super::props::PropMap,
+        objects: &[defs::ObjectDef],
         vocab: &Vocabulary,
     ) -> Self {
         // Two cells of margin: an entrance on the site's own edge still
@@ -441,11 +443,13 @@ impl DistrictSite {
         // building's own cells first (its entrance cell is also the cell
         // the type's own tags sit on, merged below).
         debug_assert_eq!(interiors.outcomes().len(), assignments.len());
+        super::props::stamp_street(&mut builder, props, vocab);
         for outcome in interiors.outcomes() {
             if let InteriorOutcome::Laid { interior, .. } = outcome {
                 add_building(&mut builder, interior, vocab);
             }
         }
+        super::props::stamp_props(&mut builder, props, interiors, objects, vocab);
 
         for (envelope, assignment) in envelopes.envelopes().zip(assignments) {
             debug_assert_eq!(
@@ -582,6 +586,8 @@ mod tests {
             types.assignments(),
             &by_id,
             &interiors,
+            &crate::generation::props::PropMap::test_fixture(pm.site(), Vec::new(), &[]).unwrap(),
+            content.objects,
             &vocab,
         );
         let assignments = types.assignments().to_vec();

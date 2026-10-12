@@ -1,0 +1,10 @@
+rules: street_is_lit
+expect: pass
+floor: 0
+legend: P=footway Y=footway+street_light
+grid:
+PPPPP
+PPPPP
+PPYPP
+PPPPP
+PPPPP

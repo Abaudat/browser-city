@@ -8,7 +8,7 @@
 # (singles 113-116), so a future open-sprite state needs a different pair or
 # the cupboard stays as it is.
 [[object]]
-id = 26
+id = 71
 key = "cupboard"
 name = "Cupboard"
 layer = "furniture"
@@ -21,7 +21,7 @@ grid = { width = 4, height = 3 }
 tags = ["fixture"]
 
 [[object]]
-id = 27
+id = 72
 key = "crate"
 name = "Crate"
 layer = "furniture"
@@ -34,7 +34,7 @@ grid = { width = 4, height = 4 }
 tags = ["fixture"]
 
 [[object]]
-id = 28
+id = 73
 key = "pallet"
 name = "Pallet"
 layer = "furniture"
@@ -47,7 +47,7 @@ grid = { width = 8, height = 6 }
 tags = ["fixture"]
 
 [[object]]
-id = 29
+id = 74
 key = "bag"
 name = "Bag"
 layer = "furniture"

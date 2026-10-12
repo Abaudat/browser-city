@@ -144,7 +144,7 @@ export const SHOP_COUNTER_DEF_ID = 3;
  * the id the e2e world seeds as that cupboard's `placed_object` row (the
  * live street has no such server row, so there it opens empty). The def's
  * art has no open-door variant. */
-export const CUPBOARD_DEF_ID = 26;
+export const CUPBOARD_DEF_ID = 71;
 export const CUPBOARD_PROP_ID = 82n;
 /** `defs/objects/city-props.toml`'s own `shop_window` id (FR121, story
  * 1.7): a real `[[object]] window = true` entry, never a street-only flag --

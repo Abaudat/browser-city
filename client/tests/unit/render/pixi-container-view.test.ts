@@ -142,7 +142,7 @@ describe("ContainerViewController lifecycle", () => {
 
   const object = {
     objectId: 82n,
-    defId: 26,
+    defId: 71,
     anchorX: 10,
     anchorY: 5,
     floor: 0,

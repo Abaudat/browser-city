@@ -5,7 +5,7 @@
 
 use super::{
     District, GenerationConfig, GenerationContent, GenerationError, Skeleton, building_types,
-    envelopes, interiors, land_use, plots, streets,
+    envelopes, interiors, land_use, plots, props, streets,
 };
 
 /// Chains every implemented pass, in FR110's own order, with no verdict
@@ -25,9 +25,11 @@ pub fn plan(
         cfg,
         content,
     );
+    let props = props::run(city_seed, &skeleton, &interiors, cfg, content)?;
     Ok(District {
         skeleton,
         interiors,
+        props,
     })
 }
 

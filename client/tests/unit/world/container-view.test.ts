@@ -81,7 +81,7 @@ describe("rectsInGrid", () => {
 const TILE = 16;
 const CUPBOARD: ContainerObject = {
   objectId: 82n,
-  defId: 26,
+  defId: 71,
   anchorX: 10,
   anchorY: 5,
   floor: 0,
@@ -113,10 +113,10 @@ describe("viewOriginPx", () => {
 
 describe("openView", () => {
   it("an intent on a def with a grid opens a view bound to that object", () => {
-    const view = openView({ objectId: 82n, defId: 26 }, (d) =>
-      d === 26 ? { width: 4, height: 3 } : undefined,
+    const view = openView({ objectId: 82n, defId: 71 }, (d) =>
+      d === 71 ? { width: 4, height: 3 } : undefined,
     );
-    expect(view).toEqual({ objectId: 82n, defId: 26, grid: { width: 4, height: 3 } });
+    expect(view).toEqual({ objectId: 82n, defId: 71, grid: { width: 4, height: 3 } });
   });
 
   it("an intent on a def without a grid opens nothing", () => {

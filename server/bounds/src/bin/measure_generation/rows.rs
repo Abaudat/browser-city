@@ -53,9 +53,12 @@ pub fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
                 building_type: a.building_type,
             })
             .collect();
+        let props = sim::generation::PropMap::test_fixture(skeleton.plots.site(), Vec::new(), &[])
+            .expect("an empty prop map builds");
         let d = sim::generation::District {
             skeleton,
             interiors: sim::generation::InteriorMap::test_fixture(shells),
+            props,
         };
         let site = d.site(content);
         let failing = d.check_rules(content).err().map(|e| e.to_string());

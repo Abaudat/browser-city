@@ -5,7 +5,7 @@
 # envelopes::run -> building_types::run -> interiors::run` chain in a
 # harness is a second copy of the chain that every new pass then has to be
 # added to -- so any call to `plots::run(`, `envelopes::run(`,
-# `building_types::run(` or `interiors::run(`
+# `building_types::run(`, `interiors::run(` or `props::run(`
 # under server/sim/tests/ or server/bounds/ fails this check unless the
 # line itself carries the marker
 #
@@ -25,7 +25,7 @@ cd "$REPO_ROOT"
 
 OFFENDERS="$(
   git ls-files 'server/sim/tests/*.rs' 'server/bounds/*.rs' -z |
-    xargs -0 -r grep -nE '(plots|envelopes|building_types|interiors)::run\(' |
+    xargs -0 -r grep -nE '(plots|envelopes|building_types|interiors|props)::run\(' |
     grep -v 'generation-entry-point: allow' || true
 )"
 

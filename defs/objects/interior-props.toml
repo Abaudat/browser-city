@@ -1,0 +1,434 @@
+# Story 3.6 (FR110): the interior props pass 7 stands for every owed fixture.
+# Each carries `indoor`, its anchor tag, and the `fixture` role. Every
+# anchor tag has two variants of its natural footprint and (where that is
+# more than a cell) one compact 1x1 variant, the guaranteed fit a room the
+# natural ones do not fit falls back to. Colliders sit inside the
+# footprint (FR128), at the cells the art actually occupies; the art
+# overhangs upward past the footprint like every other tall prop.
+# Sprites are the plain-shadow `Theme_Sorter_Singles` family only.
+
+[[object]]
+id = 26
+key = "bed_single_blue"
+name = "Single Bed (blue)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_140.png", x = 0, y = 0, w = 16, h = 48 }
+width = 1
+height = 3
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 38 }
+tags = ["bed", "indoor", "fixture"]
+
+[[object]]
+id = 27
+key = "bed_single_white"
+name = "Single Bed (white)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_147.png", x = 0, y = 0, w = 16, h = 48 }
+width = 1
+height = 3
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 38 }
+tags = ["bed", "indoor", "fixture"]
+
+[[object]]
+id = 28
+key = "bed_compact"
+name = "Compact Bed"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/20_Japanese_Interiors_Singles/Japanese_Interiors_Singles_69.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 6 }
+tags = ["bed", "indoor", "fixture"]
+
+[[object]]
+id = 29
+key = "cooker_hob_dark"
+name = "Cooker (dark hob)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_148.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 11 }
+tags = ["cooker", "indoor", "fixture"]
+
+[[object]]
+id = 30
+key = "cooker_hob_blue"
+name = "Cooker (blue hob)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_151.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 11 }
+tags = ["cooker", "indoor", "fixture"]
+
+[[object]]
+id = 31
+key = "vanity_basin_wood"
+name = "Vanity Basin (wood)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_2.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 32, y1 = 9 }
+tags = ["basin", "indoor", "fixture"]
+
+[[object]]
+id = 32
+key = "vanity_basin_pale"
+name = "Vanity Basin (pale)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_9.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 32, y1 = 9 }
+tags = ["basin", "indoor", "fixture"]
+
+[[object]]
+id = 33
+key = "pedestal_basin"
+name = "Pedestal Basin"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_33.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+collider = { x0 = 3, y0 = 2, x1 = 13, y1 = 13 }
+tags = ["basin", "indoor", "fixture"]
+
+[[object]]
+id = 34
+key = "toilet_cream"
+name = "Toilet (cream)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_21.png", x = 0, y = 0, w = 16, h = 48 }
+width = 1
+height = 1
+collider = { x0 = 2, y0 = 0, x1 = 14, y1 = 10 }
+tags = ["toilet", "indoor", "fixture"]
+
+[[object]]
+id = 35
+key = "toilet_white"
+name = "Toilet (white)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_23.png", x = 0, y = 0, w = 16, h = 48 }
+width = 1
+height = 1
+collider = { x0 = 2, y0 = 0, x1 = 14, y1 = 10 }
+tags = ["toilet", "indoor", "fixture"]
+
+[[object]]
+id = 36
+key = "table_round_oak"
+name = "Round Table (oak)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/14_Basement_Singles/Basement_Singles_1.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 2
+collider = { x0 = 4, y0 = 8, x1 = 28, y1 = 32 }
+tags = ["table_set", "seated_table", "indoor", "fixture"]
+
+[[object]]
+id = 37
+key = "table_round_red"
+name = "Round Table (red)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/14_Basement_Singles/Basement_Singles_2.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 2
+collider = { x0 = 4, y0 = 8, x1 = 28, y1 = 32 }
+tags = ["table_set", "seated_table", "indoor", "fixture"]
+
+[[object]]
+id = 38
+key = "table_stool"
+name = "Stool Table"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/14_Basement_Singles/Basement_Singles_9.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+collider = { x0 = 0, y0 = 1, x1 = 16, y1 = 16 }
+tags = ["table_set", "indoor", "fixture"]
+
+[[object]]
+id = 39
+key = "desk_drawers_pale"
+name = "Desk (pale)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_51.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 5, y0 = 0, x1 = 28, y1 = 10 }
+tags = ["indoor", "fixture"]
+
+[[object]]
+id = 40
+key = "desk_drawers_dark"
+name = "Desk (dark)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_55.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 5, y0 = 0, x1 = 28, y1 = 10 }
+tags = ["indoor", "fixture"]
+
+[[object]]
+id = 41
+key = "desk_small"
+name = "Small Desk"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_63.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 15, y1 = 9 }
+tags = ["indoor", "fixture"]
+
+[[object]]
+id = 42
+key = "workbench_table_pale"
+name = "Workbench (pale)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_309.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 31, y1 = 10 }
+tags = ["workbench", "indoor", "fixture"]
+
+[[object]]
+id = 43
+key = "workbench_table_orange"
+name = "Workbench (orange)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_310.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 31, y1 = 10 }
+tags = ["workbench", "indoor", "fixture"]
+
+[[object]]
+id = 44
+key = "workbench_compact"
+name = "Compact Workbench"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_67.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 15, y1 = 9 }
+tags = ["workbench", "indoor", "fixture"]
+
+[[object]]
+id = 45
+key = "shelving_empty_a"
+name = "Empty Shelving (a)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_51.png", x = 0, y = 0, w = 32, h = 48 }
+width = 2
+height = 1
+collider = { x0 = 3, y0 = 0, x1 = 29, y1 = 8 }
+tags = ["stock", "indoor", "fixture"]
+
+[[object]]
+id = 46
+key = "shelving_empty_b"
+name = "Empty Shelving (b)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_55.png", x = 0, y = 0, w = 32, h = 48 }
+width = 2
+height = 1
+collider = { x0 = 3, y0 = 0, x1 = 29, y1 = 8 }
+tags = ["stock", "indoor", "fixture"]
+
+[[object]]
+id = 47
+key = "shelf_compact"
+name = "Compact Shelf (lilac)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_77.png", x = 0, y = 0, w = 16, h = 48 }
+width = 1
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 7 }
+tags = ["stock", "indoor", "fixture"]
+
+[[object]]
+id = 48
+key = "till_counter_white"
+name = "Till Counter (white)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_145.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 31, y1 = 9 }
+interact_at = { x0 = 0, y0 = 16, x1 = 32, y1 = 32 }
+tags = ["counter", "indoor", "fixture"]
+
+[[object]]
+id = 49
+key = "till_counter_glass"
+name = "Till Counter (glass)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_146.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 31, y1 = 9 }
+interact_at = { x0 = 0, y0 = 16, x1 = 32, y1 = 32 }
+tags = ["counter", "indoor", "fixture"]
+
+[[object]]
+id = 50
+key = "counter_compact"
+name = "Compact Counter"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_264.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 16, y1 = 16 }
+interact_at = { x0 = -4, y0 = 16, x1 = 20, y1 = 32 }
+tags = ["counter", "indoor", "fixture"]
+
+[[object]]
+id = 51
+key = "standing_lamp_blue"
+name = "Standing Lamp (blue)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_79.png", x = 0, y = 0, w = 16, h = 48 }
+width = 1
+height = 1
+tags = ["lighting", "indoor", "underfoot", "fixture"]
+
+[[object]]
+id = 52
+key = "standing_lamp_red"
+name = "Standing Lamp (red)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_81.png", x = 0, y = 0, w = 16, h = 48 }
+width = 1
+height = 1
+tags = ["lighting", "indoor", "underfoot", "fixture"]
+
+[[object]]
+id = 59
+key = "string_lights"
+name = "String Lights"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_12.png", x = 0, y = 0, w = 32, h = 16 }
+width = 2
+height = 1
+tags = ["indoor", "underfoot", "fixture"]
+
+[[object]]
+id = 60
+key = "glass_lamp"
+name = "Glass Lamp"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_27.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["lighting", "indoor", "underfoot", "fixture"]
+
+[[object]]
+id = 61
+key = "desk_papers_grey"
+name = "Desk with Papers (grey)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_127.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 6, y0 = 0, x1 = 26, y1 = 6 }
+tags = ["desk", "indoor", "fixture"]
+
+[[object]]
+id = 62
+key = "desk_papers_wood"
+name = "Desk with Papers (wood)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_132.png", x = 0, y = 0, w = 32, h = 32 }
+width = 2
+height = 1
+collider = { x0 = 6, y0 = 0, x1 = 26, y1 = 6 }
+tags = ["desk", "indoor", "fixture"]
+
+[[object]]
+id = 63
+key = "desk_planter_small"
+name = "Small Desk (planter)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_143.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 15, y1 = 11 }
+tags = ["indoor", "fixture"]
+
+[[object]]
+id = 64
+key = "chair_yellow"
+name = "Chair (yellow)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_74.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+tags = ["chair", "indoor", "underfoot", "fixture"]
+
+[[object]]
+id = 65
+key = "chair_green"
+name = "Chair (green)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_86.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+tags = ["chair", "indoor", "underfoot", "fixture"]
+
+[[object]]
+id = 66
+key = "shelf_compact_cream"
+name = "Compact Shelf (cream)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_80.png", x = 0, y = 0, w = 16, h = 48 }
+width = 1
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 7 }
+tags = ["stock", "indoor", "fixture"]
+
+[[object]]
+id = 67
+key = "desk_school_book"
+name = "School Desk (book)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/5_Classroom_and_Library_Singles/Classroom_and_Library_Singles_8.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 7 }
+tags = ["desk", "indoor", "fixture"]
+
+[[object]]
+id = 68
+key = "desk_school_papers"
+name = "School Desk (papers)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/5_Classroom_and_Library_Singles/Classroom_and_Library_Singles_10.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 7 }
+tags = ["desk", "indoor", "fixture"]
+
+[[object]]
+id = 69
+key = "bed_compact_green"
+name = "Compact Bed (green)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/20_Japanese_Interiors_Singles/Japanese_Interiors_Singles_71.png", x = 0, y = 0, w = 16, h = 32 }
+width = 1
+height = 1
+collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 6 }
+tags = ["bed", "indoor", "fixture"]
+
+[[object]]
+id = 70
+key = "pedestal_basin_white"
+name = "Pedestal Basin (white)"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_34.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+collider = { x0 = 3, y0 = 2, x1 = 13, y1 = 13 }
+tags = ["basin", "indoor", "fixture"]
