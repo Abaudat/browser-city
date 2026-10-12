@@ -65,7 +65,7 @@ out(
 );
 out();
 out(
-  "Also gated: zero stale frames (a frame drawn with its result still in flight), a result drawn at most one frame after its instant, no worker restarts, zero major GCs on either thread, allocation under a stamped ceiling on each thread, and each statistic against the recorded finding +25% so L3 cannot get slower unnoticed. The 4x CPU throttle is reported, never gated. Gated by `client/tests/e2e/l3-budget.spec.ts` in `e2e-perf`.",
+  "Also gated: zero stale frames (a frame drawn with its result still in flight), a result drawn at most one frame after its instant, no worker restarts, no major GC pause longer than a frame on either thread, allocation under a stamped ceiling on each thread, and each statistic against the recorded finding +25% so L3 cannot get slower unnoticed. The 4x CPU throttle is reported, never gated. Gated by `client/tests/e2e/l3-budget.spec.ts` in `e2e-perf`.",
 );
 out();
 out(`## Verdict: **${record.verdict}**`);
@@ -183,8 +183,8 @@ const gcRow = (label, g) =>
   `- ${label}: ${g.minorCount} minor GCs (longest ${ms(g.longestMinorPauseMs)}), ${g.majorCount} major GCs (longest ${ms(g.longestMajorPauseMs)}).`;
 const gated = record.gcRenderedWindow ?? record.gc;
 const gatedWorker = record.workerGcRenderedWindow ?? record.workerGc;
-out(gcRow("Frame's thread, rendered window (gated at zero majors)", gated));
-out(gcRow("Worker, rendered window (gated at zero majors)", gatedWorker));
+out(gcRow("Frame's thread, rendered window (a pause over a frame is red)", gated));
+out(gcRow("Worker, rendered window (a pause over a frame is red)", gatedWorker));
 out(gcRow("Frame's thread, verdict window (render off, a quiet page: reported)", record.gc));
 out(gcRow("Worker, verdict window (reported)", record.workerGc));
 out(`- Retained heap, last lap against the first: ${record.heap.growthRatio.toFixed(3)}x (bound ${record.heap.bound}x).`);

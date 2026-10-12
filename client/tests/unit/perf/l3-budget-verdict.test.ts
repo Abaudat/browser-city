@@ -124,10 +124,14 @@ describe("L3 budget verdict (NFR11)", () => {
   });
 
   it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
-    // One major, however short, on either thread is red.
-    const brief = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 1 };
-    expect(verdict({ ...GOOD, gc: brief }).gateFailures.join()).toContain("main-thread major GC");
-    expect(verdict({ ...GOOD, workerGc: brief }).gateFailures.join()).toContain("worker major GC");
+    // A major that stays inside a frame is reported, not red; one longer is
+    // a dropped frame on either thread.
+    const brief = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 11 };
+    expect(verdict({ ...GOOD, gc: brief }).met).toBe(true);
+    expect(verdict({ ...GOOD, workerGc: brief }).met).toBe(true);
+    const long = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 20 };
+    expect(verdict({ ...GOOD, gc: long }).gateFailures.join()).toContain("main-thread major GC");
+    expect(verdict({ ...GOOD, workerGc: long }).gateFailures.join()).toContain("worker major GC");
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);
     const slowScavenges = { ...GOOD.gc, minorPausesMs: [4.5, 5], longestMinorPauseMs: 9 };
     expect(verdict({ ...GOOD, gc: slowScavenges }).met).toBe(true);

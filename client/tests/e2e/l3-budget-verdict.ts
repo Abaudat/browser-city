@@ -64,6 +64,9 @@ export const MAX_L3_ALLOC_BYTES_PER_FRAME = 15_360;
  * layer's update. Stamped at the worst of the same runs (1.5 KB) plus 25%. */
 export const MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME = 2_048;
 
+/** One 60 Hz frame, in ms: the longest a collection may stop a thread. */
+export const FRAME_MS = 1000 / 60;
+
 /** Retained heap, last window against the first, after a forced GC at each
  * end -- the same method and bound as `street-perf.spec.ts`. */
 export const MAX_L3_HEAP_GROWTH_RATIO = 1.5;
@@ -356,10 +359,18 @@ export function verdict(m: L3Measurement): Verdict {
       `the main thread allocates ${m.mainAllocBytesPerFrame.toFixed(0)} B/frame over ${MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME}`,
     );
   }
-  // Zero major collections, on the frame's thread and on the worker's.
-  if (m.gc.majorCount > 0) gate.push(`${m.gc.majorCount} main-thread major GCs in the window`);
-  if (m.workerGc.majorCount > 0)
-    gate.push(`${m.workerGc.majorCount} worker major GCs in the window`);
+  // A major collection on either thread is held to a frame: one that takes
+  // longer is a dropped frame, whoever caused it. They are not held to zero:
+  // an idle page with no L3 on it shows the same incremental-marking majors
+  // (V8 collects a quiet page on its own account), and the worker's own come
+  // from the path churn of the fixture's leg restarts. What a worker pause
+  // costs shows in the stale and lag counters, which are gated.
+  if (!(m.gc.longestMajorPauseMs <= FRAME_MS)) {
+    gate.push(`a main-thread major GC paused ${m.gc.longestMajorPauseMs.toFixed(2)} ms`);
+  }
+  if (!(m.workerGc.longestMajorPauseMs <= FRAME_MS)) {
+    gate.push(`a worker major GC paused ${m.workerGc.longestMajorPauseMs.toFixed(2)} ms`);
+  }
   if (!(m.restarts === 0)) gate.push(`the worker was replaced ${m.restarts} times`);
   if (!(m.heapGrowthRatio <= MAX_L3_HEAP_GROWTH_RATIO)) {
     gate.push(`retained heap grew ${m.heapGrowthRatio.toFixed(2)}x`);
