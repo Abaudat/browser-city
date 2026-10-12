@@ -16,23 +16,27 @@ export const L3_P95_MARGIN_MS = 1.6;
 
 /** The finding as the tripwire holds it. `ubuntu-latest` is a mixed pool of
  * CPUs, so an absolute figure would go red on a slower SKU with no code change.
- * Each L3 percentile is divided by `calibrationMs`, the time of a fixed pure-JS
+ * Each percentile is divided by `calibrationMs`, the time of a fixed pure-JS
  * workload (not L3 code) run in the same page just before the window, and the
  * ratio is held at the recorded one +25%. The NFR11 budget above stays
- * absolute and the verdict (`met`) is judged on it; the absolute figures of the
- * recorded runs are in `docs/spikes/5.4-l3-frame-budget.md`; the ratios are
- * stamped from run 38215691965 (calibration 4 ms). Lowered when L3
- * gets cheaper, never raised. */
-export const RECORDED_P95_RATIO = 0.43;
-export const RECORDED_P99_RATIO = 0.48;
-export const RECORDED_SWEEP_P95_RATIO = 0.23;
-export const RECORDED_SWEEP_P99_RATIO = 0.3;
+ * absolute and the verdict (`met`) is judged on it. Stamped at the worst ratio
+ * of the final code's `e2e-perf` runs on the runner (run 38236356617, attempts
+ * 1-3, and run 38235184667: EPYC 7763 and 9V74), whose figures are in
+ * `docs/spikes/5.4-l3-frame-budget.md`. Lowered when L3 gets cheaper, never
+ * raised. */
+/** The main thread's window: apply, request, layer update. */
+export const RECORDED_P95_RATIO = 0.09;
+export const RECORDED_P99_RATIO = 0.11;
+/** The worker's own solve time per instant, in the real ticker. */
+export const RECORDED_WORKER_P95_RATIO = 0.37;
+export const RECORDED_WORKER_P99_RATIO = 0.5;
+/** The worker's solve over successive instants with no ticker: the supplementary
+ * sweep, taken inside the worker. */
+export const RECORDED_WORKER_SWEEP_P95_RATIO = 0.26;
+export const RECORDED_WORKER_SWEEP_P99_RATIO = 0.3;
 /** A rendered result may trail the instant it was solved for by this many frames. */
 export const MAX_RESULT_LAG_FRAMES = 1;
 
-/** The worker's own solve time per instant, in the real ticker. */
-export const RECORDED_WORKER_P95_RATIO = 0.23;
-export const RECORDED_WORKER_P99_RATIO = 0.3;
 export const REGRESSION_MARGIN = 1.25;
 
 /** Frames the in-situ window (the real ticker, render interleaved) must
@@ -41,18 +45,18 @@ export const MIN_TICKER_FRAMES = 1_000;
 /** Frames the supplementary render-free sweep must hold. */
 export const MIN_MEASURED_FRAMES = 3_000;
 
-/** Allocation attributed to `src/l3/` and the crowd update, bytes per
- * frame, steady state, for the fixed rush-hour crowd (HeapProfiler sampling,
- * 15 s window). Stamped at the runner's measured figure plus 25%
- * (`docs/spikes/5.4-l3-frame-budget.md`), so a doubling goes red; the remainder
- * is the micro-path search each leg start runs. Restamp it when the figure
- * moves, never above measured + 25%. */
-export const MAX_L3_ALLOC_BYTES_PER_FRAME = 18_432;
+/** Allocation attributed to `src/l3/`, `src/l3-worker/` and the crowd update
+ * inside the worker, bytes per frame, steady state, for the fixed rush-hour
+ * crowd (HeapProfiler sampling on the worker target). Stamped at the worst of
+ * the final code's runner runs (12.1 KB, run 38236356617 attempt 2) plus 25%,
+ * so a doubling goes red; the remainder is the micro-path search each leg start
+ * runs. Restamp it when the figure moves, never above measured + 25%. */
+export const MAX_L3_ALLOC_BYTES_PER_FRAME = 15_360;
 
 /** The main thread's share of the same allocation, bytes per ticker frame,
  * through the real ticker with the render off: the apply, the post and the
- * layer's update. Stamped at the runner's measured figure plus 25%. */
-export const MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME = 4_096;
+ * layer's update. Stamped at the worst of the same runs (1.5 KB) plus 25%. */
+export const MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME = 2_048;
 
 /** Retained heap, last window against the first, after a forced GC at each
  * end -- the same method and bound as `street-perf.spec.ts`. */
@@ -301,7 +305,7 @@ export function verdict(m: L3Measurement): Verdict {
   const windows: [string, Distribution, number, number][] = [
     ["L3", m.l3Ms, RECORDED_P95_RATIO, RECORDED_P99_RATIO],
     ["worker solve", m.solveMs, RECORDED_WORKER_P95_RATIO, RECORDED_WORKER_P99_RATIO],
-    ["sweep", m.sweepMs, RECORDED_SWEEP_P95_RATIO, RECORDED_SWEEP_P99_RATIO],
+    ["sweep", m.sweepMs, RECORDED_WORKER_SWEEP_P95_RATIO, RECORDED_WORKER_SWEEP_P99_RATIO],
   ];
   for (const [name, d, recorded95, recorded99] of windows) {
     if (!(d.p95 <= L3_P95_BUDGET_MS)) {

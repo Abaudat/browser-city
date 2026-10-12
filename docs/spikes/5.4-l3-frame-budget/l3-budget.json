@@ -7,8 +7,8 @@
     "cores": 4,
     "chromium": "153.0.8010.12",
     "ci": true,
-    "runId": "38210916612",
-    "runner": "GitHub Actions 1000010278",
+    "runId": "38236356617",
+    "runner": "GitHub Actions 1000010900",
     "image": "ubuntu24"
   },
   "runMs": 60000,
@@ -24,9 +24,9 @@
       "y": 18
     },
     "liveBodiesMin": 259,
-    "walkingMin": 125,
-    "sidesteppingMax": 106,
-    "cappedMax": 93
+    "walkingMin": 129,
+    "sidesteppingMax": 107,
+    "cappedMax": 96
   },
   "budget": {
     "p95Ms": 2,
@@ -34,214 +34,502 @@
   },
   "verdict": "MISSED",
   "failures": [
-    "L3 p95 2.200 ms over 2 ms"
+    "worker solve p95 2.000 ms over the 1.6 ms margin",
+    "worker solve p95 / calibration 0.370 regressed past the recorded 0.23 +25%",
+    "worker solve p99 / calibration 0.500 regressed past the recorded 0.3 +25%"
   ],
+  "calibrationMs": 5.399999999994179,
+  "l3Ratios": {
+    "p95": 0.0740740740784656,
+    "p99": 0.0925925925926924,
+    "sweepP95": 0.2592592592530712,
+    "sweepP99": 0.2777777777780772
+  },
   "l3Ms": {
-    "frames": 3157,
-    "p50": 2,
-    "p95": 2.2000000000116415,
-    "p99": 2.3999999999941792,
-    "max": 5.099999999976717
+    "frames": 3191,
+    "p50": 0.29999999998835847,
+    "p95": 0.40000000002328306,
+    "p99": 0.5,
+    "max": 2.3999999999941792
   },
   "l3RenderedMs": {
-    "frames": 242,
-    "p50": 2.1000000000058208,
-    "p95": 2.8000000000174623,
-    "p99": 4.399999999994179,
-    "max": 5.600000000005821
+    "frames": 263,
+    "p50": 0.3000000000174623,
+    "p95": 0.6999999999825377,
+    "p99": 2.2000000000116415,
+    "max": 4.5
   },
+  "l3SolveMs": {
+    "frames": 3191,
+    "p50": 1.5,
+    "p95": 2,
+    "p99": 2.6999999999825377,
+    "max": 6
+  },
+  "untraced": {
+    "l3Ms": {
+      "frames": 531,
+      "p50": 0.29999999998835847,
+      "p95": 0.40000000002328306,
+      "p99": 0.40000000002328306,
+      "max": 0.5
+    },
+    "l3SolveMs": {
+      "frames": 531,
+      "p50": 1.5,
+      "p95": 1.7000000000116415,
+      "p99": 2.5,
+      "max": 3.199999999953434
+    }
+  },
+  "solveStale": {
+    "staleFrames": 0,
+    "skippedRequests": 0,
+    "maxLagFrames": 0,
+    "lagEvents": []
+  },
+  "workerCalibrationMs": 6.5,
   "l3SweepMs": {
     "frames": 4000,
-    "p50": 1.1000000000349246,
-    "p95": 1.2999999999883585,
-    "p99": 1.400000000023283,
-    "max": 2.099999999976717
+    "p50": 0.9000000000232831,
+    "p95": 1.3999999999650754,
+    "p99": 1.5,
+    "max": 3.099999999976717
   },
   "frameWorkMs": {
-    "frames": 242,
-    "p50": 3.1999999999825377,
-    "p95": 4.399999999994179,
-    "p99": 6.399999999994179,
-    "max": 7.7999999999883585
+    "frames": 263,
+    "p50": 1.3999999999941792,
+    "p95": 3.2999999999883585,
+    "p99": 4.2999999999883585,
+    "max": 5.300000000017462
   },
   "throttled4x": {
     "rate": 4,
     "l3Ms": {
-      "frames": 440,
-      "p50": 6.899999999965075,
-      "p95": 9.400000000023283,
-      "p99": 11.099999999976717,
-      "max": 16
+      "frames": 493,
+      "p50": 0.5999999999767169,
+      "p95": 1.599999999976717,
+      "p99": 4.5,
+      "max": 6.100000000034925
     },
+    "workerThrottle": {
+      "reached": false,
+      "error": "Error: Operation is only supported for pages, not workers",
+      "calibrationMs": 7.600000000034925,
+      "slowdown": 1.1692307692361423
+    },
+    "workerSolveMs": null,
     "frameWorkMs": {
-      "frames": 440,
-      "p50": 7.599999999976717,
-      "p95": 10.300000000046566,
-      "p99": 12,
-      "max": 17.79999999998836
+      "frames": 493,
+      "p50": 0.8999999999650754,
+      "p95": 2.3999999999650754,
+      "p99": 5.2000000000116415,
+      "max": 7.2000000000116415
     }
   },
   "allocation": {
     "windowMs": 15000,
     "frames": 4000,
-    "l3Bytes": 63354376,
-    "l3BytesPerFrame": 15838.594,
-    "ceilingBytesPerFrame": 20480,
-    "top": [
+    "l3Bytes": 47535948,
+    "l3BytesPerFrame": 11883.987,
+    "ceilingBytesPerFrame": 18432,
+    "mainBytesPerFrame": 1503.5386565272497,
+    "mainCeilingBytesPerFrame": 4096,
+    "mainTop": [
       {
-        "fn": "#ensurePaths",
-        "url": "http://127.0.0.1:5173/src/l3/body.ts",
-        "bytes": 32544048
+        "fn": "viewTick",
+        "url": "http://127.0.0.1:5173/src/l3-worker/protocol.ts",
+        "bytes": 261832
       },
       {
-        "fn": "planBodies",
-        "url": "http://127.0.0.1:5173/src/world/body-zone.ts",
-        "bytes": 14032304
+        "fn": "L3Client.port.onmessage",
+        "url": "http://127.0.0.1:5173/src/l3-worker/client.ts",
+        "bytes": 243384
       },
       {
-        "fn": "#roomOn",
-        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
-        "bytes": 4474164
+        "fn": "apply",
+        "url": "http://127.0.0.1:5173/src/l3-worker/client.ts",
+        "bytes": 169800
       },
       {
-        "fn": "findMicroPath",
-        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
-        "bytes": 3289836
-      },
-      {
-        "fn": "pullTaut",
-        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
-        "bytes": 2322220
-      },
-      {
-        "fn": "flavourKindOf",
-        "url": "http://127.0.0.1:5173/src/l3/flavour.ts",
-        "bytes": 1463920
+        "fn": "request",
+        "url": "http://127.0.0.1:5173/src/l3-worker/client.ts",
+        "bytes": 98680
       },
       {
         "fn": "seedOf",
         "url": "http://127.0.0.1:5173/src/l3/seed.ts",
-        "bytes": 1419900
+        "bytes": 91720
       },
       {
-        "fn": "frameAt",
-        "url": "http://127.0.0.1:5173/src/l3/citizen.ts",
-        "bytes": 970984
-      },
-      {
-        "fn": "walkable",
-        "url": "http://127.0.0.1:5173/src/test-street/citizens.ts",
-        "bytes": 805572
+        "fn": "collect",
+        "url": "http://127.0.0.1:5173/src/world/walk-mirror.ts",
+        "bytes": 79224
       },
       {
         "fn": "legInstants",
         "url": "http://127.0.0.1:5173/src/l3/body.ts",
-        "bytes": 679060
+        "bytes": 71148
+      },
+      {
+        "fn": "apply",
+        "url": "http://127.0.0.1:5173/src/world/body-lifecycle.ts",
+        "bytes": 40284
+      },
+      {
+        "fn": "get stats",
+        "url": "http://127.0.0.1:5173/src/l3-worker/client.ts",
+        "bytes": 38640
+      },
+      {
+        "fn": "applyZone",
+        "url": "http://127.0.0.1:5173/src/test-street/citizens-layer.ts",
+        "bytes": 36232
+      }
+    ],
+    "top": [
+      {
+        "fn": "#ensurePaths",
+        "url": "http://127.0.0.1:5173/src/l3/body.ts",
+        "bytes": 31123712
+      },
+      {
+        "fn": "lineIsClear",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 5051772
+      },
+      {
+        "fn": "#scanWalls",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 4501256
+      },
+      {
+        "fn": "pullTaut",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 3197012
+      },
+      {
+        "fn": "frameAt",
+        "url": "http://127.0.0.1:5173/src/l3/citizen.ts",
+        "bytes": 1142688
+      },
+      {
+        "fn": "seedOf",
+        "url": "http://127.0.0.1:5173/src/l3/seed.ts",
+        "bytes": 1029212
+      },
+      {
+        "fn": "findMicroPath",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 567660
+      },
+      {
+        "fn": "legInstants",
+        "url": "http://127.0.0.1:5173/src/l3/body.ts",
+        "bytes": 340956
+      },
+      {
+        "fn": "resolve",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 213712
+      },
+      {
+        "fn": "sortIndices",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 113924
       }
     ]
   },
   "gc": {
-    "minorCount": 61,
+    "minorCount": 41,
+    "majorCount": 2,
+    "totalPauseMs": 31.162000000000003,
+    "longestMinorPauseMs": 1.689,
+    "longestMajorPauseMs": 2.852,
+    "minorP99PauseMs": 1.689
+  },
+  "majorEvents": [
+    {
+      "thread": "main",
+      "args": {
+        "type": "finalize incremental marking via task",
+        "usedHeapSizeAfter": 19034260,
+        "usedHeapSizeBefore": 20032984
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 2240,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3840,
+      "tdur": 1926,
+      "tid": 3840,
+      "ts": 245570120,
+      "tts": 7181486
+    },
+    {
+      "thread": "main",
+      "args": {
+        "type": "finalize incremental marking via task",
+        "usedHeapSizeAfter": 19138076,
+        "usedHeapSizeBefore": 19977872
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 2852,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3840,
+      "tdur": 2594,
+      "tid": 3840,
+      "ts": 266649461,
+      "tts": 11556358
+    }
+  ],
+  "workerGc": {
+    "minorCount": 53,
     "majorCount": 0,
-    "totalPauseMs": 43.854,
-    "longestMinorPauseMs": 1.129,
+    "totalPauseMs": 54.410999999999994,
+    "longestMinorPauseMs": 2.223,
     "longestMajorPauseMs": 0,
-    "minorP99PauseMs": 1.129
+    "minorP99PauseMs": 2.223
   },
   "cpuTopSelf": [
     {
       "fn": "(program) ",
-      "share": 0.97732927840752
+      "share": 0.9903249097472924
     },
     {
-      "fn": "#roomOn src/l3/avoidance.ts",
-      "share": 0.0035941387890517005
+      "fn": "collectRenderablesSimple http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=f3f2a506",
+      "share": 0.0017328519855595668
     },
     {
-      "fn": "collectRenderablesSimple http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=0d62da28",
-      "share": 0.003455902681780481
-    },
-    {
-      "fn": "#resolveBody src/l3/avoidance.ts",
-      "share": 0.0031794304672380425
-    },
-    {
-      "fn": "#closestApproach src/l3/avoidance.ts",
-      "share": 0.0015205971799834117
-    },
-    {
-      "fn": "packQuadAttributes http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=0d62da28",
-      "share": 0.001105888858169754
+      "fn": "packQuadAttributes http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=f3f2a506",
+      "share": 0.001588447653429603
     },
     {
       "fn": "update src/test-street/citizens-layer.ts",
-      "share": 0.0008294166436273154
+      "share": 0.0010108303249097472
     },
     {
-      "fn": "#byPosition src/l3/avoidance.ts",
-      "share": 0.000552944429084877
+      "fn": "postMessage ",
+      "share": 0.0007220216606498195
     },
     {
-      "fn": "poseAt src/l3/body.ts",
-      "share": 0.000552944429084877
+      "fn": "(garbage collector) ",
+      "share": 0.0005776173285198556
     },
     {
-      "fn": "break http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=0d62da28",
-      "share": 0.000552944429084877
+      "fn": "update http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=f3f2a506",
+      "share": 0.0002888086642599278
     },
     {
-      "fn": "resolve src/l3/avoidance.ts",
-      "share": 0.0004147083218136577
+      "fn": "break http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=f3f2a506",
+      "share": 0.0002888086642599278
     },
     {
-      "fn": "planBodies src/world/body-zone.ts",
-      "share": 0.0004147083218136577
+      "fn": "executeInstructions http://127.0.0.1:5173/node_modules/.vite/deps/RenderTargetSystem-BredZz1o.js?v=f3f2a506",
+      "share": 0.0002888086642599278
+    },
+    {
+      "fn": "requestAnimationFrame ",
+      "share": 0.0002888086642599278
+    },
+    {
+      "fn": "visitNode ",
+      "share": 0.0001444043321299639
+    },
+    {
+      "fn": "request src/l3-worker/client.ts",
+      "share": 0.0001444043321299639
+    },
+    {
+      "fn": "apply src/l3-worker/client.ts",
+      "share": 0.0001444043321299639
     },
     {
       "fn": "instantsFor src/l3/ledger-position.ts",
-      "share": 0.0004147083218136577
+      "share": 0.0001444043321299639
     },
     {
-      "fn": "update http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=0d62da28",
-      "share": 0.0002764722145424385
+      "fn": "planBodies src/world/body-zone.ts",
+      "share": 0.0001444043321299639
+    }
+  ],
+  "workerCpuTopSelf": [
+    {
+      "fn": "(idle) ",
+      "share": 0.9893586306454939
+    },
+    {
+      "fn": "#resolveBody src/l3/avoidance.ts",
+      "share": 0.002680965147453083
+    },
+    {
+      "fn": "#roomOn src/l3/avoidance.ts",
+      "share": 0.0023922458238812127
+    },
+    {
+      "fn": "#closestApproach src/l3/avoidance.ts",
+      "share": 0.0004537017941843679
+    },
+    {
+      "fn": "(garbage collector) ",
+      "share": 0.0004537017941843679
+    },
+    {
+      "fn": "resolve src/l3/avoidance.ts",
+      "share": 0.0003712105588781192
+    },
+    {
+      "fn": "frameAt src/l3/citizen.ts",
+      "share": 0.0003712105588781192
+    },
+    {
+      "fn": "#tick src/l3-worker/solver.ts",
+      "share": 0.00032996494122499484
+    },
+    {
+      "fn": "solveAll src/test-street/street-life.ts",
+      "share": 0.00032996494122499484
+    },
+    {
+      "fn": "#scanWalls src/l3/avoidance.ts",
+      "share": 0.00032996494122499484
+    },
+    {
+      "fn": "#byPosition src/l3/avoidance.ts",
+      "share": 0.00028871932357187047
+    },
+    {
+      "fn": "flavourAt src/l3/flavour.ts",
+      "share": 0.00028871932357187047
     },
     {
       "fn": "#byCell src/l3/avoidance.ts",
-      "share": 0.0002764722145424385
+      "share": 0.00024747370591874615
+    },
+    {
+      "fn": "findMicroPath src/l3/micro-path.ts",
+      "share": 0.00024747370591874615
+    },
+    {
+      "fn": "scope.onmessage src/l3-worker/worker.ts?worker_file&type=module",
+      "share": 0.00020622808826562179
+    }
+  ],
+  "workerCpuTopLines": [
+    {
+      "at": "src/l3/avoidance.ts:383",
+      "share": 0.002680965147453083
+    },
+    {
+      "at": "src/l3/avoidance.ts:568",
+      "share": 0.0023922458238812127
+    },
+    {
+      "at": "src/l3/avoidance.ts:246",
+      "share": 0.0004537017941843679
+    },
+    {
+      "at": "src/l3/avoidance.ts:286",
+      "share": 0.0003712105588781192
+    },
+    {
+      "at": "src/l3/citizen.ts:82",
+      "share": 0.0003712105588781192
+    },
+    {
+      "at": "src/test-street/street-life.ts:177",
+      "share": 0.00032996494122499484
+    },
+    {
+      "at": "src/l3/avoidance.ts:322",
+      "share": 0.00032996494122499484
+    },
+    {
+      "at": "src/l3/avoidance.ts:119",
+      "share": 0.00028871932357187047
+    },
+    {
+      "at": "src/l3/flavour.ts:49",
+      "share": 0.00028871932357187047
+    },
+    {
+      "at": "src/l3/avoidance.ts:128",
+      "share": 0.00024747370591874615
+    },
+    {
+      "at": "src/l3/micro-path.ts:172",
+      "share": 0.00024747370591874615
+    },
+    {
+      "at": "src/l3/avoidance.ts:617",
+      "share": 0.00020622808826562179
+    },
+    {
+      "at": "src/l3/body.ts:228",
+      "share": 0.00020622808826562179
+    },
+    {
+      "at": "src/l3-worker/worker.ts?worker_file&type=module:9",
+      "share": 0.00016498247061249742
+    },
+    {
+      "at": "src/l3-worker/solver.ts:207",
+      "share": 0.00016498247061249742
+    },
+    {
+      "at": "src/l3/micro-path.ts:130",
+      "share": 0.00016498247061249742
+    },
+    {
+      "at": "src/l3-worker/worker.ts?worker_file&type=module:7",
+      "share": 0.00012373685295937308
+    },
+    {
+      "at": "src/l3/micro-path.ts:58",
+      "share": 0.00008249123530624871
+    },
+    {
+      "at": "src/l3/body.ts:80",
+      "share": 0.00008249123530624871
+    },
+    {
+      "at": "src/l3/body.ts:310",
+      "share": 0.00008249123530624871
     }
   ],
   "heap": {
     "samples": [
       {
         "atMs": 0,
-        "usedHeapBytes": 19378884
+        "usedHeapBytes": 18783240
       },
       {
-        "atMs": 10347,
-        "usedHeapBytes": 19574340
+        "atMs": 10477,
+        "usedHeapBytes": 18954240
       },
       {
-        "atMs": 20756,
-        "usedHeapBytes": 19612772
+        "atMs": 21012,
+        "usedHeapBytes": 18977388
       },
       {
-        "atMs": 31154,
-        "usedHeapBytes": 19633156
+        "atMs": 31552,
+        "usedHeapBytes": 18983524
       },
       {
-        "atMs": 41560,
-        "usedHeapBytes": 19583452
+        "atMs": 42110,
+        "usedHeapBytes": 19003652
       },
       {
-        "atMs": 51960,
-        "usedHeapBytes": 19599004
+        "atMs": 52637,
+        "usedHeapBytes": 19006608
       },
       {
-        "atMs": 62364,
-        "usedHeapBytes": 19596144
+        "atMs": 63118,
+        "usedHeapBytes": 19009088
       }
     ],
-    "growthRatio": 1.0011139072888282,
+    "growthRatio": 1.0028937061048082,
     "bound": 1.5
   }
 }

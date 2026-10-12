@@ -1,17 +1,18 @@
 #!/usr/bin/env node
-// Story 5.4 (NFR11, D-L3): docs/spikes/5.4-l3-frame-budget.md is exactly this
-// script's output over the committed raw JSON (docs/spikes/5.4-l3-frame-budget/):
-//   l3-budget.json         the l3-budget spec's report from the CI runner
-//   pre-fix.json           the run before the hot-spot fix
-//   divergence.json        the density divergence sweep, after tightening
-//   divergence-before.json the same sweep before it
+// Story 5.4 / 5.24 (NFR11, D-L3): docs/spikes/5.4-l3-frame-budget.md is exactly
+// this script's output over the committed raw JSON (docs/spikes/5.4-l3-frame-budget/):
+//   l3-budget.json            the l3-budget spec's report of the verdict-of-record run
+//   baseline-main-thread.json story 5.4's measurement of L3 on the main thread
+//   runs/run-*.json           every consecutive run of the final code, each on the runner
+//   divergence.json           the density divergence sweep, after tightening
+//   divergence-before.json    the same sweep before it
 // `scripts/ci/check-l3-budget-report-current.sh` regenerates it and fails on
 // any drift. Node only, no npm dependency.
 //
 //   node scripts/dev/generate-l3-budget-report.mjs \
 //     --raw-dir docs/spikes/5.4-l3-frame-budget \
 //     --out docs/spikes/5.4-l3-frame-budget.md
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const args = {};
@@ -23,22 +24,25 @@ if (!args["raw-dir"] || !args.out) {
   process.exit(2);
 }
 const read = (name) => JSON.parse(readFileSync(join(args["raw-dir"], name), "utf8"));
-const after = read("l3-budget.json");
-const before = read("pre-fix.json");
+const record = read("l3-budget.json");
+const baseline = read("baseline-main-thread.json");
 const divergence = read("divergence.json");
 const divergenceBefore = read("divergence-before.json");
-const second = read("l3-budget-second-sku.json");
+const runs = readdirSync(join(args["raw-dir"], "runs"))
+  .filter((f) => /^run-.*\.json$/.test(f))
+  .sort()
+  .map((f) => JSON.parse(readFileSync(join(args["raw-dir"], "runs", f), "utf8")));
 
 const ms = (v) => `${v.toFixed(2)} ms`;
-const kb = (v) => `${(v / 1024).toFixed(0)} KB`;
+const kb = (v) => `${(v / 1024).toFixed(1)} KB`;
 const row = (label, d) =>
   `| ${label} | ${d.frames} | ${ms(d.p50)} | ${ms(d.p95)} | ${ms(d.p99)} | ${ms(d.max)} |`;
-const headroom = (1 - after.l3Ms.p95 / after.budget.p95Ms) * 100;
-const env = after.environment ?? {};
+const env = record.environment ?? {};
 const machine = (e) =>
   e && e.platform
-    ? `${e.platform}, ${e.cpu}, ${e.ci ? `GitHub Actions run ${e.runId}, runner ${e.runner} (${e.image})` : "a local run"}`
+    ? `${e.cpu}, GitHub Actions run ${e.runId}, runner ${e.runner} (${e.image})`
     : "an unrecorded machine";
+const MARGIN_MS = 1.6;
 const lines = [];
 const out = (s = "") => lines.push(s);
 
@@ -50,97 +54,138 @@ out();
 out("## Pre-registered verdict");
 out();
 out(
-  `The statistic is the p95 of the per-frame L3 window (\`streetLife.solve\` + \`citizensLayer.update\`, Pixi's render excluded) measured in the real ticker with the software rasteriser off (the rendered window is reported beside it), CPU unthrottled, ${after.crowd.size} citizens bodied at once in one bubble on shipped dials. Budget: p95 <= ${after.budget.p95Ms} ms, p99 <= ${after.budget.p99Ms} ms, zero major GCs, allocation under a stamped ceiling. Gated by \`client/tests/e2e/l3-budget.spec.ts\` in \`e2e-perf\`: a budget miss is the recorded finding, and the CI gate holds the recorded figure +25% so L3 cannot get slower unnoticed; the 4x CPU-throttled run is reported, never gated.`,
+  `L3 is solved in a dedicated Worker; the frame's thread applies the result and updates the layer. Two statistics, both p95 over the real ticker with the software rasteriser off (the rendered window is reported beside it), CPU unthrottled, ${record.crowd.size} citizens bodied at once in one bubble on shipped dials, a GC trace running:`,
 );
 out();
-out(`## Verdict: **${after.verdict}**`);
+out(
+  `- the main-thread window (\`apply\`, \`request\`, \`CitizensLayer.update\`): p95 <= ${record.budget.p95Ms} ms, p99 <= ${record.budget.p99Ms} ms;`,
+);
+out(
+  `- the worker's own solve time per instant (\`StreetLife.solve\`, timed inside the worker): the same budget, and "with margin": p95 <= ${MARGIN_MS} ms, so the recorded figure plus the tripwire's 25% sits under the budget.`,
+);
 out();
-if (after.verdict === "MET") {
-  out(
-    `L3 p95 is ${ms(after.l3Ms.p95)} against ${after.budget.p95Ms} ms: ${headroom.toFixed(0)}% headroom${headroom < 25 ? ". That is inside the 25% risk band: a slower runner or a heavier dial can overturn it, and D-L3 is reopened if it does" : ""}.`,
-  );
-} else {
-  out(
-    `L3 p95 is ${ms(after.l3Ms.p95)} against ${after.budget.p95Ms} ms. **D-L3 is reopened.** Egress comparison (NFR16): ~2.4 GB/month client-simulated against ~520-1,040 GB/month assigned ownership, about 400x.`,
-  );
+out(
+  "Also gated: zero stale frames (a frame drawn with its result still in flight), a result drawn at most one frame after its instant, no major GC pause over the tail budget on either thread, allocation under a stamped ceiling on each thread, and each statistic against the recorded finding +25% so L3 cannot get slower unnoticed. The 4x CPU throttle is reported, never gated. Gated by `client/tests/e2e/l3-budget.spec.ts` in `e2e-perf`.",
+);
+out();
+out(`## Verdict: **${record.verdict}**`);
+out();
+const solve95 = record.l3SolveMs.p95;
+const verdictLine =
+  record.verdict === "MET"
+    ? `The worker's solve p95 is ${ms(solve95)} and the main-thread window p95 is ${ms(record.l3Ms.p95)}, inside the ${record.budget.p95Ms} ms budget and the ${MARGIN_MS} ms margin.`
+    : `On the verdict-of-record machine the main-thread window p95 is ${ms(record.l3Ms.p95)} (story 5.4 measured ${ms(baseline.l3Ms.p95)} for the same work on the main thread) and the worker's own solve p95 is ${ms(solve95)} against the ${record.budget.p95Ms} ms budget and the ${MARGIN_MS} ms margin.`;
+out(verdictLine);
+out();
+// Budget and margin misses decide the verdict; the tripwire items in the same
+// list are relative to the constants of the run's own commit.
+const missed = record.failures.filter((f) => /over (the )?\d/.test(f));
+if (missed.length > 0) {
+  out("What the run holds against the verdict:");
+  out();
+  for (const f of missed) out(`- ${f}`);
+  out();
 }
+out(
+  "NFR16 (egress): L3 is client-simulated, about 2.4 GB/month, against about 520-1,040 GB/month with assigned ownership, about 400x.",
+);
 out();
 out("## Environment");
 out();
 out(`- Platform: ${env.platform}, ${env.cpu} (${env.cores} cores)`);
-out(`- Chromium: ${env.chromium}, headless, ${after.viewport.width}x${after.viewport.height}`);
-out(
-  `- Runner: ${env.ci ? `GitHub Actions run ${env.runId}, runner ${env.runner} (${env.image})` : "no, a local run (not the verdict of record)"}`,
-);
-out(`- Run length: ${after.runMs / 1000} s, soak: ${after.soak}`);
+out(`- Chromium: ${env.chromium}, headless, ${record.viewport.width}x${record.viewport.height}`);
+out(`- Runner: GitHub Actions run ${env.runId}, runner ${env.runner} (${env.image})`);
+out(`- Run length: ${record.runMs / 1000} s, soak: ${record.soak}`);
 out();
 out("## Load");
 out();
 out(
-  `${after.crowd.size} rush-hour citizens (\`test-street/rush-crowd.ts\`) plus the street's own: at least ${after.crowd.liveBodiesMin} bodies live at every sample, at least ${after.crowd.walkingMin} walking, up to ${after.crowd.sidesteppingMax} sidestepping, up to ${after.crowd.cappedMax} at the neighbour cap.`,
+  `${record.crowd.size} rush-hour citizens (\`test-street/rush-crowd.ts\`) plus the street's own: at least ${record.crowd.liveBodiesMin} bodies live at every sample, at least ${record.crowd.walkingMin} walking, up to ${record.crowd.sidesteppingMax} sidestepping, up to ${record.crowd.cappedMax} at the neighbour cap.`,
 );
 out();
 out("## Distributions");
 out();
 out("| Window | Frames | p50 | p95 | p99 | max |");
 out("| --- | --- | --- | --- | --- | --- |");
-out(row("L3, unthrottled, real ticker, rasteriser off (verdict figure)", after.l3Ms));
-if (after.l3SolveMs && after.l3UpdateMs) {
-  out(row("  of which the solve (`streetLife.solve`)", after.l3SolveMs));
-  out(row("  of which the update (`citizensLayer.update`: zone plan, sprite writes)", after.l3UpdateMs));
-}
-out(row("L3, unthrottled, real ticker, rendered (reported)", after.l3RenderedMs));
-out(row("L3, unthrottled, render-free sweep (supplementary, same gate)", after.l3SweepMs));
-out(row("whole frame work, rendered, unthrottled", after.frameWorkMs));
-out(row(`L3, ${after.throttled4x.rate}x CPU throttle (reported)`, after.throttled4x.l3Ms));
-out(row(`whole frame, ${after.throttled4x.rate}x CPU throttle (reported)`, after.throttled4x.frameWorkMs));
+out(row("main-thread window, real ticker, rasteriser off (verdict figure)", record.l3Ms));
+out(row("worker solve per instant, same frames (verdict figure)", record.l3SolveMs));
+out(row("worker solve per instant, no trace running (reported)", record.untraced.l3SolveMs));
+out(row("worker solve, render-free sweep, no ticker (supplementary, same gate)", record.l3SweepMs));
+out(row("main-thread window, rendered (reported)", record.l3RenderedMs));
+out(row("whole frame work, rendered, unthrottled", record.frameWorkMs));
+out(row(`main-thread window, ${record.throttled4x.rate}x CPU throttle (reported)`, record.throttled4x.l3Ms));
+out(row(`whole frame, ${record.throttled4x.rate}x CPU throttle (reported)`, record.throttled4x.frameWorkMs));
 out();
+const wt = record.throttled4x.workerThrottle;
 out(
-  "The verdict window is the real ticker with the render suppressed (`setRender(false)`): the same window, GC and crowd, minus the software rasteriser a GPU-less runner emulates on its few cores. The rendered window is reported beside it, and the CPU profile of that window (below) shows where its time goes. The sweep runs the same window over successive 60 Hz instants with no ticker and is supplementary.",
+  wt.reached
+    ? `The ${record.throttled4x.rate}x throttle reached the worker (its calibration workload ran ${wt.slowdown.toFixed(1)}x slower), so the worker's throttled solve is reported: ${ms(record.throttled4x.workerSolveMs.p95)} p95.`
+    : `The ${record.throttled4x.rate}x throttle does not reach the worker: CDP refuses \`Emulation.setCPUThrottlingRate\` on a worker target (${wt.error ?? "no error recorded"}) and the worker's calibration workload ran ${wt.slowdown.toFixed(2)}x as slow, so there is no throttled figure for the solve; the throttled rows above are the frame's thread alone.`,
 );
 out();
-out("Self time of the rendered window, top entries:");
+out(
+  `Delivery: ${record.solveStale.staleFrames} stale frames and ${record.solveStale.skippedRequests} skipped requests over the verdict window; the most frames a result was drawn after its instant: ${record.solveStale.maxLagFrames}.`,
+);
 out();
-for (const t of after.cpuTopSelf.slice(0, 6)) {
+out("## Runs of the final code");
+out();
+out(
+  "`ubuntu-latest` is a mixed pool of CPUs; each run is a separate `e2e-perf` job on the same code, and the verdict of record is the slowest machine's.",
+);
+out();
+out(
+  "| Run | CPU | Calibration | Main window p95 / p99 | Worker solve p95 / p99 | Worker solve, no trace p95 | Sweep p95 | Stale / lag | Majors main / worker |",
+);
+out("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+for (const r of runs) {
+  out(
+    `| ${r.environment.runId} (${r.environment.runner.replace(/^GitHub Actions /, "")}) | ${r.environment.cpu.replace(/ \d+-Core Processor/, "")} | ${r.calibrationMs.toFixed(1)} ms | ${ms(r.l3Ms.p95)} / ${ms(r.l3Ms.p99)} | ${ms(r.l3SolveMs.p95)} / ${ms(r.l3SolveMs.p99)} | ${ms(r.untraced.l3SolveMs.p95)} | ${ms(r.l3SweepMs.p95)} | ${r.solveStale.staleFrames} / ${r.solveStale.maxLagFrames} | ${r.gc.majorCount} / ${r.workerGc.majorCount} |`,
+  );
+}
+out();
+const worst = (f) => Math.max(...runs.map(f));
+out(
+  `Worst ratios to the calibration workload (fixed pure JS, not L3): main window p95 ${worst((r) => r.l3Ratios.p95).toFixed(3)}, p99 ${worst((r) => r.l3Ratios.p99).toFixed(3)}; worker solve p95 ${worst((r) => r.l3SolveMs.p95 / r.calibrationMs).toFixed(3)}, p99 ${worst((r) => r.l3SolveMs.p99 / r.calibrationMs).toFixed(3)}; sweep p95 ${worst((r) => r.l3Ratios.sweepP95).toFixed(3)}, p99 ${worst((r) => r.l3Ratios.sweepP99).toFixed(3)}. The tripwire's recorded ratios are stamped from these, +25% is the gate.`,
+);
+out();
+out("## Where the solve's time goes");
+out();
+out("The worker's own CPU profile over 8 s of the real ticker, top self time:");
+out();
+for (const t of record.workerCpuTopSelf.slice(0, 8)) {
   out(`- ${(t.share * 100).toFixed(1)}% \`${t.fn.replace(/ http\S*/, "")}\``);
 }
 out();
-out("## Another runner of the pool");
-out();
 out(
-  `\`ubuntu-latest\` is a mixed pool of CPUs. The same code, in a later run (${machine(second.environment)}), measured:`,
-);
-out();
-out("| | Frames | p50 | p95 | p99 | max |");
-out("| --- | --- | --- | --- | --- | --- |");
-out(row("L3, real ticker, rasteriser off", second.l3Ms));
-out(row("L3, render-free sweep", second.l3SweepMs));
-out();
-out(
-  `The calibration workload (fixed pure JS, not L3) took ${second.calibrationMs} ms there, so L3 p95 / calibration is ${second.l3Ratios.p95.toFixed(2)} and p99 ${second.l3Ratios.p99.toFixed(2)} (sweep ${second.l3Ratios.sweepP95.toFixed(2)} and ${second.l3Ratios.sweepP99.toFixed(2)}): the tripwire's recorded ratios are stamped from this run, +25%. Verdict on this machine: ${second.l3Ms.p95 <= second.budget.p95Ms && second.l3Ms.p99 <= second.budget.p99Ms ? "inside the budget" : "MISSED"}. The verdict of record is the worse machine's.`,
+  "The profile is of a thread that is idle most of the frame, so the shares of its busy time are the figures to read: avoidance (`#resolveBody`, `#roomOn`, `#closestApproach`) is most of the solve; poses and path searches are the rest.",
 );
 out();
 out("## Allocation and GC");
 out();
 out(
-  `- Allocation attributed to \`src/l3/\` and the crowd update: ${kb(after.allocation.l3BytesPerFrame)} per frame over ${after.allocation.frames} frames (ceiling ${kb(after.allocation.ceilingBytesPerFrame)}).`,
+  `- Worker allocation attributed to \`src/l3/\`, \`src/l3-worker/\` and the crowd update: ${kb(record.allocation.l3BytesPerFrame)} per frame over ${record.allocation.frames} frames (the ceiling of that run: ${kb(record.allocation.ceilingBytesPerFrame)}).`,
 );
 out(
-  `- Minor GCs: ${after.gc.minorCount}, total pause ${ms(after.gc.totalPauseMs)}, p99 ${ms(after.gc.minorP99PauseMs ?? Number.NaN)}, longest ${ms(after.gc.longestMinorPauseMs)} (reported: a scavenge's duration measures the runner, not L3).`,
+  `- Main-thread allocation through the real ticker: ${kb(record.allocation.mainBytesPerFrame)} per frame (the ceiling of that run: ${kb(record.allocation.mainCeilingBytesPerFrame)}).`,
 );
-out(`- Major GCs: ${after.gc.majorCount} (gated at zero).`);
-out(`- Retained heap, last lap against the first: ${after.heap.growthRatio.toFixed(3)}x (bound ${after.heap.bound}x).`);
+out(
+  `- Main thread: ${record.gc.minorCount} minor GCs (total pause ${ms(record.gc.totalPauseMs)}, longest ${ms(record.gc.longestMinorPauseMs)}), ${record.gc.majorCount} major GCs (longest ${ms(record.gc.longestMajorPauseMs)}).`,
+);
+out(
+  `- Worker: ${record.workerGc.minorCount} minor GCs (longest ${ms(record.workerGc.longestMinorPauseMs)}), ${record.workerGc.majorCount} major GCs (longest ${ms(record.workerGc.longestMajorPauseMs)}).`,
+);
+out(`- Retained heap, last lap against the first: ${record.heap.growthRatio.toFixed(3)}x (bound ${record.heap.bound}x).`);
 out();
-out("Largest allocators under L3 frames:");
+out("Largest allocators under the worker's solve:");
 out();
-for (const t of after.allocation.top.slice(0, 5)) {
+for (const t of record.allocation.top.slice(0, 5)) {
   out(`- \`${t.fn}\` (${t.url.replace(/^.*\/src\//, "src/")}): ${(t.bytes / 1024 / 1024).toFixed(1)} MB sampled`);
 }
 out();
 out("## Divergence at density (AC4)");
 out();
 out(
-  `Two clients (1920x1080 and 1280x720, the second walked sideways) on the ${after.crowd.size}-body crowd, ${divergence.instants} instants, every must-agree field compared: position, activity, frame, facing and sidestep offset.`,
+  `Two clients (1920x1080 and 1280x720, the second walked sideways) on the ${record.crowd.size}-body crowd, ${divergence.instants} instants, every must-agree field compared: position, activity, frame, facing and sidestep offset. Measured in story 5.4; \`l3-agreement.spec.ts\` asserts the same zero through the worker path on every run.`,
 );
 out();
 out("| | Shared body-instants compared | Disagreements | Largest sidestep disagreement |");
@@ -166,21 +211,14 @@ for (const [label, key] of [
 }
 out();
 out(
-  `Bodies drawn on a client's own screen without a resolved offset: ${divergence.unresolvedOnScreen}. The first dense sweep disagreed because avoidance resolved a body whose neighbours are not all bodied in the other bubble. Scoping is tightened: a body sidesteps only when its whole neighbourhood lies inside the spawn rect less the micro path's box margin (\`StreetLife.solve\` with the body zone, \`zoneHoldsChunk\`); what still differs differs only in the margin, off both screens.`,
+  `Bodies drawn on a client's own screen without a resolved offset: ${divergence.unresolvedOnScreen}. Scoping: a body sidesteps only when its whole neighbourhood lies inside the spawn rect less the micro path's box margin (\`StreetLife.solve\` with the body zone, \`zoneHoldsChunk\`); what still differs differs only in the margin, off both screens.`,
 );
 out();
-out("## The hot spot, before and after");
+out("## Before the worker");
 out();
 out(
-  `The first measurement (${machine(before.environment)}) missed: L3 p95 ${ms(before.l3Ms.p95)} (p99 ${ms(before.l3Ms.p99)}), ${kb(before.allocation.l3BytesPerFrame)} per frame allocated, ${before.gc.majorCount} major GC. The CPU profile put the wall scan of avoidance (\`#scanWalls\`, a \`bigint\` chunk key per tile lookup) first by a wide margin. Fixes, none touching a dial, a count or a threshold: the collision grid memoises its last chunk, avoidance shares one wall scan per cell and grid revision, and the per-body per-frame allocations of the hot path were removed (boxed doubles across calls, comparator and sort scratch, a key string and a point object per body per frame).`,
+  `Story 5.4 measured L3 on the main thread (${machine(baseline.environment)}): p95 ${ms(baseline.l3Ms.p95)}, p99 ${ms(baseline.l3Ms.p99)}, the render-free sweep p95 ${ms(baseline.l3SweepMs.p95)}, ${kb(baseline.allocation.l3BytesPerFrame)} per frame allocated. The same figures now: the frame's thread pays ${ms(record.l3Ms.p95)} p95 and the solve, off it, ${ms(solve95)} p95 (sweep ${ms(record.l3SweepMs.p95)}).`,
 );
-out();
-out(`The after figures are the runner's (${machine(env)}); the before figures are from a different machine, so the two are read for their order of magnitude, not subtracted.`);
-out();
-out("| | L3 p95 | L3 p99 | Allocation per frame | Major GCs |");
-out("| --- | --- | --- | --- | --- |");
-out(`| before | ${ms(before.l3Ms.p95)} | ${ms(before.l3Ms.p99)} | ${kb(before.allocation.l3BytesPerFrame)} | ${before.gc.majorCount} |`);
-out(`| after | ${ms(after.l3Ms.p95)} | ${ms(after.l3Ms.p99)} | ${kb(after.allocation.l3BytesPerFrame)} | ${after.gc.majorCount} |`);
 out();
 
 writeFileSync(args.out, `${lines.join("\n")}\n`, "utf8");

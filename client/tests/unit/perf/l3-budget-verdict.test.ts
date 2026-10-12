@@ -31,7 +31,7 @@ const GOOD: L3Measurement = {
   ),
   allocBytesPerFrame: 0,
   mainAllocBytesPerFrame: 0,
-  calibrationMs: 2,
+  calibrationMs: 6,
   gc: {
     minorPausesMs: [0.5, 0.7, 0.9, 1],
     minorCount: 4,
@@ -58,7 +58,8 @@ describe("L3 budget verdict (NFR11)", () => {
 
   it("records a budget miss within the recorded finding as MISSED without failing the gate", () => {
     const recorded = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.2));
-    const v = verdict({ ...GOOD, l3Ms: recorded, calibrationMs: 6 });
+    // A slow machine: the figure is over the budget in ms, not in ratio.
+    const v = verdict({ ...GOOD, l3Ms: recorded, calibrationMs: 25 });
     expect(v.met).toBe(false);
     expect(v.failures.join()).toContain("p95");
     expect(v.gateFailures).toEqual([]);
@@ -139,7 +140,7 @@ describe("L3 budget verdict (NFR11)", () => {
   });
 
   it("FAILS a worker whose own solve is over budget while the main-thread window is green", () => {
-    const slow = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.4));
+    const slow = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 3.2));
     const v = verdict({ ...GOOD, solveMs: slow });
     expect(v.met).toBe(false);
     expect(v.failures.join()).toContain("worker solve p95");
