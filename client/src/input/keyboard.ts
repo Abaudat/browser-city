@@ -91,12 +91,14 @@ export class KeyboardState {
  * direction stuck held. Returns a cleanup function that removes every
  * listener it added.
  */
+const TEXT_ENTRY_TAGS: ReadonlySet<string> = new Set(["input", "textarea", "select"]);
+
 /** Whether a key event's target is somewhere text is typed. */
 export function isEditable(target: EventTarget | null): boolean {
   const el = target as { tagName?: unknown; isContentEditable?: unknown } | null;
   if (!el || typeof el.tagName !== "string") return false;
-  const tag = el.tagName.toUpperCase();
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
+  const tag = el.tagName.toLowerCase();
+  return TEXT_ENTRY_TAGS.has(tag) || el.isContentEditable === true;
 }
 
 export function attachKeyboard(state: KeyboardState, target: Window = window): () => void {
