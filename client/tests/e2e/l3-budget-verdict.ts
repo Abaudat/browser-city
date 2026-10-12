@@ -67,8 +67,8 @@ export const MAJOR_LIMITS: Readonly<
   workerRendered: { count: 3, pauseCal: null },
   // 2 majors, pause 1.02 x the calibration time (4.1 ms on a 4.0 ms machine)
   frameQuiet: { count: 3, pauseCal: 1.27 },
-  // 1 major, pause 0.34 x the calibration time
-  workerQuiet: { count: 2, pauseCal: 0.43 },
+  // 1 major, pause 0.31 x the worker's own calibration time
+  workerQuiet: { count: 2, pauseCal: 0.38 },
 };
 
 /** The finding as the tripwire holds it. `ubuntu-latest` is a mixed pool of
@@ -336,6 +336,9 @@ export interface L3Measurement {
   /** An idle page with no L3 and a live heap of the same size, under the same
    * trace for the same time. */
   readonly controlGc: GcSummary;
+  /** The same calibration workload's median inside the worker, in ms: what a
+   * pause on that thread is judged against. */
+  readonly workerCalibrationMs: number;
   /** `os.cpus()[0].model` of the machine. */
   readonly cpu: string;
   readonly heapGrowthRatio: number;
@@ -437,13 +440,13 @@ export function verdict(m: L3Measurement): Verdict {
   // it shows the same); a collection of any other kind is the one L3's own
   // garbage would cause. Count and pause are held to the recorded figures, and
   // the frame thread's quiet window to what the idle control showed.
-  const majors: [string, GcSummary, { count: number; pauseCal: number | null }][] = [
-    ["frame-thread rendered window", m.gc, MAJOR_LIMITS.frameRendered],
-    ["worker rendered window", m.workerGc, MAJOR_LIMITS.workerRendered],
-    ["frame-thread verdict window", m.quietGc, MAJOR_LIMITS.frameQuiet],
-    ["worker verdict window", m.quietWorkerGc, MAJOR_LIMITS.workerQuiet],
+  const majors: [string, GcSummary, { count: number; pauseCal: number | null }, number][] = [
+    ["frame-thread rendered window", m.gc, MAJOR_LIMITS.frameRendered, m.calibrationMs],
+    ["worker rendered window", m.workerGc, MAJOR_LIMITS.workerRendered, m.workerCalibrationMs],
+    ["frame-thread verdict window", m.quietGc, MAJOR_LIMITS.frameQuiet, m.calibrationMs],
+    ["worker verdict window", m.quietWorkerGc, MAJOR_LIMITS.workerQuiet, m.workerCalibrationMs],
   ];
-  for (const [where, g, limit] of majors) {
+  for (const [where, g, limit, calibration] of majors) {
     for (const type of g.majorTypes) {
       if (!INCREMENTAL_FINALISATION.test(type)) {
         gate.push(`${where}: a major GC of kind '${type}', not an incremental finalisation`);
@@ -452,7 +455,7 @@ export function verdict(m: L3Measurement): Verdict {
     if (g.majorCount > limit.count) {
       gate.push(`${where}: ${g.majorCount} major GCs, ${limit.count} allowed`);
     }
-    if (limit.pauseCal !== null && !(g.longestMajorPauseMs <= limit.pauseCal * m.calibrationMs)) {
+    if (limit.pauseCal !== null && !(g.longestMajorPauseMs <= limit.pauseCal * calibration)) {
       gate.push(`${where}: a major GC paused ${g.longestMajorPauseMs.toFixed(2)} ms`);
     }
   }

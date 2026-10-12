@@ -238,7 +238,7 @@ const types = (g) => [...new Set(g.majorTypes ?? [])].join(", ") || "none";
 out(gcRow("Frame's thread, rendered window (kind and count gated; the pause is reported)", gated));
 out(gcRow("Worker, rendered window (kind and count gated; the pause is reported)", gatedWorker));
 out(gcRow("Frame's thread, verdict window (render off, a quiet page: at most 3, each at most 1.27 x the calibration time)", record.gc));
-out(gcRow("Worker, verdict window (at most 2, each at most 0.43 x the calibration time)", record.workerGc));
+out(gcRow("Worker, verdict window (at most 2, each at most 0.38 x the worker's own calibration time)", record.workerGc));
 out(
   `- Kinds of major seen in the verdict window: frame's thread ${types(record.gc)}; worker ${types(record.workerGc)}. Only incremental-marking finalisations pass.`,
 );

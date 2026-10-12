@@ -33,6 +33,7 @@ const GOOD: L3Measurement = {
   allocBytesPerFrame: 0,
   mainAllocBytesPerFrame: 0,
   calibrationMs: 6,
+  workerCalibrationMs: 6,
   gc: {
     minorPausesMs: [0.5, 0.7, 0.9, 1],
     minorCount: 4,
