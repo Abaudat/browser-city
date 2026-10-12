@@ -1,0 +1,55 @@
+name: l3-repeat
+
+# NFR11's spread (story 5.24, D-L3): the worker's solve has no margin, and its
+# absolute 2 ms p95 is a red gate in `ci.yml`'s `e2e-perf`. This measures how
+# often that gate would go red with no code change: the same spec, alone, on
+# `count` runners of the `ubuntu-latest` pool at once, one artifact each. A
+# 7763 run over 2 ms is not flake, it is NFR11 missed at the line on the
+# verdict-of-record machine. Never retried, never part of the `ci` gate
+# (`scripts/ci/check-ci-gate.sh` only inspects `ci.yml`).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repeat:
+    name: repeat ${{ matrix.n }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+          shared-key: e2e
+          save-if: false
+      - run: bash scripts/ci/install-spacetimedb-cli.sh "$RUNNER_TEMP/spacetimedb" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - working-directory: client
+        run: npm ci
+      - working-directory: client
+        run: npx playwright install --with-deps chromium
+      - name: the L3 budget spec, alone (retries are forbidden)
+        working-directory: client
+        run: npx playwright test --project=perf l3-budget.spec.ts
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: l3-budget-${{ matrix.n }}
+          path: client/test-results/story-5.4-l3-budget
+          if-no-files-found: warn
+          retention-days: 14

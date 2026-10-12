@@ -16,9 +16,37 @@ export const L3_P99_BUDGET_MS = 4;
  * inherits, not held against the verdict. */
 export const L3_P95_MARGIN_MS = 1.6;
 /** The calibration time of the verdict-of-record machine (EPYC 7763, run
- * 38248089652): a machine slower than this is not held to the absolute budget
- * on the worker's solve, only to the recorded ratio. */
+ * 38248089652). */
 export const REFERENCE_CALIBRATION_MS = 5.5;
+/** Run-to-run spread of the calibration on one SKU: a 7763 read 5.4 and 5.5,
+ * a 9V74 4.6 and 5.9. */
+export const CALIBRATION_SPREAD = 1.15;
+
+/** The pool SKUs whose worker solve is held to the absolute budget: the
+ * verdict-of-record machine and every SKU measured at least as fast, each with
+ * the run that admitted it. An unknown CPU is admitted only by a calibration
+ * within `REFERENCE_CALIBRATION_MS * CALIBRATION_SPREAD`; a slower one is held
+ * to the recorded ratio and the report names it, so the pool gaining a new SKU
+ * is visible. */
+export const ABSOLUTE_GATE_CPUS: readonly { readonly match: RegExp; readonly run: string }[] = [
+  { match: /EPYC 7763/i, run: "38210916612 (story 5.4, the verdict of record)" },
+  { match: /EPYC 9V45/i, run: "38215691965 (story 5.4)" },
+  { match: /EPYC 9V74/i, run: "38221319610 (story 5.24)" },
+  { match: /XEON\(R\) PLATINUM 8573C/i, run: "38248089652 (story 5.24)" },
+];
+
+/** What every major collection the frame's thread or the worker shows must be:
+ * V8's own finalisation of an incremental marking cycle. An allocation failure
+ * or a last-resort mark-compact is the collection L3's own garbage would
+ * cause, and is red. */
+export const INCREMENTAL_FINALISATION = /^finalize incremental marking via (task|stack guard)$/;
+/** The worst major pause recorded (5.5 ms, Xeon 8573C, run 38248089652) plus
+ * 25%: lowered, never raised. */
+export const MAX_MAJOR_PAUSE_MS = 6.9;
+/** Majors the frame's thread shows in the quiet (render-off) window of a 60 s
+ * run: the worst recorded (2) plus 25%. The rendered window, the worker's
+ * windows and the other thread's are held to zero. */
+export const MAX_QUIET_MAIN_MAJORS = 3;
 
 /** The finding as the tripwire holds it. `ubuntu-latest` is a mixed pool of
  * CPUs, so an absolute figure would go red on a slower SKU with no code change.
@@ -122,12 +150,14 @@ export interface GcSummary {
   readonly totalPauseMs: number;
   readonly longestMinorPauseMs: number;
   readonly longestMajorPauseMs: number;
+  /** The `args.type` of every major collection, as the trace names it. */
+  readonly majorTypes: readonly string[];
 }
 
 /** Splits a trace's events into the dedicated workers' threads and the rest,
  * by the thread-name metadata the trace carries. The solve's garbage is the
  * worker's own heap: its collections run off the frame's thread and are
- * reported apart from the main thread's, which the gate holds at zero majors. */
+ * reported apart from the main thread's. */
 export function splitByThread(events: readonly TraceEvent[]): {
   main: TraceEvent[];
   worker: TraceEvent[];
@@ -154,6 +184,7 @@ export function summariseGc(events: readonly TraceEvent[]): GcSummary {
   let total = 0;
   let longestMinor = 0;
   let longestMajor = 0;
+  const majorTypes: string[] = [];
   for (const e of events) {
     if (e.ph !== "X" || e.dur === undefined) continue;
     const ms = e.dur / 1000;
@@ -164,6 +195,7 @@ export function summariseGc(events: readonly TraceEvent[]): GcSummary {
       longestMinor = Math.max(longestMinor, ms);
     } else if (e.name === "MajorGC") {
       majorCount++;
+      majorTypes.push(String(e.args?.type ?? "unknown"));
       total += ms;
       longestMajor = Math.max(longestMajor, ms);
     }
@@ -175,6 +207,7 @@ export function summariseGc(events: readonly TraceEvent[]): GcSummary {
     totalPauseMs: total,
     longestMinorPauseMs: longestMinor,
     longestMajorPauseMs: longestMajor,
+    majorTypes,
   };
 }
 
@@ -187,6 +220,7 @@ export function addGc(a: GcSummary, b: GcSummary): GcSummary {
     totalPauseMs: a.totalPauseMs + b.totalPauseMs,
     longestMinorPauseMs: Math.max(a.longestMinorPauseMs, b.longestMinorPauseMs),
     longestMajorPauseMs: Math.max(a.longestMajorPauseMs, b.longestMajorPauseMs),
+    majorTypes: [...a.majorTypes, ...b.majorTypes],
   };
 }
 
@@ -269,10 +303,15 @@ export interface L3Measurement {
   readonly mainAllocBytesPerFrame: number;
   /** The calibration workload's median time in this page, in ms. */
   readonly calibrationMs: number;
-  /** The frame's thread. */
+  /** The frame's thread, in the rendered window: what a player's frame runs. */
   readonly gc: GcSummary;
-  /** The worker's own heap. */
+  /** The worker's own heap, in the same window. */
   readonly workerGc: GcSummary;
+  /** The same two over the verdict window (render off: a quiet page). */
+  readonly quietGc: GcSummary;
+  readonly quietWorkerGc: GcSummary;
+  /** `os.cpus()[0].model` of the machine. */
+  readonly cpu: string;
   readonly heapGrowthRatio: number;
 }
 
@@ -316,6 +355,13 @@ export function verdict(m: L3Measurement): Verdict {
     gate.push(`${m.sweepMs.frames} sweep frames measured, ${MIN_MEASURED_FRAMES} required`);
   }
   if (!(m.calibrationMs > 0)) gate.push("no calibration time");
+  const admitted = ABSOLUTE_GATE_CPUS.some((c) => c.match.test(m.cpu));
+  const absoluteGate = admitted || m.calibrationMs <= REFERENCE_CALIBRATION_MS * CALIBRATION_SPREAD;
+  if (!absoluteGate) {
+    risks.push(
+      `${m.cpu} is not a known pool SKU and calibrates at ${m.calibrationMs.toFixed(1)} ms: its worker solve is held to the recorded ratio only`,
+    );
+  }
   const windows: [string, Distribution, number, number][] = [
     ["L3", m.l3Ms, RECORDED_P95_RATIO, RECORDED_P99_RATIO],
     ["worker solve", m.solveMs, RECORDED_WORKER_P95_RATIO, RECORDED_WORKER_P99_RATIO],
@@ -325,7 +371,7 @@ export function verdict(m: L3Measurement): Verdict {
     // The worker's own solve is a red gate: it has no margin to spare, so a
     // creep past the budget is caught here and not by nobody. On a machine
     // slower than the reference it is held to the ratio below instead.
-    const redBudget = name === "worker solve" && m.calibrationMs <= REFERENCE_CALIBRATION_MS;
+    const redBudget = name === "worker solve" && absoluteGate;
     const miss = redBudget ? gate : missed;
     if (!(d.p95 <= L3_P95_BUDGET_MS)) {
       miss.push(`${name} p95 ${d.p95.toFixed(3)} ms over ${L3_P95_BUDGET_MS} ms`);
@@ -359,17 +405,28 @@ export function verdict(m: L3Measurement): Verdict {
       `the main thread allocates ${m.mainAllocBytesPerFrame.toFixed(0)} B/frame over ${MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME}`,
     );
   }
-  // A major collection on either thread is held to a frame: one that takes
-  // longer is a dropped frame, whoever caused it. They are not held to zero:
-  // an idle page with no L3 on it shows the same incremental-marking majors
-  // (V8 collects a quiet page on its own account), and the worker's own come
-  // from the path churn of the fixture's leg restarts. What a worker pause
-  // costs shows in the stale and lag counters, which are gated.
-  if (!(m.gc.longestMajorPauseMs <= FRAME_MS)) {
-    gate.push(`a main-thread major GC paused ${m.gc.longestMajorPauseMs.toFixed(2)} ms`);
-  }
-  if (!(m.workerGc.longestMajorPauseMs <= FRAME_MS)) {
-    gate.push(`a worker major GC paused ${m.workerGc.longestMajorPauseMs.toFixed(2)} ms`);
+  // Major collections. Every one on either thread, in any window, is V8's own
+  // finalisation of an incremental marking cycle (an idle page with no L3 on
+  // it shows the same); a collection of any other kind is the one L3's own
+  // garbage would cause. The count and the pause are held to the worst
+  // recorded figure plus 25%, and a player's frame (the rendered window) and
+  // the worker run at zero.
+  const majors: [string, GcSummary, number][] = [
+    ["frame-thread rendered window", m.gc, 0],
+    ["worker rendered window", m.workerGc, 0],
+    ["frame-thread verdict window", m.quietGc, MAX_QUIET_MAIN_MAJORS],
+    ["worker verdict window", m.quietWorkerGc, 0],
+  ];
+  for (const [where, g, limit] of majors) {
+    for (const type of g.majorTypes) {
+      if (!INCREMENTAL_FINALISATION.test(type)) {
+        gate.push(`${where}: a major GC of kind '${type}', not an incremental finalisation`);
+      }
+    }
+    if (g.majorCount > limit) gate.push(`${where}: ${g.majorCount} major GCs, ${limit} allowed`);
+    if (!(g.longestMajorPauseMs <= MAX_MAJOR_PAUSE_MS)) {
+      gate.push(`${where}: a major GC paused ${g.longestMajorPauseMs.toFixed(2)} ms`);
+    }
   }
   if (!(m.restarts === 0)) gate.push(`the worker was replaced ${m.restarts} times`);
   if (!(m.heapGrowthRatio <= MAX_L3_HEAP_GROWTH_RATIO)) {

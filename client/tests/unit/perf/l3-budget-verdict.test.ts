@@ -40,6 +40,7 @@ const GOOD: L3Measurement = {
     totalPauseMs: 3,
     longestMinorPauseMs: 1,
     longestMajorPauseMs: 0,
+    majorTypes: [],
   },
   workerGc: {
     minorPausesMs: [0.5],
@@ -48,7 +49,27 @@ const GOOD: L3Measurement = {
     totalPauseMs: 0.5,
     longestMinorPauseMs: 0.5,
     longestMajorPauseMs: 0,
+    majorTypes: [],
   },
+  quietGc: {
+    minorPausesMs: [0.5],
+    minorCount: 1,
+    majorCount: 0,
+    totalPauseMs: 0.5,
+    longestMinorPauseMs: 0.5,
+    longestMajorPauseMs: 0,
+    majorTypes: [],
+  },
+  quietWorkerGc: {
+    minorPausesMs: [0.5],
+    minorCount: 1,
+    majorCount: 0,
+    totalPauseMs: 0.5,
+    longestMinorPauseMs: 0.5,
+    longestMajorPauseMs: 0,
+    majorTypes: [],
+  },
+  cpu: "AMD EPYC 7763 64-Core Processor",
   heapGrowthRatio: 1.01,
 };
 
@@ -124,14 +145,37 @@ describe("L3 budget verdict (NFR11)", () => {
   });
 
   it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
-    // A major that stays inside a frame is reported, not red; one longer is
-    // a dropped frame on either thread.
-    const brief = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 11 };
-    expect(verdict({ ...GOOD, gc: brief }).met).toBe(true);
-    expect(verdict({ ...GOOD, workerGc: brief }).met).toBe(true);
-    const long = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 20 };
-    expect(verdict({ ...GOOD, gc: long }).gateFailures.join()).toContain("main-thread major GC");
-    expect(verdict({ ...GOOD, workerGc: long }).gateFailures.join()).toContain("worker major GC");
+    // One major in the rendered window, however short, is red on either thread.
+    const task = "finalize incremental marking via task";
+    const one = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 3, majorTypes: [task] };
+    expect(verdict({ ...GOOD, gc: one }).gateFailures.join()).toContain(
+      "frame-thread rendered window: 1 major GCs",
+    );
+    expect(verdict({ ...GOOD, workerGc: one }).gateFailures.join()).toContain(
+      "worker rendered window: 1 major GCs",
+    );
+    expect(verdict({ ...GOOD, quietWorkerGc: one }).gateFailures.join()).toContain(
+      "worker verdict window",
+    );
+    // The quiet frame thread may finalise up to the recorded count.
+    const quiet = {
+      ...GOOD.quietGc,
+      majorCount: 3,
+      longestMajorPauseMs: 5.5,
+      majorTypes: [task, task, task],
+    };
+    expect(verdict({ ...GOOD, quietGc: quiet }).met).toBe(true);
+    expect(verdict({ ...GOOD, quietGc: { ...quiet, majorCount: 4 } }).met).toBe(false);
+    // A 7 ms finalisation is red, a 6.8 ms one is not.
+    expect(
+      verdict({ ...GOOD, quietGc: { ...quiet, longestMajorPauseMs: 7 } }).gateFailures.join(),
+    ).toContain("paused 7.00 ms");
+    expect(verdict({ ...GOOD, quietGc: { ...quiet, longestMajorPauseMs: 6.8 } }).met).toBe(true);
+    // Any other kind of major is red: it is the one L3's own garbage would cause.
+    const failing = { ...quiet, majorCount: 1, majorTypes: ["allocation failure"] };
+    expect(verdict({ ...GOOD, quietGc: failing }).gateFailures.join()).toContain(
+      "'allocation failure', not an incremental finalisation",
+    );
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);
     const slowScavenges = { ...GOOD.gc, minorPausesMs: [4.5, 5], longestMinorPauseMs: 9 };
     expect(verdict({ ...GOOD, gc: slowScavenges }).met).toBe(true);
@@ -153,6 +197,32 @@ describe("L3 budget verdict (NFR11)", () => {
     expect(verdict({ ...GOOD, solveMs: quick, calibrationMs: 5 }).gateFailures.join()).toContain(
       "worker solve p95 2.200 ms over 2 ms",
     );
+  });
+
+  it("holds a 7763 to the absolute budget whatever its calibration reads", () => {
+    const over = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.1));
+    const v = verdict({
+      ...GOOD,
+      solveMs: over,
+      calibrationMs: 5.8,
+      cpu: "AMD EPYC 7763 64-Core Processor",
+    });
+    expect(v.gateFailures.join()).toContain("worker solve p95 2.100 ms over 2 ms");
+  });
+
+  it("holds an unknown, slower CPU to the ratio only and names it", () => {
+    const over = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.4));
+    const v = verdict({ ...GOOD, solveMs: over, calibrationMs: 7, cpu: "Some New SKU @ 2.0GHz" });
+    expect(v.gateFailures.join()).not.toContain("worker solve p95 2.400 ms over 2 ms");
+    expect(v.risks.join()).toContain("Some New SKU @ 2.0GHz is not a known pool SKU");
+    // Unknown but as fast as the reference within the spread: absolute.
+    const fast = verdict({
+      ...GOOD,
+      solveMs: over,
+      calibrationMs: 6,
+      cpu: "Some New SKU @ 2.0GHz",
+    });
+    expect(fast.gateFailures.join()).toContain("worker solve p95 2.400 ms over 2 ms");
   });
 
   it("reports a solve with no margin as a risk, not as a miss", () => {

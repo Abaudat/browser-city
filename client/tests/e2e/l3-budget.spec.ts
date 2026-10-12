@@ -65,7 +65,9 @@ const RUN_MS = Number(process.env.BC_SOAK_MS ?? 60_000);
 const LAP_MS = 10_000;
 /** The rendered window, reported beside the verdict window. */
 const RENDERED_MS = 30_000;
-const WARM_UP_MS = 5_000;
+/** Long enough that the worker's heap has finished growing to its working set:
+ * the first collections of a young heap are boot, not steady state. */
+const WARM_UP_MS = 20_000;
 const ALLOC_WINDOW_MS = 15_000;
 const THROTTLED_WINDOW_MS = 10_000;
 const THROTTLE_RATE = 4;
@@ -123,6 +125,7 @@ function emptyGc(): GcSummary {
     totalPauseMs: 0,
     longestMinorPauseMs: 0,
     longestMajorPauseMs: 0,
+    majorTypes: [],
   };
 }
 
@@ -159,6 +162,10 @@ async function startGcTrace(
   };
 }
 
+// A retry on this gate is forbidden (`retries: 0`, `playwright.config.ts`): the
+// worker's solve has no margin, a red run here is the finding, and a re-run
+// that turns it green is how the margin gets spent unseen. Dispatch
+// `l3-repeat.yml` to measure the spread instead.
 test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)", async ({
   page,
   browser,
@@ -430,6 +437,24 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   const renderedMs = distribution(renderedL3);
   const frameMs = distribution(frameSamples);
   const requiredWalking = Math.floor(RUSH_CROWD_SIZE * RUSH_MIN_WALKING_SHARE);
+
+  // The control for the collections above: a page with no L3 on it and a live
+  // heap of the same size, under the same trace for the same time. What V8
+  // collects on a quiet page is not L3's; reported beside the figures that
+  // are. The crowd's page is closed first so its ticker is not in the trace.
+  await page.close();
+  const control = await browser.newPage();
+  const heapMb = Math.max(1, Math.round(last / (1024 * 1024)));
+  await control.setContent(
+    `<script>window.keep=Array.from({length:${heapMb}},()=>new Float64Array(131072));</script>`,
+  );
+  await control.waitForTimeout(10_000);
+  const controlCdp = (await control.context().newCDPSession(control)) as unknown as Cdp;
+  const controlTrace = await startGcTrace(controlCdp);
+  await control.waitForTimeout(Math.min(RUN_MS, 60_000));
+  const controlGc = (await controlTrace.finish()).main;
+  await control.close();
+
   const result = verdict({
     liveBodiesMin: liveMin,
     walkingMin,
@@ -446,6 +471,9 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     calibrationMs,
     gc: renderedGc,
     workerGc: renderedWorkerGc,
+    quietGc: gc,
+    quietWorkerGc: workerGc,
+    cpu: cpus()[0]?.model ?? "unknown",
     heapGrowthRatio: last / first,
   });
 
@@ -518,6 +546,14 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
       mainCeilingBytesPerFrame: MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME,
       mainTop: topAllocators(mainProfile.profile.head),
       top: topAllocators(profile.profile.head),
+    },
+    control: {
+      note: "an idle page, no L3, a live heap of the same size, the same trace for the same time",
+      heapMb,
+      majorCount: controlGc.majorCount,
+      longestMajorPauseMs: controlGc.longestMajorPauseMs,
+      majorTypes: controlGc.majorTypes,
+      minorCount: controlGc.minorCount,
     },
     gcRenderedWindow: {
       ...renderedGc,
