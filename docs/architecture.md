@@ -1920,7 +1920,7 @@ A first boot is the name prompt: the whole boot runs behind it while the
 player types, and `boot/arrival.ts` opens the gate (removes the prompt,
 releases `awaiting-name`, marks `PLAYER_CONTROLLABLE`) once the first frame
 has rendered and the name was submitted. `NAME_SUBMITTED` carries the time
-the shell's inline script saw the submit. The `e2e-perf` job's first-boot
+the shell's inline script saw the submit. The `boot-smoke` job's first-boot
 gate (`boot-budget.spec.ts`, `BC_BOOT_GATE_ONLY`) holds the p75 of
 `NAME_SUBMITTED` to `PLAYER_CONTROLLABLE` under 1000 ms on a production
 build, 4x CPU, domestic network, with a fixed 2000 ms typing window;
