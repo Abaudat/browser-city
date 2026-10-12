@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type CDPSession, expect, test } from "@playwright/test";
+import { calibrationWorkload } from "../calibration-workload";
 import { computeSampleTerms } from "./compute-terms.mjs";
 import type {} from "./decode-harness";
 import { CPU_PROFILES, DECODE_ROW_COUNTS, MIN_SAMPLES, NETWORK_PROFILES } from "./profiles.mjs";
@@ -64,6 +65,7 @@ async function collectOneSample(
   browser: import("@playwright/test").Browser,
   network: NetworkProfile,
   cpu: CpuProfile,
+  typingMs = 0,
 ) {
   // Quentin's cycle-3 direction: the production preview negotiates HTTP/2
   // over a throwaway self-signed cert (BC_BOOT_HTTPS,
@@ -75,6 +77,19 @@ async function collectOneSample(
   await applyThrottling(cdp, network, cpu);
 
   await page.goto("/");
+  // Story 4.6: a first boot is the name prompt. The player "types" for
+  // `typingMs` after first contentful paint and submits; the bundle, the
+  // defs and the flat have been streaming behind it the whole time.
+  await page.waitForFunction(
+    () =>
+      performance.getEntriesByType("paint").some((e) => e.name === "first-contentful-paint") &&
+      document.querySelector('[data-bc-surface="name-prompt"] input') !== null,
+    undefined,
+    { timeout: 30_000 },
+  );
+  if (typingMs > 0) await page.waitForTimeout(typingMs);
+  await page.locator('[data-bc-surface="name-prompt"] input').fill("Sam");
+  await page.keyboard.press("Enter");
   await page.waitForFunction(
     () => performance.getEntriesByName("bc-boot:player-controllable").length > 0,
     undefined,
@@ -108,7 +123,125 @@ async function collectOneSample(
   return computeSampleTerms(raw);
 }
 
-for (const network of NETWORK_PROFILES as readonly NetworkProfile[]) {
+// --- Story 4.6's first-boot gate (NFR1 / FR145) ----------------------
+//
+// Pre-registered before any number was read: `name-submitted` ->
+// `player-controllable`, production build over HTTP/2, cold context,
+// `domestic` network, 4x CPU, the player taking `GATE_TYPING_MS` after first
+// contentful paint to type a short name. The verdict is the p75 of
+// `GATE_SAMPLES` samples against `GATE_BUDGET_MS`, and no single typed
+// sample may reach it. A miss is fixed on the critical path -- never with a
+// longer typing window, a looser bound or fewer samples.
+//
+// Arrival is optimistic (control opens at submit once the first frame
+// exists), so with a 2000 ms typing window the typed leg measures about one
+// frame, and boot could grow a long way before it tripped. The leg that
+// really moves is the 0 ms one -- submit at first paint, nothing streamed
+// yet -- so it is gated too, normalised the way `l3-budget.spec.ts` is: its
+// p75 (of `GATE_ZERO_SAMPLES` samples) is divided by the median time of a
+// fixed pure-JS calibration workload run in the same job under the same 4x
+// CPU throttle, and the ratio is held to `ZERO_LEG_RATIO_RECORDED` +25%.
+// The raw milliseconds swing about 30% across shared runners (1 145 to
+// 1 501 ms on one boot path), the ratio is what can be ratcheted: lower the
+// constant when recorded runs improve it, never raise it. It is set from the
+// recorded gate artifacts of the run named beside it.
+const GATE_TYPING_MS = 2000;
+const GATE_BUDGET_MS = 1000;
+const GATE_SAMPLES = Number(process.env.BC_BOOT_GATE_SAMPLES ?? 10);
+const GATE_ZERO_SAMPLES = Number(process.env.BC_BOOT_GATE_ZERO_SAMPLES ?? 20);
+/** p75 of the 0 ms leg over the calibration workload's median, recorded from
+ * `boot-budget.yml` run 38279321515's three gate repeats (n=20 each, domestic,
+ * 4x CPU): 58.3, 58.7 and 57.1 (p75 1 352, 1 362 and 1 303 ms over a
+ * calibration of 23.2, 23.2 and 22.8 ms). The highest is the constant. */
+const ZERO_LEG_RATIO_RECORDED = 58.7;
+const RATCHET_SLACK = 1.25;
+/** Records the artifact without gating the ratio (the recording runs that
+ * set `ZERO_LEG_RATIO_RECORDED`). Never set in `ci.yml`. */
+const GATE_RECORD = Boolean(process.env.BC_BOOT_GATE_RECORD);
+const GATE_ONLY = Boolean(process.env.BC_BOOT_GATE_ONLY);
+
+/** Nearest-rank percentile of `values` (ms). */
+function percentile(values: number[], p: number): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.ceil((p / 100) * sorted.length);
+  return sorted[Math.max(0, rank - 1)] as number;
+}
+
+if (GATE_ONLY || process.env.BC_BOOT_GATE) {
+  test(`first boot gate: submit -> controllable p75 < ${GATE_BUDGET_MS} ms (domestic, 4x CPU, ${GATE_TYPING_MS} ms typing, n=${GATE_SAMPLES})`, async ({
+    browser,
+  }) => {
+    test.setTimeout((GATE_SAMPLES + GATE_ZERO_SAMPLES) * 30_000 + 120_000);
+    const network = (NETWORK_PROFILES as readonly NetworkProfile[]).find(
+      (n) => n.name === "domestic",
+    ) as NetworkProfile;
+    const cpu = (CPU_PROFILES as readonly CpuProfile[]).find(
+      (c) => c.name === "throttled",
+    ) as CpuProfile;
+
+    /** The calibration workload's median, in a page under this CPU throttle. */
+    const calibrate = async (): Promise<number> => {
+      const context = await browser.newContext({ ignoreHTTPSErrors: true });
+      const page = await context.newPage();
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu.rate });
+      await page.goto("about:blank");
+      const ms = await page.evaluate(calibrationWorkload, 21);
+      await context.close();
+      return ms;
+    };
+    const calibrationBefore = await calibrate();
+
+    const gated: number[] = [];
+    const atFirstPaint: number[] = [];
+    for (let i = 0; i < GATE_SAMPLES; i++) {
+      const typed = await collectOneSample(browser, network, cpu, GATE_TYPING_MS);
+      gated.push(typed.submitToControllableMs as number);
+    }
+    for (let i = 0; i < GATE_ZERO_SAMPLES; i++) {
+      const instant = await collectOneSample(browser, network, cpu, 0);
+      atFirstPaint.push(instant.submitToControllableMs as number);
+    }
+
+    const calibrationAfter = await calibrate();
+    const calibrationMs = (calibrationBefore + calibrationAfter) / 2;
+    const zeroP75 = percentile(atFirstPaint, 75);
+
+    const verdict = {
+      budgetMs: GATE_BUDGET_MS,
+      calibrationMs,
+      calibrationBeforeMs: calibrationBefore,
+      calibrationAfterMs: calibrationAfter,
+      zeroLegSamples: GATE_ZERO_SAMPLES,
+      zeroLegRatio: zeroP75 / calibrationMs,
+      zeroLegRatioRecorded: ZERO_LEG_RATIO_RECORDED,
+      typingMs: GATE_TYPING_MS,
+      samples: GATE_SAMPLES,
+      gatedSubmitToControllableMs: gated,
+      gatedP75Ms: percentile(gated, 75),
+      submitAtFirstPaintMs: atFirstPaint,
+      submitAtFirstPaintP75Ms: percentile(atFirstPaint, 75),
+    };
+    writeFileSync(
+      path.join(OUT_DIR, "first-boot-gate.json"),
+      `${JSON.stringify(verdict, null, 2)}\n`,
+      "utf-8",
+    );
+    expect(verdict.gatedP75Ms).toBeLessThan(GATE_BUDGET_MS);
+    for (const sample of gated) expect(sample).toBeLessThan(GATE_BUDGET_MS);
+    if (!GATE_RECORD) {
+      expect(ZERO_LEG_RATIO_RECORDED, "no recorded ratio to hold the 0 ms leg to").toBeGreaterThan(
+        0,
+      );
+      expect(
+        verdict.zeroLegRatio,
+        "submit at first paint got slower relative to the calibration workload: fix the critical path; lower the constant when recorded runs improve it, never raise it",
+      ).toBeLessThanOrEqual(ZERO_LEG_RATIO_RECORDED * RATCHET_SLACK);
+    }
+  });
+}
+
+for (const network of GATE_ONLY ? [] : (NETWORK_PROFILES as readonly NetworkProfile[])) {
   for (const cpu of CPU_PROFILES as readonly CpuProfile[]) {
     test(`milestones -- ${network.name} network, ${cpu.name} CPU (n=${SAMPLES})`, async ({
       browser,

@@ -557,6 +557,7 @@ impl_autoinc_row!(
     Character {
         character_id: 0,
         created_at: Timestamp::UNIX_EPOCH,
+        name: String::new(),
     }
 );
 impl_autoinc_row!(

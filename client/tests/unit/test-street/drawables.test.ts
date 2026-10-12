@@ -898,8 +898,8 @@ describe("story 2.14: a shop door's threshold", () => {
   const props = buildStreetProps();
   const thresholds = props.filter((d) => "defId" in d && d.defId === THRESHOLD_ARCH_SLATE_DEF_ID);
 
-  it("is placed at both shop doors, and retracts with its wall run", () => {
-    expect(thresholds).toHaveLength(2);
+  it("is placed at both shop doors and the home flat's, and retracts with its wall run", () => {
+    expect(thresholds).toHaveLength(3);
     for (const t of thresholds) {
       expect(t.isNearSide).toBe(true);
       expect(t.ownerBuildingId).not.toBe(NO_OWNER);
@@ -911,7 +911,7 @@ describe("story 2.14: a shop door's threshold", () => {
     const band = props.filter(
       (d) => "liftSourcePx" in d && d.liftSourcePx === thresholdDef?.sprite?.h,
     );
-    expect(band).toHaveLength(2);
+    expect(band).toHaveLength(3);
     for (const b of band) {
       const owner = thresholds.find((t) => t.x === b.x && t.y === b.y);
       expect(owner, "a band must share its threshold's sort point").toBeDefined();

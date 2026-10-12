@@ -1,6 +1,7 @@
 // Story 4.8: the one gate on whether the body is this page's to drive.
 import { describe, expect, it } from "vitest";
 import {
+  AWAITING_NAME,
   CONNECTION_DOWN,
   connectionReason,
   createBodyControl,
@@ -61,5 +62,17 @@ describe("connectionReason", () => {
     control.setReason("another-tab", false);
     expect(control.isOpen()).toBe(true);
     expect(CONNECTION_DOWN).toBe("connection-down");
+  });
+});
+
+describe("the awaiting-name reason", () => {
+  it("closes the body until the prompt is gone, independently of the connection", () => {
+    const control = createBodyControl();
+    control.setReason(AWAITING_NAME, true);
+    expect(control.isOpen()).toBe(false);
+    connectionReason(control)("connected");
+    expect(control.isOpen()).toBe(false);
+    control.setReason(AWAITING_NAME, false);
+    expect(control.isOpen()).toBe(true);
   });
 });

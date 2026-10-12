@@ -3,9 +3,10 @@
 // server's in-city time (within one in-city minute, the precision floor),
 // and the server never broadcasts the time: `world_clock` is inserted once
 // and never updated.
-import { expect, test } from "@playwright/test";
+
 // Pulls in `declare global { interface Window { __bc } }` -- types only.
 import type {} from "../../src/net/e2e-hooks";
+import { expect, test } from "./fixtures";
 
 const REAL_MS_PER_CITY_MINUTE = 2_500;
 const CITY_MINUTES_PER_DAY = 1_440;

@@ -75,6 +75,8 @@ export interface CharacterReport {
   readonly characterId: bigint;
   readonly createdAtMicros: bigint;
   readonly linked: boolean;
+  /** Set once at creation (story 4.6); empty on a row that predates it. */
+  readonly name: string;
 }
 
 export type RegionRow =
@@ -130,6 +132,9 @@ export interface ConnectOptions {
   readonly storage?: SettingsStorage | null;
   readonly onIdentity?: (identity: IdentityReport) => void;
   readonly onCharacter?: (character: CharacterReport) => void;
+  /** Story 4.6: the first subscription applied and the caller's
+   * `my_character` is empty -- the stored identity reaches no character. */
+  readonly onCharacterAbsent?: () => void;
   /** Story 4.3: the interest region. */
   readonly region?: RegionWiring;
   /** Story 4.8: presented instead of reading `storage`; set on a reconnect. */
@@ -167,8 +172,17 @@ export interface ConnectOptions {
  */
 export function connect(options: ConnectOptions): DbConnection {
   options.onStatus?.("connecting");
-  const { onPing, onStatus, onHandshake, clock, region, storage, onIdentity, onCharacter } =
-    options;
+  const {
+    onPing,
+    onStatus,
+    onHandshake,
+    clock,
+    region,
+    storage,
+    onIdentity,
+    onCharacter,
+    onCharacterAbsent,
+  } = options;
   const mark = (name: Parameters<typeof markBoot>[0]): void => {
     if (options.marks !== false) markBoot(name);
   };
@@ -199,7 +213,10 @@ export function connect(options: ConnectOptions): DbConnection {
       // extra round trip on the common (matched-version) path.
       connection
         .subscriptionBuilder()
-        .onApplied(() => mark(BOOT_MARK.SUBSCRIPTION_APPLIED))
+        .onApplied(() => {
+          mark(BOOT_MARK.SUBSCRIPTION_APPLIED);
+          if (connection.db.myCharacter.count() === 0n) onCharacterAbsent?.();
+        })
         .onError((ctx) => {
           // Cycle 1 review (Tim's finding 6): with no `onError`, a
           // rejected subscribe left the boot gate's own handshake latch
@@ -268,6 +285,7 @@ export function connect(options: ConnectOptions): DbConnection {
       characterId: row.characterId,
       createdAtMicros: row.createdAt.microsSinceUnixEpoch,
       linked: row.linked,
+      name: row.name,
     });
   });
 

@@ -11,10 +11,11 @@
 // run. No `waitForTimeout` anywhere -- only `waitForFunction`/
 // `expect.poll`, and `retries` stays the run's own default of 0.
 
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
+import { expect, test } from "./fixtures";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
 
 async function waitForSceneReady(page: Page): Promise<void> {
@@ -146,8 +147,8 @@ test("the DOM UI surface is an exact allowlist: every top-level surface but the 
     expect(value).not.toBeNull();
     expect(ALLOWED.has(value ?? "")).toBe(true);
   }
-  // Exact, not merely a subset: story 1.11 ships exactly two of the three
-  // (the boot name prompt is story 4.6's).
+  // Exact, not merely a subset: the name prompt (story 4.6) is gone once
+  // the player has arrived, so a booted page carries exactly these two.
   expect([...surfaces].sort()).toEqual(["connection-notice", "options-menu"]);
 });
 

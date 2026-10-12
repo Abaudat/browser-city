@@ -24,7 +24,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { PNG } from "pngjs";
 import type {} from "../../src/net/e2e-hooks";
 import { worldPointPx } from "../../src/render/screen-position";
@@ -78,6 +78,7 @@ import {
   streetWorldIndex,
 } from "../unit/test-street/street-world";
 import { canvasOf } from "./camera-test-support";
+import { expect, test } from "./fixtures";
 import { SCREENSHOT_OPTIONS } from "./screenshot-support";
 import { walkRealSegment } from "./walk-support";
 

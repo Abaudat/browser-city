@@ -67,6 +67,7 @@ export type CadenceLiveness = __Infer<typeof CadenceLiveness>;
 export const Character = __t.object("Character", {
   characterId: __t.u64(),
   createdAt: __t.timestamp(),
+  name: __t.string(),
 });
 export type Character = __Infer<typeof Character>;
 
@@ -272,6 +273,7 @@ export const MyCharacter = __t.object("MyCharacter", {
   characterId: __t.u64(),
   createdAt: __t.timestamp(),
   linked: __t.bool(),
+  name: __t.string(),
 });
 export type MyCharacter = __Infer<typeof MyCharacter>;
 

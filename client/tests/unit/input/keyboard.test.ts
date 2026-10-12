@@ -182,3 +182,18 @@ describe("attachKeyboard", () => {
     expect(state.direction()).toEqual({ x: 0, y: 0 });
   });
 });
+
+describe("typing into a text field", () => {
+  it("never drives the body, while the same key on the page does", () => {
+    const state = new KeyboardState(DEFAULT_BINDINGS);
+    const detach = attachKeyboard(state, window);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyD", bubbles: true }));
+    expect(state.direction()).toEqual({ x: 0, y: 0 });
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyD" }));
+    expect(state.direction()).toEqual({ x: 1, y: 0 });
+    detach();
+    input.remove();
+  });
+});

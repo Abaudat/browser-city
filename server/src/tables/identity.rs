@@ -6,7 +6,7 @@
 
 use sim::identity::{
     ANONYMOUS_ISSUER, ClaimError, CreatePlan, IssuerRow, LinkPlan, check_capacity, check_claim,
-    credential, plan_create, plan_link,
+    credential, plan_create, plan_link, plan_name,
 };
 use sim::reducer_classes::ReducerClass;
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, Timestamp, ViewContext, view};
@@ -14,7 +14,7 @@ use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, Timestamp, Vie
 use super::metrics::count_call;
 use super::ops::{module_owner, require_owner};
 
-/// A player's persistent entity. Deliberately thin: name, appearance and
+/// A player's persistent entity. Deliberately thin: appearance and
 /// everything else arrive additively as later stories need them (NFR33) --
 /// the only permanent decision settled here is the surrogate key.
 #[derive(Clone)]
@@ -24,6 +24,10 @@ pub struct Character {
     #[auto_inc]
     pub character_id: u64,
     pub created_at: Timestamp,
+    /// Set once by `create_character` (`sim::identity::plan_name`); never
+    /// unique, never renamed. Empty for a row that predates the column.
+    #[default("")]
+    pub name: String,
 }
 
 /// One-character-to-N-identities (FR142): `identity` is `#[unique]` (an
@@ -92,6 +96,7 @@ pub struct MyCharacter {
     pub created_at: Timestamp,
     /// Some identity of this character came through an OIDC issuer.
     pub linked: bool,
+    pub name: String,
 }
 
 #[view(accessor = my_character, public)]
@@ -112,6 +117,7 @@ pub fn my_character(ctx: &ViewContext) -> Vec<MyCharacter> {
         character_id: ch.character_id,
         created_at: ch.created_at,
         linked,
+        name: ch.name,
     }]
 }
 
@@ -164,15 +170,17 @@ pub fn check_connecting(ctx: &ReducerContext) -> Result<(), String> {
 /// character and its mapping in one transaction; a no-op when the caller
 /// already reaches one.
 #[spacetimedb::reducer]
-pub fn create_character(ctx: &ReducerContext) -> Result<(), String> {
+pub fn create_character(ctx: &ReducerContext, name: String) -> Result<(), String> {
     count_call(ctx, ReducerClass::Player);
     let issuer_id = caller_issuer(ctx)?;
     match plan_create(character_of(ctx, ctx.sender())) {
         CreatePlan::Existing(_) => Ok(()),
         CreatePlan::New => {
+            let name = plan_name(&name).map_err(|e| e.message().to_string())?;
             let ch = ctx.db.character().insert(Character {
                 character_id: 0,
                 created_at: ctx.timestamp,
+                name,
             });
             ctx.db.character_identity().insert(CharacterIdentity {
                 mapping_id: 0,

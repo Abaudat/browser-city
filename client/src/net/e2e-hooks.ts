@@ -20,11 +20,11 @@ declare global {
       /** Story 4.5: whether the link offer's carrier was placed this
        * session, set once the scene is about to mount. */
       linkOffer?: { placed: boolean };
-      createCharacter?: () => Promise<void>;
+      createCharacter?: (name?: string) => Promise<void>;
       startLink?: () => Promise<void>;
       /** Story 4.5: the character this identity reaches, once the
        * `my_character` view delivers it. */
-      character?: { characterId: string; createdAtMicros: string; linked: boolean };
+      character?: { characterId: string; createdAtMicros: string; linked: boolean; name: string };
       renderOrder?: string[];
       /** Story 4.8: the reconnect supervisor. `live` is how many SDK
        * connections are open (never more than one); `drop` closes the
@@ -45,6 +45,10 @@ declare global {
        * Recording is off until `__bcStartFrameTimings` turns it on, so a
        * functional spec never pays for it. */
       frameTimings?: number[];
+      /** `performance.now()` of each `frameTimings` sample, and of the last
+       * stopped window -- so the perf report can say *when* its worst frame was. */
+      frameStamps?: number[];
+      lastFrameStamps?: number[];
       startFrameTimings?: () => void;
       stopFrameTimings?: () => number[];
       /** Story 5.4 (NFR11): per-frame L3 window in ms, same pattern as
@@ -327,19 +331,37 @@ export function recordFrameWorkForE2e(ms: number): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.frameCount = (bucket.frameCount ?? 0) + 1;
-  if (bucket.frameTimings) bucket.frameTimings.push(ms);
+  if (bucket.frameTimings) {
+    bucket.frameTimings.push(ms);
+    bucket.frameStamps?.push(performance.now());
+  }
   if (bucket.startFrameTimings) return;
   bucket.startFrameTimings = () => {
     const current = window.__bc;
-    if (current) current.frameTimings = [];
+    if (current) {
+      current.frameTimings = [];
+      current.frameStamps = [];
+    }
   };
   bucket.stopFrameTimings = () => {
     const current = window.__bc;
     const samples = current?.frameTimings ?? [];
-    if (current) current.frameTimings = undefined;
+    if (current) {
+      current.lastFrameStamps = current.frameStamps ?? [];
+      current.frameTimings = undefined;
+      current.frameStamps = undefined;
+    }
     return samples;
   };
   window.__bc = bucket;
+}
+
+/** Story 4.6: DEV-only user-timing marks for the arrival milestones the perf
+ * report places its worst frame against (a mark is set once). */
+export function markArrivalForE2e(name: "character-known" | "sender-started"): void {
+  if (!import.meta.env.DEV) return;
+  const full = `bc-e2e:${name}`;
+  if (performance.getEntriesByName(full).length === 0) performance.mark(full);
 }
 
 /** Story 5.4 (NFR11): the L3 window recorder the budget spec drives, the
@@ -634,6 +656,7 @@ export function recordCharacterForE2e(character: {
   characterId: bigint;
   createdAtMicros: bigint;
   linked: boolean;
+  name: string;
 }): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
@@ -641,6 +664,7 @@ export function recordCharacterForE2e(character: {
     characterId: character.characterId.toString(),
     createdAtMicros: character.createdAtMicros.toString(),
     linked: character.linked,
+    name: character.name,
   };
   window.__bc = bucket;
 }
@@ -656,7 +680,7 @@ export function recordLinkOfferForE2e(placed: boolean): void {
  * 4.6, the link offer's carrier), callable by a spec until they do. No
  * argument accepts a token. */
 export function exposeIdentityActionsForE2e(actions: {
-  createCharacter: () => Promise<void>;
+  createCharacter: (name?: string) => Promise<void>;
   startLink: () => Promise<void>;
 }): void {
   if (!import.meta.env.DEV) return;
@@ -664,6 +688,13 @@ export function exposeIdentityActionsForE2e(actions: {
   bucket.createCharacter = actions.createCharacter;
   bucket.startLink = actions.startLink;
   window.__bc = bucket;
+}
+
+/** Story 4.6: a spec that assumes the pre-flat start (the shop, `PLAYER_START`)
+ * says so with `window.__bcStart = "shop"` before the page's scripts run;
+ * everyone else, and every production build, starts in the home flat. */
+export function e2eStartsInShop(): boolean {
+  return import.meta.env.DEV && (window as { __bcStart?: string }).__bcStart === "shop";
 }
 
 /** Story 4.1: exposes the client's derived in-city time as a callable. */

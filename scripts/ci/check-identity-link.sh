@@ -82,11 +82,13 @@ ok "connecting writes no character and no mapping"
 # --- create ---------------------------------------------------------------
 A="$(mint)"; B="$(mint)"; C="$(mint)"; D="$(mint)"
 [ -n "$A" ] && [ -n "$B" ] && [ -n "$C" ] && [ -n "$D" ] || fail "could not mint identities"
-expect_ok "create_character as A" "$A" create_character
+expect_err "create_character with a blank name" "$A" create_character '["   "]' "empty"
+expect_err "create_character with a name over the bound" "$A" create_character "[\"$(printf 'a%.0s' {1..25})\"]" "too long"
+expect_ok "create_character as A" "$A" create_character '["Alice"]'
 [ "$(rows character)" = "1" ] && [ "$(rows character_identity)" = "1" ] || fail "create wrote $(snapshot), expected 1/1"
-expect_ok "create_character a second time as A" "$A" create_character
+expect_ok "create_character a second time as A" "$A" create_character '["Alicia"]'
 [ "$(snapshot)" = "1/1" ] || fail "a second create wrote rows ($(snapshot))"
-expect_ok "create_character as D" "$D" create_character
+expect_ok "create_character as D" "$D" create_character '["Dee"]'
 [ "$(snapshot)" = "2/2" ] || fail "D's create wrote $(snapshot), expected 2/2"
 ok "create writes one row in each table; a second create writes nothing"
 
@@ -157,7 +159,7 @@ ok "character_identity is private and my_character returns only the caller's row
 # written down as anonymous.
 E="$(mint)"; F="$(mint)"
 CODE_4="$(printf 'd4%.0s' $(seq 32))"
-expect_ok "create_character as E" "$E" create_character
+expect_ok "create_character as E" "$E" create_character '["Eve"]'
 expect_ok "begin_link as F" "$F" begin_link "[\"$CODE_4\"]"
 expect_ok "complete_link as E (the redeemer has the character)" "$E" complete_link "[\"$CODE_4\"]"
 FISSUER="$(owner_sql 'SELECT * FROM character_identity' | grep -E '^ [0-9]+ ' | tail -1 | awk -F'|' '{gsub(/ /, "", $4); print $4}')"

@@ -63,6 +63,26 @@ jobs:
           BC_BOOT_OUT_DIR: ${{ github.workspace }}/boot-budget-out
           BC_BOOT_HOST_LABEL: github-actions-runner
         run: bash scripts/dev/run-boot-budget-spike.sh
+      # Story 4.6: the first-boot gate's 0 ms leg is held to a recorded
+      # ratio over a calibration workload; this records it, three times, so
+      # the constant is set from more than one reading.
+      - name: first-boot gate, three recording repeats (no ratio verdict)
+        env:
+          BC_BOOT_GATE_ONLY: "1"
+          BC_BOOT_SKIP_DECODE: "1"
+          BC_BOOT_GATE_RECORD: "1"
+          BC_BOOT_HOST_LABEL: github-actions-runner
+        run: |
+          for i in 1 2 3; do
+            BC_BOOT_OUT_DIR="${{ github.workspace }}/first-boot-gate-record-$i" bash scripts/dev/run-boot-budget-spike.sh
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: first-boot-gate-records
+          path: first-boot-gate-record-*
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

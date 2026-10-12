@@ -29,6 +29,8 @@
 #   BC_BOOT_HOST_LABEL       overrides the report header's host label
 #   BC_BOOT_SKIP_DECODE      set to skip D4's row-count sweep entirely
 #                            (faster iteration on the milestone half only)
+#   BC_BOOT_GATE_ONLY        set to run only story 4.6's first-boot gate (the
+#                            p75 of name submit -> controllable), no sweep
 set -uo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLIENT_DIR="$REPO_ROOT/client"
@@ -231,6 +233,13 @@ fi
     npx playwright test --project=boot ) 2>&1 | tee "$DATA_DIR/playwright.log"
 PLAYWRIGHT_STATUS=${PIPESTATUS[0]:-$?}
 [ "$PLAYWRIGHT_STATUS" -eq 0 ] || fail "the boot Playwright project failed (see above)" "$DATA_DIR/playwright.log"
+
+# BC_BOOT_GATE_ONLY (story 4.6): only the first-boot gate ran, so there is
+# no milestone sweep to reduce -- the gate's own verdict is its output.
+if [ -n "${BC_BOOT_GATE_ONLY:-}" ]; then
+  echo "run-boot-budget-spike: gate-only run, verdict in $OUT_DIR/first-boot-gate.json" >&2
+  exit 0
+fi
 
 # --- Reduce the raw JSON into the committed report ---
 node "$REPO_ROOT/scripts/dev/generate-boot-budget-report.mjs" \

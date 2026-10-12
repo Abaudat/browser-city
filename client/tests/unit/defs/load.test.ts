@@ -7,6 +7,7 @@ function validPayload(version: string): Record<string, unknown> {
     defs_version: version,
     collider_subcells_per_cell: 16,
     position_units_per_cell: 256,
+    name_max_chars: 24,
     interact_at_max_reach_cells: 2,
     max_footprint_cells: 8,
     max_grid_extent: 8,

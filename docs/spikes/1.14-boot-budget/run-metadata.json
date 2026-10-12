@@ -1,12 +1,12 @@
 {
   "spacetimeVersion": "2.9.0",
-  "runDate": "2026-09-17T08:07:00Z",
+  "runDate": "2026-10-12T15:26:54Z",
   "pixiVersion": "8.20.1",
   "browserVersion": "153.0.8010.12",
   "playwrightVersion": "1.63.0",
   "hostInfo": {
     "hostLabel": "github-actions-runner",
-    "cpuModel": "AMD EPYC 7763 64-Core Processor",
+    "cpuModel": "AMD EPYC 9V45 96-Core Processor",
     "logicalCores": 4,
     "totalMemBytes": 16766414848,
     "platform": "linux",

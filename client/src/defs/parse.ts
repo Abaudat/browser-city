@@ -583,6 +583,7 @@ export function parseDefs(data: unknown): Defs {
       "defs_version",
       "collider_subcells_per_cell",
       "position_units_per_cell",
+      "name_max_chars",
       "interact_at_max_reach_cells",
       "max_footprint_cells",
       "max_grid_extent",
@@ -622,6 +623,7 @@ export function parseDefs(data: unknown): Defs {
     "$.collider_subcells_per_cell",
   );
   const positionUnitsPerCell = expectU32(root.position_units_per_cell, "$.position_units_per_cell");
+  const nameMaxChars = expectU32(root.name_max_chars, "$.name_max_chars");
   const interactAtMaxReachCells = expectU32(
     root.interact_at_max_reach_cells,
     "$.interact_at_max_reach_cells",
@@ -865,6 +867,7 @@ export function parseDefs(data: unknown): Defs {
     defsVersion,
     colliderSubcellsPerCell,
     positionUnitsPerCell,
+    nameMaxChars,
     interactAtMaxReachCells,
     maxFootprintCells,
     maxGridExtent,

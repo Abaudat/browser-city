@@ -14,4 +14,5 @@ export default __t.row({
   characterId: __t.u64().name("character_id"),
   createdAt: __t.timestamp().name("created_at"),
   linked: __t.bool(),
+  name: __t.string(),
 });

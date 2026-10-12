@@ -9,6 +9,9 @@ pub const COLLIDER_SUBCELLS_PER_CELL: i32 = 16;
 /// Units per cell of a position on the wire (`player_position`'s fraction columns).
 pub const POSITION_UNITS_PER_CELL: i32 = 256;
 
+/// The longest character name, in Unicode scalar values.
+pub const NAME_MAX_CHARS: u32 = 24;
+
 /// How far beyond its own footprint an `interact_at` rect may reach, in whole cells.
 pub const INTERACT_AT_MAX_REACH_CELLS: i32 = 2;
 

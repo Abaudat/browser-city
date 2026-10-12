@@ -4,7 +4,7 @@
 // floor through `window.__bc`, never pixels; the video is the artefact.
 // The unit sweep (`inv_transition_reachable_from_every_standable_approach`)
 // pins the behaviour; this only proves the wiring.
-import { expect, test } from "@playwright/test";
+
 import type {} from "../../src/net/e2e-hooks";
 import {
   STREET_FLOOR,
@@ -12,6 +12,7 @@ import {
   streetSubwayWallWalkRoute,
 } from "../../src/test-street/fixture";
 import { streetWalkInputs } from "../unit/test-street/street-world";
+import { expect, test } from "./fixtures";
 import { walkRealSegment } from "./walk-support";
 
 test.use({ video: "on" });

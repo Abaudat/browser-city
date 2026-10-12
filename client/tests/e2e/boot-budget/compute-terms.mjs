@@ -36,7 +36,6 @@ const REQUIRED_MARKS = [
   "bc-boot:handshake-open",
   "bc-boot:subscription-applied",
   "bc-boot:atlas-ready",
-  "bc-boot:interactive-prompt",
   "bc-boot:player-controllable",
 ];
 
@@ -73,7 +72,7 @@ export function computeSampleTerms(raw) {
   const handshakeOpen = raw.marks["bc-boot:handshake-open"];
   const subscriptionApplied = raw.marks["bc-boot:subscription-applied"];
   const atlasReady = raw.marks["bc-boot:atlas-ready"];
-  const interactivePrompt = raw.marks["bc-boot:interactive-prompt"];
+  const nameSubmitted = raw.marks["bc-boot:name-submitted"];
   const playerControllable = raw.marks["bc-boot:player-controllable"];
 
   // Quentin's direction: `bundle` is the entry script's own Resource
@@ -156,7 +155,9 @@ export function computeSampleTerms(raw) {
   return {
     totalMs: playerControllable,
     firstPaintMs: raw.firstPaintMs,
-    interactivePromptMs: interactivePrompt,
+    nameSubmittedMs: nameSubmitted ?? null,
+    submitToControllableMs:
+      typeof nameSubmitted === "number" ? playerControllable - nameSubmitted : null,
     playerControllableMs: playerControllable,
     terms,
     atlasRequestCount: imageResources.length,

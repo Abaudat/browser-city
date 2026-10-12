@@ -1,0 +1,24 @@
+# Character-name rule cases, read by server/sim/tests/identity.rs and client/tests/unit/identity/name-rule.test.ts.
+# Format: <input><TAB><accepted-normalised-name | ->  ("-" = rejected). \uXXXX and \u{X..} escape a scalar.
+# The rule: trim, 1..=24 scalar values, no control or invisible-format characters.
+Sam	Sam
+  Sam  	Sam
+Sam Spade	Sam Spade
+Zoë	Zoë
+Mia\u{1F600}	Mia\u{1F600}
+	-
+   	-
+\u00A0\u2003	-
+Sa\u0000m	-
+Sa\u0007m	-
+Sa\u007Fm	-
+Sa\u200Bm	-
+Sa\u202Em	-
+\u200Fsam	-
+Sa\uFEFFm	-
+a	a
+aaaaaaaaaaaaaaaaaaaaaaaa	aaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaa	-
+\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}	\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}
+\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}\u{1F600}	-
+\uFEFFSam	-

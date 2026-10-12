@@ -13,7 +13,7 @@
 //      runtime (the Epic 1 shortcut is gone), and the real page fetches
 //      only the character atlas pages the crowd actually references,
 //      never the wider catalogue eagerly.
-import { expect, test } from "@playwright/test";
+
 import type { Defs } from "../../src/defs/types";
 import type {} from "../../src/net/e2e-hooks";
 import { resolveUniform } from "../../src/render/appearance/composite";
@@ -26,6 +26,7 @@ import {
 } from "../../src/test-street/citizens";
 import { committedDefs } from "../unit/test-street/street-world";
 import { ready } from "./appearance-test-support";
+import { expect, test } from "./fixtures";
 
 test.describe("the real, mounted appearance pipeline", () => {
   test("citizens sharing a tuple+override share one texture instance (AC5)", async ({ page }) => {

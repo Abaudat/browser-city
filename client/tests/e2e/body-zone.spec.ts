@@ -4,9 +4,10 @@
 // intersects the canvas is a pop. The player walks along the street with
 // real keyboard input (`walk-support.ts`) in a small window, so the body
 // zone culls part of the crowd and the walk crosses its edges.
-import { expect, test } from "@playwright/test";
+
 import type {} from "../../src/net/e2e-hooks";
 import { railingFootRoute } from "../unit/test-street/street-world";
+import { expect, test } from "./fixtures";
 import { walkRealCells, walkRealSegment } from "./walk-support";
 
 test.describe("the body zone in a real browser", () => {

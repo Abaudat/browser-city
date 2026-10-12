@@ -6,11 +6,12 @@
 // drawn); no sleeps, nothing waits on a wall clock. The math lives in the
 // unit properties; this guards the wiring.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 // Pulls in `declare global { interface Window { __bc } }` -- types only.
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
 import { AVOIDANCE_SPECS, AVOIDANCE_STANDERS, stagingBounds } from "../../src/test-street/citizens";
+import { expect, test } from "./fixtures";
 
 const defs = JSON.parse(readFileSync("public/defs/defs.json", "utf8")) as {
   balance: { key: string; value: number }[];

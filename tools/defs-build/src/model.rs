@@ -49,6 +49,11 @@ pub const COLLIDER_SUBCELLS_PER_CELL: i64 = 16;
 pub const POSITION_UNITS_PER_CELL: i64 = 256;
 const _: () = assert!(POSITION_UNITS_PER_CELL % COLLIDER_SUBCELLS_PER_CELL == 0);
 
+/// The longest character name, in Unicode scalar values. Declared once, here,
+/// and emitted into both generated artefacts by `emit.rs`; the server's
+/// `sim::identity::plan_name` and the client's name prompt both read it.
+pub const NAME_MAX_CHARS: i64 = 24;
+
 /// FR1: real milliseconds per in-city minute (60 real minutes = one day).
 /// The only hand-typed copy; emitted into both generated artefacts, read by
 /// `sim::time` and the client's `time/city-time.ts`.

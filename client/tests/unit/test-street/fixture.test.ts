@@ -34,10 +34,11 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
     // (flight, railing) and the shops'
     // wall runs -- 14 `wall_face` cells (north and south runs) and 12
     // `wall_segment` cells (west, east and party runs), and the cupboard
-    // (story 6.10). One-cell defs are
+    // (story 6.10), and the home flat's (story 4.6) walls -- 11 `wall_face`
+    // and 6 `wall_segment` cells -- its door's threshold and its bed. One-cell defs are
     // placed once per cell (`sprite` never repeats), so this counts
     // *placed rows*, not distinct props.
-    expect(defRows.length).toBe(55);
+    expect(defRows.length).toBe(74);
   });
 
   it("names only real, currently-declared defs/objects keys", () => {
@@ -51,6 +52,7 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
       }),
     );
     expect([...keys].sort()).toEqual([
+      "bed_single_blue",
       "bridge_deck",
       "bridge_stairs_abutment",
       "bridge_stairs_deck",

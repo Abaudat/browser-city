@@ -2,7 +2,9 @@
 // two figures through `report_client_measure` and nothing else:
 //   - `Boot`: the `player-controllable` boot mark, once per page, only
 //     while connected and only on a page that has not lost its connection
-//     (a reconnecting page's mark is not a boot);
+//     (a reconnecting page's mark is not a boot), and never on a first
+//     boot -- one that went through the name prompt includes the player's
+//     typing, which means nothing against NFR1 (story 4.6);
 //   - `Resumed`: the outage from the status turning `disconnected` to the
 //     next `connected`, once per drop.
 // Never from a second stopwatch, never queued on a dead connection: a send
@@ -19,6 +21,8 @@ export interface MeasureReporterDeps {
   /** The `player-controllable` mark in ms since navigation, when set. */
   bootMs: () => number | undefined;
   now: () => number;
+  /** This boot went through the name prompt (the name was submitted). */
+  firstBoot?: () => boolean;
 }
 
 export interface MeasureReporter {
@@ -42,6 +46,7 @@ export function createMeasureReporter(deps: MeasureReporterDeps): MeasureReporte
 
   const tryBoot = (): void => {
     if (!connected || bootSent || everDropped) return;
+    if (deps.firstBoot?.()) return;
     const ms = wholeMs(deps.bootMs());
     if (ms === undefined) return;
     bootSent = true;
@@ -93,6 +98,7 @@ export function startMeasureReporter(conn: () => MeasureConnection): {
     },
     bootMs: bootControllableMs,
     now: () => performance.now(),
+    firstBoot: () => performance.getEntriesByName(BOOT_MARK.NAME_SUBMITTED, "mark").length > 0,
   });
   const stop = watchControllableMark(() => reporter.markControllable());
   return { reporter, stop };

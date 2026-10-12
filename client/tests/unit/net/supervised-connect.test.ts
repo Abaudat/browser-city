@@ -148,7 +148,7 @@ describe("stale-connection guard", () => {
     old.onPing(undefined as never);
     old.onHandshake?.({ defsVersion: "a", protocolVersion: "b" });
     old.onIdentity?.({ identityHex: "x", persisted: true });
-    old.onCharacter?.({ characterId: 1n, createdAtMicros: 0n, linked: false });
+    old.onCharacter?.({ characterId: 1n, createdAtMicros: 0n, linked: false, name: "" });
     old.onStatus?.("connected");
     old.clock?.onClock({ epochMicros: 0n, speed: 1 }, "insert");
     old.region?.controller.attach({} as never, {} as never);
@@ -172,7 +172,7 @@ describe("stale-connection guard", () => {
     c.onPing(undefined as never);
     c.onHandshake?.({ defsVersion: "a", protocolVersion: "b" });
     c.onIdentity?.({ identityHex: "x", persisted: true });
-    c.onCharacter?.({ characterId: 1n, createdAtMicros: 0n, linked: false });
+    c.onCharacter?.({ characterId: 1n, createdAtMicros: 0n, linked: false, name: "" });
     c.clock?.onClock({ epochMicros: 0n, speed: 1 }, "insert");
     c.region?.controller.attach({} as never, {} as never);
     c.region?.rows?.onUpdate("placedObject", placed(1), placed(1, 1));

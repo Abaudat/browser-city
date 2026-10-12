@@ -27,6 +27,7 @@ interface FakeModuleVersionRow {
 }
 
 interface FakeState {
+  myCharacterRows: number;
   uri?: string;
   databaseName?: string;
   onConnectCb?: (connection: unknown, identity?: unknown, token?: string) => void;
@@ -63,9 +64,11 @@ interface FakeMyCharacterRow {
   characterId: bigint;
   createdAt: Timestamp;
   linked: boolean;
+  name: string;
 }
 
 const state: FakeState = {
+  myCharacterRows: 0,
   syncCalls: 0,
   subs: [],
   withTokenCalls: 0,
@@ -133,6 +136,7 @@ const fakeConn = {
       },
     },
     myCharacter: {
+      count: () => BigInt(state.myCharacterRows),
       onInsert: (cb: (ctx: unknown, row: FakeMyCharacterRow) => void) => {
         state.onMyCharacterInsertCb = cb;
       },
@@ -220,6 +224,7 @@ const { ServerClock } = await import("../../src/time/server-clock");
 const { CLOCK_SYNC_INTERVAL_MS } = await import("../../src/time/clock-sync");
 
 beforeEach(() => {
+  state.myCharacterRows = 0;
   state.uri = undefined;
   state.databaseName = undefined;
   state.onConnectCb = undefined;
@@ -449,6 +454,23 @@ describe("connect", () => {
     expect(received[0]?.message).toBe("hi");
     expect(received[0]?.writtenAtMs).toBe(123);
     expect(typeof received[0]?.observedAtMs).toBe("number");
+  });
+
+  it("reports an empty my_character once the first subscription applies, and only then (story 4.6)", () => {
+    let absent = 0;
+    connect(() => {}, undefined, undefined, undefined, {
+      storage: fakeStorage().storage,
+      onCharacterAbsent: () => {
+        absent += 1;
+      },
+    });
+    state.onConnectCb?.(fakeConn);
+    expect(absent).toBe(0);
+    state.onAppliedCb?.();
+    expect(absent).toBe(1);
+    state.myCharacterRows = 1;
+    state.onAppliedCb?.();
+    expect(absent).toBe(1);
   });
 
   it("marks the handshake open and the subscription applied (NFR1) at their own distinct moments", () => {
@@ -806,8 +828,15 @@ describe("identity token (story 4.5, FR141)", () => {
     });
     state.onMyCharacterInsertCb?.(
       {},
-      { characterId: 7n, createdAt: Timestamp.fromDate(new Date(2_000)), linked: true },
+      {
+        characterId: 7n,
+        createdAt: Timestamp.fromDate(new Date(2_000)),
+        linked: true,
+        name: "Sam",
+      },
     );
-    expect(seen).toEqual([{ characterId: 7n, createdAtMicros: 2_000_000n, linked: true }]);
+    expect(seen).toEqual([
+      { characterId: 7n, createdAtMicros: 2_000_000n, linked: true, name: "Sam" },
+    ]);
   });
 });

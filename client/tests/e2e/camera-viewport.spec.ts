@@ -8,7 +8,7 @@
 // (`tests/unit/render/camera.test.ts`, `tests/unit/test-street/
 // scene.test.ts`) -- this spec only proves what real layout and real
 // frames can show. Runs in the default `chromium` project.
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import { CAMERA_SCROLL_TOLERANCE_PX } from "../../src/render/camera";
@@ -19,6 +19,7 @@ import {
   westOpenSpotRoute,
 } from "../unit/test-street/street-world";
 import { waitForPlayerControllable } from "./boot-test-support";
+import { expect, test } from "./fixtures";
 import { walkRealSegment } from "./walk-support";
 
 function balance(key: string): number {

@@ -12,13 +12,14 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
 import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
 import { SHOP_COUNTER_DEF_ID, STREET_PROPS } from "../../src/test-street/fixture";
 import { committedDefs } from "../unit/test-street/street-world";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
+import { expect, test } from "./fixtures";
 import { ownerSql, readSpacetimeHandle } from "./spacetime-harness.mjs";
 import { walkRealCells } from "./walk-support";
 
@@ -127,6 +128,9 @@ function frames(page: Page, n: number): Promise<void> {
 }
 
 test.describe.configure({ mode: "serial" });
+
+// These specs own when a character exists, so none arrives by itself.
+test.use({ arrive: false });
 
 test("a dropped connection returns by itself: the notice goes lost then reconnected, nothing reloads, the body stays put, and the sender resumes (FR140, NFR4)", async ({
   browser,

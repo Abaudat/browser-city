@@ -118,6 +118,7 @@ try {
     env: {
       ...process.env,
       BC_DEPLOY_URL: previewUrl,
+      BC_DEPLOY_REHEARSAL: "1",
       BC_DEPLOY_EXPECT_WS_ORIGIN: handle.serverUrl.replace(/^http/, "ws"),
       BC_DEPLOY_EXPECT_DB: handle.dbName,
     },
@@ -126,9 +127,13 @@ try {
     throw new Error("the deploy-smoke Playwright project failed");
   }
   const after = IDENTITY_TABLES.map((t) => countRows(handle, t));
-  if (before.some((n, i) => n !== after[i])) {
+  // Exactly one character: the rehearsal-only control in deploy-smoke.spec.ts
+  // creates one on purpose (the frame search's positive control). Every other
+  // smoke test must create none, which the live deploy's own run holds with
+  // the control skipped.
+  if (before.some((n, i) => after[i] !== n + 1)) {
     throw new Error(
-      `the smoke run changed ${IDENTITY_TABLES.join("/")} row counts (${before.join("/")} -> ${after.join("/")}): a deploy must never create a character`,
+      `the smoke run left ${IDENTITY_TABLES.join("/")} at ${after.join("/")} from ${before.join("/")}: expected exactly the rehearsal control's one character, a deploy must never create another`,
     );
   }
 } finally {

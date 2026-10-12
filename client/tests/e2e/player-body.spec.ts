@@ -4,9 +4,10 @@
 // (`window.__bc.playerBody`), never from pixels: facing follows each leg, the
 // walk cycle advances while moving, and the body is idle at rest on the last
 // facing. The walk goes through `walk-support.ts`.
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { playerBodySquareRoute } from "../unit/test-street/street-world";
+import { expect, test } from "./fixtures";
 import { walkRealSegment } from "./walk-support";
 
 interface Seen {

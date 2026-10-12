@@ -6,7 +6,6 @@
 // judged on the body's own timeline, on the real clock, and on what is on the
 // screen.
 import { readFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
 // Pulls in `declare global { interface Window { __bc } }` -- types only.
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
@@ -18,6 +17,7 @@ import {
   streetObjectSources,
   streetStandable,
 } from "../unit/test-street/street-world";
+import { expect, test } from "./fixtures";
 
 interface Sample {
   realMs: number;

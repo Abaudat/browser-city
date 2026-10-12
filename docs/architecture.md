@@ -148,7 +148,7 @@ docs/spikes/1.3-scheduled-reducer-timing.md.
 - `metric_tally` holds the period accumulators keyed by `sim::gameplay_metrics::Tally` (its own key space): the peak, the boot histogram (log-spaced buckets with an edge exactly at 1 000 ms, 60 000 ms cap) and the resume counts. The whole period is one pure value, `Period`, which `server` loads, applies an event to and stores; a zero is the absence of a row. `Period::fire` yields every series once and the next period (peak re-seeded to the live count); `begin_restore` clears the table.
 - `sim::table_bounds::NOT_EXPORTED` is the one list of tables an export never carries and a restore never touches (`restore_state`, `connected_client`, `metric_tally`): `world_backup not-exported` prints it for the shell scripts, and `restore_coverage.rs` and `world_backup::Shape` read it directly. `scripts/ci/check-connected-client-path.sh` holds `connected_client` to `tables/metrics.rs` and the two lifecycle reducers.
 - The reconnection outage runs from the page noticing the drop to the connection returning, so a silent drop excludes up to `PROBE_TIMEOUT_MS` of detection; `RECONNECT_SEAM_MS` equals that constant and `scripts/ci/check-reconnect-seam-agrees.sh` pins the two.
-- `report_client_measure(ClientMeasure::Boot | Resumed)` is the one client measure call, class `player`. `sim::gameplay_metrics::accept_measure` refuses a value outside (0, 60 s] for boot or (0, 24 h] for resume, and a second report of the same kind on one connection. The client sends it from `net/measure-reporter.ts` alone. `Boot` is every boot to controllable; the story that adds the name prompt (4.16) must exclude or separate a first boot from it, because NFR1 applies to the return path.
+- `report_client_measure(ClientMeasure::Boot | Resumed)` is the one client measure call, class `player`. `sim::gameplay_metrics::accept_measure` refuses a value outside (0, 60 s] for boot or (0, 24 h] for resume, and a second report of the same kind on one connection. The client sends it from `net/measure-reporter.ts` alone. `Boot` is every return boot to controllable; a first boot (one that went through the name prompt, `NAME_SUBMITTED` marked) is never reported as `Boot`, because its figure includes the player typing and NFR1 applies to the return path.
 
 ## Time
 
@@ -248,8 +248,10 @@ loud failure instead, never a silent no-op.
 - `smoke` is a real Playwright spec (`client/tests/e2e/deploy-smoke.spec.ts`,
   the `deploy-smoke` project), not an HTTP 200 check: it asserts no failed
   request or console/page error, that the WebSocket dials the configured
-  Maincloud URI and database, that the initial subscription applies, and
-  that the player-controllable mark fires. It polls the live URL for a
+  Maincloud URI and database, that the initial subscription applies, that
+  the first frame renders behind the name prompt and that the prompt takes
+  typing. It never submits a name (that would create a character on the live
+  database); submit to controllable is the pre-merge e2e's. It polls the live URL for a
   `<meta name="bc-build">` tag stamped with the deployed commit before
   running, so Pages propagation lag can never pass it against a stale
   deploy. `ci.yml`'s `e2e` job runs the identical spec against a
@@ -394,6 +396,22 @@ and an OIDC identity on the same character.
   character's age is its real creation instant read on the city clock, so
   the e2e harness (which publishes the `time-control` flavour) ages it with
   `set_clock_speed`, never `jump_clock`.
+- **Name.** `create_character(name)` is the one act that makes a
+  character; `sim::identity::plan_name` trims the name and refuses an empty
+  one, one over `NAME_MAX_CHARS` (24, declared in `tools/defs-build`'s
+  `model.rs` and generated into both artefacts) and one with a control or
+  invisible format character. It is stored once on `character.name`,
+  never unique and never renamed, and reaches the client through
+  `my_character`. `client/src/identity/name-rule.ts` mirrors `plan_name`;
+  their tests hold both to `fixtures/character-names.v1.tsv`. The client writes
+  `bc.arrived.v1` (`identity/arrival-flag.ts`) when `my_character` reports a
+  character, never on submit alone; with the flag set and an identity that
+  reaches no character the prompt is asked again. `character.name` is
+  where a player's name lives until the player's body is a citizen row
+  (FR35); when citizens gain names the two are read through one path, never
+  two naming systems. A page whose token cannot be persisted (FR141) still
+  answers the prompt and enters as a visitor with the name discarded: it can
+  hold no character, so the answer is dropped.
 
 ## Stock
 
@@ -622,7 +640,7 @@ A reconnect is a new `connect()`; the SDK connection is single-use and has no re
 - A reconnect presents the token this page is using: the stored one, or for a session-only tab (`persisted: false`) the one its first connection was issued, kept in memory. `rememberFirstToken` runs on the page's first successful connect only.
 - A connect attempt that does not settle within `CONNECT_TIMEOUT_MS` (10 s) has failed: it is superseded and the backoff goes on.
 - A new connection is a new SDK cache that re-inserts everything. The SDK cache stays the only store of streamed rows: `net/` keeps none in steady state. The superseded connection's cache is still readable after `disconnect()`, and is held only until the new connection's initial region has applied. In that window `net/reconcile.ts` hands a re-insert of a held key on as an update (nothing when unchanged), and afterwards each held key the new connection did not bring back as a delete; the old connection is then dropped. Keys come from `REGION_KEY_COLUMNS` in `net/region-subscription.ts`, checked against the bindings' primary-key metadata. `world/` and `render/` receive plain insert, update and delete and never learn of a reconnect. A new region manager is built around the player's current position, a new clock sync runs, and `module_version` re-inserts through `postMountGuard`.
-- `input/body-control.ts` is the one gate on whether the body is this page's to drive, holding named reasons it is not (today one: the connection is down after having been up; a page that has not yet connected is never closed). While it is closed the scene applies no movement (a stride stops where it stands) and a primary click does nothing at all (`attachPointer`'s `canAct`: no intent, no refusal, no cursor blip); hover and the options menu are untouched. A new reason is added to the gate, never to an input device.
+- `input/body-control.ts` is the one gate on whether the body is this page's to drive, holding named reasons it is not (two: the connection is down after having been up, and `awaiting-name`, the name prompt is still up; a page that has not yet connected is never closed by the first). While it is closed the scene applies no movement (a stride stops where it stands) and a primary click does nothing at all (`attachPointer`'s `canAct`: no intent, no refusal, no cursor blip); hover and the options menu are untouched. A new reason is added to the gate, never to an input device.
 - `scripts/ci/check-subscription-shape.sh` holds `DbConnection.builder` to `net/connection.ts` and `net/link.ts` and `connect` to `net/supervised-connect.ts`; the link connection is short-lived and never supervised.
 
 ## Player position
@@ -746,7 +764,13 @@ The whole game has exactly three DOM UI surfaces (FR151): the boot name
 prompt, the options menu, the connection notice. `client/src/ui/` is
 their only home. Each is a `mountX(options)` function taking plain data
 and callbacks, returning a handle with `destroy()` -- no framework, no
-dependency. Every top-level element a surface mounts carries
+dependency. The name prompt is the one exception: its markup and CSS are
+in `index.html`, so it takes typing before any module has run, and
+`ui/name-prompt.ts` exports `adoptNamePrompt(doc, options)`, which adopts
+that element. `index.html`'s one classic inline script hides the prompt
+from a returning player before first paint (key `bc.arrived.v1`) and holds
+a submit made before the bundle evaluated (no navigation); it is the only
+code that runs before the bundle. Every top-level element a surface mounts carries
 `data-bc-surface` with one of `options-menu`, `connection-notice` or
 `name-prompt`, checked against `document.body`'s own children by
 `client/tests/e2e/connection-notice.spec.ts`. `index.html`'s own
@@ -1923,6 +1947,21 @@ Foot slide. Slow-motion or hurried walking. A pivot or pause at a waypoint. Faci
 Boot milestones are marked only through `client/src/boot/boot-marks.ts`; NFR1
 is measured by `scripts/dev/run-boot-budget-spike.sh` against a production
 build.
+
+A first boot is the name prompt: the whole boot runs behind it while the
+player types, and `boot/arrival.ts` opens the gate (removes the prompt,
+releases `awaiting-name`, marks `PLAYER_CONTROLLABLE`) once the first frame
+has rendered and the name was submitted. `NAME_SUBMITTED` carries the time
+the shell's inline script saw the submit. Arrival is optimistic, so the
+typed leg measures about one frame; the `first-boot-gate` job
+(`boot-budget.spec.ts`, `BC_BOOT_GATE_ONLY`; every client or server change)
+holds, on a production build over HTTP/2, 4x CPU and the domestic network,
+the p75 of `NAME_SUBMITTED` to `PLAYER_CONTROLLABLE` and every single sample
+under 1000 ms with a fixed 2000 ms typing window, and ratchets the 0 ms leg (submit at first paint, the leg that really moves)
+as a ratio over a fixed calibration workload run under the same throttle,
+recorded and never raised;
+`scripts/ci/check-boot-shell.sh` holds the built shell to inline markup
+and CSS with nothing render-blocking and nothing that reads as loading.
 
 ## Naming
 

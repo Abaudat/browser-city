@@ -13,13 +13,14 @@
 // on an observable condition.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
 import { computeCamera, ZOOM } from "../../src/render/camera";
 import { visibleCellBounds, worldPointPx } from "../../src/render/screen-position";
 import { CHUNK_SIZE, chunkKey } from "../../src/world/chunk";
 import { columnOf, REGION_LEAVE_RADIUS_CHUNKS, REGION_RADIUS_CHUNKS } from "../../src/world/region";
+import { expect, test } from "./fixtures";
 import { E2E_WORLD, readSpacetimeHandle } from "./spacetime-harness.mjs";
 
 const DEFS = parseDefs(

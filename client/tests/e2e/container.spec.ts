@@ -9,7 +9,7 @@
 // rects it draws, from its own view model), never through pixels. The one
 // screenshot is left behind for Artie's review.
 import { mkdirSync } from "node:fs";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
 import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
@@ -26,6 +26,7 @@ import {
 } from "../unit/test-street/street-world";
 import { waitForPlayerControllable } from "./boot-test-support";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
+import { expect, test } from "./fixtures";
 import { E2E_CUPBOARD } from "./spacetime-harness.mjs";
 import { walkRealSegment } from "./walk-support";
 
