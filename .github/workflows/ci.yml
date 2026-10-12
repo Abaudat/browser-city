@@ -552,7 +552,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     # Story 2.4's own proptests build a real WalkabilityGrid per case and
     # run erode/enclosed_regions/narrow_passages over it -- real work, not
     # the plain arithmetic most of this suite's other proptests do.
@@ -563,6 +563,9 @@ jobs:
     # for every step here; 256 (proptest's own upstream default) still
     # exercises every property thoroughly -- the `test` job's release-mode
     # run is what actually exhausts the input space at 4096.
+    # Story 3.6: every `generate` now also runs pass 7 and its windowed
+    # reachability verdict, ten times its earlier cost under this
+    # unoptimized, instrumented build; the budget grew with it.
     # The same holds for `invariants.rs`'s shared city pool: every pooled
     # invariant plans and judges whole cities, and this job measures which
     # lines run, not how many worlds are judged -- the `test` job judges
