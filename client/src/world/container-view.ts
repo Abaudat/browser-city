@@ -78,7 +78,7 @@ export function layoutRects(
       quarterTurns: ((row.orientation % 4) + 4) % 4,
     });
   }
-  out.sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
+  out.sort((a, b) => Number(a.instanceId - b.instanceId));
   return out;
 }
 

@@ -175,6 +175,8 @@ describe("FloorStacks transient views (story 6.10)", () => {
     );
     expect(stacks.transientCount()).toBe(1);
     expect(() => stacks.assertManaged(new Set())).not.toThrow();
+    stacks.detachTransient(new Container());
+    expect(stacks.transientCount()).toBe(1);
     stacks.detachTransient(view);
     expect(view.parent).toBeNull();
     expect(stacks.transientCount()).toBe(0);
