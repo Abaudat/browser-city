@@ -496,6 +496,42 @@
       ]
     },
     {
+      "accessor": "connected_client",
+      "struct_name": "ConnectedClient",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "connection_id",
+          "ty": "ConnectionId",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "boot_reported",
+          "ty": "bool",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "resume_reported",
+          "ty": "bool",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
       "accessor": "container_kind",
       "struct_name": "ContainerKind",
       "public": false,
@@ -762,6 +798,60 @@
           "unique": false,
           "has_default": false,
           "indexed": true
+        }
+      ]
+    },
+    {
+      "accessor": "gameplay_metric_sample",
+      "struct_name": "GameplayMetricSample",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "sample_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "sampled_at",
+          "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "series_code",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "value",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "sample_size",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
         }
       ]
     },
@@ -1144,6 +1234,33 @@
         {
           "name": "name",
           "ty": "String",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "metric_tally",
+      "struct_name": "MetricTally",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "tally_key",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "value",
+          "ty": "u64",
           "primary_key": false,
           "auto_inc": false,
           "unique": false,

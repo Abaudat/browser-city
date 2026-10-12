@@ -61,7 +61,7 @@ table_matches() { # <table> <file-a> <file-b>
       counter_mismatches="$(bc_wb counter-forward-diff "$2" "$3")" || return 1
       [ -z "$counter_mismatches" ]
       ;;
-    table_sample | storage_sample | reducer_class_sample)
+    table_sample | storage_sample | reducer_class_sample | gameplay_metric_sample)
       local lost
       lost="$(bc_wb sample-forward-diff "$BC_SNAPSHOT" "$1" "$2" "$3")" || return 1
       [ -z "$lost" ]
@@ -91,7 +91,7 @@ while IFS= read -r table; do
       bc_wb cadence-liveness-forward-diff "$FA" "$FB" >&2 || true
     elif [ "$table" = "reducer_class_counter" ]; then
       bc_wb counter-forward-diff "$FA" "$FB" >&2 || true
-    elif [ "$table" = table_sample ] || [ "$table" = storage_sample ] || [ "$table" = reducer_class_sample ]; then
+    elif [ "$table" = table_sample ] || [ "$table" = storage_sample ] || [ "$table" = reducer_class_sample ] || [ "$table" = gameplay_metric_sample ]; then
       bc_wb sample-forward-diff "$BC_SNAPSHOT" "$table" "$FA" "$FB" >&2 || true
     else
       diff -u "$FA" "$FB" >&2 || true

@@ -350,6 +350,8 @@ jobs:
       # Toolchain-free guards first, so a fiat stock write is red in seconds.
       - name: story 6.3 FR89, nothing but restore and metrics names the stock accessor
         run: bash ../scripts/ci/check-stock-write-path.sh
+      - name: story 4.14 FR172, connected_client has one writer
+        run: bash ../scripts/ci/check-connected-client-path.sh
       - name: story 3.13 FR110, every generation draw goes through Rng::below and every harness through plan/generate
         run: bash ../scripts/ci/check-generation-entry-point.sh
       - name: story 3.13 FR108/FR109, one writer for the district record
@@ -609,6 +611,8 @@ jobs:
       # zero cost -- needs neither cargo nor node, so it runs first,
       # before setup-node/npm ci pay for the toolchain a dangling name
       # does not need (Tim's direction).
+      - name: story 4.14 FR172, the reconnection seam equals the client probe timeout
+        run: bash ../scripts/ci/check-reconnect-seam-agrees.sh
       - name: story 4.5 FR141, the identity token stays in identity-storage.ts and net/
         run: bash ../scripts/ci/check-identity-token-confined.sh
       - name: client-side trace-matrix symmetry (no cargo)
@@ -625,6 +629,10 @@ jobs:
         run: bash ../scripts/ci/check-one-walk-helper.sh
       - name: story 5.3 NFR24, a character's frame is chosen in one place for the player, remote players and citizens
         run: bash ../scripts/ci/check-one-body-path.sh
+      - name: story 4.9 FR120-FR122, only VisibilityApplier writes a sprite's visible or alpha
+        run: bash ../scripts/ci/check-visibility-writer.sh
+      - name: story 4.9 FR124/FR182, the remote players layer places, sorts and shows nothing itself
+        run: bash ../scripts/ci/check-remote-actor-path.sh
       - name: story 5.1 FR63/NFR23, L3 reaches only itself and the defs types; net/ never reaches l3/
         run: bash ../scripts/ci/check-l3-boundary.sh
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0

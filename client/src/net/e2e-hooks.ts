@@ -98,6 +98,17 @@ declare global {
       remotePlayers?: {
         /** Where each drawn remote player is, by character id, now. */
         poses: () => Record<string, { x: number; y: number; floor: number }>;
+        /** How each is drawn: its screen point, whether it is visible and
+         * the floor whose pool holds its sprite. */
+        drawn: () => Record<
+          string,
+          {
+            screenX: number;
+            screenY: number;
+            visible: boolean;
+            stackFloor: number | undefined;
+          }
+        >;
         /** Records every frame's poses until `stopTrace` returns them. */
         startTrace: () => void;
         /** What was drawn each frame, and the samples received meanwhile. */
@@ -189,6 +200,9 @@ declare global {
        * only reader; it must never be recomputed from `viewTransform`,
        * which is the thing under test. */
       playerScreenBounds?: () => { x: number; y: number; width: number; height: number };
+      /** The local player's sprite point in world pixels -- the same space a
+       * remote's `drawn()` screen point is in. */
+      playerDrawnPoint?: () => { x: number; y: number };
       /** Story 5.2: every street citizen's agreed L3 state at a given city
        * time, computed from scratch -- never read from what was drawn. */
       l3Agreement?: (cityMilli: number) => readonly {
@@ -521,6 +535,16 @@ export function exposePlayerScreenBoundsForE2e(
   window.__bc = bucket;
 }
 
+/** Story 4.9: the local player's drawn point, read live. */
+export function exposePlayerDrawnPointForE2e(
+  getter: NonNullable<NonNullable<Window["__bc"]>["playerDrawnPoint"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.playerDrawnPoint = getter;
+  window.__bc = bucket;
+}
+
 /** Story 5.2: the same idiom, for the L3 agreement sample. */
 export function exposeL3AgreementForE2e(
   getter: NonNullable<NonNullable<Window["__bc"]>["l3Agreement"]>,
@@ -771,12 +795,41 @@ export function recordPlayerBodyForE2e(frame: {
 let remoteTrace: Record<string, { t: number; x: number; y: number; floor: number }[]> | undefined;
 let remoteSamples: Record<string, { tMs: number; x: number; y: number }[]> = {};
 let remotePoses: Record<string, { x: number; y: number; floor: number }> = {};
+let remoteDrawn: Record<
+  string,
+  { screenX: number; screenY: number; visible: boolean; stackFloor: number | undefined }
+> = {};
 
 export function recordRemotePlayersForE2e(
-  poses: Readonly<Record<string, { x: number; y: number; floor: number }>>,
+  poses: Readonly<
+    Record<
+      string,
+      {
+        x: number;
+        y: number;
+        floor: number;
+        screenX?: number;
+        screenY?: number;
+        visible?: boolean;
+        stackFloor?: number;
+      }
+    >
+  >,
 ): void {
   if (!import.meta.env.DEV) return;
-  remotePoses = { ...poses };
+  remotePoses = {};
+  remoteDrawn = {};
+  for (const [id, p] of Object.entries(poses)) {
+    remotePoses[id] = { x: p.x, y: p.y, floor: p.floor };
+    if (p.screenX !== undefined && p.screenY !== undefined) {
+      remoteDrawn[id] = {
+        screenX: p.screenX,
+        screenY: p.screenY,
+        visible: p.visible ?? false,
+        stackFloor: p.stackFloor,
+      };
+    }
+  }
   if (!remoteTrace) return;
   const t = performance.now();
   for (const [id, p] of Object.entries(poses)) {
@@ -802,6 +855,7 @@ export function exposeRemotePlayersForE2e(): void {
   const bucket = window.__bc ?? { pings: [] };
   bucket.remotePlayers = {
     poses: () => remotePoses,
+    drawn: () => remoteDrawn,
     startTrace: () => {
       remoteTrace = {};
       remoteSamples = {};

@@ -80,11 +80,14 @@ pub fn identity_connected(ctx: &ReducerContext) -> Result<(), String> {
     // mapping: a character is an explicit act (`create_character`). A token
     // from a registered issuer minted for another application is refused.
     tables::metrics::count_call(ctx, ReducerClass::Lifecycle);
-    tables::identity::check_connecting(ctx)
+    tables::identity::check_connecting(ctx)?;
+    tables::metrics::record_connect(ctx);
+    Ok(())
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn identity_disconnected(ctx: &ReducerContext) {
     // Called everytime a client disconnects
     tables::metrics::count_call(ctx, ReducerClass::Lifecycle);
+    tables::metrics::record_disconnect(ctx);
 }

@@ -17,11 +17,12 @@ tree() {
     printf '%s\n' 'await conn.procedures.syncClock({});'
     printf '%s\n' 'conn.reducers.setPlayerPosition(p);'
   } > "$d/net/a.ts"
+  printf '%s\n' 'conn().reducers.reportClientMeasure({ measure });' > "$d/net/measure-reporter.ts"
   printf '%s' "$d"
 }
 
 d="$(tree)"
-check "exactly the five allowed calls pass" 0 bash "$CHECK" "$d"
+check "exactly the six allowed calls pass" 0 bash "$CHECK" "$d"
 
 d="$(tree)"
 printf '%s\n' 'conn.reducers.sendPing({});' >> "$d/net/a.ts"
@@ -38,6 +39,10 @@ check "a comment naming a call passes" 0 bash "$CHECK" "$d"
 d="$(tree)"
 sed -i '/setPlayerPosition/d' "$d/net/a.ts"
 check "a listed call nobody makes fails until the list is revisited" 1 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s\n' 'conn.reducers.reportClientMeasure({ measure });' > "$d/main.ts"
+check "the measure call outside net/measure-reporter.ts fails" 1 bash "$CHECK" "$d"
 
 d="$(tree)"
 mkdir -p "$d/world"
