@@ -425,6 +425,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     mainAllocBytesPerFrame,
     calibrationMs,
     gc,
+    workerGc,
     heapGrowthRatio: last / first,
   });
 

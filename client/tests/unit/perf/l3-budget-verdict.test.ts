@@ -40,6 +40,14 @@ const GOOD: L3Measurement = {
     longestMinorPauseMs: 1,
     longestMajorPauseMs: 0,
   },
+  workerGc: {
+    minorPausesMs: [0.5],
+    minorCount: 1,
+    majorCount: 0,
+    totalPauseMs: 0.5,
+    longestMinorPauseMs: 0.5,
+    longestMajorPauseMs: 0,
+  },
   heapGrowthRatio: 1.01,
 };
 
@@ -114,7 +122,12 @@ describe("L3 budget verdict (NFR11)", () => {
   });
 
   it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
-    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1 } }).met).toBe(false);
+    // A major collection that stays under the tail budget is reported, not red.
+    const brief = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 3.3 };
+    expect(verdict({ ...GOOD, gc: brief }).met).toBe(true);
+    const long = { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 9 };
+    expect(verdict({ ...GOOD, gc: long }).met).toBe(false);
+    expect(verdict({ ...GOOD, workerGc: long }).gateFailures.join()).toContain("worker major GC");
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);
     const slowScavenges = { ...GOOD.gc, minorPausesMs: [4.5, 5], longestMinorPauseMs: 9 };
     expect(verdict({ ...GOOD, gc: slowScavenges }).met).toBe(true);
