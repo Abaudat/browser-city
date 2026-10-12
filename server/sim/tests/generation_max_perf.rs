@@ -29,6 +29,16 @@ fn generate_at_the_balance_max_extent_stays_inside_its_ceiling() {
         .find(|b| b.key == "generation.site_extent_cells")
         .map(|b| b.max)
         .expect("the site extent balance key") as i32;
+    // The guard is a release-mode one (the header's `--release`): the
+    // unoptimized, instrumented coverage build runs it at the live extent,
+    // where it still exercises the same code and structural bounds.
+    let max_extent = if cfg!(debug_assertions) {
+        GenerationConfig::from_balance(defs::BALANCE)
+            .unwrap()
+            .site_extent_cells
+    } else {
+        max_extent
+    };
     let mut cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     cfg.site_extent_cells = max_extent;
     let content = GenerationContent::committed();
