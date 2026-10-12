@@ -346,3 +346,30 @@ fn the_node_and_edge_ceilings_scale_linearly_with_area() {
     assert_eq!(max_nodes_for_side(1024), 4 * NODE_COUNT_BAND_512.1);
     assert_eq!(max_edges_for_side(1024), 4 * EDGE_COUNT_BAND_512.1);
 }
+
+#[test]
+fn an_isolated_portal_pair_is_disconnected() {
+    let g = MacroGraph::from_parts(
+        vec![
+            node(NodeKind::Transit, 1, 0),
+            node(NodeKind::Portal, 2, 0),
+            node(NodeKind::Portal, 2, 1),
+        ],
+        vec![edge(1, 2, EdgeKind::Portal)],
+    );
+    assert_eq!(g.check(&floors()), Err(GraphError::Disconnected { node: 1 }));
+}
+
+#[test]
+fn two_street_components_with_no_link_are_disconnected() {
+    let g = MacroGraph::from_parts(
+        vec![
+            node(NodeKind::Transit, 1, 0),
+            node(NodeKind::Transit, 2, 0),
+            node(NodeKind::Transit, 5, 0),
+            node(NodeKind::Transit, 6, 0),
+        ],
+        vec![edge(0, 1, EdgeKind::Street), edge(2, 3, EdgeKind::Street)],
+    );
+    assert_eq!(g.check(&floors()), Err(GraphError::Disconnected { node: 2 }));
+}
