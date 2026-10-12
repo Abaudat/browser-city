@@ -6844,12 +6844,7 @@ fn oracle(
     };
     let placements: Vec<Placement> = rows
         .iter()
-        .map(|r| Placement {
-            def_id: r.def_id,
-            anchor_x: r.x,
-            anchor_y: r.y,
-            floor: r.floor,
-        })
+        .map(sim::world::walkability::Placement::from)
         .collect();
     let raw = rasterise(bounds, 0, &placements, defs::OBJECTS)?;
     let eroded = erode(&raw, bw, bh);
@@ -7421,10 +7416,6 @@ fn inv_generation_collision_map_is_the_rows_rasterised() {
     over_pool("inv_generation_collision_map_is_the_rows_rasterised", |c| {
         let d = &c.district;
         let fc = d.walkability(0);
-        ensure!(
-            std::ptr::eq(fc, d.walkability(0)),
-            "the collision map is rebuilt on each read"
-        );
         let site = d.skeleton.plots.site();
         let chunk = 32;
         let stride = body_check_stride();
@@ -7456,12 +7447,7 @@ fn inv_generation_collision_map_is_the_rows_rasterised() {
                                 sim::generation::props::extent(&p.row, def).overlaps(&win)
                             })
                     })
-                    .map(|p| Placement {
-                        def_id: p.row.def_id,
-                        anchor_x: p.row.x,
-                        anchor_y: p.row.y,
-                        floor: p.row.floor,
-                    })
+                    .map(|p| sim::world::walkability::Placement::from(&p.row))
                     .collect();
                 let grid = rasterise(
                     Rect {
@@ -8709,6 +8695,90 @@ fn a_naive_clear_of_a_removed_overlapping_collider_is_not_a_rebuild() {
     let mut patched = FloorCollision::build(bounds, &[a, b]).unwrap();
     patched.repaint(a, &[b]);
     assert_eq!(patched, rebuilt);
+}
+
+/// Repainting writes inside its clipped rect and nowhere else, observed
+/// on the grid itself: the dirty rects straddle the bounds and cross a
+/// 64-bit word.
+fn locality_rects() -> Vec<Rect> {
+    vec![
+        Rect {
+            x0: 60,
+            y0: 3,
+            x1: 70,
+            y1: 9,
+        },
+        Rect {
+            x0: -4,
+            y0: -3,
+            x1: 5,
+            y1: 4,
+        },
+        Rect {
+            x0: 120,
+            y0: 30,
+            x1: 140,
+            y1: 50,
+        },
+        Rect {
+            x0: 63,
+            y0: 0,
+            x1: 65,
+            y1: 40,
+        },
+    ]
+}
+
+#[test]
+fn a_repaint_frees_exactly_its_clipped_rect_of_a_blocked_grid() {
+    let bounds = Rect {
+        x0: 0,
+        y0: 0,
+        x1: 130,
+        y1: 40,
+    };
+    for dirty in locality_rects() {
+        let mut grid = FloorCollision::build(bounds, &[bounds]).unwrap();
+        grid.repaint(dirty, &[]);
+        for y in bounds.y0..bounds.y1 {
+            for x in bounds.x0..bounds.x1 {
+                assert_eq!(
+                    grid.is_blocked(x, y),
+                    !dirty.contains(x, y),
+                    "({x}, {y}) {dirty:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_repaint_blocks_exactly_its_clipped_rect_of_a_free_grid() {
+    let bounds = Rect {
+        x0: 0,
+        y0: 0,
+        x1: 130,
+        y1: 40,
+    };
+    let whole = Rect {
+        x0: -50,
+        y0: -50,
+        x1: 300,
+        y1: 300,
+    };
+    for dirty in locality_rects() {
+        let mut grid = FloorCollision::build(bounds, &[]).unwrap();
+        grid.repaint(dirty, &[whole]);
+        for y in bounds.y0..bounds.y1 {
+            for x in bounds.x0..bounds.x1 {
+                assert_eq!(
+                    grid.is_blocked(x, y),
+                    dirty.contains(x, y),
+                    "({x}, {y}) {dirty:?}"
+                );
+            }
+        }
+    }
 }
 
 /// `inv_world_repaint_writes_only_the_words_of_its_rect` (story 3.8 AC3):

@@ -72,6 +72,18 @@ pub struct PlacedRow {
     pub orientation: u8,
 }
 
+impl From<&PlacedRow> for Placement {
+    /// The one mapping from a row to the rasteriser's input.
+    fn from(r: &PlacedRow) -> Self {
+        Placement {
+            def_id: r.def_id,
+            anchor_x: r.x,
+            anchor_y: r.y,
+            floor: r.floor,
+        }
+    }
+}
+
 /// What a placed row is, for the adapters that stamp it into a rule site
 /// and for the windowed verdicts -- never part of the row itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1188,15 +1200,7 @@ pub fn window_findings(
     objects: &[defs::ObjectDef],
 ) -> Result<(Vec<Finding>, Vec<Finding>), String> {
     let s = defs::COLLIDER_SUBCELLS_PER_CELL;
-    let placements: Vec<Placement> = rows
-        .iter()
-        .map(|r| Placement {
-            def_id: r.def_id,
-            anchor_x: r.x,
-            anchor_y: r.y,
-            floor: r.floor,
-        })
-        .collect();
+    let placements: Vec<Placement> = rows.iter().map(Placement::from).collect();
     let grid: WalkabilityGrid = walkability::rasterise(
         Rect {
             x0: window.x0 * s,
@@ -1280,30 +1284,27 @@ pub fn whole_cells_open(
         return false;
     }
     let idx = |x: i32, y: i32| (y - window.y0) as usize * w + (x - window.x0) as usize;
-    let mut blocked = vec![false; w * h];
+    let mut colliders = Vec::new();
     for r in rows {
         let Some(def) = def_of(objects, r.def_id) else {
             return false;
         };
-        if let Some(c) = crate::world::collider_cells(r.x, r.y, def) {
-            for y in c.y0.max(window.y0)..c.y1.min(window.y1) {
-                for x in c.x0.max(window.x0)..c.x1.min(window.x1) {
-                    blocked[idx(x, y)] = true;
-                }
-            }
-        }
+        colliders.extend(crate::world::collider_cells(r.x, r.y, def));
     }
-    if blocked[idx(seed_cell.0, seed_cell.1)] {
+    let Ok(grid) = crate::world::FloorCollision::build(window, &colliders) else {
+        return false;
+    };
+    if grid.is_blocked(seed_cell.0, seed_cell.1) {
         return false;
     }
-    let free = blocked.iter().filter(|b| !**b).count();
+    let free = w * h - grid.blocked_count();
     let mut seen = vec![false; w * h];
     let mut stack = vec![seed_cell];
     seen[idx(seed_cell.0, seed_cell.1)] = true;
     let mut reached = 1usize;
     while let Some((x, y)) = stack.pop() {
         for (nx, ny) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
-            if window.contains(nx, ny) && !blocked[idx(nx, ny)] && !seen[idx(nx, ny)] {
+            if window.contains(nx, ny) && !grid.is_blocked(nx, ny) && !seen[idx(nx, ny)] {
                 seen[idx(nx, ny)] = true;
                 reached += 1;
                 stack.push((nx, ny));
@@ -2477,15 +2478,7 @@ mod tests {
         };
         let props = collision_props();
         let s = defs::COLLIDER_SUBCELLS_PER_CELL;
-        let placements: Vec<Placement> = props
-            .iter()
-            .map(|p| Placement {
-                def_id: p.row.def_id,
-                anchor_x: p.row.x,
-                anchor_y: p.row.y,
-                floor: p.row.floor,
-            })
-            .collect();
+        let placements: Vec<Placement> = props.iter().map(|p| Placement::from(&p.row)).collect();
         let grid = rasterise(
             Rect {
                 x0: site.x0 * s,

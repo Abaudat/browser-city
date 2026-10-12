@@ -33,8 +33,7 @@ GRIDS="$(
 )"
 if [ -n "$GRIDS" ]; then
   echo "check-no-runtime-collision-inference: FAIL -- a whole-grid build is reachable only from generation/; runtime code may only FloorCollision::repaint a window:" >&2
-  printf '%s
-' "$GRIDS" >&2
+  printf '%s\n' "$GRIDS" >&2
   fail=1
 fi
 
@@ -46,8 +45,7 @@ BUILDS="$(
 )"
 if [ -n "$BUILDS" ]; then
   echo "check-no-runtime-collision-inference: FAIL -- nothing but pass 7 and world/ may rasterise placements (mark a caller-supplied candidate '// collision-inference: allow'):" >&2
-  printf '%s
-' "$BUILDS" >&2
+  printf '%s\n' "$BUILDS" >&2
   fail=1
 fi
 
@@ -58,8 +56,7 @@ REDUCERS="$(
 )"
 if [ -n "$REDUCERS" ]; then
   echo "check-no-runtime-collision-inference: FAIL -- a reducer path calls the generator's grid builder:" >&2
-  printf '%s
-' "$REDUCERS" >&2
+  printf '%s\n' "$REDUCERS" >&2
   fail=1
 fi
 

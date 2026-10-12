@@ -158,6 +158,13 @@ pub enum GenerationError {
     /// a floor, or none of them fits its cell even at its smallest
     /// footprint -- an owed fixture is never quietly left out.
     FixtureUnplaceable { x: i32, y: i32, tag: u32 },
+    /// A placed row's collider leaves the site: a generator defect, the
+    /// grid would read its off-site tiles as walkable.
+    ColliderOffSite {
+        def_id: u32,
+        floor: i8,
+        cells: SiteBounds,
+    },
     /// Pass 7's verdict could not rasterise a window of placed rows (an
     /// unknown def id, a window over the grid ceiling): the rows are not
     /// readable, which is not a balance-config error.
@@ -226,6 +233,14 @@ impl std::fmt::Display for GenerationError {
             GenerationError::FixtureUnplaceable { x, y, tag } => write!(
                 f,
                 "generation::props: no object def carrying tag {tag} stands on the fixture cell ({x}, {y})"
+            ),
+            GenerationError::ColliderOffSite {
+                def_id,
+                floor,
+                cells,
+            } => write!(
+                f,
+                "generation::props: the collider of def {def_id} on floor {floor} covers {cells:?}, outside the site"
             ),
             GenerationError::WindowUnreadable { window, reason } => write!(
                 f,
@@ -471,15 +486,21 @@ impl District {
     ) -> Result<Self, GenerationError> {
         let placements: Vec<crate::world::walkability::Placement> = props
             .rows()
-            .map(|r| crate::world::walkability::Placement {
-                def_id: r.def_id,
-                anchor_x: r.x,
-                anchor_y: r.y,
-                floor: r.floor,
-            })
+            .map(crate::world::walkability::Placement::from)
             .collect();
         let walkability = crate::world::floor_grids(skeleton.plots.site(), &placements, objects)
-            .map_err(GenerationError::InvalidConfig)?;
+            .map_err(|e| match e {
+                crate::world::FloorGridError::ColliderOffSite {
+                    def_id,
+                    floor,
+                    cells,
+                } => GenerationError::ColliderOffSite {
+                    def_id,
+                    floor,
+                    cells,
+                },
+                other => GenerationError::InvalidConfig(format!("walkability: {other:?}")),
+            })?;
         Ok(District {
             skeleton,
             interiors,
@@ -490,6 +511,10 @@ impl District {
 
     /// The tile grid of `floor`: blocked iff a placed collider touches the
     /// tile, bounded by the site. Every floor in range has one.
+    ///
+    /// # Panics
+    /// If `floor` is outside `MIN_FLOOR..=MAX_FLOOR`; every caller
+    /// range-checks a floor upstream.
     pub fn walkability(&self, floor: i8) -> &crate::world::FloorCollision {
         &self.walkability[&floor]
     }

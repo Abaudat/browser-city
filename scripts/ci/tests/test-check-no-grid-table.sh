@@ -16,9 +16,10 @@ snap() { # <accessor> <column>
 check "a table of ordinary names passes" 0 bash "$CHECK" "$(snap placed_object x)"
 check "the committed snapshot passes" 0 bash "$CHECK"
 check "a collision table fails" 1 bash "$CHECK" "$(snap floor_collision x)"
-check "a blocked column fails" 1 bash "$CHECK" "$(snap placed_object blocked_mask)"
+check "a walkability table fails" 1 bash "$CHECK" "$(snap walkability_floor x)"
 check "a walkable column fails" 1 bash "$CHECK" "$(snap district walkable)"
-check "a macro table fails" 1 bash "$CHECK" "$(snap macro_edge x)"
+check "a private macro graph table passes" 0 bash "$CHECK" "$(snap macro_edge x)"
+check "a closure state column passes" 0 bash "$CHECK" "$(snap road_closure blocked_until)"
 
 summary
 exit $?

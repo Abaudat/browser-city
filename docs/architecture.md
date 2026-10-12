@@ -445,8 +445,8 @@ layer's `rank` is as permanent as its `code` number and pinned by the same
 codes golden. See "Rendering" below for the ladder itself.
 
 There is no dense per-cell table, and there never will be: cell facts are
-always derived from placed content, never stored per cell. A walkability
-grid is never a table, a column or a wire message
+always derived from placed content, never stored per cell. A collision or
+walkability grid is never a table, a column or a wire message
 (`scripts/ci/check-no-grid-table.sh`).
 
 - Walkability is the absence of a collider (FR128): computed by

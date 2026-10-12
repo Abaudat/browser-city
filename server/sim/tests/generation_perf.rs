@@ -313,12 +313,14 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
         "{} placements exceed the footprint + pavement ceiling {placement_ceiling}",
         d.props.props().len()
     );
-    let fc = d.walkability(0);
+    let floors = (sim::generated::defs::MAX_FLOOR - sim::generated::defs::MIN_FLOOR + 1) as u64;
+    let stored: u64 = (sim::generated::defs::MIN_FLOOR..=sim::generated::defs::MAX_FLOOR)
+        .map(|f| d.walkability(f as i8).dense_storage_bytes() as u64)
+        .sum();
     let padded = (cfg.site_extent_cells as u64) * (cfg.site_extent_cells as u64);
     assert!(
-        (fc.dense_storage_bytes() as u64) * 8 <= padded.div_ceil(64) * 64,
-        "collision storage {} bytes is over one bit per cell of {padded}",
-        fc.dense_storage_bytes()
+        stored * 8 <= floors * padded.div_ceil(64) * 64,
+        "walkability storage {stored} bytes over {floors} floors is over one bit per cell of {padded}"
     );
     assert!(
         d.props.street().storage_bytes() as u64 <= 5 * (cfg.site_extent_cells as u64).pow(2),

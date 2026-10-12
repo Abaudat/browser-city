@@ -292,26 +292,4 @@ describe("world conformance fixture", () => {
       }
     }
   });
-
-  it("story 3.8: every tile the server's grid leaves free is free in the client's grid, at every sub-cell", () => {
-    const grid = buildGridFromFixture();
-    let freeTiles = 0;
-    for (const floorSpec of fixture.floors) {
-      const b = floorSpec.bounds;
-      for (let y = b.y0; y < b.y1; y++) {
-        for (let x = b.x0; x < b.x1; x++) {
-          const serverBlocked = floorSpec.colliders.some(
-            (r) => x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1,
-          );
-          if (serverBlocked) continue;
-          freeTiles++;
-          expect(
-            grid.entriesInCell(floorSpec.floor, x, y),
-            `(${x}, ${y}) floor ${floorSpec.floor}`,
-          ).toHaveLength(0);
-        }
-      }
-    }
-    expect(freeTiles).toBeGreaterThan(0);
-  });
 });

@@ -670,8 +670,9 @@ fn plan_digest(
     em: &envelopes::EnvelopeMap,
     bt: &sim::generation::BuildingTypeMap,
     io: &sim::generation::InteriorMap,
-    props: &sim::generation::PropMap,
+    d: &sim::generation::District,
 ) -> u64 {
+    let (props, floor0) = (&d.props, d.walkability(0));
     let mut text = String::new();
     for cy in 0..lu.rows() {
         for cx in 0..lu.cols() {
@@ -790,32 +791,8 @@ fn plan_digest(
             r.floor, r.x, r.y, r.def_id, r.layer, r.orientation
         ));
     }
-    let fc = floor_grids_of(props, &pm.site())
-        .remove(&0)
-        .expect("floor 0 always has a grid");
-    text.push_str(&format!(
-        "collision {:016x}
-",
-        fnv1a(&grid_text(&fc))
-    ));
+    text.push_str(&format!("collision {:016x}\n", fnv1a(&grid_text(floor0))));
     fnv1a(&text)
-}
-
-fn floor_grids_of(
-    props: &sim::generation::PropMap,
-    site: &sim::world::Rect,
-) -> std::collections::BTreeMap<i8, sim::world::FloorCollision> {
-    let placements: Vec<sim::world::walkability::Placement> = props
-        .rows()
-        .map(|r| sim::world::walkability::Placement {
-            def_id: r.def_id,
-            anchor_x: r.x,
-            anchor_y: r.y,
-            floor: r.floor,
-        })
-        .collect();
-    sim::world::floor_grids(*site, &placements, FROZEN_OBJECTS)
-        .expect("a generated district rasterises")
 }
 
 /// Every tile of a grid, row-major -- the grid itself, not a count.
@@ -832,18 +809,18 @@ fn grid_text(fc: &sim::world::FloorCollision) -> String {
 }
 
 /// One line per floor: the grid's bounds and the FNV-1a of its tiles.
-fn walkability_lines(props: &sim::generation::PropMap, site: &sim::world::Rect) -> String {
+fn walkability_lines(d: &sim::generation::District) -> String {
     let mut out = String::new();
-    for (floor, fc) in floor_grids_of(props, site) {
+    for floor in sim::generated::defs::MIN_FLOOR..=sim::generated::defs::MAX_FLOOR {
+        let (floor, fc) = (floor as i8, d.walkability(floor as i8));
         let b = fc.bounds();
         out.push_str(&format!(
-            "walkability floor={floor} bounds={},{},{},{} {:016x}
-",
+            "walkability floor={floor} bounds={},{},{},{} {:016x}\n",
             b.x0,
             b.y0,
             b.x1,
             b.y1,
-            fnv1a(&grid_text(&fc))
+            fnv1a(&grid_text(fc))
         ));
     }
     out
@@ -868,7 +845,7 @@ fn walkability_matches_committed_digests() {
     let mut got = Vec::new();
     for seed in SEEDS {
         let d = plan(seed, &cfg, &content).expect("frozen_config's own site is always valid");
-        let lines = walkability_lines(&d.props, &d.skeleton.plots.site());
+        let lines = walkability_lines(&d);
         if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
             println!("walkability-digest ({seed}, 0x{:016x}),", fnv1a(&lines));
         }
@@ -880,11 +857,7 @@ fn walkability_matches_committed_digests() {
     assert_eq!(got.len(), WALKABILITY_DIGESTS.len());
     for ((seed, digest, lines), (want_seed, want)) in got.iter().zip(WALKABILITY_DIGESTS) {
         assert_eq!(*seed, want_seed);
-        assert_eq!(
-            *digest, want,
-            "seed {seed}'s walkability moved:
-{lines}"
-        );
+        assert_eq!(*digest, want, "seed {seed}'s walkability moved:\n{lines}");
     }
 }
 
@@ -936,7 +909,7 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
         io.shell_count(),
         io.rejected_count(),
         props.props().len(),
-        plan_digest(lu, net, pm, em, bt, io, props),
+        plan_digest(lu, net, pm, em, bt, io, &d),
     )
 }
 
@@ -1020,9 +993,13 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
     };
     let pr_a = sim::generation::props::run(SEEDS[0], &sk_a, &io_a, &cfg, &content).unwrap(); // generation-entry-point: allow
     let pr_b = sim::generation::props::run(SEEDS[0], &sk_b, &io_b, &cfg, &content).unwrap(); // generation-entry-point: allow
+    let d_a =
+        sim::generation::District::new(sk_a, io_a.clone(), pr_a.clone(), FROZEN_OBJECTS).unwrap();
+    let d_b =
+        sim::generation::District::new(sk_b, io_b.clone(), pr_b.clone(), FROZEN_OBJECTS).unwrap();
     assert_eq!(
-        plan_digest(&lu, &net_a, &pm_a, &em_a, &bt_a, &io_a, &pr_a),
-        plan_digest(&lu, &net_b, &pm_b, &em_b, &bt_b, &io_b, &pr_b)
+        plan_digest(&lu, &net_a, &pm_a, &em_a, &bt_a, &io_a, &d_a),
+        plan_digest(&lu, &net_b, &pm_b, &em_b, &bt_b, &io_b, &d_b)
     );
 }
 

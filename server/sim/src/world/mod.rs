@@ -35,4 +35,4 @@ pub use collision::{
     AreaSpec, FloorCollision, FloorSpec, MAX_CELLS_PER_FLOOR, NO_OWNER, Ownership, Rect,
     Transition, TransitionSpec, World, WorldSpec, cell_index,
 };
-pub use raster::{collider_cells, floor_grids};
+pub use raster::{FloorGridError, collider_cells, floor_grids};

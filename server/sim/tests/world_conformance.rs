@@ -105,3 +105,30 @@ fn the_floor_grids_block_exactly_the_hand_typed_tiles_of_the_raster_case() {
         }
     }
 }
+
+/// A collider leaving the site is a typed error, never a grid that reads
+/// its off-site tiles as walkable.
+#[test]
+fn a_collider_off_the_site_is_a_typed_error() {
+    use sim::generated::defs::OBJECTS;
+    use sim::world::walkability::Placement;
+    use sim::world::{FloorGridError, Rect, floor_grids};
+
+    let def = OBJECTS.iter().find(|o| o.collider.is_some()).unwrap();
+    let bounds = Rect {
+        x0: 0,
+        y0: 0,
+        x1: 8,
+        y1: 8,
+    };
+    let rows = [Placement {
+        def_id: def.id,
+        anchor_x: 100,
+        anchor_y: 100,
+        floor: 0,
+    }];
+    assert!(matches!(
+        floor_grids(bounds, &rows, OBJECTS),
+        Err(FloorGridError::ColliderOffSite { floor: 0, .. })
+    ));
+}
