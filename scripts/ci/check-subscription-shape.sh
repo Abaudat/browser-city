@@ -2,8 +2,9 @@
 # Story 4.3 (FR136, FR58): interest management is only as good as the
 # subscriptions the client can issue, so the shape of every one is a rule.
 #
-#   1. `.subscribe(` appears only in net/connection.ts and
-#      net/region-subscription.ts.
+#   1. `.subscribe(` appears only in net/connection.ts,
+#      net/region-subscription.ts and net/container-subscription.ts (story
+#      6.10: the one open container's contents, released on close).
 #   2. No `SELECT` literal under client/src outside the generated bindings
 #      (comment lines excepted): queries are built with the typed builder.
 #   3. The whole-table set is exactly the three global singletons --
@@ -42,8 +43,8 @@ code_lines() {
 LINES="$(code_lines)"
 
 # 1. `.subscribe(` only in the two net/ files.
-BAD="$(printf '%s\n' "$LINES" | grep -F '.subscribe(' | grep -vE '^net/(connection|region-subscription)\.ts:' || true)"
-[ -z "$BAD" ] || fail ".subscribe( outside net/connection.ts and net/region-subscription.ts:
+BAD="$(printf '%s\n' "$LINES" | grep -F '.subscribe(' | grep -vE '^net/(connection|region-subscription|container-subscription)\.ts:' || true)"
+[ -z "$BAD" ] || fail ".subscribe( outside net/connection.ts, net/region-subscription.ts and net/container-subscription.ts:
 $BAD"
 
 # 2. No SELECT literal.
@@ -59,7 +60,7 @@ $BAD"
 #    predicate on the same line, so it fails here.
 STRIPPED="$(printf '%s\n' "$LINES" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*import\b' | sed -E \
   -e 's/tables\.(demoPing|moduleVersion|worldClock|myCharacter)\.build\(\)//g' \
-  -e 's/tables\.[A-Za-z0-9_]+\.where\(//g')"
+  -e 's/tables\.[A-Za-z0-9_]+\.where\(//g'   -e 's/rightSemijoin\(tables\.[A-Za-z0-9_]+,//g')"
 BAD="$(printf '%s\n' "$STRIPPED" | grep -E '\btables\b' || true)"
 [ -z "$BAD" ] || fail "the generated 'tables' object is used other than as tables.<singleton>.build() or tables.<name>.where( on one line (a whole-table subscription, or a way round the guard):
 $BAD"

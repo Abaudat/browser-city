@@ -55,6 +55,10 @@ function newStack(floor: number): FloorStack {
 export class FloorStacks {
   private readonly parent: Container;
   private readonly byFloor = new Map<number, FloorStack>();
+  /** Transient views drawn over one floor (a container's open view, story
+   * 6.10): children of that floor's own stack root, above its pool, for as
+   * long as they are attached. `assertManaged` accepts exactly these. */
+  private readonly transient = new Set<Container>();
 
   constructor(parent: Container) {
     this.parent = parent;
@@ -77,6 +81,27 @@ export class FloorStacks {
       if (root) this.parent.addChild(root);
     }
     return stack;
+  }
+
+  /** Attaches a transient, object-bound view to `floor`'s own stack, above
+   * its pool, so it scrolls with the camera and is culled with its floor.
+   * Never a child of `parent` itself: there is no screen-space layer. */
+  attachTransient(floor: number, view: Container): void {
+    this.stackFor(floor).root.addChild(view);
+    this.transient.add(view);
+  }
+
+  /** Detaches a view attached by [`attachTransient`]; a view never
+   * attached is left alone. */
+  detachTransient(view: Container): void {
+    if (!this.transient.delete(view)) return;
+    view.parent?.removeChild(view);
+  }
+
+  /** How many transient views are attached (a view's lifecycle test reads
+   * this; nothing allocates per frame while it is zero). */
+  transientCount(): number {
+    return this.transient.size;
   }
 
   /** Every floor that has a stack, ascending -- the order they draw in. */
@@ -133,7 +158,10 @@ export class FloorStacks {
         stack.pool,
       ]);
       const unmanaged = stack.root.children.filter(
-        (child) => !structural.has(child as Container) && !managedViews.has(child),
+        (child) =>
+          !structural.has(child as Container) &&
+          !managedViews.has(child) &&
+          !this.transient.has(child as Container),
       );
       if (unmanaged.length > 0) {
         throw new Error(

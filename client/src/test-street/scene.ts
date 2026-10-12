@@ -30,7 +30,7 @@ import {
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import type { VerifiedDefs } from "../boot/handshake";
 import type { BodyControl } from "../input/body-control";
-import type { IgnoredSink, IntentSink } from "../input/intent";
+import type { IgnoredSink, Intent, IntentSink } from "../input/intent";
 import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
@@ -49,6 +49,7 @@ import { newBodySprite, setBodyFrame } from "../render/body-sprite";
 import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "../render/camera";
 import { FloorStacks } from "../render/floor-stacks";
 import { layerCodeByName, passOfLayer } from "../render/layer-table";
+import { ContainerViewController } from "../render/pixi-container-view";
 import { HighlightApplier } from "../render/pixi-highlight";
 import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
 import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
@@ -64,6 +65,7 @@ import type { VisibilityState, VisibilityViewer } from "../render/visibility";
 import { isFloorCulled } from "../render/visibility";
 import { type BodyZone, bodyZoneOf, type Rect } from "../world/body-zone";
 import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
+import { type CellRect, type HeldRow, shouldClose } from "../world/container-view";
 import { buildFlights, FlightIndex } from "../world/flights";
 import {
   type FloorWalkResult,
@@ -321,6 +323,14 @@ export interface MountStreetSceneOptions {
    * movement is applied and no intent reaches the sinks; looking (hover) is
    * unaffected. Absent means always open. */
   readonly bodyControl?: Pick<BodyControl, "isOpen">;
+  /** Story 6.10 (FR94): subscribes to one container's contents while its
+   * view is open (`net/container-subscription.ts`); `onRows` is called with
+   * the held set on every change, and `release` ends the subscription.
+   * Absent means a container opens with nothing in it. */
+  readonly containerRows?: (
+    containerId: bigint,
+    onRows: (rows: readonly HeldRow[]) => void,
+  ) => { release(): void };
   /** Story 1.13: starts the street crowd's own walk-cycle ticker paused
    * -- every citizen stays at its initial, fixed-fixture pose, forever,
    * rather than animating. Exists solely so `test-street.spec.ts`'s
@@ -421,6 +431,17 @@ export interface StreetSceneHandle {
   commuterDrawn(): CommuterDrawn | undefined;
   /** What each live L3 body says about itself, for the debug tooling. */
   l3Bodies(): readonly L3BodyReport[];
+  /** Story 6.10: opens the view of the container `intent` names, replacing
+   * any open one; does nothing for an object that declares no grid. */
+  openContainer(intent: Intent): void;
+  /** Closes the open container view, if any. */
+  closeContainer(): void;
+  /** The open container view as data (an e2e hook reads this, never
+   * pixels): the object it is bound to and the cell rects it draws. */
+  containerView(): { readonly objectId: bigint; readonly rects: readonly CellRect[] } | undefined;
+  /** How many children `app.stage` has: exactly the world root, so no
+   * screen-space layer exists for a view to be drawn in. */
+  stageChildCount(): number;
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
   /** Live-updates the FR173 highlight dial (0-100) -- re-applies
@@ -1719,6 +1740,65 @@ export async function mountStreetScene(
     onHighlightChange: setHighlight,
   });
 
+  // Story 6.10 (FR94): the one open container view. Its item textures are
+  // cropped from the atlas once, here; the view itself is built per open and
+  // destroyed on close (`render/pixi-container-view.ts`), bound to its
+  // object, parented to that object's floor stack.
+  const itemTextures = new Map<number, Texture>();
+  await Promise.all(
+    defs.items
+      .filter((item) => item.atlas !== undefined)
+      .map(async (item) => {
+        itemTextures.set(item.id, await atlasPageLoader.itemTexture(defs, item));
+      }),
+  );
+  const itemBulk = new Map(defs.items.map((i) => [i.id, { width: i.width, height: i.height }]));
+  const containerController = new ContainerViewController({
+    stacks,
+    ticker: app.ticker,
+    tileSizePx,
+    storeyHeightPx,
+    textureOf: (defId) => itemTextures.get(defId),
+    bulkOf: (defId) => itemBulk.get(defId),
+    subscribe: (containerId, onRows) =>
+      options.containerRows?.(containerId, onRows) ?? { release: () => {} },
+  });
+  function openContainer(intent: Intent): void {
+    const source = objectSources.get(intent.defId);
+    const grid = source?.grid;
+    if (!source || !grid) return;
+    const drawable = propDrawables.find((d) => d.stableId === intent.objectId);
+    if (!drawable) return;
+    const object = {
+      objectId: intent.objectId,
+      defId: intent.defId,
+      anchorX: fromSortUnits(drawable.x),
+      anchorY: fromSortUnits(drawable.y),
+      floor: drawable.floor,
+      width: source.width,
+      height: source.height,
+      spriteHeightPx: source.spriteHeightPx ?? tileSizePx * source.height,
+    };
+    const def = { width: source.width, height: source.height, interactAt: source.interactAt };
+    containerController.open({
+      object,
+      grid,
+      closeWhen: () =>
+        shouldClose({
+          object,
+          def,
+          subcellsPerCell: movementConfig.subcellsPerCell,
+          player: { x: walk.x, y: walk.y, floor: walk.floor },
+          present: true,
+          visible: !hiddenObjectIds.has(intent.objectId),
+          bodyOpen: options.bodyControl?.isOpen() !== false,
+          // A lost connection closes the body (`input/body-control.ts`),
+          // which closes the view above.
+          connected: true,
+        }),
+    });
+  }
+
   // NFR2's measurement point: the scene's own CPU work for the *whole*
   // frame, not one system's callback (Quentin/Tim's direction, cycle 1).
   // Pixi's own `Application` renders through a `TickerPlugin` listener
@@ -2046,7 +2126,17 @@ export async function mountStreetScene(
     playerBody: () => bodyRect({ x: walk.x, y: walk.y }, movementConfig),
     suspendPointer: () => pointer.suspend(),
     resumePointer: () => pointer.resume(),
+    openContainer,
+    closeContainer: () => containerController.close(),
+    containerView: () => {
+      const objectId = containerController.openObjectId();
+      return objectId === undefined
+        ? undefined
+        : { objectId, rects: containerController.drawnRects() };
+    },
+    stageChildCount: () => app.stage.children.length,
     destroy: () => {
+      containerController.close();
       detachKeyboard();
       pointer.detach();
       setHighlight(undefined);

@@ -20,11 +20,13 @@ import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-
 import { KeyboardState } from "./input/keyboard";
 import { OIDC_CONFIG } from "./net/config";
 import type { CharacterReport, IdentityReport } from "./net/connection";
+import { sdkContainerBackend } from "./net/container-subscription";
 import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
   exposeCommuterDrawnForE2e,
   exposeConnectionForE2e,
+  exposeContainerViewForE2e,
   exposeIdentityActionsForE2e,
   exposeL3AgreementForE2e,
   exposePlayerDrawnPointForE2e,
@@ -82,6 +84,7 @@ import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
 import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
+import type { HeldRow } from "./world/container-view";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, thresholdDefIds, windowDefIds } from "./world/object-defs";
 import { dequantise } from "./world/position-codec";
@@ -100,6 +103,14 @@ const NO_CAMERA_YET = { zoom: 0, offsetX: 0, offsetY: 0 } as const;
 interface OfferWiring {
   readonly beforeMount: (defs: VerifiedDefs, handshakeSettled: boolean) => Promise<void>;
   readonly onIntent: (intent: Intent) => void;
+}
+
+/** Story 6.10 (FR94): how an open container's contents reach the scene. */
+interface ContainersWiring {
+  readonly rows: (
+    containerId: bigint,
+    onRows: (rows: readonly HeldRow[]) => void,
+  ) => { release(): void };
 }
 
 /** Story 4.4: the street scene's touch points with the other players and
@@ -406,6 +417,13 @@ async function main(): Promise<void> {
           syncSender();
         },
       },
+      {
+        rows: (containerId, onRows) =>
+          sdkContainerBackend(conn.current()).open(containerId, {
+            onRows: (rows) => onRows(rows),
+            onError: () => {},
+          }),
+      },
     );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
@@ -462,6 +480,7 @@ async function startStreetScene(
   followScene: (x: number, y: number, floor: number) => void,
   bodyControl: BodyControl,
   players: PlayersWiring,
+  containers: ContainersWiring,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {
@@ -685,6 +704,7 @@ async function startStreetScene(
     onMasksChecked: recordMasksCheckedForE2e,
     keyboard,
     bodyControl,
+    containerRows: containers.rows,
     // FR148: the intent sink. Nothing consumes an intent yet -- the
     // procedure interaction model is Epic 8's, deliberately unresolved --
     // so the only consumer today is the e2e observation hook. Swapping
@@ -692,6 +712,9 @@ async function startStreetScene(
     onIntent: (intent) => {
       recordIntentForE2e(intent);
       offer.onIntent(intent);
+      // Story 6.10: one call; Epic 8 replaces it wholesale with the
+      // interaction model.
+      sceneHandle?.openContainer(intent);
     },
     onIgnored: recordIgnoredIntentForE2e,
     onViewTransform: (zoom, offsetX, offsetY) => {
@@ -708,6 +731,21 @@ async function startStreetScene(
     onHighlightChange: recordHighlightForE2e,
   });
   sceneHandle = handle;
+  // Escape closes an open container view, like walking away does.
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") handle.closeContainer();
+  });
+  exposeContainerViewForE2e({
+    containerView: () => {
+      const view = handle.containerView();
+      if (!view) return null;
+      return {
+        objectId: String(view.objectId),
+        rects: view.rects.map((r) => ({ ...r, instanceId: String(r.instanceId) })),
+      };
+    },
+    stageChildren: () => handle.stageChildCount(),
+  });
   players.onMounted();
   exposeRemotePlayersForE2e();
 

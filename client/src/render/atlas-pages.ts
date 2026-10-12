@@ -11,7 +11,7 @@
 // (`test-street/scene.ts`) is this loader's first real caller.
 
 import { Assets, type Container, Rectangle, Sprite, Texture, type TextureSource } from "pixi.js";
-import type { AtlasPageDef, Defs, ObjectDef } from "../defs/types";
+import type { AtlasPageDef, Defs, ItemDef, ObjectDef } from "../defs/types";
 import { atlasFrameRect, defCellFrameRect } from "./atlas-frame";
 import { atlasPageUrl } from "./atlas-url";
 
@@ -45,6 +45,9 @@ export class AtlasPageLoader {
    * fresh `Texture` allocated on every call the way `defCellTexture` used
    * to. */
   private readonly objectCellTextures = new Map<string, Promise<Texture>>();
+  /** One shared cropped `Texture` per item def (story 6.10): what an item
+   * looks like in a container's grid, cropped from its own atlas rect. */
+  private readonly itemTextures = new Map<number, Promise<Texture>>();
   /** Every page `TextureSource` this loader has actually resolved --
    * populated only once a page's own load settles, never while pending
    * (Quentin's direction: the mounted-scene page count must read what
@@ -139,6 +142,40 @@ export class AtlasPageLoader {
         throw err;
       });
     this.objectTextures.set(object.id, promise);
+    return promise;
+  }
+
+  /**
+   * The cropped `Texture` for one item def's own atlas rect (story 6.10,
+   * FR94) -- cached by item id, shared and never destroyed by an
+   * individual caller. Rejects naming the item when it has no sprite.
+   */
+  itemTexture(defs: Defs, item: ItemDef): Promise<Texture> {
+    let promise = this.itemTextures.get(item.id);
+    if (promise) return promise;
+    const atlas = item.atlas;
+    if (!atlas) {
+      return Promise.reject(new Error(`atlas-pages: item '${item.key}' has no sprite`));
+    }
+    const page = defs.atlasPages[atlas.page];
+    if (!page) {
+      return Promise.reject(
+        new Error(
+          `atlas-pages: item '${item.key}' names atlas page ${atlas.page}, but defs only has ${defs.atlasPages.length} page(s)`,
+        ),
+      );
+    }
+    promise = this.pageTexture(page)
+      .then((pageTexture) => {
+        const cell = atlasFrameRect(atlas);
+        const frame = new Rectangle(cell.x, cell.y, cell.width, cell.height);
+        return new Texture({ source: pageTexture.source, frame, dynamic: false });
+      })
+      .catch((err: unknown) => {
+        this.itemTextures.delete(item.id);
+        throw err;
+      });
+    this.itemTextures.set(item.id, promise);
     return promise;
   }
 

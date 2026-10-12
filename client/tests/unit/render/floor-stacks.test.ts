@@ -161,3 +161,25 @@ describe("FloorStacks.assertManaged (story 15.8, Tim's direction cycle 1)", () =
     expect(() => stacks.assertManaged(new Set([orphan]))).toThrow(/stack root/);
   });
 });
+
+describe("FloorStacks transient views (story 6.10)", () => {
+  it("attaches above the floor's pool, is accepted by assertManaged and detaches cleanly", () => {
+    const world = new Container();
+    const stacks = new FloorStacks(world);
+    const stack = stacks.stackFor(0);
+    const view = new Container();
+    stacks.attachTransient(0, view);
+    expect(view.parent).toBe(stack.root);
+    expect(stack.root.children.indexOf(view)).toBeGreaterThan(
+      stack.root.children.indexOf(stack.pool),
+    );
+    expect(stacks.transientCount()).toBe(1);
+    expect(() => stacks.assertManaged(new Set())).not.toThrow();
+    stacks.detachTransient(view);
+    expect(view.parent).toBeNull();
+    expect(stacks.transientCount()).toBe(0);
+    // A stray container on the root is still refused.
+    stack.root.addChild(new Container());
+    expect(() => stacks.assertManaged(new Set())).toThrow();
+  });
+});

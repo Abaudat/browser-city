@@ -113,5 +113,18 @@ d="$(clean_tree)"
 plant "$d" "main.ts" 'import { type ConnectOptions } from "./net/connection";'
 check "importing only types from net/connection passes" 0 bash "$CHECK" "$d"
 
+d="$(clean_tree)"
+plant "$d" "net/container-subscription.ts" 'const held = tables.itemHeld.where((r) => r.containerId.eq(id));
+conn.subscriptionBuilder().subscribe([held.build(), held.rightSemijoin(tables.itemInstance, (h, i) => h.instanceId.eq(i.instanceId)).build()]);'
+check "the container subscription may subscribe, with a semijoin onto a second table" 0 bash "$CHECK" "$d"
+
+d="$(clean_tree)"
+plant "$d" "net/container-subscription.ts" 'const all = tables.itemInstance.build();'
+check "a whole-table item_instance subscription is still banned" 1 bash "$CHECK" "$d"
+
+d="$(clean_tree)"
+plant "$d" "net/container-subscription.ts" 'const t = tables.itemHeld;'
+check "aliasing a table in the container subscription is still banned" 1 bash "$CHECK" "$d"
+
 summary
 exit $?

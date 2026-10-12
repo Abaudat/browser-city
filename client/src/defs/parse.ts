@@ -628,10 +628,7 @@ export function parseDefs(data: unknown): Defs {
   );
   const maxFootprintCells = expectU32(root.max_footprint_cells, "$.max_footprint_cells");
   const maxGridExtent = expectU32(root.max_grid_extent, "$.max_grid_extent");
-  const maxItemsPerContainer = expectU32(
-    root.max_items_per_container,
-    "$.max_items_per_container",
-  );
+  const maxItemsPerContainer = expectU32(root.max_items_per_container, "$.max_items_per_container");
   const minFloor = expectI32(root.min_floor, "$.min_floor");
   const maxFloor = expectU32(root.max_floor, "$.max_floor");
   const maxShelfLifeMinutes = expectU32(root.max_shelf_life_minutes, "$.max_shelf_life_minutes");
@@ -1181,7 +1178,9 @@ function checkObjectGrid(
     ["height", g.height],
   ] as const) {
     if (v === 0 || v > maxGridExtent) {
-      fail(`object '${object.key}' grid ${axis} ${v} is outside 1..=${maxGridExtent} (MAX_GRID_EXTENT)`);
+      fail(
+        `object '${object.key}' grid ${axis} ${v} is outside 1..=${maxGridExtent} (MAX_GRID_EXTENT)`,
+      );
     }
   }
   if (g.width * g.height > maxItemsPerContainer) {
