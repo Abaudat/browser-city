@@ -93,6 +93,8 @@ import BuildingAreaRow from "./building_area_table";
 import CadenceLivenessRow from "./cadence_liveness_table";
 import DemoPingRow from "./demo_ping_table";
 import FloorTransitionRow from "./floor_transition_table";
+import ItemHeldRow from "./item_held_table";
+import ItemInstanceRow from "./item_instance_table";
 import ModuleVersionRow from "./module_version_table";
 import MyCharacterRow from "./my_character_table";
 import PlacedObjectRow from "./placed_object_table";
@@ -174,6 +176,31 @@ const tablesSchema = __schema({
       { name: 'floor_transition_transition_id_key', constraint: 'unique', columns: ['transitionId'] },
     ],
   }, FloorTransitionRow),
+  itemHeld: __table({
+    name: 'item_held',
+    indexes: [
+      { accessor: 'container_id', name: 'item_held_container_id_idx_btree', algorithm: 'btree', columns: [
+        'containerId',
+      ] },
+      { accessor: 'instance_id', name: 'item_held_instance_id_idx_btree', algorithm: 'btree', columns: [
+        'instanceId',
+      ] },
+    ],
+    constraints: [
+      { name: 'item_held_instance_id_key', constraint: 'unique', columns: ['instanceId'] },
+    ],
+  }, ItemHeldRow),
+  itemInstance: __table({
+    name: 'item_instance',
+    indexes: [
+      { accessor: 'instance_id', name: 'item_instance_instance_id_idx_btree', algorithm: 'btree', columns: [
+        'instanceId',
+      ] },
+    ],
+    constraints: [
+      { name: 'item_instance_instance_id_key', constraint: 'unique', columns: ['instanceId'] },
+    ],
+  }, ItemInstanceRow),
   placedObject: __table({
     name: 'placed_object',
     indexes: [
@@ -316,6 +343,10 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "demo_ping": Omit<typeof tablesSchema.schemaType.tables["demoPing"], "accessorName"> & { readonly accessorName: "demo_ping" };
     /** @deprecated Use `floorTransition` instead. This alias will be removed in the next major version. */
     readonly "floor_transition": Omit<typeof tablesSchema.schemaType.tables["floorTransition"], "accessorName"> & { readonly accessorName: "floor_transition" };
+    /** @deprecated Use `itemHeld` instead. This alias will be removed in the next major version. */
+    readonly "item_held": Omit<typeof tablesSchema.schemaType.tables["itemHeld"], "accessorName"> & { readonly accessorName: "item_held" };
+    /** @deprecated Use `itemInstance` instead. This alias will be removed in the next major version. */
+    readonly "item_instance": Omit<typeof tablesSchema.schemaType.tables["itemInstance"], "accessorName"> & { readonly accessorName: "item_instance" };
     /** @deprecated Use `placedObject` instead. This alias will be removed in the next major version. */
     readonly "placed_object": Omit<typeof tablesSchema.schemaType.tables["placedObject"], "accessorName"> & { readonly accessorName: "placed_object" };
     /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
@@ -351,6 +382,8 @@ const tableAccessorAliases = {
   "cadence_liveness": "cadenceLiveness",
   "demo_ping": "demoPing",
   "floor_transition": "floorTransition",
+  "item_held": "itemHeld",
+  "item_instance": "itemInstance",
   "placed_object": "placedObject",
   "player_position": "playerPosition",
   "room_area": "roomArea",
@@ -387,6 +420,10 @@ export type DbView = __DbViewBase & {
   readonly "demo_ping": __DbViewBase["demoPing"];
   /** @deprecated Use `floorTransition` instead. This alias will be removed in the next major version. */
   readonly "floor_transition": __DbViewBase["floorTransition"];
+  /** @deprecated Use `itemHeld` instead. This alias will be removed in the next major version. */
+  readonly "item_held": __DbViewBase["itemHeld"];
+  /** @deprecated Use `itemInstance` instead. This alias will be removed in the next major version. */
+  readonly "item_instance": __DbViewBase["itemInstance"];
   /** @deprecated Use `placedObject` instead. This alias will be removed in the next major version. */
   readonly "placed_object": __DbViewBase["placedObject"];
   /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
@@ -413,6 +450,10 @@ export type Tables = __TablesBase & {
   readonly "demo_ping": __TablesBase["demoPing"];
   /** @deprecated Use `floorTransition` instead. This alias will be removed in the next major version. */
   readonly "floor_transition": __TablesBase["floorTransition"];
+  /** @deprecated Use `itemHeld` instead. This alias will be removed in the next major version. */
+  readonly "item_held": __TablesBase["itemHeld"];
+  /** @deprecated Use `itemInstance` instead. This alias will be removed in the next major version. */
+  readonly "item_instance": __TablesBase["itemInstance"];
   /** @deprecated Use `placedObject` instead. This alias will be removed in the next major version. */
   readonly "placed_object": __TablesBase["placedObject"];
   /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */

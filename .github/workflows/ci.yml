@@ -350,10 +350,14 @@ jobs:
       # Toolchain-free guards first, so a fiat stock write is red in seconds.
       - name: story 6.3 FR89, nothing but restore and metrics names the stock accessor
         run: bash ../scripts/ci/check-stock-write-path.sh
+      - name: story 6.10 FR94/FR95, no held row is built outside plan_store and restore
+        run: bash ../scripts/ci/check-held-construction.sh
       - name: story 4.14 FR172, connected_client has one writer
         run: bash ../scripts/ci/check-connected-client-path.sh
       - name: story 3.13 FR110, every generation draw goes through Rng::below and every harness through plan/generate
         run: bash ../scripts/ci/check-generation-entry-point.sh
+      - name: story 3.6 FR110/FR128, the district's collision is composited once by pass 7 and nothing infers it again
+        run: bash ../scripts/ci/check-no-runtime-collision-inference.sh
       - name: story 3.13 FR108/FR109, one writer for the district record
         run: bash ../scripts/ci/check-district-write-path.sh
       - name: story 6.3 FR89, nothing outside sim::author builds an Author
@@ -505,6 +509,11 @@ jobs:
         run: bash scripts/ops/tests/run-all.sh
       - name: story 1.2 AC3, proven against a real SpacetimeDB instance
         run: bash scripts/ci/check-live-migration.sh
+      # NFR33: HEAD's module published over the merge base's world, every
+      # table seeded, nothing cleared and nothing changed. Its own
+      # disposable local instance and port (3995).
+      - name: NFR33, a world seeded at the merge base survives HEAD published over it unchanged
+        run: bash scripts/ci/check-publish-over-base.sh
       # Its own disposable local instance and port (3994), never 3987-3993.
       - name: a deploy onto a world whose init predates today's tables, rehearsed with deploy.yml's own post-publish steps
         run: bash scripts/ci/check-deploy-rehearsal.sh
@@ -591,7 +600,10 @@ jobs:
       # live -- it has no excuse for an uncovered line. Scoped to sim only:
       # a repo-wide percentage gate only teaches people to write
       # assertion-free tests to pad it.
-      - run: cargo llvm-cov -p sim --fail-under-lines 90
+      # The balance-max generation guard is a release-mode check (the `test`
+      # job runs it); under this unoptimized, instrumented build it takes
+      # minutes for no coverage the live-extent tests do not already give.
+      - run: cargo llvm-cov -p sim --fail-under-lines 90 -- --skip generate_at_the_balance_max_extent_stays_inside_its_ceiling
 
   client-check:
     name: client-check
@@ -674,6 +686,8 @@ jobs:
         run: bash ../scripts/ci/check-no-raw-part-sheets.sh
       - name: story 1.11 FR150/FR152/FR151, no canvas-text construct or native dialog under client/src/
         run: bash ../scripts/ci/check-no-canvas-ui.sh
+      - name: story 6.10 FR94, one module builds and attaches a container view
+        run: bash ../scripts/ci/check-container-view-path.sh
       - name: story 1.9 FR148, the input layer cannot reach a procedure or an interaction module
         run: bash ../scripts/ci/check-input-boundary.sh
       - name: story 1.12 FR168, debug tooling is reachable only through main.ts's DEV-gated dynamic import

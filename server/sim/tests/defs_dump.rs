@@ -47,6 +47,10 @@ fn canonical_dump() -> String {
         };
         let collider = rect(o.collider);
         let interact_at = rect(o.interact_at);
+        let grid = match o.grid {
+            None => "none".to_string(),
+            Some(g) => format!("{}x{}", g.width, g.height),
+        };
         let mut tags: Vec<u32> = o.tags.to_vec();
         tags.sort_unstable();
         let tags: Vec<String> = tags.iter().map(|t| t.to_string()).collect();
@@ -55,7 +59,7 @@ fn canonical_dump() -> String {
             None => "none".to_string(),
         };
         lines.push(format!(
-            "object {} id={} name={} layer={} sprite={sprite} height={} width={} collider={collider} interact_at={interact_at} window={} tags=[{}]",
+            "object {} id={} name={} layer={} sprite={sprite} height={} width={} collider={collider} interact_at={interact_at} grid={grid} window={} tags=[{}]",
             o.key,
             o.id,
             o.name,

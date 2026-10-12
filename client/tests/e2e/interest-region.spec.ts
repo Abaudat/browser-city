@@ -106,7 +106,9 @@ test("every spatial subscription on the wire carries a chunk predicate, and the 
   // exactly the 5x5 around the spawn.
   const cached = await page.evaluate(() => window.__bc?.region?.cachedChunkKeys("placedObject"));
   expect(cached).not.toContain(keyOf(FAR));
-  expect(cached?.length).toBe(INITIAL_HANDLES);
+  // One placed_object per chunk, plus shop A's seeded cupboard in the
+  // spawn chunk.
+  expect(cached?.length).toBe(INITIAL_HANDLES + 1);
   expect(cached).toContain(keyOf(STAY));
   expect(cached).toContain(keyOf(LEFT_BEHIND));
 });

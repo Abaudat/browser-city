@@ -230,7 +230,7 @@ loud failure instead, never a silent no-op.
 - `publish-module` calls `finish_publish` after publishing (NFR36/NFR38,
   above) and ends with `scripts/ops/assert-world-invariants.sh` against
   Maincloud, so a deploy is red the instant the live world is inconsistent
-  (`scripts/ci/check-deploy-rehearsal.sh` rehearses the same sequence over a
+  (`scripts/ci/check-publish-over-base.sh` publishes HEAD over the merge base's seeded world and asserts every seeded row still present and unchanged; `scripts/ci/check-deploy-rehearsal.sh` rehearses the same sequence over a
   world born at the live database's first deploy). NFR33 (an additive-only schema, enforced at PR time) is what
   makes this publish forward-only: there is no schema rollback, only fix
   and republish -- `server/README.md`'s own recovery section.
@@ -421,11 +421,13 @@ and an OIDC identity on the same character.
 
 - An item instance is one row in `item_instance` (identity: `instance_id` auto_inc, `def_id`, `created_at`) and exactly one row in one of two form tables. A move never touches `item_instance`; anything keyed by `instance_id` travels with it.
 - `item_placed` is the world form: `instance_id` (primary key, not auto_inc), `x`, `y`, `floor`, `offset_x`, `offset_y`, `orientation`, `chunk_key` (btree index, as on `placed_object`). It references nothing.
-- `item_held` is the container form: `instance_id` (primary key, not auto_inc), `container_kind`, `container_id`, `slot_x`, `slot_y`, `orientation`; one index `by_container` on (`container_kind`, `container_id`).
+- `item_held` is the container form: `instance_id` (primary key, not auto_inc), `container_kind`, `container_id`, `slot_x`, `slot_y`, `orientation`; one single-column btree index on `container_id` (the engine shares and prunes only single-column equalities; a reader also filters on `container_kind`). `item_held` and `item_instance` are public so a client can subscribe to one open container's rows and their instances' defs.
 - A container is `(container_kind, container_id)`: a `sim::codes::container_kind` code (`object`, whose id is a `placed_object.object_id`) plus the id in that kind's own table. It is not `holder_kind`: a holder owns stock, a container has a grid. A further kind is a code append.
 - No foreign key and no cascade, and no `parent`/`supported_by` column on any item table: a `container_id` whose object is gone is a dangling reference.
 - Mutable per-instance state is its own table keyed by `instance_id`, never columns on a form.
-- `sim::item_instance` holds the types (`Placed`, `Held`, `Placement`, `ContainerRef`) and `plan_move`: across forms one delete and one insert, within a form an update. Out-of-range values are errors, never clamped. The sub-cell offset is `0..COLLIDER_SUBCELLS_PER_CELL`; a slot is `0..MAX_GRID_EXTENT`; `MAX_GRID_EXTENT` and `MAX_ITEMS_PER_CONTAINER` are declared only there. `Placed::chunk_key` is the one place `item_placed.chunk_key` is derived.
+- `sim::item_instance` holds the types (`Placed`, `Held`, `Placement`, `ContainerRef`) and `plan_move`: across forms one delete and one insert, within a form an update. Out-of-range values are errors, never clamped. The sub-cell offset is `0..COLLIDER_SUBCELLS_PER_CELL`; a slot is `0..MAX_GRID_EXTENT`; `MAX_GRID_EXTENT` (8) and `MAX_ITEMS_PER_CONTAINER` (64) are declared in `tools/defs-build/src/model.rs` and generated into `sim::generated::defs` and `defs.json`; `sim::item_instance` re-exports them. `Placed::chunk_key` is the one place `item_placed.chunk_key` is derived.
+- `sim::container_grid` is the one fit rule (FR94): an item's footprint in a grid is its `[[item]].bulk`, width and height swapped on odd orientations; a placement fits when every cell is inside the container object's `grid` and no other held item covers one. `fits` returns `OutOfGrid`, `Overlaps { instance_id }` or `NeverFits`, never clamps and reads no count or volume: full is a shape. `first_fit` scans slots row-major, orientation 0 then 1. `plan_store` is the only code that builds a `Held` meant for a write, and a store that does not fit is `Store::DoesNotFit`, an outcome, never an `Err`. `scripts/ci/check-held-construction.sh` holds that nothing under `server/src/` builds a `Held` or names the `item_held` accessor outside `restore.rs`, which reproduces rows by value and never refuses one for not fitting (a defs retune may leave a misfit, a legal state).
+- `packing_forced` is the tedium dial: a `GAMEPLAY_METRICS` proportion of store attempts refused for fit or fitting only rotated, over all store attempts. `sim::container_grid::packing_forced` is the per-attempt verdict, `Period::on_store` folds it, and the sampler emits it. No store writer exists until Epic 8's interaction model; the first adds `record_store_attempt` beside its `plan_store` call, and `check-held-construction.sh` fails a file that calls one without the other.
 - `item_held`'s `max_rows` is `placed_object`'s times `MAX_ITEMS_PER_CONTAINER`; `item_placed`'s is `placed_object`'s; `item_instance`'s is their sum.
 
 ## World addressing
@@ -589,7 +591,8 @@ The client holds only the world around the player. Subscriptions are client-issu
 - A citizen has one pending scheduled event: its next arrival or its next chunk crossing, whichever is sooner. A crossing does one thing: `place_actor`, then schedule the next event. `sim::actor_location::crossings(route, t_depart, t_arrive, start)` is the pure plan: instants from L3's waypoint rule (`leg_instants`, pinned with the client by `fixtures/leg-instants.v1.json`), placements from `plan_move`. Crossing calls count under `ReducerClass::Scheduled`.
 - A table is split by how often it is written, not by the entity it describes: anything rewritten more often than a chunk change is its own table, joined through `actor_id`.
 - `placed_object`, `floor_transition`, `building_area` and `room_area` are public; `item_placed`, `building` and `room` stay private until a client reader exists.
-- `scripts/ci/check-subscription-shape.sh` holds the query shape (`.subscribe(` only in `net/connection.ts` and `net/region-subscription.ts`, no `SELECT` literal under `client/src`, the whole-table set exactly the three singletons); `scripts/ci/check-interest-region.sh` proves it against a real instance.
+- An open container's contents are a per-view handle, never part of the region: `net/container-subscription.ts` issues `item_held WHERE container_id = <id>` and a typed-builder semijoin from those rows onto `item_instance` (for each row's `def_id`) when a view opens and releases the one handle when it closes (`unsubscribe()` only once applied). It is the third file allowed to call `.subscribe(`.
+- `scripts/ci/check-subscription-shape.sh` holds the query shape (`.subscribe(` only in `net/connection.ts`, `net/region-subscription.ts` and `net/container-subscription.ts`, no `SELECT` literal under `client/src`, the whole-table set exactly the three singletons); `scripts/ci/check-interest-region.sh` proves it against a real instance.
 
 ## Connection
 
@@ -937,6 +940,10 @@ read the raw-import way either: they are packed, at build time, into
 sparse or `client/`-only checkout -- for as long as any client code reads
 assets from outside `client/`.
 
+### Container view
+
+A container's view (FR94) is a piece of the world: `world/container-view.ts` (pure, no `pixi.js`) holds the cell rects, the anchor and the close rule; `render/pixi-container-view.ts` is the only code that builds its display objects. One grid cell is one world tile, the view is centred on the object's footprint with its bottom edge one tile above the object's sprite, and it is attached to that object's own floor stack (`FloorStacks.attachTransient`, accepted by `assertManaged`), so it scrolls with the camera, and mount throws unless `app.stage` holds the world root and nothing else (`assertStageIsWorld`). There is one slot: opening another container replaces it. It closes with no timer and no pointer input: the feet leave the object's `interact_at` (`isWithinReach`), a floor change, the object gone (its streamed `placed_object` row leaves the cache) or hidden, or the body closed (which a lost connection does). A container is subscribed only when the server streamed its object to the client; a fixture-only prop opens empty. A failed subscription closes the view. Item textures are cropped when a view first has a row for them. It draws no text, count or readout, and the ticker is subscribed only while a view is open. `scripts/ci/check-container-view-path.sh` holds the one-module rule; a click opens it through the existing `Intent`, routed by `main.ts`'s `onIntent` in one call.
+
 ### Visibility
 
 FR120-FR122's enclosure visibility is decided by one pure function,
@@ -1162,6 +1169,10 @@ never spoils, capped at `MAX_SHELF_LIFE_MINUTES`. `bulk = { width, height
 generated `ITEMS` / `defs.json` pair; there is no item database table
 until a server reader needs one. An item instance's storage is under
 "Item instances".
+
+An `[[item]]` may carry `sprite = { sheet, x, y, w, h }`: what it looks like in a container's grid, exactly `bulk * tile_size_px` pixels. It is packed into the atlas like an object's and reaches `defs.json` only (`sprite`, `atlas`), never `sim::generated::defs`. Every shipped item has one.
+
+An `[[object]]` that declares `grid = { width, height }` (whole cells, each `1..=MAX_GRID_EXTENT`) is a container; the grid is the only thing that makes it one, as an absent `collider` is what makes an object walkable. `MAX_GRID_EXTENT * MAX_GRID_EXTENT` is held at compile time within `MAX_ITEMS_PER_CONTAINER`, so a count is never what makes a container full. Grid sizes live in `defs/objects` only: they are the tedium dial. Both parsers refuse a zero or over-extent axis and the shared canonical dump carries `grid=`.
 
 A `[[denomination]]` (FR92) is `item` (an item key) and `face_value`, with no
 id of its own. Both artefacts carry a `denominations` table, largest face
@@ -1526,14 +1537,15 @@ or plot's draws.
 `generation::plan(city_seed, &cfg, &content) -> Result<District,
 GenerationError>` chains every implemented pass in order with no verdict
 on the result (only pass 1's own site check can fail). A `District` is
-its `skeleton` (passes 1-5, a `Skeleton`) and its `interiors` (pass 6),
-each read through its own field. `plan_skeleton` runs passes 1-5 exactly
+its `skeleton` (passes 1-5, a `Skeleton`), its `interiors` (pass 6) and
+its `props` (pass 7), each read through its own field. `plan_skeleton` runs passes 1-5 exactly
 as `plan` does. `District::check` is every verdict `generate` holds a
 plan to, in order. `content` is
-`GenerationContent { rules: RuleSet<'_>, building_types, room_types, tags }`
+`GenerationContent { rules: RuleSet<'_>, building_types, room_types, tags, objects }`
 -- every content table a pass reads, loaded once
 (`GenerationContent::committed()` wraps `RuleSet::committed()`,
-`defs::BUILDING_TYPES`, `defs::ROOM_TYPES` and `defs::TAGS`) and passed
+`defs::BUILDING_TYPES`, `defs::ROOM_TYPES`, `defs::TAGS` and
+`defs::OBJECTS`) and passed
 down as a struct, never a literal read from `defs::` inside a pass; one
 signature, no `plan_with` twin.
 `District::check_building_count(&cfg)` holds AC4's building-count
@@ -1543,12 +1555,12 @@ no violation); `District::check_workplace_count(&cfg, &content)` holds
 AC4's workplace-count verdict, the same two-band shape as building count;
 `District::check_enterable_count(&cfg)` and
 `District::check_institutions_enterable(&content)` hold pass 6's two
-verdicts.
-`generation::generate` is `plan` plus all five, in that order; production
+verdicts; `District::check_reachability(&content)` holds pass 7's.
+`generation::generate` is `plan` plus all six, in that order; production
 calls `generation::create`, which wraps it. `generate` and `plan` are
 reachable outside `sim` only with the `test-fixtures` feature, which
 `browser_city` never enables. `scripts/ci/check-generation-entry-point.sh` fails
-the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`/`interiors::run(` call under `server/sim/tests/` or `server/bounds/` not marked `//
+the build on any `plots::run(`/`envelopes::run(`/`building_types::run(`/`interiors::run(`/`props::run(` call under `server/sim/tests/` or `server/bounds/` not marked `//
 generation-entry-point: allow` -- the marker is reserved for the
 independence properties and the golden's pass-2-run-twice test, which
 deliberately feed one pass a perturbed or repeated predecessor;
@@ -1760,6 +1772,34 @@ content-blindness `check-rule-engine-no-content-keys.sh` holds the rule
 engine to: no building-type/tag/profession/rule key as a quoted literal
 under `server/sim/src/generation/`.
 
+Pass 7 (`generation::props::run(city_seed, &skeleton, &interiors, &cfg,
+&content) -> Result<PropMap, GenerationError>`) is pure, reads
+earlier passes and mutates none. `GenerationContent` gains `objects`
+(`defs::OBJECTS`); defs are chosen by tag, never by key. `PropMap` is the
+sorted list of `PlacedRow { floor, y, x, def_id, layer, orientation }` --
+`placed_object`'s columns minus the surrogate id and chunk key, anchor =
+the footprint's south-west cell, extent only ever read from
+`ObjectDef.width/height` -- each carried with its owner (`Prop`, `Role`),
+plus the street's cells (`StreetGrid`) and `collision: BTreeMap<i8,
+FloorCollision>`, the one per-district cache: tile-granular, a cell
+blocked iff a placed collider touches it, built once inside `run`.
+Nothing outside `generation::`/`world::` builds a collision grid or
+rasterises placements (`scripts/ci/check-no-runtime-collision-
+inference.sh`); `create_district` still discards the plan and writes no
+row. The rows are walls, every pass-6 fixture resolved to a def carrying
+its tag, one shopfront per building holding a counter, and the street's
+lamps, ambient furniture and bins. Which side of the door a def stands is
+the two `[[coherence]]` rows over `indoor`/`outdoor`; the street's rows
+are `street_is_lit` and `waste_per_three_seating`. The street's own cells
+carry `pavement` and every `per` tag no object or building type carries
+(`footway`). `District::check` appends `check_reachability`: per building
+and per pavement band that carries furniture, a windowed
+`enclosed_regions` (on the body-eroded grid) and `narrow_passages` over
+the rows' real colliders; `Unreachable { count, window, first, narrow }`
+and `FixtureUnplaceable { x, y, tag }` join `GenerationError`. Balance
+keys are `generation.props.*`. `DistrictSite::build` stamps the pavement
+and every prop.
+
 Evidence: `bounds/src/generation_evidence.rs` renders every implemented
 pass's own output, for three committed seeds, to `docs/generation/*.svg`
 -- pass 5's own file additionally tints each envelope by a derived,
@@ -1776,7 +1816,9 @@ dashed catchment grid with a pink wash over a physically-short
 catchment (no text on the map; the per/owed/placed figures live in a
 panel below it, one line per catchment). Pass 6's file shows the
 enterable set by derived kind and a contact sheet of laid-out interiors
-per kind at viewport scale, rooms as rects.
+per kind at viewport scale, rooms as rects; pass 7's shows two street
+windows at viewport scale and dressed interiors, every prop as its
+footprint with its collider hatched.
 `cargo run -p bounds --bin dump-generation`
 regenerates them; `bounds/tests/generation_evidence_current.rs` fails
 the build if the committed files and a fresh render ever disagree.

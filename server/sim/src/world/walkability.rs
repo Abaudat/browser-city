@@ -588,6 +588,7 @@ mod tests {
                 y1: 16,
             }),
             interact_at: None,
+            grid: None,
             window: false,
             tags: &[],
         }];
@@ -633,6 +634,7 @@ mod tests {
                 y1: 16,
             }),
             interact_at: None,
+            grid: None,
             window: false,
             tags: &[],
         }];
@@ -695,6 +697,7 @@ mod tests {
                 y1: 16,
             }),
             interact_at: None,
+            grid: None,
             window: false,
             tags: &[],
         }];

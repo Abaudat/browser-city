@@ -726,6 +726,7 @@ mod tests {
             height,
             collider: None,
             interact_at: None,
+            grid: None,
             window: false,
             tags: vec![],
             flight: None,

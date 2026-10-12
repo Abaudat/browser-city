@@ -1734,6 +1734,351 @@ pub fn interiors_svg_path(seed: u64) -> std::path::PathBuf {
         .join(format!("interiors-seed-{seed}.svg"))
 }
 
+// --- pass 7: prop placement ---------------------------------------------
+
+/// Pixels per cell in pass 7's two street windows -- a 40x22-cell
+/// viewport at 16 px a cell, the tile size itself.
+const PROPS_WINDOW_CELL_PX: i64 = 16;
+
+const DEF_PALETTE: [&str; 16] = [
+    "#e53935", "#8e24aa", "#3949ab", "#039be5", "#00897b", "#7cb342", "#fdd835", "#fb8c00",
+    "#6d4c41", "#546e7a", "#d81b60", "#5e35b1", "#00acc1", "#43a047", "#c0ca33", "#f4511e",
+];
+
+/// A hatch over a collider, so a prop's solid part reads apart from its
+/// footprint.
+const PROPS_STYLE_DEFS: &str = "<defs><pattern id=\"collider-hatch\" width=\"4\" height=\"4\" patternTransform=\"rotate(45)\" patternUnits=\"userSpaceOnUse\"><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"4\" stroke=\"#000000\" stroke-width=\"1.6\"/></pattern></defs>\n";
+
+pub fn props_svg_path(seed: u64) -> std::path::PathBuf {
+    crate::world_fixture::repo_root_dir()
+        .join("docs")
+        .join("generation")
+        .join(format!("props-seed-{seed}.svg"))
+}
+
+/// The 40x22 window, aligned to a four-cell step within forty cells of
+/// `centre`, holding the most street furniture (ties to the smallest
+/// `(y, x)`), clamped inside the site.
+fn busiest_window(d: &sim::generation::District, centre: (i32, i32)) -> sim::world::Rect {
+    let site = d.skeleton.plots.site();
+    type Score = ((usize, usize), i32, i32);
+    let mut best: Option<(Score, sim::world::Rect)> = None;
+    for oy in (-40..=40).step_by(4) {
+        for ox in (-40..=40).step_by(4) {
+            let x0 = (centre.0 - VIEWPORT_W / 2 + ox).clamp(site.x0, site.x1 - VIEWPORT_W);
+            let y0 = (centre.1 - VIEWPORT_H / 2 + oy).clamp(site.y0, site.y1 - VIEWPORT_H);
+            let w = sim::world::Rect {
+                x0,
+                y0,
+                x1: x0 + VIEWPORT_W,
+                y1: y0 + VIEWPORT_H,
+            };
+            // Variety first (so a tree, a bench and a bin all stand in
+            // frame), then count, then the north-west-most.
+            let in_window: Vec<u32> = d
+                .props
+                .props()
+                .iter()
+                .filter(|p| {
+                    matches!(p.role, sim::generation::Role::Street { .. })
+                        && w.contains(p.row.x, p.row.y)
+                })
+                .map(|p| p.row.def_id)
+                .collect();
+            let distinct: std::collections::BTreeSet<u32> = in_window.iter().copied().collect();
+            let n = (distinct.len(), in_window.len());
+            let key = (n, -y0, -x0);
+            if best.as_ref().is_none_or(|(k, _)| key > *k) {
+                best = Some((key, w));
+            }
+        }
+    }
+    best.expect("at least one window").1
+}
+
+/// One prop as its footprint rect (tinted by def, titled with the def
+/// key) and its collider hatched on top; `px` is pixels per cell and
+/// `(wx0, wy0)` the world cell drawn at `(ox, oy)`.
+#[allow(clippy::too_many_arguments)]
+fn prop_rects(
+    row: &sim::generation::PlacedRow,
+    def: &defs::ObjectDef,
+    tint: &str,
+    px: i64,
+    ox: i64,
+    oy: i64,
+    wx0: i32,
+    wy0: i32,
+) -> String {
+    let e = sim::generation::props::extent(row, def);
+    let x = ox + (e.x0 - wx0) as i64 * px;
+    let y = oy + (e.y0 - wy0) as i64 * px;
+    let mut s = format!(
+        "<rect x=\"{x}\" y=\"{y}\" width=\"{}\" height=\"{}\" fill=\"{tint}\" fill-opacity=\"0.75\" stroke=\"#000\" stroke-width=\"0.5\"><title>{}</title></rect>\n",
+        e.width() * px,
+        e.height() * px,
+        def.key
+    );
+    if let Some(c) = def.collider {
+        let s16 = defs::COLLIDER_SUBCELLS_PER_CELL as i64;
+        let cx = x + c.x0 as i64 * px / s16;
+        let cy = y + c.y0 as i64 * px / s16;
+        let cw = ((c.x1 - c.x0) as i64 * px / s16).max(1);
+        let ch = ((c.y1 - c.y0) as i64 * px / s16).max(1);
+        s.push_str(&format!(
+            "<rect x=\"{cx}\" y=\"{cy}\" width=\"{cw}\" height=\"{ch}\" fill=\"url(#collider-hatch)\" stroke=\"#000\" stroke-width=\"0.4\"/>\n"
+        ));
+    }
+    s
+}
+
+/// Pass 7's evidence (`docs/generation.md`'s Prop placement section): a
+/// core street window and a periphery street window at viewport scale
+/// (pavement, carriageway, footprints, every prop as its footprint rect
+/// tinted by def, its collider hatched), then a contact sheet of dressed
+/// interiors by kind, and a legend of every def shown. No text on a map;
+/// a prop's key is its `<title>` and the legend names every tint.
+pub fn props_svg(d: &sim::generation::District, content: &GenerationContent) -> String {
+    let objects = content.objects;
+    let site = d.skeleton.plots.site();
+    let street = d.props.street();
+    let (peak, far) = peak_and_far_points(&d.skeleton.land_use);
+    let windows = [
+        ("core", busiest_window(d, peak)),
+        ("periphery", busiest_window(d, far)),
+    ];
+
+    // Every def the picture shows, in id order, for a stable palette.
+    let mut shown: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+    for p in d.props.props() {
+        if p.role != sim::generation::Role::Wall {
+            shown.insert(p.row.def_id);
+        }
+    }
+    let shown: Vec<u32> = shown.into_iter().collect();
+    let tint = |id: u32| {
+        let i = shown.iter().position(|&s| s == id).unwrap_or(0);
+        DEF_PALETTE[i % DEF_PALETTE.len()]
+    };
+    let def_of = |id: u32| objects.iter().find(|o| o.id == id);
+
+    let px = PROPS_WINDOW_CELL_PX;
+    let win_w = VIEWPORT_W as i64 * px;
+    let win_h = VIEWPORT_H as i64 * px;
+    let slot_w = SHEET_SLOT_CELLS.0 * INTERIOR_CELL_PX + 12;
+    let slot_h = SHEET_SLOT_CELLS.1 * INTERIOR_CELL_PX + 22;
+    let w = (SHEET_COLUMNS * slot_w + 16).max(win_w + 16);
+
+    let mut body = String::new();
+    let mut y = 8i64;
+    for (name, win) in windows {
+        body.push_str(&format!(
+            "<text x=\"8\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" font-weight=\"bold\">{name} street window ({} x {} cells)</text>\n",
+            y + 10,
+            VIEWPORT_W,
+            VIEWPORT_H
+        ));
+        y += 16;
+        let (ox, oy) = (8i64, y);
+        for cy in win.y0..win.y1 {
+            for cx in win.x0..win.x1 {
+                let fill = if street.is_pavement(cx, cy) {
+                    "#cfd8dc"
+                } else if street.is_road(cx, cy) {
+                    "#78909c"
+                } else {
+                    "#eceff1"
+                };
+                body.push_str(&format!(
+                    "<rect x=\"{}\" y=\"{}\" width=\"{px}\" height=\"{px}\" fill=\"{fill}\"/>\n",
+                    ox + (cx - win.x0) as i64 * px,
+                    oy + (cy - win.y0) as i64 * px
+                ));
+            }
+        }
+        for e in d.skeleton.envelopes.envelopes() {
+            let f = e.footprint;
+            if f.x1 <= win.x0 || f.x0 >= win.x1 || f.y1 <= win.y0 || f.y0 >= win.y1 {
+                continue;
+            }
+            let (x0, y0) = (f.x0.max(win.x0), f.y0.max(win.y0));
+            let (x1, y1) = (f.x1.min(win.x1), f.y1.min(win.y1));
+            body.push_str(&format!(
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"#ffe0b2\"/>\n",
+                ox + (x0 - win.x0) as i64 * px,
+                oy + (y0 - win.y0) as i64 * px,
+                (x1 - x0) as i64 * px,
+                (y1 - y0) as i64 * px
+            ));
+        }
+        for p in d.props.props() {
+            let Some(def) = def_of(p.row.def_id) else {
+                continue;
+            };
+            let e = sim::generation::props::extent(&p.row, def);
+            if e.x1 <= win.x0 || e.x0 >= win.x1 || e.y1 <= win.y0 || e.y0 >= win.y1 {
+                continue;
+            }
+            if p.role == sim::generation::Role::Wall {
+                body.push_str(&format!(
+                    "<rect x=\"{}\" y=\"{}\" width=\"{px}\" height=\"{px}\" fill=\"#37474f\"/>\n",
+                    ox + (e.x0 - win.x0) as i64 * px,
+                    oy + (e.y0 - win.y0) as i64 * px
+                ));
+            } else {
+                body.push_str(&prop_rects(
+                    &p.row,
+                    def,
+                    tint(p.row.def_id),
+                    px,
+                    ox,
+                    oy,
+                    win.x0,
+                    win.y0,
+                ));
+            }
+        }
+        y += win_h + 14;
+    }
+
+    // The dressed interiors, by kind: rooms as rects, props as footprints.
+    let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+        content.building_types.iter().map(|b| (b.id, b)).collect();
+    let tags = class_tags(content);
+    let kind_of_plot: std::collections::BTreeMap<u32, SheetKind> = d
+        .skeleton
+        .building_types
+        .assignments()
+        .iter()
+        .map(|a| (a.plot, sheet_kind(by_id[&a.building_type], &tags)))
+        .collect();
+    let ipx = INTERIOR_CELL_PX;
+    for kind in SheetKind::ALL {
+        let all: Vec<(u32, u32, &sim::generation::Interior)> = d
+            .interiors
+            .laid()
+            .filter(|(plot, _, _)| kind_of_plot[plot] == kind)
+            .collect();
+        body.push_str(&format!(
+            "<text x=\"8\" y=\"{}\" font-family=\"sans-serif\" font-size=\"13\" font-weight=\"bold\">{}: {} of {} dressed interiors</text>\n",
+            y + 10,
+            kind.label(),
+            SHEET_PER_KIND.min(all.len()),
+            all.len()
+        ));
+        y += 22;
+        let stride = (all.len() / SHEET_PER_KIND).max(1);
+        let mut picks: Vec<_> = all.iter().step_by(stride).take(SHEET_PER_KIND).collect();
+        // The best-furnished interior of the kind is always on the sheet,
+        // first, so a dressed cafe or kitchen is there to judge.
+        let richest = all.iter().max_by_key(|(_, _, i)| {
+            d.props
+                .props()
+                .iter()
+                .filter(|p| {
+                    p.building == Some(i.footprint)
+                        && matches!(p.role, sim::generation::Role::Fixture { .. })
+                })
+                .count()
+        });
+        if let (Some(r), false) = (richest, picks.is_empty()) {
+            picks.retain(|p| p.2.footprint != r.2.footprint);
+            picks.insert(0, r);
+            picks.truncate(SHEET_PER_KIND);
+        }
+        for (i, (_, ty, interior)) in picks.iter().enumerate() {
+            let col = i as i64 % SHEET_COLUMNS;
+            let row = i as i64 / SHEET_COLUMNS;
+            let (ox, oy) = (8 + col * slot_w, y + row * slot_h + 10);
+            let fp = interior.footprint;
+            body.push_str(&format!(
+                "<text x=\"{ox}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"9\">{} {}x{}</text>\n",
+                oy - 3,
+                by_id[ty].key,
+                fp.width(),
+                fp.height()
+            ));
+            body.push_str(&format!(
+                "<rect x=\"{ox}\" y=\"{oy}\" width=\"{}\" height=\"{}\" fill=\"#37474f\"/>\n",
+                fp.width() * ipx,
+                fp.height() * ipx
+            ));
+            for r in &interior.rooms {
+                body.push_str(&format!(
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"#ffe0b2\"/>\n",
+                    ox + (r.rect.x0 - fp.x0) as i64 * ipx,
+                    oy + (r.rect.y0 - fp.y0) as i64 * ipx,
+                    r.rect.width() * ipx,
+                    r.rect.height() * ipx
+                ));
+            }
+            for t in &interior.thresholds {
+                let fill = if t.entrance { "#ffeb3b" } else { "#ffffff" };
+                body.push_str(&format!(
+                    "<rect x=\"{}\" y=\"{}\" width=\"{ipx}\" height=\"{ipx}\" fill=\"{fill}\"/>\n",
+                    ox + (t.x - fp.x0) as i64 * ipx,
+                    oy + (t.y - fp.y0) as i64 * ipx
+                ));
+            }
+            for p in d.props.props().iter().filter(|p| {
+                p.building == Some(fp)
+                    && matches!(
+                        p.role,
+                        sim::generation::Role::Fixture { .. } | sim::generation::Role::Shopfront
+                    )
+            }) {
+                if let Some(def) = def_of(p.row.def_id) {
+                    body.push_str(&prop_rects(
+                        &p.row,
+                        def,
+                        tint(p.row.def_id),
+                        ipx,
+                        ox,
+                        oy,
+                        fp.x0,
+                        fp.y0,
+                    ));
+                }
+            }
+        }
+        let rows = (picks.len() as i64 + SHEET_COLUMNS - 1) / SHEET_COLUMNS;
+        y += rows * slot_h + 24;
+    }
+
+    // The legend: every def shown, tint, key and how many the district
+    // places (so a fallback's share of its anchor reads off the sheet).
+    let mut count: std::collections::BTreeMap<u32, usize> = Default::default();
+    for p in d.props.props() {
+        if p.role != sim::generation::Role::Wall {
+            *count.entry(p.row.def_id).or_insert(0) += 1;
+        }
+    }
+    body.push_str(&format!(
+        "<text x=\"8\" y=\"{}\" font-family=\"sans-serif\" font-size=\"12\" font-weight=\"bold\">props (footprint tinted by def, collider hatched; walls dark, doorway white, street door yellow; the number is how many the district places)</text>\n",
+        y + 10
+    ));
+    y += 18;
+    for (i, id) in shown.iter().enumerate() {
+        let key = def_of(*id).map_or("?", |o| o.key);
+        let (cx, cy) = (8 + (i as i64 % 5) * 250, y + 14 + (i as i64 / 5) * 18);
+        body.push_str(&format!(
+            "<rect x=\"{cx}\" y=\"{}\" width=\"12\" height=\"12\" fill=\"{}\" fill-opacity=\"0.75\" stroke=\"#000\" stroke-width=\"0.5\"/><text x=\"{}\" y=\"{cy}\" font-family=\"sans-serif\" font-size=\"11\">{key} ({})</text>\n",
+            cy - 11,
+            tint(*id),
+            cx + 16,
+            count.get(id).copied().unwrap_or(0)
+        ));
+    }
+    y += 14 + ((shown.len() as i64 + 4) / 5) * 18 + 10;
+
+    let _ = site;
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{y}\" viewBox=\"0 0 {w} {y}\">\n\
+         {PROPS_STYLE_DEFS}<rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{y}\" fill=\"#ffffff\"/>\n\
+         {body}</svg>\n"
+    )
+}
+
 /// Every evidence document [`EVIDENCE_SEEDS`] commits, for one seed.
 /// `envelopes` serves both the plot-subdivision and building-envelope
 /// Evidence rows in `docs/generation.md` -- one file for both passes.
@@ -1744,6 +2089,8 @@ pub struct EvidenceSvgs {
     pub envelopes: String,
     pub building_types: String,
     pub interiors: String,
+    /// Story 3.6: pass 7's street windows and dressed interiors.
+    pub props: String,
     /// Story 3.7: the four dials, the street network and one boundary
     /// strip ([`crate::neighbourhood_evidence`]).
     pub neighbourhoods: String,
@@ -1788,6 +2135,7 @@ pub fn build_all() -> Vec<EvidenceSvgs> {
                     &d.interiors,
                     &content,
                 ),
+                props: props_svg(&d, &content),
                 neighbourhoods: crate::neighbourhood_evidence::neighbourhoods_svg(
                     &d, &cfg, &content,
                 ),

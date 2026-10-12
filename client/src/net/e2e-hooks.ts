@@ -149,6 +149,23 @@ declare global {
         deletes: Record<string, number>;
         updates: Record<string, number>;
       };
+      /** Story 6.10 (FR94): the open container view as data -- the object
+       * it is bound to, and the cell rects it draws (grid cells, never
+       * pixels) -- or `null` while none is open. `stageChildren` is how
+       * many children the Pixi stage has (always one: the world root). */
+      containerView?: () => {
+        objectId: string;
+        rects: {
+          instanceId: string;
+          defId: number;
+          x: number;
+          y: number;
+          w: number;
+          h: number;
+          quarterTurns: number;
+        }[];
+      } | null;
+      stageChildren?: () => number;
       visibility?: Record<string, string>;
       visibilityAlpha?: Record<string, number>;
       masksAllNull?: boolean;
@@ -625,6 +642,18 @@ export function exposePlayerDrawnPointForE2e(
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.playerDrawnPoint = getter;
+  window.__bc = bucket;
+}
+
+/** Story 6.10: the open container view and the stage's child count. */
+export function exposeContainerViewForE2e(hooks: {
+  containerView: NonNullable<NonNullable<Window["__bc"]>["containerView"]>;
+  stageChildren: NonNullable<NonNullable<Window["__bc"]>["stageChildren"]>;
+}): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.containerView = hooks.containerView;
+  bucket.stageChildren = hooks.stageChildren;
   window.__bc = bucket;
 }
 

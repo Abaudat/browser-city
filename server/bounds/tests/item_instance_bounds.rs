@@ -72,19 +72,13 @@ fn the_held_form_has_a_container_and_a_slot_and_no_world_position() {
         "FR95: a held item has a grid slot and physically no x, y, floor or offset column"
     );
     assert!(t.columns[0].primary_key && !t.columns[0].auto_inc);
-    let index: Vec<(&str, Vec<&str>)> = t
-        .indexes
-        .iter()
-        .map(|i| {
-            (
-                i.accessor.as_str(),
-                i.columns.iter().map(String::as_str).collect(),
-            )
-        })
-        .collect();
-    assert_eq!(
-        index,
-        [("by_container", vec!["container_kind", "container_id"])]
+    // No composite index: a container view subscribes on `container_id`
+    // alone, as a column-level index.
+    assert!(t.indexes.is_empty());
+    let container_id = t.columns.iter().find(|c| c.name == "container_id").unwrap();
+    assert!(
+        container_id.indexed,
+        "FR94: a view's single-column equality on container_id is indexed"
     );
 }
 

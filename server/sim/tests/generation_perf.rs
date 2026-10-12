@@ -293,6 +293,37 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
             row.key
         );
     }
+
+    // Pass 7 (story 3.6): placements are bounded by the cells that can
+    // hold one -- every footprint cell is at most one wall or one solid
+    // prop, and street furniture stands on pavement or, for a lamp
+    // completing the lighting, on ground a building does not cover -- so
+    // the count is linear in the district, never in props x cells. The
+    // collision map is one bit per cell of the (padded) site extent.
+    let footprint_cells: u64 = d
+        .skeleton
+        .envelopes
+        .envelopes()
+        .map(|e| (e.footprint.width() * e.footprint.height()) as u64)
+        .sum();
+    let pavement_cells = d.props.street().pavement_count() as u64;
+    let placement_ceiling = footprint_cells + 2 * pavement_cells;
+    assert!(
+        d.props.props().len() as u64 <= placement_ceiling,
+        "{} placements exceed the footprint + pavement ceiling {placement_ceiling}",
+        d.props.props().len()
+    );
+    let fc = d.props.collision(0).expect("floor 0 collision");
+    let padded = (cfg.site_extent_cells as u64 + 4) * (cfg.site_extent_cells as u64 + 4);
+    assert!(
+        (fc.dense_storage_bytes() as u64) * 8 <= padded.div_ceil(64) * 64,
+        "collision storage {} bytes is over one bit per cell of {padded}",
+        fc.dense_storage_bytes()
+    );
+    assert!(
+        d.props.street().storage_bytes() as u64 <= 5 * (cfg.site_extent_cells as u64).pow(2),
+        "the street grid is past five bytes a cell"
+    );
 }
 
 /// Tim's direction, PR #317 cycle 4: pass 5's own distribution-override

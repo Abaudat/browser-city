@@ -1387,3 +1387,61 @@ key = "generation.neighbourhood.position_independence_max_distance_percent"
 value = 15
 min = 1
 max = 100
+
+# --- props (pass 7) -------------------------------------------------------
+# Story 3.6 (FR110). The street's pavement band on each side, by street
+# tier, in cells: the rest of the tier's width is carriageway. Furniture
+# only ever stands on a band of two or more cells, so a walkable pavement
+# cell always remains in the cross-section.
+[[balance]]
+key = "generation.props.arterial_pavement_cells"
+value = 3
+min = 1
+max = 8
+
+[[balance]]
+key = "generation.props.street_pavement_cells"
+value = 2
+min = 1
+max = 8
+
+[[balance]]
+key = "generation.props.lane_pavement_cells"
+value = 1
+min = 1
+max = 8
+
+[[balance]]
+# The distance between lamps along one side of a street, on its kerb-side
+# row; the two sides are staggered half a cadence, so a street reads as a
+# lamp every half cadence. The lamp row's own `min_spacing` keeps the ones
+# that would crowd a junction out.
+key = "generation.props.lamp_cadence_cells"
+value = 12
+min = 2
+max = 64
+
+[[balance]]
+# PROVISIONAL (Artie: re-judged the day the city is walkable). Ambient
+# street furniture -- benches and trees -- offered per 100 cells of
+# building-side pavement run, interpolated from the periphery
+# (`density_min`) to the core (`density_max`): fewer at the edge, never a
+# gap in the ground.
+key = "generation.props.ambient_per_100_cells_at_density_min"
+value = 20
+min = 0
+max = 100
+
+[[balance]]
+key = "generation.props.ambient_per_100_cells_at_density_max"
+value = 40
+min = 0
+max = 100
+
+[[balance]]
+# The most of a room's floor cells solid colliders may cover; past it a
+# fixture stands at its compact footprint.
+key = "generation.props.max_solid_percent_of_room_floor"
+value = 50
+min = 10
+max = 90

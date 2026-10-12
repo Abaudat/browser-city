@@ -912,7 +912,7 @@
     {
       "accessor": "item_held",
       "struct_name": "ItemHeld",
-      "public": false,
+      "public": true,
       "scheduled_reducer": null,
       "wide_table_waiver": null,
       "columns": [
@@ -941,7 +941,7 @@
           "auto_inc": false,
           "unique": false,
           "has_default": false,
-          "indexed": false
+          "indexed": true
         },
         {
           "name": "slot_x",
@@ -970,21 +970,12 @@
           "has_default": false,
           "indexed": false
         }
-      ],
-      "indexes": [
-        {
-          "accessor": "by_container",
-          "columns": [
-            "container_kind",
-            "container_id"
-          ]
-        }
       ]
     },
     {
       "accessor": "item_instance",
       "struct_name": "ItemInstance",
-      "public": false,
+      "public": true,
       "scheduled_reducer": null,
       "wide_table_waiver": null,
       "columns": [

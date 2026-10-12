@@ -1,0 +1,9 @@
+rules: table_set_has_a_chair table_set_has_a_second_chair
+expect: fail
+floor: 0
+legend: T=seated_table C=chair
+grid:
+T.
+violations:
+table_set_has_a_chair at (0, 0, 0)
+table_set_has_a_second_chair at (0, 0, 0)

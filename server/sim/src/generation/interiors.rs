@@ -92,7 +92,7 @@ impl Parts {
         })
     }
 
-    fn is_part(&self, tag: TagId) -> bool {
+    pub(super) fn is_part(&self, tag: TagId) -> bool {
         [
             self.wall,
             self.wall_run,

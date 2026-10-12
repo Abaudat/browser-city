@@ -209,6 +209,13 @@ balance generation.plots.residential_row_depth_cells value=12 min=4 max=64
 balance generation.plots.residential_width_max_cells value=11 min=2 max=64
 balance generation.plots.residential_width_min_cells value=10 min=2 max=64
 balance generation.plots.setback_periphery_cells value=2 min=0 max=8
+balance generation.props.ambient_per_100_cells_at_density_max value=40 min=0 max=100
+balance generation.props.ambient_per_100_cells_at_density_min value=20 min=0 max=100
+balance generation.props.arterial_pavement_cells value=3 min=1 max=8
+balance generation.props.lamp_cadence_cells value=12 min=2 max=64
+balance generation.props.lane_pavement_cells value=1 min=1 max=8
+balance generation.props.max_solid_percent_of_room_floor value=50 min=10 max=90
+balance generation.props.street_pavement_cells value=2 min=1 max=8
 balance generation.site_extent_cells value=512 min=64 max=2048
 balance generation.streets.arterial_count_ew_max value=2 min=0 max=4
 balance generation.streets.arterial_count_ew_min value=1 min=0 max=4
@@ -529,39 +536,94 @@ hairstyle kid_hairstyle_kid_6_2 id=227 family=kid sheet=ModernTileset/moderninte
 hairstyle kid_hairstyle_kid_6_3 id=228 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_3.png style=6 color=3 rare=false
 hairstyle kid_hairstyle_kid_6_4 id=229 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_4.png style=6 color=4 rare=false
 hairstyle kid_hairstyle_kid_6_5 id=230 family=kid sheet=ModernTileset/moderninteriors-win/2_Characters/Character_Generator/Hairstyles_kids/16x16/Hairstyle_kid_6_5.png style=6 color=5 rare=true
+item apron id=13 unit=0 shelf_life_minutes=0 width=1 height=2
 item bottle id=1 unit=0 shelf_life_minutes=0 width=1 height=1
 item coin_1 id=3 unit=0 shelf_life_minutes=0 width=1 height=1
 item coin_2 id=4 unit=0 shelf_life_minutes=0 width=1 height=1
 item coin_5 id=5 unit=0 shelf_life_minutes=0 width=1 height=1
+item flower_pot id=9 unit=0 shelf_life_minutes=0 width=1 height=1
+item honeycomb id=10 unit=0 shelf_life_minutes=0 width=1 height=1
 item note_10 id=6 unit=0 shelf_life_minutes=0 width=1 height=1
 item note_20 id=7 unit=0 shelf_life_minutes=0 width=1 height=1
 item note_50 id=8 unit=0 shelf_life_minutes=0 width=1 height=1
+item potted_flower id=11 unit=0 shelf_life_minutes=0 width=1 height=1
+item produce_crate id=14 unit=0 shelf_life_minutes=4320 width=2 height=2
 item recycled_glass id=2 unit=0 shelf_life_minutes=0 width=1 height=1
-object bridge_deck id=7 name=Bridge Deck layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[7,9,15]
-object bridge_stairs_abutment id=22 name=Bridge Stairs Abutment layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png:0,29,32,16 height=1 width=2 collider=0,0,32,16 interact_at=none window=false tags=[7,8,15]
-object bridge_stairs_deck id=21 name=Bridge Stairs (deck flight) layer=7 sprite=none height=2 width=2 collider=none interact_at=none window=false tags=[7,8,9,15]
-object bridge_stairs_street id=20 name=Bridge Stairs (street flight) layer=7 sprite=none height=2 width=2 collider=none interact_at=none window=false tags=[7,8,9,15]
-object bridge_stairs_tread id=23 name=Bridge Stairs Tread layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png:0,21,32,16 height=1 width=2 collider=none interact_at=none window=false tags=[7,8,9,15]
-object floor_pale_stone id=24 name=Pale Stone Floor layer=0 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png:208,560,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,13]
-object foot_stairs id=8 name=Foot Stairs layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small_2.png:0,0,16,48 height=1 width=1 collider=none interact_at=none window=false tags=[8,9,15]
-object grass_ground id=9 name=Grass layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/1_Terrains_and_Fences_Singles_16x16/ME_Singles_Terrains_and_Fences_16x16_Grass_1_22.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,10]
-object lamppost id=4 name=Street Lamp layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png:0,0,16,64 height=1 width=1 collider=2,7,14,16 interact_at=none window=false tags=[4,15]
-object park_bench id=2 name=Park Bench layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png:0,0,32,16 height=1 width=2 collider=0,5,32,12 interact_at=none window=false tags=[2,15]
-object platform_stair_flight id=16 name=Platform Stair Flight layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_3.png:0,13,32,32 height=2 width=2 collider=none interact_at=none window=false tags=[8,9,15]
-object platform_stair_railing id=17 name=Platform Stair Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Railing.png:0,0,48,16 height=1 width=3 collider=0,0,47,16 interact_at=none window=false tags=[8,15]
-object registry_post id=18 name=Registry Post layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/22_Post_Office_Singles_16x16/22_Post_Office_16x16_Black_Mailbox_1_Front.png:0,0,16,32 height=1 width=1 collider=4,7,14,15 interact_at=-4,-4,20,20 window=false tags=[15,35]
-object road_asphalt id=11 name=Road layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_26.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,12]
-object shop_counter id=3 name=Shop Counter layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png:0,0,48,64 height=1 width=3 collider=1,0,46,15 interact_at=0,16,48,32 window=false tags=[3,15]
-object shop_window id=5 name=Shop Window layer=4 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Window_1_Middle_Modular.png:0,0,48,32 height=1 width=3 collider=0,0,48,16 interact_at=none window=true tags=[5,6,16]
-object sidewalk_pavement id=10 name=Sidewalk layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_26.png:0,0,16,16 height=1 width=1 collider=none interact_at=none window=false tags=[9,11]
-object stairwell_bottom_railing id=14 name=Stairwell Bottom Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Railing_1.png:0,32,48,32 height=1 width=3 collider=0,0,48,16 interact_at=none window=false tags=[8,15]
-object stairwell_top_railing id=12 name=Stairwell Top Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,0,48,32 height=1 width=3 collider=0,11,48,16 interact_at=none window=false tags=[8,15,34]
-object stairwell_treads id=13 name=Stairwell Treads layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,32,48,16 height=1 width=3 collider=none interact_at=none window=false tags=[8,9,15]
-object stairwell_well id=19 name=Stairwell Well layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,48,48,16 height=1 width=3 collider=none interact_at=none window=false tags=[8,9,15]
-object threshold_arch_slate id=25 name=Slate Threshold layer=4 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Arched_Entryways_16x16.png:104,352,16,32 height=1 width=1 collider=none interact_at=none window=false tags=[9,14,16]
-object trash_bin id=1 name=Trash Bin layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Small_Closed_Trash_Can.png:0,0,16,32 height=1 width=1 collider=2,7,14,15 interact_at=-4,-4,20,20 window=false tags=[1,15]
-object wall_face id=15 name=Wall Face layer=4 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png:0,528,16,48 height=1 width=1 collider=0,0,16,16 interact_at=none window=false tags=[6,16]
-object wall_segment id=6 name=Wall Segment layer=4 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png:0,528,16,16 height=1 width=1 collider=0,0,16,16 interact_at=none window=false tags=[6,16]
+item seed_sack id=12 unit=0 shelf_life_minutes=0 width=1 height=2
+object bag id=74 name=Bag layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Brown_Baggage_1.png:0,0,16,16 height=1 width=1 collider=0,1,15,15 interact_at=-4,-4,20,20 grid=3x2 window=false tags=[15]
+object bed_compact id=28 name=Compact Bed layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/20_Japanese_Interiors_Singles/Japanese_Interiors_Singles_69.png:0,0,16,32 height=1 width=1 collider=1,0,14,6 interact_at=none grid=none window=false tags=[15,49,55]
+object bed_compact_green id=69 name=Compact Bed (green) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/20_Japanese_Interiors_Singles/Japanese_Interiors_Singles_71.png:0,0,16,32 height=1 width=1 collider=1,0,14,6 interact_at=none grid=none window=false tags=[15,49,55]
+object bed_single_blue id=26 name=Single Bed (blue) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_140.png:0,0,16,48 height=3 width=1 collider=0,0,16,38 interact_at=none grid=none window=false tags=[15,49,55]
+object bed_single_white id=27 name=Single Bed (white) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_147.png:0,0,16,48 height=3 width=1 collider=0,0,16,38 interact_at=none grid=none window=false tags=[15,49,55]
+object bridge_deck id=7 name=Bridge Deck layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_1.png:0,0,16,16 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[7,9,15]
+object bridge_stairs_abutment id=22 name=Bridge Stairs Abutment layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png:0,29,32,16 height=1 width=2 collider=0,0,32,16 interact_at=none grid=none window=false tags=[7,8,15]
+object bridge_stairs_deck id=21 name=Bridge Stairs (deck flight) layer=7 sprite=none height=2 width=2 collider=none interact_at=none grid=none window=false tags=[7,8,9,15]
+object bridge_stairs_street id=20 name=Bridge Stairs (street flight) layer=7 sprite=none height=2 width=2 collider=none interact_at=none grid=none window=false tags=[7,8,9,15]
+object bridge_stairs_tread id=23 name=Bridge Stairs Tread layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png:0,21,32,16 height=1 width=2 collider=none interact_at=none grid=none window=false tags=[7,8,9,15]
+object chair_green id=65 name=Chair (green) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_86.png:0,0,16,32 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[9,15,55,60]
+object chair_yellow id=64 name=Chair (yellow) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_74.png:0,0,16,32 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[9,15,55,60]
+object city_bench id=53 name=City Bench layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Bench_1.png:0,0,32,32 height=1 width=2 collider=3,0,29,15 interact_at=none grid=none window=false tags=[2,15,56]
+object cooker_hob_blue id=30 name=Cooker (blue hob) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_151.png:0,0,16,32 height=1 width=1 collider=0,0,16,11 interact_at=none grid=none window=false tags=[15,50,55]
+object cooker_hob_dark id=29 name=Cooker (dark hob) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_148.png:0,0,16,32 height=1 width=1 collider=0,0,16,11 interact_at=none grid=none window=false tags=[15,50,55]
+object counter_compact id=50 name=Compact Counter layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_264.png:0,0,16,32 height=1 width=1 collider=1,0,16,16 interact_at=-4,16,20,32 grid=none window=false tags=[3,15,55]
+object crate id=72 name=Crate layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/11_Camping_Singles_16x16/ME_Singles_Camping_16x16_Fish_Crate_1.png:0,0,32,32 height=2 width=2 collider=2,0,29,31 interact_at=-4,-4,36,36 grid=4x4 window=false tags=[15]
+object cupboard id=71 name=Cupboard layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/12_Kitchen_Black_Shadow_Singles_16x16/Kitchen_Shadow_Singles_114.png:0,0,16,16 height=1 width=1 collider=0,0,16,10 interact_at=-4,-4,20,24 grid=4x3 window=false tags=[15]
+object desk_drawers_dark id=40 name=Desk (dark) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_55.png:0,0,32,32 height=1 width=2 collider=5,0,28,10 interact_at=none grid=none window=false tags=[15,55]
+object desk_drawers_pale id=39 name=Desk (pale) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_51.png:0,0,32,32 height=1 width=2 collider=5,0,28,10 interact_at=none grid=none window=false tags=[15,55]
+object desk_papers_grey id=61 name=Desk with Papers (grey) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_127.png:0,0,32,32 height=1 width=2 collider=6,0,26,6 interact_at=none grid=none window=false tags=[15,53,55]
+object desk_papers_wood id=62 name=Desk with Papers (wood) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_132.png:0,0,32,32 height=1 width=2 collider=6,0,26,6 interact_at=none grid=none window=false tags=[15,53,55]
+object desk_planter_small id=63 name=Small Desk (planter) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/19_Hospital_SIngles/Hospital_Singles_143.png:0,0,16,32 height=1 width=1 collider=0,0,15,11 interact_at=none grid=none window=false tags=[15,55]
+object desk_school_book id=67 name=School Desk (book) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/5_Classroom_and_Library_Singles/Classroom_and_Library_Singles_8.png:0,0,16,32 height=1 width=1 collider=0,0,16,7 interact_at=none grid=none window=false tags=[15,53,55]
+object desk_school_papers id=68 name=School Desk (papers) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/5_Classroom_and_Library_Singles/Classroom_and_Library_Singles_10.png:0,0,16,32 height=1 width=1 collider=0,0,16,7 interact_at=none grid=none window=false tags=[15,53,55]
+object desk_small id=41 name=Small Desk layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_63.png:0,0,16,32 height=1 width=1 collider=1,0,15,9 interact_at=none grid=none window=false tags=[15,55]
+object floor_pale_stone id=24 name=Pale Stone Floor layer=0 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png:208,560,16,16 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[9,13]
+object flower_bush_small id=58 name=Small Flower Bush layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Flower_Bush_7.png:0,0,16,16 height=1 width=1 collider=1,2,15,15 interact_at=none grid=none window=false tags=[15,56]
+object foot_stairs id=8 name=Foot Stairs layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Small_2.png:0,0,16,48 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[8,9,15]
+object glass_lamp id=60 name=Glass Lamp layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_27.png:0,0,16,16 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[4,9,15,55]
+object grass_ground id=9 name=Grass layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/1_Terrains_and_Fences_Singles_16x16/ME_Singles_Terrains_and_Fences_16x16_Grass_1_22.png:0,0,16,16 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[9,10]
+object lamppost id=4 name=Street Lamp layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Street_Lamp_5.png:0,0,16,64 height=1 width=1 collider=2,7,14,16 interact_at=none grid=none window=false tags=[4,15,56,58]
+object pallet id=73 name=Pallet layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/17_Garden_Singles_16x16/ME_Singles_Garden_16x16_Wood_Box_Empty.png:0,0,32,32 height=2 width=2 collider=2,6,29,31 interact_at=-4,-4,36,36 grid=8x6 window=false tags=[15]
+object park_bench id=2 name=Park Bench layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/13_School_Singles_16x16/ME_Singles_School_16x16_Bench_1.png:0,0,32,16 height=1 width=2 collider=0,5,32,12 interact_at=none grid=none window=false tags=[2,15,56]
+object pedestal_basin id=33 name=Pedestal Basin layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_33.png:0,0,16,16 height=1 width=1 collider=3,2,13,13 interact_at=none grid=none window=false tags=[15,51,55]
+object pedestal_basin_white id=70 name=Pedestal Basin (white) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_34.png:0,0,16,16 height=1 width=1 collider=3,2,13,13 interact_at=none grid=none window=false tags=[15,51,55]
+object plane_tree id=54 name=Plane Tree layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Tree_1.png:0,0,32,48 height=1 width=2 collider=12,0,19,15 interact_at=none grid=none window=false tags=[15,56]
+object planter_pot_clay id=56 name=Clay Planter layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Pot_3.png:0,0,16,16 height=1 width=1 collider=2,0,13,16 interact_at=none grid=none window=false tags=[15,56]
+object planter_pot_stone id=57 name=Stone Planter layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Pot_4.png:0,0,16,16 height=1 width=1 collider=2,0,13,16 interact_at=none grid=none window=false tags=[15,56]
+object platform_stair_flight id=16 name=Platform Stair Flight layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_3.png:0,13,32,32 height=2 width=2 collider=none interact_at=none grid=none window=false tags=[8,9,15]
+object platform_stair_railing id=17 name=Platform Stair Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Railing.png:0,0,48,16 height=1 width=3 collider=0,0,47,16 interact_at=none grid=none window=false tags=[8,15]
+object registry_post id=18 name=Registry Post layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/22_Post_Office_Singles_16x16/22_Post_Office_16x16_Black_Mailbox_1_Front.png:0,0,16,32 height=1 width=1 collider=4,7,14,15 interact_at=-4,-4,20,20 grid=none window=false tags=[15,35]
+object road_asphalt id=11 name=Road layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_26.png:0,0,16,16 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[9,12]
+object round_tree id=55 name=Round Tree layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Tree_3.png:0,0,32,48 height=1 width=2 collider=1,0,31,16 interact_at=none grid=none window=false tags=[15,56]
+object shelf_compact id=47 name=Compact Shelf (lilac) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_77.png:0,0,16,48 height=1 width=1 collider=0,0,16,7 interact_at=none grid=none window=false tags=[15,48,55]
+object shelf_compact_cream id=66 name=Compact Shelf (cream) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_80.png:0,0,16,48 height=1 width=1 collider=0,0,16,7 interact_at=none grid=none window=false tags=[15,48,55]
+object shelving_empty_a id=45 name=Empty Shelving (a) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_51.png:0,0,32,48 height=1 width=2 collider=3,0,29,8 interact_at=none grid=none window=false tags=[15,48,55]
+object shelving_empty_b id=46 name=Empty Shelving (b) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_55.png:0,0,32,48 height=1 width=2 collider=3,0,29,8 interact_at=none grid=none window=false tags=[15,48,55]
+object shop_counter id=3 name=Shop Counter layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/21_Beach_Singles_16x16/21_Beach_16x16_Bamboo_Bar_Counter_1.png:0,0,48,64 height=1 width=3 collider=1,0,46,15 interact_at=0,16,48,32 grid=none window=false tags=[3,15]
+object shop_window id=5 name=Shop Window layer=4 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/16_Office_Singles_16x16/ME_Singles_Office_16x16_Window_1_Middle_Modular.png:0,0,48,32 height=1 width=3 collider=0,0,48,16 interact_at=none grid=none window=true tags=[5,6,16]
+object sidewalk_pavement id=10 name=Sidewalk layer=0 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_1_26.png:0,0,16,16 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[9,11]
+object stairwell_bottom_railing id=14 name=Stairwell Bottom Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Railing_1.png:0,32,48,32 height=1 width=3 collider=0,0,48,16 interact_at=none grid=none window=false tags=[8,15]
+object stairwell_top_railing id=12 name=Stairwell Top Railing layer=3 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,0,48,32 height=1 width=3 collider=0,11,48,16 interact_at=none grid=none window=false tags=[8,15,34]
+object stairwell_treads id=13 name=Stairwell Treads layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,32,48,16 height=1 width=3 collider=none interact_at=none grid=none window=false tags=[8,9,15]
+object stairwell_well id=19 name=Stairwell Well layer=7 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_Complete_2.png:0,48,48,16 height=1 width=3 collider=none interact_at=none grid=none window=false tags=[8,9,15]
+object standing_lamp_blue id=51 name=Standing Lamp (blue) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_79.png:0,0,16,48 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[4,9,15,55]
+object standing_lamp_red id=52 name=Standing Lamp (red) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_81.png:0,0,16,48 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[4,9,15,55]
+object string_lights id=59 name=String Lights layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_12.png:0,0,32,16 height=1 width=2 collider=none interact_at=none grid=none window=false tags=[9,15,55]
+object table_round_oak id=36 name=Round Table (oak) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/14_Basement_Singles/Basement_Singles_1.png:0,0,32,32 height=2 width=2 collider=4,8,28,32 interact_at=none grid=none window=false tags=[15,52,55,61]
+object table_round_red id=37 name=Round Table (red) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/14_Basement_Singles/Basement_Singles_2.png:0,0,32,32 height=2 width=2 collider=4,8,28,32 interact_at=none grid=none window=false tags=[15,52,55,61]
+object table_stool id=38 name=Stool Table layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/14_Basement_Singles/Basement_Singles_9.png:0,0,16,16 height=1 width=1 collider=0,1,16,16 interact_at=none grid=none window=false tags=[15,52,55]
+object threshold_arch_slate id=25 name=Slate Threshold layer=4 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Arched_Entryways_16x16.png:104,352,16,32 height=1 width=1 collider=none interact_at=none grid=none window=false tags=[9,14,16]
+object till_counter_glass id=49 name=Till Counter (glass) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_146.png:0,0,32,32 height=1 width=2 collider=1,0,31,9 interact_at=0,16,32,32 grid=none window=false tags=[3,15,55]
+object till_counter_white id=48 name=Till Counter (white) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/16_Grocery_Store_Singles/Grocery_Store_Singles_145.png:0,0,32,32 height=1 width=2 collider=1,0,31,9 interact_at=0,16,32,32 grid=none window=false tags=[3,15,55]
+object toilet_cream id=34 name=Toilet (cream) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_21.png:0,0,16,48 height=1 width=1 collider=2,0,14,10 interact_at=none grid=none window=false tags=[15,55,57]
+object toilet_white id=35 name=Toilet (white) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_23.png:0,0,16,48 height=1 width=1 collider=2,0,14,10 interact_at=none grid=none window=false tags=[15,55,57]
+object trash_bin id=1 name=Trash Bin layer=2 sprite=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/3_City_Props_Singles_16x16/ME_Singles_City_Props_16x16_Small_Closed_Trash_Can.png:0,0,16,32 height=1 width=1 collider=2,7,14,15 interact_at=-4,-4,20,20 grid=2x3 window=false tags=[1,15,56]
+object vanity_basin_pale id=32 name=Vanity Basin (pale) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_9.png:0,0,32,32 height=1 width=2 collider=1,0,32,9 interact_at=none grid=none window=false tags=[15,51,55]
+object vanity_basin_wood id=31 name=Vanity Basin (wood) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_2.png:0,0,32,32 height=1 width=2 collider=1,0,32,9 interact_at=none grid=none window=false tags=[15,51,55]
+object wall_face id=15 name=Wall Face layer=4 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png:0,528,16,48 height=1 width=1 collider=0,0,16,16 interact_at=none grid=none window=false tags=[6,16]
+object wall_segment id=6 name=Wall Segment layer=4 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Walls_16x16.png:0,528,16,16 height=1 width=1 collider=0,0,16,16 interact_at=none grid=none window=false tags=[6,16]
+object workbench_compact id=44 name=Compact Workbench layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_67.png:0,0,16,32 height=1 width=1 collider=1,0,15,9 interact_at=none grid=none window=false tags=[15,54,55]
+object workbench_table_orange id=43 name=Workbench (orange) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_310.png:0,0,32,32 height=1 width=2 collider=1,0,31,10 interact_at=none grid=none window=false tags=[15,54,55]
+object workbench_table_pale id=42 name=Workbench (pale) layer=2 sprite=ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_309.png:0,0,32,32 height=1 width=2 collider=1,0,31,10 interact_at=none grid=none window=false tags=[15,54,55]
 outfit addon_outfit_firefighter id=133 family=adult sheet=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Firefighter_16x16.png pool=role_only hides_hairstyle=false
 outfit addon_outfit_military_general id=134 family=adult sheet=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Military_General_16x16.png pool=costume hides_hairstyle=false
 outfit addon_outfit_postman id=135 family=adult sheet=ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/Character_Generator_Addons_16x16/Outfit_Postman_16x16.png pool=role_only hides_hairstyle=false
@@ -783,6 +845,7 @@ tag basin id=51 role=none
 tag bed id=49 role=none
 tag bridge id=7 role=none
 tag cafe id=26 role=none
+tag chair id=60 role=none
 tag cooker id=50 role=none
 tag cooking id=41 role=none
 tag council id=21 role=none
@@ -794,16 +857,19 @@ tag dwelling id=18 role=none
 tag entrance id=17 role=none
 tag fixture id=15 role=[2,3,7]
 tag floor id=13 role=[0]
+tag footway id=59 role=none
 tag form_high id=33 role=none
 tag form_low id=31 role=none
 tag form_mid id=32 role=none
 tag ground id=10 role=[0]
 tag hospital id=22 role=none
+tag indoor id=55 role=none
 tag lighting id=4 role=none
 tag making id=47 role=none
 tag market id=30 role=none
 tag municipal_service id=19 role=none
 tag office id=27 role=none
+tag outdoor id=56 role=none
 tag pavement id=11 role=[0]
 tag private id=38 role=none
 tag public id=36 role=none
@@ -811,6 +877,7 @@ tag registry_post id=35 role=none
 tag road id=12 role=[0]
 tag room id=39 role=none
 tag seated_service id=45 role=none
+tag seated_table id=61 role=none
 tag seating id=2 role=none
 tag shelter id=24 role=none
 tag shop id=25 role=none
@@ -819,8 +886,10 @@ tag sleeping id=40 role=none
 tag staff id=37 role=none
 tag stairs id=8 role=none
 tag stock id=48 role=none
+tag street_light id=58 role=none
 tag table_set id=52 role=none
 tag threshold id=14 role=[4]
+tag toilet id=57 role=none
 tag trading id=44 role=none
 tag underfoot id=9 role=none
 tag upright id=34 role=none

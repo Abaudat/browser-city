@@ -38,6 +38,7 @@ pub enum Series {
     ConcurrentNow,
     ConcurrentPeak,
     ReconnectWithinSeam,
+    PackingForced,
 }
 
 impl Series {
@@ -47,6 +48,7 @@ impl Series {
         Series::ConcurrentNow,
         Series::ConcurrentPeak,
         Series::ReconnectWithinSeam,
+        Series::PackingForced,
     ];
 
     pub const fn code(self) -> u32 {
@@ -56,6 +58,7 @@ impl Series {
             Series::ConcurrentNow => 3,
             Series::ConcurrentPeak => 4,
             Series::ReconnectWithinSeam => 5,
+            Series::PackingForced => 6,
         }
     }
 
@@ -66,6 +69,7 @@ impl Series {
             Series::ConcurrentNow => "concurrent_now",
             Series::ConcurrentPeak => "concurrent_peak",
             Series::ReconnectWithinSeam => "reconnect_within_seam",
+            Series::PackingForced => "packing_forced",
         }
     }
 }
@@ -205,6 +209,25 @@ pub const GAMEPLAY_METRICS: &[Metric] = &[
             returning, was at most the seam threshold (5 s: an outage short enough that the \
             player did not read it as a pause), over all resumes.",
         series: &[Series::ReconnectWithinSeam],
+    },
+    Metric {
+        code: 9,
+        name: "packing_forced",
+        unit: Unit::Proportion,
+        emitting_epic: 8,
+        emission_point: "each attempt to store an item into a container's grid, by the first store writer (Epic 8's interaction model)",
+        method: Method::Instrumented,
+        blind_spot: concat!(
+            "whether a refusal or a rotation felt like a puzzle or like a chore, and ",
+            "stores by a non-player packer, which are counted the same"
+        ),
+        definition: concat!(
+            "Store attempts that were refused because the item did not fit, or that fit only ",
+            "rotated (no unrotated placement existed in the grid), over all store attempts. ",
+            "The tedium dial: the grid sizes in defs/objects are what moves it. Read first ",
+            "when tuning a container."
+        ),
+        series: &[Series::PackingForced],
     },
 ];
 
@@ -393,15 +416,19 @@ pub enum Tally {
     ConcurrentPeak,
     ResumeWithinSeam,
     ResumeTotal,
+    PackingForced,
+    PackingTotal,
     BootBucket(u8),
 }
 
 impl Tally {
     /// The tallies that are not boot buckets.
-    pub const FIXED: [Tally; 3] = [
+    pub const FIXED: [Tally; 5] = [
         Tally::ConcurrentPeak,
         Tally::ResumeWithinSeam,
         Tally::ResumeTotal,
+        Tally::PackingForced,
+        Tally::PackingTotal,
     ];
 
     pub const fn key(self) -> u64 {
@@ -409,6 +436,8 @@ impl Tally {
             Tally::ConcurrentPeak => 1,
             Tally::ResumeWithinSeam => 2,
             Tally::ResumeTotal => 3,
+            Tally::PackingForced => 4,
+            Tally::PackingTotal => 5,
             Tally::BootBucket(b) => 0x100 + b as u64,
         }
     }
@@ -432,6 +461,10 @@ pub struct Period {
     pub boot: [u64; BOOT_BUCKETS],
     pub within: u64,
     pub total: u64,
+    /// Store attempts that were refused or needed a rotation.
+    pub packing_forced: u64,
+    /// All store attempts.
+    pub packing_total: u64,
 }
 
 impl Period {
@@ -442,6 +475,8 @@ impl Period {
             boot: [0; BOOT_BUCKETS],
             within: 0,
             total: 0,
+            packing_forced: 0,
+            packing_total: 0,
         }
     }
 
@@ -466,6 +501,15 @@ impl Period {
         }
     }
 
+    /// One store attempt into a container's grid; `forced` is
+    /// `container_grid::packing_forced`'s verdict.
+    pub fn on_store(&mut self, forced: bool) {
+        if forced {
+            self.packing_forced = self.packing_forced.saturating_add(1);
+        }
+        self.packing_total = self.packing_total.saturating_add(1);
+    }
+
     /// One series `(value, sample_size)`. The exhaustive `match` is the
     /// compile-time guarantee that a registered series has an emitter. A
     /// boot series with no report reads `(0, 0)`.
@@ -481,6 +525,7 @@ impl Period {
             Series::ConcurrentNow => (live, 1),
             Series::ConcurrentPeak => (peak_after(self.peak, live), 1),
             Series::ReconnectWithinSeam => (self.within, self.total),
+            Series::PackingForced => (self.packing_forced, self.packing_total),
         }
     }
 
@@ -503,6 +548,8 @@ impl Period {
             (Tally::ConcurrentPeak, self.peak),
             (Tally::ResumeWithinSeam, self.within),
             (Tally::ResumeTotal, self.total),
+            (Tally::PackingForced, self.packing_forced),
+            (Tally::PackingTotal, self.packing_total),
         ];
         for (b, n) in self.boot.iter().enumerate() {
             out.push((Tally::BootBucket(b as u8), *n));
@@ -518,6 +565,8 @@ impl Period {
                 Tally::ConcurrentPeak => p.peak = v,
                 Tally::ResumeWithinSeam => p.within = v,
                 Tally::ResumeTotal => p.total = v,
+                Tally::PackingForced => p.packing_forced = v,
+                Tally::PackingTotal => p.packing_total = v,
                 Tally::BootBucket(b) => {
                     if let Some(slot) = p.boot.get_mut(b as usize) {
                         *slot = v;
