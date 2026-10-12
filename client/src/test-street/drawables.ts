@@ -283,6 +283,11 @@ export function buildCharacterDrawable(
   };
 }
 
+/** Remote players' tie-breaker ids: one reserved range, far above every
+ * placed object's id, handed out on spawn by `scene.ts`. Only the sort
+ * comparator reads them; they need not agree across clients. */
+export const REMOTE_STABLE_ID_BASE = 1n << 40n;
+
 /** Mutates `player`'s position (and, on a floor transition, its own
  * `floor`) in place from a new continuous feet position -- Quentin's
  * direction: the render path must not allocate a whole new `Drawable`

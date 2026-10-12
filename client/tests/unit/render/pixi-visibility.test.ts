@@ -96,6 +96,21 @@ describe("VisibilityApplier", () => {
     expect(writeCountsAfterMany).toEqual(writeCountsAfterFirst);
   });
 
+  it("applyMember writes one member against the last viewer, and nothing before a first application", () => {
+    const applier = new VisibilityApplier();
+    const late = member({ floor: -1 });
+    applier.applyMember(late, 0.5);
+    expect((late.view as unknown as { writeCount: number }).writeCount).toBe(0);
+
+    const other = member();
+    applier.apply([other], { floor: 0, buildingId: 1n }, 0.5);
+    applier.applyMember(late, 0.5);
+    expect(late.view.visible).toBe(false); // the subway is culled for a street viewer
+    (late.drawable as { floor: number }).floor = 0; // it changed floor while the viewer stood still
+    applier.applyMember(late, 0.5);
+    expect(late.view.visible).toBe(true);
+  });
+
   it("re-applies the moment the viewer's floor or buildingId actually changes", () => {
     const applier = new VisibilityApplier();
     const wallMember = member({ layerCode: WALLS, isNearSide: true, ownerBuildingId: 1n });

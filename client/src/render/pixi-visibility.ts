@@ -60,6 +60,17 @@ export class VisibilityApplier {
     this.lastViewer = viewer;
   }
 
+  /** Applies one member against the last viewer, for a member that spawned
+   * or changed floor while the viewer stood still (`apply` would skip it).
+   * Does nothing before the first full application. */
+  applyMember(member: VisibilityMember, windowAlpha: number): void {
+    const viewer = this.lastViewer;
+    if (!viewer) return;
+    const state = computeVisibility(viewer, member.drawable);
+    member.view.visible = state !== "hidden";
+    member.view.alpha = state === "translucent" ? windowAlpha : 1;
+  }
+
   /** Applies visibility only if `viewer` differs from the last viewer this
    * instance applied (or none has been applied yet) -- the gate Tim's
    * direction describes. Returns whether it actually wrote anything, so a

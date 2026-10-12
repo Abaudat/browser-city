@@ -15,8 +15,10 @@ import { fileURLToPath } from "node:url";
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
+import { BRIDGE_FLOOR, STREET_FLOOR, streetWalkRoute } from "../../src/test-street/fixture";
+import { streetWalkInputs } from "../unit/test-street/street-world";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
-import { walkRealCells } from "./walk-support";
+import { walkRealCells, walkRealSegment } from "./walk-support";
 
 const DEFS = parseDefs(
   JSON.parse(
@@ -67,6 +69,18 @@ function frames(page: Page, n: number): Promise<void> {
   );
 }
 
+/** Gives `page` a character and returns its id. */
+async function createCharacter(page: Page): Promise<string> {
+  await page.waitForFunction(() => window.__bc?.createCharacter !== undefined);
+  await page.evaluate(() => window.__bc?.createCharacter?.());
+  await page.waitForFunction(() => window.__bc?.character !== undefined, undefined, {
+    timeout: 20_000,
+  });
+  const id = await page.evaluate(() => window.__bc?.character?.characterId);
+  if (!id) throw new Error("no character id");
+  return id;
+}
+
 test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a standing player costs nothing", async ({
   browser,
 }) => {
@@ -82,13 +96,7 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   expect(a.sends()).toBe(0);
 
   // A has a character: its sender starts and writes the spawn position.
-  await a.page.waitForFunction(() => window.__bc?.createCharacter !== undefined);
-  await a.page.evaluate(() => window.__bc?.createCharacter?.());
-  await a.page.waitForFunction(() => window.__bc?.character !== undefined, undefined, {
-    timeout: 20_000,
-  });
-  const characterId = await a.page.evaluate(() => window.__bc?.character?.characterId);
-  if (!characterId) throw new Error("no character id");
+  const characterId = await createCharacter(a.page);
 
   await b.page.waitForFunction(
     (id) => window.__bc?.remotePlayers?.poses()[id] !== undefined,
@@ -159,8 +167,96 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   const own = await a.page.evaluate(() => window.__bc?.remotePlayers?.poses() ?? {});
   expect(Object.keys(own)).not.toContain(characterId);
 
-  // B never had a character: it never wrote.
+  // B never had a character until now: it never wrote.
   expect(b.sends()).toBe(0);
+
+  // The other way round (FR138 both ways): B takes a character, walks, and A
+  // draws B moving between the samples it received.
+  const bId = await createCharacter(b.page);
+  await a.page.bringToFront();
+  await a.page.waitForFunction((id) => window.__bc?.remotePlayers?.poses()[id] !== undefined, bId, {
+    timeout: 20_000,
+  });
+  await a.page.evaluate(() => window.__bc?.remotePlayers?.startTrace());
+  await walkRealCells(b.page, "east-b", WALK_CELLS, true);
+  const bRest = await b.page.evaluate(() => window.__bc?.playerPosition);
+  if (!bRest) throw new Error("no rest position for B");
+  await a.page.waitForFunction(
+    ({ id, x, y, q }) => {
+      const p = window.__bc?.remotePlayers?.poses()[id];
+      return p !== undefined && Math.abs(p.x - x) <= q && Math.abs(p.y - y) <= q;
+    },
+    { id: bId, x: bRest.x, y: bRest.y, q: QUANTUM },
+    { timeout: 20_000 },
+  );
+  const seen = await a.page.evaluate(
+    () => window.__bc?.remotePlayers?.stopTrace() ?? { frames: {}, samples: {} },
+  );
+  const bDrawn = seen.frames[bId] ?? [];
+  expect(bDrawn.length, "A drew nothing of B").toBeGreaterThan(0);
+  for (let i = 1; i < bDrawn.length; i++) {
+    expect(bDrawn[i]?.x ?? 0).toBeGreaterThanOrEqual(bDrawn[i - 1]?.x ?? 0);
+  }
+
+  await a.page.context().close();
+  await b.page.context().close();
+});
+
+test("a player on the footbridge deck is drawn on floor 1, in the deck's stack, where they draw themselves (FR120-FR122, FR124)", async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const a = await countedPage(browser);
+  const b = await countedPage(browser);
+  const id = await createCharacter(a.page);
+  await b.page.bringToFront();
+  await b.page.waitForFunction(
+    (cid) => window.__bc?.remotePlayers?.poses()[cid] !== undefined,
+    id,
+    { timeout: 20_000 },
+  );
+  // Other tests' players share the instance: pin what changes, not the totals.
+  const before = await b.page.evaluate(() => window.__bc?.remotePlayers?.countsByFloor() ?? {});
+  const onStreet = before[STREET_FLOOR] ?? 0;
+  const onDeck = before[BRIDGE_FLOOR] ?? 0;
+  expect(onStreet).toBeGreaterThan(0);
+
+  // Out of the shop, under the bridge, up the flight and a little along the deck.
+  const route = streetWalkRoute(streetWalkInputs());
+  const alongTheDeck = route.findIndex((segment) => segment.label === "along-the-deck");
+  if (alongTheDeck < 0) throw new Error("the street walk has no along-the-deck segment");
+  for (const segment of route.slice(0, alongTheDeck + 1)) {
+    await walkRealSegment(a.page, segment);
+  }
+  const rest = await a.page.evaluate(() => window.__bc?.playerPosition);
+  if (!rest) throw new Error("no rest position");
+  await b.page.waitForFunction(
+    ({ cid, x, y, floor, q }) => {
+      const p = window.__bc?.remotePlayers?.poses()[cid];
+      return (
+        p !== undefined && p.floor === floor && Math.abs(p.x - x) <= q && Math.abs(p.y - y) <= q
+      );
+    },
+    { cid: id, x: rest.x, y: rest.y, floor: BRIDGE_FLOOR, q: QUANTUM },
+    { timeout: 30_000 },
+  );
+
+  const seen = await b.page.evaluate(
+    (cid) => ({
+      drawn: window.__bc?.remotePlayers?.drawn()[cid],
+      counts: window.__bc?.remotePlayers?.countsByFloor() ?? {},
+    }),
+    id,
+  );
+  const own = await a.page.evaluate(() => window.__bc?.playerDrawnPoint?.());
+  if (!seen.drawn || !own) throw new Error("nothing drawn to compare");
+  expect(seen.drawn.visible, "the remote is hidden on the deck").toBe(true);
+  expect(seen.drawn.stackFloor).toBe(BRIDGE_FLOOR);
+  expect(Math.abs(seen.drawn.screenX - own.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(seen.drawn.screenY - own.y)).toBeLessThanOrEqual(1);
+  // Re-parented: the street's pool let go of it and the deck's took it.
+  expect(seen.counts[STREET_FLOOR] ?? 0).toBe(onStreet - 1);
+  expect(seen.counts[BRIDGE_FLOOR] ?? 0).toBe(onDeck + 1);
 
   await a.page.context().close();
   await b.page.context().close();
