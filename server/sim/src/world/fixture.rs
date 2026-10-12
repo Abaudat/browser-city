@@ -719,3 +719,105 @@ pub fn conformance_cases() -> Vec<ConformanceCase> {
         },
     ]
 }
+
+/// One def of [`RasterCase`]: a footprint and its collider in sub-cells,
+/// local to the footprint's north-west cell.
+#[derive(Debug, Clone, Copy)]
+pub struct RasterDef {
+    pub id: u32,
+    pub width: u32,
+    pub height: u32,
+    pub collider: Option<(i32, i32, i32, i32)>,
+}
+
+/// One placed row of [`RasterCase`]: anchor (south-west corner), floor, def.
+#[derive(Debug, Clone, Copy)]
+pub struct RasterRow {
+    pub floor: i8,
+    pub x: i32,
+    pub y: i32,
+    pub def_id: u32,
+}
+
+/// The tile rasterisation rule as data: defs and rows in, the blocked
+/// tiles out. `blocked` is typed by hand -- a tile is blocked iff a
+/// collider touches it, half-open -- never produced by a rasteriser.
+#[derive(Debug, Clone)]
+pub struct RasterCase {
+    pub subcells_per_cell: i32,
+    pub bounds: Rect,
+    pub defs: Vec<RasterDef>,
+    pub rows: Vec<RasterRow>,
+    pub blocked: Vec<(i8, i32, i32)>,
+}
+
+/// The rasterisation case both sides assert: colliders ending exactly on a
+/// tile edge and one sub-cell past it, interior colliders, negative
+/// coordinates, multi-cell footprints anchored at their south-west
+/// corner, a def with no collider and an exact duplicate row.
+pub fn raster_case() -> RasterCase {
+    let d = |id, width, height, collider| RasterDef {
+        id,
+        width,
+        height,
+        collider,
+    };
+    let r = |floor, x, y, def_id| RasterRow {
+        floor,
+        x,
+        y,
+        def_id,
+    };
+    RasterCase {
+        subcells_per_cell: 16,
+        bounds: Rect {
+            x0: -8,
+            y0: -8,
+            x1: 8,
+            y1: 8,
+        },
+        defs: vec![
+            // Exactly one tile, ending on its edge.
+            d(1, 1, 1, Some((0, 0, 16, 16))),
+            // Two wide, half a tile high.
+            d(2, 2, 1, Some((0, 0, 32, 8))),
+            // Three high, 38 sub-cells: reaches into the third tile.
+            d(3, 1, 3, Some((0, 0, 16, 38))),
+            // Strictly inside one tile.
+            d(4, 1, 1, Some((4, 4, 12, 12))),
+            // 2x2 footprint, collider straddling the inner corner.
+            d(5, 2, 2, Some((8, 8, 24, 24))),
+            // No collider.
+            d(6, 1, 1, None),
+            // One sub-cell past the tile edge.
+            d(7, 1, 1, Some((0, 0, 17, 16))),
+        ],
+        rows: vec![
+            r(0, -3, -2, 1),
+            r(0, -5, 4, 2),
+            r(0, 2, 0, 3),
+            r(0, 6, 6, 4),
+            r(0, -7, -6, 5),
+            r(0, 0, 5, 6),
+            r(0, 4, -4, 7),
+            r(1, 0, 0, 1),
+            r(0, -3, -2, 1),
+        ],
+        blocked: vec![
+            (0, -3, -2),
+            (0, -5, 4),
+            (0, -4, 4),
+            (0, 2, -2),
+            (0, 2, -1),
+            (0, 2, 0),
+            (0, 6, 6),
+            (0, -7, -7),
+            (0, -6, -7),
+            (0, -7, -6),
+            (0, -6, -6),
+            (0, 4, -4),
+            (0, 5, -4),
+            (1, 0, 0),
+        ],
+    }
+}

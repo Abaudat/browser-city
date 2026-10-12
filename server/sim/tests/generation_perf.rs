@@ -41,7 +41,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // pairwise cost the generator pays, bucketed rather than all-pairs
     // (`sim::rules::mod.rs`), so this growth-target run is itself the
     // structural proof that stays linear too.
-    let d = generate(7, &cfg, &content)
+    let (d, _) = generate(7, &cfg, &content)
         .unwrap_or_else(|e| panic!("the 1024 growth target must still generate: {e}"));
     let lu = &d.skeleton.land_use;
     let net = &d.skeleton.streets;
@@ -299,7 +299,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // prop, and street furniture stands on pavement or, for a lamp
     // completing the lighting, on ground a building does not cover -- so
     // the count is linear in the district, never in props x cells. The
-    // collision map is one bit per cell of the (padded) site extent.
+    // walkability grid is one bit per cell of the site extent.
     let footprint_cells: u64 = d
         .skeleton
         .envelopes
@@ -313,12 +313,14 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
         "{} placements exceed the footprint + pavement ceiling {placement_ceiling}",
         d.props.props().len()
     );
-    let fc = d.props.collision(0).expect("floor 0 collision");
-    let padded = (cfg.site_extent_cells as u64 + 4) * (cfg.site_extent_cells as u64 + 4);
+    let floors = (sim::generated::defs::MAX_FLOOR - sim::generated::defs::MIN_FLOOR + 1) as u64;
+    let stored: u64 = (sim::generated::defs::MIN_FLOOR..=sim::generated::defs::MAX_FLOOR)
+        .map(|f| d.walkability(f as i8).dense_storage_bytes() as u64)
+        .sum();
+    let padded = (cfg.site_extent_cells as u64) * (cfg.site_extent_cells as u64);
     assert!(
-        (fc.dense_storage_bytes() as u64) * 8 <= padded.div_ceil(64) * 64,
-        "collision storage {} bytes is over one bit per cell of {padded}",
-        fc.dense_storage_bytes()
+        stored * 8 <= floors * padded.div_ceil(64) * 64,
+        "walkability storage {stored} bytes over {floors} floors is over one bit per cell of {padded}"
     );
     assert!(
         d.props.street().storage_bytes() as u64 <= 5 * (cfg.site_extent_cells as u64).pow(2),
@@ -360,4 +362,35 @@ fn placement_search_stays_within_its_own_node_budget_at_a_few_hundred_candidates
         "the search used {nodes} nodes, past its own {}-node budget",
         sim::generation::building_types::PLACEMENT_SEARCH_NODE_BUDGET
     );
+}
+
+/// Story 3.9 (AC1, structural): at the 1024 growth target the macro
+/// routing graph's node and edge counts stay under the ceilings the 512
+/// bands scale to linearly with site area -- the same constants
+/// `TABLE_BOUNDS` derives its `max_rows` from. The builder has no
+/// pairwise all-nodes loop: its edges come from street adjacency and
+/// each building's own door, so the edge count is linear in the node
+/// count, which is also asserted. Counts are printed for the measured
+/// block of `docs/generation.md`.
+#[test]
+fn macro_graph_at_the_1024_growth_target_stays_linear_in_site_area() {
+    use sim::routing::graph::{max_edges_for_side, max_nodes_for_side};
+    let mut cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    cfg.site_extent_cells = 1024;
+    let content = GenerationContent::committed();
+    let (_, g) = generate(7, &cfg, &content).unwrap();
+    let (n, e) = (g.nodes().len() as u64, g.edges().len() as u64);
+    println!("macro graph at 1024: {n} nodes, {e} edges");
+    let side = cfg.site_extent_cells as u64;
+    assert!(
+        n <= max_nodes_for_side(side),
+        "{n} nodes exceed the linear ceiling {}",
+        max_nodes_for_side(side)
+    );
+    assert!(
+        e <= max_edges_for_side(side),
+        "{e} edges exceed the linear ceiling {}",
+        max_edges_for_side(side)
+    );
+    assert!(e <= 3 * n, "{e} edges for {n} nodes is not linear");
 }

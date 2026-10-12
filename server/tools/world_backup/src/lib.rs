@@ -278,6 +278,8 @@ pub enum ColKind {
     ConnectionId,
     Timestamp,
     Schedule,
+    /// A `some`/`none` sum (a Rust `Option<T>`): `[0, value]` or `[1, []]`.
+    Option,
     Other,
 }
 
@@ -338,6 +340,8 @@ pub fn column_kind(algebraic_type: &Value) -> ColKind {
                 .collect();
             if names.contains("Interval") && names.contains("Time") && names.len() == 2 {
                 ColKind::Schedule
+            } else if names.contains("some") && names.contains("none") && names.len() == 2 {
+                ColKind::Option
             } else {
                 ColKind::Other
             }
@@ -436,10 +440,13 @@ pub fn sql_probeable_autoinc_tables(snapshot: &ModuleSchema) -> Vec<String> {
         .filter(|t| t.columns.iter().any(|c| c.primary_key && c.auto_inc))
         .filter(|t| {
             !t.columns.iter().any(|c| {
-                matches!(
-                    c.ty.as_str(),
-                    "Timestamp" | "ScheduleAt" | "Identity" | "ConnectionId"
-                )
+                // An `Option<T>` has no SQL literal a plain `0` stands in
+                // for: its probe row cannot be written.
+                c.ty.starts_with("Option<")
+                    || matches!(
+                        c.ty.as_str(),
+                        "Timestamp" | "ScheduleAt" | "Identity" | "ConnectionId"
+                    )
             })
         })
         .map(|t| t.accessor.clone())
@@ -1037,6 +1044,7 @@ fn edge_values(kind: ColKind) -> Vec<Value> {
         | ColKind::Identity
         | ColKind::ConnectionId
         | ColKind::Schedule
+        | ColKind::Option
         | ColKind::Other => vec![],
     }
 }
@@ -1101,13 +1109,35 @@ pub fn seed_rows(
                 };
                 Value::Number(bounded.into())
             } else {
-                let kind = ty_to_kind(&col.ty).ok_or_else(|| {
+                // An `Option<T>` cycles `none`, then `some` of each of T's
+                // own edge values: `[1, []]` and `[0, value]`.
+                let (inner, wrapped) = match col
+                    .ty
+                    .strip_prefix("Option<")
+                    .and_then(|t| t.strip_suffix('>'))
+                {
+                    Some(inner) => (inner, true),
+                    None => (col.ty.as_str(), false),
+                };
+                let kind = ty_to_kind(inner).ok_or_else(|| {
                     err(format!(
                         "no edge-value generator for type '{}' on '{accessor}.{}' -- a new column type must be taught to this generator before it can be seeded or restored",
                         col.ty, col.name
                     ))
                 })?;
-                let values = edge_values(kind);
+                let mut values = edge_values(kind);
+                if wrapped && !values.is_empty() {
+                    let mut options = vec![Value::Array(vec![
+                        Value::Number(1.into()),
+                        Value::Array(Vec::new()),
+                    ])];
+                    options.extend(
+                        values
+                            .into_iter()
+                            .map(|v| Value::Array(vec![Value::Number(0.into()), v])),
+                    );
+                    values = options;
+                }
                 if values.is_empty() {
                     return Err(err(format!(
                         "no edge-value generator for type '{}' on '{accessor}.{}'",
@@ -1190,7 +1220,7 @@ mod tests {
     }
 
     #[test]
-    fn sql_probeable_autoinc_tables_excludes_timestamp_identity_and_scheduled_tables() {
+    fn sql_probeable_autoinc_tables_excludes_timestamp_identity_option_and_scheduled_tables() {
         let snapshot = snap(
             r#"{"tables":[
                 {"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
@@ -1203,6 +1233,10 @@ mod tests {
                 {"accessor":"has_identity","struct_name":"HasIdentity","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
                     {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false},
                     {"name":"owner","ty":"Identity","primary_key":false,"auto_inc":false,"unique":true,"has_default":false,"indexed":false}
+                ]},
+                {"accessor":"has_option","struct_name":"HasOption","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                    {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false},
+                    {"name":"b","ty":"Option<u64>","primary_key":false,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
                 ]},
                 {"accessor":"not_autoinc","struct_name":"NotAutoinc","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
                     {"name":"code","ty":"u32","primary_key":true,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
@@ -1217,11 +1251,14 @@ mod tests {
         assert!(auto_inc_column(&snapshot, "not_autoinc").is_err());
         // autoinc_tables: unlike sql_probeable_autoinc_tables, includes
         // every auto_inc table regardless of its other columns' types --
-        // has_timestamp and has_identity both count, scheduled_one and
+        // has_timestamp, has_identity and has_option all count, scheduled_one and
         // not_autoinc still do not.
         let mut all_autoinc = autoinc_tables(&snapshot);
         all_autoinc.sort();
-        assert_eq!(all_autoinc, vec!["has_identity", "has_timestamp", "widget"]);
+        assert_eq!(
+            all_autoinc,
+            vec!["has_identity", "has_option", "has_timestamp", "widget"]
+        );
     }
 
     #[test]
@@ -1436,6 +1473,46 @@ mod tests {
         let snapshot = snap(
             r#"{"tables":[{"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
                 {"name":"weird","ty":"f64","primary_key":false,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
+            ]}]}"#,
+        );
+        assert!(seed_rows(&snapshot, "widget", 1, 1000).is_err());
+    }
+
+    #[test]
+    fn column_kind_classifies_an_option_by_its_two_variants() {
+        let r = resp(
+            r#"{"elements":[
+                {"name":{"some":"a"},"algebraic_type":{"Sum":{"variants":[{"name":{"some":"some"},"algebraic_type":{"U64":[]}},{"name":{"some":"none"},"algebraic_type":{"Product":{"elements":[]}}}]}}},
+                {"name":{"some":"b"},"algebraic_type":{"Sum":{"variants":[{"name":{"some":"a"},"algebraic_type":{}},{"name":{"some":"b"},"algebraic_type":{}}]}}}
+            ]}"#,
+            "[]",
+        );
+        assert_eq!(column_kinds(&r), vec![ColKind::Option, ColKind::Other]);
+    }
+
+    #[test]
+    fn seed_rows_cycles_an_option_column_through_none_and_some_edge_values() {
+        let snapshot = snap(
+            r#"{"tables":[{"accessor":"node","struct_name":"Node","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                {"name":"id","ty":"u64","primary_key":true,"auto_inc":true,"unique":false,"has_default":false,"indexed":false},
+                {"name":"business_id","ty":"Option<u64>","primary_key":false,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
+            ]}]}"#,
+        );
+        let rows = seed_rows(&snapshot, "node", 5, 1000).unwrap();
+        let options: Vec<String> = rows.iter().map(|r| r[1].to_string()).collect();
+        // `[1, []]` is none and `[0, v]` is some, as SQL's JSON and a
+        // reducer call both spell a sum.
+        assert_eq!(options[0], "[1,[]]");
+        assert!(options[1].starts_with("[0,"));
+        assert!(options.iter().any(|o| o.starts_with("[0,")));
+        assert!(options.iter().any(|o| o == "[1,[]]"));
+    }
+
+    #[test]
+    fn seed_rows_fails_on_an_option_of_a_type_with_no_edge_value_entry() {
+        let snapshot = snap(
+            r#"{"tables":[{"accessor":"widget","struct_name":"Widget","public":false,"scheduled_reducer":null,"wide_table_waiver":null,"columns":[
+                {"name":"weird","ty":"Option<f64>","primary_key":false,"auto_inc":false,"unique":false,"has_default":false,"indexed":false}
             ]}]}"#,
         );
         assert!(seed_rows(&snapshot, "widget", 1, 1000).is_err());

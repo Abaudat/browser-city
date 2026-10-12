@@ -28,6 +28,7 @@ import RestoreCitizenStateReducer from "../restore_citizen_state_reducer";
 import RestoreContainerKindReducer from "../restore_container_kind_reducer";
 import RestoreDemoPingReducer from "../restore_demo_ping_reducer";
 import RestoreDistrictReducer from "../restore_district_reducer";
+import RestoreEdgeKindReducer from "../restore_edge_kind_reducer";
 import RestoreFloorTransitionReducer from "../restore_floor_transition_reducer";
 import RestoreGameplayMetricSampleReducer from "../restore_gameplay_metric_sample_reducer";
 import RestoreHolderKindReducer from "../restore_holder_kind_reducer";
@@ -48,6 +49,8 @@ import RestoreReducerClassCounterReducer from "../restore_reducer_class_counter_
 import RestoreReducerClassSampleReducer from "../restore_reducer_class_sample_reducer";
 import RestoreRoomReducer from "../restore_room_reducer";
 import RestoreRoomAreaReducer from "../restore_room_area_reducer";
+import RestoreRouteEdgeReducer from "../restore_route_edge_reducer";
+import RestoreRouteNodeReducer from "../restore_route_node_reducer";
 import RestoreStockReducer from "../restore_stock_reducer";
 import RestoreStorageSampleReducer from "../restore_storage_sample_reducer";
 import RestoreTableSampleReducer from "../restore_table_sample_reducer";
@@ -78,6 +81,7 @@ export type RestoreCitizenStateParams = __Infer<typeof RestoreCitizenStateReduce
 export type RestoreContainerKindParams = __Infer<typeof RestoreContainerKindReducer>;
 export type RestoreDemoPingParams = __Infer<typeof RestoreDemoPingReducer>;
 export type RestoreDistrictParams = __Infer<typeof RestoreDistrictReducer>;
+export type RestoreEdgeKindParams = __Infer<typeof RestoreEdgeKindReducer>;
 export type RestoreFloorTransitionParams = __Infer<typeof RestoreFloorTransitionReducer>;
 export type RestoreGameplayMetricSampleParams = __Infer<typeof RestoreGameplayMetricSampleReducer>;
 export type RestoreHolderKindParams = __Infer<typeof RestoreHolderKindReducer>;
@@ -98,6 +102,8 @@ export type RestoreReducerClassCounterParams = __Infer<typeof RestoreReducerClas
 export type RestoreReducerClassSampleParams = __Infer<typeof RestoreReducerClassSampleReducer>;
 export type RestoreRoomParams = __Infer<typeof RestoreRoomReducer>;
 export type RestoreRoomAreaParams = __Infer<typeof RestoreRoomAreaReducer>;
+export type RestoreRouteEdgeParams = __Infer<typeof RestoreRouteEdgeReducer>;
+export type RestoreRouteNodeParams = __Infer<typeof RestoreRouteNodeReducer>;
 export type RestoreStockParams = __Infer<typeof RestoreStockReducer>;
 export type RestoreStorageSampleParams = __Infer<typeof RestoreStorageSampleReducer>;
 export type RestoreTableSampleParams = __Infer<typeof RestoreTableSampleReducer>;

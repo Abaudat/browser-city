@@ -53,13 +53,14 @@ pub fn rows_sweep(cfg: &GenerationConfig, content: &GenerationContent, n: u64) {
                 building_type: a.building_type,
             })
             .collect();
-        let props = sim::generation::PropMap::test_fixture(skeleton.plots.site(), Vec::new(), &[])
-            .expect("an empty prop map builds");
-        let d = sim::generation::District {
+        let props = sim::generation::PropMap::test_fixture(skeleton.plots.site(), Vec::new());
+        let d = sim::generation::District::new(
             skeleton,
-            interiors: sim::generation::InteriorMap::test_fixture(shells),
+            sim::generation::InteriorMap::test_fixture(shells),
             props,
-        };
+            content.objects,
+        )
+        .expect("an empty district rasterises");
         let site = d.site(content);
         let failing = d.check_rules(content).err().map(|e| e.to_string());
         let placed = rows

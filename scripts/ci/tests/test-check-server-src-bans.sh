@@ -43,6 +43,36 @@ check "unimplemented! is banned" 1 bash "$CHECK" "$d"
 d="$(plant 'unreachable!();')"
 check "unreachable! is banned" 1 bash "$CHECK" "$d"
 
+d="$(plant 'static mut GRAPH: Option<Vec<u32>> = None;')"
+check "static mut is banned" 1 bash "$CHECK" "$d"
+
+d="$(plant 'thread_local! { static G: RefCell<Vec<u32>> = RefCell::new(Vec::new()); }')"
+check "thread_local! is banned" 1 bash "$CHECK" "$d"
+
+d="$(plant 'static G: std::sync::OnceLock<Vec<u32>> = std::sync::OnceLock::new();')"
+check "OnceLock is banned" 1 bash "$CHECK" "$d"
+
+d="$(plant 'static G: once_cell::sync::OnceCell<u32> = OnceCell::new();')"
+check "OnceCell is banned" 1 bash "$CHECK" "$d"
+
+d="$(plant 'static G: std::sync::LazyLock<u32> = LazyLock::new(|| 1);')"
+check "LazyLock is banned" 1 bash "$CHECK" "$d"
+
+d="$(plant 'lazy_static! { static ref G: u32 = 1; }')"
+check "lazy_static! is banned" 1 bash "$CHECK" "$d"
+
+d="$(plant '//! never a OnceLock or a thread_local! graph cache -- tables only.')"
+check "module-global state named only in a comment passes" 0 bash "$CHECK" "$d"
+
+d="$(plant 'static CACHE: Mutex<Option<Vec<u32>>> = Mutex::new(None);')"
+check "a static Mutex is banned" 1 bash "$CHECK" "$d"
+
+d="$(plant 'pub(crate) static COUNT: AtomicU64 = AtomicU64::new(0);')"
+check "a static atomic is banned" 1 bash "$CHECK" "$d"
+
+d="$(plant 'const SIZE: u32 = 4; fn f(x: &'"'"'static str) {}')"
+check "const items and the 'static lifetime pass" 0 bash "$CHECK" "$d"
+
 d="$(plant 'debug_assert!(x > 0, "x must be positive");')"
 check "debug_assert! stays allowed" 0 bash "$CHECK" "$d"
 

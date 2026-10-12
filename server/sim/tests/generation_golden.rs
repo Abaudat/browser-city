@@ -54,6 +54,14 @@ const GOLDEN: &str = include_str!("goldens/generation_v13.golden");
 fn frozen_config() -> GenerationConfig {
     GenerationConfig {
         site_extent_cells: 512,
+        routing_rates: sim::routing::estimate::Rates {
+            walk_speed_millicells_per_s: 2200,
+            walk_percent: 100,
+            bike_percent: 200,
+            transit_percent: 300,
+            floor_change_penalty_milliminutes: 1000,
+        },
+        graph_internal_node_min_interior_cells: 100,
         coarse_cell_size_cells: 16,
         land_use_min_leaf_cells: 4,
         land_use_max_leaf_cells: 10,
@@ -670,8 +678,9 @@ fn plan_digest(
     em: &envelopes::EnvelopeMap,
     bt: &sim::generation::BuildingTypeMap,
     io: &sim::generation::InteriorMap,
-    props: &sim::generation::PropMap,
+    d: &sim::generation::District,
 ) -> u64 {
+    let (props, floor0) = (&d.props, d.walkability(0));
     let mut text = String::new();
     for cy in 0..lu.rows() {
         for cx in 0..lu.cols() {
@@ -790,27 +799,137 @@ fn plan_digest(
             r.floor, r.x, r.y, r.def_id, r.layer, r.orientation
         ));
     }
-    text.push_str(&format!(
-        "collision {:016x}\n",
-        collision_hash(props, &pm.site())
-    ));
+    text.push_str(&format!("collision {:016x}\n", fnv1a(&grid_text(floor0))));
     fnv1a(&text)
 }
 
-/// The FNV-1a of every cell of floor 0's cached collision over the site,
-/// row-major -- the map itself, not a count of blocked cells.
-fn collision_hash(props: &sim::generation::PropMap, site: &sim::world::Rect) -> u64 {
-    let fc = props
-        .collision(0)
-        .expect("floor 0 always has a collision map");
-    let mut text = String::new();
-    for y in site.y0..site.y1 {
-        for x in site.x0..site.x1 {
-            text.push(if fc.is_blocked(x, y) { '1' } else { '0' });
+/// Every tile of a grid, row-major -- the grid itself, not a count.
+fn grid_text(fc: &sim::world::FloorCollision) -> String {
+    let b = fc.bounds();
+    let mut cells = String::new();
+    for y in b.y0..b.y1 {
+        for x in b.x0..b.x1 {
+            cells.push(if fc.is_blocked(x, y) { '1' } else { '0' });
         }
-        text.push('\n');
+        cells.push('\n');
     }
-    fnv1a(&text)
+    cells
+}
+
+/// One line per floor: the grid's bounds and the FNV-1a of its tiles.
+fn walkability_lines(d: &sim::generation::District) -> String {
+    let mut out = String::new();
+    for floor in sim::generated::defs::MIN_FLOOR..=sim::generated::defs::MAX_FLOOR {
+        let (floor, fc) = (floor as i8, d.walkability(floor as i8));
+        let b = fc.bounds();
+        out.push_str(&format!(
+            "walkability floor={floor} bounds={},{},{},{} {:016x}\n",
+            b.x0,
+            b.y0,
+            b.x1,
+            b.y1,
+            fnv1a(&grid_text(fc))
+        ));
+    }
+    out
+}
+
+/// `fnv1a` of [`walkability_lines`] per seed: every floor's bounds and
+/// bitset. A change to rasterisation is a diff here; it is a list of
+/// constants, not a `*.golden`, because the generator's own output (the
+/// rows) has not moved. Regenerate with `GENERATION_PRINT_GOLDEN=1`.
+const WALKABILITY_DIGESTS: [(u64, u64); 5] = [
+    (1, 0x35ebc30c048763ba),
+    (2, 0xc9205cd1ba4969e8),
+    (3, 0xd2fb3dacb8515a79),
+    (42, 0x2e6a002f5633cd7f),
+    (123_456_789, 0x9d0cb3bc95789bfb),
+];
+
+#[test]
+fn walkability_matches_committed_digests() {
+    let cfg = frozen_config();
+    let content = frozen_content();
+    let mut got = Vec::new();
+    for seed in SEEDS {
+        let d = plan(seed, &cfg, &content).expect("frozen_config's own site is always valid");
+        let lines = walkability_lines(&d);
+        if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
+            println!("walkability-digest ({seed}, 0x{:016x}),", fnv1a(&lines));
+        }
+        got.push((seed, fnv1a(&lines), lines));
+    }
+    if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
+        return;
+    }
+    assert_eq!(got.len(), WALKABILITY_DIGESTS.len());
+    for ((seed, digest, lines), (want_seed, want)) in got.iter().zip(WALKABILITY_DIGESTS) {
+        assert_eq!(*seed, want_seed);
+        assert_eq!(*digest, want, "seed {seed}'s walkability moved:\n{lines}");
+    }
+}
+
+/// One line per node and per edge, in the graph's own order: exactly the
+/// rows `create_district` writes (`route_node`, `route_edge` minus the ids
+/// the table assigns).
+fn graph_lines(g: &sim::routing::graph::MacroGraph) -> String {
+    let mut out = String::new();
+    for r in g.node_rows(&vec![None; g.nodes().len()]) {
+        out.push_str(&format!(
+            "node kind={} x={} y={} floor={}
+",
+            r.kind, r.x, r.y, r.floor
+        ));
+    }
+    let ids: Vec<u64> = (0..g.nodes().len() as u64).collect();
+    for r in g.edge_rows(&ids) {
+        out.push_str(&format!(
+            "edge {}-{} kind={} cost_milliminutes={}
+",
+            r.node_a, r.node_b, r.kind, r.cost_milliminutes
+        ));
+    }
+    out
+}
+
+/// `fnv1a` of [`graph_lines`] per seed. A list of constants, not a
+/// `*.golden`, like [`WALKABILITY_DIGESTS`]: the graph is derived from
+/// rows that have not moved. Regenerate with `GENERATION_PRINT_GOLDEN=1`.
+const GRAPH_DIGESTS: [(u64, u64); 5] = [
+    (1, 0xbc351d5a7f3b4994),
+    (2, 0xb4d77cc91add5afa),
+    (3, 0x257b706bd62aae87),
+    (42, 0x3d4a5ad8e45407c1),
+    (123_456_789, 0x44cb87ba86103d6a),
+];
+
+#[test]
+fn macro_graph_matches_committed_digests() {
+    let cfg = frozen_config();
+    let content = frozen_content();
+    let mut got = Vec::new();
+    for seed in SEEDS {
+        let d = plan(seed, &cfg, &content).expect("frozen_config's own site is always valid");
+        let g = d
+            .graph(&cfg, &content)
+            .expect("a frozen district's graph builds");
+        let lines = graph_lines(&g);
+        if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
+            println!("graph-digest ({seed}, 0x{:016x}),", fnv1a(&lines));
+        }
+        got.push((seed, fnv1a(&lines), g.nodes().len(), g.edges().len()));
+    }
+    if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
+        return;
+    }
+    assert_eq!(got.len(), GRAPH_DIGESTS.len());
+    for ((seed, digest, nodes, edges), (want_seed, want)) in got.iter().zip(GRAPH_DIGESTS) {
+        assert_eq!(*seed, want_seed);
+        assert_eq!(
+            *digest, want,
+            "seed {seed}'s graph moved ({nodes} nodes, {edges} edges)"
+        );
+    }
 }
 
 fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
@@ -861,7 +980,7 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
         io.shell_count(),
         io.rejected_count(),
         props.props().len(),
-        plan_digest(lu, net, pm, em, bt, io, props),
+        plan_digest(lu, net, pm, em, bt, io, &d),
     )
 }
 
@@ -945,9 +1064,13 @@ fn running_pass_2_twice_over_one_pass_1_output_is_byte_identical() {
     };
     let pr_a = sim::generation::props::run(SEEDS[0], &sk_a, &io_a, &cfg, &content).unwrap(); // generation-entry-point: allow
     let pr_b = sim::generation::props::run(SEEDS[0], &sk_b, &io_b, &cfg, &content).unwrap(); // generation-entry-point: allow
+    let d_a =
+        sim::generation::District::new(sk_a, io_a.clone(), pr_a.clone(), FROZEN_OBJECTS).unwrap();
+    let d_b =
+        sim::generation::District::new(sk_b, io_b.clone(), pr_b.clone(), FROZEN_OBJECTS).unwrap();
     assert_eq!(
-        plan_digest(&lu, &net_a, &pm_a, &em_a, &bt_a, &io_a, &pr_a),
-        plan_digest(&lu, &net_b, &pm_b, &em_b, &bt_b, &io_b, &pr_b)
+        plan_digest(&lu, &net_a, &pm_a, &em_a, &bt_a, &io_a, &d_a),
+        plan_digest(&lu, &net_b, &pm_b, &em_b, &bt_b, &io_b, &d_b)
     );
 }
 

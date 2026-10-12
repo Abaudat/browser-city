@@ -7,6 +7,7 @@
 use spacetimedb::{ReducerContext, Table};
 
 use super::actor::{ActorKind, actor_kind};
+use super::routing::{EdgeKind, edge_kind};
 use super::world::{LayerCode, layer_code};
 
 #[spacetimedb::table(accessor = matter_kind)]
@@ -93,6 +94,14 @@ pub fn seed_all_codes(ctx: &ReducerContext) {
     for c in sim::codes::node_kind::CODES {
         if ctx.db.node_kind().code().find(c.code).is_none() {
             ctx.db.node_kind().insert(NodeKind {
+                code: c.code,
+                name: c.name.to_string(),
+            });
+        }
+    }
+    for c in sim::codes::edge_kind::CODES {
+        if ctx.db.edge_kind().code().find(c.code).is_none() {
+            ctx.db.edge_kind().insert(EdgeKind {
                 code: c.code,
                 name: c.name.to_string(),
             });

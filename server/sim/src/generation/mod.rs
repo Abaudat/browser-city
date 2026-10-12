@@ -88,7 +88,7 @@ pub(crate) use entry::generate;
 #[cfg(feature = "test-fixtures")]
 pub use entry::{generate, plan, plan_skeleton};
 pub use site::DistrictSite;
-pub use streets::{Block, Side, Sides, StreetClass, StreetEdge, StreetNetwork, block_sides};
+pub use streets::{Axis, Block, Side, Sides, StreetClass, StreetEdge, StreetNetwork, block_sides};
 
 use crate::generated::defs;
 use crate::rng::seed_from_ids;
@@ -158,6 +158,13 @@ pub enum GenerationError {
     /// a floor, or none of them fits its cell even at its smallest
     /// footprint -- an owed fixture is never quietly left out.
     FixtureUnplaceable { x: i32, y: i32, tag: u32 },
+    /// A placed row's collider leaves the site: a generator defect, the
+    /// grid would read its off-site tiles as walkable.
+    ColliderOffSite {
+        def_id: u32,
+        floor: i8,
+        cells: SiteBounds,
+    },
     /// Pass 7's verdict could not rasterise a window of placed rows (an
     /// unknown def id, a window over the grid ceiling): the rows are not
     /// readable, which is not a balance-config error.
@@ -172,6 +179,9 @@ pub enum GenerationError {
         first: SiteBounds,
         narrow: bool,
     },
+    /// Story 3.9: the macro routing graph could not be built, or its own
+    /// validation failed (`crate::routing::graph::MacroGraph::check`).
+    Graph(crate::routing::graph::GraphError),
 }
 
 impl std::fmt::Display for GenerationError {
@@ -227,6 +237,14 @@ impl std::fmt::Display for GenerationError {
                 f,
                 "generation::props: no object def carrying tag {tag} stands on the fixture cell ({x}, {y})"
             ),
+            GenerationError::ColliderOffSite {
+                def_id,
+                floor,
+                cells,
+            } => write!(
+                f,
+                "generation::props: the collider of def {def_id} on floor {floor} covers {cells:?}, outside the site"
+            ),
             GenerationError::WindowUnreadable { window, reason } => write!(
                 f,
                 "generation::props: window {window:?} could not be rasterised: {reason}"
@@ -241,6 +259,7 @@ impl std::fmt::Display for GenerationError {
                 "generation::props: {count} {} region(s) in window {window:?}, first at {first:?}",
                 if *narrow { "too-narrow" } else { "enclosed" }
             ),
+            GenerationError::Graph(e) => write!(f, "generation::graph: {e}"),
         }
     }
 }
@@ -453,25 +472,126 @@ impl Skeleton {
 pub struct District {
     pub skeleton: Skeleton,
     pub interiors: InteriorMap,
-    /// Pass 7: every placed row and the collision they composite to.
+    /// Pass 7: every placed row.
     pub props: PropMap,
+    /// One tile grid per floor `MIN_FLOOR..=MAX_FLOOR`, rasterised from
+    /// `props` over the site, once.
+    walkability: std::collections::BTreeMap<i8, crate::world::FloorCollision>,
 }
 
 impl District {
+    /// Assembles a district and rasterises its walkability: `Err` for a
+    /// row naming an unknown def or a collider that leaves the site.
+    pub fn new(
+        skeleton: Skeleton,
+        interiors: InteriorMap,
+        props: PropMap,
+        objects: &[defs::ObjectDef],
+    ) -> Result<Self, GenerationError> {
+        let placements: Vec<crate::world::walkability::Placement> = props
+            .rows()
+            .map(crate::world::walkability::Placement::from)
+            .collect();
+        let walkability = crate::world::floor_grids(skeleton.plots.site(), &placements, objects)
+            .map_err(|e| match e {
+                crate::world::FloorGridError::ColliderOffSite {
+                    def_id,
+                    floor,
+                    cells,
+                } => GenerationError::ColliderOffSite {
+                    def_id,
+                    floor,
+                    cells,
+                },
+                other => GenerationError::InvalidConfig(format!("walkability: {other:?}")),
+            })?;
+        Ok(District {
+            skeleton,
+            interiors,
+            props,
+            walkability,
+        })
+    }
+
+    /// The tile grid of `floor`: blocked iff a placed collider touches the
+    /// tile, bounded by the site. Every floor in range has one.
+    ///
+    /// # Panics
+    /// If `floor` is outside `MIN_FLOOR..=MAX_FLOOR`; every caller
+    /// range-checks a floor upstream.
+    pub fn walkability(&self, floor: i8) -> &crate::world::FloorCollision {
+        &self.walkability[&floor]
+    }
+
     /// Every verdict [`generate`] holds a finished plan to, in its order:
     /// the building count, the rules, the workplace count, the enterable
-    /// floor, then every distributed institution enterable.
+    /// floor, every distributed institution enterable, reachability, then
+    /// the macro routing graph, built once and validated. Returns that
+    /// graph: the value `create_district` writes.
     pub fn check(
         &self,
         cfg: &GenerationConfig,
         content: &GenerationContent,
-    ) -> Result<(), GenerationError> {
+    ) -> Result<crate::routing::graph::MacroGraph, GenerationError> {
         self.skeleton.check_building_count(cfg)?;
         self.check_rules(content)?;
         self.skeleton.check_workplace_count(cfg, content)?;
         self.check_enterable_count(cfg)?;
         self.check_institutions_enterable(content)?;
-        self.check_reachability(content)
+        self.check_reachability(content)?;
+        let graph = self.graph(cfg, content)?;
+        graph
+            .check(&self.walkability)
+            .map_err(GenerationError::Graph)?;
+        Ok(graph)
+    }
+
+    /// Story 3.9: the macro routing graph, derived from this finished
+    /// district. Pure: the same district and config always give the same
+    /// graph, so `create_district` writes what `check` validated.
+    pub fn graph(
+        &self,
+        cfg: &GenerationConfig,
+        content: &GenerationContent,
+    ) -> Result<crate::routing::graph::MacroGraph, GenerationError> {
+        use crate::routing::graph::{BuildInput, BuildingInput, MacroGraph};
+        let by_plot: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> = {
+            let by_id: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+                content.building_types.iter().map(|b| (b.id, b)).collect();
+            self.skeleton
+                .building_types
+                .assignments()
+                .iter()
+                .filter_map(|a| by_id.get(&a.building_type).map(|d| (a.plot, *d)))
+                .collect()
+        };
+        let buildings: Vec<BuildingInput> = self
+            .interiors
+            .laid()
+            .filter_map(|(plot, _ty, i)| {
+                let entrance = i.entrance()?;
+                Some(BuildingInput {
+                    plot,
+                    workplace: by_plot
+                        .get(&plot)
+                        .is_some_and(|d| building_types::is_workplace(d)),
+                    front: i.front,
+                    entrance: (entrance.x, entrance.y),
+                    approach: i.approach.clone(),
+                    rooms: i.rooms.iter().map(|r| r.rect).collect(),
+                })
+            })
+            .collect();
+        MacroGraph::build(&BuildInput {
+            streets: &self.skeleton.streets,
+            buildings: &buildings,
+            portals: &[],
+            floor_nodes: &[],
+            rates: cfg.routing_rates,
+            internal_node_min_floor_area: cfg.graph_internal_node_min_interior_cells,
+            walkability: &self.walkability,
+        })
+        .map_err(GenerationError::Graph)
     }
 
     /// Builds this district's own [`DistrictSite`] -- the one adapter
@@ -565,6 +685,11 @@ pub type SiteBounds = crate::world::Rect;
 #[derive(Debug, Clone, Copy)]
 pub struct GenerationConfig {
     pub site_extent_cells: i32,
+    /// The macro routing graph's inputs (story 3.9): the estimator's rates,
+    /// which price every edge, and the interior area at which a building
+    /// earns an internal node.
+    pub routing_rates: crate::routing::estimate::Rates,
+    pub graph_internal_node_min_interior_cells: i64,
 
     pub coarse_cell_size_cells: i32,
     pub land_use_min_leaf_cells: i32,
@@ -917,6 +1042,11 @@ impl GenerationConfig {
     pub fn from_balance(balance: &[defs::BalanceSeed]) -> Result<Self, GenerationError> {
         let cfg = GenerationConfig {
             site_extent_cells: get(balance, "generation.site_extent_cells") as i32,
+            routing_rates: crate::routing::estimate::Rates::from_balance(balance),
+            graph_internal_node_min_interior_cells: get(
+                balance,
+                "routing.graph.internal_node_min_interior_cells",
+            ),
             coarse_cell_size_cells: get(balance, "generation.land_use.coarse_cell_size_cells")
                 as i32,
             land_use_min_leaf_cells: get(balance, "generation.land_use.min_leaf_cells") as i32,
@@ -1590,6 +1720,17 @@ mod tests {
     fn valid_balance() -> Vec<defs::BalanceSeed> {
         vec![
             seed("generation.site_extent_cells", 512, 64, 2048),
+            seed("movement.walk_speed_millicells_per_s", 2200, 100, 20000),
+            seed("routing.speed_percent.walk", 100, 100, 100),
+            seed("routing.speed_percent.bike", 200, 100, 1000),
+            seed("routing.speed_percent.transit", 300, 100, 1000),
+            seed("routing.floor_change_penalty_milliminutes", 1000, 0, 600000),
+            seed(
+                "routing.graph.internal_node_min_interior_cells",
+                100,
+                1,
+                100000,
+            ),
             seed("generation.land_use.coarse_cell_size_cells", 16, 1, 128),
             seed("generation.land_use.min_leaf_cells", 4, 1, 64),
             seed("generation.land_use.max_leaf_cells", 10, 2, 128),
@@ -2237,7 +2378,7 @@ mod tests {
         let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
         let content = GenerationContent::committed();
         let planned = plan(11, &cfg, &content).unwrap();
-        let generated = generate(11, &cfg, &content).unwrap();
+        let (generated, _) = generate(11, &cfg, &content).unwrap();
         assert_eq!(
             planned.skeleton.plots.plots(),
             generated.skeleton.plots.plots()

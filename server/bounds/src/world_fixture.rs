@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use sim::world::fixture::{canonical_world_spec, conformance_cases};
+use sim::world::fixture::{canonical_world_spec, conformance_cases, raster_case};
 use sim::world::{AreaSpec, FloorSpec, Rect, TransitionSpec};
 
 #[derive(Debug, Serialize)]
@@ -105,12 +105,38 @@ pub struct CaseDoc {
 }
 
 #[derive(Debug, Serialize)]
+pub struct RasterDefDoc {
+    pub id: u32,
+    pub width: u32,
+    pub height: u32,
+    pub collider: Option<RectDoc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RasterRowDoc {
+    pub floor: i8,
+    pub x: i32,
+    pub y: i32,
+    pub def_id: u32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RasterDoc {
+    pub subcells_per_cell: i32,
+    pub bounds: RectDoc,
+    pub defs: Vec<RasterDefDoc>,
+    pub rows: Vec<RasterRowDoc>,
+    pub blocked: Vec<(i8, i32, i32)>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct FixtureDocument {
     pub floors: Vec<FloorDoc>,
     pub transitions: Vec<TransitionDoc>,
     pub building_areas: Vec<AreaDoc>,
     pub room_areas: Vec<AreaDoc>,
     pub cases: Vec<CaseDoc>,
+    pub raster: RasterDoc,
 }
 
 impl FixtureDocument {
@@ -140,12 +166,42 @@ pub fn build_fixture_document() -> FixtureDocument {
         })
         .collect();
 
+    let raster = raster_case();
+    let raster = RasterDoc {
+        subcells_per_cell: raster.subcells_per_cell,
+        bounds: raster.bounds.into(),
+        defs: raster
+            .defs
+            .iter()
+            .map(|d| RasterDefDoc {
+                id: d.id,
+                width: d.width,
+                height: d.height,
+                collider: d
+                    .collider
+                    .map(|(x0, y0, x1, y1)| RectDoc { x0, y0, x1, y1 }),
+            })
+            .collect(),
+        rows: raster
+            .rows
+            .iter()
+            .map(|r| RasterRowDoc {
+                floor: r.floor,
+                x: r.x,
+                y: r.y,
+                def_id: r.def_id,
+            })
+            .collect(),
+        blocked: raster.blocked,
+    };
+
     FixtureDocument {
         floors: spec.floors.iter().map(FloorDoc::from).collect(),
         transitions: spec.transitions.iter().map(TransitionDoc::from).collect(),
         building_areas: spec.building_areas.iter().map(AreaDoc::from).collect(),
         room_areas: spec.room_areas.iter().map(AreaDoc::from).collect(),
         cases,
+        raster,
     }
 }
 

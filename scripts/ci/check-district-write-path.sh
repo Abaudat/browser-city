@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # A district is generated once and read back as stored (FR108, FR109): the
-# `district` record has one writer. Under server/src/:
+# `district` record has one writer, and so do the macro routing graph's
+# `route_node` and `route_edge` rows (FR129), which are written with it.
+# Under server/src/:
 #
 #   - `generation::` (the generator) is named only in tables/district.rs.
-#   - the `district` accessor is called only in tables/district.rs (inside
-#     `create_district`, which only inserts: no update, no delete), in
-#     tables/restore.rs (inside `begin_restore` and `restore_district`
-#     only) and never in tables/metrics.rs (which imports it to sample
-#     row counts).
-#   - any other file naming the accessor (a call, a path, a glob or a
+#   - each accessor -- `district`, `route_node`, `route_edge` -- is called
+#     only in tables/district.rs (`district`: `create_district` only;
+#     the graph rows: `create_district`'s own writer `write_graph` and the
+#     test-only `debug_write_graph_then_fail`, which calls it), in
+#     tables/restore.rs (inside `begin_restore` and the accessor's own
+#     `restore_*` reducer only) and never in tables/metrics.rs (which
+#     imports them to sample row counts). The files that own them never
+#     delete or update.
+#   - any other file naming an accessor (a call, a path, a glob or a
 #     `use` reaching the module's accessor) fails.
 #
 # Comment lines are skipped. Usage: check-district-write-path.sh [src-dir]
@@ -23,31 +28,28 @@ DECL="$SRC_DIR/tables/district.rs"
 code() { grep -v '^[[:space:]]*//' "$1" | tr -d '\r'; }
 flat() { code "$1" | tr '\n' ' '; }
 
-CALLS='\.[[:space:]]*district[[:space:]]*\(\)|::[[:space:]]*district[[:space:]]*\(|district[[:space:]]*::[[:space:]]*(district([^_[:alnum:]]|$)|\*)'
-METHOD='\.[[:space:]]*district[[:space:]]*\(\)|::[[:space:]]*district[[:space:]]*\('
+# <accessor>:<declaring module>:<fns of district.rs that may name it>:<fns of restore.rs>
+ACCESSORS=(
+  "district:district:create_district:begin_restore restore_district"
+  "route_node:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_node"
+  "route_edge:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_edge"
+)
 GEN='(^|[^_[:alnum:]])generation([^_[:alnum:]]|$)'
 
-# A `use` that leaves a bare `district` after the `district::` segments are
-# taken out: `use super::district::{District, district};` reaches the
-# accessor, `use super::district::District;` does not.
-reaches_accessor() {
-  flat "$1" | grep -oE 'use [^;]*;' \
-    | sed -E 's/district[[:space:]]*::/ /g' \
-    | grep -Eq '(^|[^_[:alnum:]])district([^_[:alnum:]]|$)'
-}
-
-# calls_outside <file> <fn>... -- the enclosing fn of every `.district()`
-# call that is not one of the named functions.
+# calls_outside <file> <accessor> <fn>... -- the enclosing fn of every
+# `.<accessor>()` call that is not one of the named functions.
 calls_outside() {
-  local f="$1"; shift
+  local f="$1" acc="$2"; shift 2
   local allowed=" $* "
-  code "$f" | awk -v allowed="$allowed" '
+  code "$f" | awk -v allowed="$allowed" -v acc="$acc" '
     /(^|[^_A-Za-z0-9])fn[ \t]+[A-Za-z_0-9]+/ {
       cur = $0; sub(/^.*(^|[^_A-Za-z0-9])fn[ \t]+/, "", cur); sub(/[^A-Za-z_0-9].*$/, "", cur)
     }
-    /\.[ \t]*district[ \t]*\(\)/ {
-      name = (cur == "") ? "<unknown>" : cur
-      if (index(allowed, " " name " ") == 0) print name
+    {
+      if (match($0, "[.][ 	]*" acc "[ 	]*[(][)]")) {
+        name = (cur == "") ? "<unknown>" : cur
+        if (index(allowed, " " name " ") == 0) print name
+      }
     }'
 }
 
@@ -56,32 +58,59 @@ note() { BAD="$BAD$1"$'\n'; }
 
 while IFS= read -r f; do
   rel="${f#"$SRC_DIR"/}"
+  names_generator=0
+  if flat "$f" | grep -Eq "$GEN"; then names_generator=1; fi
   case "$rel" in
     tables/district.rs)
-      OUT="$(calls_outside "$f" create_district)"
-      [ -z "$OUT" ] || note "$rel: names the accessor outside create_district (in: $(echo "$OUT" | tr '\n' ' '))"
+      for spec in "${ACCESSORS[@]}"; do
+        IFS=: read -r acc _mod district_fns _restore_fns <<<"$spec"
+        # shellcheck disable=SC2086
+        OUT="$(calls_outside "$f" "$acc" $district_fns)"
+        [ -z "$OUT" ] || note "$rel: names the $acc accessor outside $district_fns (in: $(echo "$OUT" | tr '\n' ' '))"
+      done
       if flat "$f" | grep -Eq '\.[[:space:]]*(delete|update)[[:space:]]*\('; then
-        note "$rel: updates or deletes (the record is insert-only)"
+        note "$rel: updates or deletes (the record and the graph are insert-only)"
       fi
       continue ;;
     tables/restore.rs)
-      OUT="$(calls_outside "$f" begin_restore restore_district)"
-      [ -z "$OUT" ] || note "$rel: names the accessor outside begin_restore and restore_district (in: $(echo "$OUT" | tr '\n' ' '))"
-      if flat "$f" | grep -Eq '::[[:space:]]*district[[:space:]]*\('; then note "$rel: calls the accessor by path"; fi
-      if flat "$f" | grep -Eq "$GEN"; then note "$rel: names the generator"; fi
+      for spec in "${ACCESSORS[@]}"; do
+        IFS=: read -r acc _mod _district_fns restore_fns <<<"$spec"
+        # shellcheck disable=SC2086
+        OUT="$(calls_outside "$f" "$acc" $restore_fns)"
+        [ -z "$OUT" ] || note "$rel: names the $acc accessor outside $restore_fns (in: $(echo "$OUT" | tr '\n' ' '))"
+        if flat "$f" | grep -Eq "::[[:space:]]*$acc[[:space:]]*\("; then note "$rel: calls the $acc accessor by path"; fi
+      done
+      if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
       continue ;;
     tables/metrics.rs)
-      if flat "$f" | grep -Eq "$METHOD"; then note "$rel: calls the accessor (it only samples row counts)"; fi
-      if flat "$f" | grep -Eq "$GEN"; then note "$rel: names the generator"; fi
+      for spec in "${ACCESSORS[@]}"; do
+        IFS=: read -r acc _rest <<<"$spec"
+        if flat "$f" | grep -Eq "\.[[:space:]]*$acc[[:space:]]*\(\)|::[[:space:]]*$acc[[:space:]]*\("; then
+          note "$rel: calls the $acc accessor (it only samples row counts)"
+        fi
+      done
+      if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
       continue ;;
   esac
-  if flat "$f" | grep -Eq "$GEN"; then note "$rel: names the generator (only tables/district.rs may)"; fi
-  if flat "$f" | grep -Eq "$CALLS" || reaches_accessor "$f"; then note "$rel: names the district accessor"; fi
+  if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator (only tables/district.rs may)"; fi
+  for spec in "${ACCESSORS[@]}"; do
+    IFS=: read -r acc mod _rest <<<"$spec"
+    calls="\.[[:space:]]*$acc[[:space:]]*\(\)|::[[:space:]]*$acc[[:space:]]*\(|$mod[[:space:]]*::[[:space:]]*($acc([^_[:alnum:]]|\$)|\*)"
+    # A `use` that leaves a bare accessor after the `<mod>::` segments are
+    # taken out: `use super::routing::{RouteNode, route_node};` reaches it.
+    reaches=0
+    if flat "$f" | grep -oE 'use [^;]*;' \
+      | sed -E "s/$mod[[:space:]]*::/ /g" \
+      | grep -Eq "(^|[^_[:alnum:]])$acc([^_[:alnum:]]|\$)"; then reaches=1; fi
+    if flat "$f" | grep -Eq "$calls" || [ "$reaches" -eq 1 ]; then
+      note "$rel: names the $acc accessor"
+    fi
+  done
 done < <(find "$SRC_DIR" -name '*.rs' -not -path '*/generated/*' | sort)
 
 if [ -n "$BAD" ]; then
-  echo "check-district-write-path: FAIL -- a district is generated once and read back, never regenerated or rewritten (FR108, FR109):" >&2
+  echo "check-district-write-path: FAIL -- a district and its routing graph are generated once and read back, never regenerated or rewritten (FR108, FR109, FR129):" >&2
   printf '%s' "$BAD" >&2
   exit 1
 fi
-echo "check-district-write-path: only create_district inserts the record, only restore restores it (FR108, FR109)" >&2
+echo "check-district-write-path: only create_district inserts the record and the graph, only restore restores them (FR108, FR109, FR129)" >&2

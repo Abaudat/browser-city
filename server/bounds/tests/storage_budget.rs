@@ -104,3 +104,18 @@ fn reducer_class_sample_alert_covers_the_retention_window() {
         Some(bound("reducer_class_sample").max_rows)
     );
 }
+
+/// Story 3.9: the routing graph's rows are priced in the totals above like
+/// any table; its ceilings are the measured 512 band scaled to the 1024
+/// growth target (`sim::routing::graph`), never separate literals, and
+/// hold the measured 1024 figure.
+#[test]
+fn the_routing_graph_tables_are_bounded_by_the_graph_bands() {
+    use sim::routing::graph::{max_edges_for_side, max_nodes_for_side};
+    assert_eq!(bound("route_node").max_rows, max_nodes_for_side(1024));
+    assert_eq!(bound("route_edge").max_rows, max_edges_for_side(1024));
+    for t in ["route_node", "route_edge"] {
+        let b = bound(t);
+        assert!(b.expected_rows <= b.alert_rows && b.alert_rows <= b.max_rows);
+    }
+}

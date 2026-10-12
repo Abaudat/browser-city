@@ -7,8 +7,8 @@
 //! a diff there is exactly the moment a human must look.
 
 use sim::codes::{
-    Code, actor_kind, container_kind, holder_kind, layer, matter_kind, node_kind, provision,
-    reason_code, unit,
+    Code, actor_kind, container_kind, edge_kind, holder_kind, layer, matter_kind, node_kind,
+    provision, reason_code, unit,
 };
 use std::collections::BTreeSet;
 
@@ -116,6 +116,13 @@ fn node_kind_matches_golden_and_is_unique() {
     let golden = parse_golden(GOLDEN);
     assert_matches_golden("node_kind", node_kind::CODES, &golden);
     assert_unique("node_kind", node_kind::CODES);
+}
+
+#[test]
+fn edge_kind_matches_golden_and_is_unique() {
+    let golden = parse_golden(GOLDEN);
+    assert_matches_golden("edge_kind", edge_kind::CODES, &golden);
+    assert_unique("edge_kind", edge_kind::CODES);
 }
 
 /// Story 6.1: an item's `unit` is an extensible set (AC3) -- a `u32` code

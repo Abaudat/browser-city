@@ -34,7 +34,7 @@ fn generate_at_the_balance_max_extent_stays_inside_its_ceiling() {
     let content = GenerationContent::committed();
 
     let t = Instant::now();
-    let d = generate(7, &cfg, &content)
+    let (d, _) = generate(7, &cfg, &content)
         .unwrap_or_else(|e| panic!("the balance max extent must still generate: {e}"));
     let secs = t.elapsed().as_secs();
     assert!(
@@ -42,11 +42,14 @@ fn generate_at_the_balance_max_extent_stays_inside_its_ceiling() {
         "generate at {max_extent} cells took {secs} s, past {CEILING_SECS} s"
     );
 
-    let fc = d.props.collision(0).expect("floor 0 collision");
-    // One bit per cell of the site extent padded two cells a side.
-    let bytes = (max_extent as u64 + 4).pow(2).div_ceil(64) * 8;
+    let floors = (sim::generated::defs::MAX_FLOOR - sim::generated::defs::MIN_FLOOR + 1) as u64;
+    let stored: u64 = (sim::generated::defs::MIN_FLOOR..=sim::generated::defs::MAX_FLOOR)
+        .map(|f| d.walkability(f as i8).dense_storage_bytes() as u64)
+        .sum();
+    // One bit per cell of the site extent.
+    let bytes = (max_extent as u64).pow(2).div_ceil(64) * 8;
     assert!(
-        fc.dense_storage_bytes() as u64 <= bytes,
-        "collision is more than a bit a cell"
+        stored <= floors * bytes,
+        "walkability is more than a bit a cell a floor"
     );
 }
