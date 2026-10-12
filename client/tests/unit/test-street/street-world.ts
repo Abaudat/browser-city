@@ -545,32 +545,37 @@ function cupboardProp() {
   return prop;
 }
 
-/** Story 6.10: inside shop A, up to the row south of the cupboard and east
- * into its reach (clear of the table, south of the cupboard's collider). */
+/** Story 6.10: inside shop A, up clear of the table, east along the row
+ * south of the counter, then up under the cupboard (its reach). */
 export function cupboardReachRoute(): readonly StreetWalkSegment[] {
   const prop = cupboardProp();
   return [
     {
       label: "up-to-the-cupboard-row",
       key: "ArrowUp",
-      until: { kind: "y-at-most", value: prop.y + 0.9 },
+      until: { kind: "y-at-most", value: prop.y + 1.9 },
     },
     {
-      label: "east-into-reach",
+      label: "east-under-the-cupboard",
       key: "ArrowRight",
-      until: { kind: "x-at-least", value: prop.x },
+      until: { kind: "x-at-least", value: prop.x + 0.1 },
+    },
+    {
+      label: "up-into-reach",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: prop.y + 1.3 },
     },
   ];
 }
 
-/** From inside the cupboard's reach, west and out of it. */
+/** From inside the cupboard's reach, back down out of it. */
 export function cupboardLeaveRoute(): readonly StreetWalkSegment[] {
   const prop = cupboardProp();
   return [
     {
-      label: "west-out-of-reach",
-      key: "ArrowLeft",
-      until: { kind: "x-at-most", value: prop.x - 1.5 },
+      label: "south-out-of-reach",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: prop.y + 1.9 },
     },
   ];
 }

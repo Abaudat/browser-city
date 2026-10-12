@@ -9,6 +9,7 @@ import type { DbConnection } from "../../../src/net/bindings";
 import {
   CONTAINER_KIND_OBJECT,
   containerQueries,
+  createContainerWiring,
   sdkContainerBackend,
 } from "../../../src/net/container-subscription";
 import type { HeldRow } from "../../../src/world/container-view";
@@ -234,5 +235,71 @@ describe("sdkContainerBackend", () => {
     }
     handle.release();
     expect(fake.counts().unsubscribed).toBe(0);
+  });
+});
+
+describe("createContainerWiring", () => {
+  function wiring() {
+    const streamed = new Set<bigint>();
+    const opened: bigint[] = [];
+    const released: bigint[] = [];
+    const w = createContainerWiring({
+      isStreamed: (id) => streamed.has(id),
+      open: (id) => {
+        opened.push(id);
+        return { release: () => released.push(id) };
+      },
+    });
+    return { w, streamed, opened, released };
+  }
+  const noop = () => {};
+
+  it("a non-streamed object never opens the backend and stays present", () => {
+    const { w, opened } = wiring();
+    const handle = w.rows(7n, noop, noop);
+    expect(opened).toEqual([]);
+    expect(w.present(7n)).toBe(true);
+    handle.release();
+    expect(opened).toEqual([]);
+  });
+
+  it("a streamed object subscribes once, is present while its row is cached and absent once it leaves", () => {
+    const { w, streamed, opened } = wiring();
+    streamed.add(7n);
+    w.rows(7n, noop, noop);
+    expect(opened).toEqual([7n]);
+    expect(w.present(7n)).toBe(true);
+    streamed.delete(7n);
+    expect(w.present(7n)).toBe(false);
+  });
+
+  it("releasing a view releases its subscription and un-tracks the container", () => {
+    const { w, streamed, released } = wiring();
+    streamed.add(7n);
+    const handle = w.rows(7n, noop, noop);
+    handle.release();
+    expect(released).toEqual([7n]);
+    streamed.delete(7n);
+    expect(w.present(7n)).toBe(true);
+  });
+
+  it("a reconnect closes a subscribed view: its row is not cached again until the new region applies", () => {
+    const { w, streamed } = wiring();
+    streamed.add(7n);
+    w.rows(7n, noop, noop);
+    // The old connection's rows are gone and the new one's not yet applied.
+    streamed.clear();
+    expect(w.present(7n)).toBe(false);
+  });
+
+  it("a click before the region has delivered the row opens an empty view that stays empty until reopened", () => {
+    const { w, streamed, opened } = wiring();
+    const first = w.rows(7n, noop, noop);
+    streamed.add(7n);
+    expect(opened).toEqual([]);
+    expect(w.present(7n)).toBe(true);
+    first.release();
+    w.rows(7n, noop, noop);
+    expect(opened).toEqual([7n]);
   });
 });

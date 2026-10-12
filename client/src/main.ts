@@ -18,10 +18,14 @@ import { type BodyControl, connectionReason, createBodyControl } from "./input/b
 import type { Intent } from "./input/intent";
 import { loadBindings, resolveStorage, saveBindings } from "./input/keybindings-storage";
 import { KeyboardState } from "./input/keyboard";
-import type { DbConnection } from "./net/bindings";
 import { OIDC_CONFIG } from "./net/config";
 import type { CharacterReport, IdentityReport } from "./net/connection";
-import { isStreamedObject, sdkContainerBackend } from "./net/container-subscription";
+import {
+  type ContainerWiring,
+  createContainerWiring,
+  isStreamedObject,
+  sdkContainerBackend,
+} from "./net/container-subscription";
 import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
@@ -88,7 +92,6 @@ import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
 import { mountConnectionNotice } from "./ui/connection-notice";
 import { mountOptionsMenu } from "./ui/options-menu";
-import type { HeldRow } from "./world/container-view";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, thresholdDefIds, windowDefIds } from "./world/object-defs";
 import { dequantise } from "./world/position-codec";
@@ -107,16 +110,6 @@ const NO_CAMERA_YET = { zoom: 0, offsetX: 0, offsetY: 0 } as const;
 interface OfferWiring {
   readonly beforeMount: (defs: VerifiedDefs, handshakeSettled: boolean) => Promise<void>;
   readonly onIntent: (intent: Intent) => void;
-}
-
-/** Story 6.10 (FR94): how an open container's contents reach the scene. */
-interface ContainersWiring {
-  readonly rows: (
-    containerId: bigint,
-    onRows: (rows: readonly HeldRow[]) => void,
-    onError: () => void,
-  ) => { release(): void };
-  readonly present: (objectId: bigint) => boolean;
 }
 
 /** Story 4.4: the street scene's touch points with the other players and
@@ -423,7 +416,10 @@ async function main(): Promise<void> {
           syncSender();
         },
       },
-      containerWiring(() => conn.current()),
+      createContainerWiring({
+        isStreamed: (id) => isStreamedObject(conn.current(), id),
+        open: (id, listener) => sdkContainerBackend(conn.current()).open(id, listener),
+      }),
     );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
@@ -469,29 +465,6 @@ async function main(): Promise<void> {
  * ticker` does not exist until then either, so `stopDrawing` is
  * null-safe.
  */
-/** Story 6.10 (FR94): a container's contents are subscribed only for an
- * object the server streamed to this client; a fixture-only prop opens an
- * empty view and never subscribes. A streamed object whose row later leaves
- * the cache is gone, which closes its view. */
-function containerWiring(current: () => DbConnection): ContainersWiring {
-  const backed = new Set<bigint>();
-  return {
-    rows: (containerId, onRows, onError) => {
-      const conn = current();
-      if (!isStreamedObject(conn, containerId)) return { release: () => {} };
-      backed.add(containerId);
-      const handle = sdkContainerBackend(conn).open(containerId, { onRows, onError });
-      return {
-        release: () => {
-          backed.delete(containerId);
-          handle.release();
-        },
-      };
-    },
-    present: (objectId) => !backed.has(objectId) || isStreamedObject(current(), objectId),
-  };
-}
-
 async function startStreetScene(
   latch: HandshakeLatch,
   onDegrade: () => void,
@@ -503,7 +476,7 @@ async function startStreetScene(
   followScene: (x: number, y: number, floor: number) => void,
   bodyControl: BodyControl,
   players: PlayersWiring,
-  containers: ContainersWiring,
+  containers: ContainerWiring,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {

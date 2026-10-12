@@ -215,8 +215,8 @@ const E2E_WORLD_COUNT = (2 * E2E_WORLD.span + 1) ** 2;
  * the `placed_object` id the module gives it. */
 export const E2E_CUPBOARD = {
   objectId: 82,
-  x: 6,
-  y: 3,
+  x: 7,
+  y: 2,
   items: [
     { defId: 9, slotX: 0, slotY: 0, orientation: 0 },
     { defId: 10, slotX: 1, slotY: 0, orientation: 0 },

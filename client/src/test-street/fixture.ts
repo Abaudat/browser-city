@@ -140,7 +140,7 @@ export const TRASH_BIN_DEF_ID = 1;
  * only from the customer side. */
 export const SHOP_COUNTER_DEF_ID = 3;
 /** `defs/objects/containers.toml`'s own `cupboard` id (story 6.10, FR94): a
- * 4x3 grid, shop A's storage cupboard against its back wall. Its prop id is
+ * 4x3 grid, shop A's storage cupboard on the back-wall cell beside the counter. Its prop id is
  * the id the e2e world seeds as that cupboard's `placed_object` row (the
  * live street has no such server row, so there it opens empty). The def's
  * art has no open-door variant. */
@@ -742,13 +742,13 @@ const STREET_PROP_LIST: StreetProp[] = [
     defId: TRASH_BIN_DEF_ID,
   },
 
-  // Story 6.10 (FR94): shop A's storage cupboard, against the back wall
+  // Story 6.10 (FR94): shop A's storage cupboard, on the back-wall cell
   // beside the counter -- a container is an object that declares a grid;
   // click it from within reach and its view opens above it.
   {
     id: CUPBOARD_PROP_ID,
-    x: 6,
-    y: 3,
+    x: 7,
+    y: 2,
     floor: 0,
     layer: "furniture",
     defId: CUPBOARD_DEF_ID,

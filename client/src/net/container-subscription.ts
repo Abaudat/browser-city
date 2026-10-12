@@ -157,3 +157,50 @@ export function sdkContainerBackend(conn: DbConnection): ContainerBackend {
     },
   };
 }
+
+/** What the scene asks of the network about one container. */
+export interface ContainerWiring {
+  /** Subscribes to a streamed container's rows; a fixture-only prop gets a
+   * no-op handle and an empty view. */
+  rows(
+    containerId: bigint,
+    onRows: (rows: readonly HeldRow[]) => void,
+    onError: () => void,
+  ): ContainerHandle;
+  /** Whether the container's object still exists: always for a fixture-only
+   * prop, and for a subscribed one while its streamed row is cached. */
+  present(objectId: bigint): boolean;
+}
+
+export interface ContainerWiringSeams {
+  /** Whether the server streamed `objectId` to the current connection. */
+  isStreamed(objectId: bigint): boolean;
+  open(containerId: bigint, listener: ContainerListener): ContainerHandle;
+}
+
+/** The decisions between a click and a subscription (story 6.10):
+ *  - a container is subscribed only if the server streamed its object *at
+ *    the moment the view opens*; a prop that is not (the live street's
+ *    fixture cupboard, or a click before the region delivers its row) opens
+ *    an empty view that stays empty until reopened;
+ *  - a subscribed container is present while its row stays cached, so a row
+ *    leaving the cache -- its object deleted, or a reconnect before the new
+ *    connection's region applies -- closes its view;
+ *  - releasing a view un-tracks the container. */
+export function createContainerWiring(seams: ContainerWiringSeams): ContainerWiring {
+  const subscribed = new Set<bigint>();
+  return {
+    rows(containerId, onRows, onError) {
+      if (!seams.isStreamed(containerId)) return { release: () => {} };
+      subscribed.add(containerId);
+      const handle = seams.open(containerId, { onRows, onError });
+      return {
+        release() {
+          subscribed.delete(containerId);
+          handle.release();
+        },
+      };
+    },
+    present: (objectId) => !subscribed.has(objectId) || seams.isStreamed(objectId),
+  };
+}

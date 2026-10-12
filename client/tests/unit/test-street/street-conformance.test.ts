@@ -669,10 +669,9 @@ describe("the six collision/transition regressions this story fixes (AC)", () =>
     const table = STREET_PROPS.find((p) => p.id === 9n);
     if (!table) throw new Error("no prop with id 9 (the table)");
     const rect = propColliderRect(table);
-    // Straight south at the table, from the row north of it, down its
-    // west half (story 6.10: shop A's cupboard stands over its east half).
+    // Straight south at the table, from the row north of it.
     const fromNorth = walkToRest(
-      { x: rect.x0 + halfWidthCells + 0.1, y: rect.y0 - 1 },
+      { x: (rect.x0 + rect.x1) / 2, y: rect.y0 - 1 },
       { x: 0, y: 1 },
       table.floor,
     );
