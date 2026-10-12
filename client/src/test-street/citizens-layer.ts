@@ -299,9 +299,8 @@ export async function mountCitizensLayer(
     const c = citizens.get(id) as Citizen;
     textureIdsById[id] = idFor(frames);
     const member = l3.client.add(id);
+    // Not added to the layer, so not drawn, until a result carries it.
     const sprite = newBodySprite(frames, member.frame);
-    sprite.visible = false;
-    layer.addChild(sprite);
     const d: Drawn = { sprite, frames, member, walks: c.spec !== undefined, placed: false };
     drawn.set(id, d);
     rankDirty = true;
@@ -387,7 +386,7 @@ export async function mountCitizensLayer(
       setBodyFrame(d.sprite, d.frames, frame);
       if (!d.placed) {
         d.placed = true;
-        d.sprite.visible = true;
+        layer.addChild(d.sprite);
         // A standing citizen never moves, so it keeps its whole-world-pixel
         // placement (zoom 1, itself a whole screen pixel): its scatter
         // position is fractional, and a finer snap would only shift it.
