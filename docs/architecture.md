@@ -1881,6 +1881,12 @@ the build if the committed files and a fresh render ever disagree.
 - `route_node` and `route_edge` are private, written only by `create_district` and the restore reducers, and never cached in module state.
 - `server/src` keeps no state outside a table: no `static` item, `thread_local!`, `OnceLock`, `OnceCell`, `LazyLock` or `lazy_static!` (`check-server-src-bans.sh`).
 - `MacroGraph::check` holds the graph to one connected component over every node kind; each portal endpoint links to the nearest walking node on its own floor.
+- `routing::search::search` is A* to one origin and one target over a `GraphView` (a node by id and its edges; `SearchGraph` is the in-memory view, ids are `route_node` row ids). There is no multi-target, batch or cached variant, and its cost is its expanded nodes, never the graph's size.
+- The heuristic is the walking `estimate` between cells; every edge costs at least that, so it is consistent and a closed set is optimal.
+- The open set orders on `(f, h, node id)` and neighbours sort on `(id, kind, cost)`; ordered collections only (`check-routing-search-determinism.sh`).
+- A search expands at most `routing.search.node_budget` nodes; past it, `BudgetExceeded`. An unknown id is `UnknownNode`, no path is `Unreachable`; none panics.
+- A `Route` is single-floor legs of waypoints, `t_depart` and `t_arrive` in milliminutes from the route's start. A leg ends at each portal edge; the portal edge's cost is the gap to the next leg. In-leg instants are `leg_instants`.
+- `routing::search` is named from at most one `server/src` file; `route_node` and `route_edge` are iterated only in `restore.rs` and `metrics.rs`; no `route_*` table is public and no client file outside the bindings names one (`check-server-src-bans.sh`, `check-subscription-shape.sh`, `bounds` `routing_tables_are_never_public`). The estimator imports neither `search` nor `graph`.
 
 ## L3 (client)
 

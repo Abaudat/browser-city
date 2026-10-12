@@ -103,6 +103,18 @@ check "read_clock is banned in cadences.rs" 1 bash "$CHECK" "$d"
 
 d="$(plant 'let at = ctx.timestamp; let e = read_clock(ctx);')"
 check "ctx.timestamp and read_clock stay allowed outside cadences.rs" 0 bash "$CHECK" "$d"
+d="$(plant 'for n in ctx.db.route_node().iter() {}')"
+check "iterating route_node in a reducer file is banned" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'for n in ctx.db.route_edge().iter() {}' > "$d/restore.rs"
+check "iterating route_edge in restore.rs is allowed" 0 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'use sim::routing::search::search;' > "$d/a.rs"
+check "one file naming routing::search is allowed" 0 bash "$CHECK" "$d"
+printf '%s\n' 'use sim::routing::search::search;' > "$d/b.rs"
+check "a second file naming routing::search is banned" 1 bash "$CHECK" "$d"
 
 summary
 exit $?

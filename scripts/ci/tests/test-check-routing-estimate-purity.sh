@@ -35,6 +35,12 @@ check "a Vec" 1 bash "$CHECK" "$f"
 f="$(plant 'use std::collections::BTreeMap;')"
 check "a BTreeMap" 1 bash "$CHECK" "$f"
 
+f="$(plant 'use super::search::search;')"
+check "a search import" 1 bash "$CHECK" "$f"
+
+f="$(plant 'use crate::routing::graph::MacroGraph;')"
+check "a graph import" 1 bash "$CHECK" "$f"
+
 check "the real estimator passes" 0 bash "$CHECK"
 
 summary

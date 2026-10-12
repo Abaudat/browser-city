@@ -126,5 +126,13 @@ d="$(clean_tree)"
 plant "$d" "net/container-subscription.ts" 'const t = tables.itemHeld;'
 check "aliasing a table in the container subscription is still banned" 1 bash "$CHECK" "$d"
 
+d="$(clean_tree)"
+plant "$d" "world/graph.ts" 'const rows = conn.db.route_node;'
+check "naming a routing graph table is banned" 1 bash "$CHECK" "$d"
+
+d="$(clean_tree)"
+plant "$d" "net/bindings/route_node_table.ts" 'export const RouteNode = 1;'
+check "the generated bindings may name it" 0 bash "$CHECK" "$d"
+
 summary
 exit $?

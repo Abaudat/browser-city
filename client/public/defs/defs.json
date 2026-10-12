@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "4a4420c375f512a4",
+  "defs_version": "7e8ecf8ed029c232",
   "collider_subcells_per_cell": 16,
   "position_units_per_cell": 256,
   "interact_at_max_reach_cells": 2,
@@ -381,6 +381,7 @@
     { "key": "render.window_alpha", "max": 99, "min": 1, "value": 50 },
     { "key": "routing.floor_change_penalty_milliminutes", "max": 600000, "min": 0, "value": 1000 },
     { "key": "routing.graph.internal_node_min_interior_cells", "max": 100000, "min": 1, "value": 100 },
+    { "key": "routing.search.node_budget", "max": 100000, "min": 1000, "value": 12000 },
     { "key": "routing.speed_percent.bike", "max": 1000, "min": 100, "value": 200 },
     { "key": "routing.speed_percent.transit", "max": 1000, "min": 100, "value": 300 },
     { "key": "routing.speed_percent.walk", "max": 100, "min": 100, "value": 100 }

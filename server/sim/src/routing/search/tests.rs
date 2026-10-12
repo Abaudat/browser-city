@@ -79,7 +79,11 @@ fn route_cost_is_the_sum_of_edge_costs_and_endpoints_hold() {
     for w in r.nodes.windows(2) {
         let mut out = Vec::new();
         view.neighbours(w[0], &mut out);
-        let c = out.iter().filter(|n| n.0 == w[1]).map(|n| n.2.0).min();
+        let c = out
+            .iter()
+            .filter(|&&(id, _, _)| id == w[1])
+            .map(|&(_, _, c)| c.0)
+            .min();
         sum += c.expect("consecutive nodes share an edge");
         assert!(seen.insert(w[0]), "node repeats");
     }

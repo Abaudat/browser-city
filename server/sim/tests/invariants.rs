@@ -9203,3 +9203,263 @@ fn inv_routing_graph_edge_count_is_linear_in_node_count() {
         },
     );
 }
+
+// ---------------------------------------------------------------------
+// Route search (story 3.12): one A* to one destination, over the pool.
+// ---------------------------------------------------------------------
+
+pub const INV_ROUTE_SEARCH_COST_EQUALS_DIJKSTRA: &str = "the route search cost equals a plain Dijkstra for any node pair of a generated district (FR131)";
+pub const INV_ROUTE_SEARCH_HEURISTIC_IS_CONSISTENT: &str =
+    "for every edge and goal, h(u) <= cost(u,v) + h(v), so a closed set is optimal (FR131)";
+pub const INV_ROUTE_IS_A_VALID_WALK_WITH_DERIVABLE_INSTANTS: &str = "a route starts and ends on its endpoints, walks real edges once each, costs the sum of them, stays on one floor per leg and has leg_instants (FR56, FR131)";
+pub const INV_ROUTE_SEARCH_IGNORES_ROW_ORDER: &str =
+    "the same endpoints over a graph rebuilt from shuffled rows give the identical route (FR129)";
+pub const INV_ROUTE_SEARCH_STAYS_WITHIN_ITS_NODE_BUDGET: &str =
+    "a generated district has fewer nodes than routing.search.node_budget, so no pair is refused";
+
+/// A deterministic spread of `n` node-index pairs in a graph of `len` nodes.
+fn route_pairs(seed: u64, len: usize, n: u64) -> Vec<(u64, u64)> {
+    let len = len as u64;
+    (0..n)
+        .map(|i| {
+            let a = seed.wrapping_mul(2_654_435_761).wrapping_add(i * 7_919) % len;
+            let b = seed.wrapping_mul(40_503).wrapping_add(i * 104_729 + 1) % len;
+            (a, b)
+        })
+        .collect()
+}
+
+fn dijkstra_cost(g: &sim::routing::graph::MacroGraph, from: usize, to: usize) -> Option<i64> {
+    let mut adj: Vec<Vec<(usize, i64)>> = vec![Vec::new(); g.nodes().len()];
+    for e in g.edges() {
+        adj[e.a as usize].push((e.b as usize, e.cost.0));
+        adj[e.b as usize].push((e.a as usize, e.cost.0));
+    }
+    let mut dist = vec![i64::MAX; adj.len()];
+    let mut heap = std::collections::BinaryHeap::new();
+    dist[from] = 0;
+    heap.push(std::cmp::Reverse((0i64, from)));
+    while let Some(std::cmp::Reverse((d, u))) = heap.pop() {
+        if d > dist[u] {
+            continue;
+        }
+        if u == to {
+            return Some(d);
+        }
+        for &(v, c) in &adj[u] {
+            if d + c < dist[v] {
+                dist[v] = d + c;
+                heap.push(std::cmp::Reverse((d + c, v)));
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn inv_route_search_cost_equals_dijkstra() {
+    use sim::routing::search::{SearchGraph, node_budget, search};
+    over_pool("inv_route_search_cost_equals_dijkstra", |c| {
+        let g = pooled_graph(c)?;
+        let view = SearchGraph::from_graph(g);
+        let budget = node_budget(defs::BALANCE);
+        for (a, b) in route_pairs(c.seed, g.nodes().len(), 6) {
+            let r = search(&view, a, b, &rates(), budget).map_err(|e| format!("{a}>{b}: {e:?}"))?;
+            let want = dijkstra_cost(g, a as usize, b as usize).ok_or("disconnected")?;
+            ensure!(
+                r.cost.0 == want,
+                "{a}>{b}: A* {} vs Dijkstra {want}",
+                r.cost.0
+            );
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn inv_route_search_heuristic_is_consistent() {
+    over_pool("inv_route_search_heuristic_is_consistent", |c| {
+        let g = pooled_graph(c)?;
+        let h = |u: usize, goal: usize| {
+            estimate(
+                &rates(),
+                g.nodes()[u].point(),
+                g.nodes()[goal].point(),
+                TransportMode::Walk,
+                Correction::NONE,
+            )
+            .0
+        };
+        for (goal, _) in route_pairs(c.seed, g.nodes().len(), 3) {
+            let goal = goal as usize;
+            for e in g.edges() {
+                let (a, b) = (e.a as usize, e.b as usize);
+                ensure!(
+                    h(a, goal) <= e.cost.0 + h(b, goal) && h(b, goal) <= e.cost.0 + h(a, goal),
+                    "edge {a}-{b} breaks consistency towards {goal}"
+                );
+            }
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn inv_route_is_a_valid_walk_with_derivable_instants() {
+    use sim::actor_location::{crossings, leg_instants};
+    use sim::routing::search::{GraphView, SearchGraph, node_budget, search};
+    use sim::time::REAL_MS_PER_CITY_MINUTE;
+    let band = sim::balance::value(defs::BALANCE, "l3.walk_pace_band_percent") as i128;
+    let speed = sim::balance::value(defs::BALANCE, "movement.walk_speed_millicells_per_s") as i128;
+    over_pool("inv_route_is_a_valid_walk_with_derivable_instants", |c| {
+        let g = pooled_graph(c)?;
+        let view = SearchGraph::from_graph(g);
+        let budget = node_budget(defs::BALANCE);
+        for (a, b) in route_pairs(c.seed, g.nodes().len(), 6) {
+            let r = search(&view, a, b, &rates(), budget).map_err(|e| format!("{a}>{b}: {e:?}"))?;
+            ensure!(
+                r.nodes.first() == Some(&a) && r.nodes.last() == Some(&b),
+                "{a}>{b}: wrong ends"
+            );
+            let mut seen = std::collections::BTreeSet::new();
+            let mut sum = 0;
+            for w in r.nodes.windows(2) {
+                ensure!(seen.insert(w[0]), "{a}>{b}: node {} repeats", w[0]);
+                let mut out = Vec::new();
+                view.neighbours(w[0], &mut out);
+                let cost = out
+                    .iter()
+                    .filter(|&&(id, _, _)| id == w[1])
+                    .map(|&(_, _, c)| c.0)
+                    .min();
+                sum += cost.ok_or_else(|| format!("{a}>{b}: {}-{} is no edge", w[0], w[1]))?;
+            }
+            ensure!(
+                sum == r.cost.0,
+                "{a}>{b}: cost {} vs edge sum {sum}",
+                r.cost.0
+            );
+            ensure!(
+                r.legs.last().map(|l| l.t_arrive) == Some(sum),
+                "{a}>{b}: the last leg does not arrive at the total cost"
+            );
+            let mut clock = 0;
+            for leg in &r.legs {
+                ensure!(
+                    leg.waypoints.iter().all(|w| w.2 == leg.waypoints[0].2),
+                    "{a}>{b}: a leg spans floors"
+                );
+                ensure!(
+                    leg.t_depart >= clock && leg.t_arrive >= leg.t_depart,
+                    "{a}>{b}: leg times go backwards"
+                );
+                clock = leg.t_arrive;
+                ensure!(
+                    leg_instants(&leg.waypoints, leg.t_depart, leg.t_arrive).is_some(),
+                    "{a}>{b}: a segment is over MAX_SEGMENT_CELLS"
+                );
+                let _ = crossings(&leg.waypoints, leg.t_depart, leg.t_arrive, None);
+                // The pace the leg demands: polyline length (1/1024 cells,
+                // as leg_instants measures it) over the time it is given,
+                // against walking pace.
+                let len: i128 = leg
+                    .waypoints
+                    .windows(2)
+                    .map(|w| {
+                        let (dx, dy) = ((w[0].0 - w[1].0) as i64, (w[0].1 - w[1].1) as i64);
+                        (((dx * dx + dy * dy) as u64) << 20).isqrt() as i128
+                    })
+                    .sum();
+                let dur = (leg.t_arrive - leg.t_depart) as i128;
+                if dur > 0 && len > 0 {
+                    // 1/1024 cells per milliminute at walking pace, x100.
+                    let walk = speed * REAL_MS_PER_CITY_MINUTE as i128 * 1024 / 10_000_000;
+                    let pace = len * 100 / dur;
+                    let (lo, hi) = (walk * (100 - band) / 100, walk * (100 + band) / 100);
+                    ensure!(
+                        (lo..=hi).contains(&pace),
+                        "{a}>{b}: a leg pace {pace} is outside [{lo}, {hi}]"
+                    );
+                }
+            }
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn inv_route_search_ignores_row_order() {
+    use sim::routing::graph::{EdgeRow, NodeRow};
+    use sim::routing::search::{SearchGraph, node_budget, search};
+    over_pool("inv_route_search_ignores_row_order", |c| {
+        let g = pooled_graph(c)?;
+        let nodes: Vec<NodeRow> = g
+            .nodes()
+            .iter()
+            .enumerate()
+            .map(|(i, n)| NodeRow {
+                node_id: 1 + i as u64,
+                kind: n.kind.code(),
+                x: n.x,
+                y: n.y,
+                floor: n.floor,
+                business_id: None,
+            })
+            .collect();
+        let edges: Vec<EdgeRow> = g
+            .edges()
+            .iter()
+            .enumerate()
+            .map(|(i, e)| EdgeRow {
+                edge_id: 1 + i as u64,
+                node_a: 1 + e.a as u64,
+                node_b: 1 + e.b as u64,
+                kind: e.kind.code(),
+                cost_milliminutes: e.cost.0,
+            })
+            .collect();
+        let shuffled_order = |len: usize| {
+            let mut order: Vec<usize> = (0..len).collect();
+            order.sort_by_key(|&i| ((i as u64).wrapping_mul(2_654_435_761) ^ c.seed, i));
+            order
+        };
+        let n2: Vec<NodeRow> = shuffled_order(nodes.len())
+            .iter()
+            .map(|&i| nodes[i])
+            .collect();
+        let e2: Vec<EdgeRow> = shuffled_order(edges.len())
+            .iter()
+            .map(|&i| edges[i])
+            .collect();
+        let base = SearchGraph::from_rows(&nodes, &edges).map_err(|e| format!("{e:?}"))?;
+        let shuffled = SearchGraph::from_rows(&n2, &e2).map_err(|e| format!("{e:?}"))?;
+        let budget = node_budget(defs::BALANCE);
+        for (a, b) in route_pairs(c.seed, nodes.len(), 6) {
+            let one = search(&base, 1 + a, 1 + b, &rates(), budget);
+            let two = search(&shuffled, 1 + a, 1 + b, &rates(), budget);
+            ensure!(
+                one.is_ok() && one == two,
+                "{a}>{b}: row order changed the route"
+            );
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn inv_route_search_stays_within_its_node_budget() {
+    use sim::routing::search::{SearchGraph, node_budget, search};
+    let budget = node_budget(defs::BALANCE);
+    over_pool("inv_route_search_stays_within_its_node_budget", |c| {
+        let g = pooled_graph(c)?;
+        ensure!(
+            (g.nodes().len() as u64) < u64::from(budget),
+            "{} nodes reach the budget {budget}",
+            g.nodes().len()
+        );
+        let view = SearchGraph::from_graph(g);
+        let last = g.nodes().len() as u64 - 1;
+        search(&view, 0, last, &rates(), budget).map_err(|e| format!("{e:?}"))?;
+        Ok(())
+    });
+}
