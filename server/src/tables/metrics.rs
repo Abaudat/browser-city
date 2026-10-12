@@ -277,6 +277,17 @@ pub fn record_disconnect(ctx: &ReducerContext) {
     }
 }
 
+/// One store attempt into a container's grid (`packing_forced`): the
+/// writer of a store calls this once per attempt, with
+/// `sim::container_grid::packing_forced`'s verdict. Infallible. No store
+/// writer exists yet (Epic 8's interaction model), so nothing calls it.
+#[allow(dead_code)]
+pub fn record_store_attempt(ctx: &ReducerContext, forced: bool) {
+    let mut period = load_period(ctx);
+    period.on_store(forced);
+    store_period(ctx, &period);
+}
+
 /// The one client-to-server measure call (NFR32 allowlist). A refusal is
 /// `Err`, so it is uncounted and writes nothing.
 #[spacetimedb::reducer]

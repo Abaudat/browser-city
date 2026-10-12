@@ -6,8 +6,10 @@ metric 5 noticing
 metric 6 boot_time
 metric 7 concurrent_players
 metric 8 reconnection_continuity
+metric 9 packing_forced
 series 1 boot_millis_p50
 series 2 boot_millis_p95
 series 3 concurrent_now
 series 4 concurrent_peak
 series 5 reconnect_within_seam
+series 6 packing_forced

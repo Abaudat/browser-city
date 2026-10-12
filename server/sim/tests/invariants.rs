@@ -78,6 +78,8 @@ pub const INV_PLAYER_POSITION_PLANNING_NEVER_PANICS: &str = "Any i32 position an
 pub const INV_CHANGE_IS_REFUSED_ONLY_WHEN_THE_TILL_CANNOT_MAKE_IT: &str = "change is refused only when the till cannot make it: while the change due is under the bound a payment reports no change if and only if no combination of the pieces the till holds and what was just tendered sums to the change due, and the change chosen is the fewest pieces with ties to the larger denomination";
 pub const INV_CASH_PLANNING_NEVER_PANICS: &str = "cash planning never panics: value_of, choose_change and plan_payment return Ok or a typed Err for any table, any lines, any tender and any price";
 pub const INV_ITEM_INSTANCE_IN_EXACTLY_ONE_STATE: &str = "an item instance is in exactly one of its two states: any interleaving of place and hold moves leaves each instance in one form, never both, never neither";
+pub const INV_CONTAINER_FIT_MATCHES_ORACLE: &str = "a placement fits a container grid exactly when a brute-force cell-set oracle finds no overlap and nothing out of bounds, for any grid, any occupants and any candidate";
+pub const INV_CONTAINER_NEVER_OVERLAPS: &str = "any interleaving of store, rotate and take through the planner leaves no cell covered twice and every held item inside its grid";
 pub const INV_IDENTITY_REACHES_AT_MOST_ONE_CHARACTER: &str = "an identity reaches at most one character: over any interleaving of create, link, repeated link, link-to-self and link-by-a-stranger, no identity maps to two characters and no plan remaps a mapped identity";
 pub const INV_LINKING_NEVER_CHANGES_OR_ORPHANS_A_CHARACTER: &str = "linking never changes or orphans a character: a character's identity set only grows and never empties, and the character row is identical before and after any link, successful or refused";
 pub const INV_IDENTITY_PLANNING_NEVER_PANICS: &str = "identity planning never panics: plan_create, plan_link, check_claim and credential return Ok or a typed Err for any input, a spent or expired claim and an issuer with no audience included";
@@ -5495,6 +5497,109 @@ proptest! {
                 let in_held = held.get(&i);
                 prop_assert!(in_placed.is_some() != in_held.is_some(), "FR95: instance {} is in exactly one form", i);
                 prop_assert_eq!(in_placed.or(in_held).copied(), Some(want));
+            }
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(persisted())]
+    /// `inv_container_fit_matches_oracle` (FR94, FR95): `fits` accepts
+    /// exactly what a brute-force cell-set oracle accepts.
+    #[test]
+    fn inv_container_fit_matches_oracle(
+        grid in (1u8..=sim::item_instance::MAX_GRID_EXTENT, 1u8..=sim::item_instance::MAX_GRID_EXTENT),
+        occupants in proptest::collection::vec(
+            ((0u8..8, 0u8..8), (1u8..=4, 1u8..=4), 0u8..4), 0..8),
+        cand in ((1u8..=8, 1u8..=8), 0u8..4, (0u8..8, 0u8..8)),
+    ) {
+        use std::collections::BTreeSet;
+        use sim::container_grid::{FitError, Occupant, fits, footprint};
+        let cells = |slot: (u8, u8), bulk: (u8, u8), o: u8| -> Vec<(i32, i32)> {
+            let (w, h) = footprint(bulk, o);
+            let mut v = Vec::new();
+            for y in 0..h { for x in 0..w { v.push((slot.0 as i32 + x as i32, slot.1 as i32 + y as i32)); } }
+            v
+        };
+        // Occupants are made disjoint and in-grid first, as the planner
+        // keeps them; the rest are dropped.
+        let mut taken: BTreeSet<(i32, i32)> = BTreeSet::new();
+        let mut held: Vec<Occupant> = Vec::new();
+        for (i, (slot, bulk, o)) in occupants.iter().enumerate() {
+            let cs = cells(*slot, *bulk, *o);
+            let inside = cs.iter().all(|&(x, y)| x < grid.0 as i32 && y < grid.1 as i32);
+            if inside && cs.iter().all(|c| !taken.contains(c)) {
+                taken.extend(cs);
+                held.push(Occupant { instance_id: i as u64 + 1, slot: *slot, bulk: *bulk, orientation: *o });
+            }
+        }
+        let (bulk, o, slot) = cand;
+        let got = fits(grid, &held, bulk, o, slot);
+        let cs = cells(slot, bulk, o);
+        let in_bounds = cs.iter().all(|&(x, y)| x < grid.0 as i32 && y < grid.1 as i32);
+        let free = cs.iter().all(|c| !taken.contains(c));
+        let ever = (bulk.0 <= grid.0 && bulk.1 <= grid.1) || (bulk.1 <= grid.0 && bulk.0 <= grid.1);
+        prop_assert_eq!(got.is_ok(), in_bounds && free);
+        if !ever {
+            prop_assert_eq!(got, Err(FitError::NeverFits));
+        } else if !in_bounds {
+            prop_assert_eq!(got, Err(FitError::OutOfGrid));
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(persisted())]
+    /// `inv_container_never_overlaps` (FR95): any interleaving of store,
+    /// rotate and take that goes through the planner leaves no cell
+    /// covered twice and every item in bounds.
+    #[test]
+    fn inv_container_never_overlaps(
+        grid in (1u8..=sim::item_instance::MAX_GRID_EXTENT, 1u8..=sim::item_instance::MAX_GRID_EXTENT),
+        ops in proptest::collection::vec(
+            (0u64..6, 0u8..3, (1u8..=3, 1u8..=3), 0u8..4, (0u8..8, 0u8..8)), 0..60),
+    ) {
+        use std::collections::{BTreeMap, BTreeSet};
+        use sim::codes::container_kind;
+        use sim::container_grid::{Occupant, Store, footprint, plan_store};
+        use sim::item_instance::{ContainerRef, Held, MovePlan, Placed, Placement};
+        let container = ContainerRef::new(container_kind::OBJECT, 1).unwrap();
+        let world = Placement::Placed(Placed::new(0, 0, 0, (0, 0), 0).unwrap());
+        let mut held: BTreeMap<u64, Occupant> = BTreeMap::new();
+        for &(id, kind, bulk, o, slot) in &ops {
+            let before = held.clone();
+            match kind {
+                // Take: leaves the container.
+                2 => { held.remove(&id); }
+                // Store (new) or rotate/move (already held).
+                _ => {
+                    let (bulk, current) = match held.get(&id) {
+                        Some(h) => (h.bulk, Placement::Held(Held::new(container, h.slot, h.orientation).unwrap())),
+                        None => (bulk, world),
+                    };
+                    let occ: Vec<Occupant> = held.values().copied().collect();
+                    match plan_store(current, container, grid, id, &occ, bulk, slot, o).unwrap() {
+                        Store::Stored(plan) => {
+                            let into = match plan {
+                                MovePlan::Cross { insert, .. } => insert,
+                                MovePlan::Within(p) => p,
+                                MovePlan::Nothing => current,
+                            };
+                            if let Placement::Held(h) = into {
+                                held.insert(id, Occupant { instance_id: id, slot: h.slot(), bulk, orientation: h.orientation() });
+                            }
+                        }
+                        Store::DoesNotFit(_) => prop_assert_eq!(&held, &before, "a refused store writes nothing"),
+                    }
+                }
+            }
+            let mut seen: BTreeSet<(u8, u8)> = BTreeSet::new();
+            for h in held.values() {
+                let (w, hh) = footprint(h.bulk, h.orientation);
+                prop_assert!(h.slot.0 as u16 + w as u16 <= grid.0 as u16 && h.slot.1 as u16 + hh as u16 <= grid.1 as u16, "every item is in bounds");
+                for y in 0..hh { for x in 0..w {
+                    prop_assert!(seen.insert((h.slot.0 + x, h.slot.1 + y)), "no cell covered twice");
+                } }
             }
         }
     }
