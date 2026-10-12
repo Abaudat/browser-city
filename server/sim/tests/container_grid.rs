@@ -6,7 +6,7 @@
 use sim::codes::container_kind;
 use sim::container_grid::{
     FitError, Occupant, Store, can_ever_fit, first_fit, first_misfit, fits, footprint,
-    needs_rotation, packing_forced, plan_store,
+    needs_rotation, occupied, packing_forced, plan_store,
 };
 use sim::generated::defs::{ITEMS, MAX_FOOTPRINT_CELLS, OBJECTS};
 use sim::item_instance::{
@@ -312,4 +312,12 @@ fn the_audit_names_the_first_row_that_leaves_the_grid_or_overlaps() {
         first_misfit(grid, &over),
         Some((2, FitError::Overlaps { instance_id: 1 }))
     );
+}
+
+#[test]
+fn occupied_lists_every_covered_cell_row_major() {
+    let grid = (3, 2);
+    let held = [occ(1, (0, 0), (2, 1), 0), occ(2, (2, 0), (1, 2), 0)];
+    assert_eq!(occupied(grid, &held), [(0, 0), (1, 0), (2, 0), (2, 1)]);
+    assert_eq!(occupied(grid, &[]), []);
 }
