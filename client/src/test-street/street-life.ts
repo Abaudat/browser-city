@@ -83,6 +83,8 @@ export class StreetLife {
   /** How far a pose strays from its ledger position: the micro path's box. */
   readonly #strayCells: number;
   #zone: BodyZone | undefined;
+  /** The instant of the last `solve`: what `liveAt` puts back. */
+  #lastT: number | undefined;
   readonly #zoneHeld: HeldPredicate = (floor, cx, cy) =>
     this.#zone === undefined ||
     zoneHoldsChunk(this.#zone, floor, cx, cy, this.#zoneDials.chunkSize, this.#strayCells);
@@ -158,6 +160,7 @@ export class StreetLife {
    * its ledger line (off screen, in the margin). */
   solve(t: number, zone?: BodyZone): void {
     this.#zone = zone;
+    this.#lastT = t;
     this.#run(this.#members, t, this.#field);
   }
 
@@ -178,12 +181,15 @@ export class StreetLife {
     return this.#field.offsetY(member.index);
   }
 
-  /** The bodies this client holds, solved at `t` as they are (the ticker
-   * solves again next frame), sorted by id. What the e2e divergence check
-   * compares between two clients whose bubbles differ. */
+  /** The bodies this client holds, solved at `t` as they are, sorted by id.
+   * What the e2e divergence check compares between two clients whose bubbles
+   * differ. A read, not a step: afterwards the poses and the field are put
+   * back to the last `solve`, so nothing the next frame draws from changes. */
   liveAt(t: number): readonly LifeSample[] {
     this.#run(this.#members, t, this.#field);
-    return sampleOf(this.#members, this.#field);
+    const sample = sampleOf(this.#members, this.#field);
+    if (this.#lastT !== undefined) this.#run(this.#members, this.#lastT, this.#field);
+    return sample;
   }
 
   /** Every citizen's agreed state at `t`, computed from scratch with fresh

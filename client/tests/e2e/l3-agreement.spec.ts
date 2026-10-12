@@ -9,6 +9,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 // Pulls in `declare global { interface Window { __bc } }` -- types only.
 import type {} from "../../src/net/e2e-hooks";
+import { ZOOM } from "../../src/render/camera";
 import { AVOIDANCE_SPECS, AVOIDANCE_STANDERS, stagingBounds } from "../../src/test-street/citizens";
 
 const defs = JSON.parse(readFileSync("public/defs/defs.json", "utf8")) as {
@@ -148,41 +149,77 @@ test("two clients with different bubbles agree on every shared body of the 200-b
       page.evaluate((instants) => {
         const hook = window.__bc?.l3Live;
         if (!hook) throw new Error("no l3Live hook");
-        return instants.map((t) => ({ t, bodies: hook(t).map((s) => ({ ...s })) }));
+        // One synchronous read, between frames: the hook puts the live poses
+        // back to the last solved frame itself.
+        return instants.map((t) => {
+          const live = hook(t);
+          return { t, viewport: live.viewport, bodies: live.bodies.map((s) => ({ ...s })) };
+        });
       }, INSTANTS as number[]);
     const [fromA, fromB] = await Promise.all([sweep(pageA), sweep(pageB)]);
 
+    type Body = (typeof fromA)[number]["bodies"][number];
+    type View = (typeof fromA)[number]["viewport"];
+    const onScreen = (view: View, s: Body): boolean =>
+      view !== undefined && s.x >= view.x0 && s.x <= view.x1 && s.y >= view.y0 && s.y <= view.y1;
+    const differs = (a: Body, b: Body): boolean =>
+      a.x !== b.x ||
+      a.y !== b.y ||
+      a.activity !== b.activity ||
+      a.frameIndex !== b.frameIndex ||
+      a.facing !== b.facing ||
+      a.offsetX !== b.offsetX ||
+      a.offsetY !== b.offsetY;
+    const px = (a: Body, b: Body): number =>
+      Math.hypot(a.offsetX - b.offsetX, a.offsetY - b.offsetY) * TILE_SIZE_PX * ZOOM;
+    const zero = () => ({ shared: 0, disagreements: 0, maxPx: 0 });
+    // Every shared body, whether or not both resolved it, split by where it
+    // is drawn: on both screens, on one only, on neither.
+    const split = { onBothScreens: zero(), onOneScreen: zero(), offBothScreens: zero() };
     let compared = 0;
     let disagreements = 0;
     let maxOffsetDisagreementCells = 0;
     let onlyInOne = 0;
     let sidestepping = 0;
+    let unresolvedOnScreen = 0;
     const examples: string[] = [];
     for (let k = 0; k < fromA.length; k++) {
-      const inB = new Map((fromB[k]?.bodies ?? []).map((s) => [s.id, s]));
-      const sampleA = fromA[k]?.bodies ?? [];
-      onlyInOne += sampleA.filter((s) => !inB.has(s.id)).length;
-      for (const sa of sampleA) {
+      const a = fromA[k];
+      const b = fromB[k];
+      if (!a || !b) continue;
+      const inB = new Map(b.bodies.map((s) => [s.id, s]));
+      // The scoping claim, as a guard: a body drawn on a client's own screen
+      // always has a resolved (agreed) offset there.
+      for (const s of a.bodies) if (onScreen(a.viewport, s) && !s.agreed) unresolvedOnScreen++;
+      for (const s of b.bodies) if (onScreen(b.viewport, s) && !s.agreed) unresolvedOnScreen++;
+      onlyInOne += a.bodies.filter((s) => !inB.has(s.id)).length;
+      for (const sa of a.bodies) {
         const sb = inB.get(sa.id);
+        if (!sb) continue;
+        const seenA = onScreen(a.viewport, sa);
+        const seenB = onScreen(b.viewport, sb);
+        const bucket =
+          seenA && seenB
+            ? split.onBothScreens
+            : seenA || seenB
+              ? split.onOneScreen
+              : split.offBothScreens;
+        bucket.shared++;
+        if (differs(sa, sb)) {
+          bucket.disagreements++;
+          bucket.maxPx = Math.max(bucket.maxPx, px(sa, sb));
+        }
         // Only an offset resolved on a wholly held neighbourhood is agreed on.
-        if (!sb || !sa.agreed || !sb.agreed) continue;
+        if (!sa.agreed || !sb.agreed) continue;
         compared++;
         if (sa.offsetX !== 0 || sa.offsetY !== 0) sidestepping++;
-        const same =
-          sa.x === sb.x &&
-          sa.y === sb.y &&
-          sa.activity === sb.activity &&
-          sa.frameIndex === sb.frameIndex &&
-          sa.facing === sb.facing &&
-          sa.offsetX === sb.offsetX &&
-          sa.offsetY === sb.offsetY;
-        if (same) continue;
+        if (!differs(sa, sb)) continue;
         disagreements++;
         maxOffsetDisagreementCells = Math.max(
           maxOffsetDisagreementCells,
           Math.hypot(sa.offsetX - sb.offsetX, sa.offsetY - sb.offsetY),
         );
-        if (examples.length < 5) examples.push(`${sa.id}@${fromA[k]?.t}`);
+        if (examples.length < 5) examples.push(`${sa.id}@${a.t}`);
       }
     }
     const report = {
@@ -192,7 +229,9 @@ test("two clients with different bubbles agree on every shared body of the 200-b
       heldByOneOnly: onlyInOne,
       disagreements,
       maxOffsetDisagreementCells,
-      maxOffsetDisagreementPx: maxOffsetDisagreementCells * TILE_SIZE_PX,
+      maxOffsetDisagreementPx: maxOffsetDisagreementCells * TILE_SIZE_PX * ZOOM,
+      unresolvedOnScreen,
+      allSharedBodies: split,
       examples,
     };
     mkdirSync("test-results/story-5.4-l3-budget", { recursive: true });
@@ -207,6 +246,9 @@ test("two clients with different bubbles agree on every shared body of the 200-b
     expect(compared).toBeGreaterThan(INSTANTS.length * 50);
     expect(sidestepping).toBeGreaterThan(INSTANTS.length * 10);
     expect(onlyInOne).toBeGreaterThan(0);
+    expect(report.unresolvedOnScreen).toBe(0);
+    expect(split.onBothScreens.shared).toBeGreaterThan(INSTANTS.length * 10);
+    expect(split.onBothScreens.disagreements).toBe(0);
     expect(report).toMatchObject({ disagreements: 0, maxOffsetDisagreementPx: 0 });
   } finally {
     await a.close();

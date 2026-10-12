@@ -6,6 +6,7 @@ import {
   type L3Measurement,
   MAX_L3_ALLOC_BYTES_PER_FRAME,
   MIN_MEASURED_FRAMES,
+  MIN_TICKER_FRAMES,
   median,
   percentile,
   type SamplingNode,
@@ -18,7 +19,10 @@ const GOOD: L3Measurement = {
   walkingMin: 150,
   requiredBodies: 200,
   requiredWalking: 120,
-  l3Ms: distribution(Array.from({ length: MIN_MEASURED_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01)),
+  l3Ms: distribution(Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01)),
+  sweepMs: distribution(
+    Array.from({ length: MIN_MEASURED_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01),
+  ),
   allocBytesPerFrame: 0,
   gc: {
     minorPausesMs: [0.5, 0.7, 0.9, 1],
@@ -38,7 +42,7 @@ describe("L3 budget verdict (NFR11)", () => {
 
   it("FAILS a planted over-budget series", () => {
     const slow = distribution(
-      Array.from({ length: MIN_MEASURED_FRAMES }, (_, i) => (i % 10 < 2 ? 3 : 0.5)),
+      Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => (i % 10 < 2 ? 3 : 0.5)),
     );
     const v = verdict({ ...GOOD, l3Ms: slow });
     expect(v.met).toBe(false);
@@ -47,7 +51,7 @@ describe("L3 budget verdict (NFR11)", () => {
 
   it("FAILS a planted tail the p95 hides", () => {
     const tail = distribution(
-      Array.from({ length: MIN_MEASURED_FRAMES }, (_, i) => (i % 50 === 0 ? 9 : 0.4)),
+      Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => (i % 50 === 0 ? 9 : 0.4)),
     );
     const v = verdict({ ...GOOD, l3Ms: tail });
     expect(v.met).toBe(false);
@@ -60,19 +64,23 @@ describe("L3 budget verdict (NFR11)", () => {
     expect(v.failures.join()).toContain("B/frame");
   });
 
-  it("FAILS on a major GC, a long minor pause and heap growth", () => {
+  it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
     expect(verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1 } }).met).toBe(false);
-    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, minorPausesMs: [4.5, 4.6, 4.7, 5] } }).met).toBe(
-      false,
-    );
-    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, longestMinorPauseMs: 9 } }).met).toBe(false);
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);
+    const slowScavenges = { ...GOOD.gc, minorPausesMs: [4.5, 5], longestMinorPauseMs: 9 };
+    expect(verdict({ ...GOOD, gc: slowScavenges }).met).toBe(true);
+  });
+
+  it("FAILS a render-free sweep over budget even when the ticker is green", () => {
+    const slow = distribution(Array.from({ length: MIN_MEASURED_FRAMES }, () => 2.5));
+    expect(verdict({ ...GOOD, sweepMs: slow }).met).toBe(false);
   });
 
   it("FAILS a vacuous run: too few bodies, too few walking, too few frames", () => {
     expect(verdict({ ...GOOD, liveBodiesMin: 199 }).met).toBe(false);
     expect(verdict({ ...GOOD, walkingMin: 10 }).met).toBe(false);
     expect(verdict({ ...GOOD, l3Ms: distribution([0.1, 0.2]) }).met).toBe(false);
+    expect(verdict({ ...GOOD, sweepMs: distribution([0.1, 0.2]) }).met).toBe(false);
   });
 
   it("FAILS on NaN rather than passing it", () => {
@@ -108,12 +116,6 @@ describe("GC classification", () => {
     expect(gc.totalPauseMs).toBeCloseTo(11.3);
     expect(gc.longestMinorPauseMs).toBe(1.5);
     expect(gc.longestMajorPauseMs).toBe(9);
-  });
-
-  it("tolerates one outlier scavenge but not a shifted distribution", () => {
-    const pauses = [...Array.from({ length: 300 }, () => 0.8), 6];
-    const gc = { ...GOOD.gc, minorPausesMs: pauses, longestMinorPauseMs: 6 };
-    expect(verdict({ ...GOOD, gc }).met).toBe(true);
   });
 
   it("adds laps", () => {

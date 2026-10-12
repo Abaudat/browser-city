@@ -6,7 +6,10 @@
     "cpu": "Intel(R) Core(TM) i9-14900KF",
     "cores": 32,
     "chromium": "153.0.8010.12",
-    "ci": false
+    "ci": false,
+    "runId": null,
+    "runner": null,
+    "image": null
   },
   "runMs": 60000,
   "soak": false,
@@ -21,9 +24,9 @@
       "y": 18
     },
     "liveBodiesMin": 259,
-    "walkingMin": 128,
-    "sidesteppingMax": 111,
-    "cappedMax": 97
+    "walkingMin": 126,
+    "sidesteppingMax": 107,
+    "cappedMax": 94
   },
   "budget": {
     "p95Ms": 2,
@@ -32,203 +35,204 @@
   "verdict": "MET",
   "failures": [],
   "l3Ms": {
-    "frames": 4000,
-    "p50": 0.6000000000931323,
-    "p95": 0.7000000001862645,
-    "p99": 0.8999999999068677,
-    "max": 1.3000000002793968
+    "frames": 3736,
+    "p50": 0.7999999998137355,
+    "p95": 1,
+    "p99": 1.1000000005587935,
+    "max": 1.6000000005587935
   },
-  "l3TickerMs": {
-    "frames": 3697,
-    "p50": 0.8000000002793968,
-    "p95": 0.900000000372529,
-    "p99": 1,
-    "max": 1.7999999998137355
+  "l3SweepMs": {
+    "frames": 4000,
+    "p50": 0.6000000005587935,
+    "p95": 0.7000000001862645,
+    "p99": 0.8000000007450581,
+    "max": 1.2000000001862645
   },
   "frameWorkMs": {
-    "frames": 3697,
+    "frames": 3736,
     "p50": 1.2999999998137355,
-    "p95": 1.3999999999068677,
-    "p99": 1.5,
-    "max": 2.2999999998137355
+    "p95": 1.400000000372529,
+    "p99": 1.7000000001862645,
+    "max": 2.5
   },
   "throttled4x": {
     "rate": 4,
     "l3Ms": {
-      "frames": 433,
-      "p50": 3.7000000001862645,
-      "p95": 4.600000000093132,
-      "p99": 5.399999999906868,
-      "max": 6.899999999906868
+      "frames": 428,
+      "p50": 3.7999999998137355,
+      "p95": 4.3999999994412065,
+      "p99": 5,
+      "max": 7.2999999998137355
     },
     "frameWorkMs": {
-      "frames": 433,
-      "p50": 5.7000000001862645,
-      "p95": 7,
-      "p99": 8,
-      "max": 9.600000000093132
+      "frames": 428,
+      "p50": 5.8999999994412065,
+      "p95": 6.699999999254942,
+      "p99": 7.2999999998137355,
+      "max": 10.199999999254942
     }
   },
   "allocation": {
     "windowMs": 15000,
-    "frames": 901,
-    "l3Bytes": 82676756,
-    "l3BytesPerFrame": 91761.10543840178,
+    "frames": 902,
+    "l3Bytes": 13890468,
+    "l3BytesPerFrame": 15399.631929046564,
     "ceilingBytesPerFrame": 204800,
     "top": [
       {
-        "fn": "update",
-        "url": "http://127.0.0.1:5173/src/test-street/citizens-layer.ts",
-        "bytes": 21349304
-      },
-      {
-        "fn": "#resolveBody",
-        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
-        "bytes": 21021396
-      },
-      {
-        "fn": "#byPosition",
-        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
-        "bytes": 15161508
-      },
-      {
         "fn": "#ensurePaths",
         "url": "http://127.0.0.1:5173/src/l3/body.ts",
-        "bytes": 7253788
-      },
-      {
-        "fn": "#roomOn",
-        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
-        "bytes": 7164780
-      },
-      {
-        "fn": "sort",
-        "url": "",
-        "bytes": 5254188
+        "bytes": 7319532
       },
       {
         "fn": "planBodies",
         "url": "http://127.0.0.1:5173/src/world/body-zone.ts",
-        "bytes": 3138484
+        "bytes": 3143020
+      },
+      {
+        "fn": "#roomOn",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 1016880
       },
       {
         "fn": "findMicroPath",
         "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
-        "bytes": 693416
+        "bytes": 681516
       },
       {
         "fn": "flavourKindOf",
         "url": "http://127.0.0.1:5173/src/l3/flavour.ts",
-        "bytes": 340640
+        "bytes": 329712
       },
       {
         "fn": "seedOf",
         "url": "http://127.0.0.1:5173/src/l3/seed.ts",
-        "bytes": 290088
+        "bytes": 310824
+      },
+      {
+        "fn": "pullTaut",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 267804
+      },
+      {
+        "fn": "frameAt",
+        "url": "http://127.0.0.1:5173/src/l3/citizen.ts",
+        "bytes": 211468
+      },
+      {
+        "fn": "walkable",
+        "url": "http://127.0.0.1:5173/src/test-street/citizens.ts",
+        "bytes": 204160
+      },
+      {
+        "fn": "apply",
+        "url": "http://127.0.0.1:5173/src/world/body-lifecycle.ts",
+        "bytes": 85248
       }
     ]
   },
   "gc": {
-    "minorCount": 280,
+    "minorCount": 114,
     "majorCount": 0,
-    "totalPauseMs": 65.86200000000001,
-    "longestMinorPauseMs": 0.51,
-    "longestMajorPauseMs": 0
+    "totalPauseMs": 32.094,
+    "longestMinorPauseMs": 0.671,
+    "longestMajorPauseMs": 0,
+    "minorP99PauseMs": 0.449
   },
   "cpuTopSelf": [
     {
       "fn": "(program) ",
-      "share": 0.7554474708171206
+      "share": 0.7652040030792918
     },
     {
       "fn": "(idle) ",
-      "share": 0.22568093385214008
-    },
-    {
-      "fn": "#roomOn src/l3/avoidance.ts",
-      "share": 0.004085603112840467
+      "share": 0.20958429561200922
     },
     {
       "fn": "#resolveBody src/l3/avoidance.ts",
-      "share": 0.0019455252918287938
+      "share": 0.005388760585065435
     },
     {
-      "fn": "#keepNearest src/l3/avoidance.ts",
-      "share": 0.0015564202334630351
-    },
-    {
-      "fn": "packQuadAttributes http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=bf58eda8",
-      "share": 0.0013618677042801556
+      "fn": "#roomOn src/l3/avoidance.ts",
+      "share": 0.003849114703618168
     },
     {
       "fn": "collectRenderablesSimple http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=bf58eda8",
-      "share": 0.0011673151750972762
+      "share": 0.0032717474980754426
     },
     {
-      "fn": "update src/test-street/citizens-layer.ts",
-      "share": 0.0007782101167315176
+      "fn": "#closestApproach src/l3/avoidance.ts",
+      "share": 0.0013471901462663587
+    },
+    {
+      "fn": "packQuadAttributes http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=bf58eda8",
+      "share": 0.000962278675904542
     },
     {
       "fn": "bufferSubData ",
-      "share": 0.0005836575875486381
+      "share": 0.000962278675904542
     },
     {
-      "fn": "(garbage collector) ",
-      "share": 0.0005836575875486381
+      "fn": "update src/test-street/citizens-layer.ts",
+      "share": 0.0007698229407236335
+    },
+    {
+      "fn": "clear ",
+      "share": 0.0005773672055427252
+    },
+    {
+      "fn": "(anonymous) src/test-street/scene.ts",
+      "share": 0.0005773672055427252
     },
     {
       "fn": "resolve src/l3/avoidance.ts",
-      "share": 0.0003891050583657588
+      "share": 0.0005773672055427252
     },
     {
-      "fn": "#byCell src/l3/avoidance.ts",
-      "share": 0.0003891050583657588
+      "fn": "update http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=bf58eda8",
+      "share": 0.00038491147036181676
     },
     {
-      "fn": "_update http://127.0.0.1:5173/node_modules/.vite/deps/RenderTargetSystem-BredZz1o.js?v=bf58eda8",
-      "share": 0.0003891050583657588
+      "fn": "render http://127.0.0.1:5173/node_modules/.vite/deps/pixi__js.js?v=bf58eda8",
+      "share": 0.00038491147036181676
     },
     {
       "fn": "render http://127.0.0.1:5173/node_modules/.vite/deps/RenderTargetSystem-BredZz1o.js?v=bf58eda8",
-      "share": 0.0003891050583657588
-    },
-    {
-      "fn": "break http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=bf58eda8",
-      "share": 0.0003891050583657588
+      "share": 0.00038491147036181676
     }
   ],
   "heap": {
     "samples": [
       {
         "atMs": 0,
-        "usedHeapBytes": 19066308
+        "usedHeapBytes": 19117884
       },
       {
-        "atMs": 10471,
-        "usedHeapBytes": 19273148
+        "atMs": 10621,
+        "usedHeapBytes": 19302360
       },
       {
-        "atMs": 20875,
-        "usedHeapBytes": 19313948
+        "atMs": 21229,
+        "usedHeapBytes": 19295116
       },
       {
-        "atMs": 31306,
-        "usedHeapBytes": 19356180
+        "atMs": 31823,
+        "usedHeapBytes": 19347452
       },
       {
-        "atMs": 41744,
-        "usedHeapBytes": 19332064
+        "atMs": 42403,
+        "usedHeapBytes": 19360700
       },
       {
-        "atMs": 52178,
-        "usedHeapBytes": 19382356
+        "atMs": 52863,
+        "usedHeapBytes": 19351304
       },
       {
-        "atMs": 62568,
-        "usedHeapBytes": 19378072
+        "atMs": 63408,
+        "usedHeapBytes": 19377668
       }
     ],
-    "growthRatio": 1.005444050966661,
+    "growthRatio": 1.0039014918383038,
     "bound": 1.5
   }
 }

@@ -60,15 +60,38 @@ export function worldPointPx(
   zoom: number,
   flightOffsetPx: number,
 ): { readonly x: number; readonly y: number } {
-  return {
-    x: snapToScreenPx(worldX * tileSizePx, zoom),
-    // The flight offset (FR182) is summed with the floor offset *before*
-    // the one snap -- never snapped separately and added after.
-    y: snapToScreenPx(
-      worldY * tileSizePx + floorOffsetPx(floor, storeyHeightPx) + flightOffsetPx,
-      zoom,
-    ),
-  };
+  return worldPointPxInto(
+    { x: 0, y: 0 },
+    worldX,
+    worldY,
+    floor,
+    tileSizePx,
+    storeyHeightPx,
+    zoom,
+    flightOffsetPx,
+  );
+}
+
+/** `worldPointPx` written into `out`, for a per-frame, per-body caller that
+ * must not allocate. */
+export function worldPointPxInto(
+  out: { x: number; y: number },
+  worldX: number,
+  worldY: number,
+  floor: number,
+  tileSizePx: number,
+  storeyHeightPx: number,
+  zoom: number,
+  flightOffsetPx: number,
+): { x: number; y: number } {
+  out.x = snapToScreenPx(worldX * tileSizePx, zoom);
+  // The flight offset (FR182) is summed with the floor offset *before*
+  // the one snap -- never snapped separately and added after.
+  out.y = snapToScreenPx(
+    worldY * tileSizePx + floorOffsetPx(floor, storeyHeightPx) + flightOffsetPx,
+    zoom,
+  );
+  return out;
 }
 
 /**

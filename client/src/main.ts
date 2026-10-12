@@ -77,6 +77,7 @@ import { resolveStorage as resolveSessionStorage } from "./settings/settings-sto
 import { PLAYER_START } from "./test-street/fixture";
 import { placeLinkCarrier } from "./test-street/link-carrier";
 import type { RemotePlayersSource } from "./test-street/remote-players-layer";
+import { buildRushCrowd } from "./test-street/rush-crowd";
 import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
 import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
@@ -629,7 +630,9 @@ async function startStreetScene(
   const watchBodiesForE2e =
     import.meta.env.DEV && new URLSearchParams(window.location.search).has("watchBodies");
   const rushCrowdForE2e =
-    import.meta.env.DEV && new URLSearchParams(window.location.search).has("rushCrowd");
+    import.meta.env.DEV && new URLSearchParams(window.location.search).has("rushCrowd")
+      ? buildRushCrowd(defs)
+      : undefined;
 
   // Story 1.12 (FR165/FR168): set only inside the DEV branch below, and
   // only after the scene has mounted. Every callback that notifies it is
@@ -737,7 +740,7 @@ async function startStreetScene(
   exposeL3BodiesForE2e(
     () => handle.l3Bodies(),
     () => handle.citizensLayer.bodyCount(),
-    (t) => handle.citizensLayer.liveAt(t),
+    (t) => ({ viewport: handle.viewportCells(), bodies: handle.citizensLayer.liveAt(t) }),
     (frames) => handle.l3Sweep(frames),
   );
 

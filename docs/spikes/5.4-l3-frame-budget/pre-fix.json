@@ -222,5 +222,11 @@
     ],
     "growthRatio": 1.0376522305033036,
     "bound": 1.5
+  },
+  "environment": {
+    "platform": "win32",
+    "cpu": "Intel(R) Core(TM) i9-14900KF",
+    "cores": 32,
+    "ci": false
   }
 }

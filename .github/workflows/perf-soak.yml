@@ -35,7 +35,7 @@ jobs:
   soak:
     name: soak
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       # The client reads its sprites straight out of the repo-root
       # `ModernTileset/`, so this needs the whole repository, never a

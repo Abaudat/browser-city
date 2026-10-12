@@ -37,6 +37,7 @@ import {
   MAX_L3_ALLOC_BYTES_PER_FRAME,
   MAX_L3_HEAP_GROWTH_RATIO,
   MIN_MEASURED_FRAMES,
+  MIN_TICKER_FRAMES,
   type SamplingNode,
   summariseGc,
   type TraceEvent,
@@ -171,7 +172,13 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
 
   heapSamples.push({ atMs: 0, usedHeapBytes: await heapBytes(cdp) });
   const startedAt = Date.now();
-  while (Date.now() - startedAt < RUN_MS) {
+  // Laps run until the time is up and the ticker window holds its floor of
+  // frames, within three times the time: a slow frame must not pass by being
+  // too few to count.
+  while (
+    Date.now() - startedAt < RUN_MS ||
+    (l3Samples.length < MIN_TICKER_FRAMES && Date.now() - startedAt < 3 * RUN_MS)
+  ) {
     const trace = await startGcTrace(cdp);
     await startTimings(page);
     const lapEnd = Date.now() + LAP_MS;
@@ -238,13 +245,13 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
 
   const first = heapSamples[1]?.usedHeapBytes ?? Number.NaN;
   const last = heapSamples[heapSamples.length - 1]?.usedHeapBytes ?? Number.NaN;
-  // The gated statistic: render-free L3 frames over successive instants, so
-  // a runner that draws few frames still yields the sample the verdict needs.
-  // The real-ticker window above is reported beside it and gated at the same
-  // budget.
+  // The verdict figure is the real ticker's L3 window, render interleaved.
+  // The render-free sweep -- the same window over successive 60 Hz instants,
+  // no render, so no scavenge or contention lands in it -- is supplementary:
+  // the optimistic figure, gated at the same budget.
   const sweep = await page.evaluate((n) => window.__bc?.l3Sweep?.(n) ?? [], SWEEP_FRAMES);
-  const l3Ms = distribution(sweep);
-  const tickerMs = distribution(l3Samples);
+  const sweepMs = distribution(sweep);
+  const l3Ms = distribution(l3Samples);
   const frameMs = distribution(frameSamples);
   const requiredWalking = Math.floor(RUSH_CROWD_SIZE * RUSH_MIN_WALKING_SHARE);
   const result = verdict({
@@ -253,6 +260,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     requiredBodies: RUSH_CROWD_SIZE,
     requiredWalking,
     l3Ms,
+    sweepMs,
     allocBytesPerFrame,
     gc,
     heapGrowthRatio: last / first,
@@ -267,6 +275,9 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
       cores: cpus().length,
       chromium: browser.version(),
       ci: Boolean(process.env.CI),
+      runId: process.env.GITHUB_RUN_ID ?? null,
+      runner: process.env.RUNNER_NAME ?? null,
+      image: process.env.ImageOS ?? null,
     },
     runMs: RUN_MS,
     soak: RUN_MS >= 300_000,
@@ -283,7 +294,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     verdict: result.met ? "MET" : "MISSED",
     failures: result.failures,
     l3Ms,
-    l3TickerMs: tickerMs,
+    l3SweepMs: sweepMs,
     frameWorkMs: frameMs,
     throttled4x: {
       rate: THROTTLE_RATE,
@@ -298,17 +309,17 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
       ceilingBytesPerFrame: MAX_L3_ALLOC_BYTES_PER_FRAME,
       top: topAllocators(profile.profile.head),
     },
-    gc: { ...gc, minorPausesMs: undefined },
+    gc: {
+      ...gc,
+      minorPausesMs: undefined,
+      minorP99PauseMs: distribution(gc.minorPausesMs).p99,
+    },
     cpuTopSelf: cpuTop,
     heap: { samples: heapSamples, growthRatio: last / first, bound: MAX_L3_HEAP_GROWTH_RATIO },
   };
   mkdirSync(REPORT_DIR, { recursive: true });
   writeFileSync(`${REPORT_DIR}/l3-budget.json`, `${JSON.stringify(report, null, 2)}\n`, "utf-8");
 
-  expect(l3Ms.frames).toBeGreaterThanOrEqual(MIN_MEASURED_FRAMES);
-  // The real ticker, render and all, must hold the same budget.
-  expect(tickerMs.frames).toBeGreaterThan(100);
-  expect(tickerMs.p95).toBeLessThanOrEqual(L3_P95_BUDGET_MS);
   // The load is not vacuous: avoidance really ran, and ran at its cap.
   expect(sidesteppingMax).toBeGreaterThan(0);
   expect(cappedMax).toBeGreaterThan(0);

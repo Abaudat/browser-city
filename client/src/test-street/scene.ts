@@ -119,7 +119,7 @@ import {
   type RemotePlayersLayer,
   type RemotePlayersSource,
 } from "./remote-players-layer";
-import { buildRushCrowd } from "./rush-crowd";
+import type { RushCrowd } from "./rush-crowd";
 import { lifeDialsFor, StreetLife } from "./street-life";
 import { Timetable } from "./timetable";
 
@@ -255,8 +255,9 @@ export interface MountStreetSceneOptions {
    * clock: the bracket is here. */
   readonly onL3Work?: (ms: number) => void;
   /** Story 5.4: the dev-only rush-hour load (`rush-crowd.ts`) added to the
-   * street. Absent in every production path. */
-  readonly rushCrowd?: boolean;
+   * street, built by the caller inside its DEV branch so a production bundle
+   * never holds the builder. Absent in every production path. */
+  readonly rushCrowd?: RushCrowd;
   /** Called once at mount and then every time visibility is actually
    * re-applied (story 1.7's e2e proof, `enclosure.spec.ts`) -- a map from
    * decimal `stableId` string to its current FR120/FR121/FR122 state,
@@ -431,6 +432,8 @@ export interface StreetSceneHandle {
    * instants from the current city time, timing each. No render, so a
    * GPU-less runner that draws few frames still yields thousands of samples. */
   l3Sweep(frames: number): number[];
+  /** The viewport in floor-0 cells (an e2e read), or none before a camera. */
+  viewportCells(): { x0: number; y0: number; x1: number; y1: number } | undefined;
   /** Removes every listener this scene attached (keyboard and pointer). */
   destroy(): void;
   /** Live-updates the FR173 highlight dial (0-100) -- re-applies
@@ -1892,7 +1895,7 @@ export async function mountStreetScene(
       config: l3Config,
       life: streetLife,
       frozen: crowdFrozen,
-      rush: rushCrowd && !crowdFrozen ? buildRushCrowd(defs) : undefined,
+      rush: crowdFrozen ? undefined : rushCrowd,
     },
     // A frozen crowd is staged whole for a screenshot.
     crowdFrozen ? {} : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
@@ -2021,6 +2024,7 @@ export async function mountStreetScene(
     allBoundTextureSources: countAllBoundTextureSources(app.stage),
     commuterDrawn: () => commuterDrawn(),
     l3Bodies: () => [...commuterDiagnostics(), ...citizensLayer.l3Bodies()],
+    viewportCells: () => viewportRect(),
     l3Sweep: (frames) => {
       const start = cityMilliminutes?.();
       if (start === undefined) return [];

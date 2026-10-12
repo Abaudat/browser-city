@@ -201,17 +201,21 @@ declare global {
       }[];
       /** Story 5.4: the L3 state of the bodies this client holds, at a
        * given city time -- what differs between two bubbles. */
-      l3Live?: (cityMilli: number) => readonly {
-        id: string;
-        x: number;
-        y: number;
-        activity: string;
-        frameIndex: number;
-        facing: string;
-        offsetX: number;
-        offsetY: number;
-        agreed: boolean;
-      }[];
+      l3Live?: (cityMilli: number) => {
+        /** The viewport in floor-0 cells. */
+        viewport: { x0: number; y0: number; x1: number; y1: number } | undefined;
+        bodies: readonly {
+          id: string;
+          x: number;
+          y: number;
+          activity: string;
+          frameIndex: number;
+          facing: string;
+          offsetX: number;
+          offsetY: number;
+          agreed: boolean;
+        }[];
+      };
       /** Story 5.1: the L3 commuter as last drawn -- a callable read fresh
        * each call, `undefined` while it is not on screen. */
       commuterDrawn?: () =>

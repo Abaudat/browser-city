@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 // Story 5.4 (NFR11, D-L3): docs/spikes/5.4-l3-frame-budget.md is exactly this
-// script's output over the committed raw JSON the l3-budget spec wrote
-// (docs/spikes/5.4-l3-frame-budget/l3-budget.json, and pre-fix.json, the run
-// before the hot-spot fix). `scripts/ci/check-l3-budget-report-current.sh`
-// regenerates it and fails on any drift. Node only, no npm dependency.
+// script's output over the committed raw JSON (docs/spikes/5.4-l3-frame-budget/):
+//   l3-budget.json         the l3-budget spec's report from the CI runner
+//   pre-fix.json           the run before the hot-spot fix
+//   divergence.json        the density divergence sweep, after tightening
+//   divergence-before.json the same sweep before it
+// `scripts/ci/check-l3-budget-report-current.sh` regenerates it and fails on
+// any drift. Node only, no npm dependency.
 //
 //   node scripts/dev/generate-l3-budget-report.mjs \
 //     --raw-dir docs/spikes/5.4-l3-frame-budget \
@@ -11,11 +14,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const args = Object.fromEntries(
-  process.argv
-    .slice(2)
-    .reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1]]] : acc), []),
-);
+const args = {};
+for (let i = 2; i < process.argv.length; i += 2) {
+  args[String(process.argv[i]).replace(/^--/, "")] = process.argv[i + 1];
+}
 if (!args["raw-dir"] || !args.out) {
   console.error("usage: generate-l3-budget-report.mjs --raw-dir <dir> --out <file>");
   process.exit(2);
@@ -23,12 +25,19 @@ if (!args["raw-dir"] || !args.out) {
 const read = (name) => JSON.parse(readFileSync(join(args["raw-dir"], name), "utf8"));
 const after = read("l3-budget.json");
 const before = read("pre-fix.json");
+const divergence = read("divergence.json");
+const divergenceBefore = read("divergence-before.json");
 
 const ms = (v) => `${v.toFixed(2)} ms`;
 const kb = (v) => `${(v / 1024).toFixed(0)} KB`;
 const row = (label, d) =>
   `| ${label} | ${d.frames} | ${ms(d.p50)} | ${ms(d.p95)} | ${ms(d.p99)} | ${ms(d.max)} |`;
 const headroom = (1 - after.l3Ms.p95 / after.budget.p95Ms) * 100;
+const env = after.environment ?? {};
+const machine = (e) =>
+  e && e.platform
+    ? `${e.platform}, ${e.cpu}, ${e.ci ? `GitHub Actions run ${e.runId}, runner ${e.runner} (${e.image})` : "a local run"}`
+    : "an unrecorded machine";
 const lines = [];
 const out = (s = "") => lines.push(s);
 
@@ -40,14 +49,14 @@ out();
 out("## Pre-registered verdict");
 out();
 out(
-  `The statistic is the p95 of the per-frame L3 window (\`streetLife.solve\` + \`citizensLayer.update\`, Pixi's render excluded), CPU unthrottled, ${after.crowd.size} citizens bodied at once in one bubble on shipped dials. Budget: p95 <= ${after.budget.p95Ms} ms, p99 <= ${after.budget.p99Ms} ms. Gated by \`client/tests/e2e/l3-budget.spec.ts\` in \`e2e-perf\`; the 4x CPU-throttled run is reported, never gated.`,
+  `The statistic is the p95 of the per-frame L3 window (\`streetLife.solve\` + \`citizensLayer.update\`, Pixi's render excluded) measured in the real ticker with the render interleaved, CPU unthrottled, ${after.crowd.size} citizens bodied at once in one bubble on shipped dials. Budget: p95 <= ${after.budget.p95Ms} ms, p99 <= ${after.budget.p99Ms} ms, zero major GCs, allocation under a stamped ceiling. Gated by \`client/tests/e2e/l3-budget.spec.ts\` in \`e2e-perf\`; the 4x CPU-throttled run is reported, never gated.`,
 );
 out();
 out(`## Verdict: **${after.verdict}**`);
 out();
 if (after.verdict === "MET") {
   out(
-    `L3 p95 is ${ms(after.l3Ms.p95)} against ${after.budget.p95Ms} ms: ${headroom.toFixed(0)}% headroom${headroom < 25 ? ", inside the 25% risk band: a slower runner or a heavier dial can overturn it, and D-L3 is reopened if it does" : ""}.`,
+    `L3 p95 is ${ms(after.l3Ms.p95)} against ${after.budget.p95Ms} ms: ${headroom.toFixed(0)}% headroom${headroom < 25 ? ". That is inside the 25% risk band: a slower runner or a heavier dial can overturn it, and D-L3 is reopened if it does" : ""}.`,
   );
 } else {
   out(
@@ -57,33 +66,40 @@ if (after.verdict === "MET") {
 out();
 out("## Environment");
 out();
-const env = after.environment ?? {};
 out(`- Platform: ${env.platform}, ${env.cpu} (${env.cores} cores)`);
 out(`- Chromium: ${env.chromium}, headless, ${after.viewport.width}x${after.viewport.height}`);
-out(`- CI runner: ${env.ci ? "yes" : "no (a local run; the CI figure is the \`story-5.4-l3-budget\` artifact of the \`e2e-perf\` job)"}`);
+out(
+  `- Runner: ${env.ci ? `GitHub Actions run ${env.runId}, runner ${env.runner} (${env.image})` : "no, a local run (not the verdict of record)"}`,
+);
 out(`- Run length: ${after.runMs / 1000} s, soak: ${after.soak}`);
 out();
 out("## Load");
 out();
 out(
-  `${after.crowd.size} rush-hour citizens (\`test-street/rush-crowd.ts\`) plus the street's own: at least ${after.crowd.liveBodiesMin} bodies live at every sample, at least ${after.crowd.walkingMin} walking, up to ${after.crowd.sidesteppingMax} sidestepping, up to ${after.crowd.cappedMax} at the neighbour cap, ${after.crowd.size * 0.1} converging on one cell.`,
+  `${after.crowd.size} rush-hour citizens (\`test-street/rush-crowd.ts\`) plus the street's own: at least ${after.crowd.liveBodiesMin} bodies live at every sample, at least ${after.crowd.walkingMin} walking, up to ${after.crowd.sidesteppingMax} sidestepping, up to ${after.crowd.cappedMax} at the neighbour cap.`,
 );
 out();
 out("## Distributions");
 out();
 out("| Window | Frames | p50 | p95 | p99 | max |");
 out("| --- | --- | --- | --- | --- | --- |");
-out(row("L3, unthrottled (render-free sweep, gated)", after.l3Ms));
-out(row("L3, unthrottled (real ticker, render included in the frame)", after.l3TickerMs));
+out(row("L3, unthrottled, real ticker (verdict figure)", after.l3Ms));
+out(row("L3, unthrottled, render-free sweep (supplementary, same gate)", after.l3SweepMs));
 out(row("whole frame work, unthrottled", after.frameWorkMs));
 out(row(`L3, ${after.throttled4x.rate}x CPU throttle (reported)`, after.throttled4x.l3Ms));
 out(row(`whole frame, ${after.throttled4x.rate}x CPU throttle (reported)`, after.throttled4x.frameWorkMs));
 out();
+out("The sweep runs the same window over successive 60 Hz instants with no render, so no render contention or scavenge lands inside it: it is the optimistic figure and never the headline.");
+out();
 out("## Allocation and GC");
 out();
-out(`- Allocation attributed to \`src/l3/\` and the crowd update: ${kb(after.allocation.l3BytesPerFrame)} per frame over ${after.allocation.frames} frames (ceiling ${kb(after.allocation.ceilingBytesPerFrame)}).`);
-out(`- Minor GCs: ${after.gc.minorCount}, total pause ${ms(after.gc.totalPauseMs)}, longest ${ms(after.gc.longestMinorPauseMs)}.`);
-out(`- Major GCs: ${after.gc.majorCount}.`);
+out(
+  `- Allocation attributed to \`src/l3/\` and the crowd update: ${kb(after.allocation.l3BytesPerFrame)} per frame over ${after.allocation.frames} frames (ceiling ${kb(after.allocation.ceilingBytesPerFrame)}).`,
+);
+out(
+  `- Minor GCs: ${after.gc.minorCount}, total pause ${ms(after.gc.totalPauseMs)}, p99 ${ms(after.gc.minorP99PauseMs ?? Number.NaN)}, longest ${ms(after.gc.longestMinorPauseMs)} (reported: a scavenge's duration measures the runner, not L3).`,
+);
+out(`- Major GCs: ${after.gc.majorCount} (gated at zero).`);
 out(`- Retained heap, last lap against the first: ${after.heap.growthRatio.toFixed(3)}x (bound ${after.heap.bound}x).`);
 out();
 out("Largest allocators under L3 frames:");
@@ -92,11 +108,45 @@ for (const t of after.allocation.top.slice(0, 5)) {
   out(`- \`${t.fn}\` (${t.url.replace(/^.*\/src\//, "src/")}): ${(t.bytes / 1024 / 1024).toFixed(1)} MB sampled`);
 }
 out();
+out("## Divergence at density (AC4)");
+out();
+out(
+  `Two clients (1920x1080 and 1280x720, the second walked sideways) on the ${after.crowd.size}-body crowd, ${divergence.instants} instants, every must-agree field compared: position, activity, frame, facing and sidestep offset.`,
+);
+out();
+out("| | Shared body-instants compared | Disagreements | Largest sidestep disagreement |");
+out("| --- | --- | --- | --- |");
+out(
+  `| before tightening (every body resolved against whatever its bubble held) | ${divergenceBefore.compared} | ${divergenceBefore.disagreements} | ${divergenceBefore.maxOffsetDisagreementPx.toFixed(1)} px |`,
+);
+out(
+  `| after (resolved only on a wholly held neighbourhood) | ${divergence.compared} | ${divergence.disagreements} | ${divergence.maxOffsetDisagreementPx.toFixed(1)} px |`,
+);
+out();
+out("Every shared body, resolved or not, by where it is drawn (after tightening):");
+out();
+out("| Drawn | Shared body-instants | Disagreements | Largest (screen px) |");
+out("| --- | --- | --- | --- |");
+for (const [label, key] of [
+  ["on both clients' screens", "onBothScreens"],
+  ["on one client's screen", "onOneScreen"],
+  ["on neither screen (the off-screen margin)", "offBothScreens"],
+]) {
+  const r = divergence.allSharedBodies[key];
+  out(`| ${label} | ${r.shared} | ${r.disagreements} | ${r.maxPx.toFixed(1)} |`);
+}
+out();
+out(
+  `Bodies drawn on a client's own screen without a resolved offset: ${divergence.unresolvedOnScreen}. The first dense sweep disagreed because avoidance resolved a body whose neighbours are not all bodied in the other bubble. Scoping is tightened: a body sidesteps only when its whole neighbourhood lies inside the spawn rect less the micro path's box margin (\`StreetLife.solve\` with the body zone, \`zoneHoldsChunk\`); what still differs differs only in the margin, off both screens.`,
+);
+out();
 out("## The hot spot, before and after");
 out();
 out(
-  `The first measurement missed: L3 p95 ${ms(before.l3Ms.p95)} (p99 ${ms(before.l3Ms.p99)}), ${kb(before.allocation.l3BytesPerFrame)} per frame allocated, ${before.gc.majorCount} major GC. The CPU profile put the wall scan of avoidance (\`#scanWalls\`, a \`bigint\` chunk key per tile lookup) first by a wide margin. Two fixes, neither touching a dial, a count or a threshold: the collision grid memoises its last chunk, and avoidance shares one wall scan per cell and grid revision. After: p95 ${ms(after.l3Ms.p95)}, ${kb(after.allocation.l3BytesPerFrame)} per frame.`,
+  `The first measurement (${machine(before.environment)}) missed: L3 p95 ${ms(before.l3Ms.p95)} (p99 ${ms(before.l3Ms.p99)}), ${kb(before.allocation.l3BytesPerFrame)} per frame allocated, ${before.gc.majorCount} major GC. The CPU profile put the wall scan of avoidance (\`#scanWalls\`, a \`bigint\` chunk key per tile lookup) first by a wide margin. Fixes, none touching a dial, a count or a threshold: the collision grid memoises its last chunk, avoidance shares one wall scan per cell and grid revision, and the per-body per-frame allocations of the hot path were removed (boxed doubles across calls, comparator and sort scratch, a key string and a point object per body per frame).`,
 );
+out();
+out(`The after figures are the runner's (${machine(env)}); the before figures are from a different machine, so the two are read for their order of magnitude, not subtracted.`);
 out();
 out("| | L3 p95 | L3 p99 | Allocation per frame | Major GCs |");
 out("| --- | --- | --- | --- | --- |");

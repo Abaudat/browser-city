@@ -33,7 +33,7 @@ import {
 } from "../render/appearance/composite";
 import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
 import { bodyTexture, newBodySprite, setBodyFrame } from "../render/body-sprite";
-import { snapToScreenPx, worldPointPx } from "../render/screen-position";
+import { snapToScreenPx, worldPointPx, worldPointPxInto } from "../render/screen-position";
 import { BodyLifecycle } from "../world/body-lifecycle";
 import { type BodyCandidate, type BodyZone, WHOLE_ZONE } from "../world/body-zone";
 import { cellOf } from "../world/ownership";
@@ -405,6 +405,7 @@ export async function mountCitizensLayer(
   const ID_DEPTH_STEP = 1e-6;
 
   /** Draws the street's life as `StreetLife.solve` last left it. */
+  const placed = { x: 0, y: 0 };
   function update(t: number | undefined, zone?: BodyZone): void {
     if (t !== undefined) applyZone(t, zone);
     if (rankDirty) {
@@ -417,7 +418,8 @@ export async function mountCitizensLayer(
       if (!d.walks) continue;
       const ox = l3.life.offsetX(d.member);
       const oy = l3.life.offsetY(d.member);
-      const px = worldPointPx(
+      const px = worldPointPxInto(
+        placed,
         frame.x + ox,
         frame.y + oy,
         CROWD_FLOOR,
