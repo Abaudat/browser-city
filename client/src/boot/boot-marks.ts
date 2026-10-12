@@ -53,6 +53,10 @@ export const BOOT_MARK = {
    * frame -- a mark that fires before input really moves the player is a
    * lying mark and fails the spec. */
   PLAYER_CONTROLLABLE: "bc-boot:player-controllable",
+  /** The first time the player's own body position changes after it was
+   * first placed: proof, in a production build with no test hook, that input
+   * really drives the body. Absent until the player has moved. */
+  FIRST_STEP: "bc-boot:first-step",
 } as const;
 
 export type BootMarkName = (typeof BOOT_MARK)[keyof typeof BOOT_MARK];

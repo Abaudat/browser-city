@@ -20,6 +20,7 @@
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import { REGION_RADIUS_CHUNKS } from "../../src/world/region";
+import { waitForPlayerControllable } from "./boot-test-support";
 import { expect, test } from "./fixtures";
 import { E2E_WORLD } from "./spacetime-harness.mjs";
 
@@ -50,7 +51,10 @@ test("every boot mark fires during a normal load, in a sane order", async ({ pag
   );
   const byName = new Map(marks.map((m) => [m.name, m.at]));
 
+  // `FIRST_STEP` only exists once the player has moved; the honesty test
+  // below holds it.
   for (const name of Object.values(BOOT_MARK)) {
+    if (name === BOOT_MARK.FIRST_STEP) continue;
     expect(byName.has(name), `missing boot mark '${name}'`).toBe(true);
   }
 
@@ -259,4 +263,31 @@ test("the rows delivered by the time the initial region has applied are exactly 
   // One placed_object and one actor_location per region chunk, and shop
   // A's seeded cupboard (a second placed_object in the spawn chunk).
   expect(rows).toBe(regionChunks * 2 + 1);
+});
+
+test("FIRST_STEP is honest: absent until a key moves the body, then set after it and never before PLAYER_CONTROLLABLE", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await waitForPlayerControllable(page);
+  // Settled and standing: nothing has moved the body.
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => performance.getEntriesByName("bc-boot:first-step").length)).toBe(
+    0,
+  );
+
+  const pressedAt = await page.evaluate(() => performance.now());
+  await page.keyboard.down("KeyD");
+  await page.waitForFunction(
+    () => performance.getEntriesByName("bc-boot:first-step").length > 0,
+    undefined,
+    { timeout: 3_000 },
+  );
+  await page.keyboard.up("KeyD");
+  const marks = await page.evaluate(() => ({
+    step: performance.getEntriesByName("bc-boot:first-step")[0]?.startTime ?? 0,
+    controllable: performance.getEntriesByName("bc-boot:player-controllable")[0]?.startTime ?? 0,
+  }));
+  expect(marks.step).toBeGreaterThan(pressedAt);
+  expect(marks.step).toBeGreaterThan(marks.controllable);
 });

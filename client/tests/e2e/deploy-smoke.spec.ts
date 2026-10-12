@@ -169,20 +169,57 @@ test("a new player can answer the prompt and reach the world, without a characte
   );
   await expect(page.locator('[data-bc-surface="name-prompt"]')).toHaveCount(0);
 
-  // The body answers: holding a key moves the world under the camera.
-  const canvas = page.locator("#test-street canvas");
-  const before = await canvas.screenshot();
+  // The body answers: a production-safe mark fires when the player's own
+  // position first changes -- absent before the key, set within 3 s of it.
+  const stepMark = async () =>
+    page.evaluate((name) => performance.getEntriesByName(name).length, BOOT_MARK.FIRST_STEP);
+  expect(await stepMark(), "the body had already stepped before any key").toBe(0);
   await page.keyboard.down("KeyD");
-  await page.waitForTimeout(600);
+  await page.waitForFunction(
+    (name) => performance.getEntriesByName(name).length > 0,
+    BOOT_MARK.FIRST_STEP,
+    { timeout: 3_000 },
+  );
   await page.keyboard.up("KeyD");
-  const after = await canvas.screenshot();
-  expect(
-    Buffer.compare(before, after),
-    "holding a movement key changed nothing on screen",
-  ).not.toBe(0);
 
+  // The search can see this page's outgoing calls at all (a positive
+  // control: a reducer name that is certainly sent -- the clock sync), so
+  // a decoder mismatch fails here instead of hiding a created character.
+  expect(
+    sent.some((frame) => frame.includes("sync_clock")),
+    "the frame search cannot see sync_clock, so its silence about create_character proves nothing",
+  ).toBe(true);
   // And no character was created for it.
   expect(sent.some((frame) => frame.includes("create_character"))).toBe(false);
+});
+
+// Story 4.6: the pre-merge rehearsal's own control for the test above, where
+// creating a character is harmless: with storage working the same page's
+// submit really does put `create_character` on the wire, and the search finds
+// it. Skipped against the live deploy.
+test("the frame search sees create_character when a character is created (rehearsal only)", async ({
+  page,
+}) => {
+  test.skip(!process.env.BC_DEPLOY_REHEARSAL, "only against the disposable local database");
+  const deployUrl = process.env.BC_DEPLOY_URL as string;
+  const sent: string[] = [];
+  page.on("websocket", (ws) => {
+    ws.on("framesent", ({ payload }) => {
+      sent.push(typeof payload === "string" ? payload : payload.toString("latin1"));
+    });
+  });
+  await page.goto(deployUrl);
+  await expect(page.locator('[data-bc-surface="name-prompt"] input')).toBeFocused();
+  await page.keyboard.type("Rehearsal");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(
+    (markName) => performance.getEntriesByName(markName).length > 0,
+    BOOT_MARK.PLAYER_CONTROLLABLE,
+    { timeout: 30_000 },
+  );
+  await expect
+    .poll(() => sent.some((frame) => frame.includes("create_character")), { timeout: 10_000 })
+    .toBe(true);
 });
 
 // Story 1.12 (AC1, FR168): "off means off", against a real *production*

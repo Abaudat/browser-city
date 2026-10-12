@@ -718,6 +718,8 @@ async function startStreetScene(
   // The render path's own resort event drives this hook directly
   // (Quentin's direction) -- never a ticker polling `getRenderOrder()`
   // every frame to see whether it changed.
+  let firstPlaced: { x: number; y: number; floor: number } | undefined;
+  let firstStepMarked = false;
   const handle = await mountStreetScene(app, {
     defs,
     atlasBaseUrl: `${import.meta.env.BASE_URL}atlas/`,
@@ -747,6 +749,13 @@ async function startStreetScene(
     rushCrowd: rushCrowdForE2e,
     onPlayerMove: (x, y, floor) => {
       recordPlayerPositionForE2e(x, y, floor);
+      if (!firstStepMarked) {
+        if (firstPlaced === undefined) firstPlaced = { x, y, floor };
+        else if (x !== firstPlaced.x || y !== firstPlaced.y || floor !== firstPlaced.floor) {
+          firstStepMarked = true;
+          markBoot(BOOT_MARK.FIRST_STEP);
+        }
+      }
       players.onPlayerMove(x, y, floor);
       followScene(x, y, floor);
       // Story 1.12: `onPlayerMove` is the one callback here that really

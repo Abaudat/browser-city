@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type CDPSession, expect, test } from "@playwright/test";
+import { calibrationWorkload } from "../calibration-workload";
 import { computeSampleTerms } from "./compute-terms.mjs";
 import type {} from "./decode-harness";
 import { CPU_PROFILES, DECODE_ROW_COUNTS, MIN_SAMPLES, NETWORK_PROFILES } from "./profiles.mjs";
@@ -136,18 +137,25 @@ async function collectOneSample(
 // exists), so with a 2000 ms typing window the typed leg measures about one
 // frame, and boot could grow a long way before it tripped. The leg that
 // really moves is the 0 ms one -- submit at first paint, nothing streamed
-// yet -- so it is ratcheted: `ZERO_LEG_P75_RATCHET_MS` is the recorded p75
-// (this gate's own artifact at PR #451's 879e7205: 1 316 ms; the same gate read
-// 1 501 ms at 6efd9dba, inside the slack -- the sweep's own 20-sample figure,
-// 1 050 ms in boot-budget run 38270201821, is a different measurement order and
-// is not this constant's source), the verdict fails above it
-// plus `RATCHET_SLACK`, and the constant is lowered when a run improves it
-// and never raised.
+// yet -- so it is gated too, normalised the way `l3-budget.spec.ts` is: its
+// p75 (of `GATE_ZERO_SAMPLES` samples) is divided by the median time of a
+// fixed pure-JS calibration workload run in the same job under the same 4x
+// CPU throttle, and the ratio is held to `ZERO_LEG_RATIO_RECORDED` +25%.
+// The raw milliseconds swing about 30% across shared runners (1 145 to
+// 1 501 ms on one boot path), the ratio is what can be ratcheted: lower the
+// constant when recorded runs improve it, never raise it. It is set from the
+// recorded gate artifacts of the runs named beside it.
 const GATE_TYPING_MS = 2000;
 const GATE_BUDGET_MS = 1000;
 const GATE_SAMPLES = Number(process.env.BC_BOOT_GATE_SAMPLES ?? 10);
-const ZERO_LEG_P75_RATCHET_MS = 1316;
+const GATE_ZERO_SAMPLES = Number(process.env.BC_BOOT_GATE_ZERO_SAMPLES ?? 20);
+/** p75 of the 0 ms leg over the calibration workload's median, recorded
+ * from the gate artifacts named in the comment above (0 until recorded). */
+const ZERO_LEG_RATIO_RECORDED = 0;
 const RATCHET_SLACK = 1.25;
+/** Records the artifact without gating the ratio (the recording runs that
+ * set `ZERO_LEG_RATIO_RECORDED`). Never set in `ci.yml`. */
+const GATE_RECORD = Boolean(process.env.BC_BOOT_GATE_RECORD);
 const GATE_ONLY = Boolean(process.env.BC_BOOT_GATE_ONLY);
 
 /** Nearest-rank percentile of `values` (ms). */
@@ -161,7 +169,7 @@ if (GATE_ONLY || process.env.BC_BOOT_GATE) {
   test(`first boot gate: submit -> controllable p75 < ${GATE_BUDGET_MS} ms (domestic, 4x CPU, ${GATE_TYPING_MS} ms typing, n=${GATE_SAMPLES})`, async ({
     browser,
   }) => {
-    test.setTimeout(GATE_SAMPLES * 2 * 30_000 + 60_000);
+    test.setTimeout((GATE_SAMPLES + GATE_ZERO_SAMPLES) * 30_000 + 120_000);
     const network = (NETWORK_PROFILES as readonly NetworkProfile[]).find(
       (n) => n.name === "domestic",
     ) as NetworkProfile;
@@ -169,19 +177,42 @@ if (GATE_ONLY || process.env.BC_BOOT_GATE) {
       (c) => c.name === "throttled",
     ) as CpuProfile;
 
+    /** The calibration workload's median, in a page under this CPU throttle. */
+    const calibrate = async (): Promise<number> => {
+      const context = await browser.newContext({ ignoreHTTPSErrors: true });
+      const page = await context.newPage();
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu.rate });
+      await page.goto("about:blank");
+      const ms = await page.evaluate(calibrationWorkload, 21);
+      await context.close();
+      return ms;
+    };
+    const calibrationBefore = await calibrate();
+
     const gated: number[] = [];
     const atFirstPaint: number[] = [];
     for (let i = 0; i < GATE_SAMPLES; i++) {
       const typed = await collectOneSample(browser, network, cpu, GATE_TYPING_MS);
       gated.push(typed.submitToControllableMs as number);
     }
-    for (let i = 0; i < GATE_SAMPLES; i++) {
+    for (let i = 0; i < GATE_ZERO_SAMPLES; i++) {
       const instant = await collectOneSample(browser, network, cpu, 0);
       atFirstPaint.push(instant.submitToControllableMs as number);
     }
 
+    const calibrationAfter = await calibrate();
+    const calibrationMs = (calibrationBefore + calibrationAfter) / 2;
+    const zeroP75 = percentile(atFirstPaint, 75);
+
     const verdict = {
       budgetMs: GATE_BUDGET_MS,
+      calibrationMs,
+      calibrationBeforeMs: calibrationBefore,
+      calibrationAfterMs: calibrationAfter,
+      zeroLegSamples: GATE_ZERO_SAMPLES,
+      zeroLegRatio: zeroP75 / calibrationMs,
+      zeroLegRatioRecorded: ZERO_LEG_RATIO_RECORDED,
       typingMs: GATE_TYPING_MS,
       samples: GATE_SAMPLES,
       gatedSubmitToControllableMs: gated,
@@ -196,10 +227,15 @@ if (GATE_ONLY || process.env.BC_BOOT_GATE) {
     );
     expect(verdict.gatedP75Ms).toBeLessThan(GATE_BUDGET_MS);
     for (const sample of gated) expect(sample).toBeLessThan(GATE_BUDGET_MS);
-    expect(
-      verdict.submitAtFirstPaintP75Ms,
-      "submit at first paint got slower than the ratchet: fix the critical path; lower the constant when a run improves it, never raise it",
-    ).toBeLessThanOrEqual(ZERO_LEG_P75_RATCHET_MS * RATCHET_SLACK);
+    if (!GATE_RECORD) {
+      expect(ZERO_LEG_RATIO_RECORDED, "no recorded ratio to hold the 0 ms leg to").toBeGreaterThan(
+        0,
+      );
+      expect(
+        verdict.zeroLegRatio,
+        "submit at first paint got slower relative to the calibration workload: fix the critical path; lower the constant when recorded runs improve it, never raise it",
+      ).toBeLessThanOrEqual(ZERO_LEG_RATIO_RECORDED * RATCHET_SLACK);
+    }
   });
 }
 
