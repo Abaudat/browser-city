@@ -46,8 +46,8 @@ fn every_conformance_case_matches_the_real_world_queries() {
 
 /// Story 3.8 AC2 (FR135, NFR30): the tile rasterisation rule -- a tile is
 /// blocked iff any collider touches it, half-open -- against the shared,
-/// hand-typed `raster` case. The client asserts the same case in
-/// `client/tests/unit/world/conformance.test.ts`; no code is shared.
+/// hand-typed `raster` case. The client suite asserts the same case;
+/// no code is shared.
 #[test]
 fn the_floor_grids_block_exactly_the_hand_typed_tiles_of_the_raster_case() {
     use sim::generated::defs::{ColliderRect, ObjectDef};
