@@ -7076,7 +7076,8 @@ fn planted_wall(x: i32, y: i32) -> sim::generation::PlacedRow {
 /// and the cells it claims are the anchor plus the def's own extent,
 /// recomputed here, each on a floor cell of its own building or off the
 /// carriageway and outside every footprint on the street; no two solid
-/// props claim one cell.
+/// props claim one cell, and no underfoot (collider-less) prop -- a chair, a
+/// lamp -- shares a cell with any other prop's footprint.
 #[test]
 fn inv_generation_every_placement_is_one_row_at_its_anchor() {
     over_pool(
@@ -7089,6 +7090,9 @@ fn inv_generation_every_placement_is_one_row_at_its_anchor() {
                 .map(|(_, _, i)| (i.footprint, i))
                 .collect();
             let mut solid: std::collections::BTreeSet<(i32, i32)> = Default::default();
+            // Every claimant of a cell, with whether it is underfoot.
+            let mut claims: std::collections::BTreeMap<(i32, i32), Vec<(bool, &str)>> =
+                Default::default();
             for p in d.props.props() {
                 let def = defs::OBJECTS
                     .iter()
@@ -7140,6 +7144,10 @@ fn inv_generation_every_placement_is_one_row_at_its_anchor() {
                             );
                         }
                     }
+                    claims
+                        .entry((x, y))
+                        .or_default()
+                        .push((def.collider.is_none(), def.key));
                     if def.collider.is_some() {
                         ensure!(
                             solid.insert((x, y)),
@@ -7148,6 +7156,13 @@ fn inv_generation_every_placement_is_one_row_at_its_anchor() {
                         );
                     }
                 }
+            }
+            for (&(x, y), who) in &claims {
+                ensure!(
+                    who.len() == 1 || who.iter().all(|&(underfoot, _)| !underfoot),
+                    "an underfoot prop shares ({x}, {y}) with another prop: {:?}",
+                    who.iter().map(|&(_, k)| k).collect::<Vec<_>>()
+                );
             }
             Ok(())
         },

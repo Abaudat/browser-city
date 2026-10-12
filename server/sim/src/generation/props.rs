@@ -107,8 +107,8 @@ pub struct Prop {
 /// never an error: a prop with no fitting cell is a typed skip.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PropSkips {
-    /// A fixture whose natural footprint did not fit and stood at the
-    /// tag's compact variant instead.
+    /// A fixture that stands at a smaller footprint than its tag's
+    /// largest, because the natural one did not fit or left a pocket.
     pub compact_fallbacks: u32,
     /// A building re-placed with some of its fixtures at compact
     /// footprints because the natural ones left a pocket the player body
@@ -776,7 +776,9 @@ pub fn run(
 /// cell unreachable, the fixtures that stand on more than a cell go
 /// compact one at a time -- the one whose compacting alone clears it,
 /// else each in turn until it is clear -- so a single awkward bed does not
-/// turn the whole house compact.
+/// turn the whole house compact. Fixtures are tried in the order pass 6
+/// emitted them (`Interior::fixtures`): the first that clears alone wins,
+/// and the cumulative run stops at the first fixture that clears.
 fn dress_one(
     seed: u64,
     cat: &Catalogue,
@@ -973,7 +975,7 @@ fn dress_building(
                 }
             }
             *solid_per_room.entry(f.room).or_insert(0) += solid_cells;
-            if rank >= natural.len() && !compact_only && max_area > 1 {
+            if Catalogue::area(d) < max_area {
                 skips.compact_fallbacks += 1;
             }
             out.push(Prop {
@@ -2695,6 +2697,176 @@ mod tests {
         assert!(whole_cells_open(window, (0, 0), &rows, defs::OBJECTS));
         let (enclosed, narrow) = window_findings(window, (0, 0), &rows, defs::OBJECTS).unwrap();
         assert!(enclosed.is_empty() && narrow.is_empty());
+    }
+
+    // --- dress_one's search -------------------------------------------
+
+    /// The committed content with the multi-cell anchor tag's defs
+    /// replaced by a 3x1 solid and a 1x1 compact variant, both copied from
+    /// a real def of the tag so everything else about them (layer,
+    /// `indoor`, `fixture`) is the committed one.
+    fn wide_content() -> (Vec<defs::ObjectDef>, TagId, u32, u32) {
+        let content = GenerationContent::committed();
+        let cat0 = Catalogue::new(&content).unwrap();
+        let tag = multi_cell_tag(&cat0);
+        let template = *cat0.carrying(tag, Place::Floor)[0];
+        let mut objects: Vec<defs::ObjectDef> = defs::OBJECTS
+            .iter()
+            .filter(|o| !o.tags.contains(&tag))
+            .copied()
+            .collect();
+        let (natural, compact) = (90_001, 90_002);
+        objects.push(defs::ObjectDef {
+            id: natural,
+            key: "a_wide_natural",
+            width: 3,
+            height: 1,
+            collider: Some(defs::ColliderRect {
+                x0: 0,
+                y0: 0,
+                x1: 48,
+                y1: 16,
+            }),
+            ..template
+        });
+        objects.push(defs::ObjectDef {
+            id: compact,
+            key: "a_compact",
+            width: 1,
+            height: 1,
+            collider: Some(defs::ColliderRect {
+                x0: 0,
+                y0: 0,
+                x1: 16,
+                y1: 16,
+            }),
+            ..template
+        });
+        (objects, tag, natural, compact)
+    }
+
+    /// `(fixture cell, def)` in cell order, the skips, the plain skips.
+    type Searched = (Vec<((i32, i32), u32)>, PropSkips, PropSkips);
+
+    /// `dress_one` over `fixtures` with the 3x1/1x1 pair as the anchor's
+    /// only defs: the placed fixtures' `(cell, def)` in cell order, the
+    /// skips, and what a plain natural dressing of the same building gives.
+    fn search(fixtures: &[(i32, i32)]) -> Searched {
+        let (objects, tag, _, _) = wide_content();
+        let content = GenerationContent::committed();
+        let swapped = GenerationContent {
+            objects: &objects,
+            ..content
+        };
+        let cat = Catalogue::new(&swapped).unwrap();
+        let i = interior(
+            &fixtures
+                .iter()
+                .map(|&(x, y)| (x, y, tag))
+                .collect::<Vec<_>>(),
+        );
+        let mut plain = PropSkips::default();
+        let direct = dress_building(3, &cat, &cfg(), &i, &BTreeSet::new(), &mut plain).unwrap();
+        let mut skips = PropSkips::default();
+        let props = dress_one(3, &cat, &cfg(), &i, &mut skips).unwrap();
+        if !needs_compact(&i, &direct, &cat) {
+            let a: Vec<PlacedRow> = props.iter().map(|p| p.row).collect();
+            let b: Vec<PlacedRow> = direct.iter().map(|p| p.row).collect();
+            assert_eq!(a, b, "a clear natural dressing is kept as it is");
+        }
+        let mut placed: Vec<((i32, i32), u32)> = props
+            .iter()
+            .filter_map(|p| match p.role {
+                Role::Fixture { cell, .. } => Some((cell, p.row.def_id)),
+                _ => None,
+            })
+            .collect();
+        placed.sort();
+        (placed, skips, plain)
+    }
+
+    #[test]
+    fn dress_one_keeps_a_natural_dressing_that_clears_and_its_skips_exactly() {
+        let (_, _, natural, _) = wide_content();
+        let (placed, skips, plain) = search(&[(101, 103)]);
+        assert_eq!(placed, vec![((101, 103), natural)]);
+        assert_eq!(skips, plain, "the skips are the plain dressing's own");
+        assert_eq!(skips.buildings_replaced, 0);
+        assert_eq!(skips.compact_fallbacks, 0);
+    }
+
+    #[test]
+    fn dress_one_compacts_the_first_fixture_whose_compact_variant_alone_clears() {
+        // Two 3-wide solids seal row 104 between them; compacting either
+        // one opens a lane, so the first in fixture order is the one, and
+        // the other stays natural.
+        let (_, _, natural, compact) = wide_content();
+        let (placed, skips, _) = search(&[(101, 104), (106, 104)]);
+        assert_eq!(placed, vec![((101, 104), compact), ((106, 104), natural)]);
+        assert_eq!(skips.buildings_replaced, 1);
+        assert_eq!(skips.compact_fallbacks, 1);
+    }
+
+    #[test]
+    fn dress_one_goes_compact_in_turn_only_as_far_as_it_must() {
+        // Rows 103 and 105 are each sealed by a pair; no one fixture
+        // clears both, so they go compact one at a time in fixture order
+        // until the building clears -- the fourth is never touched.
+        let (_, _, natural, compact) = wide_content();
+        let (placed, skips, _) = search(&[(101, 103), (106, 103), (101, 105), (106, 105)]);
+        assert_eq!(
+            placed,
+            vec![
+                ((101, 103), compact),
+                ((101, 105), compact),
+                ((106, 103), compact),
+                ((106, 105), natural),
+            ]
+        );
+        assert_eq!(skips.buildings_replaced, 1);
+        assert_eq!(skips.compact_fallbacks, 3);
+    }
+
+    #[test]
+    fn a_table_with_no_free_cell_in_reach_gets_no_chair_and_a_counted_skip() {
+        let cat = catalogue();
+        let &(table, chair, _, _) = cat.attendants.first().expect("a chair row");
+        let filler = defs::TAGS
+            .iter()
+            .map(|t| t.id)
+            .find(|&t| {
+                t != table && t != chair && {
+                    let c = cat.carrying(t, Place::Floor);
+                    !c.is_empty() && c.iter().all(|d| d.width == 1 && d.height == 1)
+                }
+            })
+            .expect("a one-cell anchor tag");
+        // The table in the room's corner; every other cell within reach of
+        // it holds a fixture of its own, so no free floor cell is left.
+        let mut fixtures = vec![(101, 101, table)];
+        for y in 101..=105 {
+            for x in 101..=105 {
+                if (x, y) != (101, 101) && !(x <= 102 && y <= 102) {
+                    fixtures.push((x, y, filler));
+                }
+            }
+        }
+        let i = interior(&fixtures);
+        let mut skips = PropSkips::default();
+        let props = dress_building(1, &cat, &cfg(), &i, &BTreeSet::new(), &mut skips).unwrap();
+        let chairs = props
+            .iter()
+            .filter(|p| def_of(cat.objects, p.row.def_id).is_some_and(|d| d.tags.contains(&chair)))
+            .count();
+        assert_eq!(chairs, 0, "no chair stands on another prop");
+        let owed: u32 = cat
+            .attendants
+            .iter()
+            .filter(|a| a.0 == table)
+            .map(|a| a.2)
+            .sum();
+        assert!(owed >= 1);
+        assert_eq!(skips.attendants_unplaced, owed);
     }
 
     // --- the street half -----------------------------------------------

@@ -98,3 +98,7 @@ group = "shared"
 [[page_group]]
 theme = "hospital"
 group = "shared"
+
+[[page_group]]
+theme = "classroom_and_library"
+group = "shared"

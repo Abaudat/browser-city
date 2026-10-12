@@ -927,12 +927,12 @@
 <rect x="584" y="56" width="16" height="16" fill="#37474f"/>
 <rect x="8" y="72" width="16" height="16" fill="#37474f"/>
 <rect x="40" y="72" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="40" y="72" width="16" height="16" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="40" y="72" width="16" height="7" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="56" y="72" width="16" height="16" fill="#37474f"/>
 <rect x="200" y="72" width="16" height="16" fill="#37474f"/>
 <rect x="216" y="72" width="16" height="16" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="232" y="72" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="232" y="72" width="16" height="16" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="232" y="72" width="16" height="7" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="248" y="72" width="16" height="16" fill="#37474f"/>
 <rect x="264" y="72" width="32" height="16" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_papers_wood</title></rect>
 <rect x="270" y="72" width="20" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2010,23 +2010,23 @@
 <rect x="296" y="422" width="16" height="16" fill="#37474f"/>
 <rect x="312" y="422" width="16" height="16" fill="#37474f"/>
 <rect x="328" y="422" width="16" height="16" fill="#37474f"/>
-<rect x="408" y="422" width="16" height="16" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="408" y="422" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="424" y="422" width="16" height="16" fill="#37474f"/>
 <rect x="568" y="422" width="16" height="16" fill="#37474f"/>
-<rect x="584" y="422" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="584" y="422" width="16" height="16" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="184" y="438" width="16" height="16" fill="#37474f"/>
 <rect x="216" y="438" width="16" height="16" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="248" y="438" width="16" height="16" fill="#37474f"/>
-<rect x="264" y="438" width="16" height="16" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
-<rect x="280" y="438" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="264" y="438" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="280" y="438" width="16" height="16" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="296" y="438" width="16" height="16" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="328" y="438" width="16" height="16" fill="#37474f"/>
-<rect x="360" y="438" width="16" height="16" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="360" y="438" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="376" y="422" width="32" height="32" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
 <rect x="380" y="430" width="24" height="24" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="600" y="422" width="32" height="32" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
 <rect x="604" y="430" width="24" height="24" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="632" y="438" width="16" height="16" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="632" y="438" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="184" y="454" width="16" height="16" fill="#37474f"/>
 <rect x="248" y="454" width="16" height="16" fill="#37474f"/>
 <rect x="328" y="454" width="16" height="16" fill="#37474f"/>
@@ -2090,7 +2090,7 @@
 <rect x="200" y="566" width="16" height="16" fill="#37474f"/>
 <rect x="232" y="566" width="16" height="16" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="296" y="566" width="16" height="16" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
-<rect x="312" y="566" width="16" height="16" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="312" y="566" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="376" y="566" width="16" height="16" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="408" y="566" width="16" height="16" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_dark</title></rect>
 <rect x="408" y="566" width="16" height="11" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2104,12 +2104,12 @@
 <rect x="344" y="582" width="16" height="16" fill="#37474f"/>
 <rect x="424" y="582" width="16" height="16" fill="#37474f"/>
 <rect x="568" y="582" width="16" height="16" fill="#37474f"/>
-<rect x="600" y="582" width="16" height="16" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="600" y="582" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="200" y="598" width="16" height="16" fill="#37474f"/>
 <rect x="216" y="566" width="16" height="48" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
 <rect x="216" y="566" width="16" height="38" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="264" y="598" width="16" height="16" fill="#37474f"/>
-<rect x="296" y="598" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="296" y="598" width="16" height="16" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="312" y="582" width="32" height="32" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
 <rect x="316" y="590" width="24" height="24" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="344" y="598" width="16" height="16" fill="#37474f"/>
@@ -2125,8 +2125,8 @@
 <rect x="312" y="614" width="16" height="16" fill="#37474f"/>
 <rect x="328" y="614" width="16" height="16" fill="#37474f"/>
 <rect x="344" y="614" width="16" height="16" fill="#37474f"/>
-<rect x="360" y="614" width="16" height="16" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
-<rect x="376" y="614" width="16" height="16" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="360" y="614" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="376" y="614" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="424" y="614" width="16" height="16" fill="#37474f"/>
 <rect x="568" y="614" width="16" height="16" fill="#37474f"/>
 <rect x="600" y="598" width="32" height="32" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
@@ -2143,7 +2143,7 @@
 <rect x="472" y="630" width="16" height="16" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>lamppost</title></rect>
 <rect x="474" y="637" width="12" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="568" y="630" width="16" height="16" fill="#37474f"/>
-<rect x="600" y="630" width="16" height="16" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="600" y="630" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="200" y="646" width="16" height="16" fill="#37474f"/>
 <rect x="328" y="646" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact</title></rect>
 <rect x="329" y="646" width="13" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2194,7 +2194,7 @@
 <rect x="184" y="726" width="16" height="16" fill="#37474f"/>
 <rect x="216" y="726" width="16" height="16" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="232" y="726" width="16" height="16" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="232" y="726" width="16" height="16" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="232" y="726" width="16" height="7" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="248" y="726" width="16" height="16" fill="#37474f"/>
 <rect x="312" y="726" width="16" height="16" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="344" y="726" width="16" height="16" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>counter_compact</title></rect>
@@ -2233,20 +2233,20 @@
 <rect x="71" y="822" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_dark</title></rect>
 <rect x="71" y="822" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="80" y="822" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="35" y="831" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
-<rect x="44" y="831" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="35" y="831" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="44" y="831" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="71" y="840" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="116" y="840" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="35" y="840" width="18" height="18" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
 <rect x="37" y="844" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="17" y="858" width="9" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_blue</title></rect>
 <rect x="17" y="858" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="62" y="858" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="62" y="858" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="71" y="849" width="18" height="18" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
 <rect x="73" y="853" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="134" y="840" width="9" height="27" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
 <rect x="134" y="840" width="9" height="21" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="80" y="867" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="80" y="867" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="62" y="885" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact</title></rect>
 <rect x="62" y="885" width="7" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="71" y="885" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
@@ -2322,11 +2322,11 @@
 <rect x="611" y="849" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="629" y="840" width="18" height="18" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
 <rect x="631" y="844" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="647" y="849" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="647" y="849" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="665" y="849" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_dark</title></rect>
 <rect x="665" y="849" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="674" y="849" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
-<rect x="638" y="858" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="638" y="858" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="638" y="876" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="647" y="876" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact</title></rect>
 <rect x="647" y="876" width="7" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2343,12 +2343,12 @@
 <rect x="803" y="867" width="9" height="9" fill="#ffeb3b"/>
 <rect x="812" y="849" width="9" height="9" fill="#ffffff"/>
 <rect x="812" y="831" width="9" height="9" fill="#ffffff"/>
-<rect x="785" y="813" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="785" y="813" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="794" y="813" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="821" y="813" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>toilet_white</title></rect>
 <rect x="822" y="813" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="830" y="813" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="803" y="822" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="803" y="822" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="785" y="822" width="18" height="18" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
 <rect x="787" y="826" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="830" y="831" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin</title></rect>
@@ -2381,13 +2381,13 @@
 <rect x="1040" y="840" width="7" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="977" y="840" width="18" height="18" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
 <rect x="979" y="844" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="977" y="858" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
-<rect x="986" y="858" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="977" y="858" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="986" y="858" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="1031" y="867" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
-<rect x="1040" y="876" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="1040" y="876" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="1022" y="876" width="18" height="18" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
 <rect x="1024" y="880" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1040" y="885" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="1040" y="885" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <text x="8" y="1003" font-family="sans-serif" font-size="9">cottage 9x10</text>
 <rect x="8" y="1006" width="81" height="90" fill="#37474f"/>
 <rect x="17" y="1015" width="36" height="72" fill="#ffe0b2"/>
@@ -2407,8 +2407,8 @@
 <rect x="71" y="1051" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="26" y="1051" width="18" height="18" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
 <rect x="28" y="1055" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="26" y="1069" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
-<rect x="35" y="1069" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="26" y="1069" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="35" y="1069" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="71" y="1060" width="9" height="27" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
 <rect x="71" y="1060" width="9" height="21" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="200" y="1003" font-family="sans-serif" font-size="9">cottage 8x8</text>
@@ -2443,10 +2443,10 @@
 <rect x="419" y="1015" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="437" y="1015" width="9" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_blue</title></rect>
 <rect x="437" y="1015" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="401" y="1033" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="401" y="1033" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="410" y="1024" width="18" height="18" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
 <rect x="412" y="1028" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="410" y="1042" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="410" y="1042" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="419" y="1060" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin</title></rect>
 <rect x="420" y="1061" width="5" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="437" y="1060" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
@@ -2469,8 +2469,8 @@
 <rect x="638" y="1015" width="9" height="9" fill="#00acc1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>toilet_cream</title></rect>
 <rect x="639" y="1015" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="647" y="1015" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="602" y="1024" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
-<rect x="620" y="1033" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="602" y="1024" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="620" y="1033" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="638" y="1033" width="18" height="9" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>vanity_basin_wood</title></rect>
 <rect x="638" y="1033" width="17" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="602" y="1033" width="18" height="18" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
@@ -2492,8 +2492,8 @@
 <rect x="848" y="1015" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="803" y="1024" width="18" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>vanity_basin_pale</title></rect>
 <rect x="803" y="1024" width="17" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="839" y="1033" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
-<rect x="848" y="1033" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="839" y="1033" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="848" y="1033" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="794" y="1042" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="812" y="1042" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact</title></rect>
 <rect x="812" y="1042" width="7" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2515,13 +2515,13 @@
 <rect x="1022" y="1015" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="1031" y="1015" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>toilet_white</title></rect>
 <rect x="1032" y="1015" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="977" y="1033" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="977" y="1033" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="1031" y="1033" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin</title></rect>
 <rect x="1032" y="1034" width="5" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="977" y="1042" width="18" height="18" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
 <rect x="979" y="1046" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1031" y="1051" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="986" y="1060" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="986" y="1060" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="1031" y="1060" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact</title></rect>
 <rect x="1031" y="1060" width="7" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="8" y="1232" font-family="sans-serif" font-size="13" font-weight="bold">commercial workplaces: 12 of 165 dressed interiors</text>
@@ -2540,23 +2540,23 @@
 <rect x="35" y="1263" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="71" y="1263" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="71" y="1281" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="71" y="1281" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="71" y="1281" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="17" y="1290" width="18" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_b</title></rect>
 <rect x="18" y="1290" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="35" y="1290" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="53" y="1290" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="53" y="1290" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="53" y="1290" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="53" y="1290" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="53" y="1317" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="62" y="1317" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
-<rect x="35" y="1326" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="62" y="1317" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="35" y="1326" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="53" y="1326" width="18" height="18" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
 <rect x="55" y="1330" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="17" y="1344" width="18" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_white</title></rect>
 <rect x="17" y="1344" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="35" y="1335" width="18" height="18" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
 <rect x="37" y="1339" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="53" y="1344" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
-<rect x="35" y="1353" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="53" y="1344" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="35" y="1353" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="62" y="1380" width="27" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shop_window</title></rect>
 <rect x="62" y="1380" width="27" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="200" y="1251" font-family="sans-serif" font-size="9">hairdresser 11x10</text>
@@ -2573,16 +2573,16 @@
 <rect x="263" y="1254" width="27" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="227" y="1263" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="263" y="1263" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="263" y="1263" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="263" y="1263" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="272" y="1263" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="281" y="1290" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="281" y="1290" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="263" y="1299" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="263" y="1299" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="281" y="1290" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="263" y="1299" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="263" y="1299" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="281" y="1299" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="272" y="1317" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="281" y="1317" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="281" y="1317" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="281" y="1317" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="218" y="1326" width="18" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_white</title></rect>
 <rect x="218" y="1326" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="392" y="1251" font-family="sans-serif" font-size="9">gym 10x10</text>
@@ -2600,17 +2600,17 @@
 <rect x="410" y="1263" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="455" y="1263" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="464" y="1263" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="464" y="1263" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="464" y="1263" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="446" y="1290" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="446" y="1290" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="446" y="1290" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="455" y="1290" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="464" y="1290" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="464" y="1290" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="446" y="1317" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="446" y="1317" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="464" y="1290" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="464" y="1290" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="446" y="1317" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="446" y="1317" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="455" y="1317" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="464" y="1317" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="464" y="1317" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="464" y="1317" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="410" y="1326" width="18" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_glass</title></rect>
 <rect x="410" y="1326" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="584" y="1251" font-family="sans-serif" font-size="9">market_hall 12x16</text>
@@ -2631,24 +2631,24 @@
 <rect x="647" y="1254" width="27" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="602" y="1263" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="611" y="1263" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="611" y="1263" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="611" y="1263" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="647" y="1263" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="593" y="1290" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="593" y="1290" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="593" y="1290" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="593" y="1299" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="611" y="1299" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="611" y="1299" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="611" y="1299" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="611" y="1299" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="602" y="1317" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="611" y="1317" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="611" y="1317" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="611" y="1317" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="593" y="1344" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="593" y="1344" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="593" y="1344" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="602" y="1344" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="593" y="1380" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="602" y="1380" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="602" y="1380" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="611" y="1380" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="611" y="1380" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="602" y="1380" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="611" y="1380" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="611" y="1380" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="647" y="1380" width="18" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_glass</title></rect>
 <rect x="647" y="1380" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="776" y="1251" font-family="sans-serif" font-size="9">bank_branch 10x10</text>
@@ -2665,17 +2665,17 @@
 <rect x="785" y="1263" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="812" y="1263" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="830" y="1263" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="830" y="1263" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="830" y="1263" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="839" y="1263" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="848" y="1263" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="848" y="1263" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="848" y="1263" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="848" y="1263" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="839" y="1290" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="848" y="1290" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="848" y="1290" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="830" y="1326" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="830" y="1326" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="848" y="1290" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="830" y="1326" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="830" y="1326" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="839" y="1326" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="839" y="1326" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="839" y="1326" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="848" y="1326" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="830" y="1335" width="27" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shop_window</title></rect>
 <rect x="830" y="1335" width="27" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2693,16 +2693,16 @@
 <rect x="1022" y="1254" width="27" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="986" y="1263" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="1040" y="1263" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1040" y="1263" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1022" y="1272" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="1022" y="1272" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1040" y="1263" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1022" y="1272" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="1022" y="1272" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1040" y="1272" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="1031" y="1290" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="1040" y="1290" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1040" y="1290" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1040" y="1290" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1031" y="1317" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="1040" y="1317" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1040" y="1317" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1040" y="1317" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="986" y="1326" width="18" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_white</title></rect>
 <rect x="986" y="1326" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="8" y="1453" font-family="sans-serif" font-size="9">butcher 10x11</text>
@@ -2719,15 +2719,15 @@
 <rect x="53" y="1465" width="18" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_glass</title></rect>
 <rect x="53" y="1465" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="80" y="1465" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="17" y="1483" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="17" y="1483" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="17" y="1483" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="17" y="1483" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="26" y="1483" width="18" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_b</title></rect>
 <rect x="27" y="1483" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="17" y="1501" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="17" y="1501" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="17" y="1501" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="26" y="1501" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="17" y="1528" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="17" y="1528" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="17" y="1528" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="26" y="1528" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <text x="200" y="1453" font-family="sans-serif" font-size="9">office_block 11x13</text>
 <rect x="200" y="1456" width="99" height="117" fill="#37474f"/>
@@ -2746,22 +2746,22 @@
 <rect x="227" y="1465" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="272" y="1465" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="281" y="1465" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="281" y="1465" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="281" y="1465" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="281" y="1492" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="281" y="1492" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="263" y="1501" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="263" y="1501" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="281" y="1492" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="263" y="1501" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="263" y="1501" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="281" y="1501" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="281" y="1519" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="281" y="1519" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="263" y="1528" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="263" y="1528" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="281" y="1519" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="263" y="1528" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="263" y="1528" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="281" y="1528" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="263" y="1546" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="263" y="1546" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="263" y="1546" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="272" y="1546" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="281" y="1546" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="281" y="1546" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="281" y="1546" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="281" y="1546" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="227" y="1555" width="9" height="9" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>counter_compact</title></rect>
 <rect x="227" y="1555" width="8" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="392" y="1453" font-family="sans-serif" font-size="9">greengrocer 15x12</text>
@@ -2800,12 +2800,12 @@
 <rect x="638" y="1465" width="18" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_b</title></rect>
 <rect x="639" y="1465" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="629" y="1528" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="647" y="1528" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
+<rect x="647" y="1528" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="593" y="1537" width="18" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_white</title></rect>
 <rect x="593" y="1537" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="620" y="1537" width="9" height="9" fill="#e53935" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_stool</title></rect>
 <rect x="620" y="1537" width="9" height="8" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="629" y="1546" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="629" y="1546" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="638" y="1537" width="18" height="18" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
 <rect x="640" y="1541" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="638" y="1555" width="27" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shop_window</title></rect>
@@ -2822,7 +2822,7 @@
 <rect x="785" y="1483" width="9" height="9" fill="#ffffff"/>
 <rect x="794" y="1465" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="803" y="1465" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="803" y="1465" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="803" y="1465" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="821" y="1465" width="18" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_papers_grey</title></rect>
 <rect x="824" y="1465" width="11" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="839" y="1465" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
@@ -2830,7 +2830,7 @@
 <rect x="849" y="1465" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="794" y="1492" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="803" y="1492" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="803" y="1492" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="803" y="1492" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="821" y="1519" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="785" y="1537" width="18" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_glass</title></rect>
 <rect x="785" y="1537" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2847,16 +2847,16 @@
 <rect x="977" y="1510" width="9" height="9" fill="#ffffff"/>
 <rect x="995" y="1483" width="9" height="9" fill="#ffffff"/>
 <rect x="977" y="1465" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="977" y="1465" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="986" y="1465" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="986" y="1465" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="977" y="1465" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="986" y="1465" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="986" y="1465" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="995" y="1465" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="1031" y="1465" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="1031" y="1483" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_a</title></rect>
 <rect x="1032" y="1483" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="986" y="1492" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="1004" y="1492" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1004" y="1492" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1004" y="1492" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1004" y="1519" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="977" y="1546" width="18" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_white</title></rect>
 <rect x="977" y="1546" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2885,8 +2885,8 @@
 <rect x="53" y="1713" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_a</title></rect>
 <rect x="54" y="1713" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="71" y="1713" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="98" y="1713" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="98" y="1713" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="98" y="1713" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="98" y="1713" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="107" y="1713" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="17" y="1731" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="17" y="1731" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2896,25 +2896,25 @@
 <rect x="108" y="1731" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="107" y="1749" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="116" y="1749" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="116" y="1749" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="116" y="1749" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="17" y="1758" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="26" y="1758" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="26" y="1758" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="35" y="1758" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="35" y="1758" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="26" y="1758" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="35" y="1758" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="35" y="1758" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="26" y="1776" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="35" y="1776" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="35" y="1776" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="35" y="1776" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="107" y="1776" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="98" y="1794" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="98" y="1794" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="116" y="1794" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="116" y="1794" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="116" y="1794" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="17" y="1803" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="17" y="1803" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="17" y="1803" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="26" y="1803" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="35" y="1803" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="35" y="1803" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="35" y="1803" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="35" y="1803" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="200" y="1701" font-family="sans-serif" font-size="9">warehouse 13x14</text>
 <rect x="200" y="1704" width="117" height="126" fill="#37474f"/>
 <rect x="245" y="1713" width="36" height="108" fill="#ffe0b2"/>
@@ -2939,27 +2939,27 @@
 <rect x="218" y="1731" width="18" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_b</title></rect>
 <rect x="219" y="1731" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="299" y="1740" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="299" y="1740" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="299" y="1740" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="209" y="1749" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="209" y="1749" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="209" y="1749" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="218" y="1749" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="227" y="1749" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="227" y="1749" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="227" y="1749" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="227" y="1749" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="272" y="1767" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="272" y="1767" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="272" y="1767" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="299" y="1776" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="209" y="1785" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="218" y="1785" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="218" y="1785" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="227" y="1785" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="227" y="1785" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="218" y="1785" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="227" y="1785" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="227" y="1785" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="299" y="1794" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="299" y="1794" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="299" y="1794" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="209" y="1803" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="209" y="1803" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="209" y="1803" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="218" y="1803" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="227" y="1803" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="227" y="1803" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="227" y="1803" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="227" y="1803" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="392" y="1701" font-family="sans-serif" font-size="9">vehicle_repair_garage 14x12</text>
 <rect x="392" y="1704" width="126" height="108" fill="#37474f"/>
 <rect x="473" y="1713" width="36" height="90" fill="#ffe0b2"/>
@@ -2977,14 +2977,14 @@
 <rect x="410" y="1713" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="455" y="1713" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="473" y="1713" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="473" y="1713" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="473" y="1713" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="491" y="1713" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="428" y="1722" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="428" y="1722" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="428" y="1722" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="401" y="1731" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_papers_wood</title></rect>
 <rect x="404" y="1731" width="11" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="455" y="1731" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="455" y="1731" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="455" y="1731" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="401" y="1749" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_a</title></rect>
 <rect x="402" y="1749" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="419" y="1749" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
@@ -2992,14 +2992,14 @@
 <rect x="473" y="1758" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="473" y="1758" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="446" y="1767" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="446" y="1767" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="446" y="1767" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="401" y="1776" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="401" y="1776" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="401" y="1776" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="419" y="1776" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="455" y="1785" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="455" y="1785" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="401" y="1794" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="401" y="1794" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="401" y="1794" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="401" y="1794" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="584" y="1701" font-family="sans-serif" font-size="9">food_plant 10x12</text>
 <rect x="584" y="1704" width="90" height="108" fill="#37474f"/>
 <rect x="593" y="1776" width="72" height="27" fill="#ffe0b2"/>
@@ -3020,14 +3020,14 @@
 <rect x="603" y="1731" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="611" y="1749" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="629" y="1749" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="629" y="1749" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="629" y="1749" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="647" y="1749" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="656" y="1749" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="656" y="1749" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="593" y="1758" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="593" y="1758" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="611" y="1758" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="611" y="1758" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="593" y="1758" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="611" y="1758" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="611" y="1758" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="593" y="1776" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="593" y="1776" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="620" y="1776" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
@@ -3047,18 +3047,18 @@
 <rect x="803" y="1713" width="18" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_b</title></rect>
 <rect x="804" y="1713" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="830" y="1713" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="830" y="1713" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="830" y="1713" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="839" y="1713" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="830" y="1740" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="830" y="1740" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="830" y="1740" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="839" y="1740" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="785" y="1749" width="18" height="9" fill="#8e24aa" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_table_pale</title></rect>
 <rect x="785" y="1749" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="830" y="1767" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="830" y="1767" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="830" y="1767" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="839" y="1767" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="848" y="1767" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="848" y="1767" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="848" y="1767" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="848" y="1767" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="968" y="1701" font-family="sans-serif" font-size="9">builders_yard 10x16</text>
 <rect x="968" y="1704" width="90" height="144" fill="#37474f"/>
 <rect x="977" y="1749" width="72" height="54" fill="#ffe0b2"/>
@@ -3078,17 +3078,17 @@
 <rect x="1004" y="1713" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1013" y="1713" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="1031" y="1713" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="1040" y="1713" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="1040" y="1713" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1040" y="1713" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="1040" y="1713" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="977" y="1731" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="977" y="1731" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="977" y="1731" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1004" y="1731" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1004" y="1731" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1004" y="1731" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1040" y="1731" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1040" y="1731" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1040" y="1731" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1004" y="1749" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="1022" y="1749" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1022" y="1749" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1022" y="1749" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1040" y="1749" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="1040" y="1749" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="977" y="1812" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_a</title></rect>
@@ -3114,29 +3114,29 @@
 <rect x="62" y="1978" width="9" height="9" fill="#ffffff"/>
 <rect x="89" y="1978" width="9" height="9" fill="#ffffff"/>
 <rect x="44" y="1915" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="44" y="1915" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="44" y="1915" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="62" y="1915" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="80" y="1915" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="80" y="1915" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="26" y="1960" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="44" y="1960" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="62" y="1960" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="62" y="1960" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="62" y="1960" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="98" y="1960" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="98" y="1960" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="44" y="1969" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="44" y="1969" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="98" y="1960" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="44" y="1969" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="44" y="1969" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="80" y="1969" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="80" y="1969" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="98" y="1969" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="17" y="1978" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="17" y="1978" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="17" y="1978" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="44" y="1987" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="44" y="1987" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="44" y="1987" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="53" y="1987" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="80" y="1987" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="98" y="1987" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="98" y="1987" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="98" y="1987" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="89" y="1996" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_papers_wood</title></rect>
 <rect x="92" y="1996" width="11" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="200" y="1903" font-family="sans-serif" font-size="9">workshop 12x12</text>
@@ -3164,21 +3164,21 @@
 <rect x="236" y="1960" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="236" y="1960" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="245" y="1960" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="245" y="1960" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="245" y="1960" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="263" y="1960" width="18" height="9" fill="#8e24aa" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_table_pale</title></rect>
 <rect x="263" y="1960" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="290" y="1960" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="290" y="1960" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="209" y="1978" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="209" y="1978" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="290" y="1960" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="209" y="1978" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="209" y="1978" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="218" y="1978" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="236" y="1978" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="209" y="1996" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_a</title></rect>
 <rect x="210" y="1996" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="236" y="1996" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="236" y="1996" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="236" y="1996" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="236" y="1996" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="245" y="1996" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="245" y="1996" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="245" y="1996" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="392" y="1903" font-family="sans-serif" font-size="9">vehicle_repair_garage 16x10</text>
 <rect x="392" y="1906" width="144" height="90" fill="#37474f"/>
 <rect x="455" y="1915" width="27" height="72" fill="#ffe0b2"/>
@@ -3200,12 +3200,12 @@
 <rect x="429" y="1915" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="464" y="1915" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="509" y="1915" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="518" y="1915" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="518" y="1915" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="518" y="1915" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="518" y="1915" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="491" y="1924" width="18" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_b</title></rect>
 <rect x="492" y="1924" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="455" y="1942" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="455" y="1942" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="455" y="1942" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="509" y="1942" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="473" y="1951" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="473" y="1951" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -3215,9 +3215,9 @@
 <rect x="402" y="1969" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="419" y="1969" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="491" y="1969" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="491" y="1969" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="500" y="1969" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="500" y="1969" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="491" y="1969" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="500" y="1969" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="500" y="1969" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="509" y="1969" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <text x="584" y="1903" font-family="sans-serif" font-size="9">vehicle_repair_garage 10x10</text>
 <rect x="584" y="1906" width="90" height="90" fill="#37474f"/>
@@ -3232,18 +3232,18 @@
 <rect x="602" y="1915" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="647" y="1915" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="656" y="1915" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="656" y="1915" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="656" y="1915" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="647" y="1942" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="656" y="1942" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="656" y="1942" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="656" y="1942" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="593" y="1951" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="593" y="1951" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="620" y="1951" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="620" y="1951" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="620" y="1951" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="656" y="1969" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="656" y="1969" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="638" y="1978" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="638" y="1978" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="656" y="1969" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="638" y="1978" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="638" y="1978" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="656" y="1978" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <text x="776" y="1903" font-family="sans-serif" font-size="9">food_plant 11x10</text>
 <rect x="776" y="1906" width="99" height="90" fill="#37474f"/>
@@ -3259,17 +3259,17 @@
 <rect x="786" y="1915" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="803" y="1915" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="857" y="1915" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="857" y="1915" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="839" y="1924" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="839" y="1924" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="857" y="1915" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="839" y="1924" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="839" y="1924" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="857" y="1924" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="848" y="1942" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="857" y="1942" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="857" y="1942" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="857" y="1942" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="785" y="1951" width="18" height="9" fill="#8e24aa" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_table_pale</title></rect>
 <rect x="785" y="1951" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="839" y="1969" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="839" y="1969" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="839" y="1969" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="848" y="1969" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <text x="968" y="1903" font-family="sans-serif" font-size="9">recycling_facility 10x12</text>
 <rect x="968" y="1906" width="90" height="108" fill="#37474f"/>
@@ -3292,17 +3292,17 @@
 <rect x="978" y="1960" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="995" y="1960" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="1022" y="1960" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1022" y="1960" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1022" y="1960" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1031" y="1960" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="977" y="1987" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="977" y="1987" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="977" y="1987" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="995" y="1987" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="1004" y="1987" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="1004" y="1987" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1040" y="1987" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1040" y="1987" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1022" y="1996" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="1022" y="1996" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1040" y="1987" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1022" y="1996" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="1022" y="1996" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1040" y="1996" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <text x="8" y="2132" font-family="sans-serif" font-size="13" font-weight="bold">institutional workplaces: 12 of 88 dressed interiors</text>
 <text x="8" y="2151" font-family="sans-serif" font-size="9">fire_station 20x12</text>
@@ -3320,12 +3320,12 @@
 <rect x="44" y="2190" width="9" height="9" fill="#ffffff"/>
 <rect x="26" y="2190" width="9" height="9" fill="#ffffff"/>
 <rect x="17" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
-<rect x="44" y="2163" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="44" y="2163" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="44" y="2163" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="44" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="53" y="2163" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="89" y="2163" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="98" y="2163" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="98" y="2163" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="98" y="2163" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="98" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="116" y="2163" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="116" y="2163" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="125" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
@@ -3333,7 +3333,7 @@
 <rect x="170" y="2163" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="170" y="2163" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="17" y="2181" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="17" y="2181" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="17" y="2181" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="53" y="2181" width="18" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_b</title></rect>
 <rect x="54" y="2181" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="80" y="2181" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_a</title></rect>
@@ -3360,21 +3360,21 @@
 <rect x="281" y="2190" width="9" height="9" fill="#ffffff"/>
 <rect x="308" y="2190" width="9" height="9" fill="#ffffff"/>
 <rect x="218" y="2163" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="245" y="2163" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="245" y="2163" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="245" y="2163" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="245" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="254" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="281" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="299" y="2163" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="308" y="2163" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="308" y="2163" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="308" y="2163" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="308" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="209" y="2163" width="9" height="27" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
 <rect x="209" y="2163" width="9" height="21" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="254" y="2181" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="254" y="2181" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="254" y="2181" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="272" y="2163" width="9" height="27" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
 <rect x="272" y="2163" width="9" height="21" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="299" y="2181" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="299" y="2181" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="299" y="2181" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="254" y="2199" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="299" y="2226" width="18" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_glass</title></rect>
 <rect x="299" y="2226" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -3391,8 +3391,8 @@
 <rect x="491" y="2190" width="9" height="9" fill="#ffffff"/>
 <rect x="509" y="2190" width="9" height="9" fill="#ffffff"/>
 <rect x="410" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
-<rect x="419" y="2163" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="419" y="2163" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="419" y="2163" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="419" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="446" y="2163" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="482" y="2163" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="509" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
@@ -3402,8 +3402,8 @@
 <rect x="440" y="2181" width="11" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="473" y="2181" width="18" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_papers_grey</title></rect>
 <rect x="476" y="2181" width="11" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="518" y="2181" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="518" y="2181" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="518" y="2181" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="518" y="2181" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="464" y="2199" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="509" y="2226" width="18" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_white</title></rect>
 <rect x="509" y="2226" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -3422,28 +3422,28 @@
 <rect x="602" y="2181" width="9" height="9" fill="#ffffff"/>
 <rect x="674" y="2181" width="9" height="9" fill="#ffffff"/>
 <rect x="593" y="2163" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="593" y="2163" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="593" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="602" y="2163" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="611" y="2163" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="611" y="2163" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="611" y="2163" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="611" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="638" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="656" y="2163" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="656" y="2163" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="656" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="665" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
-<rect x="674" y="2163" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="674" y="2163" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="674" y="2163" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="674" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="638" y="2181" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="638" y="2181" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="638" y="2181" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="593" y="2190" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="593" y="2190" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="593" y="2190" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="611" y="2190" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="656" y="2190" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="593" y="2199" width="18" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_papers_grey</title></rect>
 <rect x="596" y="2199" width="11" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="656" y="2199" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="656" y="2199" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="656" y="2199" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="656" y="2199" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="674" y="2199" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="674" y="2199" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="674" y="2199" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="638" y="2217" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="593" y="2235" width="18" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_white</title></rect>
 <rect x="593" y="2235" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -3464,8 +3464,8 @@
 <rect x="830" y="2208" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="785" y="2226" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelving_empty_a</title></rect>
 <rect x="786" y="2226" width="14" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="803" y="2226" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="803" y="2226" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="803" y="2226" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="803" y="2226" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="821" y="2226" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact</title></rect>
 <rect x="821" y="2226" width="7" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="968" y="2151" font-family="sans-serif" font-size="9">transit_office 13x16</text>
@@ -3486,29 +3486,29 @@
 <rect x="1049" y="2154" width="27" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1004" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="1049" y="2163" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1049" y="2163" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1049" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1058" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
-<rect x="1067" y="2163" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="1067" y="2163" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1067" y="2163" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="1067" y="2163" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1058" y="2190" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="1067" y="2190" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1067" y="2190" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1049" y="2217" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="1049" y="2217" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1067" y="2190" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1049" y="2217" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="1049" y="2217" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1058" y="2217" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="1067" y="2217" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1067" y="2217" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1067" y="2217" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1049" y="2244" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1049" y="2244" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1049" y="2244" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1058" y="2244" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="1067" y="2244" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="1067" y="2244" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1067" y="2244" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="1067" y="2244" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1004" y="2280" width="18" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_glass</title></rect>
 <rect x="1004" y="2280" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1049" y="2280" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="1049" y="2280" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1049" y="2280" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="1049" y="2280" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1058" y="2280" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1058" y="2280" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1058" y="2280" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1067" y="2280" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <text x="8" y="2353" font-family="sans-serif" font-size="9">transit_office 15x16</text>
 <rect x="8" y="2356" width="135" height="144" fill="#37474f"/>
@@ -3530,26 +3530,26 @@
 <rect x="71" y="2365" width="8" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="116" y="2365" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="17" y="2383" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="17" y="2383" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="125" y="2383" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="125" y="2383" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="35" y="2392" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="35" y="2392" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="17" y="2383" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="125" y="2383" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="125" y="2383" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="35" y="2392" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="35" y="2392" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="107" y="2392" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="107" y="2392" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="107" y="2392" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="26" y="2410" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="17" y="2428" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="17" y="2428" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="17" y="2428" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="116" y="2428" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="26" y="2446" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="107" y="2446" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="107" y="2446" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="107" y="2446" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="107" y="2446" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="125" y="2455" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="125" y="2455" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="125" y="2455" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="17" y="2464" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="17" y="2464" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="35" y="2473" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="35" y="2473" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="17" y="2464" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="35" y="2473" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="35" y="2473" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="35" y="2491" width="27" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shop_window</title></rect>
 <rect x="35" y="2491" width="27" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="200" y="2353" font-family="sans-serif" font-size="9">library 11x14</text>
@@ -3565,18 +3565,18 @@
 <rect x="236" y="2401" width="9" height="9" fill="#ffffff"/>
 <rect x="236" y="2365" width="9" height="9" fill="#ffffff"/>
 <rect x="209" y="2365" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="209" y="2365" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="209" y="2365" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="218" y="2365" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="263" y="2365" width="18" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_glass</title></rect>
 <rect x="263" y="2365" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="281" y="2365" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="209" y="2392" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="209" y="2392" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="209" y="2392" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="209" y="2392" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="218" y="2392" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="227" y="2392" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="227" y="2392" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="209" y="2419" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="209" y="2419" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="227" y="2392" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="209" y="2419" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="209" y="2419" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="218" y="2419" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="218" y="2446" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="218" y="2464" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_papers_wood</title></rect>
@@ -3600,10 +3600,10 @@
 <rect x="410" y="2365" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="455" y="2365" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="491" y="2365" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
-<rect x="419" y="2383" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="419" y="2383" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="419" y="2383" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="419" y="2383" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="401" y="2392" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="401" y="2392" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="401" y="2392" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="482" y="2392" width="18" height="9" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_papers_wood</title></rect>
 <rect x="485" y="2392" width="11" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="410" y="2428" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
@@ -3628,29 +3628,29 @@
 <rect x="611" y="2428" width="9" height="9" fill="#ffffff"/>
 <rect x="611" y="2383" width="9" height="9" fill="#ffffff"/>
 <rect x="629" y="2383" width="9" height="9" fill="#ffffff"/>
-<rect x="593" y="2365" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="593" y="2365" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="593" y="2365" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="593" y="2365" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="602" y="2365" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="611" y="2365" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="611" y="2365" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="611" y="2365" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="638" y="2365" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="647" y="2365" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="647" y="2365" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="647" y="2365" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="665" y="2365" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="665" y="2365" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="665" y="2365" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="683" y="2365" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="602" y="2392" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="638" y="2392" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="692" y="2392" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="692" y="2392" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="692" y="2392" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="692" y="2392" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="593" y="2410" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="593" y="2410" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="611" y="2410" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="611" y="2410" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="593" y="2410" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="611" y="2410" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="611" y="2410" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="629" y="2410" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="629" y="2410" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="647" y="2410" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="647" y="2410" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="629" y="2410" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="647" y="2410" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="647" y="2410" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="638" y="2437" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="593" y="2455" width="9" height="9" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>counter_compact</title></rect>
 <rect x="593" y="2455" width="8" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -3674,14 +3674,14 @@
 <rect x="794" y="2383" width="18" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_papers_grey</title></rect>
 <rect x="797" y="2383" width="11" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="830" y="2383" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="830" y="2383" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="830" y="2383" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="848" y="2392" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="848" y="2392" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="866" y="2392" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="866" y="2392" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="848" y="2392" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="866" y="2392" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="866" y="2392" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="794" y="2401" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="803" y="2401" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="803" y="2401" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="803" y="2401" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="803" y="2401" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="830" y="2428" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="785" y="2437" width="9" height="9" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>counter_compact</title></rect>
 <rect x="785" y="2437" width="8" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -3701,18 +3701,18 @@
 <rect x="986" y="2365" width="18" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>till_counter_white</title></rect>
 <rect x="986" y="2365" width="16" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1049" y="2365" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1049" y="2365" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="1031" y="2374" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_planter_small</title></rect>
-<rect x="1031" y="2374" width="8" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1049" y="2365" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1031" y="2374" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_book</title></rect>
+<rect x="1031" y="2374" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1049" y="2374" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="1031" y="2401" width="9" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>workbench_compact</title></rect>
 <rect x="1031" y="2401" width="7" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1040" y="2401" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1040" y="2401" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1040" y="2401" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1049" y="2401" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="1040" y="2419" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="1049" y="2419" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact</title></rect>
-<rect x="1049" y="2419" width="9" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="1049" y="2419" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="1031" y="2437" width="27" height="9" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shop_window</title></rect>
 <rect x="1031" y="2437" width="27" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="8" y="2582" font-family="sans-serif" font-size="12" font-weight="bold">props (footprint tinted by def, collider hatched; walls dark, doorway white, street door yellow; the number is how many the district places)</text>
@@ -3753,7 +3753,7 @@
 <rect x="1008" y="2701" width="12" height="12" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2712" font-family="sans-serif" font-size="11">glass_lamp (1293)</text>
 <rect x="8" y="2719" width="12" height="12" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2730" font-family="sans-serif" font-size="11">desk_papers_grey (77)</text>
 <rect x="258" y="2719" width="12" height="12" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2730" font-family="sans-serif" font-size="11">desk_papers_wood (70)</text>
-<rect x="508" y="2719" width="12" height="12" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2730" font-family="sans-serif" font-size="11">desk_planter_small (449)</text>
-<rect x="758" y="2719" width="12" height="12" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2730" font-family="sans-serif" font-size="11">chair_yellow (590)</text>
-<rect x="1008" y="2719" width="12" height="12" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2730" font-family="sans-serif" font-size="11">chair_green (619)</text>
+<rect x="508" y="2719" width="12" height="12" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2730" font-family="sans-serif" font-size="11">chair_yellow (590)</text>
+<rect x="758" y="2719" width="12" height="12" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2730" font-family="sans-serif" font-size="11">chair_green (619)</text>
+<rect x="1008" y="2719" width="12" height="12" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2730" font-family="sans-serif" font-size="11">desk_school_book (449)</text>
 </svg>

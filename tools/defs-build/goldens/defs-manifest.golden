@@ -63,6 +63,11 @@ object 62 desk_papers_wood
 object 63 desk_planter_small
 object 64 chair_yellow
 object 65 chair_green
+object 66 shelf_compact_cream
+object 67 desk_school_book
+object 68 desk_school_papers
+object 69 bed_compact_green
+object 70 pedestal_basin_white
 item 1 bottle
 item 2 recycled_glass
 item 3 coin_1
