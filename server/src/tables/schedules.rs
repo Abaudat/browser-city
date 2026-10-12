@@ -62,7 +62,7 @@ fn schedule_at_micros(at: ScheduleAt) -> Result<i64, String> {
 
 /// Deletes every pending row `iter_ids`/`delete` can see and inserts
 /// exactly one, at the next phase-preserving, catch-up-bounded target
-/// computed by `sim::cadence::next_target` from `origin_micros`/
+/// computed by `sim::cadence::fire` from `grid_origin_micros`/
 /// `period_ms`/`ctx.timestamp`. The one function every cadence's arm
 /// (`arm_every_cadence_from`/`arm_every_cadence`) and every cadence's own
 /// fired reducer body (re-arming itself after doing its work) both call.
@@ -72,9 +72,12 @@ fn schedule_at_micros(at: ScheduleAt) -> Result<i64, String> {
 /// shared trait across SpacetimeDB's per-table generated accessors to
 /// abstract this genuinely generically. Returns `(target_micros,
 /// missed)`.
+// The two instants stay positional beside the closures they sit with.
+#[allow(clippy::too_many_arguments)]
 fn arm_cadence(
     ctx: &ReducerContext,
-    origin_micros: i64,
+    grid_origin_micros: i64,
+    fired_target_micros: i64,
     period_ms: i64,
     speed: u32,
     mut iter_ids: impl FnMut() -> Vec<u64>,
@@ -84,8 +87,9 @@ fn arm_cadence(
     for id in iter_ids() {
         delete(id);
     }
-    let (target_micros, missed) = sim::cadence::next_target(
-        origin_micros,
+    let (target_micros, missed) = sim::cadence::fire(
+        grid_origin_micros,
+        fired_target_micros,
         period_ms,
         speed,
         ctx.timestamp.to_micros_since_unix_epoch(),
@@ -241,18 +245,25 @@ pub mod cadence_code {
     pub const METRICS: u32 = 2;
 }
 
-/// Generates `$name(ctx, origin_micros, speed) -> (target, missed)`, which
-/// re-arms one cadence's scheduled table from `origin_micros`. Shared by
+/// Generates `$name(ctx, grid_origin, fired_target, speed) -> (target,
+/// missed)`, which re-arms one cadence's scheduled table on the grid
+/// anchored at `grid_origin`; `missed` is measured from `fired_target`. Shared by
 /// `arm_every_cadence_from` (the initial arm, from `init`/
 /// `finish_restore`), `arm_every_cadence` (from `finish_restore`), and
 /// the cadence's own fired reducer (the re-arm after firing). One
 /// invocation per armed cadence, never a hand-copied closure triple.
 macro_rules! arm_schedule {
     ($name:ident, $accessor:ident, $Row:ident, $period_ms:expr) => {
-        fn $name(ctx: &ReducerContext, origin_micros: i64, speed: u32) -> (i64, u64) {
+        fn $name(
+            ctx: &ReducerContext,
+            grid_origin_micros: i64,
+            fired_target_micros: i64,
+            speed: u32,
+        ) -> (i64, u64) {
             arm_cadence(
                 ctx,
-                origin_micros,
+                grid_origin_micros,
+                fired_target_micros,
                 $period_ms,
                 speed,
                 || ctx.db.$accessor().iter().map(|r| r.scheduled_id).collect(),
@@ -334,7 +345,8 @@ pub fn run_maintenance(ctx: &ReducerContext, row: MaintenanceSchedule) -> Result
         ctx,
         sim::cadence::city_minute_of(epoch_micros, speed, origin_micros),
     );
-    let (_next_target_micros, missed) = arm_maintenance_schedule(ctx, origin_micros, speed);
+    let (_next_target_micros, missed) =
+        arm_maintenance_schedule(ctx, origin_micros, origin_micros, speed);
     record_cadence_fire(ctx, cadence_code::MAINTENANCE, origin_micros, missed);
     Ok(())
 }
@@ -349,7 +361,8 @@ pub fn sample_metrics(ctx: &ReducerContext, row: MetricsSampleSchedule) -> Resul
     // Infallible by construction: nothing between the clock read and the
     // re-arm may abort, or the cadence would stop.
     metrics::run_sampler(ctx);
-    let (_next_target_micros, missed) = arm_metrics_schedule(ctx, epoch_micros, speed);
+    let (_next_target_micros, missed) =
+        arm_metrics_schedule(ctx, epoch_micros, origin_micros, speed);
     record_cadence_fire(ctx, cadence_code::METRICS, origin_micros, missed);
     Ok(())
 }
@@ -362,8 +375,8 @@ pub fn sample_metrics(ctx: &ReducerContext, row: MetricsSampleSchedule) -> Resul
 /// derived state, rebuilt explicitly, never trusted to survive a deploy
 /// purely by surviving as pending rows (docs/architecture.md).
 pub fn arm_every_cadence_from(ctx: &ReducerContext, epoch_micros: i64, speed: u32) {
-    arm_maintenance_schedule(ctx, epoch_micros, speed);
-    arm_metrics_schedule(ctx, epoch_micros, speed);
+    arm_maintenance_schedule(ctx, epoch_micros, epoch_micros, speed);
+    arm_metrics_schedule(ctx, epoch_micros, epoch_micros, speed);
 }
 
 /// Looks up `world_clock.epoch_at` and arms every cadence from it.

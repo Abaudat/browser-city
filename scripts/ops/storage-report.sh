@@ -20,10 +20,21 @@
 # -- because it is the dedupe key of the issue `report-scheduled-failure.sh`
 # files; the figure is in the detail.
 #
+# Maincloud scales an idle database to zero and a pending schedule does not
+# wake it: the first read of a run wakes it. So before measuring, the report
+# settles: it reads `metrics_sample_schedule` until its pending target is in
+# the future (`--settle` seconds, default 60, polled every 5 s). A target
+# still past, or no pending row, is a scheduler that is not dispatching:
+# `watcher: sampler stale`. Cadences that fired within WAKE_SKEW_MICROS of
+# the report's start are printed as `fired during this read`. The report also
+# prints the largest gap between samples over the last poll window; a gap is
+# evidence, never a breach (an idle database sleeps, which is normal).
+#
 # Usage: storage-report.sh <database> [--server <server>] [--now <micros>]
-#        [--findings <file>]
-# `--now` overrides the runner's clock (tests). Prints "no storage samples
-# yet" and exits 0 when the sampler has not fired at all.
+#        [--findings <file>] [--settle <seconds>]
+# `--now` overrides the runner's clock (tests); `BC_SLEEP` overrides `sleep`.
+# Prints "no storage samples yet" and exits 0 when the sampler has not
+# fired at all.
 set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib.sh"
@@ -32,28 +43,44 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # real hour at speed 1 (the production speed).
 STALE_MICROS=$((3 * 3600 * 1000000))
 
+# Runner/server clock skew allowance for "fired during this read": the
+# server clock was seen 2 s behind the runner's; 10 s is five times that.
+WAKE_SKEW_MICROS=$((10 * 1000000))
+# The gap history window: the watcher polls every 6 h; one more hour of
+# margin so a late poll still sees the whole previous window.
+GAP_WINDOW_MICROS=$((7 * 3600 * 1000000))
+SETTLE_STEP_SECONDS=5
+
 unreadable() { # <message>
   echo "storage-report: could not read the metrics -- $1" >&2
   exit 2
 }
 
-USAGE="usage: storage-report.sh <database> [--server <server>] [--now <micros>] [--findings <file>]"
+USAGE="usage: storage-report.sh <database> [--server <server>] [--now <micros>] [--findings <file>] [--settle <seconds>]"
 DB="${1:-}"
 [ -n "$DB" ] || unreadable "$USAGE"
 shift
 SERVER_ARGS=()
 NOW_MICROS=""
 FINDINGS_FILE=""
+SETTLE_SECONDS=60
+INJECTED_NOW=0
 while [ "$#" -ge 2 ]; do
   case "$1" in
     --server) SERVER_ARGS=(--server "$2") ;;
-    --now) NOW_MICROS="$2" ;;
+    --now) NOW_MICROS="$2"; INJECTED_NOW=1 ;;
+    --settle) SETTLE_SECONDS="$2" ;;
     --findings) FINDINGS_FILE="$2" ;;
     *) break ;;
   esac
   shift 2
 done
-[ -n "$NOW_MICROS" ] || NOW_MICROS=$(($(date +%s) * 1000000))
+case "$SETTLE_SECONDS" in ''|*[!0-9]*) unreadable "--settle needs whole seconds -- $USAGE" ;; esac
+runner_now() { # the runner's clock, or the injected one
+  if [ "$INJECTED_NOW" -eq 1 ]; then echo "$NOW_MICROS"; else echo $(($(date +%s) * 1000000)); fi
+}
+[ -n "$NOW_MICROS" ] || NOW_MICROS="$(runner_now)"
+START_MICROS="$NOW_MICROS"
 [ "$#" -eq 0 ] || unreadable "unrecognized argument(s): $* -- $USAGE"
 [ -z "$FINDINGS_FILE" ] || : >"$FINDINGS_FILE"
 
@@ -66,6 +93,44 @@ read_table() {
   ( bc_sql_json "storage-report" "$DB" "${SERVER_ARGS[@]}" "SELECT * FROM $1" >"$2" ) 2>"$TMP/read-error.log" \
     || unreadable "$(cat "$TMP/read-error.log")"
 }
+BREACH=0
+# finding <title> <detail> -- a breach: stderr, and the findings file.
+finding() {
+  BREACH=1
+  echo "storage-report: BREACH -- $2" >&2
+  [ -z "$FINDINGS_FILE" ] || printf '%s\t%s\n' "$1" "$2" >>"$FINDINGS_FILE"
+}
+
+# Settle: the first read wakes the database; wait for its overdue fire.
+micros_of() { printf '%s' "$1" | grep -oE '[0-9]+' | tail -n1; }
+STALE_REASONS=()
+pending_target() { # sets TARGET to the earliest pending target in micros, or ""
+  read_table metrics_sample_schedule "$TMP/schedule.json"
+  bc_wb row-count "$TMP/schedule.json" >/dev/null || unreadable "unparseable metrics_sample_schedule reply"
+  local v t="" m
+  while IFS= read -r v; do
+    m="$(micros_of "$v")"
+    [ -n "$m" ] || continue
+    if [ -z "$t" ] || [ "$m" -lt "$t" ]; then t="$m"; fi
+  done < <(bc_wb column-values "$TMP/schedule.json" scheduled_at)
+  TARGET="$t"
+}
+POLLS=$((SETTLE_SECONDS / SETTLE_STEP_SECONDS))
+TARGET=""
+pending_target
+ATTEMPT=0
+while [ -n "$TARGET" ] && [ "$TARGET" -le "$(runner_now)" ] && [ "$ATTEMPT" -lt "$POLLS" ]; do
+  ${BC_SLEEP:-sleep} "$SETTLE_STEP_SECONDS"
+  ATTEMPT=$((ATTEMPT + 1))
+  pending_target
+done
+NOW_MICROS="$(runner_now)"
+if [ -z "$TARGET" ]; then
+  STALE_REASONS+=("no pending metrics_sample_schedule row: the sampler is not armed")
+elif [ "$TARGET" -le "$NOW_MICROS" ]; then
+  STALE_REASONS+=("the pending sampler target is $(((NOW_MICROS - TARGET) / 1000000))s past after settling ${SETTLE_SECONDS}s: the scheduler is not dispatching")
+fi
+
 read_table storage_sample "$TMP/storage.json"
 read_table table_sample "$TMP/tables.json"
 read_table reducer_class_sample "$TMP/classes.json"
@@ -81,6 +146,10 @@ column() { bc_wb column-values "$1" "$2"; }
 STORAGE_ROWS="$(bc_wb row-count "$TMP/storage.json")"
 if [ "$STORAGE_ROWS" -eq 0 ]; then
   echo "storage-report: no storage samples yet"
+  if [ "${#STALE_REASONS[@]}" -gt 0 ]; then
+    finding "watcher: sampler stale" "STALE -- $(printf '%s; ' "${STALE_REASONS[@]}" | sed 's/; $//')"
+    exit 1
+  fi
   exit 0
 fi
 
@@ -137,11 +206,19 @@ fi
 # `cadence_code` in server/src/tables/schedules.rs), ages in seconds against
 # the same clock as the stale check. Best effort: a failed read changes the
 # text, never the verdict; its reason reaches the job log.
-micros_of() { printf '%s' "$1" | grep -oE '[0-9]+' | tail -n1; }
-age_of() { # <timestamp> -- seconds before NOW_MICROS, or "?"
+fired_text() { # <timestamp> -- "fired during this read", or seconds before NOW_MICROS
   local m
   m="$(micros_of "$1")"
-  if [ -n "$m" ]; then echo "$(((NOW_MICROS - m) / 1000000))s"; else echo "?"; fi
+  if [ -z "$m" ]; then echo "?"
+  elif [ "$m" -ge $((START_MICROS - WAKE_SKEW_MICROS)) ]; then echo "fired during this read"
+  else echo "$(((NOW_MICROS - m) / 1000000))s ago"; fi
+}
+target_text() { # <timestamp> -- an age, or "in Ns" for a future target
+  local m
+  m="$(micros_of "$1")"
+  if [ -z "$m" ]; then echo "?"
+  elif [ "$m" -gt "$NOW_MICROS" ]; then echo "in $(((m - NOW_MICROS) / 1000000))s"
+  else echo "$(((NOW_MICROS - m) / 1000000))s ago"; fi
 }
 LIVENESS_LINES=""
 LIVENESS_ERR=""
@@ -155,7 +232,7 @@ if ( bc_sql_json "storage-report" "$DB" "${SERVER_ARGS[@]}" "SELECT * FROM caden
     <(column "$TMP/liveness.json" missed) >"$TMP/liveness.rows"
   while IFS='|' read -r c t f n m; do
     [ -n "$c" ] || continue
-    LIVENESS_LINES="${LIVENESS_LINES:+$LIVENESS_LINES; }cadence $c: last fired $(age_of "$f") ago, last target $(age_of "$t") ago, fires=$n missed=$m"
+    LIVENESS_LINES="${LIVENESS_LINES:+$LIVENESS_LINES; }cadence $c: last fired $(fired_text "$f"), last target $(target_text "$t"), fires=$n missed=$m"
   done <"$TMP/liveness.rows"
   [ -n "$LIVENESS_LINES" ] || LIVENESS_LINES="no rows"
 else
@@ -165,17 +242,33 @@ fi
 LIVENESS_TEXT="${LIVENESS_ERR:-cadence liveness: $LIVENESS_LINES}"
 echo "storage-report: $LIVENESS_TEXT"
 
-BREACH=0
-# finding <title> <detail> -- a breach: stderr, and the findings file.
-finding() {
-  BREACH=1
-  echo "storage-report: BREACH -- $2" >&2
-  [ -z "$FINDINGS_FILE" ] || printf '%s\t%s\n' "$1" "$2" >>"$FINDINGS_FILE"
-}
-
-SAMPLED_MICROS="$(printf '%s' "$SAMPLED_AT" | grep -oE '[0-9]+' | tail -n1)"
+SAMPLED_MICROS="$(micros_of "$SAMPLED_AT")"
 if [ -n "$SAMPLED_MICROS" ] && [ $((NOW_MICROS - SAMPLED_MICROS)) -gt "$STALE_MICROS" ]; then
-  finding "watcher: sampler stale" "STALE -- the newest sample is $(((NOW_MICROS - SAMPLED_MICROS) / 1000000))s old, over three sampler periods ($((STALE_MICROS / 1000000))s): the sampler has stopped. $LIVENESS_TEXT"
+  STALE_REASONS+=("the newest sample is $(((NOW_MICROS - SAMPLED_MICROS) / 1000000))s old, over three sampler periods ($((STALE_MICROS / 1000000))s): the sampler has stopped")
+fi
+
+# Gap history: the largest gap between consecutive samples inside the poll
+# window, printed and never judged (an idle database sleeps).
+WINDOW_START=$((START_MICROS - GAP_WINDOW_MICROS))
+SAMPLE_TIMES="$(column "$TMP/storage.json" sampled_at | while IFS= read -r v; do
+  m="$(micros_of "$v")"
+  [ -n "$m" ] || { echo "BAD"; continue; }
+  echo "$m"
+done | sort -n)"
+case "$SAMPLE_TIMES" in *BAD*) unreadable "unparseable sampled_at in the sample series" ;; esac
+PREV=""
+LARGEST=0
+while IFS= read -r m; do
+  [ -n "$m" ] || continue
+  if [ -n "$PREV" ] && [ "$m" -ge "$WINDOW_START" ] && [ $((m - PREV)) -gt "$LARGEST" ]; then
+    LARGEST=$((m - PREV))
+  fi
+  PREV="$m"
+done <<<"$SAMPLE_TIMES"
+echo "storage-report: sample gaps over the last $((GAP_WINDOW_MICROS / 3600000000))h: largest between samples $((LARGEST / 1000000))s"
+if [ "${#STALE_REASONS[@]}" -gt 0 ]; then
+  REASONS="$(printf '%s; ' "${STALE_REASONS[@]}")"
+  finding "watcher: sampler stale" "STALE -- ${REASONS%; }. $LIVENESS_TEXT"
 fi
 if [ "$OVER_WALL" = "true" ]; then
   finding "watcher: storage over wall" "estimated storage total $TOTAL bytes is past the wall of $WALL_BYTES bytes"

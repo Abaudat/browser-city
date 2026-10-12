@@ -49,6 +49,15 @@ stub_bin() {
   printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of reducer_class_sample)" "${3:-[]}" >"$d/classes.json"
   printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of cadence_liveness)" "${LIVENESS:-[]}" >"$d/liveness.json"
   printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of gameplay_metric_sample)" "${GAMEPLAY:-[]}" >"$d/gameplay.json"
+  # The settle read: SCHED_SEQ is a space-separated list of row arrays, one
+  # served per call (the last repeats). Default: one future target.
+  local seq="${SCHED_SEQ:-[[1,[1,[9000000000000000000]]]]}" i=0 one
+  for one in $seq; do
+    i=$((i + 1))
+    printf '[{"schema":%s,"rows":%s,"total_duration_micros":1,"stats":{}}]' "$(schema_of metrics_sample_schedule)" "$one" >"$d/sched.$i.json"
+  done
+  echo "$i" >"$d/sched.total"
+  echo 0 >"$d/sched.count"
   cat >"$d/spacetime" <<STUB
 #!/usr/bin/env bash
 case "${4:-}" in
@@ -56,6 +65,11 @@ case "${4:-}" in
   auth) echo "Error: 401 unauthorized" >&2; exit 0 ;;
 esac
 case "\$*" in
+  *metrics_sample_schedule*)
+    [ "${4:-}" = "settle-fail" ] && { echo "Error: boom" >&2; exit 1; }
+    n=\$(( \$(cat "$d/sched.count") + 1 )); echo \$n >"$d/sched.count"
+    t=\$(cat "$d/sched.total"); [ \$n -le \$t ] || n=\$t
+    cat "$d/sched.\$n.json" ;;
   *gameplay_metric_sample*) cat "$d/gameplay.json" ;;
   *cadence_liveness*) echo liveness >>"$CALLS_LOG"; [ "${4:-}" = "liveness-fail" ] && { echo "Error: boom" >&2; exit 1; }; cat "$d/liveness.json" ;;
   *storage_sample*) cat "$d/storage.json" ;;
@@ -74,7 +88,7 @@ run_report() {
   local bin
   rm -f "$CALLS_LOG"
   bin="$(stub_bin "$1" "$2" "${3:-[]}" "${4:-}")"
-  ( PATH="$bin:$PATH" bash "$REPORT" my-db --server http://127.0.0.1:1 --now "${NOW:-150}" --findings "$FINDINGS" )
+  ( PATH="$bin:$PATH" BC_SLEEP=true bash "$REPORT" my-db --server http://127.0.0.1:1 --now "${NOW:-150}" --settle "${SETTLE:-10}" --findings "$FINDINGS" )
 }
 
 FINDINGS="$(fake_dir)/findings.tsv"
@@ -184,6 +198,60 @@ OUT="$(LIVENESS="$LIVE" NOW=150 run_report '[[1,100,5000,false,false,10737418240
 check "liveness unreadable on a healthy run -> exit 0, never 1 or 2" 0 bash -c "exit $CODE"
 check "and writes no finding" 0 is_empty "$FINDINGS"
 check_contains "and says liveness was unreadable" "cadence liveness unreadable" "$OUT"
+
+echo
+echo "a cadence that fired during this read says so, never a negative age"
+SKEW=$((10 * 1000000))
+N=$((100 + STALE))
+LV="[[1,[$((N + 5000000))],[$((N + 2000000))],5,0],[2,[$((N - SKEW - 1000000))],[$((N - SKEW - 1000000))],5,0],[3,[$((N - SKEW))],[$((N - SKEW))],5,0]]"
+OUT="$(LIVENESS="$LV" NOW=$N run_report "[[1,$((N - 100)),5000,false,false,1,2]]" '[]' 2>&1)"
+check_contains "a fire after --now is flagged" "cadence 1: last fired fired during this read" "$OUT"
+check_contains "a future target prints as in Ns, never negative" "last target in 5s" "$OUT"
+check "no negative age is printed" 0 lacks "$OUT" "-2s"
+check "a target is never said to have fired" 0 lacks "$OUT" "last target fired"
+check_contains "a fire just before the allowance is a plain age" "cadence 2: last fired 11s ago" "$OUT"
+check_contains "a fire exactly at START - skew is flagged" "cadence 3: last fired fired during this read, last target 10s ago" "$OUT"
+
+echo
+echo "gap history is printed, never a breach"
+H=3600000000
+N=$((100 * H))
+S1="[[1,$((N - 8 * H)),1,false,false,1,2],[2,$N,1,false,false,1,2]]"
+OUT="$(NOW=$N run_report "$S1" '[]' 2>&1)"; CODE=$?
+check "an 8h gap healed by a fresh sample -> exit 0" 0 bash -c "exit $CODE"
+check "and writes no finding" 0 is_empty "$FINDINGS"
+check_contains "prints the largest gap" "largest between samples 28800s" "$OUT"
+OUT="$(NOW=$N run_report '[[1,"x",1,false,false,1,2]]' '[]' 2>&1)"; CODE=$?
+check "an unreadable series -> exit 2" 2 bash -c "exit $CODE"
+
+echo
+echo "issue 446: a sleeping database woken by this read is healthy"
+# Replays run 38210789893: the last pre-sleep sample 8 h old, both cadences
+# overdue by 7+ h, the first schedule read past, the wake fire's sample fresh.
+INC="[[1,[$((N - 7 * H))],[$((N + 1000000))],900,40],[2,[$((N - 7 * H - 1800000000))],[$((N + 1000000))],3000,1060]]"
+OUT="$(SCHED_SEQ="[[1,[1,[$((N - 7 * H))]]]] [[1,[1,[$((N + H))]]]]" LIVENESS="$INC" NOW=$N run_report "$S1" '[]' 2>&1)"; CODE=$?
+check "a woken database -> exit 0" 0 bash -c "exit $CODE"
+check "and writes no finding" 0 is_empty "$FINDINGS"
+check_contains "the metrics cadence fired during this read" "cadence 2: last fired fired during this read" "$OUT"
+check_contains "the other cadence fired during this read" "cadence 1: last fired fired during this read" "$OUT"
+check_contains "the 8h gap is printed" "largest between samples 28800s" "$OUT"
+
+echo
+echo "settle: the first read wakes the database; the report waits for the overdue fire"
+OK='[[1,100,5000,false,false,10737418240,42949672960]]'
+OUT="$(SCHED_SEQ='[[1,[1,[10]]]] [[1,[1,[9000000000000000000]]]]' run_report "$OK" '[]' 2>&1)"; CODE=$?
+check "a past target that flips to future -> exit 0" 0 bash -c "exit $CODE"
+check "and writes no finding" 0 is_empty "$FINDINGS"
+OUT="$(SCHED_SEQ='[[1,[1,[10]]]]' run_report "$OK" '[]' 2>&1)"; CODE=$?
+check "a target that stays past -> exit 1" 1 bash -c "exit $CODE"
+check_contains "sampler stale title" "watcher: sampler stale$TAB" "$(cat "$FINDINGS")"
+check_contains "says the scheduler is not dispatching" "not dispatching" "$(cat "$FINDINGS")"
+OUT="$(SCHED_SEQ='[]' run_report "$OK" '[]' 2>&1)"; CODE=$?
+check "no pending row -> exit 1" 1 bash -c "exit $CODE"
+check_contains "says it is not armed" "not armed" "$(cat "$FINDINGS")"
+OUT="$(run_report "$OK" '[]' '[]' settle-fail 2>&1)"; CODE=$?
+check "a settle read failure -> exit 2" 2 bash -c "exit $CODE"
+check "and writes no finding" 0 is_empty "$FINDINGS"
 
 echo
 echo "cost per reducer class is printed for the newest fire, never alerted on"
