@@ -28,10 +28,17 @@ import { KeyboardState } from "./input/keyboard";
 import { OIDC_CONFIG } from "./net/config";
 import type { CharacterReport, IdentityReport } from "./net/connection";
 import {
+  type ContainerWiring,
+  createContainerWiring,
+  isStreamedObject,
+  sdkContainerBackend,
+} from "./net/container-subscription";
+import {
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
   exposeCommuterDrawnForE2e,
   exposeConnectionForE2e,
+  exposeContainerViewForE2e,
   exposeIdentityActionsForE2e,
   exposeL3AgreementForE2e,
   exposeL3BodiesForE2e,
@@ -454,6 +461,10 @@ async function main(): Promise<void> {
           syncSender();
         },
       },
+      createContainerWiring({
+        isStreamed: (id) => isStreamedObject(conn.current(), id),
+        open: (id, listener) => sdkContainerBackend(conn.current()).open(id, listener),
+      }),
     );
   } catch (error: unknown) {
     // NFR42: the street scene degrades to not-drawing, never takes the ping
@@ -511,6 +522,7 @@ async function startStreetScene(
   bodyControl: BodyControl,
   onFirstFrame: () => void,
   players: PlayersWiring,
+  containers: ContainerWiring,
 ): Promise<void> {
   const mount = document.getElementById("test-street");
   if (!mount) {
@@ -748,6 +760,8 @@ async function startStreetScene(
     onMasksChecked: recordMasksCheckedForE2e,
     keyboard,
     bodyControl,
+    containerRows: containers.rows,
+    containerPresent: containers.present,
     // FR148: the intent sink. Nothing consumes an intent yet -- the
     // procedure interaction model is Epic 8's, deliberately unresolved --
     // so the only consumer today is the e2e observation hook. Swapping
@@ -755,6 +769,9 @@ async function startStreetScene(
     onIntent: (intent) => {
       recordIntentForE2e(intent);
       offer.onIntent(intent);
+      // Story 6.10: one call; Epic 8 replaces it wholesale with the
+      // interaction model.
+      sceneHandle?.openContainer(intent);
     },
     onIgnored: recordIgnoredIntentForE2e,
     onViewTransform: (zoom, offsetX, offsetY) => {
@@ -771,6 +788,17 @@ async function startStreetScene(
     onHighlightChange: recordHighlightForE2e,
   });
   sceneHandle = handle;
+  exposeContainerViewForE2e({
+    containerView: () => {
+      const view = handle.containerView();
+      if (!view) return null;
+      return {
+        objectId: String(view.objectId),
+        rects: view.rects.map((r) => ({ ...r, instanceId: String(r.instanceId) })),
+      };
+    },
+    stageChildren: () => handle.stageChildCount(),
+  });
   players.onMounted();
   exposeRemotePlayersForE2e();
 

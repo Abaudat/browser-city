@@ -91,6 +91,10 @@ export interface ObjectDef {
    * Absent means this object declares no interaction at all -- there is
    * no separate `interactable` flag anywhere. */
   readonly interactAt?: ColliderRect;
+  /** Story 6.10 (FR94): the container grid in whole cells. Its presence
+   * *is* the declaration that this object is a container; there is no
+   * `container` flag anywhere. */
+  readonly grid?: GridDef;
   /** Story 15.15 (FR182): a flight of stairs. Absent means the object is
    * not one. Client-only: the server never learns it. */
   readonly flight?: FlightDef;
@@ -142,6 +146,12 @@ export interface ItemDef {
   /** The item's world footprint, in whole cells (FR94). */
   readonly width: number;
   readonly height: number;
+  /** What the item looks like in a container's grid: exactly
+   * `width * tile` by `height * tile` pixels (Story 6.10). Absent only in
+   * fixtures; every shipped item has one. */
+  readonly sprite?: SpriteRect;
+  /** Where the packer put `sprite` on its page; present with `sprite`. */
+  readonly atlas?: AtlasRect;
 }
 
 export interface RecipeDef {
@@ -271,6 +281,11 @@ export interface UniformDef {
   readonly accessory?: string;
 }
 
+export interface GridDef {
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface Defs {
   readonly defsVersion: string;
   /** Sub-cells per cell, the fixed unit every `ObjectDef.collider` is
@@ -291,6 +306,10 @@ export interface Defs {
    * this -- generated once by `tools/defs-build` into both artefacts,
    * never a client-side literal. */
   readonly maxFootprintCells: number;
+  /** FR94: a container grid's axes are each held to this. */
+  readonly maxGridExtent: number;
+  /** FR95: the most cells one container grid holds. */
+  readonly maxItemsPerContainer: number;
   /** The world's declared floor range (story 4.3) -- generated once by
    * `tools/defs-build`, never a client-side literal. */
   readonly minFloor: number;

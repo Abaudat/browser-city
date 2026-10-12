@@ -887,7 +887,7 @@ describe("story 15.5: flat objects stay under the player, upright props keep y-s
         layerCodeByName("ground_objects"),
       );
     }
-    for (const id of [82n, 15n]) {
+    for (const id of [200n, 15n]) {
       const p = props.find((q) => q.stableId === id);
       expect(p && passOfLayer(p.layerCode)).toBe("pool");
     }

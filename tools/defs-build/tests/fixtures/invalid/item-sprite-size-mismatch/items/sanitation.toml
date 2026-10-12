@@ -1,0 +1,7 @@
+[[item]]
+id = 1
+key = "bottle"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 2, height = 1 }
+sprite = { sheet = "fixtures/objects/ME_Theme_Sorter_16x16/1_Test_Singles_16x16/trash-bin-test.png", x = 0, y = 0, w = 16, h = 16 }

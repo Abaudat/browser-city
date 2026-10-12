@@ -139,6 +139,13 @@ export const TRASH_BIN_DEF_ID = 1;
  * FR148): the wide interaction target -- three cells of counter, reachable
  * only from the customer side. */
 export const SHOP_COUNTER_DEF_ID = 3;
+/** `defs/objects/containers.toml`'s own `cupboard` id (story 6.10, FR94): a
+ * 4x3 grid, shop A's storage cupboard on the back-wall cell beside the counter. Its prop id is
+ * the id the e2e world seeds as that cupboard's `placed_object` row (the
+ * live street has no such server row, so there it opens empty). The def's
+ * art has no open-door variant. */
+export const CUPBOARD_DEF_ID = 71;
+export const CUPBOARD_PROP_ID = 82n;
 /** `defs/objects/city-props.toml`'s own `shop_window` id (FR121, story
  * 1.7): a real `[[object]] window = true` entry, never a street-only flag --
  * every shopfront window places it by id, the same way the lamppost
@@ -735,6 +742,18 @@ const STREET_PROP_LIST: StreetProp[] = [
     defId: TRASH_BIN_DEF_ID,
   },
 
+  // Story 6.10 (FR94): shop A's storage cupboard, on the back-wall cell
+  // beside the counter -- a container is an object that declares a grid;
+  // click it from within reach and its view opens above it.
+  {
+    id: CUPBOARD_PROP_ID,
+    x: 7,
+    y: 2,
+    floor: 0,
+    layer: "furniture",
+    defId: CUPBOARD_DEF_ID,
+  },
+
   // The street lamp (story 1.8's known-solid rest point the scripted walk
   // -- `streetWalkRoute` below -- and `drawables.test.ts` walk the player
   // into): story 2.13 retargets this row to draw the def's own real
@@ -880,7 +899,9 @@ const STREET_PROP_LIST: StreetProp[] = [
     defId: BRIDGE_STAIRS_TREAD_DEF_ID,
   })),
   ...Array.from({ length: BRIDGE_ABUTMENT_ROWS }, (_, index) => ({
-    id: BigInt(82 + index),
+    // 200.. -- the ids below 100 are taken, and 82 is the e2e world's
+    // cupboard (`CUPBOARD_PROP_ID`).
+    id: BigInt(200 + index),
     x: BRIDGE_FLIGHT_X0,
     y: BRIDGE_UP_ANCHOR_Y - BRIDGE_ABUTMENT_ROWS + index,
     floor: STREET_FLOOR,

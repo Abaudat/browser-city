@@ -102,3 +102,11 @@ group = "shared"
 [[page_group]]
 theme = "classroom_and_library"
 group = "shared"
+
+[[page_group]]
+theme = "kitchen_black_shadow"
+group = "shared"
+
+[[page_group]]
+theme = "grocery_store_black_shadow"
+group = "shared"

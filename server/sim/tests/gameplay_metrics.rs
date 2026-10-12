@@ -40,6 +40,7 @@ fn registry_holds_exactly_the_fr172_five_and_the_three_live_technical_metrics() 
             "boot_time",
             "concurrent_players",
             "reconnection_continuity",
+            "packing_forced",
         ]
     );
 }
@@ -75,7 +76,7 @@ fn a_series_belongs_to_exactly_one_metric() {
 }
 
 #[test]
-fn a_deferred_metric_names_an_epic_after_4_and_a_live_one_epic_4() {
+fn a_deferred_metric_names_an_epic_after_4_and_a_live_one_an_epic_that_has_landed() {
     for m in GAMEPLAY_METRICS {
         if m.series.is_empty() {
             assert!(
@@ -85,7 +86,9 @@ fn a_deferred_metric_names_an_epic_after_4_and_a_live_one_epic_4() {
                 m.emitting_epic
             );
         } else {
-            assert_eq!(m.emitting_epic, 4, "{} is live", m.name);
+            // Epic 4 (the technical metrics) and epic 8 (`packing_forced`'s
+            // first store writer).
+            assert!([4, 8].contains(&m.emitting_epic), "{} is live", m.name);
         }
     }
 }
@@ -408,4 +411,41 @@ fn resume_is_accepted_once_and_bounded() {
 fn boot_and_resume_are_independent_flags() {
     let f = accept_measure(FRESH, Measure::Boot { millis: 10 }).unwrap();
     assert!(accept_measure(f, Measure::Resumed { outage_millis: 10 }).is_ok());
+}
+
+#[test]
+fn packing_forced_is_one_proportion_series_folded_into_the_period() {
+    let m = GAMEPLAY_METRICS
+        .iter()
+        .find(|m| m.name == "packing_forced")
+        .unwrap();
+    assert_eq!(m.unit, Unit::Proportion);
+    assert_eq!(m.method, Method::Instrumented);
+    assert_eq!(m.series, &[Series::PackingForced]);
+    assert_eq!(metric_of(Series::PackingForced).name, "packing_forced");
+}
+
+#[test]
+fn packing_forced_counts_forced_stores_over_all_store_attempts() {
+    let mut p = Period::new(0);
+    assert_eq!(p.figure(Series::PackingForced, 0), (0, 0));
+    p.on_store(false);
+    p.on_store(true);
+    p.on_store(false);
+    p.on_store(true);
+    assert_eq!(p.figure(Series::PackingForced, 0), (2, 4));
+    // A fire reports it and the next period starts empty.
+    let (rows, next) = p.fire(0);
+    assert!(rows.contains(&(Series::PackingForced, 2, 4)));
+    assert_eq!(next.figure(Series::PackingForced, 0), (0, 0));
+}
+
+#[test]
+fn packing_tallies_round_trip_through_their_rows() {
+    let mut p = Period::new(0);
+    p.on_store(true);
+    p.on_store(false);
+    let back = Period::from_tallies(p.tallies());
+    assert_eq!(back.packing_forced, 1);
+    assert_eq!(back.packing_total, 2);
 }

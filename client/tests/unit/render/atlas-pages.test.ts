@@ -120,6 +120,50 @@ describe("AtlasPageLoader", () => {
   });
 });
 
+describe("AtlasPageLoader.itemTexture (story 6.10)", () => {
+  const ITEM = {
+    id: 12,
+    key: "flour_sack",
+    atlas: { page: 0, x: 3, y: 4, w: 16, h: 32 },
+  } as unknown as import("../../../src/defs/types").ItemDef;
+
+  it("crops the item's own atlas rect and caches it by item id", async () => {
+    loadMock.mockResolvedValue(fakeSourceTexture());
+    const loader = new AtlasPageLoader("/atlas/");
+    const defs = defsWith([PAGE]);
+    const first = await loader.itemTexture(defs, ITEM);
+    const second = await loader.itemTexture(defs, ITEM);
+    expect(second).toBe(first);
+    expect(
+      (first as unknown as { frame: { x: number; y: number; width: number; height: number } })
+        .frame,
+    ).toMatchObject({
+      x: 3,
+      y: 4,
+      width: 16,
+      height: 32,
+    });
+    expect(loadMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects naming an item with no sprite, or one naming a page that does not exist", async () => {
+    const loader = new AtlasPageLoader("/atlas/");
+    await expect(
+      loader.itemTexture(defsWith([PAGE]), { id: 1, key: "tin" } as never),
+    ).rejects.toThrow(/tin/);
+    await expect(loader.itemTexture(defsWith([]), ITEM)).rejects.toThrow(/flour_sack/);
+  });
+
+  it("evicts a rejected load so the next demand retries", async () => {
+    loadMock.mockRejectedValueOnce(new Error("network drop"));
+    const loader = new AtlasPageLoader("/atlas/");
+    const defs = defsWith([PAGE]);
+    await expect(loader.itemTexture(defs, ITEM)).rejects.toThrow("network drop");
+    loadMock.mockResolvedValueOnce(fakeSourceTexture());
+    await expect(loader.itemTexture(defs, ITEM)).resolves.toBeDefined();
+  });
+});
+
 // Story 2.13, cycle 2 (Tim's direction): the per-cell cache lives here,
 // next to `objectTexture`'s own per-object cache -- a `defId` placed
 // several times (four `bridge_deck` cells, a generated city sharing one

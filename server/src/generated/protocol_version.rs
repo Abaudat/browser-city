@@ -9,4 +9,4 @@
 /// client's own copy of this same constant by the FR147 handshake; a
 /// mismatch means the bindings compiled into the client's bundle disagree
 /// with what the module actually publishes.
-pub const PROTOCOL_VERSION: &str = "3472636ce72d26c2";
+pub const PROTOCOL_VERSION: &str = "17dae40966bb09ab";

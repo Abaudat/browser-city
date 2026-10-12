@@ -33,10 +33,11 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
     // four rows (top railing, treads, well, bottom railing), the platform's two
     // (flight, railing) and the shops'
     // wall runs -- 14 `wall_face` cells (north and south runs) and 12
-    // `wall_segment` cells (west, east and party runs). One-cell defs are
+    // `wall_segment` cells (west, east and party runs), and the cupboard
+    // (story 6.10). One-cell defs are
     // placed once per cell (`sprite` never repeats), so this counts
     // *placed rows*, not distinct props.
-    expect(defRows.length).toBe(54);
+    expect(defRows.length).toBe(55);
   });
 
   it("names only real, currently-declared defs/objects keys", () => {
@@ -55,6 +56,7 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
       "bridge_stairs_deck",
       "bridge_stairs_street",
       "bridge_stairs_tread",
+      "cupboard",
       "lamppost",
       "platform_stair_flight",
       "platform_stair_railing",

@@ -1,0 +1,54 @@
+# Story 6.10 (FR94): what a shopping basket is made of -- one item of every
+# footprint the cupboard's grid is tuned against. A sprite is the thing
+# alone (never a stand, tray or shelf with the thing on it) and exactly
+# `bulk * tile` pixels, so the item in the cupboard is the item on the
+# pavement. Shelf lives are starting values: fruit spoils in days, the rest
+# keeps.
+
+[[item]]
+id = 9
+key = "flower_pot"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_387.png", x = 0, y = 0, w = 16, h = 16 }
+
+[[item]]
+id = 10
+key = "honeycomb"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_364.png", x = 0, y = 0, w = 16, h = 16 }
+
+[[item]]
+id = 11
+key = "potted_flower"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_392.png", x = 0, y = 0, w = 16, h = 16 }
+
+[[item]]
+id = 12
+key = "seed_sack"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 2 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_384.png", x = 0, y = 0, w = 16, h = 32 }
+
+[[item]]
+id = 13
+key = "apron"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 2 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_468.png", x = 0, y = 0, w = 16, h = 32 }
+
+[[item]]
+id = 14
+key = "produce_crate"
+unit = "piece"
+shelf_life_minutes = 4320
+bulk = { width = 2, height = 2 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Black_Shadow_Singles/16_Grocery_Store_Black_Shadow_Singles_16x16/Grocery_Store_Black_Shadow_Singles_449.png", x = 0, y = 0, w = 32, h = 32 }

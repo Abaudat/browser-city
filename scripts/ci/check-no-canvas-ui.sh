@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # FR150/FR152 (Quentin's direction, story 1.11): all UI is DOM except
 # transient, object-bound container views drawn in canvas -- nothing
-# persistent, global or abstract is ever drawn into the canvas, and this
-# story adds no in-world information object at all yet, so there is no
-# canvas text anywhere under client/src/ today. Modelled on
+# persistent, global or abstract is ever drawn into the canvas. Story 6.10
+# adds the first such view: a container's grid, drawn in world space above
+# its object by `render/pixi-container-view.ts` (the one object-bound
+# exception; `check-container-view-path.sh` holds it to that module). It
+# draws no text, number or count, so this guard is unchanged: there is
+# still no canvas text anywhere under client/src/. Modelled on
 # check-no-masks.sh: a mechanical grep, run by `client-check` alongside
 # the other client-only guards, because Biome's `noRestrictedImports` can
 # ban an import but not every property/namespace access this bans.

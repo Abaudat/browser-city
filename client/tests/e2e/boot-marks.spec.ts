@@ -256,6 +256,7 @@ test("the rows delivered by the time the initial region has applied are exactly 
     const inserts = window.__bc?.region?.inserts ?? {};
     return Object.values(inserts).reduce((sum, n) => sum + n, 0);
   });
-  // One placed_object and one actor_location per region chunk.
-  expect(rows).toBe(regionChunks * 2);
+  // One placed_object and one actor_location per region chunk, and shop
+  // A's seeded cupboard (a second placed_object in the spawn chunk).
+  expect(rows).toBe(regionChunks * 2 + 1);
 });
