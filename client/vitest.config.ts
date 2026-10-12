@@ -21,6 +21,7 @@ export default defineConfig({
         "src/world/**",
         "src/input/**",
         "src/l3/**",
+        "src/l3-worker/**",
         "src/ui/**",
         "src/settings/**",
         "src/time/**",
@@ -68,6 +69,11 @@ export default defineConfig({
         "src/test-street/**",
         "src/render/appearance/composite-pages.ts",
         "src/render/appearance/character-part-pages.ts",
+        // Story 5.24: the two lines of worker plumbing -- `new Worker` and the
+        // scope binding -- that need a real worker runtime; the solver and
+        // the client they join are in scope and tested over a loopback port.
+        "src/l3-worker/spawn.ts",
+        "src/l3-worker/worker.ts",
       ],
       thresholds: {
         lines: 90,

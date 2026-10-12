@@ -121,9 +121,13 @@ export function planBodies(
   zone: BodyZone,
   out: BodyPlan = createBodyPlan(),
   count: number = candidates.length,
+  /** Whether to list the ids that keep their body. A caller that never reads
+   * `keep` passes false and the list is left alone: emptying and refilling a
+   * list of hundreds every frame is its own allocation. */
+  collectKeep = true,
 ): BodyPlan {
   out.spawn.length = 0;
-  out.keep.length = 0;
+  if (collectKeep) out.keep.length = 0;
   out.despawn.length = 0;
   let heldSeen = 0;
   for (let i = 0; i < count; i++) {
@@ -132,7 +136,11 @@ export function planBodies(
     const y = c.y - c.floor * zone.storeyCells;
     if (held.has(c.id)) {
       heldSeen++;
-      (covisible && inRect(zone.despawn, c.x, y) ? out.keep : out.despawn).push(c.id);
+      if (covisible && inRect(zone.despawn, c.x, y)) {
+        if (collectKeep) out.keep.push(c.id);
+      } else {
+        out.despawn.push(c.id);
+      }
     } else if (covisible && inRect(zone.spawn, c.x, y)) {
       out.spawn.push(c.id);
     }

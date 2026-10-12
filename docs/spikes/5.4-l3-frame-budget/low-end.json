@@ -1,0 +1,33 @@
+{
+  "story": "5.24",
+  "nfr": "NFR11",
+  "note": "the whole browser on one core (taskset -c 0); reported, not gated",
+  "environment": {
+    "cpu": "AMD EPYC 7763 64-Core Processor",
+    "ci": true,
+    "runId": "38247650065",
+    "runner": "GitHub Actions 1000011142",
+    "affinity": "taskset -c 0"
+  },
+  "windowMs": 30000,
+  "calibrationMs": 13.600000000093132,
+  "workerCalibrationMs": 17.200000000186265,
+  "mainWindowMs": {
+    "frames": 1082,
+    "p50": 0.19999999995343387,
+    "p95": 0.30000000004656613,
+    "p99": 0.39999999990686774,
+    "max": 2
+  },
+  "workerSolveMs": {
+    "frames": 1082,
+    "p50": 1.1000000000931323,
+    "p95": 4.099999999860302,
+    "p99": 5.300000000046566,
+    "max": 13.200000000186265
+  },
+  "staleFrames": 0,
+  "skippedRequests": 0,
+  "restarts": 0,
+  "maxLagFrames": 0
+}

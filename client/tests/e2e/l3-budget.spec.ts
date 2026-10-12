@@ -36,46 +36,23 @@ import {
   L3_P99_BUDGET_MS,
   MAX_L3_ALLOC_BYTES_PER_FRAME,
   MAX_L3_HEAP_GROWTH_RATIO,
+  MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME,
   MIN_MEASURED_FRAMES,
   MIN_TICKER_FRAMES,
   type SamplingNode,
+  splitByThread,
   summariseGc,
   type TraceEvent,
   topAllocators,
   verdict,
 } from "./l3-budget-verdict";
+import { attachWorker, type WorkerCdp } from "./worker-cdp";
 
 /** The whole frame (render included) under the crowd: NFR2's "busy street"
  * half. Measured at p95 2.6 ms locally with the 200-body crowd, against the
  * 0.6 ms of the empty street (`street-perf.spec.ts`); stamped at 6 ms, the
  * measured figure with the runner's slowness and a margin on top. */
 const P95_CROWD_FRAME_WORK_MS = 6;
-
-/** The fixed, committed calibration workload: pure JS (typed-array sort and
- * arithmetic, string-keyed map traffic), not L3 code, so it does not move with
- * what it calibrates. Run in the page; returns the median of `runs` in ms. It
- * is the denominator the regression tripwire divides by, so a slower runner
- * CPU does not read as L3 getting slower. */
-function calibrationWorkload(runs: number): number {
-  const times: number[] = [];
-  for (let r = 0; r < runs; r++) {
-    const start = performance.now();
-    let acc = 0;
-    const values = new Float64Array(4096);
-    for (let rep = 0; rep < 12; rep++) {
-      for (let i = 0; i < values.length; i++) values[i] = Math.sin(i * 12.9898 + rep) * 1e3;
-      values.sort();
-      for (let i = 0; i < values.length; i++) acc += Math.sqrt(Math.abs(values[i] as number));
-    }
-    const map = new Map<string, number>();
-    for (let i = 0; i < 2048; i++) map.set(`key-${i % 512}-${i & 7}`, i);
-    for (let i = 0; i < 2048; i++) acc += map.get(`key-${i % 512}-${i & 7}`) ?? 0;
-    if (acc === -1) console.log(acc);
-    times.push(performance.now() - start);
-  }
-  times.sort((a, b) => a - b);
-  return times[times.length >> 1] as number;
-}
 
 /** The street pavement's south edge: the lamppost row is 8, the body rests
  * just short of it. */
@@ -88,7 +65,9 @@ const RUN_MS = Number(process.env.BC_SOAK_MS ?? 60_000);
 const LAP_MS = 10_000;
 /** The rendered window, reported beside the verdict window. */
 const RENDERED_MS = 30_000;
-const WARM_UP_MS = 5_000;
+/** Long enough that the worker's heap has finished growing to its working set:
+ * the first collections of a young heap are boot, not steady state. */
+const WARM_UP_MS = 20_000;
 const ALLOC_WINDOW_MS = 15_000;
 const THROTTLED_WINDOW_MS = 10_000;
 const THROTTLE_RATE = 4;
@@ -113,8 +92,11 @@ async function startTimings(page: Page): Promise<void> {
   });
 }
 
-async function stopTimings(page: Page): Promise<{ l3: number[]; frame: number[] }> {
+async function stopTimings(
+  page: Page,
+): Promise<{ l3: number[]; solve: number[]; frame: number[] }> {
   return page.evaluate(() => ({
+    solve: window.__bc?.stopL3SolveTimings?.() ?? [],
     l3: window.__bc?.stopL3Timings?.() ?? [],
     frame: window.__bc?.stopFrameTimings?.() ?? [],
   }));
@@ -135,7 +117,23 @@ async function census(
   });
 }
 
-async function startGcTrace(cdp: Cdp): Promise<{ finish(): Promise<GcSummary> }> {
+function emptyGc(): GcSummary {
+  return {
+    minorPausesMs: [],
+    minorCount: 0,
+    majorCount: 0,
+    totalPauseMs: 0,
+    longestMinorPauseMs: 0,
+    longestMajorPauseMs: 0,
+    majorTypes: [],
+  };
+}
+
+const majorEvents: { thread: string; name: string; dur?: number; args?: unknown }[] = [];
+
+async function startGcTrace(
+  cdp: Cdp,
+): Promise<{ finish(): Promise<{ main: GcSummary; worker: GcSummary }> }> {
   const events: TraceEvent[] = [];
   let done: () => void = () => {};
   const complete = new Promise<void>((resolve) => {
@@ -152,11 +150,22 @@ async function startGcTrace(cdp: Cdp): Promise<{ finish(): Promise<GcSummary> }>
     async finish() {
       await cdp.send("Tracing.end");
       await complete;
-      return summariseGc(events);
+      const { main, worker } = splitByThread(events);
+      for (const e of main) {
+        if (e.name === "MajorGC") majorEvents.push({ thread: "main", ...e });
+      }
+      for (const e of worker) {
+        if (e.name === "MajorGC") majorEvents.push({ thread: "worker", ...e });
+      }
+      return { main: summariseGc(main), worker: summariseGc(worker) };
     },
   };
 }
 
+// A retry on this gate is forbidden (`retries: 0`, `playwright.config.ts`): the
+// worker's solve has no margin, a red run here is the finding, and a re-run
+// that turns it green is how the margin gets spent unseen. Dispatch
+// `l3-repeat.yml` to measure the spread instead.
 test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)", async ({
   page,
   browser,
@@ -182,25 +191,40 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   await page.waitForTimeout(WARM_UP_MS);
 
   const cdp = (await page.context().newCDPSession(page)) as unknown as Cdp;
+  // The solve runs in a dedicated worker, a CDP target of its own: its CPU
+  // throttle and its heap sampler are sent to it separately.
+  const worker: WorkerCdp = await attachWorker(browser, "l3-worker");
   let liveMin = Number.POSITIVE_INFINITY;
   let walkingMin = Number.POSITIVE_INFINITY;
   let sidesteppingMax = 0;
   let cappedMax = 0;
 
   /** One lap's samples, and what the crowd was doing through it. */
+  async function takeCensus(): Promise<void> {
+    const c = await census(page);
+    liveMin = Math.min(liveMin, c.live);
+    walkingMin = Math.min(walkingMin, c.walking);
+    sidesteppingMax = Math.max(sidesteppingMax, c.sidestepping);
+    cappedMax = Math.max(cappedMax, c.capped);
+  }
+
+  /** A lap: with a trace running nothing else touches the page in it -- the
+   * census is taken beside it, so the window holds the ticker and the trace
+   * alone. */
   async function lap(durationMs: number, trace?: Awaited<ReturnType<typeof startGcTrace>>) {
     await startTimings(page);
     const end = Date.now() + durationMs;
     while (Date.now() < end) {
-      await page.waitForTimeout(1_000);
-      const c = await census(page);
-      liveMin = Math.min(liveMin, c.live);
-      walkingMin = Math.min(walkingMin, c.walking);
-      sidesteppingMax = Math.max(sidesteppingMax, c.sidestepping);
-      cappedMax = Math.max(cappedMax, c.capped);
+      if (trace) {
+        await page.waitForTimeout(Math.max(0, end - Date.now()));
+      } else {
+        await page.waitForTimeout(1_000);
+        await takeCensus();
+      }
     }
     const batch = await stopTimings(page);
-    return { batch, gc: trace ? await trace.finish() : undefined };
+    const traced = trace ? await trace.finish() : undefined;
+    return { batch, gc: traced?.main, workerGc: traced?.worker };
   }
 
   // Phase 1, the frame as a player's machine draws it: render on. Software
@@ -208,10 +232,19 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   // few cores, so L3 measured here is inflated by the rasteriser, not by L3
   // (the profile below shows where the samples go). Reported, and the whole
   // frame work is gated (NFR2's busy street); never the L3 verdict.
+  // The collections are counted here, in the window a player's machine runs:
+  // the verdict window below has the render off, and a frame thread that
+  // allocates next to nothing is a quiet page, which V8 collects on its own
+  // account (an idle page with no L3 at all shows the same majors).
   const renderedL3: number[] = [];
   const frameSamples: number[] = [];
+  let renderedGc: GcSummary = emptyGc();
+  let renderedWorkerGc: GcSummary = emptyGc();
   for (let spent = 0; spent < RENDERED_MS; spent += LAP_MS) {
-    const { batch } = await lap(LAP_MS);
+    await takeCensus();
+    const { batch, gc: lapGc, workerGc: lapWorkerGc } = await lap(LAP_MS, await startGcTrace(cdp));
+    if (lapGc) renderedGc = addGc(renderedGc, lapGc);
+    if (lapWorkerGc) renderedWorkerGc = addGc(renderedWorkerGc, lapWorkerGc);
     renderedL3.push(...batch.l3);
     frameSamples.push(...batch.frame);
   }
@@ -219,7 +252,21 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
   // Where the time goes, with the render on: a CPU profile, top self-time.
   await cdp.send("Profiler.enable");
   await cdp.send("Profiler.start");
+  // The worker's own profile alongside: the solve's self time is its alone.
+  await worker.send("Profiler.enable");
+  await worker.send("Profiler.setSamplingInterval", { interval: 200 });
+  await worker.send("Profiler.start");
   await page.waitForTimeout(8_000);
+  const workerCpu = (await worker.send("Profiler.stop")) as {
+    profile: {
+      nodes: {
+        id: number;
+        callFrame: { functionName: string; url: string };
+        positionTicks?: { line: number; ticks: number }[];
+      }[];
+      samples: number[];
+    };
+  };
   const cpu = (await cdp.send("Profiler.stop")) as {
     profile: {
       nodes: { id: number; callFrame: { functionName: string; url: string } }[];
@@ -239,23 +286,48 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     .slice(0, 15)
     .map(([fn, n]) => ({ fn, share: n / total }));
 
+  const workerHits = new Map<number, number>();
+  for (const id of workerCpu.profile.samples) workerHits.set(id, (workerHits.get(id) ?? 0) + 1);
+  const workerSelf = new Map<string, number>();
+  const workerLines = new Map<string, number>();
+  for (const node of workerCpu.profile.nodes) {
+    const file = node.callFrame.url.replace(/^.*\/src\//, "src/");
+    const key = `${node.callFrame.functionName || "(anonymous)"} ${file}`;
+    workerSelf.set(key, (workerSelf.get(key) ?? 0) + (workerHits.get(node.id) ?? 0));
+    for (const t of node.positionTicks ?? []) {
+      const at = `${file}:${t.line}`;
+      workerLines.set(at, (workerLines.get(at) ?? 0) + t.ticks);
+    }
+  }
+  const workerTotal = workerCpu.profile.samples.length || 1;
+  const workerCpuTop = [...workerSelf.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([fn, n]) => ({ fn, share: n / workerTotal }));
+  const workerLinesTop = [...workerLines.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([at, n]) => ({ at, share: n / workerTotal }));
+
   // Phase 2, the verdict: the same real ticker -- the same window, the same
   // GC, the same crowd -- with the rasteriser taken out, so what is measured
   // is L3's own work and its own garbage, the runner's GPU emulation aside.
   await page.evaluate(() => window.__bc?.setRender?.(false));
   // The tripwire's denominator, taken with the same page and CPU the window
   // runs on, immediately before it.
-  const calibrationMs = await page.evaluate(calibrationWorkload, 21);
+  const calibrationMs = await page.evaluate(() => window.__bc?.l3Calibrate?.(21) ?? 0);
+  const workerCalibrationMs = await page.evaluate(
+    async () => (await window.__bc?.l3WorkerCalibrate?.(21)) ?? 0,
+  );
+  // The calibrations stall the pipeline for a moment (they run on the worker
+  // the ticks queue behind): let it drain before the window opens.
+  await page.waitForTimeout(1_000);
+  const statsBefore = await page.evaluate(() => window.__bc?.l3SolveStats?.(true));
   const heapSamples: { atMs: number; usedHeapBytes: number }[] = [];
   const l3Samples: number[] = [];
-  let gc: GcSummary = {
-    minorPausesMs: [],
-    minorCount: 0,
-    majorCount: 0,
-    totalPauseMs: 0,
-    longestMinorPauseMs: 0,
-    longestMajorPauseMs: 0,
-  };
+  const solveSamples: number[] = [];
+  let workerGc: GcSummary = emptyGc();
+  let gc: GcSummary = emptyGc();
   heapSamples.push({ atMs: 0, usedHeapBytes: await heapBytes(cdp) });
   const startedAt = Date.now();
   // Laps run until the time is up and the window holds its floor of frames,
@@ -264,57 +336,146 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     Date.now() - startedAt < RUN_MS ||
     (l3Samples.length < MIN_TICKER_FRAMES && Date.now() - startedAt < 3 * RUN_MS)
   ) {
-    const { batch, gc: lapGc } = await lap(LAP_MS, await startGcTrace(cdp));
+    await takeCensus();
+    const { batch, gc: lapGc, workerGc: lapWorkerGc } = await lap(LAP_MS, await startGcTrace(cdp));
     l3Samples.push(...batch.l3);
+    solveSamples.push(...batch.solve);
     if (lapGc) gc = addGc(gc, lapGc);
+    if (lapWorkerGc) workerGc = addGc(workerGc, lapWorkerGc);
     heapSamples.push({ atMs: Date.now() - startedAt, usedHeapBytes: await heapBytes(cdp) });
   }
+
+  const statsAfter = await page.evaluate(() => window.__bc?.l3SolveStats?.());
+  const staleFrames = (statsAfter?.stale ?? Number.NaN) - (statsBefore?.stale ?? 0);
+  const skippedRequests = (statsAfter?.skipped ?? Number.NaN) - (statsBefore?.skipped ?? 0);
+  const maxLagFrames = statsAfter?.maxLagFrames ?? Number.NaN;
+  const restarts = (statsAfter?.restarts ?? Number.NaN) - (statsBefore?.restarts ?? 0);
+  const lagEvents = statsAfter?.lagEvents ?? [];
+
+  // The same ticker window with no trace running: reported beside the verdict
+  // figure, never gated -- the trace's own cost is part of what the verdict
+  // pre-registered, so it stays in the verdict figure.
+  await startTimings(page);
+  await page.waitForTimeout(10_000);
+  const untraced = await stopTimings(page);
 
   // Allocation, per 60 Hz frame of city time and so independent of how fast
   // the runner draws: the render-free sweep under the sampling profiler (its
   // overhead would distort the timed window above).
-  await cdp.send("HeapProfiler.enable");
-  await cdp.send("HeapProfiler.startSampling", {
+  // The sweep and its allocation are the worker's: the sampler is attached to
+  // its target, not the page's.
+  await worker.send("HeapProfiler.enable");
+  await worker.send("HeapProfiler.startSampling", {
     samplingInterval: 512,
     includeObjectsCollectedByMajorGC: true,
     includeObjectsCollectedByMinorGC: true,
   });
   const allocSweep = await page.evaluate((n) => window.__bc?.l3Sweep?.(n) ?? [], SWEEP_FRAMES);
-  const profile = (await cdp.send("HeapProfiler.stopSampling")) as {
+  const profile = (await worker.send("HeapProfiler.stopSampling")) as {
     profile: { head: SamplingNode };
   };
   const allocFrames = allocSweep.length;
   const allocBytes = attributedBytes(profile.profile.head);
   const allocBytesPerFrame = allocFrames > 0 ? allocBytes / allocFrames : Number.NaN;
 
+  // The main thread's share: the real ticker, render off, under the page's own
+  // sampler -- the apply, the post and the layer's update allocate next to
+  // nothing; the solve's garbage is the worker's.
+  await cdp.send("HeapProfiler.enable");
+  await cdp.send("HeapProfiler.startSampling", {
+    samplingInterval: 512,
+    includeObjectsCollectedByMajorGC: true,
+    includeObjectsCollectedByMinorGC: true,
+  });
+  await startTimings(page);
+  await page.waitForTimeout(ALLOC_WINDOW_MS);
+  const mainWindow = await stopTimings(page);
+  const mainProfile = (await cdp.send("HeapProfiler.stopSampling")) as {
+    profile: { head: SamplingNode };
+  };
+  const mainAllocBytesPerFrame =
+    mainWindow.l3.length > 0
+      ? attributedBytes(mainProfile.profile.head) / mainWindow.l3.length
+      : Number.NaN;
+
   // The low-end figure: reported, never gated.
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE_RATE });
+  // CDP refuses the throttle on a worker target ("only supported for pages");
+  // the calibration below is what proves whether it took.
+  const workerThrottleError = await worker
+    .send("Emulation.setCPUThrottlingRate", { rate: THROTTLE_RATE })
+    .then(() => null)
+    .catch((e: unknown) => String(e));
+  // The throttle must be seen to reach the worker: the calibration workload
+  // inside it runs about THROTTLE_RATE times slower, or the throttled worker
+  // figure is not reported.
+  const workerCalibrationThrottledMs = await page.evaluate(
+    async () => (await window.__bc?.l3WorkerCalibrate?.(5)) ?? 0,
+  );
+  const workerSlowdown = workerCalibrationThrottledMs / workerCalibrationMs;
+  const workerThrottleReached = workerSlowdown >= THROTTLE_RATE * 0.6;
   await startTimings(page);
   await page.waitForTimeout(THROTTLED_WINDOW_MS);
   const throttled = await stopTimings(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  await worker.send("Emulation.setCPUThrottlingRate", { rate: 1 }).catch(() => undefined);
+  // The sweep: the worker's solve over successive 60 Hz instants, no ticker --
+  // supplementary, gated at the same budget. Taken before the render is back
+  // on: the software rasteriser competes with the worker for the runner's few
+  // cores, and what is measured here is the solve.
+  const sweep = await page.evaluate((n) => window.__bc?.l3Sweep?.(n) ?? [], SWEEP_FRAMES);
   await page.evaluate(() => window.__bc?.setRender?.(true));
 
   const first = heapSamples[1]?.usedHeapBytes ?? Number.NaN;
   const last = heapSamples[heapSamples.length - 1]?.usedHeapBytes ?? Number.NaN;
-  // The sweep: the same window over successive 60 Hz instants, no ticker --
-  // supplementary, gated at the same budget.
-  const sweep = await page.evaluate((n) => window.__bc?.l3Sweep?.(n) ?? [], SWEEP_FRAMES);
   const sweepMs = distribution(sweep);
   const l3Ms = distribution(l3Samples);
+  // The solve as the worker timed it, one sample per ticker frame: recorded
+  // beside the main-thread window, never folded into it.
+  expect(solveSamples.length).toBe(l3Samples.length);
+  const solveMs = distribution(solveSamples);
   const renderedMs = distribution(renderedL3);
   const frameMs = distribution(frameSamples);
   const requiredWalking = Math.floor(RUSH_CROWD_SIZE * RUSH_MIN_WALKING_SHARE);
+
+  // The control for the collections above: a page with no L3 on it and a live
+  // heap of the same size, under the same trace for the same time. What V8
+  // collects on a quiet page is not L3's; reported beside the figures that
+  // are. The crowd's page is closed first so its ticker is not in the trace.
+  await page.close();
+  const control = await browser.newPage();
+  const heapMb = Math.max(1, Math.round(last / (1024 * 1024)));
+  await control.setContent(
+    `<script>window.keep=Array.from({length:${heapMb}},()=>new Float64Array(131072));</script>`,
+  );
+  await control.waitForTimeout(10_000);
+  const controlCdp = (await control.context().newCDPSession(control)) as unknown as Cdp;
+  const controlTrace = await startGcTrace(controlCdp);
+  await control.waitForTimeout(Math.min(RUN_MS, 60_000));
+  const controlGc = (await controlTrace.finish()).main;
+  await control.close();
+
   const result = verdict({
     liveBodiesMin: liveMin,
     walkingMin,
     requiredBodies: RUSH_CROWD_SIZE,
     requiredWalking,
     l3Ms,
+    solveMs,
+    staleFrames,
+    maxLagFrames,
+    restarts,
     sweepMs,
     allocBytesPerFrame,
+    mainAllocBytesPerFrame,
     calibrationMs,
-    gc,
+    workerCalibrationMs,
+    gc: renderedGc,
+    workerGc: renderedWorkerGc,
+    quietGc: gc,
+    quietWorkerGc: workerGc,
+    controlGc,
+    cpu: cpus()[0]?.model ?? "unknown",
     heapGrowthRatio: last / first,
   });
 
@@ -345,6 +506,7 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     budget: { p95Ms: L3_P95_BUDGET_MS, p99Ms: L3_P99_BUDGET_MS },
     verdict: result.met ? "MET" : "MISSED",
     failures: result.failures,
+    risks: result.risks,
     calibrationMs,
     l3Ratios: {
       p95: l3Ms.p95 / calibrationMs,
@@ -354,11 +516,26 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     },
     l3Ms,
     l3RenderedMs: renderedMs,
+    l3SolveMs: solveMs,
+    untraced: {
+      l3Ms: distribution(untraced.l3),
+      l3SolveMs: distribution(untraced.solve),
+    },
+    solveStale: { staleFrames, skippedRequests, maxLagFrames, restarts, lagEvents },
+    workerCalibrationMs,
     l3SweepMs: sweepMs,
     frameWorkMs: frameMs,
     throttled4x: {
       rate: THROTTLE_RATE,
       l3Ms: distribution(throttled.l3),
+      workerThrottle: {
+        reached: workerThrottleReached,
+        error: workerThrottleError,
+        calibrationMs: workerCalibrationThrottledMs,
+        slowdown: workerSlowdown,
+      },
+      // Only a throttle proven to reach the worker gives a figure.
+      workerSolveMs: workerThrottleReached ? distribution(throttled.solve) : null,
       frameWorkMs: distribution(throttled.frame),
     },
     allocation: {
@@ -367,14 +544,43 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
       l3Bytes: allocBytes,
       l3BytesPerFrame: allocBytesPerFrame,
       ceilingBytesPerFrame: MAX_L3_ALLOC_BYTES_PER_FRAME,
+      mainBytesPerFrame: mainAllocBytesPerFrame,
+      mainCeilingBytesPerFrame: MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME,
+      mainTop: topAllocators(mainProfile.profile.head),
       top: topAllocators(profile.profile.head),
+    },
+    control: {
+      note: "an idle page, no L3, a live heap of the same size, the same trace for the same time",
+      heapMb,
+      majorCount: controlGc.majorCount,
+      longestMajorPauseMs: controlGc.longestMajorPauseMs,
+      majorTypes: controlGc.majorTypes,
+      minorCount: controlGc.minorCount,
+    },
+    gcRenderedWindow: {
+      ...renderedGc,
+      minorPausesMs: undefined,
+      minorP99PauseMs: distribution(renderedGc.minorPausesMs).p99,
+    },
+    workerGcRenderedWindow: {
+      ...renderedWorkerGc,
+      minorPausesMs: undefined,
+      minorP99PauseMs: distribution(renderedWorkerGc.minorPausesMs).p99,
     },
     gc: {
       ...gc,
       minorPausesMs: undefined,
       minorP99PauseMs: distribution(gc.minorPausesMs).p99,
     },
+    majorEvents,
+    workerGc: {
+      ...workerGc,
+      minorPausesMs: undefined,
+      minorP99PauseMs: distribution(workerGc.minorPausesMs).p99,
+    },
     cpuTopSelf: cpuTop,
+    workerCpuTopSelf: workerCpuTop,
+    workerCpuTopLines: workerLinesTop,
     heap: { samples: heapSamples, growthRatio: last / first, bound: MAX_L3_HEAP_GROWTH_RATIO },
   };
   mkdirSync(REPORT_DIR, { recursive: true });

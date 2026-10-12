@@ -134,6 +134,15 @@ export class AvoidanceField {
   #rank = new Int32Array(0);
   #candD = new Float64Array(0);
   #candMiss = new Float64Array(0);
+  /** Each candidate's signed lateral miss as a stander (`#approach[0]`). */
+  #candSide = new Float64Array(0);
+  /** How much each candidate is an obstacle (see `#prepareObstacles`), the
+   * candidates that are at all (`#obstA`, `#obstN` of them), and whether this
+   * body's have been worked out yet. */
+  #candStanding = new Float64Array(0);
+  #obstA = new Int32Array(0);
+  #obstN = 0;
+  #obstReady = false;
   #candJ = new Int32Array(0);
   #found = 0;
   #order = new Int32Array(0);
@@ -224,11 +233,14 @@ export class AvoidanceField {
     this.#offY = f64(this.#offY);
     this.#candD = f64(this.#candD);
     this.#candMiss = f64(this.#candMiss);
+    this.#candSide = f64(this.#candSide);
+    this.#candStanding = f64(this.#candStanding);
     this.#floor = i32(this.#floor);
     this.#cellX = i32(this.#cellX);
     this.#cellY = i32(this.#cellY);
     this.#rank = i32(this.#rank);
     this.#candJ = i32(this.#candJ);
+    this.#obstA = i32(this.#obstA);
     this.#order = i32(this.#order);
     this.#cells = i32(this.#cells);
     this.#moving = u8(this.#moving);
@@ -429,11 +441,25 @@ export class AvoidanceField {
       this.#wallDx = new Float64Array(n);
       this.#wallDy = new Float64Array(n);
     }
+    // A tile limits a sidestep only when it is within the clearance plus the
+    // reach to the side (`across - reach` is its lower bound, and no limit
+    // below `want <= clearance` is ever taken from beyond that); one further
+    // off, on either side, never moves a room, so it is not kept. The margin of
+    // one cell dwarfs any rounding. Order is kept; `room` is a minimum.
+    const hx = this.#hx[i] as number;
+    const hy = this.#hy[i] as number;
+    const band = dials.clearanceCells + TILE_RADIUS_CELLS + dials.halfWidthCells + 1;
+    let kept = 0;
     for (let k = 0; k < n; k++) {
-      this.#wallDx[k] = (tiles[2 * k] as number) + 0.5 - x;
-      this.#wallDy[k] = (tiles[2 * k + 1] as number) + 0.5 - y;
+      const wdx = (tiles[2 * k] as number) + 0.5 - x;
+      const wdy = (tiles[2 * k + 1] as number) + 0.5 - y;
+      const lateral = wdx * -hy + wdy * hx;
+      if (lateral > band || lateral < -band) continue;
+      this.#wallDx[kept] = wdx;
+      this.#wallDy[kept] = wdy;
+      kept++;
     }
-    this.#walls = n;
+    this.#walls = kept;
   }
 
   /** The blocked tiles of the `side` x `side` square at `(x0, y0)`, as
@@ -513,16 +539,17 @@ export class AvoidanceField {
 
     this.#found = found;
     this.#walls = -1;
+    this.#obstReady = false;
     // How each neighbour passes, if it stood at its anchor: its miss.
     for (let a = 0; a < found; a++) {
       const j = this.#candJ[a] as number;
       this.#closestApproach(i, j, true);
       this.#candMiss[a] = this.#approach[1] as number;
+      this.#candSide[a] = this.#approach[0] as number;
     }
     let acc = 0;
     for (let a = 0; a < found; a++) {
       const j = this.#candJ[a] as number;
-      const weight = smooth(1 - (this.#candD[a] as number) / radius);
       // A walking neighbour mid-edge shares the clearance by its own motion; one
       // easing into or out of a corner or an end is treated as standing there
       // (its anchor) in proportion to how little its ramp has come in, so what
@@ -563,8 +590,7 @@ export class AvoidanceField {
         if (shortfall > 0) {
           const dpx = (this.#anchorX[j] as number) - xi;
           const dpy = (this.#anchorY[j] as number) - yi;
-          this.#closestApproach(i, j, true);
-          let dir = directionFor(this.#approach[0] as number, 1, dials.tieBandCells);
+          let dir = directionFor(this.#candSide[a] as number, 1, dials.tieBandCells);
           // Pass on the side with room for the clearance, decided at the point
           // abeam of the stander, which holds for the whole pass.
           const along = dpx * hx + dpy * hy;
@@ -587,6 +613,9 @@ export class AvoidanceField {
           asStander = dir * shortfall;
         }
       }
+      // A neighbour that asks for nothing adds nothing: no weight to find.
+      if (asWalker === 0 && asStander === 0) continue;
+      const weight = smooth(1 - (this.#candD[a] as number) / radius);
       acc += weight * (settled * asWalker + (1 - settled) * asStander);
     }
     if (acc === 0) return;
@@ -633,6 +662,26 @@ export class AvoidanceField {
     return keep;
   }
 
+  /** Which of body `i`'s neighbours are obstacles at all, and how much. A
+   * body is an obstacle where it stands, or at its anchor while it eases into
+   * or out of a corner or an end, and as much as it is not yet walking. It
+   * comes into force over the outer quarter of the radius, so one that enters
+   * range does not move the limit at once. The same for every query about the
+   * body this frame, so worked out once, for the ones that count. */
+  #prepareObstacles(dials: AvoidDials): void {
+    let n = 0;
+    for (let a = 0; a < this.#found; a++) {
+      const j = this.#candJ[a] as number;
+      const standing =
+        (1 - (this.#ramp[j] as number)) *
+        smooth((1 - (this.#candD[a] as number) / dials.radiusCells) / OBSTACLE_FADE_IN);
+      this.#candStanding[a] = standing;
+      if (standing > 0) this.#obstA[n++] = a;
+    }
+    this.#obstN = n;
+    this.#obstReady = true;
+  }
+
   /** How far body `i`, moved `along` its heading, may sidestep to `side` (+1
    * its right, -1 its left) before its edge meets a blocked tile or a standing
    * body, at most `want` (`along`, `side` and `want` in `#room[0..2]`, the room
@@ -673,18 +722,13 @@ export class AvoidanceField {
     const reachBody = 2 * dials.halfWidthCells;
     const x = (this.#x[i] as number) + ox;
     const y = (this.#y[i] as number) + oy;
-    for (let a = 0; a < this.#found; a++) {
+    if (!this.#obstReady) this.#prepareObstacles(dials);
+    for (let q = 0; q < this.#obstN; q++) {
+      const a = this.#obstA[q] as number;
       const j = this.#candJ[a] as number;
       if (j === skip) continue;
       if (mode === 1 && (this.#candMiss[a] as number) < dials.clearanceCells) continue;
-      // A body is an obstacle where it stands, or at its anchor while it eases
-      // into or out of a corner or an end, and as much as it is not yet walking.
-      // It comes into force over the outer quarter of the radius, so one that
-      // enters range does not move the limit at once.
-      const standing =
-        (1 - (this.#ramp[j] as number)) *
-        smooth((1 - (this.#candD[a] as number) / dials.radiusCells) / OBSTACLE_FADE_IN);
-      if (standing <= 0) continue;
+      const standing = this.#candStanding[a] as number;
       const dx = (this.#anchorX[j] as number) - x;
       const dy = (this.#anchorY[j] as number) - y;
       const across = dx * sx + dy * sy;

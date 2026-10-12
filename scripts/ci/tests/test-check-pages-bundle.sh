@@ -29,11 +29,27 @@ good_dist() {
 EOF
   printf 'console.log("connect", "%s");\n' "$URI" > "$d/assets/index-abc.js"
   printf '{}' > "$d/defs/defs.json"
+  printf 'self.onmessage=()=>{};
+' > "$d/assets/worker-abc.js"
   printf '%s' "$d"
 }
 
 d="$(good_dist)"
 check "a correctly-based build with the real production URI passes" 0 bash "$CHECK" "$d" "$BASE" "$URI"
+
+d="$(good_dist)"
+rm "$d/assets/worker-abc.js"
+check "a build with no L3 worker chunk fails" 1 bash "$CHECK" "$d" "$BASE" "$URI"
+
+d="$(good_dist)"
+printf 'importScripts("/assets/other.js");
+' >> "$d/assets/worker-abc.js"
+check "a root-absolute reference baked into the worker chunk fails" 1 bash "$CHECK" "$d" "$BASE" "$URI"
+
+d="$(good_dist)"
+printf 'new WebSocket("ws://127.0.0.1:3000");
+' >> "$d/assets/worker-abc.js"
+check "the local-dev URI in the worker chunk fails" 1 bash "$CHECK" "$d" "$BASE" "$URI"
 
 d="$(good_dist)"
 sed -i "s#${BASE}assets/index-abc.js#/assets/index-abc.js#" "$d/index.html"

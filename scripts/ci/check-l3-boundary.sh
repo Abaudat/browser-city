@@ -11,11 +11,19 @@
 # `client/biome.json` loses its `src/l3/**` override or its ban on importing
 # `l3/` from `src/net/**` (the fast feedback a developer gets).
 #
-# Usage: check-l3-boundary.sh [l3 dir] [net dir]   (the test plants violations)
+# Story 5.24 (D-L3): the L3 solve runs in a worker, wired by `client/src/
+# l3-worker/`. That adapter may import only itself, `l3/`, the defs types, the
+# pure world modules (`body-zone`, `chunk`, `region`, `walk-mirror`) and the two
+# pure fixture modules the solve is built on (`test-street/street-life`,
+# `test-street/timetable`); never Pixi, `net/`, `render/`, the DOM, a timer or
+# randomness. `worker.ts` alone may read the clock and the worker's `self`.
+#
+# Usage: check-l3-boundary.sh [l3 dir] [net dir] [adapter dir]   (the test plants violations)
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC_DIR="${1:-"$REPO_ROOT/client/src/l3"}"
 NET_DIR="${2:-"$REPO_ROOT/client/src/net"}"
+ADAPTER_DIR="${3:-"$REPO_ROOT/client/src/l3-worker"}"
 
 [ -d "$SRC_DIR" ] || { echo "check-l3-boundary: $SRC_DIR not found" >&2; exit 1; }
 
@@ -86,11 +94,52 @@ if [ -n "$HASH" ]; then
   echo "$HASH" >&2
 fi
 
-# Nothing under net/ reaches l3/.
+# The L3 worker's adapter reaches only the pure modules it is built on.
+if [ -d "$ADAPTER_DIR" ]; then
+  ADAPTER_BAD=""
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    spec="$(printf '%s' "$hit" | sed -E "s/^.*[\"']([^\"']+)[\"']\$/\1/")"
+    case "$spec" in
+      ./*) ;;
+      ../l3/*|../defs/types) ;;
+      ../world/body-zone|../world/chunk|../world/region|../world/walk-mirror) ;;
+      ../test-street/street-life|../test-street/timetable) ;;
+      *) ADAPTER_BAD+="$hit"$'\n' ;;
+    esac
+  done < <(grep -rnoE "$SPEC_PATTERN" "$ADAPTER_DIR" --include='*.ts' 2>/dev/null | tr -d '\r' || true)
+  if [ -n "$ADAPTER_BAD" ]; then
+    fail "client/src/l3-worker/ may import only itself, l3/, the defs types, world/{body-zone,chunk,region,walk-mirror} and test-street/{street-life,timetable}:"
+    printf '%s' "$ADAPTER_BAD" >&2
+  fi
+  ADAPTER_DYNAMIC="$(grep -rnE "(^|[^A-Za-z0-9_.\$])import[[:space:]]*\(" "$ADAPTER_DIR" --include='*.ts' 2>/dev/null \
+    | tr -d '\r' | grep -vE '\.ts:[0-9]+:[[:space:]]*(//|/\*|\*)' || true)"
+  if [ -n "$ADAPTER_DYNAMIC" ]; then
+    fail "client/src/l3-worker/ must not import dynamically:"
+    echo "$ADAPTER_DYNAMIC" >&2
+  fi
+  # No DOM, network, storage, timer or randomness anywhere in it; the clock
+  # and the worker's own scope only in worker.ts.
+  ADAPTER_NAMES='Date|window|document|globalThis|navigator|fetch|WebSocket|XMLHttpRequest|localStorage|sessionStorage|crypto|requestAnimationFrame|setTimeout|setInterval|Math\.random'
+  ADAPTER_GLOBALS="$(grep -rnE "(^|[^A-Za-z0-9_.\$])(${ADAPTER_NAMES})([^A-Za-z0-9_]|\$)" "$ADAPTER_DIR" --include='*.ts' 2>/dev/null \
+    | tr -d '\r' | grep -vE '\.ts:[0-9]+:[[:space:]]*(//|/\*|\*)' || true)"
+  if [ -n "$ADAPTER_GLOBALS" ]; then
+    fail "client/src/l3-worker/ must not use the DOM, the network, storage, timers or randomness:"
+    echo "$ADAPTER_GLOBALS" >&2
+  fi
+  CLOCK="$(grep -rnE "(^|[^A-Za-z0-9_.\$])(performance|self)([^A-Za-z0-9_]|\$)" "$ADAPTER_DIR" --include='*.ts' 2>/dev/null \
+    | tr -d '\r' | grep -vE '/worker\.ts:' | grep -vE '\.ts:[0-9]+:[[:space:]]*(//|/\*|\*)' || true)"
+  if [ -n "$CLOCK" ]; then
+    fail "client/src/l3-worker/ reads the clock or self only in worker.ts:"
+    echo "$CLOCK" >&2
+  fi
+fi
+
+# Nothing under net/ reaches l3/ or its worker.
 if [ -d "$NET_DIR" ]; then
-  NET_HITS="$(grep -rnE "(from|import|require)[[:space:]]*\(?[[:space:]]*${Q}(\.\./)+l3(/|${Q})" "$NET_DIR" --include='*.ts' 2>/dev/null | tr -d '\r' || true)"
+  NET_HITS="$(grep -rnE "(from|import|require)[[:space:]]*\(?[[:space:]]*${Q}(\.\./)+l3(-worker)?(/|${Q})" "$NET_DIR" --include='*.ts' 2>/dev/null | tr -d '\r' || true)"
   if [ -n "$NET_HITS" ]; then
-    fail "client/src/net/ must not import l3/:"
+    fail "client/src/net/ must not import l3/ or l3-worker/:"
     echo "$NET_HITS" >&2
   fi
 fi

@@ -771,13 +771,28 @@ async function startStreetScene(
   exposePlayerScreenBoundsForE2e(handle.playerScreenBounds);
   exposePlayerDrawnPointForE2e(handle.playerDrawnPoint);
   exposeCommuterDrawnForE2e(handle.commuterDrawn);
-  exposeL3AgreementForE2e((t) => handle.citizensLayer.agreementAt(t));
+  exposeL3AgreementForE2e(
+    (t) => handle.citizensLayer.agreementAt(t),
+    (ts) => handle.citizensLayer.agreementAtMany(ts),
+  );
   exposeL3BodiesForE2e(
     () => handle.l3Bodies(),
     () => handle.citizensLayer.bodyCount(),
-    (t) => ({ viewport: handle.viewportCells(), bodies: handle.citizensLayer.liveAt(t) }),
+    async (t) => ({
+      viewport: handle.viewportCells(),
+      bodies: await handle.citizensLayer.liveAt(t),
+    }),
     (frames) => handle.l3Sweep(frames),
     (on) => handle.setRender(on),
+    {
+      stats: (resetLag) => handle.l3SolveStats(resetLag),
+      calibrate: (runs) => handle.l3Calibrate(runs),
+      workerCalibrate: (runs) => handle.l3WorkerCalibrate(runs),
+      liveMany: async (ts) => ({
+        viewport: handle.viewportCells(),
+        bodies: await handle.citizensLayer.liveAtMany(ts),
+      }),
+    },
   );
 
   // Story 1.12 (FR165/FR168): the whole of the debug tooling's gate, and
@@ -817,6 +832,7 @@ async function startStreetScene(
       orderOf: (stableId) => handle.orderIndexOf(stableId),
       viewerBody: () => handle.playerBody(),
       l3Bodies: () => handle.l3Bodies(),
+      l3SolveStats: () => handle.l3SolveStats(),
     };
     debugOverlays = mountDebugOverlays({
       mount,

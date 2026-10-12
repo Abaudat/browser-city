@@ -1,0 +1,606 @@
+{
+  "story": "5.4",
+  "nfr": "NFR11",
+  "environment": {
+    "platform": "linux",
+    "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "cores": 4,
+    "chromium": "153.0.8010.12",
+    "ci": true,
+    "runId": "38255150301",
+    "runner": "GitHub Actions 1000011287",
+    "image": "ubuntu24"
+  },
+  "runMs": 60000,
+  "soak": false,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "crowd": {
+    "size": 200,
+    "pileCell": {
+      "x": 10,
+      "y": 18
+    },
+    "liveBodiesMin": 259,
+    "walkingMin": 134,
+    "sidesteppingMax": 103,
+    "cappedMax": 89
+  },
+  "budget": {
+    "p95Ms": 2,
+    "p99Ms": 4
+  },
+  "verdict": "MISSED",
+  "failures": [
+    "worker rendered window: 2 major GCs, 0 allowed",
+    "worker rendered window: a major GC paused 8.91 ms"
+  ],
+  "risks": [
+    "worker solve p95 1.800 ms has no margin: over 1.6 ms"
+  ],
+  "calibrationMs": 5.800000000017462,
+  "l3Ratios": {
+    "p95": 0.0689655172401681,
+    "p99": 0.068965517245186,
+    "sweepP95": 0.2758620689606724,
+    "sweepP99": 0.3103448275933012
+  },
+  "l3Ms": {
+    "frames": 2867,
+    "p50": 0.29999999998835847,
+    "p95": 0.39999999999417923,
+    "p99": 0.40000000002328306,
+    "max": 2.400000000023283
+  },
+  "l3RenderedMs": {
+    "frames": 345,
+    "p50": 0.29999999998835847,
+    "p95": 0.39999999999417923,
+    "p99": 1.3000000000174623,
+    "max": 2.1999999999825377
+  },
+  "l3SolveMs": {
+    "frames": 2867,
+    "p50": 1.599999999976717,
+    "p95": 1.8000000000174623,
+    "p99": 2.8000000000174623,
+    "max": 6.800000000017462
+  },
+  "untraced": {
+    "l3Ms": {
+      "frames": 473,
+      "p50": 0.29999999998835847,
+      "p95": 0.39999999999417923,
+      "p99": 0.40000000002328306,
+      "max": 0.40000000002328306
+    },
+    "l3SolveMs": {
+      "frames": 473,
+      "p50": 1.6000000000058208,
+      "p95": 1.8000000000174623,
+      "p99": 2.7999999999883585,
+      "max": 4
+    }
+  },
+  "solveStale": {
+    "staleFrames": 0,
+    "skippedRequests": 0,
+    "maxLagFrames": 0,
+    "restarts": 0,
+    "lagEvents": []
+  },
+  "workerCalibrationMs": 6.7000000000116415,
+  "l3SweepMs": {
+    "frames": 4000,
+    "p50": 0.9000000000232831,
+    "p95": 1.599999999976717,
+    "p99": 1.8000000000465661,
+    "max": 3.699999999953434
+  },
+  "frameWorkMs": {
+    "frames": 345,
+    "p50": 1.2999999999883585,
+    "p95": 1.8999999999941792,
+    "p99": 2.5,
+    "max": 3.5
+  },
+  "throttled4x": {
+    "rate": 4,
+    "l3Ms": {
+      "frames": 452,
+      "p50": 0.5999999999767169,
+      "p95": 1.3999999999650754,
+      "p99": 1.900000000023283,
+      "max": 5.2000000000116415
+    },
+    "workerThrottle": {
+      "reached": false,
+      "error": "Error: Operation is only supported for pages, not workers",
+      "calibrationMs": 6.5,
+      "slowdown": 0.9701492537296577
+    },
+    "workerSolveMs": null,
+    "frameWorkMs": {
+      "frames": 452,
+      "p50": 0.7999999999883585,
+      "p95": 2.099999999976717,
+      "p99": 2.8999999999650754,
+      "max": 6.7000000000116415
+    }
+  },
+  "allocation": {
+    "windowMs": 15000,
+    "frames": 4000,
+    "l3Bytes": 47271088,
+    "l3BytesPerFrame": 11817.772,
+    "ceilingBytesPerFrame": 15360,
+    "mainBytesPerFrame": 841.9943502824859,
+    "mainCeilingBytesPerFrame": 1152,
+    "mainTop": [
+      {
+        "fn": "port.onmessage",
+        "url": "http://127.0.0.1:5173/src/l3-worker/client.ts",
+        "bytes": 186140
+      },
+      {
+        "fn": "seedOf",
+        "url": "http://127.0.0.1:5173/src/l3/seed.ts",
+        "bytes": 88568
+      },
+      {
+        "fn": "legInstants",
+        "url": "http://127.0.0.1:5173/src/l3/body.ts",
+        "bytes": 77812
+      },
+      {
+        "fn": "apply",
+        "url": "http://127.0.0.1:5173/src/world/body-lifecycle.ts",
+        "bytes": 50260
+      },
+      {
+        "fn": "viewDoubles",
+        "url": "http://127.0.0.1:5173/src/l3-worker/protocol.ts",
+        "bytes": 43380
+      },
+      {
+        "fn": "viewBytes",
+        "url": "http://127.0.0.1:5173/src/l3-worker/protocol.ts",
+        "bytes": 43380
+      },
+      {
+        "fn": "applyZone",
+        "url": "http://127.0.0.1:5173/src/test-street/citizens-layer.ts",
+        "bytes": 35672
+      },
+      {
+        "fn": "get stats",
+        "url": "http://127.0.0.1:5173/src/l3-worker/client.ts",
+        "bytes": 31252
+      },
+      {
+        "fn": "collect",
+        "url": "http://127.0.0.1:5173/src/world/walk-mirror.ts",
+        "bytes": 30332
+      },
+      {
+        "fn": "avalanche",
+        "url": "http://127.0.0.1:5173/src/l3/seed.ts",
+        "bytes": 7248
+      }
+    ],
+    "top": [
+      {
+        "fn": "#ensurePaths",
+        "url": "http://127.0.0.1:5173/src/l3/body.ts",
+        "bytes": 30897172
+      },
+      {
+        "fn": "#scanWalls",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 4546740
+      },
+      {
+        "fn": "pullTaut",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 4136044
+      },
+      {
+        "fn": "lineIsClear",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 3988776
+      },
+      {
+        "fn": "seedOf",
+        "url": "http://127.0.0.1:5173/src/l3/seed.ts",
+        "bytes": 1117380
+      },
+      {
+        "fn": "frameAt",
+        "url": "http://127.0.0.1:5173/src/l3/citizen.ts",
+        "bytes": 1116056
+      },
+      {
+        "fn": "findMicroPath",
+        "url": "http://127.0.0.1:5173/src/l3/micro-path.ts",
+        "bytes": 520404
+      },
+      {
+        "fn": "legInstants",
+        "url": "http://127.0.0.1:5173/src/l3/body.ts",
+        "bytes": 351540
+      },
+      {
+        "fn": "resolve",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 218120
+      },
+      {
+        "fn": "sortIndices",
+        "url": "http://127.0.0.1:5173/src/l3/avoidance.ts",
+        "bytes": 112328
+      }
+    ]
+  },
+  "control": {
+    "note": "an idle page, no L3, a live heap of the same size, the same trace for the same time",
+    "heapMb": 18,
+    "majorCount": 2,
+    "longestMajorPauseMs": 1.433,
+    "majorTypes": [
+      "finalize incremental marking via task",
+      "finalize incremental marking via task"
+    ],
+    "minorCount": 0
+  },
+  "gcRenderedWindow": {
+    "minorCount": 16,
+    "majorCount": 0,
+    "totalPauseMs": 11.341999999999999,
+    "longestMinorPauseMs": 1.676,
+    "longestMajorPauseMs": 0,
+    "majorTypes": [],
+    "minorP99PauseMs": 1.676
+  },
+  "workerGcRenderedWindow": {
+    "minorCount": 12,
+    "majorCount": 2,
+    "totalPauseMs": 25.443,
+    "longestMinorPauseMs": 2.511,
+    "longestMajorPauseMs": 8.914,
+    "majorTypes": [
+      "finalize incremental marking via task",
+      "finalize incremental marking via task"
+    ],
+    "minorP99PauseMs": 2.511
+  },
+  "gc": {
+    "minorCount": 23,
+    "majorCount": 0,
+    "totalPauseMs": 17.799,
+    "longestMinorPauseMs": 1.105,
+    "longestMajorPauseMs": 0,
+    "majorTypes": [],
+    "minorP99PauseMs": 1.105
+  },
+  "majorEvents": [
+    {
+      "thread": "worker",
+      "args": {
+        "type": "finalize incremental marking via task",
+        "usedHeapSizeAfter": 1785912,
+        "usedHeapSizeBefore": 3558700
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 8914,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3451,
+      "tdur": 1820,
+      "tid": 3473,
+      "ts": 146575701,
+      "tts": 657879
+    },
+    {
+      "thread": "worker",
+      "args": {
+        "type": "finalize incremental marking via task",
+        "usedHeapSizeAfter": 1785708,
+        "usedHeapSizeBefore": 2017268
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 5228,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3451,
+      "tdur": 2819,
+      "tid": 3473,
+      "ts": 147187647,
+      "tts": 674020
+    },
+    {
+      "thread": "main",
+      "args": {
+        "type": "finalize incremental marking via task",
+        "usedHeapSizeAfter": 752668,
+        "usedHeapSizeBefore": 908192
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 1433,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3523,
+      "tdur": 1233,
+      "tid": 3523,
+      "ts": 319096923,
+      "tts": 36796
+    },
+    {
+      "thread": "main",
+      "args": {
+        "type": "finalize incremental marking via task",
+        "usedHeapSizeAfter": 752668,
+        "usedHeapSizeBefore": 752668
+      },
+      "cat": "devtools.timeline,v8",
+      "dur": 773,
+      "name": "MajorGC",
+      "ph": "X",
+      "pid": 3523,
+      "tdur": 686,
+      "tid": 3523,
+      "ts": 319699810,
+      "tts": 39926
+    }
+  ],
+  "workerGc": {
+    "minorCount": 50,
+    "majorCount": 0,
+    "totalPauseMs": 64.532,
+    "longestMinorPauseMs": 2.407,
+    "longestMajorPauseMs": 0,
+    "majorTypes": [],
+    "minorP99PauseMs": 2.407
+  },
+  "cpuTopSelf": [
+    {
+      "fn": "(program) ",
+      "share": 0.9855114043896142
+    },
+    {
+      "fn": "packQuadAttributes http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=dfd6d7cf",
+      "share": 0.0024386745086788122
+    },
+    {
+      "fn": "collectRenderablesSimple http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=dfd6d7cf",
+      "share": 0.0020083201836178454
+    },
+    {
+      "fn": "postMessage ",
+      "share": 0.0015779658585568786
+    },
+    {
+      "fn": "(garbage collector) ",
+      "share": 0.0014345144168698895
+    },
+    {
+      "fn": "update src/test-street/citizens-layer.ts",
+      "share": 0.0010041600918089227
+    },
+    {
+      "fn": "port.onmessage src/l3-worker/client.ts",
+      "share": 0.0007172572084349448
+    },
+    {
+      "fn": "instantsFor src/l3/ledger-position.ts",
+      "share": 0.0005738057667479559
+    },
+    {
+      "fn": "break http://127.0.0.1:5173/node_modules/.vite/deps/GCManagedHash-CB0-jVHT.js?v=dfd6d7cf",
+      "share": 0.00043035432506096684
+    },
+    {
+      "fn": "updateTransformAndChildren http://127.0.0.1:5173/node_modules/.vite/deps/RenderTargetSystem-BredZz1o.js?v=dfd6d7cf",
+      "share": 0.00043035432506096684
+    },
+    {
+      "fn": "update http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=dfd6d7cf",
+      "share": 0.00028690288337397793
+    },
+    {
+      "fn": "sortChildren http://127.0.0.1:5173/node_modules/.vite/deps/Filter-zNCIpwxe.js?v=dfd6d7cf",
+      "share": 0.00028690288337397793
+    },
+    {
+      "fn": "uniformMatrix3fv ",
+      "share": 0.00028690288337397793
+    },
+    {
+      "fn": "bufferSubData ",
+      "share": 0.00028690288337397793
+    },
+    {
+      "fn": "apply src/l3-worker/client.ts",
+      "share": 0.00028690288337397793
+    }
+  ],
+  "workerCpuTopSelf": [
+    {
+      "fn": "(idle) ",
+      "share": 0.9866047231900891
+    },
+    {
+      "fn": "#resolveBody src/l3/avoidance.ts",
+      "share": 0.0038714672861014324
+    },
+    {
+      "fn": "#roomOn src/l3/avoidance.ts",
+      "share": 0.0029036004645760743
+    },
+    {
+      "fn": "resolve src/l3/avoidance.ts",
+      "share": 0.0006968641114982578
+    },
+    {
+      "fn": "#closestApproach src/l3/avoidance.ts",
+      "share": 0.0006581494386372435
+    },
+    {
+      "fn": "frameAt src/l3/citizen.ts",
+      "share": 0.0005807200929152149
+    },
+    {
+      "fn": "poseAt src/l3/body.ts",
+      "share": 0.0005032907471931862
+    },
+    {
+      "fn": "solveAll src/test-street/street-life.ts",
+      "share": 0.00042586140147115757
+    },
+    {
+      "fn": "#scanWalls src/l3/avoidance.ts",
+      "share": 0.00038714672861014324
+    },
+    {
+      "fn": "#byCell src/l3/avoidance.ts",
+      "share": 0.00038714672861014324
+    },
+    {
+      "fn": "postMessage ",
+      "share": 0.00038714672861014324
+    },
+    {
+      "fn": "(garbage collector) ",
+      "share": 0.0003484320557491289
+    },
+    {
+      "fn": "scope.onmessage src/l3-worker/worker.ts?worker_file&type=module",
+      "share": 0.00027100271002710027
+    },
+    {
+      "fn": "flavourAt src/l3/flavour.ts",
+      "share": 0.00027100271002710027
+    },
+    {
+      "fn": "sortIndices src/l3/avoidance.ts",
+      "share": 0.00027100271002710027
+    }
+  ],
+  "workerCpuTopLines": [
+    {
+      "at": "src/l3/avoidance.ts:383",
+      "share": 0.0038714672861014324
+    },
+    {
+      "at": "src/l3/avoidance.ts:568",
+      "share": 0.0029036004645760743
+    },
+    {
+      "at": "src/l3/avoidance.ts:286",
+      "share": 0.0006968641114982578
+    },
+    {
+      "at": "src/l3/avoidance.ts:246",
+      "share": 0.0006581494386372435
+    },
+    {
+      "at": "src/l3/citizen.ts:82",
+      "share": 0.0005807200929152149
+    },
+    {
+      "at": "src/test-street/street-life.ts:177",
+      "share": 0.00042586140147115757
+    },
+    {
+      "at": "src/l3/avoidance.ts:322",
+      "share": 0.00038714672861014324
+    },
+    {
+      "at": "src/l3/avoidance.ts:128",
+      "share": 0.00038714672861014324
+    },
+    {
+      "at": ":6",
+      "share": 0.00038714672861014324
+    },
+    {
+      "at": "src/l3/flavour.ts:49",
+      "share": 0.00027100271002710027
+    },
+    {
+      "at": "src/l3/avoidance.ts:617",
+      "share": 0.00027100271002710027
+    },
+    {
+      "at": "src/l3-worker/solver.ts:152",
+      "share": 0.00027100271002710027
+    },
+    {
+      "at": "src/l3-worker/worker.ts?worker_file&type=module:9",
+      "share": 0.00023228803716608595
+    },
+    {
+      "at": "src/l3/body.ts:243",
+      "share": 0.0001548586914440573
+    },
+    {
+      "at": "src/l3/micro-path.ts:130",
+      "share": 0.0001548586914440573
+    },
+    {
+      "at": "src/l3/body.ts:131",
+      "share": 0.0001548586914440573
+    },
+    {
+      "at": "src/l3/micro-path.ts:172",
+      "share": 0.00011614401858304297
+    },
+    {
+      "at": "src/l3/avoidance.ts:119",
+      "share": 0.00011614401858304297
+    },
+    {
+      "at": "src/l3/body.ts:281",
+      "share": 0.00007742934572202865
+    },
+    {
+      "at": "src/l3/body.ts:252",
+      "share": 0.00007742934572202865
+    }
+  ],
+  "heap": {
+    "samples": [
+      {
+        "atMs": 0,
+        "usedHeapBytes": 19187152
+      },
+      {
+        "atMs": 10375,
+        "usedHeapBytes": 19217968
+      },
+      {
+        "atMs": 20800,
+        "usedHeapBytes": 19262712
+      },
+      {
+        "atMs": 31223,
+        "usedHeapBytes": 19269712
+      },
+      {
+        "atMs": 41635,
+        "usedHeapBytes": 19271676
+      },
+      {
+        "atMs": 52031,
+        "usedHeapBytes": 19279072
+      },
+      {
+        "atMs": 62410,
+        "usedHeapBytes": 19281104
+      }
+    ],
+    "growthRatio": 1.0032852588785661,
+    "bound": 1.5
+  }
+}

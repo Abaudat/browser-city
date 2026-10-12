@@ -44,17 +44,21 @@ const INSTANTS: readonly number[] = [
 
 async function ready(page: Page): Promise<void> {
   await page.goto("/");
-  await page.waitForFunction(() => window.__bc?.l3Agreement !== undefined, undefined, {
+  await page.waitForFunction(() => window.__bc?.l3AgreementMany !== undefined, undefined, {
     timeout: 20_000,
   });
 }
 
 async function sampleAt(page: Page): Promise<Record<number, Sample[]>> {
-  return page.evaluate((instants) => {
-    const hook = window.__bc?.l3Agreement;
-    if (!hook) throw new Error("no l3Agreement hook");
+  return page.evaluate(async (instants) => {
+    const hook = window.__bc?.l3AgreementMany;
+    if (!hook) throw new Error("no l3AgreementMany hook");
+    // One round trip to the worker for every instant.
+    const samples = await hook(instants);
     const out: Record<number, Sample[]> = {};
-    for (const t of instants) out[t] = hook(t).map((s) => ({ ...s }));
+    instants.forEach((t, i) => {
+      out[t] = (samples[i] ?? []).map((s) => ({ ...s }));
+    });
     return out;
   }, INSTANTS as number[]);
 }
@@ -129,7 +133,7 @@ test("two clients with different bubbles agree on every shared body of the 200-b
       );
       await page.keyboard.up("ArrowDown");
       await page.waitForFunction(
-        (n) => (window.__bc?.bodyCount?.() ?? 0) >= n && window.__bc?.l3Live !== undefined,
+        (n) => (window.__bc?.bodyCount?.() ?? 0) >= n && window.__bc?.l3LiveMany !== undefined,
         DENSE_BODIES,
         { timeout: 60_000 },
       );
@@ -146,15 +150,17 @@ test("two clients with different bubbles agree on every shared body of the 200-b
     await pageB.waitForTimeout(1_000);
 
     const sweep = (page: Page) =>
-      page.evaluate((instants) => {
-        const hook = window.__bc?.l3Live;
-        if (!hook) throw new Error("no l3Live hook");
-        // One synchronous read, between frames: the hook puts the live poses
-        // back to the last solved frame itself.
-        return instants.map((t) => {
-          const live = hook(t);
-          return { t, viewport: live.viewport, bodies: live.bodies.map((s) => ({ ...s })) };
-        });
+      page.evaluate(async (instants) => {
+        const hook = window.__bc?.l3LiveMany;
+        if (!hook) throw new Error("no l3LiveMany hook");
+        // One round trip: the worker reads each instant at the bodies it holds
+        // and puts its live poses back to the last solved frame itself.
+        const live = await hook(instants);
+        return instants.map((t, i) => ({
+          t,
+          viewport: live.viewport,
+          bodies: (live.bodies[i] ?? []).map((s) => ({ ...s })),
+        }));
       }, INSTANTS as number[]);
     const [fromA, fromB] = await Promise.all([sweep(pageA), sweep(pageB)]);
 

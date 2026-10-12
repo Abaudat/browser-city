@@ -9,7 +9,10 @@ import {
   MIN_TICKER_FRAMES,
   median,
   percentile,
+  RECORDED_P95_RATIO,
+  RECORDED_P99_RATIO,
   type SamplingNode,
+  splitByThread,
   summariseGc,
   verdict,
 } from "../../e2e/l3-budget-verdict";
@@ -20,11 +23,17 @@ const GOOD: L3Measurement = {
   requiredBodies: 200,
   requiredWalking: 120,
   l3Ms: distribution(Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01)),
+  solveMs: distribution(Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01)),
+  staleFrames: 0,
+  maxLagFrames: 0,
+  restarts: 0,
   sweepMs: distribution(
     Array.from({ length: MIN_MEASURED_FRAMES }, (_, i) => 0.3 + (i % 10) * 0.01),
   ),
   allocBytesPerFrame: 0,
-  calibrationMs: 2,
+  mainAllocBytesPerFrame: 0,
+  calibrationMs: 6,
+  workerCalibrationMs: 6,
   gc: {
     minorPausesMs: [0.5, 0.7, 0.9, 1],
     minorCount: 4,
@@ -32,18 +41,57 @@ const GOOD: L3Measurement = {
     totalPauseMs: 3,
     longestMinorPauseMs: 1,
     longestMajorPauseMs: 0,
+    majorTypes: [],
   },
+  workerGc: {
+    minorPausesMs: [0.5],
+    minorCount: 1,
+    majorCount: 0,
+    totalPauseMs: 0.5,
+    longestMinorPauseMs: 0.5,
+    longestMajorPauseMs: 0,
+    majorTypes: [],
+  },
+  quietGc: {
+    minorPausesMs: [0.5],
+    minorCount: 1,
+    majorCount: 0,
+    totalPauseMs: 0.5,
+    longestMinorPauseMs: 0.5,
+    longestMajorPauseMs: 0,
+    majorTypes: [],
+  },
+  quietWorkerGc: {
+    minorPausesMs: [0.5],
+    minorCount: 1,
+    majorCount: 0,
+    totalPauseMs: 0.5,
+    longestMinorPauseMs: 0.5,
+    longestMajorPauseMs: 0,
+    majorTypes: [],
+  },
+  controlGc: {
+    minorPausesMs: [],
+    minorCount: 0,
+    majorCount: 2,
+    totalPauseMs: 2,
+    longestMinorPauseMs: 0,
+    longestMajorPauseMs: 1.3,
+    majorTypes: ["finalize incremental marking via task", "finalize incremental marking via task"],
+  },
+  cpu: "AMD EPYC 7763 64-Core Processor",
   heapGrowthRatio: 1.01,
 };
 
 describe("L3 budget verdict (NFR11)", () => {
   it("is met by a healthy run", () => {
-    expect(verdict(GOOD)).toEqual({ met: true, failures: [], gateFailures: [] });
+    expect(verdict(GOOD)).toEqual({ met: true, failures: [], risks: [], gateFailures: [] });
   });
 
   it("records a budget miss within the recorded finding as MISSED without failing the gate", () => {
     const recorded = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.2));
-    const v = verdict({ ...GOOD, l3Ms: recorded, calibrationMs: 6 });
+    // A slow machine: the figure is over the budget in ms, not in ratio.
+    const v = verdict({ ...GOOD, l3Ms: recorded, calibrationMs: 25 });
     expect(v.met).toBe(false);
     expect(v.failures.join()).toContain("p95");
     expect(v.gateFailures).toEqual([]);
@@ -53,13 +101,25 @@ describe("L3 budget verdict (NFR11)", () => {
     const at = (p95: number, p99: number) =>
       distribution(Array.from({ length: MIN_TICKER_FRAMES }, (_, i) => (i % 20 === 0 ? p99 : p95)));
     // The recorded ratio: L3 4.3 ms on a 10 ms calibration.
-    const recorded = { ...GOOD, l3Ms: at(4.3, 4.8), calibrationMs: 10 };
+    const recorded = {
+      ...GOOD,
+      l3Ms: at(RECORDED_P95_RATIO * 10, RECORDED_P99_RATIO * 10),
+      calibrationMs: 10,
+    };
     expect(verdict(recorded).gateFailures).toEqual([]);
     // The same L3 on a 1.5x slower CPU: both times scale, the ratio holds.
-    const slower = { ...GOOD, l3Ms: at(6.45, 7.2), calibrationMs: 15 };
+    const slower = {
+      ...GOOD,
+      l3Ms: at(RECORDED_P95_RATIO * 15, RECORDED_P99_RATIO * 15),
+      calibrationMs: 15,
+    };
     expect(verdict(slower).gateFailures).toEqual([]);
     // 1.5x the L3 on the same calibration is a regression.
-    const regressed = { ...GOOD, l3Ms: at(6.45, 7.2), calibrationMs: 10 };
+    const regressed = {
+      ...GOOD,
+      l3Ms: at(RECORDED_P95_RATIO * 15, RECORDED_P99_RATIO * 15),
+      calibrationMs: 10,
+    };
     expect(verdict(regressed).gateFailures.join()).toContain("calibration");
   });
 
@@ -89,8 +149,58 @@ describe("L3 budget verdict (NFR11)", () => {
     expect(v.gateFailures.join()).toContain("B/frame");
   });
 
+  it("FAILS a main thread that allocates per frame", () => {
+    const v = verdict({ ...GOOD, mainAllocBytesPerFrame: 1_000_000 });
+    expect(v.gateFailures.join()).toContain("main thread allocates");
+  });
+
   it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
-    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1 } }).met).toBe(false);
+    const task = "finalize incremental marking via task";
+    const some = (n: number, pause: number) => ({
+      ...GOOD.gc,
+      majorCount: n,
+      longestMajorPauseMs: pause,
+      majorTypes: Array.from({ length: n }, () => task),
+    });
+    // At the recorded figures, green; one major or a millisecond more, red.
+    expect(verdict({ ...GOOD, gc: some(2, 30) }).met).toBe(true);
+    expect(verdict({ ...GOOD, gc: some(3, 3) }).gateFailures.join()).toContain(
+      "frame-thread rendered window: 3 major GCs, 2 allowed",
+    );
+    // The rendered windows' pauses are reported, not gated; the quiet one is.
+    expect(verdict({ ...GOOD, workerGc: some(1, 40) }).met).toBe(true);
+    // GOOD calibrates at 6 ms: the quiet frame thread may pause 1.27 x that.
+    expect(verdict({ ...GOOD, quietGc: some(1, 7.5) }).met).toBe(true);
+    expect(verdict({ ...GOOD, quietGc: some(1, 7.7) }).gateFailures.join()).toContain(
+      "paused 7.70 ms",
+    );
+    expect(verdict({ ...GOOD, quietWorkerGc: some(1, 2.7) }).gateFailures.join()).toContain(
+      "worker verdict window: a major GC paused 2.70 ms",
+    );
+    // A slower instance gets its pause in proportion: 5.3 ms on a 6 ms calibration is green.
+    expect(verdict({ ...GOOD, quietGc: some(2, 5.3) }).met).toBe(true);
+    expect(verdict({ ...GOOD, workerGc: some(4, 3) }).gateFailures.join()).toContain(
+      "worker rendered window: 4 major GCs",
+    );
+    expect(verdict({ ...GOOD, quietWorkerGc: some(3, 1) }).gateFailures.join()).toContain(
+      "worker verdict window: 3 major GCs",
+    );
+    // The quiet frame thread may not show more than the idle control did.
+    const quiet = {
+      ...GOOD.quietGc,
+      majorCount: 3,
+      longestMajorPauseMs: 4,
+      majorTypes: [task, task, task],
+    };
+    expect(verdict({ ...GOOD, quietGc: quiet }).gateFailures.join()).toContain(
+      "the idle control 2",
+    );
+    expect(verdict({ ...GOOD, quietGc: some(2, 4) }).met).toBe(true);
+    // Any other kind of major is red: it is the one L3's own garbage would cause.
+    const failing = { ...some(1, 2), majorTypes: ["allocation failure"] };
+    expect(verdict({ ...GOOD, workerGc: failing }).gateFailures.join()).toContain(
+      "'allocation failure', not an incremental finalisation",
+    );
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);
     const slowScavenges = { ...GOOD.gc, minorPausesMs: [4.5, 5], longestMinorPauseMs: 9 };
     expect(verdict({ ...GOOD, gc: slowScavenges }).met).toBe(true);
@@ -99,6 +209,111 @@ describe("L3 budget verdict (NFR11)", () => {
   it("FAILS a render-free sweep over budget even when the ticker is green", () => {
     const slow = distribution(Array.from({ length: MIN_MEASURED_FRAMES }, () => 2.5));
     expect(verdict({ ...GOOD, sweepMs: slow }).gateFailures).not.toEqual([]);
+  });
+
+  it("FAILS a worker whose own solve is over budget while the main-thread window is green", () => {
+    const slow = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 3.2));
+    const v = verdict({ ...GOOD, solveMs: slow });
+    expect(v.met).toBe(false);
+    expect(v.failures.join()).toContain("worker solve p95");
+    expect(v.gateFailures.join()).toContain("worker solve p95 / calibration");
+    // The absolute budget is the verdict's, not a CI gate: a solve over it with
+    // its ratio inside the tripwire reads MISSED and fails nothing.
+    const quick = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.2));
+    const v2 = verdict({ ...GOOD, solveMs: quick, calibrationMs: 6.2 });
+    expect(v2.met).toBe(false);
+    expect(v2.failures.join()).toContain("worker solve p95 2.200 ms over 2 ms");
+    expect(v2.gateFailures).toEqual([]);
+  });
+
+  it("reads a 7763 over the budget as MISSED whatever its calibration reads, without failing CI", () => {
+    const over = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.1));
+    const v = verdict({
+      ...GOOD,
+      solveMs: over,
+      calibrationMs: 6,
+      cpu: "AMD EPYC 7763 64-Core Processor",
+    });
+    expect(v.met).toBe(false);
+    expect(v.failures.join()).toContain("worker solve p95 2.100 ms over 2 ms");
+    expect(v.gateFailures).toEqual([]);
+  });
+
+  it("names an unknown, slower CPU's miss as a risk, not a verdict", () => {
+    const over = distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 2.4));
+    const v = verdict({ ...GOOD, solveMs: over, calibrationMs: 7, cpu: "Some New SKU @ 2.0GHz" });
+    expect(v.failures.join()).not.toContain("worker solve p95 2.400 ms over 2 ms");
+    expect(v.risks.join()).toContain("Some New SKU @ 2.0GHz is not a known pool SKU");
+    expect(v.risks.join()).toContain("worker solve p95 2.400 ms over 2 ms");
+    // Unknown but as fast as the reference within the spread: the verdict's.
+    const fast = verdict({
+      ...GOOD,
+      solveMs: over,
+      calibrationMs: 6,
+      cpu: "Some New SKU @ 2.0GHz",
+    });
+    expect(fast.failures.join()).toContain("worker solve p95 2.400 ms over 2 ms");
+  });
+
+  it("judges each thread's major pause against that thread's own calibration", () => {
+    const task = "finalize incremental marking via task";
+    const pause = (ms: number) => ({
+      ...GOOD.quietGc,
+      majorCount: 1,
+      longestMajorPauseMs: ms,
+      majorTypes: [task],
+    });
+    // Frame thread slow (6 ms), worker fast (3 ms): the worker limit is 0.38 x 3.
+    const slowFrame = { ...GOOD, calibrationMs: 6, workerCalibrationMs: 3 };
+    expect(verdict({ ...slowFrame, quietWorkerGc: pause(1.5) }).gateFailures.join()).toContain(
+      "worker verdict window: a major GC paused 1.50 ms",
+    );
+    expect(verdict({ ...slowFrame, quietGc: pause(1.5) }).gateFailures.join()).not.toContain(
+      "major GC",
+    );
+    // The reverse: the worker has the room, the frame thread (limit 1.27 x 3) has not.
+    const slowWorker = { ...GOOD, calibrationMs: 3, workerCalibrationMs: 6 };
+    expect(verdict({ ...slowWorker, quietWorkerGc: pause(2) }).gateFailures.join()).not.toContain(
+      "major GC",
+    );
+    expect(verdict({ ...slowWorker, quietGc: pause(4) }).gateFailures.join()).toContain(
+      "frame-thread verdict window: a major GC paused 4.00 ms",
+    );
+  });
+
+  it("fails a run with no worker calibration by name, not by a NaN comparison", () => {
+    for (const bad of [0, Number.NaN]) {
+      const v = verdict({ ...GOOD, workerCalibrationMs: bad });
+      expect(v.gateFailures).toContain("no worker calibration time");
+    }
+  });
+
+  it("reports a solve with no margin as a risk, not as a miss", () => {
+    const v = verdict({
+      ...GOOD,
+      calibrationMs: 6,
+      solveMs: distribution(Array.from({ length: MIN_TICKER_FRAMES }, () => 1.9)),
+    });
+    expect(v.met).toBe(true);
+    expect(v.risks.join()).toContain("worker solve p95 1.900 ms has no margin");
+    expect(verdict(GOOD).risks).toEqual([]);
+  });
+
+  it("FAILS any stale frame: a worker that falls behind is a bug whatever the timings say", () => {
+    const v = verdict({ ...GOOD, staleFrames: 1 });
+    expect(v.met).toBe(false);
+    expect(v.gateFailures.join()).toContain("stale");
+  });
+
+  it("FAILS a worker that had to be replaced", () => {
+    const v = verdict({ ...GOOD, restarts: 1 });
+    expect(v.met).toBe(false);
+    expect(v.gateFailures.join()).toContain("replaced");
+  });
+
+  it("FAILS a result drawn more than one frame after its instant", () => {
+    const v = verdict({ ...GOOD, maxLagFrames: 2 });
+    expect(v.gateFailures.join()).toContain("frames late");
   });
 
   it("FAILS a vacuous run: too few bodies, too few walking, too few frames", () => {
@@ -122,6 +337,26 @@ describe("percentiles", () => {
     expect(median([5, 1, 3])).toBe(3);
     expect(percentile([], 50)).toBeNaN();
     expect(distribution([3, 1, 2]).max).toBe(3);
+  });
+});
+
+describe("GC by thread", () => {
+  it("keeps a worker's collections out of the main thread's count", () => {
+    const events = [
+      { name: "thread_name", ph: "M", pid: 1, tid: 7, args: { name: "DedicatedWorker thread" } },
+      { name: "thread_name", ph: "M", pid: 1, tid: 1, args: { name: "CrRendererMain" } },
+      { name: "MajorGC", ph: "X", dur: 1000, pid: 1, tid: 7 },
+      { name: "MinorGC", ph: "X", dur: 500, pid: 1, tid: 1 },
+    ];
+    const { main, worker } = splitByThread(events);
+    expect(summariseGc(main).majorCount).toBe(0);
+    expect(summariseGc(main).minorCount).toBe(1);
+    expect(summariseGc(worker).majorCount).toBe(1);
+  });
+
+  it("counts a major on the main thread", () => {
+    const { main } = splitByThread([{ name: "MajorGC", ph: "X", dur: 1000, pid: 1, tid: 1 }]);
+    expect(summariseGc(main).majorCount).toBe(1);
   });
 });
 

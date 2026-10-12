@@ -49,9 +49,10 @@ declare global {
       stopFrameTimings?: () => number[];
       /** Story 5.4 (NFR11): per-frame L3 window in ms, same pattern as
        * `frameTimings`; recorded only between start and stop. */
-      l3Timings?: number[];
       startL3Timings?: () => void;
       stopL3Timings?: () => number[];
+      /** The worker's own solve time at each `l3Timings` frame. */
+      stopL3SolveTimings?: () => number[];
       /** Story 5.4: every drawn L3 body as the debug overlay reads it. */
       l3Bodies?: () => readonly {
         id: string;
@@ -63,8 +64,23 @@ declare global {
       /** Story 5.4: draws nothing while off; L3 and every ticker listener
        * keep running. */
       setRender?: (on: boolean) => void;
-      /** Story 5.4: times `frames` render-free L3 frames (NFR11). */
-      l3Sweep?: (frames: number) => number[];
+      /** Story 5.4: the worker's solve time for `frames` successive instants,
+       * each timed inside the worker (NFR11). */
+      l3Sweep?: (frames: number) => Promise<number[]>;
+      /** D-L3: the worker's counters (stale draws, skipped requests). */
+      l3SolveStats?: (resetLag?: boolean) => {
+        applied: number;
+        stale: number;
+        skipped: number;
+        restarts: number;
+        lastSolveMs: number;
+        maxLagFrames: number;
+        lagEvents: readonly { frame: number; due: number; ready: number; inFlight: number }[];
+      };
+      /** D-L3: the calibration workload's median, on the main thread and
+       * inside the worker. */
+      l3Calibrate?: (runs: number) => number;
+      l3WorkerCalibrate?: (runs: number) => Promise<number>;
       /** Story 5.4: how many bodies are drawn right now. */
       bodyCount?: () => number;
       /** Story 2.8 (FR147): how many ticker frames the mounted street
@@ -222,20 +238,51 @@ declare global {
       playerDrawnPoint?: () => { x: number; y: number };
       /** Story 5.2: every street citizen's agreed L3 state at a given city
        * time, computed from scratch -- never read from what was drawn. */
-      l3Agreement?: (cityMilli: number) => readonly {
-        id: string;
-        x: number;
-        y: number;
-        activity: string;
-        frameIndex: number;
-        facing: string;
-        offsetX: number;
-        offsetY: number;
-        look: string;
-      }[];
+      l3Agreement?: (cityMilli: number) => Promise<
+        readonly {
+          id: string;
+          x: number;
+          y: number;
+          activity: string;
+          frameIndex: number;
+          facing: string;
+          offsetX: number;
+          offsetY: number;
+          look: string;
+        }[]
+      >;
+      /** `l3Agreement` for many instants in one round trip to the worker. */
+      l3AgreementMany?: (cityMillis: readonly number[]) => Promise<
+        readonly (readonly {
+          id: string;
+          x: number;
+          y: number;
+          activity: string;
+          frameIndex: number;
+          facing: string;
+          offsetX: number;
+          offsetY: number;
+          look: string;
+        }[])[]
+      >;
+      /** `l3Live` for many instants in one round trip to the worker. */
+      l3LiveMany?: (cityMillis: readonly number[]) => Promise<{
+        viewport: { x0: number; y0: number; x1: number; y1: number } | undefined;
+        bodies: readonly (readonly {
+          id: string;
+          x: number;
+          y: number;
+          activity: string;
+          frameIndex: number;
+          facing: string;
+          offsetX: number;
+          offsetY: number;
+          agreed: boolean;
+        }[])[];
+      }>;
       /** Story 5.4: the L3 state of the bodies this client holds, at a
        * given city time -- what differs between two bubbles. */
-      l3Live?: (cityMilli: number) => {
+      l3Live?: (cityMilli: number) => Promise<{
         /** The viewport in floor-0 cells. */
         viewport: { x0: number; y0: number; x1: number; y1: number } | undefined;
         bodies: readonly {
@@ -249,7 +296,7 @@ declare global {
           offsetY: number;
           agreed: boolean;
         }[];
-      };
+      }>;
       /** Story 5.1: the L3 commuter as last drawn -- a callable read fresh
        * each call, `undefined` while it is not on screen. */
       commuterDrawn?: () =>
@@ -342,24 +389,50 @@ export function recordFrameWorkForE2e(ms: number): void {
   window.__bc = bucket;
 }
 
-/** Story 5.4 (NFR11): the L3 window recorder the budget spec drives, the
- * same idiom as `recordFrameWorkForE2e`: nothing is kept, and nothing
- * allocated, unless a caller has started it. */
-export function recordL3WorkForE2e(ms: number): void {
+/** Samples for one recorded window, in a buffer allocated when the window
+ * starts and written in place, so the recorder itself adds no garbage to the
+ * window it measures. */
+class SampleWindow {
+  #buf = new Float64Array(0);
+  #n = 0;
+  #on = false;
+
+  start(): void {
+    if (this.#buf.length === 0) this.#buf = new Float64Array(1 << 15);
+    this.#n = 0;
+    this.#on = true;
+  }
+
+  push(v: number): void {
+    if (this.#on && this.#n < this.#buf.length) this.#buf[this.#n++] = v;
+  }
+
+  stop(): number[] {
+    this.#on = false;
+    const out = Array.from(this.#buf.subarray(0, this.#n));
+    this.#n = 0;
+    return out;
+  }
+}
+
+const l3Window = new SampleWindow();
+const l3SolveWindow = new SampleWindow();
+
+/** Story 5.4 (NFR11): the L3 window recorder the budget spec drives: nothing
+ * is kept, and nothing allocated per sample, unless a caller has started it.
+ * `solveMs` is the worker's own time for the frame's solve. */
+export function recordL3WorkForE2e(ms: number, solveMs = 0): void {
   if (!import.meta.env.DEV) return;
+  l3Window.push(ms);
+  l3SolveWindow.push(solveMs);
   const bucket = window.__bc ?? { pings: [] };
-  if (bucket.l3Timings) bucket.l3Timings.push(ms);
   if (bucket.startL3Timings) return;
   bucket.startL3Timings = () => {
-    const current = window.__bc;
-    if (current) current.l3Timings = [];
+    l3Window.start();
+    l3SolveWindow.start();
   };
-  bucket.stopL3Timings = () => {
-    const current = window.__bc;
-    const samples = current?.l3Timings ?? [];
-    if (current) current.l3Timings = undefined;
-    return samples;
-  };
+  bucket.stopL3SolveTimings = () => l3SolveWindow.stop();
+  bucket.stopL3Timings = () => l3Window.stop();
   window.__bc = bucket;
 }
 
@@ -370,6 +443,12 @@ export function exposeL3BodiesForE2e(
   live: NonNullable<NonNullable<Window["__bc"]>["l3Live"]>,
   sweep: NonNullable<NonNullable<Window["__bc"]>["l3Sweep"]>,
   setRender: NonNullable<NonNullable<Window["__bc"]>["setRender"]>,
+  solve: {
+    stats: NonNullable<NonNullable<Window["__bc"]>["l3SolveStats"]>;
+    calibrate: NonNullable<NonNullable<Window["__bc"]>["l3Calibrate"]>;
+    workerCalibrate: NonNullable<NonNullable<Window["__bc"]>["l3WorkerCalibrate"]>;
+    liveMany: NonNullable<NonNullable<Window["__bc"]>["l3LiveMany"]>;
+  },
 ): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
@@ -378,6 +457,10 @@ export function exposeL3BodiesForE2e(
   bucket.l3Live = live;
   bucket.l3Sweep = sweep;
   bucket.setRender = setRender;
+  bucket.l3SolveStats = solve.stats;
+  bucket.l3Calibrate = solve.calibrate;
+  bucket.l3WorkerCalibrate = solve.workerCalibrate;
+  bucket.l3LiveMany = solve.liveMany;
   window.__bc = bucket;
 }
 
@@ -577,10 +660,12 @@ export function exposeContainerViewForE2e(hooks: {
 /** Story 5.2: the same idiom, for the L3 agreement sample. */
 export function exposeL3AgreementForE2e(
   getter: NonNullable<NonNullable<Window["__bc"]>["l3Agreement"]>,
+  many: NonNullable<NonNullable<Window["__bc"]>["l3AgreementMany"]>,
 ): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.l3Agreement = getter;
+  bucket.l3AgreementMany = many;
   window.__bc = bucket;
 }
 

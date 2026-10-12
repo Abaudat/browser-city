@@ -195,6 +195,24 @@ describe("the zone is judged per floor", () => {
     expect(planBodies(new Set(), [below], bodyZoneOf(VIEW, storeyCells, 1)).spawn).toEqual(["b"]);
   });
 
+  it("without `keep` it plans the same spawns and despawns and never touches the keep list", () => {
+    const held = new Set(["a", "b", "gone"]);
+    const cands = [
+      { id: "a", x: 0, y: 0, floor: 0 },
+      { id: "b", x: 9_999, y: 0, floor: 0 },
+      { id: "c", x: 1, y: 1, floor: 0 },
+    ];
+    const full = planBodies(held, cands, FLOOR_VIEW);
+    const out = createBodyPlan();
+    const keep = out.keep;
+    planBodies(held, cands, FLOOR_VIEW, out, cands.length, false);
+    expect(out.spawn).toEqual(full.spawn);
+    expect(out.despawn).toEqual(full.despawn);
+    expect(out.keep).toBe(keep);
+    expect(out.keep).toEqual([]);
+    expect(full.keep).toEqual(["a"]);
+  });
+
   it("planning into a reused plan allocates no new lists", () => {
     const out = createBodyPlan();
     const arrays = [out.spawn, out.keep, out.despawn];

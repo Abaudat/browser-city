@@ -34,10 +34,25 @@ export class Timetable {
 
   /** The walk is sized so the route is walked at canonical pace over the
    * tiles it actually takes on `walk`. */
-  constructor(spec: TimetableSpec, config: L3Config, walk: Walkability, path: PathConfig) {
+  constructor(
+    spec: TimetableSpec,
+    config: L3Config,
+    walk: Walkability,
+    path: PathConfig,
+    /** The walk time already measured elsewhere (milliminutes): skips the probe,
+     * so a second timetable of the same spec is the first one's. */
+    walkMilli?: number,
+  ) {
     const msPerMilli = config.realMsPerCityMinute / 1000;
-    const probe = new Body({ waypoints: spec.out, departAt: 0, arriveAt: 1 }, walk, path);
-    this.walkMilli = milliminutesFor((probe.totalLength / config.walkCellsPerS) * 1000, msPerMilli);
+    if (walkMilli === undefined) {
+      const probe = new Body({ waypoints: spec.out, departAt: 0, arriveAt: 1 }, walk, path);
+      this.walkMilli = milliminutesFor(
+        (probe.totalLength / config.walkCellsPerS) * 1000,
+        msPerMilli,
+      );
+    } else {
+      this.walkMilli = walkMilli;
+    }
     this.dwellMilli = milliminutesFor(spec.dwellMs, msPerMilli);
     this.halfMilli = 2 * this.dwellMilli + this.walkMilli;
     this.periodMilli = 2 * this.halfMilli;

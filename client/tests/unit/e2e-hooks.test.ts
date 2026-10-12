@@ -8,6 +8,7 @@ import {
   exposeRemotePlayersForE2e,
   recordAppearanceTextureIdsForE2e,
   recordFrameWorkForE2e,
+  recordL3WorkForE2e,
   recordMasksCheckedForE2e,
   recordPingForE2e,
   recordPlayerPositionForE2e,
@@ -371,5 +372,19 @@ describe("exposeConnectionForE2e", () => {
     vi.stubEnv("DEV", false);
     exposeConnectionForE2e({ live: () => 1, drop: () => {} });
     expect(window.__bc).toBeUndefined();
+  });
+});
+
+describe("recordL3WorkForE2e", () => {
+  it("keeps nothing until started, then the window and its solve share", () => {
+    recordL3WorkForE2e(2, 1.5);
+    window.__bc?.startL3Timings?.();
+    recordL3WorkForE2e(3, 2);
+    recordL3WorkForE2e(4, 1);
+    expect(window.__bc?.stopL3SolveTimings?.()).toEqual([2, 1]);
+    // Stopping the solve samples does not stop the window's.
+    expect(window.__bc?.stopL3Timings?.()).toEqual([3, 4]);
+    recordL3WorkForE2e(5, 1);
+    expect(window.__bc?.stopL3Timings?.()).toEqual([]);
   });
 });

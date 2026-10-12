@@ -415,6 +415,18 @@ export function stagingBounds(): { x0: number; y0: number; x1: number; y1: numbe
   return { x0: STAGE_X0, y0: STAGE_Y0, x1: STAGE_EAST_X1, y1: STAGE_Y1 };
 }
 
+/** The kerb row beyond the staging pavement as a cell rect on floor 0: the
+ * walkability blocks it though the collision grid holds nothing there. */
+export function stagingKerbRect(): {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  floor: number;
+} {
+  return { x0: KERB_X0, y0: STAGE_Y1, x1: STAGE_EAST_X1, y1: STAGE_Y1, floor: 0 };
+}
+
 /** Whether the cell is the kerb beyond the staging pavement's last row. */
 export function isStagingKerb(x: number, y: number): boolean {
   return y === STAGE_Y1 && x >= KERB_X0 && x < STAGE_EAST_X1;

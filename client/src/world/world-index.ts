@@ -102,6 +102,16 @@ export class WorldIndex implements CollisionGridQuery, FootprintQuery {
     return this.grid.revision;
   }
 
+  /** The collision grid's chunks changed since the last drain. */
+  drainChangedChunks(fn: (floor: number, cx: number, cy: number) => void): void {
+    this.grid.drainChangedChunks(fn);
+  }
+
+  /** Every chunk of the collision grid that holds a collider. */
+  allChunks(fn: (floor: number, cx: number, cy: number) => void): void {
+    this.grid.allChunks(fn);
+  }
+
   /** FR128's collision read (`world/movement.ts`'s resolver). */
   entriesInCell(floor: number, cellX: number, cellY: number): readonly GridEntry[] {
     return this.grid.entriesInCell(floor, cellX, cellY);

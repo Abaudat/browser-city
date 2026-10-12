@@ -631,4 +631,63 @@ describe("local avoidance (FR64)", () => {
     for (let k = 0; k < 20; k++) run(bodies, ALL_HELD, open, field);
     expect(field.capacity).toBe(capacity);
   });
+
+  it("is unchanged by blocked tiles too far off its line to limit a sidestep", () => {
+    // Two walkers meeting head on in a lane with a wall one cell to the side
+    // of it: the walls decide the room. Blocked tiles further off than the
+    // clearance and the body's reach never can, whatever their number or side.
+    const bodies = [
+      walker("a", 10.5, 10.5, 1, 0),
+      walker("b", 12.5, 10.7, -1, 0),
+      { ...walker("s", 11.5, 10.5, 0, 0), moving: false, ramp: 0, speed: 0 },
+    ];
+    const near = new TestGrid();
+    for (let x = 5; x < 18; x++) {
+      near.block(x, 11);
+      near.block(x, 9);
+    }
+    const far = new TestGrid();
+    for (let x = 5; x < 18; x++) {
+      far.block(x, 11);
+      far.block(x, 9);
+    }
+    const reach = dials.clearanceCells + 1 + dials.halfWidthCells + 1;
+    for (let k = 0; k < 40; k++) {
+      far.block(3 + k, 10 - Math.ceil(reach) - 3);
+      far.block(3 + k, 10 + Math.ceil(reach) + 6);
+    }
+    const a = run(bodies, ALL_HELD, near).out;
+    const b = run(bodies, ALL_HELD, far).out;
+    expect(b).toEqual(a);
+    // The near wall did limit something, or the test proves nothing.
+    expect(run(bodies, ALL_HELD, open).out).not.toEqual(a);
+  });
+
+  it("gives a field kept across frames the offsets a fresh one gives", () => {
+    // One field kept across frames (it reuses last frame's order when its
+    // members are unchanged) against a fresh field every frame: bodies drift,
+    // some cross, one frame teleports them all, one drops a member.
+    fc.assert(
+      fc.property(
+        fc.array(body(24), { minLength: 6, maxLength: 40 }),
+        fc.integer({ min: 0, max: 5 }),
+        (raw, dropAt) => {
+          const kept = new AvoidanceField();
+          let frame = withIds(raw);
+          for (let f = 0; f < 6; f++) {
+            frame = frame.map((b, k) => {
+              if (f === 3) return { ...b, x: 24 - b.x, y: (b.y * 7 + k) % 24 }; // a teleport
+              return { ...b, x: b.x + b.hx * WALK * 40, y: b.y + b.hy * WALK * 40 };
+            });
+            const shown = f === dropAt ? frame.slice(1) : frame;
+            const a = run(shown, ALL_HELD, open, kept).out;
+            const b = run(shown, ALL_HELD, open, new AvoidanceField()).out;
+            if (JSON.stringify([...a]) !== JSON.stringify([...b])) return false;
+          }
+          return true;
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
 });
