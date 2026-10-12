@@ -232,6 +232,19 @@ const ASSERTED: &str =
 /// the reason it is not a measured ceiling. A new generation key is in
 /// exactly one of the two places or the build is red.
 pub const NOT_MEASURED: &[(&str, &str)] = &[
+    ("generation.props.arterial_pavement_cells", AUTHORED),
+    ("generation.props.street_pavement_cells", AUTHORED),
+    ("generation.props.lane_pavement_cells", AUTHORED),
+    ("generation.props.lamp_cadence_cells", AUTHORED),
+    (
+        "generation.props.ambient_per_100_cells_at_density_min",
+        TUNED,
+    ),
+    (
+        "generation.props.ambient_per_100_cells_at_density_max",
+        TUNED,
+    ),
+    ("generation.props.max_solid_percent_of_room_floor", AUTHORED),
     (
         "generation.envelopes.commercial_min_interior_depth_cells",
         AUTHORED,
@@ -923,6 +936,7 @@ mod tests {
             building_types: &types,
             room_types: base.room_types,
             tags: base.tags,
+            objects: base.objects,
         };
         assert_ne!(fp(&rows(), &base), fp(&rows(), &changed));
     }

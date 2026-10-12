@@ -1,0 +1,16 @@
+rules: indoor_props_never_on_the_street
+expect: fail
+floor: 0
+legend: W=wall+wall_run F=floor I=floor+indoor D=threshold+wall_run+entrance P=pavement R=road Q=pavement+indoor
+area: 1 0,0 4,3
+area: 2 1,1 3,2
+area: 2 1,2 2,3
+area: 3 1,3 2,4
+grid:
+WWWW
+WFFW
+WDWW
+.Q..
+.R..
+violations:
+indoor_props_never_on_the_street at (1, 3, 0)

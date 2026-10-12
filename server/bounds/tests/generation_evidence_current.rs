@@ -3,7 +3,7 @@
 
 use bounds::generation_evidence::{
     build_all, build_detour_worst_svgs, building_types_svg_path, detour_worst_svg_path,
-    envelopes_svg_path, interiors_svg_path, land_use_svg_path, streets_svg_path,
+    envelopes_svg_path, interiors_svg_path, land_use_svg_path, props_svg_path, streets_svg_path,
 };
 
 fn assert_current(path: std::path::PathBuf, expected: &str) {
@@ -29,6 +29,7 @@ fn generation_evidence_is_current() {
         assert_current(envelopes_svg_path(svgs.seed), &svgs.envelopes);
         assert_current(building_types_svg_path(svgs.seed), &svgs.building_types);
         assert_current(interiors_svg_path(svgs.seed), &svgs.interiors);
+        assert_current(props_svg_path(svgs.seed), &svgs.props);
         assert_current(
             bounds::neighbourhood_evidence::neighbourhoods_svg_path(svgs.seed),
             &svgs.neighbourhoods,

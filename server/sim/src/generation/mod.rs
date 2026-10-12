@@ -59,6 +59,10 @@ pub mod neighbourhoods;
 pub mod plots;
 #[cfg(not(feature = "test-fixtures"))]
 mod plots;
+#[cfg(feature = "test-fixtures")]
+pub mod props;
+#[cfg(not(feature = "test-fixtures"))]
+mod props;
 pub mod record;
 pub mod site;
 #[cfg(feature = "test-fixtures")]
@@ -73,6 +77,7 @@ pub use envelopes::{Envelope, EnvelopeMap, EnvelopeOutcome, RejectReason};
 pub use interiors::{Interior, InteriorMap, InteriorOutcome};
 pub use land_use::{LandUse, LandUseCell, LandUseMap, Neighbourhood, NeighbourhoodParams, Region};
 pub use plots::{Plot, PlotMap};
+pub use props::{PlacedRow, Prop, PropMap, Role};
 pub use record::{DistrictRecord, RuleSetVersion, create};
 
 // `plan` and `generate` are reachable outside this crate only with
@@ -101,9 +106,9 @@ pub fn rect_seed_key(r: SiteBounds) -> u64 {
 
 /// Bumped whenever any implemented pass's algorithm or seeding changes in
 /// a way that could move its output for a fixed seed -- `tests/goldens/
-/// generation_v12.golden` is keyed to this, exactly like `sim::rng::
+/// generation_v13.golden` is keyed to this, exactly like `sim::rng::
 /// RNG_VERSION`/`sim::appearance::APPEARANCE_VERSION`.
-pub const GENERATION_VERSION: u32 = 12;
+pub const GENERATION_VERSION: u32 = 13;
 
 /// Every way generation itself can fail, across every implemented pass --
 /// one type, never a `Result<_, String>` per pass.
@@ -149,6 +154,24 @@ pub enum GenerationError {
     /// [`create`]: `site` overlaps a district already recorded -- a
     /// generated site is never generated again, under any rules.
     SiteAlreadyGenerated { site: SiteBounds },
+    /// Pass 7: a fixture pass 6 owed has no object def that may stand on
+    /// a floor, or none of them fits its cell even at its smallest
+    /// footprint -- an owed fixture is never quietly left out.
+    FixtureUnplaceable { x: i32, y: i32, tag: u32 },
+    /// Pass 7's verdict could not rasterise a window of placed rows (an
+    /// unknown def id, a window over the grid ceiling): the rows are not
+    /// readable, which is not a balance-config error.
+    WindowUnreadable { window: SiteBounds, reason: String },
+    /// Pass 7's verdict: placed props leave `count` walkable region(s)
+    /// enclosed or too narrow for the player body inside `window` (world
+    /// cells); `first` is the first one's bounds in sub-cells and `narrow`
+    /// says which check found it.
+    Unreachable {
+        count: usize,
+        window: SiteBounds,
+        first: SiteBounds,
+        narrow: bool,
+    },
 }
 
 impl std::fmt::Display for GenerationError {
@@ -200,6 +223,24 @@ impl std::fmt::Display for GenerationError {
                 f,
                 "generation::create: site {site:?} overlaps an already generated district"
             ),
+            GenerationError::FixtureUnplaceable { x, y, tag } => write!(
+                f,
+                "generation::props: no object def carrying tag {tag} stands on the fixture cell ({x}, {y})"
+            ),
+            GenerationError::WindowUnreadable { window, reason } => write!(
+                f,
+                "generation::props: window {window:?} could not be rasterised: {reason}"
+            ),
+            GenerationError::Unreachable {
+                count,
+                window,
+                first,
+                narrow,
+            } => write!(
+                f,
+                "generation::props: {count} {} region(s) in window {window:?}, first at {first:?}",
+                if *narrow { "too-narrow" } else { "enclosed" }
+            ),
         }
     }
 }
@@ -219,6 +260,9 @@ pub struct GenerationContent<'a> {
     /// structural parts (wall, floor, threshold...) are resolved from.
     pub room_types: &'a [defs::RoomTypeDef],
     pub tags: &'a [defs::TagDef],
+    /// Pass 7's vocabulary: every object def a prop may be stood from,
+    /// chosen by tag, never by key.
+    pub objects: &'a [defs::ObjectDef],
 }
 
 impl GenerationContent<'static> {
@@ -231,6 +275,7 @@ impl GenerationContent<'static> {
             building_types: defs::BUILDING_TYPES,
             room_types: defs::ROOM_TYPES,
             tags: defs::TAGS,
+            objects: defs::OBJECTS,
         }
     }
 }
@@ -401,13 +446,15 @@ impl Skeleton {
     }
 }
 
-/// One finished city plan: passes 1-5 ([`Skeleton`]) and pass 6's
-/// interiors. Never a `PlacedObject` -- still the abstract plan this
-/// module has always handed down (FR110).
+/// One finished city plan: passes 1-5 ([`Skeleton`]), pass 6's interiors
+/// and pass 7's placed rows. Rows in `placed_object`'s own shape, never
+/// the table itself (FR110).
 #[derive(Debug, Clone)]
 pub struct District {
     pub skeleton: Skeleton,
     pub interiors: InteriorMap,
+    /// Pass 7: every placed row and the collision they composite to.
+    pub props: PropMap,
 }
 
 impl District {
@@ -423,7 +470,8 @@ impl District {
         self.check_rules(content)?;
         self.skeleton.check_workplace_count(cfg, content)?;
         self.check_enterable_count(cfg)?;
-        self.check_institutions_enterable(content)
+        self.check_institutions_enterable(content)?;
+        self.check_reachability(content)
     }
 
     /// Builds this district's own [`DistrictSite`] -- the one adapter
@@ -439,8 +487,19 @@ impl District {
             self.skeleton.building_types.assignments(),
             &by_id,
             &self.interiors,
+            &self.props,
+            content.objects,
             &interiors::Vocabulary::new(content),
         )
+    }
+
+    /// Story 3.6's verdict: every building's own rows, rasterised through
+    /// their real colliders over its footprint and approach, leave no
+    /// enclosed region and no passage narrower than the player body; the
+    /// same over each street frontage's pavement band. Windowed, never the
+    /// whole district at sub-cell resolution.
+    pub fn check_reachability(&self, content: &GenerationContent) -> Result<(), GenerationError> {
+        props::check_reachability(self, content)
     }
 
     /// FR114's verdict: the count of enterable interiors (every building
@@ -782,6 +841,20 @@ pub struct GenerationConfig {
     pub interior_kind_min_enterable_percent: [i64; 4],
     /// No required kind may exceed this share of the enterable set.
     pub interior_max_kind_share_percent: i64,
+
+    // --- props (pass 7) ----------------------------------------------
+    /// The pavement band's depth on each side of a street edge, by tier
+    /// (arterial, street, lane), in cells.
+    pub props_pavement_cells: [i32; 3],
+    /// The distance between lamps along one side of a street (the two
+    /// sides are staggered half a cadence).
+    pub props_lamp_cadence_cells: i32,
+    /// Ambient street furniture per 100 cells of building-side run, at
+    /// the periphery and at the core.
+    pub props_ambient_per_100_min: i32,
+    pub props_ambient_per_100_max: i32,
+    /// The most of a room's floor solid colliders may cover.
+    pub props_max_solid_percent: i32,
 }
 
 fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
@@ -1038,6 +1111,24 @@ impl GenerationConfig {
                 balance,
                 "generation.interiors.max_kind_share_percent",
             ),
+            props_pavement_cells: [
+                get(balance, "generation.props.arterial_pavement_cells") as i32,
+                get(balance, "generation.props.street_pavement_cells") as i32,
+                get(balance, "generation.props.lane_pavement_cells") as i32,
+            ],
+            props_lamp_cadence_cells: get(balance, "generation.props.lamp_cadence_cells") as i32,
+            props_ambient_per_100_min: get(
+                balance,
+                "generation.props.ambient_per_100_cells_at_density_min",
+            ) as i32,
+            props_ambient_per_100_max: get(
+                balance,
+                "generation.props.ambient_per_100_cells_at_density_max",
+            ) as i32,
+            props_max_solid_percent: get(
+                balance,
+                "generation.props.max_solid_percent_of_room_floor",
+            ) as i32,
         };
 
         if cfg.coarse_cell_size_cells <= 0
@@ -1733,6 +1824,28 @@ mod tests {
                 100,
             ),
             seed("generation.interiors.max_kind_share_percent", 85, 1, 100),
+            seed("generation.props.arterial_pavement_cells", 3, 1, 8),
+            seed("generation.props.street_pavement_cells", 2, 1, 8),
+            seed("generation.props.lane_pavement_cells", 1, 1, 8),
+            seed("generation.props.lamp_cadence_cells", 12, 2, 64),
+            seed(
+                "generation.props.ambient_per_100_cells_at_density_min",
+                20,
+                0,
+                100,
+            ),
+            seed(
+                "generation.props.ambient_per_100_cells_at_density_max",
+                40,
+                0,
+                100,
+            ),
+            seed(
+                "generation.props.max_solid_percent_of_room_floor",
+                50,
+                10,
+                90,
+            ),
             seed("generation.neighbourhood.legible_step", 30, 0, 100000),
             seed("generation.neighbourhood.poor_band_max", 25, 0, 100000),
             seed("generation.neighbourhood.min_corners", 3, 0, 100000),
