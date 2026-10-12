@@ -790,27 +790,44 @@ fn plan_digest(
             r.floor, r.x, r.y, r.def_id, r.layer, r.orientation
         ));
     }
-    text.push_str(&format!(
-        "collision {:016x}\n",
-        collision_hash(props, &pm.site())
-    ));
+    text.push_str(&walkability_lines(props, &pm.site()));
     fnv1a(&text)
 }
 
-/// The FNV-1a of every cell of floor 0's cached collision over the site,
-/// row-major -- the map itself, not a count of blocked cells.
-fn collision_hash(props: &sim::generation::PropMap, site: &sim::world::Rect) -> u64 {
-    let fc = props
-        .collision(0)
-        .expect("floor 0 always has a collision map");
-    let mut text = String::new();
-    for y in site.y0..site.y1 {
-        for x in site.x0..site.x1 {
-            text.push(if fc.is_blocked(x, y) { '1' } else { '0' });
+/// One line per floor: the grid's bounds and the FNV-1a of every tile of
+/// it, row-major -- the grid itself, not a count of blocked tiles.
+fn walkability_lines(props: &sim::generation::PropMap, site: &sim::world::Rect) -> String {
+    let placements: Vec<sim::world::walkability::Placement> = props
+        .rows()
+        .map(|r| sim::world::walkability::Placement {
+            def_id: r.def_id,
+            anchor_x: r.x,
+            anchor_y: r.y,
+            floor: r.floor,
+        })
+        .collect();
+    let grids = sim::world::floor_grids(*site, &placements, FROZEN_OBJECTS)
+        .expect("a generated district rasterises");
+    let mut out = String::new();
+    for (floor, fc) in grids {
+        let b = fc.bounds();
+        let mut cells = String::new();
+        for y in b.y0..b.y1 {
+            for x in b.x0..b.x1 {
+                cells.push(if fc.is_blocked(x, y) { '1' } else { '0' });
+            }
+            cells.push('\n');
         }
-        text.push('\n');
+        out.push_str(&format!(
+            "walkability floor={floor} bounds={},{},{},{} {:016x}\n",
+            b.x0,
+            b.y0,
+            b.x1,
+            b.y1,
+            fnv1a(&cells)
+        ));
     }
-    fnv1a(&text)
+    out
 }
 
 fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {

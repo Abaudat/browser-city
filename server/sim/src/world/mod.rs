@@ -24,6 +24,7 @@ mod chunk;
 mod collision;
 #[cfg(feature = "test-fixtures")]
 pub mod fixture;
+mod raster;
 pub mod walkability;
 
 pub use chunk::{
@@ -34,3 +35,4 @@ pub use collision::{
     AreaSpec, FloorCollision, FloorSpec, MAX_CELLS_PER_FLOOR, NO_OWNER, Ownership, Rect,
     Transition, TransitionSpec, World, WorldSpec, cell_index,
 };
+pub use raster::{collider_cells, floor_grids};

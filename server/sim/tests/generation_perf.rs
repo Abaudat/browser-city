@@ -299,7 +299,7 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
     // prop, and street furniture stands on pavement or, for a lamp
     // completing the lighting, on ground a building does not cover -- so
     // the count is linear in the district, never in props x cells. The
-    // collision map is one bit per cell of the (padded) site extent.
+    // walkability grid is one bit per cell of the site extent.
     let footprint_cells: u64 = d
         .skeleton
         .envelopes
@@ -313,8 +313,8 @@ fn generation_at_the_1024_growth_target_stays_within_structural_bounds() {
         "{} placements exceed the footprint + pavement ceiling {placement_ceiling}",
         d.props.props().len()
     );
-    let fc = d.props.collision(0).expect("floor 0 collision");
-    let padded = (cfg.site_extent_cells as u64 + 4) * (cfg.site_extent_cells as u64 + 4);
+    let fc = d.walkability(0);
+    let padded = (cfg.site_extent_cells as u64) * (cfg.site_extent_cells as u64);
     assert!(
         (fc.dense_storage_bytes() as u64) * 8 <= padded.div_ceil(64) * 64,
         "collision storage {} bytes is over one bit per cell of {padded}",

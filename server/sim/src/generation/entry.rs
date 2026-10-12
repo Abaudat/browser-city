@@ -26,11 +26,7 @@ pub fn plan(
         content,
     );
     let props = props::run(city_seed, &skeleton, &interiors, cfg, content)?;
-    Ok(District {
-        skeleton,
-        interiors,
-        props,
-    })
+    District::new(skeleton, interiors, props, content.objects)
 }
 
 /// Passes 1-5 only: what a harness that reads nothing of the interiors

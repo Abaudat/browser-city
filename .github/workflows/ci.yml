@@ -356,8 +356,10 @@ jobs:
         run: bash ../scripts/ci/check-connected-client-path.sh
       - name: story 3.13 FR110, every generation draw goes through Rng::below and every harness through plan/generate
         run: bash ../scripts/ci/check-generation-entry-point.sh
-      - name: story 3.6 FR110/FR128, the district's collision is composited once by pass 7 and nothing infers it again
+      - name: story 3.6/3.8 FR110/FR128/FR135, the district's walkability is built once by generation and only repainted at runtime
         run: bash ../scripts/ci/check-no-runtime-collision-inference.sh
+      - name: story 3.8 FR135, no table or column stores or sends a walkability grid
+        run: bash ../scripts/ci/check-no-grid-table.sh
       - name: story 3.13 FR108/FR109, one writer for the district record
         run: bash ../scripts/ci/check-district-write-path.sh
       - name: story 6.3 FR89, nothing outside sim::author builds an Author

@@ -586,7 +586,7 @@ mod tests {
             types.assignments(),
             &by_id,
             &interiors,
-            &crate::generation::props::PropMap::test_fixture(pm.site(), Vec::new(), &[]).unwrap(),
+            &crate::generation::props::PropMap::test_fixture(pm.site(), Vec::new()),
             content.objects,
             &vocab,
         );

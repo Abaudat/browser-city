@@ -42,9 +42,9 @@ fn generate_at_the_balance_max_extent_stays_inside_its_ceiling() {
         "generate at {max_extent} cells took {secs} s, past {CEILING_SECS} s"
     );
 
-    let fc = d.props.collision(0).expect("floor 0 collision");
-    // One bit per cell of the site extent padded two cells a side.
-    let bytes = (max_extent as u64 + 4).pow(2).div_ceil(64) * 8;
+    let fc = d.walkability(0);
+    // One bit per cell of the site extent.
+    let bytes = (max_extent as u64).pow(2).div_ceil(64) * 8;
     assert!(
         fc.dense_storage_bytes() as u64 <= bytes,
         "collision is more than a bit a cell"

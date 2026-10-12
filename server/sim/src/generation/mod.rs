@@ -453,11 +453,47 @@ impl Skeleton {
 pub struct District {
     pub skeleton: Skeleton,
     pub interiors: InteriorMap,
-    /// Pass 7: every placed row and the collision they composite to.
+    /// Pass 7: every placed row.
     pub props: PropMap,
+    /// One tile grid per floor `MIN_FLOOR..=MAX_FLOOR`, rasterised from
+    /// `props` over the site, once.
+    walkability: std::collections::BTreeMap<i8, crate::world::FloorCollision>,
 }
 
 impl District {
+    /// Assembles a district and rasterises its walkability: `Err` for a
+    /// row naming an unknown def or a collider that leaves the site.
+    pub fn new(
+        skeleton: Skeleton,
+        interiors: InteriorMap,
+        props: PropMap,
+        objects: &[defs::ObjectDef],
+    ) -> Result<Self, GenerationError> {
+        let placements: Vec<crate::world::walkability::Placement> = props
+            .rows()
+            .map(|r| crate::world::walkability::Placement {
+                def_id: r.def_id,
+                anchor_x: r.x,
+                anchor_y: r.y,
+                floor: r.floor,
+            })
+            .collect();
+        let walkability = crate::world::floor_grids(skeleton.plots.site(), &placements, objects)
+            .map_err(GenerationError::InvalidConfig)?;
+        Ok(District {
+            skeleton,
+            interiors,
+            props,
+            walkability,
+        })
+    }
+
+    /// The tile grid of `floor`: blocked iff a placed collider touches the
+    /// tile, bounded by the site. Every floor in range has one.
+    pub fn walkability(&self, floor: i8) -> &crate::world::FloorCollision {
+        &self.walkability[&floor]
+    }
+
     /// Every verdict [`generate`] holds a finished plan to, in its order:
     /// the building count, the rules, the workplace count, the enterable
     /// floor, then every distributed institution enterable.

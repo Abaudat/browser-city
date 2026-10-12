@@ -27,9 +27,8 @@
 //! verdict over what stands is [`super::District::check_reachability`]:
 //! the whole-cell reading where it clears a window (sound under two
 //! tested conditions, see [`whole_cells_open`]), the exact sub-cell check
-//! ([`window_findings`]) everywhere else. The collision map is built
-//! once, here, as one [`FloorCollision`] per floor, and cached on
-//! [`PropMap`]; nothing recomputes it.
+//! ([`window_findings`]) everywhere else. The district's collision is
+//! rasterised from these rows once, by [`super::District::new`].
 //!
 //! **Carriers, never consequence.** Every prop is placed in its empty,
 //! default state. A def carrying a tag any row owes -- a distribution
@@ -48,11 +47,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::generated::defs;
 use crate::rng::{Rng, seed_from_ids};
 use crate::rules::{CoherenceMode, RowRatio, TagId};
+use crate::world::Rect;
 use crate::world::walkability::{
     self, Finding, Placement, WalkabilityGrid, enclosed_regions, footprint_origin, narrow_passages,
     player_body_subcells,
 };
-use crate::world::{FloorCollision, Rect};
 
 use super::interiors::{Interior, InteriorMap, InteriorOutcome, Parts, Vocabulary};
 use super::streets::{Axis, Side, StreetClass, StreetEdge};
@@ -355,13 +354,11 @@ fn bands(e: &StreetEdge, cfg: &GenerationConfig) -> Vec<Band> {
     ]
 }
 
-/// Pass 7's output: every placed row, the street it stands on and the
-/// district's collision, built once.
+/// Pass 7's output: every placed row and the street it stands on.
 #[derive(Debug, Clone)]
 pub struct PropMap {
     props: Vec<Prop>,
     street: StreetGrid,
-    collision: BTreeMap<i8, FloorCollision>,
     skips: PropSkips,
     /// The tags every cell of the street's pavement carries besides the
     /// pavement part (what a distribution row is judged `per`).
@@ -375,11 +372,7 @@ impl PropMap {
     /// An empty map over a site with no street -- a hand-built district's
     /// stand-in for harnesses that never run pass 7.
     #[cfg(any(test, feature = "test-fixtures"))]
-    pub fn test_fixture(
-        site: Rect,
-        props: Vec<Prop>,
-        objects: &[defs::ObjectDef],
-    ) -> Result<Self, GenerationError> {
+    pub fn test_fixture(site: Rect, props: Vec<Prop>) -> Self {
         let n = (site.width() * site.height()).max(0) as usize;
         let street = StreetGrid {
             bounds: site,
@@ -389,15 +382,13 @@ impl PropMap {
         };
         let mut props = props;
         props.sort_by_key(|p| p.row);
-        let collision = build_collision(site, &props, objects)?;
-        Ok(PropMap {
+        PropMap {
             props,
             street,
-            collision,
             skips: PropSkips::default(),
             street_tags: Vec::new(),
             windows: Vec::new(),
-        })
+        }
     }
 
     /// Every placed prop, sorted by row `(floor, y, x, def)`.
@@ -413,12 +404,6 @@ impl PropMap {
 
     pub fn street(&self) -> &StreetGrid {
         &self.street
-    }
-
-    /// The cached collision of floor `floor`: a cell is blocked iff a
-    /// placed collider touches it. Built once in [`run`].
-    pub fn collision(&self, floor: i8) -> Option<&FloorCollision> {
-        self.collision.get(&floor)
     }
 
     pub fn skips(&self) -> PropSkips {
@@ -449,52 +434,6 @@ pub fn extent(row: &PlacedRow, def: &defs::ObjectDef) -> Rect {
 /// The def of `id` among `objects`.
 pub fn def_of(objects: &[defs::ObjectDef], id: u32) -> Option<&defs::ObjectDef> {
     objects.iter().find(|o| o.id == id)
-}
-
-/// The cell range a def's collider touches, in world cells, for a row:
-/// blocked iff the sub-cell rect overlaps the cell at all.
-pub fn collider_cells(row: &PlacedRow, def: &defs::ObjectDef) -> Option<Rect> {
-    let c = def.collider?;
-    let s = defs::COLLIDER_SUBCELLS_PER_CELL;
-    let (ox, oy) = footprint_origin(row.x, row.y, def.height);
-    Some(Rect {
-        x0: ox + c.x0.div_euclid(s),
-        y0: oy + c.y0.div_euclid(s),
-        x1: ox + (c.x1 + s - 1).div_euclid(s),
-        y1: oy + (c.y1 + s - 1).div_euclid(s),
-    })
-}
-
-fn build_collision(
-    bounds: Rect,
-    props: &[Prop],
-    objects: &[defs::ObjectDef],
-) -> Result<BTreeMap<i8, FloorCollision>, GenerationError> {
-    let by_id: BTreeMap<u32, &defs::ObjectDef> = objects.iter().map(|o| (o.id, o)).collect();
-    let mut per_floor: BTreeMap<i8, Vec<Rect>> = BTreeMap::new();
-    for p in props {
-        let def = by_id.get(&p.row.def_id).ok_or_else(|| {
-            GenerationError::InvalidConfig(format!("props: unknown def {}", p.row.def_id))
-        })?;
-        if let Some(c) = collider_cells(&p.row, def) {
-            per_floor.entry(p.row.floor).or_default().push(c);
-        }
-    }
-    per_floor.entry(0).or_default();
-    // A little margin: a prop may overhang the site's own edge.
-    let padded = Rect {
-        x0: bounds.x0 - 2,
-        y0: bounds.y0 - 2,
-        x1: bounds.x1 + 2,
-        y1: bounds.y1 + 2,
-    };
-    let mut out = BTreeMap::new();
-    for (floor, colliders) in per_floor {
-        let fc =
-            FloorCollision::build(padded, &colliders).map_err(GenerationError::InvalidConfig)?;
-        out.insert(floor, fc);
-    }
-    Ok(out)
 }
 
 // --- the catalogue ----------------------------------------------------
@@ -756,11 +695,9 @@ pub fn run(
     let windows = windows_of(cfg, skeleton, &street, &props);
 
     props.sort_by_key(|p| p.row);
-    let collision = build_collision(skeleton.plots.site(), &props, cat.objects)?;
     Ok(PropMap {
         props,
         street,
-        collision,
         skips,
         street_tags: cat
             .street_tags
@@ -1348,7 +1285,7 @@ pub fn whole_cells_open(
         let Some(def) = def_of(objects, r.def_id) else {
             return false;
         };
-        if let Some(c) = collider_cells(r, def) {
+        if let Some(c) = crate::world::collider_cells(r.x, r.y, def) {
             for y in c.y0.max(window.y0)..c.y1.min(window.y1) {
                 for x in c.x0.max(window.x0)..c.x1.min(window.x1) {
                     blocked[idx(x, y)] = true;
@@ -2531,7 +2468,7 @@ mod tests {
     }
 
     #[test]
-    fn the_collision_map_is_the_rows_rasterised_and_a_collider_less_prop_adds_nothing() {
+    fn the_floor_grids_are_the_rows_rasterised_and_a_collider_less_prop_adds_nothing() {
         let site = Rect {
             x0: 0,
             y0: 0,
@@ -2539,7 +2476,6 @@ mod tests {
             y1: 32,
         };
         let props = collision_props();
-        let map = PropMap::test_fixture(site, props.clone(), defs::OBJECTS).unwrap();
         let s = defs::COLLIDER_SUBCELLS_PER_CELL;
         let placements: Vec<Placement> = props
             .iter()
@@ -2562,7 +2498,8 @@ mod tests {
             defs::OBJECTS,
         )
         .unwrap();
-        let fc = map.collision(0).unwrap();
+        let grids = crate::world::floor_grids(site, &placements, defs::OBJECTS).unwrap();
+        let fc = &grids[&0];
         let mut blocked = 0;
         for y in site.y0..site.y1 {
             for x in site.x0..site.x1 {
@@ -2579,20 +2516,6 @@ mod tests {
     }
 
     #[test]
-    fn the_collision_map_is_built_once_and_read_from_the_same_allocation() {
-        let site = Rect {
-            x0: 0,
-            y0: 0,
-            x1: 64,
-            y1: 32,
-        };
-        let map = PropMap::test_fixture(site, collision_props(), defs::OBJECTS).unwrap();
-        let a = map.collision(0).unwrap() as *const FloorCollision;
-        let b = map.collision(0).unwrap() as *const FloorCollision;
-        assert!(std::ptr::eq(a, b));
-    }
-
-    #[test]
     fn the_rows_are_sorted_and_carry_no_extent_of_their_own() {
         // `PlacedRow` is exactly floor, anchor, def, layer, orientation.
         let site = Rect {
@@ -2601,7 +2524,7 @@ mod tests {
             x1: 64,
             y1: 32,
         };
-        let map = PropMap::test_fixture(site, collision_props(), defs::OBJECTS).unwrap();
+        let map = PropMap::test_fixture(site, collision_props());
         let rows: Vec<PlacedRow> = map.rows().copied().collect();
         let mut sorted = rows.clone();
         sorted.sort();

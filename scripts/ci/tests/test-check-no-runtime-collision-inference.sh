@@ -35,6 +35,24 @@ check "a collision grid built outside generation/ and world/ fails" 1 run "$d"
 check_contains "names the file" "routing.rs" "$(run "$d" 2>&1)"
 
 d="$(repo)"
+printf '%s
+' 'fn spawn() { let g = floor_grids(b, &p, o); }' > "$d/server/sim/src/routing.rs"
+( cd "$d" && git add -A ) >/dev/null 2>&1
+check "the rows-to-grids function outside generation/ and world/ fails" 1 run "$d"
+
+d="$(repo)"
+printf '%s
+' 'fn repair() { grid.repaint(r, &c); }' > "$d/server/src/lib.rs"
+( cd "$d" && git add -A ) >/dev/null 2>&1
+check "a runtime window repaint passes" 0 run "$d"
+
+d="$(repo)"
+printf '%s
+' 'fn d() { floor_grids(b, &p, o); }' > "$d/server/sim/src/generation/mod.rs"
+( cd "$d" && git add -A ) >/dev/null 2>&1
+check "generation/ may build the whole grids" 0 run "$d"
+
+d="$(repo)"
 printf '%s\n' 'fn spawn() { walkability::rasterise(b, 0, &p, o); }' > "$d/server/sim/src/routing.rs"
 ( cd "$d" && git add -A ) >/dev/null 2>&1
 check "rasterising placements outside generation/ and world/ fails" 1 run "$d"

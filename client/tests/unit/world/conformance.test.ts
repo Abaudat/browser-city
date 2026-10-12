@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import { chunkKey } from "../../../src/world/chunk";
 import type { ColliderSource } from "../../../src/world/collision-grid";
 import { CollisionGrid } from "../../../src/world/collision-grid";
+import { npcWalkability } from "../../../src/world/npc-walkable";
 import { NO_OWNER, type OwnershipArea, OwnershipIndex } from "../../../src/world/ownership";
 import { TransitionIndex, type TransitionSpec } from "../../../src/world/transitions";
 import { OPEN_ENTRY_BAND } from "./entry-band";
@@ -65,7 +66,23 @@ interface Case {
   readonly expect_room_id: number;
 }
 
+interface RasterDef {
+  readonly id: number;
+  readonly width: number;
+  readonly height: number;
+  readonly collider: Rect | null;
+}
+
+interface RasterCase {
+  readonly subcells_per_cell: number;
+  readonly bounds: Rect;
+  readonly defs: readonly RasterDef[];
+  readonly rows: readonly { floor: number; x: number; y: number; def_id: number }[];
+  readonly blocked: readonly (readonly [number, number, number])[];
+}
+
 interface Fixture {
+  readonly raster: RasterCase;
   readonly floors: readonly FloorSpec[];
   readonly transitions: readonly TransitionDoc[];
   readonly building_areas: readonly AreaSpec[];
@@ -234,5 +251,67 @@ describe("world conformance fixture", () => {
         });
       }
     }
+  });
+
+  // Story 3.8 AC2 (FR135): the rasterisation rule, asserted from the same
+  // hand-typed case the Rust side asserts. No code is shared (NFR30).
+  it("story 3.8: the client's derived walkability blocks exactly the raster case's tiles", () => {
+    const { raster } = fixture;
+    expect(raster.subcells_per_cell).toBe(SUBCELLS_PER_CELL);
+    const defs = new Map<number, ColliderSource>(
+      raster.defs.map((d) => [
+        d.id,
+        { width: d.width, height: d.height, ...(d.collider ? { collider: d.collider } : {}) },
+      ]),
+    );
+    const grid = new CollisionGrid(SUBCELLS_PER_CELL, defs);
+    let objectId = 1n;
+    for (const r of raster.rows) {
+      grid.insert({
+        objectId: objectId++,
+        defId: r.def_id,
+        x: r.x,
+        y: r.y,
+        floor: r.floor,
+        layer: 0,
+        orientation: 0,
+        chunkKey: 0n,
+      });
+    }
+    const walkability = npcWalkability(grid);
+    const floors = new Set([0, 1, ...raster.blocked.map(([f]) => f)]);
+    const expected = new Set(raster.blocked.map(([f, x, y]) => `${f},${x},${y}`));
+    expect(expected.size).toBeGreaterThan(0);
+    for (const floor of floors) {
+      for (let y = raster.bounds.y0; y < raster.bounds.y1; y++) {
+        for (let x = raster.bounds.x0; x < raster.bounds.x1; x++) {
+          expect(!walkability.walkable(floor, x, y), `(${x}, ${y}) floor ${floor}`).toBe(
+            expected.has(`${floor},${x},${y}`),
+          );
+        }
+      }
+    }
+  });
+
+  it("story 3.8: every tile the server's grid leaves free is free in the client's grid, at every sub-cell", () => {
+    const grid = buildGridFromFixture();
+    let freeTiles = 0;
+    for (const floorSpec of fixture.floors) {
+      const b = floorSpec.bounds;
+      for (let y = b.y0; y < b.y1; y++) {
+        for (let x = b.x0; x < b.x1; x++) {
+          const serverBlocked = floorSpec.colliders.some(
+            (r) => x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1,
+          );
+          if (serverBlocked) continue;
+          freeTiles++;
+          expect(
+            grid.entriesInCell(floorSpec.floor, x, y),
+            `(${x}, ${y}) floor ${floorSpec.floor}`,
+          ).toHaveLength(0);
+        }
+      }
+    }
+    expect(freeTiles).toBeGreaterThan(0);
   });
 });
