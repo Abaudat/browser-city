@@ -6,6 +6,7 @@
 //   runs/run-*.json           every consecutive run of the final code, each on the runner
 //   divergence.json           the density divergence sweep, after tightening
 //   divergence-before.json    the same sweep before it
+//   low-end.json              the one-core run (`perf-soak.yml`, `taskset -c 0`), reported
 // `scripts/ci/check-l3-budget-report-current.sh` regenerates it and fails on
 // any drift. Node only, no npm dependency.
 //
@@ -28,6 +29,7 @@ const record = read("l3-budget.json");
 const baseline = read("baseline-main-thread.json");
 const divergence = read("divergence.json");
 const divergenceBefore = read("divergence-before.json");
+const lowEnd = read("low-end.json");
 const runs = readdirSync(join(args["raw-dir"], "runs"))
   .filter((f) => /^run-.*\.json$/.test(f))
   .sort()
@@ -157,6 +159,21 @@ out();
 const worst = (f) => Math.max(...runs.map(f));
 out(
   `Worst ratios to the calibration workload (fixed pure JS, not L3): main window p95 ${worst((r) => r.l3Ratios.p95).toFixed(3)}, p99 ${worst((r) => r.l3Ratios.p99).toFixed(3)}; worker solve p95 ${worst((r) => r.l3SolveMs.p95 / r.calibrationMs).toFixed(3)}, p99 ${worst((r) => r.l3SolveMs.p99 / r.calibrationMs).toFixed(3)}; sweep p95 ${worst((r) => r.l3Ratios.sweepP95).toFixed(3)}, p99 ${worst((r) => r.l3Ratios.sweepP99).toFixed(3)}. The tripwire's recorded ratios are stamped from these, +25% is the gate.`,
+);
+out();
+out("## On one core (reported)");
+out();
+out(
+  `CDP cannot throttle a worker, so the low-end figure pins the whole browser to one core (\`taskset -c 0\`, \`perf-soak.yml\`; ${lowEnd.environment.cpu}, run ${lowEnd.environment.runId}): the frame's thread, the worker and the rasteriser fight for it. Calibration ${lowEnd.calibrationMs.toFixed(1)} ms on the main thread, ${lowEnd.workerCalibrationMs.toFixed(1)} ms in the worker. Reported, never gated.`,
+);
+out();
+out("| Window | Frames | p50 | p95 | p99 | max |");
+out("| --- | --- | --- | --- | --- | --- |");
+out(row("main-thread window", lowEnd.mainWindowMs));
+out(row("worker solve per instant", lowEnd.workerSolveMs));
+out();
+out(
+  `Stale frames ${lowEnd.staleFrames}, skipped requests ${lowEnd.skippedRequests}, worker restarts ${lowEnd.restarts}, the most frames a result was drawn after its instant: ${lowEnd.maxLagFrames}. The lookahead absorbs a solve several times the budget: a starved worker would show here as counted stale frames, not as silence.`,
 );
 out();
 out("## Where the solve's time goes");

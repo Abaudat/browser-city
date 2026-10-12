@@ -16,7 +16,7 @@ export const L3_P99_BUDGET_MS = 4;
  * inherits, not held against the verdict. */
 export const L3_P95_MARGIN_MS = 1.6;
 /** The calibration time of the verdict-of-record machine (EPYC 7763, run
- * 38236356617): a machine slower than this is not held to the absolute budget
+ * 38248089652): a machine slower than this is not held to the absolute budget
  * on the worker's solve, only to the recorded ratio. */
 export const REFERENCE_CALIBRATION_MS = 5.5;
 
@@ -26,16 +26,16 @@ export const REFERENCE_CALIBRATION_MS = 5.5;
  * workload (not L3 code) run in the same page just before the window, and the
  * ratio is held at the recorded one +25%. The NFR11 budget above stays
  * absolute and the verdict (`met`) is judged on it. Stamped at the worst ratio
- * of the final code's `e2e-perf` runs on the runner (run 38236356617, attempts
- * 1-3, and run 38235184667: EPYC 7763 and 9V74), whose figures are in
+ * of the final code's `e2e-perf` runs on the runner (run 38248089652, attempts
+ * 1-4: EPYC 7763 twice, Xeon 8573C, EPYC 9V45), whose figures are in
  * `docs/spikes/5.4-l3-frame-budget.md`. Lowered when L3 gets cheaper, never
  * raised. */
 /** The main thread's window: apply, request, layer update. */
 export const RECORDED_P95_RATIO = 0.09;
 export const RECORDED_P99_RATIO = 0.11;
 /** The worker's own solve time per instant, in the real ticker. */
-export const RECORDED_WORKER_P95_RATIO = 0.37;
-export const RECORDED_WORKER_P99_RATIO = 0.5;
+export const RECORDED_WORKER_P95_RATIO = 0.35;
+export const RECORDED_WORKER_P99_RATIO = 0.48;
 /** The worker's solve over successive instants with no ticker: the supplementary
  * sweep, taken inside the worker. */
 export const RECORDED_WORKER_SWEEP_P95_RATIO = 0.26;
@@ -54,15 +54,15 @@ export const MIN_MEASURED_FRAMES = 3_000;
 /** Allocation attributed to `src/l3/`, `src/l3-worker/` and the crowd update
  * inside the worker, bytes per frame, steady state, for the fixed rush-hour
  * crowd (HeapProfiler sampling on the worker target). Stamped at the worst of
- * the final code's runner runs (12.1 KB, run 38236356617 attempt 2) plus 25%,
+ * the final code's runner runs (12.7 KB, run 38248089652 attempt 4) plus 25%,
  * so a doubling goes red; the remainder is the micro-path search each leg start
  * runs. Restamp it when the figure moves, never above measured + 25%. */
 export const MAX_L3_ALLOC_BYTES_PER_FRAME = 15_360;
 
 /** The main thread's share of the same allocation, bytes per ticker frame,
  * through the real ticker with the render off: the apply, the post and the
- * layer's update. Stamped at the worst of the same runs (1.5 KB) plus 25%. */
-export const MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME = 2_048;
+ * layer's update. Stamped at the worst of the same runs (0.9 KB) plus 25%. */
+export const MAX_L3_MAIN_ALLOC_BYTES_PER_FRAME = 1_152;
 
 /** One 60 Hz frame, in ms: the longest a collection may stop a thread. */
 export const FRAME_MS = 1000 / 60;

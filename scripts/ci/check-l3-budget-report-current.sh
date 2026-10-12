@@ -9,7 +9,7 @@ RAW_DIR="$REPO_ROOT/docs/spikes/5.4-l3-frame-budget"
 COMMITTED="$REPO_ROOT/docs/spikes/5.4-l3-frame-budget.md"
 GENERATOR="$REPO_ROOT/scripts/dev/generate-l3-budget-report.mjs"
 
-for f in "$RAW_DIR/l3-budget.json" "$RAW_DIR/baseline-main-thread.json" "$RAW_DIR/divergence.json" "$RAW_DIR/divergence-before.json" "$COMMITTED" "$GENERATOR"; do
+for f in "$RAW_DIR/l3-budget.json" "$RAW_DIR/baseline-main-thread.json" "$RAW_DIR/divergence.json" "$RAW_DIR/divergence-before.json" "$RAW_DIR/low-end.json" "$COMMITTED" "$GENERATOR"; do
   [ -f "$f" ] || {
     echo "check-l3-budget-report-current: $f not found" >&2
     exit 1
