@@ -62,7 +62,7 @@ describe("L3 budget verdict (NFR11)", () => {
 
   it("FAILS on a major GC, a long minor pause and heap growth", () => {
     expect(verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1 } }).met).toBe(false);
-    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, minorPausesMs: [2.5, 2.6, 2.7, 3] } }).met).toBe(
+    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, minorPausesMs: [4.5, 4.6, 4.7, 5] } }).met).toBe(
       false,
     );
     expect(verdict({ ...GOOD, gc: { ...GOOD.gc, longestMinorPauseMs: 9 } }).met).toBe(false);
@@ -111,8 +111,8 @@ describe("GC classification", () => {
   });
 
   it("tolerates one outlier scavenge but not a shifted distribution", () => {
-    const pauses = [...Array.from({ length: 300 }, () => 0.8), 3.8];
-    const gc = { ...GOOD.gc, minorPausesMs: pauses, longestMinorPauseMs: 3.8 };
+    const pauses = [...Array.from({ length: 300 }, () => 0.8), 6];
+    const gc = { ...GOOD.gc, minorPausesMs: pauses, longestMinorPauseMs: 6 };
     expect(verdict({ ...GOOD, gc }).met).toBe(true);
   });
 

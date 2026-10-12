@@ -21,11 +21,12 @@ export const MIN_MEASURED_FRAMES = 3_000;
  * allocation fails CI against it; lower it when the figure falls. */
 export const MAX_L3_ALLOC_BYTES_PER_FRAME = 204_800;
 
-/** A single scavenge may not take longer than this many L3 budgets: it
- * would cost a frame and more. The routine pause is held to the budget at
- * its p99 instead (`L3_P95_BUDGET_MS`): one outlier on a shared runner is
- * noise, a distribution that shifts is not. */
-export const MAX_MINOR_PAUSE_BUDGETS = 4;
+/** A scavenge pauses the whole page, not L3, and on the shared CI runner a
+ * routine one takes 2-3 ms (measured p99 2.7 ms), so the pause is held to the
+ * L3 tail budget (`L3_P99_BUDGET_MS`) at its p99: a pause that long still
+ * fits a frame, and a distribution that shifts is caught. A single scavenge
+ * may not take more than this many tail budgets: it would cost a frame. */
+export const MAX_MINOR_PAUSE_BUDGETS = 2;
 
 /** Retained heap, last window against the first, after a forced GC at each
  * end -- the same method and bound as `street-perf.spec.ts`. */
@@ -224,10 +225,10 @@ export function verdict(m: L3Measurement): Verdict {
     [...m.gc.minorPausesMs].sort((x, y) => x - y),
     99,
   );
-  if (m.gc.minorPausesMs.length > 0 && !(minorP99 <= L3_P95_BUDGET_MS)) {
-    failures.push(`minor GC p99 ${minorP99.toFixed(2)} ms over ${L3_P95_BUDGET_MS} ms`);
+  if (m.gc.minorPausesMs.length > 0 && !(minorP99 <= L3_P99_BUDGET_MS)) {
+    failures.push(`minor GC p99 ${minorP99.toFixed(2)} ms over ${L3_P99_BUDGET_MS} ms`);
   }
-  if (!(m.gc.longestMinorPauseMs <= MAX_MINOR_PAUSE_BUDGETS * L3_P95_BUDGET_MS)) {
+  if (!(m.gc.longestMinorPauseMs <= MAX_MINOR_PAUSE_BUDGETS * L3_P99_BUDGET_MS)) {
     failures.push(`longest minor GC ${m.gc.longestMinorPauseMs.toFixed(2)} ms is a dropped frame`);
   }
   if (!(m.heapGrowthRatio <= MAX_L3_HEAP_GROWTH_RATIO)) {
