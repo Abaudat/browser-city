@@ -21,8 +21,8 @@ import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import { REGION_RADIUS_CHUNKS } from "../../src/world/region";
 import { waitForPlayerControllable } from "./boot-test-support";
+import { areaRowsInChunk, arrivalCell, placedRowsInChunk } from "./district-support";
 import { expect, test } from "./fixtures";
-import { E2E_WORLD } from "./spacetime-harness.mjs";
 
 declare global {
   interface Window {
@@ -147,8 +147,11 @@ test("PLAYER_CONTROLLABLE is honest: a key pressed the instant it fires actually
 // `defs/objects` rows and the retraction stub is `wall_segment`, so the raw
 // `Stairs_Complete_2` and wall sheets are no longer fetched (the byte
 // budget stays, an upper bound). Story 2.14: 26 -- the interior floor
-// draws from the atlas instead of its own raw sheet.
-const ATLAS_REQUEST_COUNT = 26;
+// draws from the atlas instead of its own raw sheet. Story 3.16: 5 -- the
+// generated district draws only through packed atlas pages (no raw
+// `ModernTileset/` sheet is fetched at all) and, with no crowd mounted, the
+// character pages are the player's own look.
+const ATLAS_REQUEST_COUNT = 5;
 const ATLAS_BYTES_BUDGET = Math.ceil((1_451_572 * 1.05) / (16 * 1024)) * (16 * 1024);
 
 test("the atlas request count and byte total the mount actually fetches, once settled, stay inside budget (NFR1)", async ({
@@ -234,21 +237,27 @@ test("the atlas request count and byte total the mount actually fetches, once se
 });
 
 // Story 4.3: `REGION_APPLIED` is the initial interest region landing, and
-// what lands is exactly the region's rows -- never the world's. The seeded
-// e2e world (`spacetime-harness.mjs`) holds one `placed_object` and one
-// `actor_location` in every chunk of a (2 * span + 1)-square block; the
-// region is the (2 * radius + 1)-square around spawn. A client that
-// subscribed any region table whole would deliver the whole block and fail
-// the exact count.
+// what lands is exactly the region's rows -- never the world's. The generated
+// district holds rows in every chunk of its site; the region is the
+// (2 * radius + 1)-square around spawn. A client that subscribed any region
+// table whole would deliver the whole district and fail the exact count.
 test("the rows delivered by the time the initial region has applied are exactly the region's, not the world's", async ({
   page,
 }) => {
-  const regionChunks = (2 * REGION_RADIUS_CHUNKS + 1) ** 2;
-  const worldChunks = (2 * E2E_WORLD.span + 1) ** 2;
-  // The precondition that lets the assertion fail: the world is bigger
-  // than the region, and the region lies wholly inside it.
-  expect(REGION_RADIUS_CHUNKS).toBeLessThanOrEqual(E2E_WORLD.span);
-  expect(worldChunks).toBeGreaterThan(regionChunks);
+  const home = {
+    cx: Math.floor(arrivalCell().x / 32),
+    cy: Math.floor(arrivalCell().y / 32),
+  };
+  let expected = 0;
+  for (let dx = -REGION_RADIUS_CHUNKS; dx <= REGION_RADIUS_CHUNKS; dx++) {
+    for (let dy = -REGION_RADIUS_CHUNKS; dy <= REGION_RADIUS_CHUNKS; dy++) {
+      expected += placedRowsInChunk(home.cx + dx, home.cy + dy);
+      expected += areaRowsInChunk(home.cx + dx, home.cy + dy);
+    }
+  }
+  // The precondition that lets the assertion fail: the district is bigger
+  // than the region.
+  expect(placedRowsInChunk(0, 0)).toBeGreaterThan(0);
 
   await page.goto("/");
   await page.waitForFunction(
@@ -260,9 +269,9 @@ test("the rows delivered by the time the initial region has applied are exactly 
     const inserts = window.__bc?.region?.inserts ?? {};
     return Object.values(inserts).reduce((sum, n) => sum + n, 0);
   });
-  // One placed_object and one actor_location per region chunk, and shop
-  // A's seeded cupboard (a second placed_object in the spawn chunk).
-  expect(rows).toBe(regionChunks * 2 + 1);
+  // Every placed_object, building_area and room_area of the region's
+  // chunks, and nothing else (the district places no actor or transition).
+  expect(rows).toBe(expected);
 });
 
 test("FIRST_STEP is honest: absent until a key moves the body, then set after it and never before PLAYER_CONTROLLABLE", async ({

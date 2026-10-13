@@ -543,3 +543,51 @@ export function streetAcrossChunkBorder(
   if (!best) throw new Error(`no street crossing a chunk border near ${from.x},${from.y}`);
   return { start: best.start, end: best.end, border: best.border };
 }
+
+const CHUNK = 32;
+
+/** How many `placed_object` rows the module holds in chunk `(cx, cy)` of
+ * floor 0: one ground row per cell of the site and its margin, plus the
+ * dump's objects. The same arithmetic `District::region_rows` writes. */
+export function placedRowsInChunk(cx: number, cy: number): number {
+  const margin = districtMargin();
+  const x0 = Math.max(cx * CHUNK, district.site.x0 - margin);
+  const x1 = Math.min((cx + 1) * CHUNK, district.site.x1 + margin);
+  const y0 = Math.max(cy * CHUNK, district.site.y0 - margin);
+  const y1 = Math.min((cy + 1) * CHUNK, district.site.y1 + margin);
+  const ground = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+  const props = district.objects.filter(
+    (o) => o.floor === 0 && Math.floor(o.x / CHUNK) === cx && Math.floor(o.y / CHUNK) === cy,
+  ).length;
+  return ground + props;
+}
+
+/** Building and room area rows in chunk `(cx, cy)` of floor 0. */
+export function areaRowsInChunk(cx: number, cy: number): number {
+  const inChunk = (a: { x0: number; y0: number }) =>
+    Math.floor(a.x0 / CHUNK) === cx && Math.floor(a.y0 / CHUNK) === cy;
+  return district.buildingAreas.filter(inChunk).length + district.roomAreas.filter(inChunk).length;
+}
+
+/** A row to watch come and go in chunk `(cx, cy)` of floor 0: the first dump
+ * object anchored there, else the ground row of the chunk's first cell (the
+ * ground is written first, row-major over the site and its margin, so its
+ * id is its position in that walk). */
+export function firstObjectIn(cx: number, cy: number): bigint {
+  const o = district.objects.find(
+    (r) => r.floor === 0 && Math.floor(r.x / CHUNK) === cx && Math.floor(r.y / CHUNK) === cy,
+  );
+  if (o) return o.objectId;
+  const margin = districtMargin();
+  const x = Math.max(cx * CHUNK, district.site.x0 - margin);
+  const y = Math.max(cy * CHUNK, district.site.y0 - margin);
+  const width = district.site.x1 - district.site.x0 + 2 * margin;
+  return BigInt((y - (district.site.y0 - margin)) * width + (x - (district.site.x0 - margin)) + 1);
+}
+
+/** `city.ground.margin_cells`, from the committed defs. */
+function districtMargin(): number {
+  const entry = committedDefs().balance.find((b) => b.key === "city.ground.margin_cells");
+  if (!entry) throw new Error("no city.ground.margin_cells balance key");
+  return entry.value;
+}
