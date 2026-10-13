@@ -506,3 +506,40 @@ export function openSquareNear(from: Cell, side: number): Cell {
   }
   throw new Error(`no open ${side}x${side} block near ${from.x},${from.y}`);
 }
+
+/** A straight east-west outdoor run of at least `minLen` cells that crosses a
+ * chunk border (a multiple of the chunk size) with `minEachSide` cells on
+ * each side of it, nearest `from`: where a walk streams a chunk in and out. */
+export function streetAcrossChunkBorder(
+  from: Cell,
+  minEachSide: number,
+): { start: Cell; end: Cell; border: number } {
+  const best = (() => {
+    let found: { start: Cell; end: Cell; border: number; d: number } | undefined;
+    for (let y = from.y - 60; y <= from.y + 60; y++) {
+      for (let border = 32 * Math.floor((from.x - 120) / 32); border < from.x + 120; border += 32) {
+        let x0 = border;
+        while (
+          x0 > border - 3 * minEachSide &&
+          fits(x0 - 1, y) &&
+          buildingOf({ x: x0 - 1, y }) === 0n
+        )
+          x0--;
+        let x1 = border;
+        while (
+          x1 < border + 3 * minEachSide &&
+          fits(x1 + 1, y) &&
+          buildingOf({ x: x1 + 1, y }) === 0n
+        )
+          x1++;
+        if (!fits(border, y) || buildingOf({ x: border, y }) !== 0n) continue;
+        if (border - x0 < minEachSide || x1 - border < minEachSide) continue;
+        const d = Math.abs(y - from.y) + Math.abs(border - from.x);
+        if (!found || d < found.d) found = { start: { x: x0, y }, end: { x: x1, y }, border, d };
+      }
+    }
+    return found;
+  })();
+  if (!best) throw new Error(`no street crossing a chunk border near ${from.x},${from.y}`);
+  return { start: best.start, end: best.end, border: best.border };
+}

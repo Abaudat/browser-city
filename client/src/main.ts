@@ -917,6 +917,7 @@ async function startWorldScene(
       localProps: handle
         .localPropCells()
         .map((p) => ({ objectId: p.objectId.toString(), x: p.x, y: p.y })),
+      boundAtlasPages: handle.distinctBoundAtlasPages,
     };
   });
   exposePlayerDrawnPointForE2e(handle.playerDrawnPoint);

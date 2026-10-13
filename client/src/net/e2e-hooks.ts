@@ -234,6 +234,8 @@ declare global {
         buildingId: string;
         roomId: string;
         localProps: { objectId: string; x: number; y: number }[];
+        /** Atlas page sources reachable from the display list right now. */
+        boundAtlasPages: number;
       };
       /** Story 5.2: every street citizen's agreed L3 state at a given city
        * time, computed from scratch -- never read from what was drawn. */
