@@ -16,12 +16,11 @@ import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
 import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
-import { SHOP_COUNTER_DEF_ID, STREET_PROPS } from "../../src/test-street/fixture";
 import { committedDefs } from "../unit/support/committed-defs";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
+import { arrivalCell, nearestInteractable, walkFreeCells, walkTo } from "./district-support";
 import { expect, test } from "./fixtures";
 import { ownerSql, readSpacetimeHandle } from "./spacetime-harness.mjs";
-import { walkRealCells } from "./walk-support";
 
 type WebSocketRoute = Parameters<Parameters<Page["routeWebSocket"]>[1]>[0];
 
@@ -224,7 +223,7 @@ test("a dropped connection returns by itself: the notice goes lost then reconnec
   expect(staticUpdates(rowsAfter.updates)).toEqual(staticUpdates(rowsBefore.updates));
 
   // The sender resumed: a step is on the server.
-  await walkRealCells(a, "east", 1.5, true);
+  await walkFreeCells(a, "walk", 1.5);
   const rest = await position(a);
   if (!rest) throw new Error("no rest position");
   await witness.waitForFunction(
@@ -291,7 +290,7 @@ test("the world moved while away: after reconnecting, another player's new posit
   await expect(notice(a)).toHaveText("Connection lost", { timeout: 5_000 });
 
   // B walks while A is cut off.
-  await walkRealCells(b, "east", 2.5, true);
+  await walkFreeCells(b, "walk", 2.5);
   const bRest = await position(b);
   if (!bRest) throw new Error("no position for B");
 
@@ -314,8 +313,10 @@ test("while the connection is down the body answers no click: no intent and no r
 }) => {
   const a = await (await browser.newContext()).newPage();
   const sockets = await openPlayer(a);
-  const counter = STREET_PROPS.find((p) => "defId" in p && p.defId === SHOP_COUNTER_DEF_ID);
-  if (!counter) throw new Error("no counter in the fixture");
+  // The nearest counter the generator placed, and a cell a few steps from
+  // its reach: the player stands where the counter is on screen.
+  const counter = nearestInteractable(arrivalCell());
+  await walkTo(a, counter.outOfReachCell);
   const balance = (key: string): number => {
     const entry = committedDefs().balance.find((b) => b.key === key);
     if (!entry) throw new Error(`no balance key ${key}`);
@@ -352,9 +353,9 @@ test("while the connection is down the body answers no click: no intent and no r
 
   sockets.mode = "pass";
   await expect(notice(a)).toHaveText("Reconnected", { timeout: 30_000 });
-  // The player starts out of the counter's reach: a click is now refused.
+  // The player stands out of the counter's reach: a click is now refused.
   await clickCounter();
-  await expect.poll(refusals).toEqual([String(counter.id)]);
+  await expect.poll(refusals).toEqual([String(counter.objectId)]);
 
   await a.context().close();
 });

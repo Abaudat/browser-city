@@ -12,8 +12,8 @@ import { bodyCell } from "../../src/world/movement";
 import { isBodyClear } from "../../src/world/standable";
 import { committedDefs, committedMovementConfig } from "../unit/support/committed-defs";
 import { districtWorld } from "../unit/support/district-fixture";
-import { walkRealSegment } from "./walk-support";
-import type { WalkKey, WalkSegment } from "./walk-types";
+import { segmentsOf, walkRealAxes, walkRealCellsDir, walkRealSegment } from "./walk-support";
+import type { WalkKey } from "./walk-types";
 
 const { district, world, ownership } = districtWorld();
 const config = committedMovementConfig();
@@ -191,39 +191,6 @@ export function routeBetween(from: Cell, to: Cell): Cell[] {
     }
   }
   throw new Error(`no route from ${from.x},${from.y} to ${to.x},${to.y}`);
-}
-
-/** A route as held-key segments: one per straight run, released once the
- * body's centre has reached the run's last cell centre. */
-export function segmentsOf(route: readonly Cell[], label = "route"): WalkSegment[] {
-  const out: WalkSegment[] = [];
-  let i = 0;
-  while (i < route.length - 1) {
-    const a = route[i] as Cell;
-    const b = route[i + 1] as Cell;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    let j = i + 1;
-    while (j + 1 < route.length) {
-      const n = route[j + 1] as Cell;
-      const c = route[j] as Cell;
-      if (n.x - c.x !== dx || n.y - c.y !== dy) break;
-      j++;
-    }
-    const end = route[j] as Cell;
-    const dir = DIRS.find((d) => d.dx === dx && d.dy === dy) as (typeof DIRS)[number];
-    const until =
-      dx > 0
-        ? ({ kind: "x-at-least", value: end.x + 0.5 } as const)
-        : dx < 0
-          ? ({ kind: "x-at-most", value: end.x + 0.5 } as const)
-          : dy > 0
-            ? ({ kind: "y-at-least", value: end.y + 0.5 } as const)
-            : ({ kind: "y-at-most", value: end.y + 0.5 } as const);
-    out.push({ label: `${label}-${out.length}-to-${end.x},${end.y}`, key: dir.key, until });
-    i = j;
-  }
-  return out;
 }
 
 /** Walks the player (wherever it stands now) to `to`, with real key presses,
@@ -488,21 +455,54 @@ export async function walkToPosition(
   to: { x: number; y: number; cell: Cell },
 ): Promise<void> {
   await walkTo(page, to.cell);
-  for (const axis of ["x", "y"] as const) {
-    const here = await page.evaluate(() => window.__bc?.playerPosition);
-    if (!here) throw new Error("no player position");
-    const delta = to[axis] - here[axis];
-    if (Math.abs(delta) < 0.02) continue;
-    const key: WalkKey =
-      axis === "x" ? (delta > 0 ? "ArrowRight" : "ArrowLeft") : delta > 0 ? "ArrowDown" : "ArrowUp";
-    const until =
-      axis === "x"
-        ? delta > 0
-          ? ({ kind: "x-at-least", value: to.x } as const)
-          : ({ kind: "x-at-most", value: to.x } as const)
-        : delta > 0
-          ? ({ kind: "y-at-least", value: to.y } as const)
-          : ({ kind: "y-at-most", value: to.y } as const);
-    await walkRealSegment(page, { label: `nudge-${axis}`, key, until });
+  await walkRealAxes(page, to);
+}
+
+/** Walks `cells` from where the player stands, in whichever of the four
+ * directions has the room for it (east first): what a spec that only needs
+ * the player to move does, whatever building it happens to stand in. */
+export async function walkFreeCells(page: Page, label: string, cells: number): Promise<void> {
+  const here = await page.evaluate(() => window.__bc?.playerPosition);
+  if (!here) throw new Error("no player position");
+  const from = bodyCell(here);
+  const options: { key: WalkKey; dx: number; dy: number }[] = [
+    { key: "ArrowRight", dx: 1, dy: 0 },
+    { key: "ArrowLeft", dx: -1, dy: 0 },
+    { key: "ArrowDown", dx: 0, dy: 1 },
+    { key: "ArrowUp", dx: 0, dy: -1 },
+  ];
+  const room = Math.ceil(cells) + 1;
+  for (const o of options) {
+    let ok = true;
+    for (let i = 1; i <= room && ok; i++) {
+      ok = canStep(
+        { x: from.x + o.dx * (i - 1), y: from.y + o.dy * (i - 1) },
+        { x: from.x + o.dx * i, y: from.y + o.dy * i },
+      );
+    }
+    if (ok) {
+      await walkRealCellsDir(page, label, cells, o.key);
+      return;
+    }
   }
+  throw new Error(`no direction with ${cells} free cells from ${from.x},${from.y}`);
+}
+
+/** The nearest cell to `from` with a clear `side` x `side` block of fitting
+ * cells to its south-east: where a body can walk a small square. */
+export function openSquareNear(from: Cell, side: number): Cell {
+  for (let r = 0; r <= 60; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const c = { x: from.x + dx, y: from.y + dy };
+        let ok = true;
+        for (let y = c.y; ok && y < c.y + side; y++) {
+          for (let x = c.x; ok && x < c.x + side; x++) ok = fits(x, y);
+        }
+        if (ok) return c;
+      }
+    }
+  }
+  throw new Error(`no open ${side}x${side} block near ${from.x},${from.y}`);
 }

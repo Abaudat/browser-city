@@ -4,7 +4,13 @@ import { basename, dirname, join } from "node:path";
 import { type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { committedMovementConfig } from "../unit/support/committed-defs";
-import { RELEASE_LAG, type WalkSegment } from "./walk-types";
+import {
+  RELEASE_LAG,
+  WALK_DIRECTIONS,
+  type WalkKey,
+  type WalkSegment,
+  type WalkUntil,
+} from "./walk-types";
 import {
   armWalkWatcher,
   awaitWalk,
@@ -122,5 +128,91 @@ export async function walkRealCells(
   const segment: WalkSegment = east
     ? { label, key: "ArrowRight", until: { kind: "x-at-least", value: here.x + cells } }
     : { label, key: "ArrowLeft", until: { kind: "x-at-most", value: here.x - cells } };
+  await walkRealSegment(page, segment);
+}
+
+/** A cell of the world, for a route. */
+export interface RouteCell {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** A route as held-key segments: one per straight run, released once the
+ * body's centre has reached the run's last cell centre. */
+export function segmentsOf(route: readonly RouteCell[], label = "route"): WalkSegment[] {
+  const out: WalkSegment[] = [];
+  let i = 0;
+  while (i < route.length - 1) {
+    const a = route[i] as RouteCell;
+    const b = route[i + 1] as RouteCell;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    let j = i + 1;
+    while (j + 1 < route.length) {
+      const n = route[j + 1] as RouteCell;
+      const c = route[j] as RouteCell;
+      if (n.x - c.x !== dx || n.y - c.y !== dy) break;
+      j++;
+    }
+    const end = route[j] as RouteCell;
+    const key = (Object.keys(WALK_DIRECTIONS) as WalkKey[]).find(
+      (k) => WALK_DIRECTIONS[k].x === dx && WALK_DIRECTIONS[k].y === dy,
+    ) as WalkKey;
+    const until =
+      dx > 0
+        ? ({ kind: "x-at-least", value: end.x + 0.5 } as const)
+        : dx < 0
+          ? ({ kind: "x-at-most", value: end.x + 0.5 } as const)
+          : dy > 0
+            ? ({ kind: "y-at-least", value: end.y + 0.5 } as const)
+            : ({ kind: "y-at-most", value: end.y + 0.5 } as const);
+    out.push({ label: `${label}-${out.length}-to-${end.x},${end.y}`, key, until });
+    i = j;
+  }
+  return out;
+}
+
+/** Walks, along each axis in turn, from where the player stands to the exact
+ * position `to`: one held key per axis, released the frame it is reached. */
+export async function walkRealAxes(page: Page, to: { x: number; y: number }): Promise<void> {
+  for (const axis of ["x", "y"] as const) {
+    const here = await page.evaluate(() => window.__bc?.playerPosition);
+    if (!here) throw new Error("no player position");
+    const delta = to[axis] - here[axis];
+    if (Math.abs(delta) < 0.02) continue;
+    const key: WalkKey =
+      axis === "x" ? (delta > 0 ? "ArrowRight" : "ArrowLeft") : delta > 0 ? "ArrowDown" : "ArrowUp";
+    const until: WalkUntil =
+      axis === "x"
+        ? delta > 0
+          ? { kind: "x-at-least", value: to.x }
+          : { kind: "x-at-most", value: to.x }
+        : delta > 0
+          ? { kind: "y-at-least", value: to.y }
+          : { kind: "y-at-most", value: to.y };
+    const segment: WalkSegment = { label: `nudge-${axis}`, key, until };
+    await walkRealSegment(page, segment);
+  }
+}
+
+/** Walks `cells` from where the player stands in the direction of `key`,
+ * with real keyboard input. */
+export async function walkRealCellsDir(
+  page: Page,
+  label: string,
+  cells: number,
+  key: WalkKey,
+): Promise<void> {
+  const here = await page.evaluate(() => window.__bc?.playerPosition);
+  if (!here) throw new Error("no player position");
+  const until: WalkUntil =
+    key === "ArrowRight"
+      ? { kind: "x-at-least", value: here.x + cells }
+      : key === "ArrowLeft"
+        ? { kind: "x-at-most", value: here.x - cells }
+        : key === "ArrowDown"
+          ? { kind: "y-at-least", value: here.y + cells }
+          : { kind: "y-at-most", value: here.y - cells };
+  const segment: WalkSegment = { label, key, until };
   await walkRealSegment(page, segment);
 }

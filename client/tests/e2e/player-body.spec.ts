@@ -6,9 +6,9 @@
 // facing. The walk goes through `walk-support.ts`.
 import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
-import { playerBodySquareRoute } from "../unit/test-street/street-world";
+import { arrivalCell, openSquareNear, walkTo } from "./district-support";
 import { expect, test } from "./fixtures";
-import { walkRealSegment } from "./walk-support";
+import { walkRealCellsDir } from "./walk-support";
 
 interface Seen {
   animation: string;
@@ -46,28 +46,28 @@ async function stopRecording(page: Page): Promise<Seen[]> {
   });
 }
 
-const LEGS: [string, string][] = [
-  ["square-up", "up"],
-  ["square-left", "left"],
-  ["square-down", "down"],
-  ["square-right", "right"],
+const LEGS: [string, string, "ArrowUp" | "ArrowLeft" | "ArrowDown" | "ArrowRight"][] = [
+  ["square-up", "up", "ArrowUp"],
+  ["square-left", "left", "ArrowLeft"],
+  ["square-down", "down", "ArrowDown"],
+  ["square-right", "right", "ArrowRight"],
 ];
+
+/** How far each leg of the square walks, in cells. */
+const LEG_CELLS = 1.5;
 
 test.describe("the player's body", () => {
   test("faces each leg, walks while moving, and rests idle on the last facing", async ({
     page,
   }) => {
     await ready(page);
-    const route = playerBodySquareRoute();
-    const square = route.filter((s) => s.label.startsWith("square-"));
-    const approach = route.filter((s) => !s.label.startsWith("square-"));
-    for (const segment of approach) await walkRealSegment(page, segment);
+    // Out into the open, to the middle of a clear block of street.
+    const block = openSquareNear(arrivalCell(), 4);
+    await walkTo(page, { x: block.x + 1, y: block.y + 1 });
 
-    for (const [label, facing] of LEGS) {
-      const segment = square.find((s) => s.label === label);
-      if (!segment) throw new Error(`no segment ${label}`);
+    for (const [label, facing, key] of LEGS) {
       await startRecording(page);
-      await walkRealSegment(page, segment);
+      await walkRealCellsDir(page, label, LEG_CELLS, key);
       // At rest: the body returns to the idle row on the same facing.
       await page.waitForFunction(() => window.__bc?.playerBody?.animation === "idle", undefined, {
         timeout: 5000,

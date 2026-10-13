@@ -15,13 +15,11 @@ import { fileURLToPath } from "node:url";
 import type { Browser, Page } from "@playwright/test";
 import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
-import { BRIDGE_FLOOR, STREET_FLOOR, streetWalkRoute } from "../../src/test-street/fixture";
 import { CHUNK_SIZE } from "../../src/world/chunk";
 import { REGION_LEAVE_RADIUS_CHUNKS, REGION_RADIUS_CHUNKS } from "../../src/world/region";
-import { streetWalkInputs } from "../unit/test-street/street-world";
+import { walkFreeCells } from "./district-support";
 import { expect, test } from "./fixtures";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
-import { walkRealCells, walkRealSegment } from "./walk-support";
 
 const DEFS = parseDefs(
   JSON.parse(
@@ -36,6 +34,8 @@ const balance = (key: string): number => {
 const HZ = balance("net.player_position_hz");
 const QUANTUM = 1 / DEFS.positionUnitsPerCell;
 const WALK_CELLS = 2.5;
+/** The one floor the generated city has. */
+const GROUND_FLOOR = 0;
 const HOP_CELLS = 0.2;
 
 /** A page whose position writes are counted from the first frame it sends. */
@@ -124,7 +124,7 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   await b.page.evaluate(() => window.__bc?.remotePlayers?.startTrace());
   const sendsBefore = a.sends();
   const startedAt = Date.now();
-  await walkRealCells(a.page, "east", WALK_CELLS, true);
+  await walkFreeCells(a.page, "walk", WALK_CELLS);
   const walkMs = Date.now() - startedAt;
 
   // B converges to A's own rest position within one quantum.
@@ -187,7 +187,7 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
     timeout: 20_000,
   });
   await a.page.evaluate(() => window.__bc?.remotePlayers?.startTrace());
-  await walkRealCells(b.page, "east-b", WALK_CELLS, true);
+  await walkFreeCells(b.page, "walk-b", WALK_CELLS);
   const bRest = await b.page.evaluate(() => window.__bc?.playerPosition);
   if (!bRest) throw new Error("no rest position for B");
   await a.page.waitForFunction(
@@ -219,7 +219,7 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
     page.evaluate(([cx, cy, floor]) => window.__bc?.region?.moveTo(cx, cy, floor), [
       x,
       aRest.y,
-      STREET_FLOOR,
+      GROUND_FLOOR,
     ] as [number, number, number]);
   const drawnByB = (cid: string) =>
     b.page.evaluate((id) => window.__bc?.remotePlayers?.poses()[id] !== undefined, cid);
@@ -275,55 +275,5 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   expect(after.drawn?.screenX).toBe(before?.screenX);
   expect(after.drawn?.screenY).toBe(before?.screenY);
 
-  await b.page.context().close();
-});
-
-test("a player on the footbridge deck is drawn on floor 1, in the deck's stack, where they draw themselves (FR120-FR122, FR124)", async ({
-  browser,
-}) => {
-  test.setTimeout(120_000);
-  const a = await countedPage(browser);
-  const b = await countedPage(browser);
-  const id = await createCharacter(a.page);
-  await b.page.bringToFront();
-  await b.page.waitForFunction(
-    (cid) => window.__bc?.remotePlayers?.poses()[cid] !== undefined,
-    id,
-    { timeout: 20_000 },
-  );
-  // Out of the shop, under the bridge, up the flight and a little along the deck.
-  const route = streetWalkRoute(streetWalkInputs());
-  const alongTheDeck = route.findIndex((segment) => segment.label === "along-the-deck");
-  if (alongTheDeck < 0) throw new Error("the street walk has no along-the-deck segment");
-  for (const segment of route.slice(0, alongTheDeck + 1)) {
-    await walkRealSegment(a.page, segment);
-  }
-  const rest = await a.page.evaluate(() => window.__bc?.playerPosition);
-  if (!rest) throw new Error("no rest position");
-  await b.page.waitForFunction(
-    ({ cid, x, y, floor, q }) => {
-      const p = window.__bc?.remotePlayers?.poses()[cid];
-      return (
-        p !== undefined && p.floor === floor && Math.abs(p.x - x) <= q && Math.abs(p.y - y) <= q
-      );
-    },
-    { cid: id, x: rest.x, y: rest.y, floor: BRIDGE_FLOOR, q: QUANTUM },
-    { timeout: 30_000 },
-  );
-
-  const seen = await b.page.evaluate(
-    (cid) => ({ drawn: window.__bc?.remotePlayers?.drawn()[cid] }),
-    id,
-  );
-  const own = await a.page.evaluate(() => window.__bc?.playerDrawnPoint?.());
-  if (!seen.drawn || !own) throw new Error("nothing drawn to compare");
-  expect(seen.drawn.visible, "the remote is hidden on the deck").toBe(true);
-  // The sprite's real parent is the deck floor's pool (re-parented on the
-  // floor change), not merely listed under it.
-  expect(seen.drawn.stackFloor).toBe(BRIDGE_FLOOR);
-  expect(Math.abs(seen.drawn.screenX - own.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(seen.drawn.screenY - own.y)).toBeLessThanOrEqual(1);
-
-  await a.page.context().close();
   await b.page.context().close();
 });

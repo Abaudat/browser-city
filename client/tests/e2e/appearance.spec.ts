@@ -14,25 +14,21 @@
 //      only the character atlas pages the crowd actually references,
 //      never the wider catalogue eagerly.
 
+import { RUSH_LOOKS } from "../../src/debug/rush-crowd";
 import type { Defs } from "../../src/defs/types";
 import type {} from "../../src/net/e2e-hooks";
 import { resolveUniform } from "../../src/render/appearance/composite";
+import { buildPlayerAppearanceTuple, tupleFor } from "../../src/render/appearance/player-look";
 import { resolveLayers } from "../../src/render/appearance/resolve-layers";
-import {
-  buildCitizenFixtures,
-  buildPlayerAppearanceTuple,
-  buildUniformedWalkerFixture,
-  buildWalkerFixture,
-} from "../../src/test-street/citizens";
 import { committedDefs } from "../unit/support/committed-defs";
 import { ready } from "./appearance-test-support";
 import { expect, test } from "./fixtures";
 
 test.describe("the real, mounted appearance pipeline", () => {
   test("citizens sharing a tuple+override share one texture instance (AC5)", async ({ page }) => {
-    // `?freezeBodies=1` holds the whole crowd, no zone: sharing is a property
-    // of the cache, not of who is near the viewport.
-    await page.goto("/?freezeBodies=1");
+    // `?rushCrowd=1` lays the harness crowd, `RUSH_LOOKS` looks shared among
+    // its citizens; `?freezeBodies=1` holds every body at its first pose.
+    await page.goto("/?rushCrowd=1&freezeBodies=1");
     await ready(page);
 
     const ids = await page.evaluate(() => window.__bc?.appearanceTextureIds ?? {});
@@ -40,16 +36,20 @@ test.describe("the real, mounted appearance pipeline", () => {
       () => window.__bc?.appearanceDistinctTextureCount ?? -1,
     );
 
-    // `citizens.ts` puts three adults (`adult-0`, `adult-1`, `adult-2`) on
-    // one shared tuple.
-    expect(ids["adult-0"]).toBeDefined();
-    expect(ids["adult-0"]).toBe(ids["adult-1"]);
-    expect(ids["adult-0"]).toBe(ids["adult-2"]);
-
-    // And two kids (`kid-0`, `kid-1`) on another.
-    expect(ids["kid-0"]).toBeDefined();
-    expect(ids["kid-0"]).toBe(ids["kid-1"]);
-    expect(ids["kid-0"]).not.toBe(ids["adult-0"]);
+    // Citizen `n` and citizen `n + RUSH_LOOKS` wear one look, so they share
+    // one texture; two neighbours wear different looks and do not.
+    const byIndex = new Map<number, number>();
+    for (const [id, textureId] of Object.entries(ids)) {
+      const n = Number(id.split("-").pop());
+      byIndex.set(n, textureId);
+    }
+    const pairs = [...byIndex.keys()].filter((n) => byIndex.has(n + RUSH_LOOKS));
+    expect(pairs.length, "bodies of two citizens with one look").toBeGreaterThan(0);
+    for (const n of pairs) expect(byIndex.get(n)).toBe(byIndex.get(n + RUSH_LOOKS));
+    const distinctNeighbour = [...byIndex.keys()].find(
+      (n) => byIndex.has(n + 1) && byIndex.get(n) !== byIndex.get(n + 1),
+    );
+    expect(distinctNeighbour, "two neighbours with different looks").toBeDefined();
 
     // The distinct count is real -- fewer distinct textures than citizens
     // (since some share), and at least as many as the number of visibly
@@ -63,20 +63,15 @@ test.describe("the real, mounted appearance pipeline", () => {
     page,
   }) => {
     const defs: Defs = committedDefs();
-    const fixtures = [
-      ...buildCitizenFixtures(defs),
-      buildWalkerFixture(defs),
-      buildUniformedWalkerFixture(defs),
-    ];
     const tuplesAndOverrides: {
-      tuple: (typeof fixtures)[number]["tuple"];
+      tuple: ReturnType<typeof tupleFor>;
       override: ReturnType<typeof resolveUniform>;
-    }[] = fixtures.map((fixture) => ({
-      tuple: fixture.tuple,
-      override: fixture.professionKey ? resolveUniform(defs, fixture.professionKey) : null,
+    }[] = Array.from({ length: RUSH_LOOKS }, (_, i) => ({
+      tuple: tupleFor(defs, "adult", i),
+      override: null,
     }));
-    // The player itself (`scene.ts`) is a generated tuple through the
-    // same pipeline, never part of `citizens.ts`'s own fixture list.
+    // The player itself (`world-scene.ts`) is a generated tuple through the
+    // same pipeline, never part of the crowd.
     tuplesAndOverrides.push({
       tuple: buildPlayerAppearanceTuple(defs),
       override: null,
@@ -103,7 +98,7 @@ test.describe("the real, mounted appearance pipeline", () => {
       if (basename.startsWith("character_")) requestedCharacterAtlasFiles.add(basename);
     });
 
-    await page.goto("/");
+    await page.goto("/?rushCrowd=1");
     await ready(page);
 
     // The Epic 1 shortcut is gone entirely -- never a single request to a
@@ -124,19 +119,16 @@ test.describe("the real, mounted appearance pipeline", () => {
   test("different people cost about as much as identical ones -- the same number of bound texture sources for N distinct tuples as for N identical ones (story 2.7, NFR12)", async ({
     page,
   }) => {
-    // The crowd's own normal fixtures (`citizens.ts`) already put
-    // `ADULT_COUNT` (40) + `KID_COUNT` (6) = 46 citizens on mostly-
-    // distinct tuples -- comfortably over the N >= 32 this AC asks for,
-    // so the "distinct" half is just the crowd's own default mount.
-    await page.goto("/");
+    // The harness crowd's default mount puts `RUSH_LOOKS` (40) distinct
+    // looks on its bodies -- comfortably over the N >= 32 this AC asks for.
+    await page.goto("/?rushCrowd=1&freezeBodies=1");
     await ready(page);
     const distinctCrowdSources = await page.evaluate(() => window.__bc?.allBoundTextureSources);
     const distinctCrowdPages = await page.evaluate(() => window.__bc?.distinctBoundAtlasPages);
 
-    // `?identicalCrowd=1` (main.ts, DEV-only) mounts the exact same
-    // crowd -- same count, same positions, same uniforms -- but every
-    // adult (and, separately, every kid) shares one tuple.
-    await page.goto("/?identicalCrowd=1");
+    // `?rushLooks=1` (main.ts, DEV-only) mounts the exact same crowd --
+    // same count, same positions -- but every citizen shares one look.
+    await page.goto("/?rushCrowd=1&rushLooks=1&freezeBodies=1");
     await ready(page);
     const identicalCrowdSources = await page.evaluate(() => window.__bc?.allBoundTextureSources);
     const identicalCrowdPages = await page.evaluate(() => window.__bc?.distinctBoundAtlasPages);
@@ -221,7 +213,7 @@ test.describe("the real, mounted appearance pipeline", () => {
       throw new Error("appearance.spec: no sanitation_worker uniform in committed defs");
     }
 
-    await page.goto("/");
+    await page.goto("/?rushCrowd=1");
     await ready(page);
 
     // The full `(animation, direction, frame)` grid for the plain adult

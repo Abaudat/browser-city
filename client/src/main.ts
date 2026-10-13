@@ -747,7 +747,10 @@ async function startWorldScene(
     import.meta.env.DEV && new URLSearchParams(window.location.search).has("watchBodies");
   const rushCrowdForE2e =
     import.meta.env.DEV && new URLSearchParams(window.location.search).has("rushCrowd")
-      ? (await import("./debug/rush-crowd")).rushCrowdFor(defs)
+      ? (await import("./debug/rush-crowd")).rushCrowdFor(
+          defs,
+          Number(new URLSearchParams(window.location.search).get("rushLooks") ?? 0) || undefined,
+        )
       : undefined;
 
   // Story 1.12 (FR165/FR168): set only inside the DEV branch below, and

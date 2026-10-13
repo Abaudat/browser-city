@@ -29,6 +29,9 @@ export const RUSH_CROWD_SIZE = 200;
  * gate asserts at least this many bodies are walking or sidestepping. */
 export const RUSH_MIN_WALKING_SHARE = 0.6;
 
+/** How many distinct looks the crowd shares among its citizens. */
+export const RUSH_LOOKS = 40;
+
 /** How far from the start, in cells, the crowd is laid: inside the body zone
  * of a player on a 1080p screen. */
 export const RUSH_RADIUS_CELLS = 18;
@@ -77,6 +80,7 @@ export function buildRushCrowd(
   defs: Defs,
   world: { standable(x: number, y: number): boolean; start: Cell },
   count = RUSH_CROWD_SIZE,
+  looks = RUSH_LOOKS,
 ): RushCrowd {
   const pool: Cell[] = [];
   const r = RUSH_RADIUS_CELLS;
@@ -110,9 +114,9 @@ export function buildRushCrowd(
     const id = `rush-${kind}-${i}`;
     fixtures.push({
       id,
-      // Forty looks, shared: the appearance cache is bounded, and rendering
-      // is not what this load measures.
-      tuple: tupleFor(defs, "adult", i % 40),
+      // A few dozen looks, shared: the appearance cache is bounded, and
+      // rendering is not what this load measures.
+      tuple: tupleFor(defs, "adult", i % looks),
       gridX: at.x + 0.5,
       gridY: at.y + 0.5,
       facing,
@@ -138,7 +142,7 @@ export function buildRushCrowd(
 }
 
 /** What `main.ts` hands the scene as its `crowd` option. */
-export function rushCrowdFor(defs: Defs) {
+export function rushCrowdFor(defs: Defs, looks = RUSH_LOOKS) {
   return (world: { standable(x: number, y: number): boolean; start: Cell }) =>
-    buildRushCrowd(defs, world);
+    buildRushCrowd(defs, world, RUSH_CROWD_SIZE, looks);
 }

@@ -597,9 +597,7 @@ export function exposeL3AgreementForE2e(
 }
 
 /** Story 3.16: the same idiom, for the streamed world's own counters. */
-export function exposeWorldForE2e(
-  getter: NonNullable<NonNullable<Window["__bc"]>["world"]>,
-): void {
+export function exposeWorldForE2e(getter: NonNullable<NonNullable<Window["__bc"]>["world"]>): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.world = getter;

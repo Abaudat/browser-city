@@ -19,12 +19,11 @@ import {
   nearestCell,
   ownership,
   routeBetween,
-  segmentsOf,
   straightStreet,
   walkTo,
 } from "./district-support";
 import { expect, test } from "./fixtures";
-import { walkRealSegment } from "./walk-support";
+import { segmentsOf, walkRealSegment } from "./walk-support";
 
 test.use({ viewport: { width: 1920, height: 1080 } });
 
