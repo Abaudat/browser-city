@@ -9,6 +9,7 @@ import {
   RUSH_CROWD_SIZE,
   RUSH_MIN_WALKING_SHARE,
   RUSH_RADIUS_CELLS,
+  rushCrowdFor,
 } from "../../../src/debug/rush-crowd";
 import { type AvoidDials, scanSpan } from "../../../src/l3/avoidance";
 import { CitizenBody } from "../../../src/l3/citizen";
@@ -268,3 +269,20 @@ describe("avoidance scoping at density (bubble independence)", () => {
 });
 
 const T_LONG = 60_000;
+
+describe("laying the crowd over a world", () => {
+  it("is empty where nothing is standable, and builds through the page's hook", () => {
+    const none = buildRushCrowd(defs, { standable: () => false, start: START });
+    expect(none).toEqual({ fixtures: [], specs: {}, walkerCount: 0 });
+    const built = rushCrowdFor(defs)({ standable, start: START });
+    expect(built.fixtures).toHaveLength(RUSH_CROWD_SIZE);
+  });
+
+  it("still lays a crowd where only a thin lane is standable", () => {
+    const lane = (x: number, y: number) => y === START.y && Math.abs(x - START.x) < 20;
+    const built = buildRushCrowd(defs, { standable: lane, start: START });
+    expect(built.fixtures).toHaveLength(RUSH_CROWD_SIZE);
+    for (const f of built.fixtures)
+      expect(lane(Math.floor(f.gridX), Math.floor(f.gridY))).toBe(true);
+  });
+});

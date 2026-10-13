@@ -39,3 +39,61 @@ describe("a citizen's look through the street's life", () => {
     expect(afterDespawn).toEqual(withBody);
   });
 });
+
+describe("StreetLife: posing, reading and dropping bodies", () => {
+  it("poses one body alone at its spawn instant, never moving another", () => {
+    const life = new StreetLife(cfg, walk);
+    const a = life.add({
+      id: "a",
+      stand: standState({ x: 2, y: 2 }, 0, "down"),
+      standAt: { x: 2.5, y: 2.5 },
+      look: "a",
+      remake: make("a"),
+      body: make("a")().body,
+    });
+    const b = life.add({
+      id: "b",
+      stand: standState({ x: 8, y: 8 }, 0, "left"),
+      standAt: { x: 8.5, y: 8.5 },
+      look: "b",
+      remake: make("b"),
+      body: make("b")().body,
+    });
+    const bBefore = { x: b.frame.x, y: b.frame.y };
+    life.pose(a, 100);
+    expect(a.frame.x).toBeCloseTo(2.5, 6);
+    expect({ x: b.frame.x, y: b.frame.y }).toEqual(bBefore);
+  });
+
+  it("reads the live state without disturbing the last solve", () => {
+    const life = new StreetLife(cfg, walk);
+    life.add({
+      id: "a",
+      stand: standState({ x: 2, y: 2 }, 0, "down"),
+      standAt: { x: 2.5, y: 2.5 },
+      look: "a",
+      remake: make("a"),
+      body: make("a")().body,
+    });
+    life.solve(10);
+    const before = life.liveAt(50).map((s) => s.id);
+    life.remove(life.members[0] as NonNullable<(typeof life.members)[number]>);
+    expect(before).toEqual(["a"]);
+    // With nothing solved yet, a read restores nothing and fails nothing.
+    const fresh = new StreetLife(cfg, walk);
+    expect(fresh.liveAt(0)).toEqual([]);
+  });
+
+  it("drops a body it is not holding without complaint", () => {
+    const life = new StreetLife(cfg, walk);
+    const a = life.add({
+      id: "a",
+      stand: standState({ x: 2, y: 2 }, 0, "down"),
+      look: "a",
+      remake: make("a"),
+      body: make("a")().body,
+    });
+    life.remove(a);
+    expect(() => life.remove(a)).not.toThrow();
+  });
+});

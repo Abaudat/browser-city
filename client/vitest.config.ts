@@ -17,7 +17,6 @@ export default defineConfig({
         "src/net/**",
         "src/defs/**",
         "src/render/**",
-        "src/test-street/**",
         "src/world/**",
         "src/input/**",
         "src/l3/**",
@@ -25,12 +24,12 @@ export default defineConfig({
         "src/settings/**",
         "src/time/**",
       ],
-      // `src/net/bindings/**` is generated (never hand-tested). `src/
-      // test-street/**` is throwaway harness code (Tim's direction: fenced off
-      // from the permanent render modules precisely so the whole
-      // directory can be excluded here, by path, rather than by naming
-      // individual files as they're added) -- it is still exercised by
-      // real tests (`tests/unit/test-street/**`), just not held to this bar.
+      // `src/net/bindings/**` is generated (never hand-tested). The real-Pixi
+      // adapters (`render/world-scene.ts`, `render/citizens-layer.ts`,
+      // `render/remote-players-layer.ts`, `debug/compare-pipeline-vs-stack.ts`)
+      // are excluded by name, as the street directory they came from was:
+      // everything they decide lives in the pure modules beside them, which
+      // stay in scope.
       // Every permanent `src/render/**` module -- including the
       // Pixi-touching `pixi-order.ts`, which is sprite/container wiring
       // and nothing that decides an order or a position -- stays in
@@ -65,7 +64,10 @@ export default defineConfig({
         // Story 2.8: a generated constant, the same idiom as bindings/ --
         // nothing to unit-test in a literal string assignment.
         "src/net/protocol-version.ts",
-        "src/test-street/**",
+        "src/render/world-scene.ts",
+        "src/render/citizens-layer.ts",
+        "src/render/remote-players-layer.ts",
+        "src/debug/compare-pipeline-vs-stack.ts",
         "src/render/appearance/composite-pages.ts",
         "src/render/appearance/character-part-pages.ts",
       ],

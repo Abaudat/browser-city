@@ -8,11 +8,14 @@ import { buildLayerRankTable, resolveRank } from "../../../src/render/layer-rank
 import { LAYER_TABLE, layerCodeByName } from "../../../src/render/layer-table";
 import {
   BAND_ID_OFFSET,
+  buildCharacterDrawable,
   buildPropDrawables,
   isDefPropDrawable,
+  PLAYER_STABLE_ID,
   type PlacedRowView,
   REMOTE_STABLE_ID_BASE,
   STUB_ID_OFFSET,
+  updateCharacterDrawable,
 } from "../../../src/render/prop-drawables";
 import { computeVisibility } from "../../../src/render/visibility";
 import { NO_OWNER, OwnershipIndex } from "../../../src/world/ownership";
@@ -117,5 +120,24 @@ describe("buildPropDrawables", () => {
     expect(() =>
       buildPropDrawables([row(1, 9999, 0, 0, FURNITURE)], options(new OwnershipIndex())),
     ).toThrow(/9999/);
+  });
+});
+
+describe("character drawables", () => {
+  it("sits at its feet point, never retracted, and moves in place", () => {
+    const player = buildCharacterDrawable(rank.get(layerCodeByName("characters")) ?? 50, 3.5, 4, 0);
+    expect(player.stableId).toBe(PLAYER_STABLE_ID);
+    expect(player.isNearSide).toBe(false);
+    expect(player.ownerBuildingId).toBe(NO_OWNER);
+    const before = player.x;
+    updateCharacterDrawable(player, 4.5, 4, 1);
+    expect(player.x).toBeGreaterThan(before);
+    expect(player.floor).toBe(1);
+  });
+
+  it("keeps a remote player's id range above every placed row", () => {
+    const remote = buildCharacterDrawable(50, 1, 1, 0, REMOTE_STABLE_ID_BASE + 1n, "remote");
+    expect(remote.stableId).toBeGreaterThan(REMOTE_STABLE_ID_BASE);
+    expect("assetKey" in remote ? remote.assetKey : "").toBe("remote");
   });
 });

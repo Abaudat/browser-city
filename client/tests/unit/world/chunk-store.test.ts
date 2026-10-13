@@ -108,3 +108,101 @@ describe("ChunkStore (story 3.16)", () => {
     expect(store.isApplied(k)).toBe(false);
   });
 });
+
+describe("ChunkStore: the other tables and the edges", () => {
+  const roomRow = (id: bigint, x0: number): RoomArea => ({
+    areaId: id,
+    roomId: 5n,
+    x0,
+    y0: 0,
+    x1: x0 + 2,
+    y1: 2,
+    floor: 0,
+    chunkKey: chunkKey(x0, 0, 0),
+  });
+  const transition = (id: bigint) => ({
+    transitionId: id,
+    x: 3,
+    y: 3,
+    floor: 0,
+    targetX: 4,
+    targetY: 3,
+    targetFloor: -1,
+    chunkKey: chunkKey(3, 3, 0),
+  });
+
+  it("replaces and removes room areas and building areas by row id", () => {
+    const store = new ChunkStore();
+    const log: string[] = [];
+    store.attach({
+      placedInserted: () => {},
+      placedDeleted: () => {},
+      buildingAreaInserted: (r) => log.push(`+b${r.areaId}`),
+      buildingAreaDeleted: (r) => log.push(`-b${r.areaId}`),
+      roomAreaInserted: (r) => log.push(`+r${r.areaId}`),
+      roomAreaDeleted: (r) => log.push(`-r${r.areaId}`),
+    });
+    store.insert("roomArea", roomRow(1n, 0));
+    store.insert("roomArea", roomRow(1n, 0));
+    store.delete("roomArea", roomRow(1n, 0));
+    store.delete("roomArea", roomRow(1n, 0));
+    store.insert("buildingArea", building(2n, 0, 0, 4, 4));
+    store.insert("buildingArea", building(2n, 0, 0, 4, 4));
+    store.delete("buildingArea", building(2n, 0, 0, 4, 4));
+    expect(log).toEqual(["+r1", "-r1", "+r1", "-r1", "+b2", "-b2", "+b2", "-b2"]);
+    expect(store.chunkKeys()).toHaveLength(0);
+  });
+
+  it("holds floor transitions and forwards them to a sink that wants them", () => {
+    const store = new ChunkStore();
+    const log: string[] = [];
+    store.attach({
+      placedInserted: () => {},
+      placedDeleted: () => {},
+      buildingAreaInserted: () => {},
+      buildingAreaDeleted: () => {},
+      roomAreaInserted: () => {},
+      roomAreaDeleted: () => {},
+      transitionInserted: (r) => log.push(`+t${r.transitionId}`),
+      transitionDeleted: (r) => log.push(`-t${r.transitionId}`),
+    });
+    store.insert("floorTransition", transition(1n));
+    store.insert("floorTransition", transition(1n));
+    store.delete("floorTransition", transition(1n));
+    expect(log).toEqual(["+t1", "-t1", "+t1", "-t1"]);
+  });
+
+  it("replays transitions and tolerates a sink with no transition handlers", () => {
+    const store = new ChunkStore();
+    store.insert("floorTransition", transition(2n));
+    store.insert("roomArea", roomRow(3n, 0));
+    const log: string[] = [];
+    store.attach({
+      placedInserted: () => {},
+      placedDeleted: () => {},
+      buildingAreaInserted: () => {},
+      buildingAreaDeleted: () => {},
+      roomAreaInserted: (r) => log.push(`+r${r.areaId}`),
+      roomAreaDeleted: () => {},
+    });
+    store.delete("floorTransition", transition(2n));
+    expect(log).toEqual(["+r3"]);
+  });
+
+  it("tells a listener which chunks changed, and which handle applied", () => {
+    const store = new ChunkStore();
+    const seen: bigint[] = [];
+    store.onChunkChanged((k) => seen.push(k));
+    store.insert("placedObject", placed(1n, 3, 3));
+    store.markApplied([chunkKey(3, 3, 0), chunkKey(3, 3, -1)]);
+    expect(seen).toEqual([chunkKey(3, 3, 0), chunkKey(3, 3, 0), chunkKey(3, 3, -1)]);
+  });
+
+  it("ignores the delete of a row it never held", () => {
+    const store = new ChunkStore();
+    const { sink, log } = recorder();
+    store.attach(sink);
+    store.delete("placedObject", placed(9n, 1, 1));
+    expect(log).toEqual([]);
+  });
+});

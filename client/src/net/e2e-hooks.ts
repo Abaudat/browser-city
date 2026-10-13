@@ -254,27 +254,6 @@ declare global {
           agreed: boolean;
         }[];
       };
-      /** Story 5.1: the L3 commuter as last drawn -- a callable read fresh
-       * each call, `undefined` while it is not on screen. */
-      commuterDrawn?: () =>
-        | {
-            cityMilli: number;
-            legKey: number;
-            departAt: number;
-            arriveAt: number;
-            distance: number;
-            x: number;
-            y: number;
-            floor: number;
-            orderIndex: number;
-            lamppostOrderIndex: number;
-            screenX: number;
-            screenY: number;
-            animation: string;
-            direction: string;
-            frameIndex: number;
-          }
-        | undefined;
       /** Cycle 2 (Quentin's direction, finding 2): the world container's
        * own real, live `scale`/`position` -- a callable, read fresh every
        * call from the real, mounted `Container`, never a value recorded
@@ -606,16 +585,6 @@ export function exposeL3AgreementForE2e(
   window.__bc = bucket;
 }
 
-/** Story 5.1: the same idiom, for the L3 commuter's last drawn state. */
-export function exposeCommuterDrawnForE2e(
-  getter: NonNullable<NonNullable<Window["__bc"]>["commuterDrawn"]>,
-): void {
-  if (!import.meta.env.DEV) return;
-  const bucket = window.__bc ?? { pings: [] };
-  bucket.commuterDrawn = getter;
-  window.__bc = bucket;
-}
-
 /** Cycle 2 (Quentin's direction, finding 2): the same idiom, for the
  * world container's own real, live `scale`/`position`. */
 export function exposeWorldTransformForE2e(
@@ -688,13 +657,6 @@ export function exposeIdentityActionsForE2e(actions: {
   bucket.createCharacter = actions.createCharacter;
   bucket.startLink = actions.startLink;
   window.__bc = bucket;
-}
-
-/** Story 4.6: a spec that assumes the pre-flat start (the shop, `PLAYER_START`)
- * says so with `window.__bcStart = "shop"` before the page's scripts run;
- * everyone else, and every production build, starts in the home flat. */
-export function e2eStartsInShop(): boolean {
-  return import.meta.env.DEV && (window as { __bcStart?: string }).__bcStart === "shop";
 }
 
 /** Story 4.1: exposes the client's derived in-city time as a callable. */
