@@ -30,8 +30,8 @@ import { committedDefs } from "../support/committed-defs";
  * world says is standable, so a field is the plainest world there is. */
 const START = { x: 100, y: 100 };
 const FIELD = {
-  x0: START.x - 3 * RUSH_RADIUS_CELLS,
-  x1: START.x + 3 * RUSH_RADIUS_CELLS,
+  x0: START.x - 6 * RUSH_RADIUS_CELLS,
+  x1: START.x + 6 * RUSH_RADIUS_CELLS,
   y0: START.y - 3 * RUSH_RADIUS_CELLS,
   y1: START.y + 3 * RUSH_RADIUS_CELLS,
 };
@@ -121,7 +121,7 @@ describe("the rush-hour crowd (NFR11 workload)", () => {
       ...crowd.fixtures.map((f) => ({ x: Math.floor(f.gridX), y: Math.floor(f.gridY), floor: 0 })),
     ];
     for (const c of cells) {
-      expect(Math.abs(c.x - START.x)).toBeLessThanOrEqual(2 * RUSH_RADIUS_CELLS);
+      expect(Math.abs(c.x - START.x)).toBeLessThanOrEqual(6 * RUSH_RADIUS_CELLS);
       expect(Math.abs(c.y - START.y)).toBeLessThanOrEqual(RUSH_RADIUS_CELLS);
       expect(standable(c.x, c.y)).toBe(true);
     }

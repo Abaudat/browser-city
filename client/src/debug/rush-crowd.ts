@@ -33,8 +33,12 @@ export const RUSH_MIN_WALKING_SHARE = 0.6;
 export const RUSH_LOOKS = 40;
 
 /** How far from the start, in cells, the crowd is laid: inside the body zone
- * of a player on a 1080p screen. */
-export const RUSH_RADIUS_CELLS = 18;
+ * of a player on a 1080p screen (the zone reaches 20 cells either side and
+ * 11 above and below), clear of its edge where a body's neighbourhood
+ * stops being held. */
+export const RUSH_RADIUS_CELLS = 5;
+/** The crowd's east-west reach, in cells either side of the start. */
+export const RUSH_REACH_X_CELLS = 6 * RUSH_RADIUS_CELLS;
 
 export interface RushCrowd extends CrowdSource {
   /** Citizens that walk (have a timetable). */
@@ -85,7 +89,7 @@ export function buildRushCrowd(
   const pool: Cell[] = [];
   const r = RUSH_RADIUS_CELLS;
   for (let dy = -r; dy <= r; dy++) {
-    for (let dx = -r * 2; dx <= r * 2; dx++) {
+    for (let dx = -RUSH_REACH_X_CELLS; dx <= RUSH_REACH_X_CELLS; dx++) {
       const c = { x: world.start.x + dx, y: world.start.y + dy };
       if (world.standable(c.x, c.y)) pool.push(c);
     }
@@ -93,6 +97,13 @@ export function buildRushCrowd(
   if (pool.length === 0) return { fixtures: [], specs: {}, walkerCount: 0 };
   const pick = (n: number, salt: number): Cell =>
     pool[hash32(n * 2654435761 + salt) % pool.length] as Cell;
+  // Starts are distinct cells (a shuffled walk through the pool): two bodies
+  // on one cell would tie on every distance, and ties are not the load.
+  const shuffled = pool
+    .map((c, i) => ({ c, k: hash32(i * 2654435761 + 0x9e37) }))
+    .sort((a, b) => a.k - b.k || a.c.x - b.c.x || a.c.y - b.c.y)
+    .map((e) => e.c);
+  const startOf = (n: number): Cell => shuffled[n % shuffled.length] as Cell;
   const near = (from: Cell, n: number, salt: number, maxCells: number): Cell => {
     // The first of a few draws within `maxCells` of `from`; the draw itself
     // when none is.
@@ -126,7 +137,7 @@ export function buildRushCrowd(
 
   let n = 0;
   for (let k = 0; k < count - standers - pile; k++, n++) {
-    const from = pick(n, 0x11);
+    const from = startOf(n);
     const to = near(from, n, 0x12, 4 + (n % 9));
     const facing = facings[hash32(n) % 4] as Facing;
     add(n, k % 3 === 0 ? "column" : "lane", from, facing, leg(from, to, 100 + (n % 400), facing));
@@ -136,7 +147,7 @@ export function buildRushCrowd(
     add(n, "pile", from, "right", leg(from, pilePoint, 100 + (n % 200), "right"));
   }
   for (let k = 0; k < standers; k++, n++) {
-    add(n, "stand", pick(n, 0x51), facings[hash32(n) % 4] as Facing);
+    add(n, "stand", startOf(n), facings[hash32(n) % 4] as Facing);
   }
   return { fixtures, specs, walkerCount: count - standers };
 }
