@@ -188,6 +188,7 @@ pub fn create_character(ctx: &ReducerContext, name: String) -> Result<(), String
                 character_id: ch.character_id,
                 issuer_id,
             });
+            super::player_position::place_at_arrival(ctx, ch.character_id);
             Ok(())
         }
     }

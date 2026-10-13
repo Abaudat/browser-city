@@ -5,13 +5,16 @@
 //!
 //! `create_district` is the only path to the generator
 //! (`sim::generation::create` decides, this reducer only reads the rows and
-//! inserts the record). `scripts/ci/check-district-write-path.sh` fails any
-//! other file under `server/src/` that names `generation::` or the
-//! `district` accessor outside the places listed there.
+//! inserts the record, the macro graph and the district's world rows).
+//! `scripts/ci/check-district-write-path.sh` fails any other file under
+//! `server/src/` that names `generation::` or the `district` accessor
+//! outside the places listed there, and any writer of the four region
+//! tables other than this file and `restore.rs`.
 
 use sim::generated::defs;
 use sim::generation::{
-    DistrictRecord, GenerationConfig, GenerationContent, RuleSetVersion, SiteBounds, create,
+    DistrictRecord, GenerationConfig, GenerationContent, GroundConfig, RegionRows, RuleSetVersion,
+    SiteBounds, create,
 };
 use sim::reducer_classes::ReducerClass;
 use sim::routing::graph::{MacroGraph, NodeKind};
@@ -19,8 +22,13 @@ use spacetimedb::{ReducerContext, Table, Timestamp};
 
 use super::metrics::count_call;
 use super::ops::require_owner;
+use super::player_position::relocate_stranded;
 use super::routing::{RouteEdge, RouteNode, route_edge, route_node};
 use super::stock::{Business, business};
+use super::world::{
+    BuildingArea, FloorTransition, PlacedObject, RoomArea, building_area, floor_transition,
+    placed_object, room_area,
+};
 
 #[derive(Clone)]
 #[spacetimedb::table(accessor = district)]
@@ -38,13 +46,31 @@ pub struct District {
     pub rng_version: u32,
     pub defs_version: String,
     pub generated_at: Timestamp,
+    /// `District::arrival_cell`, floor 0: where a new character first
+    /// stands. Derived once, at generation, and read back as stored.
+    #[default(0)]
+    pub arrival_x: i32,
+    #[default(0)]
+    pub arrival_y: i32,
 }
 
-/// Generates the district for `seed` over the configured site and records
-/// it, once: a site that already has a record is refused, whatever the
-/// recorded versions.
+/// The district's arrival cell, floor 0: none before the district exists.
+pub fn arrival_cell_of(ctx: &ReducerContext) -> Option<(i32, i32)> {
+    ctx.db
+        .district()
+        .iter()
+        .next()
+        .map(|d| (d.arrival_x, d.arrival_y))
+}
+
+/// Generates the city's district (`city.seed`, never a caller's
+/// argument) over the configured site and records it, once: a site that
+/// already has a record is refused, whatever the recorded versions. Writes
+/// the record, the macro graph and the world rows in one transaction, then
+/// moves every player standing somewhere that is not walkable on the new
+/// district to its arrival cell.
 #[spacetimedb::reducer]
-pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
+pub fn create_district(ctx: &ReducerContext) -> Result<(), String> {
     count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
     let existing: Vec<DistrictRecord> = ctx
@@ -68,8 +94,12 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
         .collect();
     let cfg = GenerationConfig::from_balance(defs::BALANCE).map_err(|e| e.to_string())?;
     let content = GenerationContent::committed();
-    let (record, _district, graph) =
+    let seed = GroundConfig::city_seed(defs::BALANCE);
+    let (record, district, graph) =
         create(&existing, seed, &cfg, &content).map_err(|e| e.to_string())?;
+    let arrival = district
+        .arrival_cell(&cfg, &content)
+        .ok_or_else(|| "the district has no arrival cell".to_string())?;
     ctx.db.district().insert(District {
         district_id: 0,
         seed: record.seed,
@@ -81,9 +111,70 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
         rng_version: record.version.rng,
         defs_version: record.version.defs,
         generated_at: ctx.timestamp,
+        arrival_x: arrival.0,
+        arrival_y: arrival.1,
     });
     write_graph(ctx, &graph);
+    let ground = GroundConfig::from_balance(defs::BALANCE);
+    write_world(ctx, &district.region_rows(&ground, &content));
+    relocate_stranded(ctx, arrival, |x, y, f| {
+        f == 0 && district.is_standable_at(x, y, f)
+    });
     Ok(())
+}
+
+/// The one world writer: every row of `rows`, as given, inside the
+/// caller's transaction (`restore.rs` is the only other writer of these
+/// four tables).
+fn write_world(ctx: &ReducerContext, rows: &RegionRows) {
+    for r in &rows.placed {
+        ctx.db.placed_object().insert(PlacedObject {
+            object_id: 0,
+            def_id: r.def_id,
+            x: r.x,
+            y: r.y,
+            floor: r.floor,
+            layer: r.layer,
+            orientation: r.orientation,
+            chunk_key: r.chunk_key,
+        });
+    }
+    for r in &rows.transitions {
+        ctx.db.floor_transition().insert(FloorTransition {
+            transition_id: 0,
+            x: r.x,
+            y: r.y,
+            floor: r.floor,
+            target_x: r.target_x,
+            target_y: r.target_y,
+            target_floor: r.target_floor,
+            chunk_key: r.chunk_key,
+        });
+    }
+    for r in &rows.building_areas {
+        ctx.db.building_area().insert(BuildingArea {
+            area_id: 0,
+            building_id: r.owner_id,
+            x0: r.x0,
+            y0: r.y0,
+            x1: r.x1,
+            y1: r.y1,
+            floor: r.floor,
+            chunk_key: r.chunk_key,
+        });
+    }
+    for r in &rows.room_areas {
+        ctx.db.room_area().insert(RoomArea {
+            area_id: 0,
+            room_id: r.owner_id,
+            x0: r.x0,
+            y0: r.y0,
+            x1: r.x1,
+            y1: r.y1,
+            floor: r.floor,
+            chunk_key: r.chunk_key,
+        });
+    }
 }
 
 /// The one graph writer: one `business` row per workplace source node,

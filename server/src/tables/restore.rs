@@ -549,6 +549,8 @@ impl_autoinc_row!(
         rng_version: 0,
         defs_version: String::new(),
         generated_at: Timestamp::UNIX_EPOCH,
+        arrival_x: 0,
+        arrival_y: 0,
     }
 );
 impl_autoinc_row!(

@@ -140,6 +140,8 @@ export const District = __t.object("District", {
   rngVersion: __t.u32(),
   defsVersion: __t.string(),
   generatedAt: __t.timestamp(),
+  arrivalX: __t.i32(),
+  arrivalY: __t.i32(),
 });
 export type District = __Infer<typeof District>;
 

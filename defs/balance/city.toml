@@ -1,0 +1,48 @@
+# The one live city (story 3.16): its seed and the ground it lays.
+# Not under `generation.`: these are never generation inputs the
+# stamped sweeps depend on.
+
+[[balance]]
+# The one city's seed. `create_district` reads it, never a caller; tests,
+# evidence and the live world use the same number, so a change goes
+# through review.
+key = "city.seed"
+value = 20260713
+min = 0
+max = 4294967295
+
+[[balance]]
+# Ground rows the district writes beyond its site edge on every side, so
+# the viewport never shows a bare canvas at the boundary: at least half
+# a viewport (`neighbourhood.viewport_width_cells` / 2).
+key = "city.ground.margin_cells"
+value = 24
+min = 0
+max = 64
+
+[[balance]]
+# The ground object ids (`defs/objects/terrain.toml`, `interior-shell.toml`)
+# the district lays under every cell: open ground, pavement band,
+# carriageway and a room floor.
+key = "city.ground.open_object_id"
+value = 9
+min = 0
+max = 65535
+
+[[balance]]
+key = "city.ground.pavement_object_id"
+value = 10
+min = 0
+max = 65535
+
+[[balance]]
+key = "city.ground.road_object_id"
+value = 11
+min = 0
+max = 65535
+
+[[balance]]
+key = "city.ground.floor_object_id"
+value = 24
+min = 0
+max = 65535

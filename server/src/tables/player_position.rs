@@ -6,6 +6,7 @@ use sim::player_position::{Write, plan_position};
 use sim::reducer_classes::ReducerClass;
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
+use super::district::arrival_cell_of;
 use super::identity::character_of;
 use super::metrics::count_call;
 
@@ -72,4 +73,68 @@ pub fn set_player_position(
         }
     }
     Ok(())
+}
+
+/// Places a character that has no position yet at the district's arrival
+/// cell; a no-op before a district exists or once a row is there.
+pub fn place_at_arrival(ctx: &ReducerContext, character_id: u64) {
+    let Some((x, y)) = arrival_cell_of(ctx) else {
+        return;
+    };
+    if ctx
+        .db
+        .player_position()
+        .character_id()
+        .find(character_id)
+        .is_some()
+    {
+        return;
+    }
+    let half = (sim::generated::defs::POSITION_UNITS_PER_CELL / 2) as u8;
+    if let Ok(Write::Insert(r) | Write::Update(r)) = plan_position(false, x, y, 0, half, half) {
+        ctx.db.player_position().insert(PlayerPosition {
+            character_id,
+            chunk_key: r.chunk_key,
+            x: r.x,
+            y: r.y,
+            floor: r.floor,
+            frac_x: r.frac_x,
+            frac_y: r.frac_y,
+            updated_at: ctx.timestamp,
+        });
+    }
+}
+
+/// Moves, in place, every position whose cell `standable` refuses to
+/// `arrival` (floor 0, the middle of the cell). An update, never a delete;
+/// idempotent.
+pub fn relocate_stranded(
+    ctx: &ReducerContext,
+    arrival: (i32, i32),
+    standable: impl Fn(i32, i32, i8) -> bool,
+) {
+    let stranded: Vec<PlayerPosition> = ctx
+        .db
+        .player_position()
+        .iter()
+        .filter(|p| !standable(p.x, p.y, p.floor))
+        .collect();
+    let half = (sim::generated::defs::POSITION_UNITS_PER_CELL / 2) as u8;
+    for p in stranded {
+        let Ok(Write::Update(r) | Write::Insert(r)) =
+            plan_position(true, arrival.0, arrival.1, 0, half, half)
+        else {
+            continue;
+        };
+        ctx.db.player_position().character_id().update(PlayerPosition {
+            character_id: p.character_id,
+            chunk_key: r.chunk_key,
+            x: r.x,
+            y: r.y,
+            floor: r.floor,
+            frac_x: r.frac_x,
+            frac_y: r.frac_y,
+            updated_at: ctx.timestamp,
+        });
+    }
 }
