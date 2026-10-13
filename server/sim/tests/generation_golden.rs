@@ -1,7 +1,7 @@
 //! The determinism harness for stories 3.2-3.4 (FR110 passes 1-5): same
 //! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
 //! all six passes for a fixed seed set and compares a readable summary
-//! plus a digest against the committed `tests/goldens/generation_v13.
+//! plus a digest against the committed `tests/goldens/generation_v14.
 //! golden`, so a diff names what moved rather than just "hash differs".
 //! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
 //! bump.sh` fails a PR that touches the golden without bumping that
@@ -43,7 +43,7 @@ use sim::rules::{CoherenceMode, RuleDef, RuleKind, RuleSet};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v13.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v14.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -892,46 +892,6 @@ fn graph_lines(g: &sim::routing::graph::MacroGraph) -> String {
     out
 }
 
-/// `fnv1a` of [`graph_lines`] per seed. A list of constants, not a
-/// `*.golden`, like [`WALKABILITY_DIGESTS`]: the graph is derived from
-/// rows that have not moved. Regenerate with `GENERATION_PRINT_GOLDEN=1`.
-const GRAPH_DIGESTS: [(u64, u64); 5] = [
-    (1, 0xaad36fc5b8d60eb1),
-    (2, 0x2ad2cbc84a0ba101),
-    (3, 0x81a9bf96485f80ca),
-    (42, 0x663a2e82d052efbc),
-    (123_456_789, 0x2edadccdf7c796ff),
-];
-
-#[test]
-fn macro_graph_matches_committed_digests() {
-    let cfg = frozen_config();
-    let content = frozen_content();
-    let mut got = Vec::new();
-    for seed in SEEDS {
-        let d = plan(seed, &cfg, &content).expect("frozen_config's own site is always valid");
-        let g = d
-            .graph(&cfg, &content)
-            .expect("a frozen district's graph builds");
-        let lines = graph_lines(&g);
-        if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
-            println!("graph-digest ({seed}, 0x{:016x}),", fnv1a(&lines));
-        }
-        got.push((seed, fnv1a(&lines), g.nodes().len(), g.edges().len()));
-    }
-    if std::env::var_os("GENERATION_PRINT_GOLDEN").is_some() {
-        return;
-    }
-    assert_eq!(got.len(), GRAPH_DIGESTS.len());
-    for ((seed, digest, nodes, edges), (want_seed, want)) in got.iter().zip(GRAPH_DIGESTS) {
-        assert_eq!(*seed, want_seed);
-        assert_eq!(
-            *digest, want,
-            "seed {seed}'s graph moved ({nodes} nodes, {edges} edges)"
-        );
-    }
-}
-
 fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     let content = frozen_content();
     let d = plan(seed, cfg, &content).expect("frozen_config's own site is always valid");
@@ -968,7 +928,7 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
     let distinct_types = bt.distinct_types().len();
 
     format!(
-        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} types_placed={types_placed} distinct_types={distinct_types} enterable={} shells={} interiors_rejected={} props={} count_ok={count_verdict} digest={:016x}",
+        "seed={seed} regions=res:{},com:{},ind:{},inst:{} nodes={node_count} edges={} blocks={} dead_ends={dead_ends} max_detour_pct={max_detour_pct} p99_detour_pct={p99_detour_pct} density_rings={rings:?} plots={} open_plots={open_plots} envelopes_placed={placed} envelopes_rejected={rejected} types_placed={types_placed} distinct_types={distinct_types} enterable={} shells={} interiors_rejected={} props={} count_ok={count_verdict} digest={:016x} graph={:016x}",
         count(LandUse::Residential),
         count(LandUse::Commercial),
         count(LandUse::Industrial),
@@ -979,7 +939,11 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
         io.enterable_count(),
         io.shell_count(),
         io.rejected_count(),
-        props.props().len(),
+        plan_digest(lu, net, pm, em, bt, io, &d),
+        fnv1a(&graph_lines(
+            &d.graph(cfg, &content)
+                .expect("a frozen district's graph builds"),
+        )),
         plan_digest(lu, net, pm, em, bt, io, &d),
     )
 }
@@ -996,7 +960,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v13.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v14.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );
@@ -1092,7 +1056,7 @@ fn print_golden() {
 }
 
 /// `fnv1a` of the routes between a fixed spread of node pairs, per seed:
-/// path, cost and legs. A list of constants like [`GRAPH_DIGESTS`];
+/// path, cost and legs. A list of constants like [`WALKABILITY_DIGESTS`];
 /// regenerate with `GENERATION_PRINT_GOLDEN=1`; a move is a search change
 const ROUTE_DIGESTS: [(u64, u64); 5] = [
     (1, 0xb2b4fb47e7d3104f),
