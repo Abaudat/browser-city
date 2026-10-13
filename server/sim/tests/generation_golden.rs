@@ -939,12 +939,12 @@ fn summary_line(seed: u64, cfg: &GenerationConfig) -> String {
         io.enterable_count(),
         io.shell_count(),
         io.rejected_count(),
+        props.props().len(),
         plan_digest(lu, net, pm, em, bt, io, &d),
         fnv1a(&graph_lines(
             &d.graph(cfg, &content)
                 .expect("a frozen district's graph builds"),
         )),
-        plan_digest(lu, net, pm, em, bt, io, &d),
     )
 }
 
