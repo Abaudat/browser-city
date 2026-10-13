@@ -180,31 +180,52 @@ fn ties_break_on_node_id_not_on_edge_order() {
 }
 
 #[test]
-fn the_graph_view_is_only_asked_about_expanded_nodes() {
+fn the_graph_view_is_only_asked_about_expanded_and_pushed_nodes() {
+    use std::cell::RefCell;
     struct Counting<'a> {
         inner: SearchGraph,
-        asked: &'a Cell<u32>,
+        expanded: &'a Cell<u32>,
+        looked_up: &'a RefCell<Vec<NodeId>>,
     }
     impl GraphView for Counting<'_> {
         fn node(&self, id: NodeId) -> Option<Node> {
+            self.looked_up.borrow_mut().push(id);
             self.inner.node(id)
         }
         fn neighbours(&self, id: NodeId, out: &mut Vec<(NodeId, EdgeKind, Milliminutes)>) {
-            self.asked.set(self.asked.get() + 1);
+            self.expanded.set(self.expanded.get() + 1);
             self.inner.neighbours(id, out)
         }
     }
     let g = lattice();
-    let asked = Cell::new(0);
+    let (expanded, looked_up) = (Cell::new(0), RefCell::new(Vec::new()));
     let v = Counting {
         inner: SearchGraph::from_graph(&g),
-        asked: &asked,
+        expanded: &expanded,
+        looked_up: &looked_up,
     };
-    search(&v, 0, 1, &rates(), 100).unwrap();
+    let near = search(&v, 0, 1, &rates(), 100).unwrap();
     assert!(
-        asked.get() < 16,
+        expanded.get() < 16,
         "a near goal expanded {} nodes",
-        asked.get()
+        expanded.get()
+    );
+    assert!(near.nodes.len() == 2);
+
+    // Across the lattice every node is reached by several edges, but is
+    // looked up once when pushed (plus the origin, goal and the route's
+    // own waypoints): never once per edge.
+    looked_up.borrow_mut().clear();
+    let far = search(&v, 0, 15, &rates(), 100).unwrap();
+    let lookups = looked_up.borrow().len();
+    let distinct = looked_up
+        .borrow()
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    assert!(
+        lookups <= distinct + far.nodes.len() + 2,
+        "{lookups} lookups for {distinct} distinct nodes"
     );
 }
 
@@ -248,5 +269,14 @@ fn rows_give_the_same_route_in_any_row_order() {
     assert_eq!(
         search(&shuffled, 1000, 1015, &rates(), 10_000).unwrap(),
         want
+    );
+}
+
+#[test]
+fn the_budget_covers_the_largest_district_the_tables_are_bounded_for() {
+    use crate::routing::graph::{GROWTH_TARGET_SIDE_CELLS, max_nodes_for_side};
+    assert!(
+        u64::from(node_budget(defs::BALANCE)) >= max_nodes_for_side(GROWTH_TARGET_SIDE_CELLS),
+        "routing.search.node_budget is under the node ceiling of the growth-target district"
     );
 }

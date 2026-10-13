@@ -9097,13 +9097,9 @@ fn inv_routing_graph_is_deterministic() {
     }
 }
 
-/// `inv_routing_fixture_world_portals_validate` (story 3.9 AC5): the
-/// conformance world's real floor transitions (bridge, manhole,
-/// staircase) become portal nodes and cross-floor edges that pass
-/// `check`; the generated cities alone only ever see floor 0.
-#[test]
-fn inv_routing_fixture_world_portals_validate() {
-    use sim::routing::graph::{BuildInput, EdgeKind, MacroGraph, NodeKind, PortalPair};
+/// The conformance world's routing graph and its floors.
+fn fixture_world() -> (sim::routing::graph::MacroGraph, sim::routing::graph::Floors) {
+    use sim::routing::graph::{BuildInput, MacroGraph, PortalPair};
     let spec = fixture::canonical_world_spec();
     let floors: sim::routing::graph::Floors = spec
         .floors
@@ -9162,6 +9158,17 @@ fn inv_routing_fixture_world_portals_validate() {
         walkability: &floors,
     })
     .unwrap();
+    (g, floors)
+}
+
+/// `inv_routing_fixture_world_portals_validate` (story 3.9 AC5): the
+/// conformance world's real floor transitions (bridge, manhole,
+/// staircase) become portal nodes and cross-floor edges that pass
+/// `check`; the generated cities alone only ever see floor 0.
+#[test]
+fn inv_routing_fixture_world_portals_validate() {
+    use sim::routing::graph::{EdgeKind, NodeKind};
+    let (g, floors) = fixture_world();
     // Every portal is reachable from a non-portal node on its own floor.
     for n in g.nodes().iter().filter(|n| n.kind == NodeKind::Portal) {
         assert!(
@@ -9304,87 +9311,155 @@ fn inv_route_search_heuristic_is_consistent() {
     });
 }
 
-#[test]
-fn inv_route_is_a_valid_walk_with_derivable_instants() {
+/// One route's contract; returns its leg count. Shared by the pooled
+/// (floor 0) test and the fixture world, which has portals.
+fn check_route(
+    g: &sim::routing::graph::MacroGraph,
+    view: &sim::routing::search::SearchGraph,
+    a: u64,
+    b: u64,
+) -> Result<usize, String> {
     use sim::actor_location::{crossings, leg_instants};
-    use sim::routing::search::{GraphView, SearchGraph, node_budget, search};
+    use sim::routing::graph::EdgeKind;
+    use sim::routing::search::{GraphView, node_budget, search};
     use sim::time::REAL_MS_PER_CITY_MINUTE;
     let band = sim::balance::value(defs::BALANCE, "l3.walk_pace_band_percent") as i128;
     let speed = sim::balance::value(defs::BALANCE, "movement.walk_speed_millicells_per_s") as i128;
+    let r = search(view, a, b, &rates(), node_budget(defs::BALANCE))
+        .map_err(|e| format!("{a}>{b}: {e:?}"))?;
+    ensure!(
+        r.nodes.first() == Some(&a) && r.nodes.last() == Some(&b),
+        "{a}>{b}: wrong ends"
+    );
+    let mut seen = std::collections::BTreeSet::new();
+    let mut sum = 0;
+    for w in r.nodes.windows(2) {
+        ensure!(seen.insert(w[0]), "{a}>{b}: node {} repeats", w[0]);
+        let mut out = Vec::new();
+        view.neighbours(w[0], &mut out);
+        let cost = out
+            .iter()
+            .filter(|&&(id, _, _)| id == w[1])
+            .map(|&(_, _, c)| c.0)
+            .min();
+        sum += cost.ok_or_else(|| format!("{a}>{b}: {}-{} is no edge", w[0], w[1]))?;
+    }
+    ensure!(
+        sum == r.cost.0,
+        "{a}>{b}: cost {} vs edge sum {sum}",
+        r.cost.0
+    );
+    // [0, cost] is covered: the first leg departs at 0, each gap between
+    // legs is exactly the portal edge between them, and legs plus gaps add
+    // up to the route's cost.
+    ensure!(
+        r.legs.first().map(|l| l.t_depart) == Some(0),
+        "{a}>{b}: the first leg does not depart at 0"
+    );
+    ensure!(
+        r.legs.last().map(|l| l.t_arrive) == Some(sum),
+        "{a}>{b}: the last leg does not arrive at the total cost"
+    );
+    let at = |w: (i32, i32, i8)| {
+        g.nodes()
+            .iter()
+            .position(|n| (n.x, n.y, n.floor) == w)
+            .ok_or_else(|| format!("{a}>{b}: waypoint {w:?} is no node"))
+    };
+    let mut covered = 0;
+    for pair in r.legs.windows(2) {
+        let (from, to) = (
+            at(*pair[0].waypoints.last().ok_or("an empty leg")?)?,
+            at(pair[1].waypoints[0])?,
+        );
+        let portal = g
+            .edges()
+            .iter()
+            .find(|e| {
+                e.kind == EdgeKind::Portal
+                    && ((e.a as usize, e.b as usize) == (from, to)
+                        || (e.a as usize, e.b as usize) == (to, from))
+            })
+            .ok_or_else(|| format!("{a}>{b}: legs {from} and {to} share no portal edge"))?;
+        let gap = pair[1].t_depart - pair[0].t_arrive;
+        ensure!(
+            gap == portal.cost.0,
+            "{a}>{b}: a leg gap of {gap} is not its portal edge cost {}",
+            portal.cost.0
+        );
+        covered += gap;
+    }
+    covered += r.legs.iter().map(|l| l.t_arrive - l.t_depart).sum::<i64>();
+    ensure!(
+        covered == r.cost.0,
+        "{a}>{b}: legs and gaps cover {covered} of {}",
+        r.cost.0
+    );
+    for leg in &r.legs {
+        ensure!(
+            leg.waypoints.iter().all(|w| w.2 == leg.waypoints[0].2),
+            "{a}>{b}: a leg spans floors"
+        );
+        ensure!(
+            leg_instants(&leg.waypoints, leg.t_depart, leg.t_arrive).is_some(),
+            "{a}>{b}: a segment is over MAX_SEGMENT_CELLS"
+        );
+        let _ = crossings(&leg.waypoints, leg.t_depart, leg.t_arrive, None);
+        // The pace the leg demands: the tile path L3 walks between
+        // waypoints is 4-connected, so a segment is its Manhattan length
+        // (1/1024 cells) over the time it is given, against walking pace.
+        // Distance in no time is an infinite pace.
+        let len: i128 = leg
+            .waypoints
+            .windows(2)
+            .map(|w| {
+                let (dx, dy) = ((w[0].0 - w[1].0).abs(), (w[0].1 - w[1].1).abs());
+                (dx + dy) as i128 * 1024
+            })
+            .sum();
+        let dur = (leg.t_arrive - leg.t_depart) as i128;
+        ensure!(
+            len == 0 || dur > 0,
+            "{a}>{b}: a leg covers distance in no time"
+        );
+        if len > 0 {
+            // 1/1024 cells per milliminute at walking pace, x100.
+            let walk = speed * REAL_MS_PER_CITY_MINUTE as i128 * 1024 / 10_000_000;
+            let pace = len * 100 / dur;
+            let (lo, hi) = (walk * (100 - band) / 100, walk * (100 + band) / 100);
+            ensure!(
+                (lo..=hi).contains(&pace),
+                "{a}>{b}: a leg pace {pace} is outside [{lo}, {hi}]"
+            );
+        }
+    }
+    Ok(r.legs.len())
+}
+
+#[test]
+fn inv_route_is_a_valid_walk_with_derivable_instants() {
+    use sim::routing::search::SearchGraph;
     over_pool("inv_route_is_a_valid_walk_with_derivable_instants", |c| {
         let g = pooled_graph(c)?;
         let view = SearchGraph::from_graph(g);
-        let budget = node_budget(defs::BALANCE);
         for (a, b) in route_pairs(c.seed, g.nodes().len(), 6) {
-            let r = search(&view, a, b, &rates(), budget).map_err(|e| format!("{a}>{b}: {e:?}"))?;
-            ensure!(
-                r.nodes.first() == Some(&a) && r.nodes.last() == Some(&b),
-                "{a}>{b}: wrong ends"
-            );
-            let mut seen = std::collections::BTreeSet::new();
-            let mut sum = 0;
-            for w in r.nodes.windows(2) {
-                ensure!(seen.insert(w[0]), "{a}>{b}: node {} repeats", w[0]);
-                let mut out = Vec::new();
-                view.neighbours(w[0], &mut out);
-                let cost = out
-                    .iter()
-                    .filter(|&&(id, _, _)| id == w[1])
-                    .map(|&(_, _, c)| c.0)
-                    .min();
-                sum += cost.ok_or_else(|| format!("{a}>{b}: {}-{} is no edge", w[0], w[1]))?;
-            }
-            ensure!(
-                sum == r.cost.0,
-                "{a}>{b}: cost {} vs edge sum {sum}",
-                r.cost.0
-            );
-            ensure!(
-                r.legs.last().map(|l| l.t_arrive) == Some(sum),
-                "{a}>{b}: the last leg does not arrive at the total cost"
-            );
-            let mut clock = 0;
-            for leg in &r.legs {
-                ensure!(
-                    leg.waypoints.iter().all(|w| w.2 == leg.waypoints[0].2),
-                    "{a}>{b}: a leg spans floors"
-                );
-                ensure!(
-                    leg.t_depart >= clock && leg.t_arrive >= leg.t_depart,
-                    "{a}>{b}: leg times go backwards"
-                );
-                clock = leg.t_arrive;
-                ensure!(
-                    leg_instants(&leg.waypoints, leg.t_depart, leg.t_arrive).is_some(),
-                    "{a}>{b}: a segment is over MAX_SEGMENT_CELLS"
-                );
-                let _ = crossings(&leg.waypoints, leg.t_depart, leg.t_arrive, None);
-                // The pace the leg demands: polyline length (1/1024 cells,
-                // as leg_instants measures it) over the time it is given,
-                // against walking pace.
-                let len: i128 = leg
-                    .waypoints
-                    .windows(2)
-                    .map(|w| {
-                        let (dx, dy) = ((w[0].0 - w[1].0) as i64, (w[0].1 - w[1].1) as i64);
-                        (((dx * dx + dy * dy) as u64) << 20).isqrt() as i128
-                    })
-                    .sum();
-                let dur = (leg.t_arrive - leg.t_depart) as i128;
-                if dur > 0 && len > 0 {
-                    // 1/1024 cells per milliminute at walking pace, x100.
-                    let walk = speed * REAL_MS_PER_CITY_MINUTE as i128 * 1024 / 10_000_000;
-                    let pace = len * 100 / dur;
-                    let (lo, hi) = (walk * (100 - band) / 100, walk * (100 + band) / 100);
-                    ensure!(
-                        (lo..=hi).contains(&pace),
-                        "{a}>{b}: a leg pace {pace} is outside [{lo}, {hi}]"
-                    );
-                }
-            }
+            check_route(g, &view, a, b)?;
         }
         Ok(())
     });
+    // Generated cities are one floor; the conformance world has portals,
+    // so the multi-leg half of the contract is exercised on every pair.
+    let g = fixture_world().0;
+    let view = sim::routing::search::SearchGraph::from_graph(&g);
+    let mut multi_leg = 0;
+    for a in 0..g.nodes().len() as u64 {
+        for b in 0..g.nodes().len() as u64 {
+            if check_route(&g, &view, a, b).unwrap_or_else(|e| panic!("{e}")) > 1 {
+                multi_leg += 1;
+            }
+        }
+    }
+    assert!(multi_leg > 0, "no fixture-world route crossed a floor");
 }
 
 #[test]

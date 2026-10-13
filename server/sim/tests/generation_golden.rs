@@ -1103,7 +1103,7 @@ const ROUTE_DIGESTS: [(u64, u64); 5] = [
 ];
 
 fn route_lines(seed: u64) -> String {
-    use sim::routing::search::{SearchGraph, search};
+    use sim::routing::search::{SearchGraph, node_budget, search};
     let cfg = frozen_config();
     let content = frozen_content();
     let d = plan(seed, &cfg, &content).expect("frozen_config's own site is always valid");
@@ -1115,8 +1115,14 @@ fn route_lines(seed: u64) -> String {
     let mut out = String::new();
     for i in 0..24u64 {
         let (a, b) = ((i * 7_919 + 13) % n, (i * 104_729 + 5_003) % n);
-        let r = search(&view, a, b, &cfg.routing_rates, 100_000)
-            .expect("a generated graph is connected");
+        let r = search(
+            &view,
+            a,
+            b,
+            &cfg.routing_rates,
+            node_budget(sim::generated::defs::BALANCE),
+        )
+        .expect("a generated graph is connected");
         out.push_str(&format!(
             "{a}>{b} cost={} nodes={:?} legs={}\n",
             r.cost.0,

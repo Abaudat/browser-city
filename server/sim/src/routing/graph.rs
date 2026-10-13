@@ -38,6 +38,8 @@ pub const EDGE_COUNT_BAND_512: (u64, u64) = (
 );
 /// The side, in cells, the bands above are declared at.
 pub const BAND_SITE_SIDE_CELLS: u64 = 512;
+/// The side, in cells, of the district the tables are bounded for (NFR14).
+pub const GROWTH_TARGET_SIDE_CELLS: u64 = 1024;
 
 /// The most nodes a site of `side` cells may hold: the band's ceiling
 /// scaled linearly with area. Used by the structural performance test

@@ -111,14 +111,16 @@ pub fn search(
             if closed.contains(&next) {
                 continue;
             }
-            let Some(n) = graph.node(next) else { continue };
             let ng = g + cost.0;
-            if g_score.get(&next).is_none_or(|&old| ng < old) {
-                g_score.insert(next, ng);
-                parent.insert(next, (id, cost.0));
-                let hn = h(&n);
-                open.push(Reverse((ng + hn, hn, next)));
+            if g_score.get(&next).is_some_and(|&old| ng >= old) {
+                continue;
             }
+            // Only an improving edge costs a node lookup.
+            let Some(n) = graph.node(next) else { continue };
+            g_score.insert(next, ng);
+            parent.insert(next, (id, cost.0));
+            let hn = h(&n);
+            open.push(Reverse((ng + hn, hn, next)));
         }
     }
     Err(SearchError::Unreachable)

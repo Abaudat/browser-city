@@ -87,19 +87,33 @@ fi
 
 # Story 3.12 (FR131, FR135): a search costs its expanded nodes, never the
 # graph's size, so the whole of `route_node` / `route_edge` is only ever
-# iterated by the restore reducers and the metrics sampler.
-ITER_MATCHES="$(grep -rnE 'route_(node|edge)\(\)[[:space:]]*\.iter\(\)' "$SRC_DIR" --include='*.rs' --exclude-dir=generated 2>/dev/null | grep -vE '/(restore|metrics)\.rs:' | not_a_comment_line || true)"
+# iterated by the restore reducers and the metrics sampler; and there is one
+# call site for the route search, the destination-commit path. Each file is
+# joined onto one line first (comment lines dropped), so a rustfmt-split
+# chain or a grouped `use sim::routing::{estimate, search};` is still seen.
+ITER_MATCHES=""
+SEARCH_FILES=""
+while IFS= read -r -d '' f; do
+  flat="$(tr -d '\r' <"$f" | grep -vE '^[[:space:]]*//' | tr '\n' ' ' || true)"
+  base="$(basename "$f")"
+  if [ "$base" != restore.rs ] && [ "$base" != metrics.rs ] \
+    && grep -qE 'route_(node|edge)\(\)[[:space:]]*\.iter\(\)' <<<"$flat"; then
+    ITER_MATCHES="$ITER_MATCHES$f
+"
+  fi
+  if grep -qE 'routing::(search|\{[^}]*\bsearch\b)' <<<"$flat"; then
+    SEARCH_FILES="$SEARCH_FILES$f
+"
+  fi
+done < <(find "$SRC_DIR" -name '*.rs' -not -path '*/generated/*' -print0 | sort -z)
 if [ -n "$ITER_MATCHES" ]; then
   echo "check-server-src-bans: FAIL -- route_node()/route_edge() iterated outside restore.rs and metrics.rs: a route search reads the graph through its indexes, never a whole table (story 3.12):" >&2
-  echo "$ITER_MATCHES" >&2
+  printf '%s' "$ITER_MATCHES" >&2
   FAILED=1
 fi
-
-# One call site for the route search: the destination-commit path.
-SEARCH_FILES="$(grep -rlE 'routing::search' "$SRC_DIR" --include='*.rs' --exclude-dir=generated 2>/dev/null | sort || true)"
-if [ -n "$SEARCH_FILES" ] && [ "$(printf '%s\n' "$SEARCH_FILES" | wc -l)" -gt 1 ]; then
+if [ "$(printf '%s' "$SEARCH_FILES" | grep -c .)" -gt 1 ]; then
   echo "check-server-src-bans: FAIL -- routing::search is used from more than one file under server/src/ (one search, from the one destination-commit path, story 3.12):" >&2
-  echo "$SEARCH_FILES" >&2
+  printf '%s' "$SEARCH_FILES" >&2
   FAILED=1
 fi
 

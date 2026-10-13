@@ -379,8 +379,6 @@ jobs:
         run: bash ../scripts/ci/check-reducer-counted.sh
       - name: story 3.11 FR131, the travel-time estimator is graph-free and collection-free
         run: bash ../scripts/ci/check-routing-estimate-purity.sh
-      - name: story 3.12 FR129, the route search holds no hash-ordered collection
-        run: bash ../scripts/ci/check-routing-search-determinism.sh
       - name: story 3.9 FR130, the routing graph and its tables carry minutes and no second distance unit
         run: bash ../scripts/ci/check-routing-one-unit.sh
       - run: bash ../scripts/ci/check-golden-version-bump.sh
