@@ -86,6 +86,21 @@ pub fn arrival_cell_of(ctx: &ReducerContext) -> Option<(i32, i32)> {
 pub fn create_district(ctx: &ReducerContext) -> Result<(), String> {
     count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
+    create_district_at(ctx, GroundConfig::city_seed(defs::BALANCE))
+}
+
+/// Test-only (`time-control` flavour, never deployed): the same
+/// generation as [`create_district`] over a caller's `seed`, so a
+/// reviewer can walk any seed on a local instance.
+#[cfg(feature = "time-control")]
+#[spacetimedb::reducer]
+pub fn debug_create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    create_district_at(ctx, seed)
+}
+
+fn create_district_at(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
     let existing: Vec<DistrictRecord> = ctx
         .db
         .district()
@@ -107,7 +122,6 @@ pub fn create_district(ctx: &ReducerContext) -> Result<(), String> {
         .collect();
     let cfg = GenerationConfig::from_balance(defs::BALANCE).map_err(|e| e.to_string())?;
     let content = GenerationContent::committed();
-    let seed = GroundConfig::city_seed(defs::BALANCE);
     let (record, district, graph) =
         create(&existing, seed, &cfg, &content).map_err(|e| e.to_string())?;
     let arrival = district

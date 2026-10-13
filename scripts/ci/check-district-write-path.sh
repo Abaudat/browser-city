@@ -31,9 +31,9 @@ flat() { code "$1" | tr '\n' ' '; }
 
 # <accessor>:<declaring module>:<fns of district.rs that may name it>:<fns of restore.rs>
 ACCESSORS=(
-  "district:district:create_district arrival_cell_of arrival_cell_in_view:begin_restore restore_district"
-  "route_node:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_node"
-  "route_edge:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_edge"
+  "district:district:create_district create_district_at arrival_cell_of arrival_cell_in_view:begin_restore restore_district"
+  "route_node:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_node"
+  "route_edge:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_edge"
 )
 GEN='(^|[^_[:alnum:]])generation([^_[:alnum:]]|$)'
 

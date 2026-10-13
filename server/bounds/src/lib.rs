@@ -9,6 +9,7 @@
 //! `spacetimedb` dependency, gate it with plain `cargo test`.
 
 pub mod city_clock_fixture;
+pub mod district_fixture;
 #[cfg(test)]
 mod float_scan;
 pub mod generation_evidence;
@@ -16,7 +17,6 @@ pub mod generation_stamp;
 pub mod neighbourhood_evidence;
 pub mod schema;
 pub mod sweep;
-pub mod district_fixture;
 pub mod world_fixture;
 
 pub use sim::table_bounds::{BoundKind, TABLE_BOUNDS, TableBound};

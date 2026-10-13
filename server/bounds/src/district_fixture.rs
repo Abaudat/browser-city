@@ -104,7 +104,11 @@ pub fn build_document() -> String {
                 a.floor
             ));
         }
-        out.push_str(if name == "roomAreas" { "\n]\n" } else { "\n],\n" });
+        out.push_str(if name == "roomAreas" {
+            "\n]\n"
+        } else {
+            "\n],\n"
+        });
     }
     out.push_str("}\n");
     out

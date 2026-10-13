@@ -164,15 +164,18 @@ pub fn relocate_stranded(
         else {
             continue;
         };
-        ctx.db.player_position().character_id().update(PlayerPosition {
-            character_id: p.character_id,
-            chunk_key: r.chunk_key,
-            x: r.x,
-            y: r.y,
-            floor: r.floor,
-            frac_x: r.frac_x,
-            frac_y: r.frac_y,
-            updated_at: ctx.timestamp,
-        });
+        ctx.db
+            .player_position()
+            .character_id()
+            .update(PlayerPosition {
+                character_id: p.character_id,
+                chunk_key: r.chunk_key,
+                x: r.x,
+                y: r.y,
+                floor: r.floor,
+                frac_x: r.frac_x,
+                frac_y: r.frac_y,
+                updated_at: ctx.timestamp,
+            });
     }
 }
