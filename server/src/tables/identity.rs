@@ -121,6 +121,19 @@ pub fn my_character(ctx: &ViewContext) -> Vec<MyCharacter> {
     }]
 }
 
+/// Where the caller starts (`player_position::start_of`): its stored
+/// position, else the district's arrival cell.
+#[view(accessor = my_start, public)]
+pub fn my_start(ctx: &ViewContext) -> Vec<super::player_position::MyStart> {
+    let me = ctx
+        .db
+        .character_identity()
+        .identity()
+        .find(ctx.sender())
+        .map(|m| m.character_id);
+    super::player_position::start_of(ctx, me)
+}
+
 fn issuer_rows(ctx: &ReducerContext) -> Vec<IssuerRow> {
     ctx.db
         .oidc_issuer()

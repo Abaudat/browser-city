@@ -100,6 +100,7 @@ import ItemHeldRow from "./item_held_table";
 import ItemInstanceRow from "./item_instance_table";
 import ModuleVersionRow from "./module_version_table";
 import MyCharacterRow from "./my_character_table";
+import MyStartRow from "./my_start_table";
 import PlacedObjectRow from "./placed_object_table";
 import PlayerPositionRow from "./player_position_table";
 import RoomAreaRow from "./room_area_table";
@@ -274,6 +275,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyCharacterRow),
+  myStart: __table({
+    name: 'my_start',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyStartRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -365,6 +373,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "module_version": Omit<typeof tablesSchema.schemaType.tables["moduleVersion"], "accessorName"> & { readonly accessorName: "module_version" };
     /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
     readonly "my_character": Omit<typeof tablesSchema.schemaType.tables["myCharacter"], "accessorName"> & { readonly accessorName: "my_character" };
+    /** @deprecated Use `myStart` instead. This alias will be removed in the next major version. */
+    readonly "my_start": Omit<typeof tablesSchema.schemaType.tables["myStart"], "accessorName"> & { readonly accessorName: "my_start" };
   };
 };
 
@@ -396,6 +406,7 @@ const tableAccessorAliases = {
   "world_clock": "worldClock",
   "module_version": "moduleVersion",
   "my_character": "myCharacter",
+  "my_start": "myStart",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -442,6 +453,8 @@ export type DbView = __DbViewBase & {
   readonly "module_version": __DbViewBase["moduleVersion"];
   /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
   readonly "my_character": __DbViewBase["myCharacter"];
+  /** @deprecated Use `myStart` instead. This alias will be removed in the next major version. */
+  readonly "my_start": __DbViewBase["myStart"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
@@ -472,6 +485,8 @@ export type Tables = __TablesBase & {
   readonly "module_version": __TablesBase["moduleVersion"];
   /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
   readonly "my_character": __TablesBase["myCharacter"];
+  /** @deprecated Use `myStart` instead. This alias will be removed in the next major version. */
+  readonly "my_start": __TablesBase["myStart"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

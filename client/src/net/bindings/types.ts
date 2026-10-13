@@ -279,6 +279,15 @@ export const MyCharacter = __t.object("MyCharacter", {
 });
 export type MyCharacter = __Infer<typeof MyCharacter>;
 
+export const MyStart = __t.object("MyStart", {
+  x: __t.i32(),
+  y: __t.i32(),
+  floor: __t.i8(),
+  fracX: __t.u8(),
+  fracY: __t.u8(),
+});
+export type MyStart = __Infer<typeof MyStart>;
+
 export const NodeKind = __t.object("NodeKind", {
   code: __t.u32(),
   name: __t.string(),

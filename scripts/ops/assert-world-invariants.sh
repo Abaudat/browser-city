@@ -66,6 +66,18 @@ for t in $CODE_TABLES; do
   [ "$n" -ge 1 ] || bad "code table '$t' is empty"
 done
 
+# The city exists: exactly one district, and a world row at its arrival cell.
+DISTRICTS="$(rows "SELECT arrival_x, arrival_y FROM district")"
+N_DISTRICTS="$(printf '%s\n' "$DISTRICTS" | grep -c . || true)"
+if [ "$N_DISTRICTS" -ne 1 ]; then
+  bad "district holds $N_DISTRICTS row(s), expected exactly 1 -- ensure-district.sh did not run"
+else
+  AX="$(printf '%s' "$DISTRICTS" | tr -d ' ' | cut -d'|' -f1)"
+  AY="$(printf '%s' "$DISTRICTS" | tr -d ' ' | cut -d'|' -f2)"
+  ARRIVAL_ROWS="$(rows "SELECT object_id FROM placed_object WHERE x = $AX AND y = $AY" | grep -c . || true)"
+  [ "$ARRIVAL_ROWS" -ge 1 ] || bad "no placed_object row at the arrival cell ($AX, $AY) -- the district's world rows were not written"
+fi
+
 LIVENESS="$(rows "SELECT fires FROM cadence_liveness")"
 if [ -n "$LIVENESS" ]; then
   while read -r fires; do

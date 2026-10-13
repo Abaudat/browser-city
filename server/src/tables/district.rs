@@ -37,6 +37,9 @@ pub struct District {
     #[primary_key]
     #[auto_inc]
     pub district_id: u64,
+    /// Indexed only so `arrival_cell_in_view` can read the row: a view has
+    /// no table scan.
+    #[index(btree)]
     pub seed: u64,
     pub x0: i32,
     pub y0: i32,
@@ -52,6 +55,16 @@ pub struct District {
     pub arrival_x: i32,
     #[default(0)]
     pub arrival_y: i32,
+}
+
+/// The same cell, read from a view.
+pub fn arrival_cell_in_view(ctx: &spacetimedb::ViewContext) -> Option<(i32, i32)> {
+    ctx.db
+        .district()
+        .seed()
+        .filter(0u64..)
+        .next()
+        .map(|d| (d.arrival_x, d.arrival_y))
 }
 
 /// The district's arrival cell, floor 0: none before the district exists.

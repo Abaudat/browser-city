@@ -85,7 +85,7 @@ grep -qF "rolled back on purpose" "$DATA_DIR/rollback-1.log" \
 ok "an aborting reducer that wrote a whole graph left every table empty"
 
 # --- (b) create_district writes the graph --------------------------------
-spacetime call "$DB" "${SERVER_ARGS[@]}" -y create_district 7 >"$DATA_DIR/create.log" 2>&1 \
+spacetime call "$DB" "${SERVER_ARGS[@]}" -y create_district >"$DATA_DIR/create.log" 2>&1 \
   || fail "create_district as owner failed" "$DATA_DIR/create.log"
 STATE="$(graph_state)"
 NODES="$(count_of "$STATE" route_node)"

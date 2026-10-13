@@ -4,9 +4,9 @@
 
 use sim::player_position::{Write, plan_position};
 use sim::reducer_classes::ReducerClass;
-use spacetimedb::{ReducerContext, Table, Timestamp};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, Timestamp, ViewContext};
 
-use super::district::arrival_cell_of;
+use super::district::{arrival_cell_in_view, arrival_cell_of};
 use super::identity::character_of;
 use super::metrics::count_call;
 
@@ -31,6 +31,44 @@ pub struct PlayerPosition {
     pub frac_y: u8,
     /// The server's `ctx.timestamp` of the write.
     pub updated_at: Timestamp,
+}
+
+/// Where the caller starts: its own character's stored position when it
+/// has one, else the district's arrival cell. Empty before a district
+/// exists. The client takes its first position from the `my_start` view
+/// and from nowhere else.
+#[derive(SpacetimeType, Clone, Debug, PartialEq, Eq)]
+pub struct MyStart {
+    pub x: i32,
+    pub y: i32,
+    pub floor: i8,
+    pub frac_x: u8,
+    pub frac_y: u8,
+}
+
+/// The `my_start` row for a caller whose character is `character_id`
+/// (none when it has no character yet).
+pub fn start_of(ctx: &ViewContext, character_id: Option<u64>) -> Vec<MyStart> {
+    if let Some(p) = character_id.and_then(|id| ctx.db.player_position().character_id().find(id)) {
+        return vec![MyStart {
+            x: p.x,
+            y: p.y,
+            floor: p.floor,
+            frac_x: p.frac_x,
+            frac_y: p.frac_y,
+        }];
+    }
+    let half = (sim::generated::defs::POSITION_UNITS_PER_CELL / 2) as u8;
+    arrival_cell_in_view(ctx)
+        .map(|(x, y)| MyStart {
+            x,
+            y,
+            floor: 0,
+            frac_x: half,
+            frac_y: half,
+        })
+        .into_iter()
+        .collect()
 }
 
 /// Writes the caller's own character's position: the reducer takes no
