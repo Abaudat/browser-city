@@ -591,3 +591,35 @@ function districtMargin(): number {
   if (!entry) throw new Error("no city.ground.margin_cells balance key");
   return entry.value;
 }
+
+/** The nearest cell to `from` with `cells` of open ground ahead of it along
+ * `dir` (an axis, or a diagonal), every step of it clear for a body. */
+export function startWithRoom(from: Cell, dir: { x: number; y: number }, cells: number): Cell {
+  const clearAhead = (c: Cell): boolean => {
+    for (let i = 1; i <= cells; i++) {
+      const a = { x: c.x + dir.x * (i - 1), y: c.y + dir.y * (i - 1) };
+      const b = { x: c.x + dir.x * i, y: c.y + dir.y * i };
+      // A diagonal step is two orthogonal ones; both routes must be open.
+      if (dir.x !== 0 && dir.y !== 0) {
+        const viaX = { x: b.x, y: a.y };
+        const viaY = { x: a.x, y: b.y };
+        if (!canStep(a, viaX) || !canStep(viaX, b) || !canStep(a, viaY) || !canStep(viaY, b)) {
+          return false;
+        }
+      } else if (!canStep(a, b)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  for (let r = 0; r <= 60; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const c = { x: from.x + dx, y: from.y + dy };
+        if (fits(c.x, c.y) && buildingOf(c) === 0n && clearAhead(c)) return c;
+      }
+    }
+  }
+  throw new Error(`no start with ${cells} cells of room near ${from.x},${from.y}`);
+}

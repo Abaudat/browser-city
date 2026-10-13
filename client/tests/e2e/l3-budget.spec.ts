@@ -21,12 +21,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { cpus, platform } from "node:os";
 import type { Page } from "@playwright/test";
+import { RUSH_CROWD_SIZE, RUSH_MIN_WALKING_SHARE } from "../../src/debug/rush-crowd";
 import type {} from "../../src/net/e2e-hooks";
-import {
-  RUSH_CROWD_SIZE,
-  RUSH_MIN_WALKING_SHARE,
-  RUSH_PILE_CELL,
-} from "../../src/test-street/rush-crowd";
 import { calibrationWorkload } from "./calibration-workload";
 import { expect, test } from "./fixtures";
 import {
@@ -52,10 +48,6 @@ import {
  * 0.6 ms of the empty street (`street-perf.spec.ts`); stamped at 6 ms, the
  * measured figure with the runner's slowness and a margin on top. */
 const P95_CROWD_FRAME_WORK_MS = 6;
-
-/** The street pavement's south edge: the lamppost row is 8, the body rests
- * just short of it. */
-const PAVEMENT_EDGE_PLAYER_Y = 7.3;
 
 /** Render-free L3 frames the verdict is taken over. */
 const SWEEP_FRAMES = MIN_MEASURED_FRAMES + 1_000;
@@ -139,18 +131,10 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
 }) => {
   test.setTimeout(RUN_MS + 300_000);
   await page.setViewportSize({ width: 1920, height: 1080 });
-  await page.goto("/?rushCrowd");
+  await page.goto("/?rushCrowd=1");
   await page.waitForFunction(() => window.__bc?.playerPosition !== undefined, undefined, {
     timeout: 60_000,
   });
-  // To the street's south edge, where the crowd is in view and held.
-  await page.keyboard.down("ArrowDown");
-  await page.waitForFunction(
-    (y) => (window.__bc?.playerPosition?.y ?? 0) > y,
-    PAVEMENT_EDGE_PLAYER_Y,
-    { timeout: 20_000 },
-  );
-  await page.keyboard.up("ArrowDown");
   // Every citizen of the crowd has a body before anything is measured.
   await expect
     .poll(() => page.evaluate(() => window.__bc?.bodyCount?.() ?? 0), { timeout: 60_000 })
@@ -312,7 +296,6 @@ test("L3 fits the frame for a 200-body rush hour: time, allocation, GC (NFR11)",
     viewport: { width: 1920, height: 1080 },
     crowd: {
       size: RUSH_CROWD_SIZE,
-      pileCell: RUSH_PILE_CELL,
       liveBodiesMin: liveMin,
       walkingMin,
       sidesteppingMax,
