@@ -911,6 +911,9 @@ async function startWorldScene(
       liveSprites: handle.liveSpriteCount(),
       buildingId: at.buildingId.toString(),
       roomId: at.roomId.toString(),
+      localProps: handle
+        .localPropCells()
+        .map((p) => ({ objectId: p.objectId.toString(), x: p.x, y: p.y })),
     };
   });
   exposePlayerDrawnPointForE2e(handle.playerDrawnPoint);

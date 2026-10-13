@@ -342,6 +342,8 @@ export interface WorldSceneHandle {
   /** How many chunks are drawn right now, and how many pool and flat
    * sprites they hold: what the leak check compares. */
   drawnChunkCount(): number;
+  /** The cells the page's own local props were placed on. */
+  localPropCells(): readonly { objectId: bigint; x: number; y: number }[];
   liveSpriteCount(): number;
   /** The building and room the player's own cell is in. */
   ownershipAtPlayer(): { readonly buildingId: bigint; readonly roomId: bigint };
@@ -1410,6 +1412,7 @@ export async function mountWorldScene(
   // the store like any streamed one, on the standable cell nearest the
   // player's start.
   const localProps: readonly LocalProp[] = options.localProps ?? [];
+  const placedLocal: { objectId: bigint; x: number; y: number }[] = [];
   function placeLocalProps(): void {
     for (const prop of localProps) {
       const cell = nearestStandable(
@@ -1419,6 +1422,7 @@ export async function mountWorldScene(
         prop.minDistance ?? 1,
       );
       if (!cell) continue;
+      placedLocal.push({ objectId: prop.objectId, x: cell.x, y: cell.y });
       store.insert("placedObject", {
         objectId: prop.objectId,
         defId: prop.defId,
@@ -1931,6 +1935,7 @@ export async function mountWorldScene(
     },
     stageChildCount: () => app.stage.children.length,
     drawnChunkCount: () => drawnChunks.size,
+    localPropCells: () => placedLocal,
     liveSpriteCount: () => liveEntries.size,
     ownershipAtPlayer: () => ownership.ownershipAt(walk.cellX, walk.cellY, walk.floor),
     destroy: () => {

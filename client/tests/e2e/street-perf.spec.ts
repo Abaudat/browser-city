@@ -6,7 +6,7 @@
 //     BC_SOAK_MS=600000 npm run test:e2e:perf  # the 10-minute soak
 //
 // What it measures is the whole per-frame CPU *work*, not one system's
-// callback (cycle 1 finding, both leads): `test-street/scene.ts` brackets
+// callback (cycle 1 finding, both leads): `render/world-scene.ts` brackets
 // it with two ticker listeners, one at `UPDATE_PRIORITY.INTERACTION`
 // (before everything) and one at `UPDATE_PRIORITY.UTILITY` (after Pixi's
 // own render, which runs at `UPDATE_PRIORITY.LOW`) -- so movement,
@@ -127,7 +127,7 @@ async function hoverAnInteractableProp(page: Page): Promise<void> {
   );
   const worldPx = { x: anchor.x, y: anchor.y - tileSizePx / 2 };
   const canvasOffset = await canvasOffsetForWorldPx(page, worldPx);
-  const box = await page.locator("#test-street canvas").boundingBox();
+  const box = await page.locator("#world canvas").boundingBox();
   if (!box) throw new Error("no street canvas to hover");
   await page.mouse.move(box.x + canvasOffset.x, box.y + canvasOffset.y);
 }

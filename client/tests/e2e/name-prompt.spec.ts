@@ -6,14 +6,15 @@
 // bound here; the timing gate is `boot-budget/boot-budget.spec.ts`'s.
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
-import { HOME_FLAT_SPAWN } from "../../src/test-street/fixture";
 import { waitForPlayerControllable } from "./boot-test-support";
+import { arrivalCell } from "./district-support";
 import { expect, test } from "./fixtures";
 import { ownerSql, readSpacetimeHandle } from "./spacetime-harness.mjs";
 
 // The prompt is driven by hand, and the player arrives where a new character
-// really does: the home flat.
-test.use({ arrive: false, startAt: "home" });
+// really does: the generated dwelling the district names.
+const HOME_FLAT_SPAWN = { x: arrivalCell().x + 0.5, y: arrivalCell().y + 0.5, floor: 0 } as const;
+test.use({ arrive: false });
 
 const PROMPT = '[data-bc-surface="name-prompt"]';
 

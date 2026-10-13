@@ -24,15 +24,15 @@ import {
   buildUniformedWalkerFixture,
   buildWalkerFixture,
 } from "../../src/test-street/citizens";
-import { committedDefs } from "../unit/test-street/street-world";
+import { committedDefs } from "../unit/support/committed-defs";
 import { ready } from "./appearance-test-support";
 import { expect, test } from "./fixtures";
 
 test.describe("the real, mounted appearance pipeline", () => {
   test("citizens sharing a tuple+override share one texture instance (AC5)", async ({ page }) => {
-    // `?freezeCrowd=1` holds the whole crowd, no zone: sharing is a property
+    // `?freezeBodies=1` holds the whole crowd, no zone: sharing is a property
     // of the cache, not of who is near the viewport.
-    await page.goto("/?freezeCrowd=1");
+    await page.goto("/?freezeBodies=1");
     await ready(page);
 
     const ids = await page.evaluate(() => window.__bc?.appearanceTextureIds ?? {});

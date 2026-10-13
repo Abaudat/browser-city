@@ -17,7 +17,7 @@ interface Seen {
 }
 
 async function ready(page: Page): Promise<void> {
-  await page.goto("/?freezeCrowd=1");
+  await page.goto("/?freezeBodies=1");
   await page.waitForFunction(() => window.__bc?.playerBody !== undefined, undefined, {
     timeout: 60_000,
   });

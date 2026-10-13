@@ -56,7 +56,7 @@ async function waitForSceneReady(page: Page): Promise<void> {
 /** One centre check against the player sprite's own real, live global
  * bounds -- never recomputed from `viewTransform`, which is the
  * implementation under test (Quentin's direction). The sprite is
- * bottom-centre anchored (`test-street/scene.ts`'s own `anchor.set(0.5,
+ * bottom-centre anchored (`render/world-scene.ts`'s own `anchor.set(0.5,
  * 1)`), and that anchor -- not the bounding box's own vertical centre --
  * is the point the camera actually centres (`screen-position.ts`'s own
  * `worldPointPx`); a tall sprite's real drawn top sits well above the
@@ -65,7 +65,7 @@ async function waitForSceneReady(page: Page): Promise<void> {
  * `bounds.y + height`), never the box's geometric middle. */
 async function assertPlayerCentred(page: Page): Promise<void> {
   const deviation = await page.evaluate(() => {
-    const canvas = document.querySelector("#test-street canvas");
+    const canvas = document.querySelector("#world canvas");
     if (!(canvas instanceof HTMLCanvasElement)) throw new Error("no street canvas");
     const bounds = window.__bc?.playerScreenBounds?.();
     if (!bounds) throw new Error("no playerScreenBounds hook");
@@ -112,7 +112,7 @@ interface FollowSample {
  * direction, finding 8): the caller drives movement with real
  * `page.keyboard.down`/`up`, dispatched from Node, never a synthetic
  * `window.dispatchEvent` inside the page -- the same real-input idiom
- * `test-street.spec.ts`/`enclosure.spec.ts` already use elsewhere in
+ * `district-walk.spec.ts`/`enclosure.spec.ts` already use elsewhere in
  * this suite.
  */
 async function startFollowSample(
@@ -122,7 +122,7 @@ async function startFollowSample(
 ): Promise<() => Promise<FollowSample>> {
   await page.evaluate(
     ({ tileSizePx, dir }) => {
-      const canvas = document.querySelector("#test-street canvas");
+      const canvas = document.querySelector("#world canvas");
       if (!(canvas instanceof HTMLCanvasElement))
         throw new Error("startFollowSample: no street canvas");
       const startPos = window.__bc?.playerPosition;
@@ -154,7 +154,7 @@ async function startFollowSample(
           const pos = window.__bc?.playerPosition;
           const world = window.__bc?.worldTransform?.();
           if (bounds && pos && world) {
-            // The bottom-centre anchor (`test-street/scene.ts`'s own
+            // The bottom-centre anchor (`render/world-scene.ts`'s own
             // `anchor.set(0.5, 1)`), never the bounding box's own vertical
             // centre -- see `assertPlayerCentred`'s own doc comment for why.
             const centreX = bounds.x + bounds.width / 2;
@@ -501,7 +501,7 @@ test.describe("camera/viewport (NFR48)", () => {
       // alone matches, which is a real race, not only a test one.
       await page.waitForFunction(
         (expected) => {
-          const canvas = document.querySelector("#test-street canvas");
+          const canvas = document.querySelector("#world canvas");
           if (!(canvas instanceof HTMLCanvasElement)) return false;
           const rect = canvas.getBoundingClientRect();
           if (
@@ -608,7 +608,7 @@ test.describe("camera/viewport (NFR48)", () => {
         __bcSamplesBeforeAtlasReady: () => samplesBeforeAtlasReady,
       });
       function tick(): void {
-        const canvas = document.querySelector("#test-street canvas");
+        const canvas = document.querySelector("#world canvas");
         const worldTransform = window.__bc?.worldTransform;
         const done = performance.getEntriesByName("bc-boot:player-controllable").length > 0;
         if (canvas instanceof HTMLCanvasElement && worldTransform) {
@@ -691,7 +691,7 @@ async function assertNoScrollChrome(
   size: { width: number; height: number },
 ): Promise<void> {
   const state = await page.evaluate(() => {
-    const canvas = document.querySelector("#test-street canvas");
+    const canvas = document.querySelector("#world canvas");
     if (!(canvas instanceof HTMLCanvasElement)) throw new Error("no street canvas");
     const rect = canvas.getBoundingClientRect();
     return {

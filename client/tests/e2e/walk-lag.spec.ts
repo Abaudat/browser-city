@@ -4,15 +4,15 @@
 // the figures for each one.
 import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
-import type { StreetWalkSegment } from "../../src/test-street/fixture";
 import { expect, test } from "./fixtures";
 import { walkRealSegment } from "./walk-support";
+import type { WalkSegment } from "./walk-types";
 
 const HOPS = 20;
 const HOP_CELLS = 0.2;
 
 async function ready(page: Page): Promise<void> {
-  await page.goto("/?freezeCrowd=1");
+  await page.goto("/?freezeBodies=1");
   await page.waitForFunction(() => window.__bc?.playerAppearance !== undefined, undefined, {
     timeout: 60_000,
   });
@@ -23,7 +23,7 @@ async function hops(page: Page, count: number): Promise<void> {
     const east = i % 2 === 0;
     const here = await page.evaluate(() => window.__bc?.playerPosition);
     if (!here) throw new Error("no player position");
-    const segment: StreetWalkSegment = east
+    const segment: WalkSegment = east
       ? {
           label: "hop-east",
           key: "ArrowRight",

@@ -27,7 +27,7 @@ import { walkRealSegment } from "./walk-support";
 const OVERLAY_IDS = DEBUG_OVERLAYS.map((o) => o.id);
 
 // The fixed viewport the one `toHaveScreenshot` check needs, and the
-// same budget idiom `test-street.spec.ts` uses: an absolute pixel count
+// same budget idiom `district-walk.spec.ts` uses: an absolute pixel count
 // (never a ratio of the whole canvas) plus Playwright's own per-pixel
 // colour tolerance for anti-aliasing noise. Nothing here moves -- the
 // player never takes a step and the crowd is frozen -- so what this
@@ -118,7 +118,7 @@ test("the collision overlay draws every collider state over the real street (AC2
 test("the collision overlay's player body sits on the player's real drawn sprite (AC3)", async ({
   page,
 }) => {
-  await page.goto("/?debug=collision&freezeCrowd");
+  await page.goto("/?debug=collision&freezeBodies");
   await waitForSceneReady(page);
 
   const player = page.locator('[data-bc-collider="player"]');
@@ -223,7 +223,7 @@ test("an unknown ?debug= id warns and boots anyway, with no console error", asyn
 });
 
 test("the overlay is deliberately non-diegetic", async ({ page }) => {
-  await page.goto("/?debug=collision,sort&freezeCrowd");
+  await page.goto("/?debug=collision,sort&freezeBodies");
   await waitForSceneReady(page);
   await page.waitForFunction(
     () => (document.querySelectorAll("[data-bc-collider]").length ?? 0) > 0,
@@ -239,12 +239,12 @@ test("the overlay is deliberately non-diegetic", async ({ page }) => {
       [...document.body.children].map((c) => c.getAttribute("data-bc-surface") ?? c.id),
     ),
   ).not.toContain("overlays");
-  await expect(page.locator('#test-street > [data-bc-debug="overlays"]')).toHaveCount(1);
+  await expect(page.locator('#world > [data-bc-debug="overlays"]')).toHaveCount(1);
 
   // The supplement, never the proof: a drawing regression the attribute
   // assertions above cannot see. The crowd is frozen so the frame is
-  // deterministic, exactly as test-street.spec.ts's own snapshots are.
-  await expect(page.locator("#test-street")).toHaveScreenshot(
+  // deterministic, exactly as district-walk.spec.ts's own snapshots are.
+  await expect(page.locator("#world")).toHaveScreenshot(
     "collision-overlay.png",
     OVERLAY_SCREENSHOT_OPTIONS,
   );
@@ -255,7 +255,7 @@ test("the overlay is deliberately non-diegetic", async ({ page }) => {
 // base rail. The DOM facts are the proof -- the player's body sits exactly
 // on the railing's collider rect -- and the picture is the supplement.
 test("the player walking south rests on the top railing's foot (story 15.12)", async ({ page }) => {
-  await page.goto("/?debug=collision&freezeCrowd");
+  await page.goto("/?debug=collision&freezeBodies");
   await waitForSceneReady(page);
 
   const foot = topRailingFoot();
@@ -300,7 +300,7 @@ test("the player walking south rests on the top railing's foot (story 15.12)", a
   const clip = await page.evaluate(
     ({ x0, y0, x1, y1 }) => {
       const view = window.__bc?.viewTransform;
-      const canvas = document.querySelector("#test-street canvas");
+      const canvas = document.querySelector("#world canvas");
       if (!view || !canvas) throw new Error("no view transform or canvas");
       const box = canvas.getBoundingClientRect();
       const px = (cell: number, offset: number) => cell * 16 * view.zoom + offset;

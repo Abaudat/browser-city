@@ -17,7 +17,7 @@ import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
 import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
 import { SHOP_COUNTER_DEF_ID, STREET_PROPS } from "../../src/test-street/fixture";
-import { committedDefs } from "../unit/test-street/street-world";
+import { committedDefs } from "../unit/support/committed-defs";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
 import { expect, test } from "./fixtures";
 import { ownerSql, readSpacetimeHandle } from "./spacetime-harness.mjs";
@@ -82,7 +82,7 @@ const notice = (page: Page) => page.locator("[data-bc-notice]");
 
 async function openPlayer(page: Page): Promise<Sockets> {
   const sockets = await routeDb(page);
-  await page.goto("/?freezeCrowd=1&remotePlayers=1");
+  await page.goto("/?freezeBodies=1&remotePlayers=1");
   await page.waitForFunction(() => window.__bc?.playerAppearance !== undefined, undefined, {
     timeout: 60_000,
   });
@@ -108,7 +108,7 @@ function witnessPose(witness: Page, id: string) {
 }
 
 async function openWitness(page: Page, id: string): Promise<void> {
-  await page.goto("/?freezeCrowd=1&remotePlayers=1");
+  await page.goto("/?freezeBodies=1&remotePlayers=1");
   await page.waitForFunction((cid) => window.__bc?.remotePlayers?.poses()[cid] !== undefined, id, {
     timeout: 30_000,
   });
@@ -199,7 +199,7 @@ test("a dropped connection returns by itself: the notice goes lost then reconnec
   expect(sockets.count).toBeGreaterThan(socketsBefore);
   expect(await a.evaluate(() => (window as unknown as { __sentinel?: number }).__sentinel)).toBe(4);
   expect(navigations).toBe(0);
-  await expect(a.locator("#test-street canvas")).toBeAttached();
+  await expect(a.locator("#world canvas")).toBeAttached();
   expect(await position(a)).toEqual(before);
   expect(await a.evaluate(() => window.__bc?.connection?.live())).toBe(1);
 

@@ -183,7 +183,7 @@ test("the atlas request count and byte total the mount actually fetches, once se
   // that recurring unnoticed.
   //
   // The reconciliation against `allBoundTextureSources = 17`
-  // (`test-street.spec.ts`), written down once because it is what would
+  // (`district-walk.spec.ts`), written down once because it is what would
   // have caught the Resource-Timing gate's own blindness: this gate's requests
   // are 14 raw `ModernTileset/` sheets (`scene.ts`'s own
   // `ASSET_URLS`) + 1 packed `shared` atlas page + 10 character part-

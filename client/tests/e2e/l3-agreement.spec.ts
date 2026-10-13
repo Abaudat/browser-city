@@ -298,7 +298,7 @@ test("the whole staging is on screen at 1366x768 from the street's south edge", 
   const outside = await page.evaluate(
     ({ points, tile }) => {
       const view = window.__bc?.viewTransform;
-      const canvas = document.querySelector("#test-street canvas");
+      const canvas = document.querySelector("#world canvas");
       if (!view || !(canvas instanceof HTMLCanvasElement)) throw new Error("no scene");
       const rect = canvas.getBoundingClientRect();
       return points.filter(([x, y]) => {

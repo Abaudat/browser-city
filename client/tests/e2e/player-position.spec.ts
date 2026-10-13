@@ -52,7 +52,7 @@ async function countedPage(browser: Browser): Promise<{ page: Page; sends: () =>
       sends += text.match(/set_player_position/g)?.length ?? 0;
     });
   });
-  await page.goto("/?freezeCrowd=1&remotePlayers=1");
+  await page.goto("/?freezeBodies=1&remotePlayers=1");
   await page.waitForFunction(() => window.__bc?.playerAppearance !== undefined, undefined, {
     timeout: 60_000,
   });
