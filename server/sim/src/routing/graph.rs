@@ -196,6 +196,10 @@ pub enum GraphError {
     NodeNotWalkable {
         node: u32,
     },
+    /// A diagonal edge whose corner, or an arm to it, is not walkable.
+    CornerBlocked {
+        edge: u32,
+    },
     /// A building entrance whose approach ends off every street.
     EntranceOffStreet {
         plot: u32,
@@ -288,6 +292,41 @@ pub struct BuildInput<'a> {
     pub floor_nodes: &'a [Point],
     /// Every floor's tile grid.
     pub walkability: &'a Floors,
+}
+
+/// The one rule for a segment that is neither horizontal nor vertical: it
+/// is walked through its axis-aligned corner, so the walked length is the
+/// costed Manhattan one. The corner is the same whichever way the segment
+/// is walked: the endpoint first in (y, x) order runs along its row, then
+/// down the other's column. `None` on an axis-aligned segment or one that
+/// changes floor. `MacroGraph::check` holds both arms walkable.
+pub fn corner(a: Point, b: Point) -> Option<Point> {
+    if a.floor != b.floor || a.x == b.x || a.y == b.y {
+        return None;
+    }
+    let (lo, hi) = if (a.y, a.x) <= (b.y, b.x) {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    Some(Point {
+        x: hi.x,
+        y: lo.y,
+        floor: lo.floor,
+    })
+}
+
+/// Every cell of the two arms of `a` to `b` through [`corner`], ends
+/// included.
+fn corner_cells(a: Point, b: Point, c: Point) -> impl Iterator<Item = (i32, i32)> {
+    let (lo, hi) = if (a.y, a.x) <= (b.y, b.x) {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    let row = (lo.x.min(c.x)..=lo.x.max(c.x)).map(move |x| (x, lo.y));
+    let col = (lo.y.min(hi.y)..=lo.y.max(hi.y)).map(move |y| (c.x, y));
+    row.chain(col)
 }
 
 fn cost(rates: &Rates, a: Point, b: Point) -> Milliminutes {
@@ -390,7 +429,7 @@ impl MacroGraph {
             };
             let internal =
                 (has_internal_node(interior_cells(&b.rooms), input.internal_node_min_floor_area))
-                    .then(|| internal_cell(&b.rooms, input.walkability))
+                    .then(|| internal_cell(&b.rooms, b.entrance, input.walkability))
                     .flatten();
             placed.push(Placed {
                 plot: b.plot,
@@ -581,6 +620,17 @@ impl MacroGraph {
                 return Err(GraphError::NodeNotWalkable { node: i as u32 });
             }
         }
+        for (i, e) in self.edges.iter().enumerate() {
+            let (a, b) = (
+                self.nodes[e.a as usize].point(),
+                self.nodes[e.b as usize].point(),
+            );
+            if let Some(c) = corner(a, b)
+                && !corner_cells(a, b, c).all(|(x, y)| walkable(walkability, c.floor, x, y))
+            {
+                return Err(GraphError::CornerBlocked { edge: i as u32 });
+            }
+        }
         self.check_connected()
     }
 
@@ -696,8 +746,21 @@ impl MacroGraph {
 
 /// The centre of the largest room (first on a tie), snapped to the
 /// nearest walkable floor cell: nearest by Manhattan distance, then row,
-/// then column. `None` when no room has a walkable cell.
-fn internal_cell(rooms: &[Rect], walkability: &Floors) -> Option<(i32, i32)> {
+/// then column, among the cells whose walk from `entrance` through
+/// [`corner`] is on walkable tiles (the edge's own post-condition).
+/// `None` when no room has such a cell.
+fn internal_cell(rooms: &[Rect], entrance: (i32, i32), walkability: &Floors) -> Option<(i32, i32)> {
+    let from = Point {
+        x: entrance.0,
+        y: entrance.1,
+        floor: 0,
+    };
+    let reachable = |x: i32, y: i32| {
+        let to = Point { x, y, floor: 0 };
+        corner(from, to).is_none_or(|c| {
+            corner_cells(from, to, c).all(|(cx, cy)| walkable(walkability, 0, cx, cy))
+        })
+    };
     let mut order: Vec<&Rect> = rooms.iter().collect();
     order.sort_by_key(|r| std::cmp::Reverse(r.width() * r.height()));
     for r in order {
@@ -706,7 +769,7 @@ fn internal_cell(rooms: &[Rect], walkability: &Floors) -> Option<(i32, i32)> {
         let mut best: Option<(i64, i32, i32)> = None;
         for y in r.y0..r.y1 {
             for x in r.x0..r.x1 {
-                if !walkable(walkability, 0, x, y) {
+                if !walkable(walkability, 0, x, y) || !reachable(x, y) {
                     continue;
                 }
                 let d = (x - cx).abs() as i64 + (y - cy).abs() as i64;

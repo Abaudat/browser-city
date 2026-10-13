@@ -896,11 +896,11 @@ fn graph_lines(g: &sim::routing::graph::MacroGraph) -> String {
 /// `*.golden`, like [`WALKABILITY_DIGESTS`]: the graph is derived from
 /// rows that have not moved. Regenerate with `GENERATION_PRINT_GOLDEN=1`.
 const GRAPH_DIGESTS: [(u64, u64); 5] = [
-    (1, 0xbc351d5a7f3b4994),
-    (2, 0xb4d77cc91add5afa),
-    (3, 0x257b706bd62aae87),
-    (42, 0x3d4a5ad8e45407c1),
-    (123_456_789, 0x44cb87ba86103d6a),
+    (1, 0xaad36fc5b8d60eb1),
+    (2, 0x2ad2cbc84a0ba101),
+    (3, 0x81a9bf96485f80ca),
+    (42, 0x663a2e82d052efbc),
+    (123_456_789, 0x2edadccdf7c796ff),
 ];
 
 #[test]
@@ -1095,11 +1095,11 @@ fn print_golden() {
 /// path, cost and legs. A list of constants like [`GRAPH_DIGESTS`];
 /// regenerate with `GENERATION_PRINT_GOLDEN=1`; a move is a search change
 const ROUTE_DIGESTS: [(u64, u64); 5] = [
-    (1, 0xcb608558cad62c67),
-    (2, 0x1b34ea0db49df612),
-    (3, 0x81ea023cb8178366),
-    (42, 0x91fa510ff67f1619),
-    (123_456_789, 0x3deaec13125c0489),
+    (1, 0xb2b4fb47e7d3104f),
+    (2, 0xb8a1e9b0253129a5),
+    (3, 0xe5d5c88adafe2db8),
+    (42, 0x259bace9de20c0e7),
+    (123_456_789, 0xee7f37e92fb32be5),
 ];
 
 fn route_lines(seed: u64) -> String {
@@ -1123,11 +1123,16 @@ fn route_lines(seed: u64) -> String {
             node_budget(sim::generated::defs::BALANCE),
         )
         .expect("a generated graph is connected");
+        // What is delivered: every leg's waypoints and its two instants.
         out.push_str(&format!(
-            "{a}>{b} cost={} nodes={:?} legs={}\n",
+            "{a}>{b} cost={} nodes={:?} legs={:?}
+",
             r.cost.0,
             r.nodes,
-            r.legs.len()
+            r.legs
+                .iter()
+                .map(|l| (&l.waypoints, l.t_depart, l.t_arrive))
+                .collect::<Vec<_>>()
         ));
     }
     out

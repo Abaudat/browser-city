@@ -5,8 +5,9 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
+use super::Point;
 use super::estimate::{Correction, Rates, estimate};
-use super::graph::{EdgeKind, EdgeRow, GraphError, MacroGraph, Node, NodeRow};
+use super::graph::{EdgeKind, EdgeRow, GraphError, MacroGraph, Node, NodeRow, corner};
 use super::{Milliminutes, TransportMode};
 use crate::actor_location::Waypoint;
 use crate::balance;
@@ -169,10 +170,16 @@ fn assemble(
             legs.push(std::mem::replace(&mut leg, next));
         } else {
             // A diagonal segment is walked at its straight-line length but
-            // costed Manhattan: route through its axis-aligned corner so the
-            // walked length is the costed one.
-            if prev.0 != w.0 && prev.1 != w.1 {
-                leg.waypoints.push((w.0, prev.1, w.2));
+            // costed Manhattan: route through its axis-aligned corner (the
+            // one rule, `graph::corner`, which `MacroGraph::check` holds
+            // walkable) so the walked length is the costed one.
+            let point = |t: Waypoint| Point {
+                x: t.0,
+                y: t.1,
+                floor: t.2,
+            };
+            if let Some(c) = corner(point(prev), point(w)) {
+                leg.waypoints.push((c.x, c.y, c.floor));
             }
             leg.waypoints.push(w);
             leg.t_arrive = cumulative;

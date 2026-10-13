@@ -9219,6 +9219,7 @@ pub const INV_ROUTE_SEARCH_COST_EQUALS_DIJKSTRA: &str = "the route search cost e
 pub const INV_ROUTE_SEARCH_HEURISTIC_IS_CONSISTENT: &str =
     "for every edge and goal, h(u) <= cost(u,v) + h(v), so a closed set is optimal (FR131)";
 pub const INV_ROUTE_IS_A_VALID_WALK_WITH_DERIVABLE_INSTANTS: &str = "a route starts and ends on its endpoints, walks real edges once each, costs the sum of them, stays on one floor per leg and has leg_instants (FR56, FR131)";
+pub const INV_ROUTING_DIAGONAL_EDGES_HAVE_WALKABLE_CORNERS: &str = "both arms of every diagonal edge's corner are walkable, so a route is never issued through a wall (FR135)";
 pub const INV_ROUTE_SEARCH_IGNORES_ROW_ORDER: &str =
     "the same endpoints over a graph rebuilt from shuffled rows give the identical route (FR129)";
 pub const INV_ROUTE_SEARCH_STAYS_WITHIN_ITS_NODE_BUDGET: &str =
@@ -9311,14 +9312,16 @@ fn inv_route_search_heuristic_is_consistent() {
     });
 }
 
-/// One route's contract; returns its leg count. Shared by the pooled
-/// (floor 0) test and the fixture world, which has portals.
+/// One route's contract; returns its leg count and how many corner
+/// waypoints it carries. Shared by the pooled (floor 0) test and the
+/// fixture world, which has portals.
 fn check_route(
     g: &sim::routing::graph::MacroGraph,
     view: &sim::routing::search::SearchGraph,
+    standable: &dyn Fn(i8, i32, i32) -> bool,
     a: u64,
     b: u64,
-) -> Result<usize, String> {
+) -> Result<(usize, usize), String> {
     use sim::actor_location::{crossings, leg_instants};
     use sim::routing::graph::EdgeKind;
     use sim::routing::search::{GraphView, node_budget, search};
@@ -9433,7 +9436,23 @@ fn check_route(
             );
         }
     }
-    Ok(r.legs.len())
+    // Every waypoint is a standable tile, the corners this route invented
+    // (waypoints that are no node) included.
+    let node_cells: std::collections::BTreeSet<(i32, i32, i8)> =
+        g.nodes().iter().map(|n| (n.x, n.y, n.floor)).collect();
+    let mut corners = 0;
+    for leg in &r.legs {
+        for w in &leg.waypoints {
+            ensure!(
+                standable(w.2, w.0, w.1),
+                "{a}>{b}: waypoint {w:?} is not walkable"
+            );
+            if !node_cells.contains(w) {
+                corners += 1;
+            }
+        }
+    }
+    Ok((r.legs.len(), corners))
 }
 
 #[test]
@@ -9442,24 +9461,76 @@ fn inv_route_is_a_valid_walk_with_derivable_instants() {
     over_pool("inv_route_is_a_valid_walk_with_derivable_instants", |c| {
         let g = pooled_graph(c)?;
         let view = SearchGraph::from_graph(g);
+        let standable =
+            |f: i8, x: i32, y: i32| f == 0 && c.district.walkability(0).is_standable(x, y);
         for (a, b) in route_pairs(c.seed, g.nodes().len(), 6) {
-            check_route(g, &view, a, b)?;
+            check_route(g, &view, &standable, a, b)?;
         }
         Ok(())
     });
-    // Generated cities are one floor; the conformance world has portals,
-    // so the multi-leg half of the contract is exercised on every pair.
-    let g = fixture_world().0;
+    // Generated cities are one floor; the conformance world has portals
+    // and diagonal links, so the multi-leg and corner halves of the
+    // contract are exercised on every pair.
+    let (g, floors) = fixture_world();
     let view = sim::routing::search::SearchGraph::from_graph(&g);
-    let mut multi_leg = 0;
+    let standable = |f: i8, x: i32, y: i32| floors[&f].is_standable(x, y);
+    let (mut multi_leg, mut corners) = (0, 0);
     for a in 0..g.nodes().len() as u64 {
         for b in 0..g.nodes().len() as u64 {
-            if check_route(&g, &view, a, b).unwrap_or_else(|e| panic!("{e}")) > 1 {
-                multi_leg += 1;
-            }
+            let (legs, c) =
+                check_route(&g, &view, &standable, a, b).unwrap_or_else(|e| panic!("{e}"));
+            multi_leg += usize::from(legs > 1);
+            corners += c;
         }
     }
     assert!(multi_leg > 0, "no fixture-world route crossed a floor");
+    assert!(corners > 0, "no fixture-world route carried a corner");
+}
+
+/// Every non-axis-aligned edge of every pooled district and of the
+/// conformance world has both arms of its `corner` walkable: the corner
+/// waypoint a route is issued through is never in a wall (FR135).
+#[test]
+fn inv_routing_diagonal_edges_have_walkable_corners() {
+    use sim::routing::graph::{MacroGraph, corner};
+    fn arms_walkable(
+        g: &MacroGraph,
+        standable: &dyn Fn(i8, i32, i32) -> bool,
+    ) -> Result<usize, String> {
+        let mut diagonals = 0;
+        for (i, e) in g.edges().iter().enumerate() {
+            let (a, b) = (
+                g.nodes()[e.a as usize].point(),
+                g.nodes()[e.b as usize].point(),
+            );
+            let Some(c) = corner(a, b) else { continue };
+            diagonals += 1;
+            let (lo, hi) = if (a.y, a.x) <= (b.y, b.x) {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            let row = (lo.x.min(c.x)..=lo.x.max(c.x)).map(|x| (x, lo.y));
+            let col = (lo.y.min(hi.y)..=lo.y.max(hi.y)).map(|y| (c.x, y));
+            for (x, y) in row.chain(col) {
+                ensure!(
+                    standable(c.floor, x, y),
+                    "edge {i} ({a:?} to {b:?}): ({x}, {y}) on its arms is blocked"
+                );
+            }
+        }
+        Ok(diagonals)
+    }
+    over_pool("inv_routing_diagonal_edges_have_walkable_corners", |c| {
+        let g = pooled_graph(c)?;
+        arms_walkable(g, &|f, x, y| {
+            f == 0 && c.district.walkability(0).is_standable(x, y)
+        })
+        .map(|_| ())
+    });
+    let (g, floors) = fixture_world();
+    let diagonals = arms_walkable(&g, &|f, x, y| floors[&f].is_standable(x, y)).unwrap();
+    assert!(diagonals > 0, "the conformance world has no diagonal edge");
 }
 
 #[test]
