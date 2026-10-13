@@ -45,6 +45,7 @@ import {
   exposePlayerScreenBoundsForE2e,
   exposeRegionForE2e,
   exposeRemotePlayersForE2e,
+  exposeWorldForE2e,
   exposeWorldTransformForE2e,
   markArrivalForE2e,
   recordAllBoundTextureSourcesForE2e,
@@ -903,6 +904,15 @@ async function startWorldScene(
   recordDoorwaysForE2e(handle.doorways());
   recordAllBoundTextureSourcesForE2e(handle.allBoundTextureSources);
   exposePlayerScreenBoundsForE2e(handle.playerScreenBounds);
+  exposeWorldForE2e(() => {
+    const at = handle.ownershipAtPlayer();
+    return {
+      drawnChunks: handle.drawnChunkCount(),
+      liveSprites: handle.liveSpriteCount(),
+      buildingId: at.buildingId.toString(),
+      roomId: at.roomId.toString(),
+    };
+  });
   exposePlayerDrawnPointForE2e(handle.playerDrawnPoint);
   exposeL3AgreementForE2e((t) => handle.citizensLayer.agreementAt(t));
   exposeL3BodiesForE2e(

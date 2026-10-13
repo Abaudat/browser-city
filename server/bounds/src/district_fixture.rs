@@ -91,8 +91,10 @@ pub fn build_document() -> String {
             if i > 0 {
                 out.push_str(",\n");
             }
+            // The owner id is a 64-bit hash: a JSON number would lose bits in
+            // any reader that parses it as a double, so it is a string.
             out.push_str(&format!(
-                "[{},{},{},{},{},{},{}]",
+                "[{},\"{}\",{},{},{},{},{}]",
                 i + 1,
                 a.owner_id,
                 a.x0,

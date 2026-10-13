@@ -224,6 +224,16 @@ declare global {
       /** The local player's sprite point in world pixels -- the same space a
        * remote's `drawn()` screen point is in. */
       playerDrawnPoint?: () => { x: number; y: number };
+      /** Story 3.16: the streamed world as the scene holds it right now --
+       * how many chunks are drawn, how many sprites they hold, and the
+       * building and room the player's own cell is in. A callable read
+       * fresh each call. */
+      world?: () => {
+        drawnChunks: number;
+        liveSprites: number;
+        buildingId: string;
+        roomId: string;
+      };
       /** Story 5.2: every street citizen's agreed L3 state at a given city
        * time, computed from scratch -- never read from what was drawn. */
       l3Agreement?: (cityMilli: number) => readonly {
@@ -582,6 +592,16 @@ export function exposeL3AgreementForE2e(
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.l3Agreement = getter;
+  window.__bc = bucket;
+}
+
+/** Story 3.16: the same idiom, for the streamed world's own counters. */
+export function exposeWorldForE2e(
+  getter: NonNullable<NonNullable<Window["__bc"]>["world"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.world = getter;
   window.__bc = bucket;
 }
 

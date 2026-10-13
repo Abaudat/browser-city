@@ -28,8 +28,8 @@ interface RawDump {
   readonly groundObjectIds: [number, number, number, number];
   readonly groundMargin: number;
   readonly objects: [number, number, number, number, number, number, number][];
-  readonly buildingAreas: [number, number, number, number, number, number, number][];
-  readonly roomAreas: [number, number, number, number, number, number, number][];
+  readonly buildingAreas: [number, string, number, number, number, number, number][];
+  readonly roomAreas: [number, string, number, number, number, number, number][];
 }
 
 export interface District {
