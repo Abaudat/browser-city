@@ -8,7 +8,7 @@ REPO_ROOT="$(cd -- "$TEST_DIR/../../.." && pwd)"
 CHECK="$REPO_ROOT/scripts/ci/check-boot-shell.sh"
 
 GOOD_HEAD='<meta charset="UTF-8" /><title>BrowserCity</title><link rel="icon" href="data:image/svg+xml,x" /><style>#bc-name-prompt{display:flex}</style><script type="module" crossorigin src="/assets/index.js"></script><link rel="modulepreload" href="/assets/a.js">'
-GOOD_BODY='<div id="test-street"></div><form id="bc-name-prompt" data-bc-surface="name-prompt"><input name="name" type="text"><button type="submit" aria-label="Enter"></button></form><script>(function(){})();</script>'
+GOOD_BODY='<div id="world"></div><form id="bc-name-prompt" data-bc-surface="name-prompt"><input name="name" type="text"><button type="submit" aria-label="Enter"></button></form><script>(function(){})();</script>'
 
 shell() { # <head> <body> -> a dist dir holding that index.html
   local d
@@ -26,7 +26,7 @@ NOUI="$(ui 'export const clean = 1;')"
 
 check "a shell with the inline prompt and nothing blocking passes" 0 bash "$CHECK" "$(shell "$GOOD_HEAD" "$GOOD_BODY")" "$NOUI"
 check "no built index.html" 1 bash "$CHECK" "$(fake_dir)" "$NOUI"
-check "no prompt surface" 1 bash "$CHECK" "$(shell "$GOOD_HEAD" '<div id="test-street"></div>')" "$NOUI"
+check "no prompt surface" 1 bash "$CHECK" "$(shell "$GOOD_HEAD" '<div id="world"></div>')" "$NOUI"
 check "the prompt is not a form" 1 bash "$CHECK" "$(shell "$GOOD_HEAD" '<div data-bc-surface="name-prompt"><input name="name"><button type="submit"></button></div>')" "$NOUI"
 check "no submit control" 1 bash "$CHECK" "$(shell "$GOOD_HEAD" '<form data-bc-surface="name-prompt"><input name="name"></form>')" "$NOUI"
 NOCSS_HEAD='<meta charset="UTF-8" /><title>BrowserCity</title><link rel="icon" href="data:image/svg+xml,x" /><style>body{margin:0}</style>'

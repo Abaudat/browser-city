@@ -43,7 +43,7 @@ check "the real shape: one DEV-gated dynamic import, SVG only under debug/" 0 ba
 d="$(tree "$GOOD_MAIN" "render/thing.ts" 'import { DEBUG_STYLE } from "../debug/debug-style";')"
 check "another module importing debug/" 1 bash "$CHECK" "$d"
 
-d="$(tree "$GOOD_MAIN" "test-street/scene.ts" 'import type { DebugOverlay } from "../debug/overlay-registry";')"
+d="$(tree "$GOOD_MAIN" "render/world-scene.ts" 'import type { DebugOverlay } from "../debug/overlay-registry";')"
 check "a type-only import from outside main.ts is still an import" 1 bash "$CHECK" "$d"
 
 d="$(tree 'import { mountDebugOverlays } from "./debug/overlays";

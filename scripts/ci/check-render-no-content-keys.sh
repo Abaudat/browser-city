@@ -2,13 +2,12 @@
 # Story 15.5 (AC2): which pass an object draws in is read from its layer
 # (`render/layer-table.ts`'s `passOfLayer`), never from a client-side list
 # of object keys. Fails if, as a quoted string literal in the renderer's own
-# source -- `client/src/render/**`, `test-street/scene.ts` and
-# `test-street/drawables.ts` -- appears either
+# source -- `client/src/render/**` -- appears either
 #   - any `object` key in `tools/defs-build/goldens/defs-manifest.golden`, or
-#   - any `assetKey` value the fixture's rows carry (the manhole and doormat
-#     are `assetKey` rows, not defs objects), except the allow-list below.
-# `test-street/fixture.ts` is the one legitimate place a key may be typed and
-# is not scanned. Quoted matches only, like
+#   - any `assetKey` value a fixture file's rows carry (only when
+#     BC_RENDER_FIXTURE names one; the streamed world has none), except the
+#     allow-list below.
+# Quoted matches only, like
 # `check-rule-engine-no-content-keys.sh`.
 # Usage: check-render-no-content-keys.sh [manifest] [path...]
 # Env: BC_RENDER_FIXTURE overrides the fixture path (for the self-test).
@@ -22,13 +21,11 @@ if [ "$#" -gt 1 ]; then
 else
   TARGETS=(
     "$REPO_ROOT/client/src/render"
-    "$REPO_ROOT/client/src/test-street/scene.ts"
-    "$REPO_ROOT/client/src/test-street/drawables.ts"
   )
 fi
-FIXTURE="${BC_RENDER_FIXTURE:-$REPO_ROOT/client/src/test-street/fixture.ts}"
+FIXTURE="${BC_RENDER_FIXTURE:-}"
 
-for f in "$MANIFEST" "$FIXTURE" "${TARGETS[@]}"; do
+for f in "$MANIFEST" ${FIXTURE:+"$FIXTURE"} "${TARGETS[@]}"; do
   [ -e "$f" ] || {
     echo "check-render-no-content-keys: FAIL -- $f not found" >&2
     exit 1
@@ -51,10 +48,13 @@ scan() { # <label> <key>
   fi
 }
 
-ASSET_KEYS="$(grep -oE 'assetKey: "[A-Za-z0-9_]+"' "$FIXTURE" | sed -E 's/assetKey: "(.*)"/\1/' | sort -u)"
-if [ -z "$ASSET_KEYS" ]; then
-  echo "check-render-no-content-keys: FAIL -- no assetKey rows parsed out of $FIXTURE" >&2
-  exit 1
+ASSET_KEYS=""
+if [ -n "$FIXTURE" ]; then
+  ASSET_KEYS="$(grep -oE 'assetKey: "[A-Za-z0-9_]+"' "$FIXTURE" | sed -E 's/assetKey: "(.*)"/\1/' | sort -u)"
+  if [ -z "$ASSET_KEYS" ]; then
+    echo "check-render-no-content-keys: FAIL -- no assetKey rows parsed out of $FIXTURE" >&2
+    exit 1
+  fi
 fi
 for key in $ASSET_KEYS; do
   case "$ASSET_ALLOW" in *" $key "*) continue ;; esac

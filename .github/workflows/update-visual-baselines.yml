@@ -1,9 +1,9 @@
 name: update-visual-baselines
 
-# Regenerates the committed visual baselines (`client/tests/e2e/
-# test-street.spec.ts-snapshots/*.png`, since story 1.12
-# `debug-overlays.spec.ts-snapshots/*.png`, and since story 15.7
-# `enclosure.spec.ts-snapshots/*.png`) on the
+# Regenerates the committed visual baselines (`client/tests/e2e/<spec>-snapshots/*.png`, for every spec
+# `scripts/ci/check-visual-baseline-specs.sh` finds calling
+# `toHaveScreenshot` -- none since story 3.16 retired the hand-laid street;
+# the district's committed review shots live in `docs/generation/`) on the
 # CI image (story 1.13, Quentin's direction: baselines must be generated
 # on linux chromium, never on a contributor's own machine, whose font
 # hinting and GPU rasteriser render different pixels than CI's).
@@ -87,17 +87,17 @@ jobs:
       # `--update-snapshots` over the whole project would also rewrite
       # any baseline a spec added later without anybody deciding to.
       - working-directory: client
-        run: npx playwright test tests/e2e/test-street.spec.ts tests/e2e/debug-overlays.spec.ts tests/e2e/enclosure.spec.ts --project=chromium --update-snapshots
+        run: npx playwright test --project=chromium --update-snapshots --grep @visual-baseline
       - name: commit any changed or new baselines
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add 'client/tests/e2e/test-street.spec.ts-snapshots/**' 'client/tests/e2e/debug-overlays.spec.ts-snapshots/**' 'client/tests/e2e/enclosure.spec.ts-snapshots/**'
+          git add 'client/tests/e2e/*-snapshots/**'
           if git diff --cached --quiet; then
             echo "update-visual-baselines: no baseline changed" >&2
             exit 0
           fi
-          git commit -m "Update visual baselines (test-street.spec.ts, linux chromium)"
+          git commit -m "Update visual baselines (linux chromium)"
           git push
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
         id: commit

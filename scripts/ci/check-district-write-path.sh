@@ -6,7 +6,8 @@
 #
 #   - `generation::` (the generator) is named only in tables/district.rs.
 #   - each accessor -- `district`, `route_node`, `route_edge` -- is called
-#     only in tables/district.rs (`district`: `create_district` only;
+#     only in tables/district.rs (`district`: `create_district`, and the
+#     two arrival readers `arrival_cell_of`/`arrival_cell_in_view`;
 #     the graph rows: `create_district`'s own writer `write_graph` and the
 #     test-only `debug_write_graph_then_fail`, which calls it), in
 #     tables/restore.rs (inside `begin_restore` and the accessor's own
@@ -30,7 +31,7 @@ flat() { code "$1" | tr '\n' ' '; }
 
 # <accessor>:<declaring module>:<fns of district.rs that may name it>:<fns of restore.rs>
 ACCESSORS=(
-  "district:district:create_district:begin_restore restore_district"
+  "district:district:create_district arrival_cell_of arrival_cell_in_view:begin_restore restore_district"
   "route_node:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_node"
   "route_edge:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_edge"
 )
