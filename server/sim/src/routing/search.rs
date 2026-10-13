@@ -168,6 +168,12 @@ fn assemble(
             };
             legs.push(std::mem::replace(&mut leg, next));
         } else {
+            // A diagonal segment is walked at its straight-line length but
+            // costed Manhattan: route through its axis-aligned corner so the
+            // walked length is the costed one.
+            if prev.0 != w.0 && prev.1 != w.1 {
+                leg.waypoints.push((w.0, prev.1, w.2));
+            }
             leg.waypoints.push(w);
             leg.t_arrive = cumulative;
         }

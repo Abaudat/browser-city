@@ -280,3 +280,33 @@ fn the_budget_covers_the_largest_district_the_tables_are_bounded_for() {
         "routing.search.node_budget is under the node ceiling of the growth-target district"
     );
 }
+
+#[test]
+fn a_diagonal_edge_is_issued_at_walking_pace() {
+    use crate::balance;
+    use crate::time::REAL_MS_PER_CITY_MINUTE;
+    let nodes = vec![node(0, 0, 0), node(12, 9, 0)];
+    let edges = vec![edge(&nodes, 0, 1, EdgeKind::Street)];
+    let g = MacroGraph::from_parts(nodes, edges);
+    let r = run(&g, 0, 1).unwrap();
+    assert_eq!(r.legs.len(), 1);
+    let w = &r.legs[0].waypoints;
+    assert_eq!(w, &vec![(0, 0, 0), (12, 0, 0), (12, 9, 0)]);
+    // Straight-line length, in 1/1024 cells, as leg_instants measures it.
+    let len: i128 = w
+        .windows(2)
+        .map(|p| {
+            let (dx, dy) = ((p[0].0 - p[1].0) as i64, (p[0].1 - p[1].1) as i64);
+            (((dx * dx + dy * dy) as u64) << 20).isqrt() as i128
+        })
+        .sum();
+    let dur = (r.legs[0].t_arrive - r.legs[0].t_depart) as i128;
+    let band = balance::value(defs::BALANCE, "l3.walk_pace_band_percent") as i128;
+    let speed = balance::value(defs::BALANCE, "movement.walk_speed_millicells_per_s") as i128;
+    let walk = speed * REAL_MS_PER_CITY_MINUTE as i128 * 1024 / 10_000_000;
+    let pace = len * 100 / dur;
+    assert!(
+        (walk * (100 - band) / 100..=walk * (100 + band) / 100).contains(&pace),
+        "pace {pace} against walking {walk}"
+    );
+}

@@ -9405,16 +9405,16 @@ fn check_route(
             "{a}>{b}: a segment is over MAX_SEGMENT_CELLS"
         );
         let _ = crossings(&leg.waypoints, leg.t_depart, leg.t_arrive, None);
-        // The pace the leg demands: the tile path L3 walks between
-        // waypoints is 4-connected, so a segment is its Manhattan length
-        // (1/1024 cells) over the time it is given, against walking pace.
-        // Distance in no time is an infinite pace.
+        // The pace the leg demands: straight-line length (1/1024 cells,
+        // as leg_instants and an open-ground L3 walk measure it) over the
+        // time it is given, against walking pace. Distance in no time is
+        // an infinite pace.
         let len: i128 = leg
             .waypoints
             .windows(2)
             .map(|w| {
-                let (dx, dy) = ((w[0].0 - w[1].0).abs(), (w[0].1 - w[1].1).abs());
-                (dx + dy) as i128 * 1024
+                let (dx, dy) = ((w[0].0 - w[1].0) as i64, (w[0].1 - w[1].1) as i64);
+                (((dx * dx + dy * dy) as u64) << 20).isqrt() as i128
             })
             .sum();
         let dur = (leg.t_arrive - leg.t_depart) as i128;
