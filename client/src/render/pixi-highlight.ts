@@ -16,7 +16,7 @@
 // that same call). `refresh()` is what re-attaches an orphaned overlay to
 // its source's own new position -- re-using the same `Sprite` instance
 // rather than destroying and rebuilding it, so a re-sort while something
-// is marked allocates nothing -- and `test-street/scene.ts`'s `reorderFloor`
+// is marked allocates nothing -- and `render/world-scene.ts`'s `reorderFloor`
 // (the one wrapper that calls `applyDepthOrder`) is the only call site
 // that ever calls it for that reason; every other caller reaches it
 // through the ticker below.
@@ -29,7 +29,7 @@
 // comparison the instant nothing is marked -- so this class owns
 // subscribing it to a caller-injected ticker itself (Quentin's direction:
 // the permanent guarantee belongs in the permanent module, not in
-// `test-street/scene.ts`, which is outside the coverage bar and which
+// `render/world-scene.ts`, which is outside the coverage bar and which
 // Epic 3 deletes). The subscription exists only while something is
 // actually marked -- added on the first real transition to a real id,
 // removed on the transition back to `undefined` -- so a street with
@@ -41,7 +41,7 @@ import { highlightOverlaySpec } from "./highlight";
 
 /** One source sprite this applier may highlight, keyed by the stable id
  * of the object it belongs to -- built once at mount from the same
- * `spritesByObjectId` map `test-street/scene.ts` already computes for
+ * `spritesByObjectId` map `render/world-scene.ts` already computes for
  * picking's own drawn-rect index, never a second lookup. */
 export type HighlightSpritesByObjectId = ReadonlyMap<bigint, readonly Sprite[]>;
 
@@ -71,10 +71,10 @@ function sourceViewOf(source: Sprite) {
 /**
  * Owns every overlay sprite this scene ever draws for FR173, and its own
  * per-frame `refresh` subscription. `set`/`setStrength`/`refresh` are the
- * whole surface `test-street/scene.ts` wires: the map, the handle's own
+ * whole surface `render/world-scene.ts` wires: the map, the handle's own
  * `setHighlightStrength` forwarding, and `reorderFloor`'s own call after
  * every re-sort. There is no separate `destroy()`: `set(undefined)` is
- * the one teardown path (`test-street/scene.ts`'s own `destroy()` already
+ * the one teardown path (`render/world-scene.ts`'s own `destroy()` already
  * routes through `setHighlight(undefined)`), so it is also what
  * unsubscribes the ticker -- a second, unused teardown method is not
  * public surface a permanent module carries.
@@ -99,7 +99,7 @@ export class HighlightApplier {
   }
 
   /** The object currently marked, or `undefined` -- read back by
-   * `test-street/scene.ts`'s own wiring to decide whether `onHighlightChange`
+   * `render/world-scene.ts`'s own wiring to decide whether `onHighlightChange`
    * actually fires, never a second, separately-tracked id. */
   current(): bigint | undefined {
     return this.highlightedObjectId;
@@ -138,7 +138,7 @@ export class HighlightApplier {
    * become visible again gains one back -- never a snapshot frozen at
    * hover start (Artie's direction). A no-op the instant nothing is
    * marked. Called by the ticker every frame something is marked, and
-   * directly by `test-street/scene.ts`'s `reorderFloor` after every
+   * directly by `render/world-scene.ts`'s `reorderFloor` after every
    * re-sort (see the module doc for why that one extra call site exists). */
   refresh(): void {
     this.sync();

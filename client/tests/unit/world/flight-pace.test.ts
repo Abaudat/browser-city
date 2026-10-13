@@ -5,18 +5,18 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { advanceSurfaceGait } from "../../../src/l3/gait";
-import { STREET_TRANSITIONS } from "../../../src/test-street/fixture";
 import type { CollisionGridQuery, GridEntry } from "../../../src/world/collision-grid";
 import { type Flight, FlightIndex } from "../../../src/world/flights";
 import { initialFloorWalkState, stepAndTransition } from "../../../src/world/floor-walk";
 import { MAX_DELTA_MS, step } from "../../../src/world/movement";
 import { TransitionIndex } from "../../../src/world/transitions";
 import {
+  STREET_TRANSITIONS,
   streetFlightIndex,
   streetFlightList,
   streetMovementConfig,
   streetWorldIndex,
-} from "../test-street/street-world";
+} from "../support/stairs-world";
 import { OPEN_ENTRY_BAND } from "./entry-band";
 
 const TILE = 16;

@@ -3,8 +3,8 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type Page, test } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
-import { RELEASE_LAG, type StreetWalkSegment } from "../../src/test-street/fixture";
-import { streetMovementConfig } from "../unit/test-street/street-world";
+import { committedMovementConfig } from "../unit/support/committed-defs";
+import { RELEASE_LAG, type WalkSegment } from "./walk-types";
 import {
   armWalkWatcher,
   awaitWalk,
@@ -21,7 +21,7 @@ const RECORD_FILE = join(import.meta.dirname, "..", "..", "walk-records", "walks
  * own 30 s timeout can kill it unrecorded. */
 const DEFAULT_TIMEOUT_MS = 15_000;
 
-function writeRecord(segment: StreetWalkSegment, mode: WalkMode, record: WalkRecord): void {
+function writeRecord(segment: WalkSegment, mode: WalkMode, record: WalkRecord): void {
   const info = test.info();
   mkdirSync(dirname(RECORD_FILE), { recursive: true });
   appendFileSync(
@@ -55,7 +55,7 @@ function writeRecord(segment: StreetWalkSegment, mode: WalkMode, record: WalkRec
  * reproduced. */
 async function walkSegment(
   page: Page,
-  segment: StreetWalkSegment,
+  segment: WalkSegment,
   mode: WalkMode,
   timeoutMs: number,
 ): Promise<void> {
@@ -64,7 +64,7 @@ async function walkSegment(
     code: segment.key,
     mode,
     timeoutMs,
-    maxStepCells: streetMovementConfig().walkSpeedCellsPerMs * RELEASE_LAG.stepMs,
+    maxStepCells: committedMovementConfig().walkSpeedCellsPerMs * RELEASE_LAG.stepMs,
   };
   const armed = await page.evaluate(armWalkWatcher, args);
   if (!armed) {
@@ -93,7 +93,7 @@ async function walkSegment(
  * (see `walkSegment` for what was measured). */
 export function walkRealSegment(
   page: Page,
-  segment: StreetWalkSegment,
+  segment: WalkSegment,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<void> {
   return walkSegment(page, segment, "real", timeoutMs);
@@ -103,7 +103,7 @@ export function walkRealSegment(
  * moves make a real key arrive late. */
 export function walkSyntheticSegment(
   page: Page,
-  segment: StreetWalkSegment,
+  segment: WalkSegment,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<void> {
   return walkSegment(page, segment, "synthetic", timeoutMs);
@@ -119,7 +119,7 @@ export async function walkRealCells(
 ): Promise<void> {
   const here = await page.evaluate(() => window.__bc?.playerPosition);
   if (!here) throw new Error("no player position");
-  const segment: StreetWalkSegment = east
+  const segment: WalkSegment = east
     ? { label, key: "ArrowRight", until: { kind: "x-at-least", value: here.x + cells } }
     : { label, key: "ArrowLeft", until: { kind: "x-at-most", value: here.x - cells } };
   await walkRealSegment(page, segment);

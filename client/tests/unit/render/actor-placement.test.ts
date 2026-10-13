@@ -10,19 +10,20 @@ import {
   type PlacementDims,
   placeActorAt,
 } from "../../../src/render/actor-placement";
+import { buildCharacterDrawable, REMOTE_STABLE_ID_BASE } from "../../../src/render/prop-drawables";
 import { worldPointPx } from "../../../src/render/screen-position";
 import { computeVisibility } from "../../../src/render/visibility";
-import { buildCharacterDrawable, REMOTE_STABLE_ID_BASE } from "../../../src/test-street/drawables";
-import { STREET_FLOOR, SUBWAY_FLOOR } from "../../../src/test-street/fixture";
 import { initialFloorWalkState, stepAndTransition } from "../../../src/world/floor-walk";
 import {
   committedDefs,
+  STREET_FLOOR,
+  SUBWAY_FLOOR,
   streetFlightIndex,
   streetFlightList,
   streetMovementConfig,
   streetTransitionIndex,
   streetWorldIndex,
-} from "../test-street/street-world";
+} from "../support/stairs-world";
 
 const TICK_MS = 16;
 const config = streetMovementConfig();

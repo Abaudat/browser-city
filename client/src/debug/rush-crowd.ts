@@ -18,7 +18,7 @@ import type { Defs } from "../defs/types";
 import type { Facing } from "../l3/gait";
 import type { TimetableSpec } from "../l3/interim-timetable";
 import { tupleFor } from "../render/appearance/player-look";
-import { CROWD_FLOOR, type CitizenFixture, type CrowdSource } from "../render/citizens-layer";
+import { type CitizenFixture, CROWD_FLOOR, type CrowdSource } from "../render/citizens-layer";
 
 /** NFR11's agent count: "~200 agents in a busy bubble". The L3 budget gate
  * (`l3-budget.spec.ts`) asserts this many bodies are live while it measures;

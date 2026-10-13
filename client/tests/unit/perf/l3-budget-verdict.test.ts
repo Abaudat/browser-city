@@ -160,9 +160,9 @@ describe("allocation attribution", () => {
 
   it("sums samples whose stack runs through l3/ or the crowd adapters", () => {
     const head = node("", 0, [
-      node("http://x/src/test-street/scene.ts", 100, [
+      node("http://x/src/render/world-scene.ts", 100, [
         node("http://x/src/l3/avoidance.ts", 40, [node("http://x/node_modules/a.js", 8)]),
-        node("http://x/src/test-street/citizens-layer.ts", 10),
+        node("http://x/src/render/citizens-layer.ts", 10),
         node("http://x/src/render/body-sprite.ts", 500),
       ]),
     ]);

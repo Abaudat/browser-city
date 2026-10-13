@@ -19,20 +19,10 @@ import type { Facing } from "../l3/gait";
 import { Timetable, type TimetableSpec } from "../l3/interim-timetable";
 import { type LedgerPoint, ledgerPositionAt } from "../l3/ledger-position";
 import type { Walkability } from "../l3/micro-path";
-import {
-  type LifeMember,
-  type LifeSample,
-  lifeDialsFor,
-  type StreetLife,
-  standState,
-} from "./street-life";
 import { BodyLifecycle } from "../world/body-lifecycle";
 import { type BodyCandidate, type BodyZone, WHOLE_ZONE } from "../world/body-zone";
 import { cellOf } from "../world/ownership";
-import type {
-  AppearanceTextureCache,
-  CompositeFrames,
-} from "./appearance/appearance-texture";
+import type { AppearanceTextureCache, CompositeFrames } from "./appearance/appearance-texture";
 import {
   type AppearanceTuple,
   appearanceCacheKey,
@@ -41,6 +31,13 @@ import {
 } from "./appearance/composite";
 import { newBodySprite, setBodyFrame } from "./body-sprite";
 import { worldPointPx, worldPointPxInto } from "./screen-position";
+import {
+  type LifeMember,
+  type LifeSample,
+  lifeDialsFor,
+  type StreetLife,
+  standState,
+} from "./street-life";
 
 /** The floor every crowd body lives on. */
 export const CROWD_FLOOR = 0;

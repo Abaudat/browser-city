@@ -3,7 +3,7 @@
 // An overlay never sees the scene, the Pixi application, the street or any
 // index directly: it sees this interface, which carries exactly what the
 // overlays registered today need and nothing else. That is what lets
-// `test-street/scene.ts` satisfy it now and Epic 3's real, subscribed pool
+// `render/world-scene.ts` satisfy it now and Epic 3's real, subscribed pool
 // satisfy it later with no overlay changing a line -- and what keeps a
 // tool for inspecting the world from being able to perturb it, since
 // every method here is a read.

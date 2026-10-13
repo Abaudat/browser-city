@@ -68,7 +68,7 @@ export function thresholdDefIds(defs: Defs): ReadonlySet<number> {
 /** Every real `defs/objects` entry, keyed by its own `id` (story 2.13,
  * Tim's direction cycle 2: next to [`objectDefsById`] above, which
  * indexes the same array for a different, narrower shape) -- built once
- * per mount (`render/test-street/scene.ts`), never a fresh linear
+ * per mount (`render/render/world-scene.ts`), never a fresh linear
  * `Array.find` per drawable. */
 export function buildObjectDefIndex(defs: Defs): ReadonlyMap<number, ObjectDef> {
   return new Map(defs.objects.map((object) => [object.id, object]));

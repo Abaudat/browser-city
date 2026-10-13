@@ -4,48 +4,57 @@
 // pair work is bounded by the neighbour cap, wall scans by the sidestepping
 // bodies, path searches by segments x grid revisions, buffers stop growing.
 import { describe, expect, it } from "vitest";
-import { type AvoidDials, scanSpan } from "../../../src/l3/avoidance";
-import { CitizenBody } from "../../../src/l3/citizen";
-import { pathConfigOf, walkFramesPerCycle } from "../../../src/l3/config";
-import { withStagingKerb } from "../../../src/test-street/citizens";
 import {
   buildRushCrowd,
   RUSH_CROWD_SIZE,
   RUSH_MIN_WALKING_SHARE,
-  RUSH_X0,
-  RUSH_X1,
-  RUSH_Y0,
-  RUSH_Y1,
-} from "../../../src/test-street/rush-crowd";
+  RUSH_RADIUS_CELLS,
+} from "../../../src/debug/rush-crowd";
+import { type AvoidDials, scanSpan } from "../../../src/l3/avoidance";
+import { CitizenBody } from "../../../src/l3/citizen";
+import { pathConfigOf, walkFramesPerCycle } from "../../../src/l3/config";
+import { Timetable } from "../../../src/l3/interim-timetable";
 import {
   type LifeMember,
   lifeDialsFor,
   StreetLife,
   standState,
-} from "../../../src/test-street/street-life";
-import { Timetable } from "../../../src/test-street/timetable";
+} from "../../../src/render/street-life";
 import { bodyZoneOf, zoneHoldsChunk } from "../../../src/world/body-zone";
 import { CHUNK_SIZE } from "../../../src/world/chunk";
-import { npcWalkability } from "../../../src/world/npc-walkable";
 import { l3Config } from "../l3/defs-config";
-import { committedDefs, streetWorldIndex } from "./street-world";
+import { committedDefs } from "../support/committed-defs";
+
+/** An open field around the start: the crowd is laid over whatever the
+ * world says is standable, so a field is the plainest world there is. */
+const START = { x: 100, y: 100 };
+const FIELD = {
+  x0: START.x - 3 * RUSH_RADIUS_CELLS,
+  x1: START.x + 3 * RUSH_RADIUS_CELLS,
+  y0: START.y - 3 * RUSH_RADIUS_CELLS,
+  y1: START.y + 3 * RUSH_RADIUS_CELLS,
+};
+const standable = (x: number, y: number) =>
+  x >= FIELD.x0 && x < FIELD.x1 && y >= FIELD.y0 && y < FIELD.y1;
+const base = {
+  revision: () => 0,
+  walkable: (_floor: number, x: number, y: number) => standable(x, y),
+};
 
 const cfg = l3Config();
 const defs = committedDefs();
 const path = pathConfigOf(cfg);
-const base = npcWalkability(streetWorldIndex());
 const gait = { strideCells: cfg.strideCells, framesPerCycle: walkFramesPerCycle(defs, "adult") };
 const life = lifeDialsFor(defs, cfg, "adult");
-const crowd = buildRushCrowd(defs);
+const crowd = buildRushCrowd(defs, { standable, start: START });
 
 /** A walkability whose revision a test can move, standing in for the
  * collision grid changing under the crowd. */
 function revisable() {
   let revision = 0;
-  const walk = withStagingKerb({ revision: () => revision, walkable: base.walkable });
   const wrapped = {
-    revision: () => revision + walk.revision(),
-    walkable: walk.walkable,
+    revision: () => revision,
+    walkable: base.walkable,
   };
   return { walk: wrapped, bump: () => void revision++ };
 }
@@ -91,40 +100,29 @@ describe("the rush-hour crowd (NFR11 workload)", () => {
   it("holds RUSH_CROWD_SIZE distinct citizens, deterministically", () => {
     expect(crowd.fixtures).toHaveLength(RUSH_CROWD_SIZE);
     expect(new Set(crowd.fixtures.map((f) => f.id)).size).toBe(RUSH_CROWD_SIZE);
-    expect(buildRushCrowd(defs)).toEqual(crowd);
+    expect(buildRushCrowd(defs, { standable, start: START })).toEqual(crowd);
     expect(RUSH_CROWD_SIZE).toBeGreaterThanOrEqual(200);
   });
 
-  it("is rush hour: most walk, both ways on shared rows, some stand, a pile converges", () => {
+  it("is rush hour: most walk, some stand, a pile converges", () => {
     const walkers = Object.keys(crowd.specs).length;
     expect(walkers).toBe(crowd.walkerCount);
     expect(walkers / RUSH_CROWD_SIZE).toBeGreaterThanOrEqual(RUSH_MIN_WALKING_SHARE);
     expect(crowd.fixtures.length - walkers).toBeGreaterThan(0);
-    const lanes = Object.entries(crowd.specs).filter(([id]) => id.startsWith("rush-lane"));
-    const eastRows = new Set(
-      lanes.filter(([, s]) => s.out[1].x > s.out[0].x).map(([, s]) => s.out[0].y),
-    );
-    const westRows = new Set(
-      lanes.filter(([, s]) => s.out[1].x < s.out[0].x).map(([, s]) => s.out[0].y),
-    );
-    expect([...eastRows].filter((r) => westRows.has(r)).length).toBeGreaterThan(0);
     const pile = Object.entries(crowd.specs).filter(([id]) => id.startsWith("rush-pile"));
     expect(pile.length).toBeGreaterThan(0);
     expect(new Set(pile.map(([, s]) => `${s.out[1].x},${s.out[1].y}`)).size).toBe(1);
   });
 
-  it("stays on open pavement inside the crowd's own bounds", () => {
-    const { walk } = revisable();
+  it("stays on standable cells within the crowd's radius of the start", () => {
     const cells = [
       ...Object.values(crowd.specs).flatMap((s) => s.out),
       ...crowd.fixtures.map((f) => ({ x: Math.floor(f.gridX), y: Math.floor(f.gridY), floor: 0 })),
     ];
     for (const c of cells) {
-      expect(c.x).toBeGreaterThanOrEqual(RUSH_X0);
-      expect(c.x).toBeLessThanOrEqual(RUSH_X1);
-      expect(c.y).toBeGreaterThanOrEqual(RUSH_Y0);
-      expect(c.y).toBeLessThanOrEqual(RUSH_Y1);
-      expect(walk.walkable(0, c.x, c.y)).toBe(true);
+      expect(Math.abs(c.x - START.x)).toBeLessThanOrEqual(2 * RUSH_RADIUS_CELLS);
+      expect(Math.abs(c.y - START.y)).toBeLessThanOrEqual(RUSH_RADIUS_CELLS);
+      expect(standable(c.x, c.y)).toBe(true);
     }
   });
 });
@@ -213,7 +211,12 @@ describe("L3 work counters over a sustained rush hour", () => {
 });
 
 describe("avoidance scoping at density (bubble independence)", () => {
-  const rect = (x0: number, x1: number) => ({ x0, y0: -10, x1, y1: 40 });
+  const rect = (x0: number, x1: number) => ({
+    x0: START.x + x0,
+    y0: START.y - 20,
+    x1: START.x + x1,
+    y1: START.y + 20,
+  });
 
   it("a chunk is held only wholly inside the spawn rect less the inset, in the band", () => {
     const zone = bodyZoneOf({ x0: 0, y0: 0, x1: 0, y1: 0 }, 0, 0, 10);

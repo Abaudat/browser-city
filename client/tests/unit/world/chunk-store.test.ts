@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BuildingArea, PlacedObject, RoomArea } from "../../../src/net/bindings/types";
-import { ChunkStore, type WorldSink } from "../../../src/world/chunk-store";
 import { chunkKey } from "../../../src/world/chunk";
+import { ChunkStore, type WorldSink } from "../../../src/world/chunk-store";
 
 function placed(id: bigint, x: number, y: number, floor = 0): PlacedObject {
   return {

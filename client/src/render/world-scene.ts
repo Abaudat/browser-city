@@ -26,36 +26,11 @@ import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { type BodyDials, type BodyFrame, createBodyMotion, poseBody } from "../l3/body-pose";
-import type { TransitionSpec } from "../world/transitions";
 import { framesByAnimation, loadL3Config, walkFramesPerCycle } from "../l3/config";
-import { type ActorPlacement, placeActorAt } from "./actor-placement";
-import { AppearanceTextureCache } from "./appearance/appearance-texture";
-import type { AppearanceTuple } from "./appearance/composite";
-import { buildPlayerAppearanceTuple } from "./appearance/player-look";
-import {
-  AtlasPageLoader,
-  countAllBoundTextureSources,
-  countBoundAtlasPages,
-} from "./atlas-pages";
-import { newBodySprite, setBodyFrame } from "./body-sprite";
-import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "./camera";
-import { assertStageIsWorld, FloorStacks } from "./floor-stacks";
-import { layerCodeByName, passOfLayer } from "./layer-table";
-import { ContainerViewController } from "./pixi-container-view";
-import { HighlightApplier } from "./pixi-highlight";
-import { applyDepthOrder, type OrderedMember } from "./pixi-order";
-import { VisibilityApplier, type VisibilityMember } from "./pixi-visibility";
-import {
-  floorOffsetPx,
-  snapToScreenPx,
-  visibleCellBounds,
-  worldPointPx,
-} from "./screen-position";
-import type { Drawable } from "./sort-key";
-import { fromSortUnits } from "./sort-units";
-import type { VisibilityState, VisibilityViewer } from "./visibility";
-import { isFloorCulled } from "./visibility";
+import type { PlacedObject } from "../net/bindings/types";
 import { type BodyZone, bodyZoneOf, type Rect } from "../world/body-zone";
+import { chunkKey, unpackChunkKey } from "../world/chunk";
+import type { ChunkStore } from "../world/chunk-store";
 import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
 import { type CellRect, type HeldRow, shouldClose } from "../world/container-view";
 import { buildFlights, FlightIndex, type PlacedFlightRow } from "../world/flights";
@@ -71,18 +46,33 @@ import { buildObjectDefIndex, type ObjectSource, objectDefById } from "../world/
 import { NO_OWNER, OwnershipIndex } from "../world/ownership";
 import { bandOf } from "../world/region";
 import { isBodyClear, isCellStandable } from "../world/standable";
+import type { TransitionSpec } from "../world/transitions";
 import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
+import { type ActorPlacement, placeActorAt } from "./actor-placement";
+import { AppearanceTextureCache } from "./appearance/appearance-texture";
+import type { AppearanceTuple } from "./appearance/composite";
+import { buildPlayerAppearanceTuple } from "./appearance/player-look";
+import { AtlasPageLoader, countAllBoundTextureSources, countBoundAtlasPages } from "./atlas-pages";
+import { newBodySprite, setBodyFrame } from "./body-sprite";
+import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "./camera";
 import { chunkResidency } from "./chunk-residency";
 import {
   type BodyScreenBounds,
-  CROWD_FLOOR,
   type CitizensLayerHandle,
+  CROWD_FLOOR,
   type CrowdSource,
   type L3BodyReport,
   mountCitizensLayer,
 } from "./citizens-layer";
+import { decomposeFootprint } from "./decompose";
+import { assertStageIsWorld, FloorStacks } from "./floor-stacks";
+import { layerCodeByName, passOfLayer } from "./layer-table";
+import { ContainerViewController } from "./pixi-container-view";
+import { HighlightApplier } from "./pixi-highlight";
+import { applyDepthOrder, type OrderedMember } from "./pixi-order";
+import { VisibilityApplier, type VisibilityMember } from "./pixi-visibility";
 import {
   BAND_ID_OFFSET,
   type BuildPropDrawablesOptions,
@@ -101,11 +91,12 @@ import {
   type RemotePlayersLayer,
   type RemotePlayersSource,
 } from "./remote-players-layer";
+import { floorOffsetPx, snapToScreenPx, visibleCellBounds, worldPointPx } from "./screen-position";
+import type { Drawable } from "./sort-key";
+import { fromSortUnits } from "./sort-units";
 import { StreetLife } from "./street-life";
-import { decomposeFootprint } from "./decompose";
-import type { PlacedObject } from "../net/bindings/types";
-import { type ChunkStore } from "../world/chunk-store";
-import { chunkKey, unpackChunkKey } from "../world/chunk";
+import type { VisibilityState, VisibilityViewer } from "./visibility";
+import { isFloorCulled } from "./visibility";
 
 /** Colour the app background switches to while the viewer is on any
  * below-ground floor (Artie's direction: what surrounds the subway
@@ -439,7 +430,7 @@ export interface WorldSceneHandle {
 
   // Story 1.12 (FR165): the reads `main.ts` assembles a `DebugWorldView`
   // out of. Deliberately five plain reads rather than a `DebugWorldView`
-  // built here: `test-street/` never imports `debug/` (nothing but
+  // built here: `render/world-scene.ts` never imports `debug/` (nothing but
   // `main.ts` does), and Epic 3's real pool will expose the same five
   // facts from somewhere else entirely.
 
@@ -949,8 +940,7 @@ export async function mountWorldScene(
       isStandable: (x, y, floor) => isCellStandable(worldIndex, movementConfig, x, y, floor),
       entryBand: {
         subcellsPerCell: movementConfig.subcellsPerCell,
-        isBodyClear: (floor, cx, feet) =>
-          isBodyClear(worldIndex, movementConfig, floor, cx, feet),
+        isBodyClear: (floor, cx, feet) => isBodyClear(worldIndex, movementConfig, floor, cx, feet),
       },
     });
   }
@@ -1223,7 +1213,9 @@ export async function mountWorldScene(
     const flatEntries: PoolEntry[] = [];
     for (const drawable of buildPropDrawables(propRows, propOptions)) {
       if (!isDefPropDrawable(drawable)) continue;
-      const sprite = createSprite(cellTexture(drawable.defId, drawable.sourceCol, drawable.sourceRow));
+      const sprite = createSprite(
+        cellTexture(drawable.defId, drawable.sourceCol, drawable.sourceRow),
+      );
       positionSprite(
         sprite,
         fromSortUnits(drawable.x),
@@ -1727,7 +1719,9 @@ export async function mountWorldScene(
         ZOOM,
         appearanceCache,
         { walk: npcWalk, config: l3Config, life: streetLife, crowd: crowdSource },
-        bodiesFrozen ? {} : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
+        bodiesFrozen
+          ? {}
+          : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
       )
     : undefined;
   const msPerMilliminute = l3Config.realMsPerCityMinute / 1000;
@@ -1913,7 +1907,9 @@ export async function mountWorldScene(
     setHighlightStrength,
     currentFloor: () => walk.floor,
     poolDrawables: () => [
-      ...[...liveEntries].filter((e) => passOfLayer(e.drawable.layerCode) === "pool").map((e) => e.drawable),
+      ...[...liveEntries]
+        .filter((e) => passOfLayer(e.drawable.layerCode) === "pool")
+        .map((e) => e.drawable),
       playerEntry.drawable,
     ],
     orderIndexOf: (stableId) => {

@@ -20,13 +20,10 @@ import {
   poseBody,
 } from "../l3/body-pose";
 import { framesByAnimation, loadL3Config, walkFramesPerCycle } from "../l3/config";
-import type {
-  AppearanceTextureCache,
-  CompositeFrames,
-} from "./appearance/appearance-texture";
-import { newBodySprite, setBodyFrame } from "./body-sprite";
 import type { RemoteMotion, RemotePose } from "../world/remote-motion";
+import type { AppearanceTextureCache, CompositeFrames } from "./appearance/appearance-texture";
 import { buildPlayerAppearanceTuple } from "./appearance/player-look";
+import { newBodySprite, setBodyFrame } from "./body-sprite";
 
 export interface RemotePlayersWiring {
   readonly motion: RemoteMotion;

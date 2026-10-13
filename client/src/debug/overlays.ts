@@ -69,7 +69,7 @@ declare global {
 }
 
 export interface MountDebugOverlaysOptions {
-  /** The canvas mount (`#test-street`), never `document.body`: FR151's
+  /** The canvas mount (`#world`), never `document.body`: FR151's
    * DOM-surface allowlist is checked against `document.body`'s own
    * children, and a debug overlay is not a UI surface. */
   readonly mount: HTMLElement;
@@ -79,7 +79,7 @@ export interface MountDebugOverlaysOptions {
    * to land where the renderer drew.
    *
    * A getter rather than two numbers (Tim's direction, cycle 2): captured
-   * once, this would be correct only because `test-street/scene.ts`
+   * once, this would be correct only because `render/world-scene.ts`
    * happens to do its final `resize` before `mountStreetScene` resolves
    * and never resize again. Epic 3's real, resizable camera would inherit
    * that as a silently misaligned overlay -- every hairline off by

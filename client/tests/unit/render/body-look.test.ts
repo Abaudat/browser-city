@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { CitizenBody } from "../../../src/l3/citizen";
 import { walkFramesPerCycle } from "../../../src/l3/config";
-import { StreetLife, standState } from "../../../src/test-street/street-life";
+import { StreetLife, standState } from "../../../src/render/street-life";
 import { l3Config, quietLife } from "../l3/defs-config";
 import { CFG, TestGrid } from "../l3/support";
-import { committedDefs } from "./street-world";
+import { committedDefs } from "../support/committed-defs";
 
 const cfg = l3Config();
 const gait = {

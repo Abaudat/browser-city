@@ -5,7 +5,7 @@
 import { Container } from "pixi.js";
 import { describe, expect, it } from "vitest";
 import { computeCamera, worldPxFromClient } from "../../../src/render/camera";
-import { applyCameraToWorld, clientToWorldPx } from "../../../src/test-street/scene";
+import { applyCameraToWorld, clientToWorldPx } from "../../../src/render/world-scene";
 
 // `highlightOverlayAlpha`'s own tests moved to
 // `tests/unit/render/highlight.test.ts` (story 1.15): the affordance mark

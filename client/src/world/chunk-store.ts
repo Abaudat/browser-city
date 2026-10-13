@@ -7,12 +7,7 @@
 // The world is never built from anything but these rows: no client code
 // derives geometry the server already knows.
 
-import type {
-  BuildingArea,
-  FloorTransition,
-  PlacedObject,
-  RoomArea,
-} from "../net/bindings/types";
+import type { BuildingArea, FloorTransition, PlacedObject, RoomArea } from "../net/bindings/types";
 
 /** What a chunk's rows come to, keyed by each table's own primary key. */
 export interface ChunkData {

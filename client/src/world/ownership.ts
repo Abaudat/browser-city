@@ -95,7 +95,10 @@ export class OwnershipIndex {
   /** The areas given are anonymous: addressable by position only, never
    * deletable. A streamed world feeds [`insertBuilding`] and its
    * siblings by row id instead. */
-  constructor(buildingAreas: readonly OwnershipArea[] = [], roomAreas: readonly OwnershipArea[] = []) {
+  constructor(
+    buildingAreas: readonly OwnershipArea[] = [],
+    roomAreas: readonly OwnershipArea[] = [],
+  ) {
     let anonymous = -1n;
     for (const area of buildingAreas) this.buildingAreas.insert(anonymous--, area);
     for (const area of roomAreas) this.roomAreas.insert(anonymous--, area);

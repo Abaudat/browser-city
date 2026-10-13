@@ -149,7 +149,7 @@ export interface SamplingNode {
 
 /** Which frames count as L3: the `l3/` modules and the two crowd adapters
  * that run inside the L3 window. */
-export const L3_FRAME_URL = /\/src\/(l3\/|test-street\/(street-life|citizens-layer))/;
+export const L3_FRAME_URL = /\/src\/(l3\/|render\/(street-life|citizens-layer))/;
 
 /** Bytes sampled under any frame whose url matches `isL3`: a sample counts
  * once, for the stack that allocated it. */

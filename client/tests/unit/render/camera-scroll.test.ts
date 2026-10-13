@@ -4,7 +4,7 @@ import { CAMERA_SCROLL_TOLERANCE_PX, computeCamera, ZOOM } from "../../../src/re
 import { worldPointPx } from "../../../src/render/screen-position";
 import { CollisionGrid } from "../../../src/world/collision-grid";
 import { type MovementConfig, step } from "../../../src/world/movement";
-import { committedDefs, streetMovementConfig } from "../test-street/street-world";
+import { committedDefs, committedMovementConfig } from "../support/committed-defs";
 
 // `inv_camera_scroll_tracks_continuous_walk`: the real `step`,
 // `worldPointPx` and `computeCamera`, composed per frame with no Pixi.
@@ -16,7 +16,7 @@ import { committedDefs, streetMovementConfig } from "../test-street/street-world
 // balance key's own range rather than pinned to today's value.
 
 const DEFS = committedDefs();
-const BASE_CONFIG = streetMovementConfig();
+const BASE_CONFIG = committedMovementConfig();
 function balance(key: string): { value: number; min: number; max: number } {
   const entry = DEFS.balance.find((b) => b.key === key);
   if (!entry) throw new Error(`no balance entry '${key}'`);

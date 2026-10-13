@@ -58,6 +58,15 @@ interface FakeState {
   disconnectCalls: number;
   builds: number;
   onMyCharacterInsertCb?: (ctx: unknown, row: FakeMyCharacterRow) => void;
+  onMyStartInsertCb?: (ctx: unknown, row: FakeMyStartRow) => void;
+}
+
+interface FakeMyStartRow {
+  x: number;
+  y: number;
+  floor: number;
+  fracX: number;
+  fracY: number;
 }
 
 interface FakeMyCharacterRow {
@@ -141,6 +150,11 @@ const fakeConn = {
         state.onMyCharacterInsertCb = cb;
       },
     },
+    myStart: {
+      onInsert: (cb: (ctx: unknown, row: FakeMyStartRow) => void) => {
+        state.onMyStartInsertCb = cb;
+      },
+    },
     moduleVersion: {
       onInsert: (cb: (ctx: unknown, row: FakeModuleVersionRow) => void) => {
         state.onModuleVersionInsertCb = cb;
@@ -197,6 +211,7 @@ vi.mock("../../src/net/bindings", () => ({
     moduleVersion: fakeTable("module_version"),
     worldClock: fakeTable("world_clock"),
     myCharacter: fakeTable("my_character"),
+    myStart: fakeTable("my_start"),
     placedObject: fakeTable("placed_object"),
     floorTransition: fakeTable("floor_transition"),
     buildingArea: fakeTable("building_area"),
@@ -245,6 +260,7 @@ beforeEach(() => {
   state.disconnectCalls = 0;
   state.builds = 0;
   state.onMyCharacterInsertCb = undefined;
+  state.onMyStartInsertCb = undefined;
 });
 
 describe("connect", () => {
@@ -268,6 +284,7 @@ describe("connect", () => {
       "query:module_version",
       "query:world_clock",
       "query:my_character",
+      "query:my_start",
     ]);
   });
 
@@ -818,6 +835,16 @@ describe("identity token (story 4.5, FR141)", () => {
       expect(f.writes).toEqual([]);
       expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe("{corrupt");
     });
+  });
+
+  it("reports where the identity starts from the my_start view (story 3.16)", () => {
+    const seen: unknown[] = [];
+    connect(() => {}, undefined, undefined, undefined, {
+      storage: fakeStorage().storage,
+      onStart: (s) => seen.push(s),
+    });
+    state.onMyStartInsertCb?.({}, { x: 436, y: 5, floor: 0, fracX: 128, fracY: 128 });
+    expect(seen).toEqual([{ x: 436, y: 5, floor: 0, fracX: 128, fracY: 128 }]);
   });
 
   it("reports the player's own character from the my_character view", () => {

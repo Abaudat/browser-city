@@ -1,6 +1,6 @@
 // The client's own mirror of `sim::world::WorldSpec::build`'s refusals
 // (NFR30 forbids sharing the code): world data -- hand-laid today
-// (`test-street/fixture.ts`), streamed from `building_area`/`room_area`/
+// (`the generated district`), streamed from `building_area`/`room_area`/
 // `floor_transition` rows tomorrow -- is checked before anything consumes
 // it, so a bad world fails a fast test rather than only failing when
 // somebody walks it.

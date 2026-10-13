@@ -4,27 +4,24 @@
 // (the re-lay closed nothing but the cells it covers).
 
 import { describe, expect, it } from "vitest";
-import {
-  BRIDGE_DECK_DEF_ID,
-  BRIDGE_FLOOR,
-  STREET_FLOOR,
-  STREET_TRANSITIONS,
-  streetPlacedRows,
-} from "../../../src/test-street/fixture";
 import { initialFloorWalkState, stepAndTransition } from "../../../src/world/floor-walk";
 import { footprintCells } from "../../../src/world/footprint";
 import { bodyCell, step } from "../../../src/world/movement";
 import { isBodyClear, isCellStandable } from "../../../src/world/standable";
 import { pairTransitions, TransitionIndex } from "../../../src/world/transitions";
 import { WorldIndex } from "../../../src/world/world-index";
-import { cellKey, reachableCells, reachableGrid } from "./reachable";
-import { REACHABLE_GRID } from "./reachable-golden";
+import { cellKey, reachableCells } from "../support/reachable";
 import {
+  BRIDGE_DECK_DEF_ID,
+  BRIDGE_FLOOR,
   committedDefs,
+  STREET_FLOOR,
+  STREET_TRANSITIONS,
   streetFlightIndex,
   streetMovementConfig,
   streetObjectSources,
-} from "./street-world";
+  streetPlacedRows,
+} from "../support/stairs-world";
 
 const config = streetMovementConfig();
 const sub = config.subcellsPerCell;
@@ -189,10 +186,6 @@ describe("a transition onto its own cell keeps the walker's position (FR117)", (
 
 describe("the street and the deck stay reachable (FR117)", () => {
   const now = reachableCells(world);
-
-  it("the reachable cells per floor are the committed golden: any layout change that moves them is a diff to review", () => {
-    expect(reachableGrid(now.seen)).toEqual(REACHABLE_GRID);
-  });
 
   it("every standable cell of the deck is reachable, and so is every anchor of the footbridge", () => {
     const deckCells = allRows

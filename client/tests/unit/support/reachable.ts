@@ -2,16 +2,18 @@
 // transitions: one shared helper for the reachability test and the committed
 // golden (`regen-golden.ts`). The bounds are the fixture's own.
 
-import {
-  PLAYER_START,
-  STREET_TRANSITIONS,
-  streetPlacedRows,
-} from "../../../src/test-street/fixture";
 import { cellOf } from "../../../src/world/ownership";
 import { isBodyClear, isCellStandable } from "../../../src/world/standable";
 import { TransitionIndex, type TransitionSpec } from "../../../src/world/transitions";
 import type { WorldIndex } from "../../../src/world/world-index";
-import { streetMovementConfig, streetObjectSources, streetWorldIndex } from "./street-world";
+import {
+  PLAYER_START,
+  STREET_TRANSITIONS,
+  streetMovementConfig,
+  streetObjectSources,
+  streetPlacedRows,
+  streetWorldIndex,
+} from "./stairs-world";
 
 export const cellKey = (floor: number, x: number, y: number) => `${floor}|${x}|${y}`;
 

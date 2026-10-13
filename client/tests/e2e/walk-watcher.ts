@@ -1,17 +1,13 @@
 // The in-page walk watcher and the checks on what it records. No Node or
 // Playwright import: the watcher is serialised into the page, and a unit
 // test drives it directly.
-import {
-  RELEASE_LAG,
-  type StreetWalkSegment,
-  type StreetWalkUntil,
-} from "../../src/test-street/fixture";
-import { streetMovementConfig } from "../unit/test-street/street-world";
+import { committedMovementConfig } from "../unit/support/committed-defs";
+import { RELEASE_LAG, type WalkSegment, type WalkUntil } from "./walk-types";
 
 export type WalkMode = "real" | "synthetic";
 
 export interface WatcherArgs {
-  readonly until: StreetWalkUntil;
+  readonly until: WalkUntil;
   readonly code: string;
   readonly mode: WalkMode;
   readonly timeoutMs: number;
@@ -270,7 +266,7 @@ export function armWalkWatcher(args: WatcherArgs): boolean {
 export function releaseBoundCells(): number {
   return (
     (1 + RELEASE_LAG.releaseLagSteps) *
-    streetMovementConfig().walkSpeedCellsPerMs *
+    committedMovementConfig().walkSpeedCellsPerMs *
     RELEASE_LAG.stepMs
   );
 }
@@ -279,7 +275,7 @@ export function releaseBoundCells(): number {
  * walk rested further past its axis threshold than `boundCells`. */
 export function overshootViolation(
   record: WalkRecord,
-  segment: StreetWalkSegment,
+  segment: WalkSegment,
   boundCells: number,
 ): string | null {
   if (record.movedAfterKeyupFrames > 0) {

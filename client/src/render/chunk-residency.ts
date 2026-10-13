@@ -6,8 +6,8 @@
 // in inside it -- and dropped only a whole chunk past that, so a player
 // standing on a boundary never makes a chunk thrash.
 
-import { REGION_BODY_MARGIN_CELLS } from "../world/region";
 import { CHUNK_SIZE, unpackChunkKey } from "../world/chunk";
+import { REGION_BODY_MARGIN_CELLS } from "../world/region";
 
 /** How far beyond the viewport a chunk is drawn: the region's own body
  * margin, so what the region holds ahead of the player is drawn ahead of
@@ -64,7 +64,10 @@ export function chunkResidency(
     if (wanted) {
       const d = Math.hypot((x0 + x1) / 2 - centreX, (y0 + y1) / 2 - centreY);
       draw.push({ key, d });
-    } else if (drawnSet.has(key) && !(floorWanted(floor) && reach(DRAW_MARGIN_CELLS + CHUNK_SIZE))) {
+    } else if (
+      drawnSet.has(key) &&
+      !(floorWanted(floor) && reach(DRAW_MARGIN_CELLS + CHUNK_SIZE))
+    ) {
       drop.push(key);
     }
   }

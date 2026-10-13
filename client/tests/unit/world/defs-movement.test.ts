@@ -4,12 +4,16 @@
 // is the same file the browser fetches at runtime.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { LAMPPOST_CELL, LAMPPOST_DEF_ID } from "../../../src/test-street/fixture";
 import { CollisionGrid } from "../../../src/world/collision-grid";
 import type { Vec2 } from "../../../src/world/movement";
 import { step } from "../../../src/world/movement";
 import { objectDefsById } from "../../../src/world/object-defs";
-import { committedDefs, streetMovementConfig } from "../test-street/street-world";
+import {
+  committedDefs,
+  LAMPPOST_CELL,
+  LAMPPOST_DEF_ID,
+  streetMovementConfig,
+} from "../support/stairs-world";
 
 /** FR137/the GDD's own pace: one viewport width is 40 cells, and crossing
  * it takes 18 real seconds. The numbers are the requirement, so they are
