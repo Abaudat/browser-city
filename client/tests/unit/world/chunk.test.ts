@@ -40,3 +40,19 @@ describe("chunkKey", () => {
     );
   });
 });
+
+import { chunkKey as chunkKeyOf, unpackChunkKey } from "../../../src/world/chunk";
+
+describe("unpackChunkKey (story 3.16)", () => {
+  it("inverts chunkKey for positive and negative chunks and floors", () => {
+    for (const [x, y, f] of [
+      [0, 0, 0],
+      [95, 31, 0],
+      [-1, -33, -1],
+      [-200, 700, 2],
+    ] as const) {
+      const k = unpackChunkKey(chunkKeyOf(x, y, f));
+      expect(k).toEqual({ cx: Math.floor(x / 32), cy: Math.floor(y / 32), floor: f });
+    }
+  });
+});

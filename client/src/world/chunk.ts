@@ -33,3 +33,17 @@ export function chunkKey(x: number, y: number, floor: number): bigint {
   const f = BigInt(Math.trunc(floor)) & FLOOR_MASK;
   return (cx << (CHUNK_Y_BITS + FLOOR_BITS)) | (cy << FLOOR_BITS) | f;
 }
+
+/** The chunk coordinates and floor a chunk key names -- the inverse of
+ * [`chunkKey`] on its three packed fields. */
+export function unpackChunkKey(key: bigint): { cx: number; cy: number; floor: number } {
+  const signed = (v: bigint, bits: bigint): number => {
+    const sign = 1n << (bits - 1n);
+    return Number(v >= sign ? v - (1n << bits) : v);
+  };
+  return {
+    cx: signed((key >> (CHUNK_Y_BITS + FLOOR_BITS)) & CHUNK_X_MASK, CHUNK_X_BITS),
+    cy: signed((key >> FLOOR_BITS) & CHUNK_Y_MASK, CHUNK_Y_BITS),
+    floor: signed(key & FLOOR_MASK, FLOOR_BITS),
+  };
+}

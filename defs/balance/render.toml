@@ -52,3 +52,12 @@ value = 50
 min = 1
 max = 100
 
+
+[[balance]]
+# The flat wall swatch a wall's stub and a doorway's band are drawn with
+# (`defs/objects/city-props.toml`'s `wall_segment`): the object id the
+# renderer reads, never a content key.
+key = "render.wall_stub_object_id"
+value = 6
+min = 0
+max = 65535

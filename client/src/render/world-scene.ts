@@ -1,32 +1,23 @@
-// The street scene's Pixi mount -- one of a small, named set of files
+// The world scene's Pixi mount -- one of a small, named set of files
 // allowed to import `pixi.js` (`bootstrap.ts`,
 // `render/pixi-order.ts`/`render/pixi-visibility.ts`/`render/pixi-highlight.ts`,
 // and story 1.10/2.7's `render/appearance/composite-pages.ts`/`appearance-texture.ts` and
-// `test-street/citizens-layer.ts`/`test-street/compare-pipeline-vs-stack.ts`, each its
+// `render/citizens-layer.ts`/`render/remote-players-layer.ts`, each its
 // own real-canvas/Pixi adapter). Ordering itself is
 // `render/pixi-order.ts`'s job, visibility is `render/pixi-visibility.
 // ts`'s (story 1.7), FR173's affordance mark is `render/pixi-highlight.
 // ts`'s (story 1.15); this file's whole job is texture loading, sprite
 // construction, container wiring, keyboard input and the mount-time
-// geometry guard. Real LimeZu sprites only, loaded straight out of the
-// repo-root `ModernTileset/` (Artie's direction: no coloured rectangles,
-// no new PNGs beyond what a new prop genuinely needs) -- nearest-
-// neighbour filtering, integer world-pixel positions rounded before the
-// zoom scale, bottom-centre sprite anchors pinned to each drawable's own
-// cell.
+// geometry guard. The world it draws is the generated district's rows,
+// streamed (story 3.16) -- never a hand-laid scene. Real LimeZu sprites
+// only, resolved through the atlas -- nearest-neighbour filtering, integer
+// world-pixel positions rounded before the zoom scale, bottom-centre
+// sprite anchors pinned to each drawable's own cell.
 //
 // D17: no debug text, no rank numbers, no sort-key readouts on the
 // canvas. This module draws the scene and nothing else.
 
-import {
-  type Application,
-  Assets,
-  Container,
-  Rectangle,
-  Sprite,
-  Texture,
-  UPDATE_PRIORITY,
-} from "pixi.js";
+import { type Application, Container, Sprite, type Texture, UPDATE_PRIORITY } from "pixi.js";
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import type { VerifiedDefs } from "../boot/handshake";
 import type { BodyControl } from "../input/body-control";
@@ -35,38 +26,39 @@ import { attachKeyboard, type KeyboardState } from "../input/keyboard";
 import type { PickContext, PickRect } from "../input/pick";
 import { attachPointer } from "../input/pointer";
 import { type BodyDials, type BodyFrame, createBodyMotion, poseBody } from "../l3/body-pose";
-import { CitizenBody } from "../l3/citizen";
-import { framesByAnimation, loadL3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
-import { type ActorPlacement, placeActorAt } from "../render/actor-placement";
-import { AppearanceTextureCache } from "../render/appearance/appearance-texture";
-import { type AppearanceTuple, appearanceCacheKey } from "../render/appearance/composite";
+import type { TransitionSpec } from "../world/transitions";
+import { framesByAnimation, loadL3Config, walkFramesPerCycle } from "../l3/config";
+import { type ActorPlacement, placeActorAt } from "./actor-placement";
+import { AppearanceTextureCache } from "./appearance/appearance-texture";
+import type { AppearanceTuple } from "./appearance/composite";
+import { buildPlayerAppearanceTuple } from "./appearance/player-look";
 import {
   AtlasPageLoader,
   countAllBoundTextureSources,
   countBoundAtlasPages,
-} from "../render/atlas-pages";
-import { newBodySprite, setBodyFrame } from "../render/body-sprite";
-import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "../render/camera";
-import { assertStageIsWorld, FloorStacks } from "../render/floor-stacks";
-import { layerCodeByName, passOfLayer } from "../render/layer-table";
-import { ContainerViewController } from "../render/pixi-container-view";
-import { HighlightApplier } from "../render/pixi-highlight";
-import { applyDepthOrder, type OrderedMember } from "../render/pixi-order";
-import { VisibilityApplier, type VisibilityMember } from "../render/pixi-visibility";
+} from "./atlas-pages";
+import { newBodySprite, setBodyFrame } from "./body-sprite";
+import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "./camera";
+import { assertStageIsWorld, FloorStacks } from "./floor-stacks";
+import { layerCodeByName, passOfLayer } from "./layer-table";
+import { ContainerViewController } from "./pixi-container-view";
+import { HighlightApplier } from "./pixi-highlight";
+import { applyDepthOrder, type OrderedMember } from "./pixi-order";
+import { VisibilityApplier, type VisibilityMember } from "./pixi-visibility";
 import {
   floorOffsetPx,
   snapToScreenPx,
   visibleCellBounds,
   worldPointPx,
-} from "../render/screen-position";
-import type { Drawable } from "../render/sort-key";
-import { fromSortUnits } from "../render/sort-units";
-import type { VisibilityState, VisibilityViewer } from "../render/visibility";
-import { isFloorCulled } from "../render/visibility";
+} from "./screen-position";
+import type { Drawable } from "./sort-key";
+import { fromSortUnits } from "./sort-units";
+import type { VisibilityState, VisibilityViewer } from "./visibility";
+import { isFloorCulled } from "./visibility";
 import { type BodyZone, bodyZoneOf, type Rect } from "../world/body-zone";
 import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
 import { type CellRect, type HeldRow, shouldClose } from "../world/container-view";
-import { buildFlights, FlightIndex } from "../world/flights";
+import { buildFlights, FlightIndex, type PlacedFlightRow } from "../world/flights";
 import {
   type FloorWalkResult,
   initialFloorWalkState,
@@ -82,65 +74,38 @@ import { isBodyClear, isCellStandable } from "../world/standable";
 import { TransitionIndex } from "../world/transitions";
 import type { CellBounds, PlacedObjectView } from "../world/world-index";
 import { WorldIndex } from "../world/world-index";
-import { ASSET_URLS, type PixelRect } from "./assets";
-import {
-  buildCommuterAppearanceTuple,
-  buildPlayerAppearanceTuple,
-  CROWD_FLOOR,
-  withStagingKerb,
-} from "./citizens";
+import { chunkResidency } from "./chunk-residency";
 import {
   type BodyScreenBounds,
+  CROWD_FLOOR,
   type CitizensLayerHandle,
+  type CrowdSource,
   type L3BodyReport,
   mountCitizensLayer,
 } from "./citizens-layer";
-import { COMMUTER_ID, COMMUTER_SPEC, COMMUTER_STABLE_ID } from "./commuter";
 import {
+  BAND_ID_OFFSET,
+  type BuildPropDrawablesOptions,
   buildCharacterDrawable,
   buildPropDrawables,
   isDefPropDrawable,
+  type PlacedRowView,
   type PropDrawable,
-  type PropDrawableByAsset,
   REMOTE_STABLE_ID_BASE,
+  STUB_ID_OFFSET,
   updateCharacterDrawable,
-} from "./drawables";
-import {
-  isDefStreetProp,
-  LAMPPOST_DEF_ID,
-  PLAYER_START,
-  STREET_BUILDING_AREAS,
-  STREET_GROUND_TILES,
-  STREET_PROPS,
-  STREET_ROOM_AREAS,
-  STREET_TRANSITIONS,
-  type StreetGroundTiles,
-  streetColliderSources,
-  streetPlacedRows,
-} from "./fixture";
+} from "./prop-drawables";
 import {
   type ActorHost,
   mountRemotePlayersLayer,
   type RemotePlayersLayer,
   type RemotePlayersSource,
 } from "./remote-players-layer";
-import type { RushCrowd } from "./rush-crowd";
-import { lifeDialsFor, StreetLife } from "./street-life";
-import { Timetable } from "./timetable";
-
-/** A plain, single-tile interior floor swatch cropped from the same
- * Room Builder sheet family as the walls -- real art, never a new PNG,
- * and visually distinct from the exterior `sidewalk` tile (Artie's
- * direction: there must be an inside). */
-
-/** A small, purely cosmetic screen-space nudge applied after normal
- * bottom-centre anchoring -- never applied to a drawable's sort
- * position. Only the glass needs one, to sit visually on the table it
- * shares an anchor cell with rather than beside its leg (Artie's
- * direction). */
-const SCREEN_Y_NUDGE_PX: Readonly<Partial<Record<string, number>>> = {
-  glass: -18,
-};
+import { StreetLife } from "./street-life";
+import { decomposeFootprint } from "./decompose";
+import type { PlacedObject } from "../net/bindings/types";
+import { type ChunkStore } from "../world/chunk-store";
+import { chunkKey, unpackChunkKey } from "../world/chunk";
 
 /** Colour the app background switches to while the viewer is on any
  * below-ground floor (Artie's direction: what surrounds the subway
@@ -176,7 +141,7 @@ const CROWD_LAYER_CODE = layerCodeByName("characters");
  * inside FR122's culling for free). */
 const GROUND_DECALS_LAYER_CODE = GROUND_LAYER_CODE;
 
-export interface MountStreetSceneOptions {
+export interface MountWorldSceneOptions {
   /** Story 1.10: the fetched, parsed defs document -- needed to build the
    * street crowd's real appearance textures (`citizens-layer.ts`) and, via
    * `citizens.ts`, the tuples themselves. Story 2.8 (FR147): typed as
@@ -217,6 +182,21 @@ export interface MountStreetSceneOptions {
   readonly windowDefIds: ReadonlySet<number>;
   /** The def ids carrying the `threshold` role, resolved once by the caller. */
   readonly thresholdDefIds: ReadonlySet<number>;
+  /** The flat wall swatch a wall stub and a doorway band draw with
+   * (`render.wall_stub_object_id`). */
+  readonly wallStubDefId: number;
+  /** The streamed world: every row the scene draws and collides with. */
+  readonly world: ChunkStore;
+  /** Rows the page places itself, nearest the player's start (the link
+   * offer's carrier). */
+  readonly localProps?: readonly LocalProp[];
+  /** A crowd to mount (a DEV harness), built once the world is held and
+   * told which cells a body may stand on: absent means the street is drawn
+   * with nobody on it. */
+  readonly crowd?: (world: {
+    readonly standable: (x: number, y: number) => boolean;
+    readonly start: { readonly x: number; readonly y: number };
+  }) => CrowdSource;
   /** Called once after every real re-sort (including the first one) with
    * the resulting `stableId` order -- the render path's own event, never
    * polled every frame (Quentin's direction). */
@@ -253,9 +233,9 @@ export interface MountStreetSceneOptions {
    * gates on, never a rAF interval. One call per frame into a sink that
    * does nothing unless a perf run has asked for samples. */
   readonly onFrameWork?: (ms: number) => void;
-  /** Where the player starts (story 4.6: the home flat); defaults to
-   * `PLAYER_START`, the shop the pre-flat specs assume. */
-  readonly playerStart?: { readonly x: number; readonly y: number; readonly floor: number };
+  /** Where the player starts: the server's `my_start` -- its stored
+   * position, else the district's arrival cell. Never a client constant. */
+  readonly playerStart: { readonly x: number; readonly y: number; readonly floor: number };
   /** The scene's first frame has rendered (story 4.6). */
   readonly onFirstFrame?: (at: number) => void;
   /** Story 5.4 (NFR11): how long L3 took this frame, in ms -- the pose,
@@ -264,10 +244,6 @@ export interface MountStreetSceneOptions {
    * nothing unless a perf run has asked for samples. `l3/` itself reads no
    * clock: the bracket is here. */
   readonly onL3Work?: (ms: number) => void;
-  /** Story 5.4: the dev-only rush-hour load (`rush-crowd.ts`) added to the
-   * street, built by the caller inside its DEV branch so a production bundle
-   * never holds the builder. Absent in every production path. */
-  readonly rushCrowd?: RushCrowd;
   /** Called once at mount and then every time visibility is actually
    * re-applied (story 1.7's e2e proof, `enclosure.spec.ts`) -- a map from
    * decimal `stableId` string to its current FR120/FR121/FR122 state,
@@ -351,58 +327,33 @@ export interface MountStreetSceneOptions {
   /** Whether a server-backed container's object still exists (its
    * streamed `placed_object` row is in the cache). Absent means it does. */
   readonly containerPresent?: (objectId: bigint) => boolean;
-  /** Story 1.13: starts the street crowd's own walk-cycle ticker paused
-   * -- every citizen stays at its initial, fixed-fixture pose, forever,
-   * rather than animating. Exists solely so `test-street.spec.ts`'s
-   * `toHaveScreenshot` checks have a deterministic frame to compare: the
-   * crowd's own animation state otherwise depends on real wall-clock
-   * timing between mount and screenshot, which no baseline could ever
-   * match twice. Absent (or `false`) means the crowd walks normally. */
-  readonly startWithCrowdFrozen?: boolean;
+  /** Pins every body at its initial pose, forever, rather than animating.
+   * Exists solely so a `toHaveScreenshot` check has a deterministic frame
+   * to compare: a body's animation state otherwise depends on real
+   * wall-clock timing between mount and screenshot. */
+  readonly freezeBodies?: boolean;
   /** City time since the epoch in milliminutes, or `undefined` while the
    * clock cannot tell it. Every L3 body is posed from this and nothing
    * else; with no reading, no body is drawn. */
   readonly cityMilliminutes?: () => number | undefined;
-  /** Story 2.7 (Quentin's direction): collapses the street crowd's own
-   * distinct-per-citizen appearance tuples down to one shared tuple per
-   * family, same count and positions -- exists solely so `test-street.
-   * spec.ts`'s "different people cost about as much as identical ones"
-   * comparison can mount the "identical" half without a second crowd
-   * fixture module. Absent (or `false`) means the crowd's own tuples
-   * stay distinct, exactly as they always have. */
-  readonly crowdIdenticalTuples?: boolean;
 }
 
-export interface CommuterDrawn {
-  /** City time this frame was posed at, in milliminutes. */
-  readonly cityMilli: number;
-  readonly legKey: number;
-  readonly departAt: number;
-  readonly arriveAt: number;
-  /** Cells walked along the current leg. */
-  readonly distance: number;
-  /** Where the body is, in cells. */
-  readonly x: number;
-  readonly y: number;
-  readonly floor: number;
-  /** Where the commuter and the lamppost came out in the street floor's applied depth order. */
-  readonly orderIndex: number;
-  readonly lamppostOrderIndex: number;
-  /** The sprite's own drawn position, in stage pixels. */
-  readonly screenX: number;
-  readonly screenY: number;
-  readonly animation: string;
-  readonly direction: string;
-  readonly frameIndex: number;
-}
-
-export interface StreetSceneHandle {
+export interface WorldSceneHandle {
   readonly app: Application;
   /** The player's own appearance tuple, as composited at mount (FR61) --
    * `main.ts` wires its DEV-only `window.__bc` hook against this, the
    * same way it does for the crowd's own texture identities. */
   readonly playerAppearance: AppearanceTuple;
+  /** The look cache the scene's bodies share (a DEV hook compares its
+   * composites against a stack of layers). */
+  readonly appearanceCache: AppearanceTextureCache;
   getRenderOrder(): readonly bigint[];
+  /** How many chunks are drawn right now, and how many pool and flat
+   * sprites they hold: what the leak check compares. */
+  drawnChunkCount(): number;
+  liveSpriteCount(): number;
+  /** The building and room the player's own cell is in. */
+  ownershipAtPlayer(): { readonly buildingId: bigint; readonly roomId: bigint };
   /** The keyboard this scene is actually driven by -- the caller's own
    * instance when it supplied one. */
   readonly keyboard: KeyboardState;
@@ -421,7 +372,7 @@ export interface StreetSceneHandle {
   /** Story 2.14: every mounted threshold sprite and its wall-top band --
    * resolved texture size and lift above the sort anchor, for the e2e
    * proof that the doorways really draw. */
-  readonly doorways: readonly {
+  doorways(): readonly {
     readonly stableId: string;
     readonly textureWidth: number;
     readonly textureHeight: number;
@@ -445,10 +396,6 @@ export interface StreetSceneHandle {
   playerScreenBounds(): { x: number; y: number; width: number; height: number };
   /** The player's sprite point in world pixels, for the e2e hook. */
   playerDrawnPoint(): { x: number; y: number };
-  /** The commuter as last drawn, or `undefined` while it is not on screen
-   * (no clock, or the crowd frozen). A getter read fresh each call, for
-   * `l3-walk.spec.ts`'s per-frame sampling. */
-  commuterDrawn(): CommuterDrawn | undefined;
   /** What each live L3 body says about itself, for the debug tooling. */
   l3Bodies(): readonly L3BodyReport[];
   /** Story 6.10: opens the view of the container `intent` names, replacing
@@ -520,118 +467,6 @@ export interface StreetSceneHandle {
   playerBody(): ColliderRectSubcells;
 }
 
-function cropped(base: Texture, frame: Rectangle | PixelRect): Texture {
-  const rect =
-    frame instanceof Rectangle ? frame : new Rectangle(frame.x, frame.y, frame.width, frame.height);
-  return new Texture({ source: base.source, frame: rect, dynamic: false });
-}
-
-/**
- * Turns one drawable's placeholder art into the exact texture its own
- * cell should show, in whole pixels only -- Tim/Artie's direction: a
- * per-cell sub-rect is only legal on whole-tile boundaries, and a prop's
- * declared footprint must agree with its art's real pixel dimensions.
- * Two shapes are legal along the decomposed axis: the asset is already
- * exactly one tile long (every cell repeats the whole texture, vertical
- * overhang on the other axis allowed and unconstrained), or the asset is
- * exactly `count * tileSizePx` long (one wide image sliced into `count`
- * equal whole-pixel cells). A footprint decomposed along both axes is
- * sliced one tile per cell, from art exactly its size. Anything else -- a
- * fractional slice, or a mismatch -- throws at mount rather than drawing
- * a stretched lie.
- */
-export function sliceTexture(
-  base: Texture,
-  drawable: PropDrawableByAsset,
-  tileSizePx: number,
-): Texture {
-  const { footprintWidth, footprintHeight, sourceCol, sourceRow, assetKey } = drawable;
-
-  if (footprintWidth === 1 && footprintHeight === 1) {
-    return base;
-  }
-  if (footprintWidth > 1 && footprintHeight === 1) {
-    return sliceAlongAxis(base, "horizontal", footprintWidth, sourceCol, tileSizePx, assetKey);
-  }
-  if (footprintHeight > 1 && footprintWidth === 1) {
-    return sliceAlongAxis(base, "vertical", footprintHeight, sourceRow, tileSizePx, assetKey);
-  }
-  // Both axes: only art exactly `width x height` tiles, one tile per cell.
-  if (base.width === footprintWidth * tileSizePx && base.height === footprintHeight * tileSizePx) {
-    return cropped(
-      base,
-      new Rectangle(sourceCol * tileSizePx, sourceRow * tileSizePx, tileSizePx, tileSizePx),
-    );
-  }
-  throw new Error(
-    `sliceTexture: asset '${assetKey}' is ${base.width}x${base.height}px, not exactly its ${footprintWidth}x${footprintHeight}-tile footprint -- a two-axis footprint is only sliced from art that size`,
-  );
-}
-
-function sliceAlongAxis(
-  base: Texture,
-  axis: "horizontal" | "vertical",
-  cellCount: number,
-  index: number,
-  tileSizePx: number,
-  assetKey: string,
-): Texture {
-  const extent = axis === "horizontal" ? base.width : base.height;
-
-  if (extent === tileSizePx) {
-    // Repeat: this asset is already exactly one cell long on the
-    // decomposed axis -- every cell reuses the whole texture.
-    return base;
-  }
-  if (extent === cellCount * tileSizePx) {
-    const frame =
-      axis === "horizontal"
-        ? new Rectangle(index * tileSizePx, 0, tileSizePx, base.height)
-        : new Rectangle(0, index * tileSizePx, base.width, tileSizePx);
-    return cropped(base, frame);
-  }
-  throw new Error(
-    `sliceTexture: asset '${assetKey}' is ${extent}px along its decomposed (${axis}) axis, which is ` +
-      `neither one tile (${tileSizePx}px, a repeating asset) nor exactly ${cellCount} tiles ` +
-      `(${cellCount * tileSizePx}px, a sliceable one) -- a fractional or mismatched sub-rect is refused, not drawn`,
-  );
-}
-
-function textureFor(assetKey: string, textures: ReadonlyMap<string, Texture>): Texture {
-  const texture = textures.get(assetKey);
-  if (!texture) throw new Error(`scene: no texture loaded for asset '${assetKey}'`);
-  return texture;
-}
-
-/** One drawable's own real texture (story 2.13): a `defId` drawable draws
- * only through `AtlasPageLoader.objectCellTexture` -- never a
- * `ModernTileset/` import; an `assetKey` drawable keeps drawing from
- * `scene.ts`'s own raw texture table via `sliceTexture`, exactly as
- * before. The one place this file dispatches on the `PropDrawable`
- * union's own discriminant. `objectDefIndex` is built once at mount
- * (Tim's direction, cycle 2) -- never a fresh linear `find` per drawable. */
-function resolvePropTexture(
-  drawable: PropDrawable,
-  defs: VerifiedDefs,
-  objectDefIndex: ReturnType<typeof buildObjectDefIndex>,
-  atlasPageLoader: AtlasPageLoader,
-  textures: ReadonlyMap<string, Texture>,
-  tileSizePx: number,
-): Promise<Texture> {
-  if (isDefPropDrawable(drawable)) {
-    const object = objectDefById(objectDefIndex, drawable.defId);
-    return atlasPageLoader.objectCellTexture(
-      defs,
-      object,
-      drawable.sourceCol,
-      tileSizePx,
-      drawable.sourceRow,
-    );
-  }
-  const base = textureFor(drawable.assetKey, textures);
-  return Promise.resolve(sliceTexture(base, drawable, tileSizePx));
-}
-
 function createSprite(texture: Texture): Sprite {
   const sprite = new Sprite(texture);
   // Bottom-centre origin pinned to the cell's bottom edge (Artie's
@@ -639,15 +474,6 @@ function createSprite(texture: Texture): Sprite {
   // never downward.
   sprite.anchor.set(0.5, 1);
   return sprite;
-}
-
-/** `SCREEN_Y_NUDGE_PX`'s own screen-space nudge, in pixels -- structurally
- * unreachable from a `defId` drawable (Tim's direction, cycle 2: not
- * merely "misses today"), so no `"def:<id>"` entry could ever apply one
- * to a def row: an `assetKey` drawable looks its own key up in the
- * table; a `defId` drawable is never even offered the chance to. */
-function assetNudgePx(drawable: PropDrawable): number {
-  return isDefPropDrawable(drawable) ? 0 : (SCREEN_Y_NUDGE_PX[drawable.assetKey] ?? 0);
 }
 
 /** How far above its sort anchor a drawable is drawn, in the world
@@ -839,21 +665,25 @@ export function clientToWorldPx(
 }
 
 /**
- * Mounts the committed street scene (`fixture.ts`) into `app`, wires
- * keyboard movement and floor transitions for the player, keeps the pool
- * container's children ordered by `render/pixi-order.ts`'s
+ * Mounts the streamed world into `app`: the scene is built from the rows in
+ * `options.world` (the region subscription's `placed_object`,
+ * `building_area`, `room_area` and `floor_transition` rows) and from
+ * nothing else. Wires keyboard movement and floor transitions for the
+ * player, keeps each floor's pool ordered by `render/pixi-order.ts`'s
  * `applyDepthOrder`, and keeps every member's FR120/FR121/FR122 state
- * current through `render/pixi-visibility.ts`'s `VisibilityApplier` --
- * applied to every ground-tile pass as well as the sorted pool, so a
- * culled floor is culled entirely (FR122), not only its pool sprites.
- * Re-sorts only when the player's own sort key actually changes, and
- * re-applies visibility only when the player's own enclosure/floor
- * changes -- a street of static props costs nothing per frame either way.
+ * current through `render/pixi-visibility.ts`'s `VisibilityApplier`.
+ *
+ * Held rows feed the collision and ownership indexes at once; their art is
+ * drawn chunk by chunk as the viewport comes within `DRAW_MARGIN_CELLS` of
+ * a chunk (`chunk-residency.ts`), and released a chunk past it. Re-sorts
+ * only when an actor's own sort key changes, and re-applies visibility
+ * only when the player's own enclosure or floor changes, or ownership
+ * itself moved.
  */
-export async function mountStreetScene(
+export async function mountWorldScene(
   app: Application,
-  options: MountStreetSceneOptions,
-): Promise<StreetSceneHandle> {
+  options: MountWorldSceneOptions,
+): Promise<WorldSceneHandle> {
   const {
     defs,
     atlasBaseUrl,
@@ -866,6 +696,8 @@ export async function mountStreetScene(
     objectDefs,
     windowDefIds,
     thresholdDefIds,
+    wallStubDefId,
+    world: store,
     onOrderChange,
     onPlayerMove,
     onPlayerStep,
@@ -875,7 +707,7 @@ export async function mountStreetScene(
     onCitizenBodies,
     onFrameWork,
     onFirstFrame,
-    playerStart = PLAYER_START,
+    playerStart,
     onVisibilityChange,
     onMasksChecked,
     onIntent,
@@ -883,74 +715,36 @@ export async function mountStreetScene(
     onViewTransform,
     onWorldReady,
     onHighlightChange,
-    startWithCrowdFrozen,
+    freezeBodies,
     onL3Work,
-    rushCrowd,
+    crowd,
     cityMilliminutes,
-    crowdIdenticalTuples,
     highlightStrength,
   } = options;
-  const crowdFrozen = startWithCrowdFrozen ?? false;
+  const bodiesFrozen = freezeBodies ?? false;
 
-  const rawTextures = new Map<string, Texture>();
-  await Promise.all(
-    Object.entries(ASSET_URLS).map(async ([key, url]) => {
-      const texture = await Assets.load<Texture>(url);
-      texture.source.scaleMode = "nearest"; // Artie: nearest-neighbour filtering
-      rawTextures.set(key, texture);
-    }),
-  );
-
-  const textures = new Map(rawTextures);
-
-  // Story 2.6/2.13: every `defId`-placed prop draws through
-  // `AtlasPageLoader` instead of a `ModernTileset/` URL import -- its own
-  // per-cell texture is resolved per drawable, below, by
-  // `resolvePropTexture`. This loader is the one place a packed atlas
-  // page is ever fetched.
+  // Story 2.6/2.13: every prop draws through `AtlasPageLoader`; this loader
+  // is the one place a packed atlas page is ever fetched.
   const atlasPageLoader = new AtlasPageLoader(atlasBaseUrl);
-  // Built once (Tim's direction, cycle 2): every `defId` lookup below goes
-  // through this index, never a fresh linear `Array.find` per drawable.
   const objectDefIndex = buildObjectDefIndex(defs);
 
   const world = new Container();
-  // The camera/viewport story (Quentin's direction): zoom is set here,
-  // before this container has a single child and before it is even
-  // attached to the stage, and never touched again -- only the camera's
-  // own `position` (below, `applyCamera`) changes after this point, once
-  // per frame. The renderer's own size is the caller's concern
-  // (`main.ts`'s `resizeTo: window`, never `app.renderer.resize` called
-  // from here): this scene never sizes the canvas to its own content any
-  // more.
+  // The camera/viewport story: zoom is set here, before this container has
+  // a single child, and never touched again -- only the camera's own
+  // `position` changes after this point, once per frame.
   world.scale.set(ZOOM);
 
-  // The player's own starting state (cycle 2, Quentin's direction):
-  // computed synchronously from `PLAYER_START` alone, so it is available
-  // here -- before `world` has a single child, before it is even
-  // attached to the stage, and before any of the awaits above or below
-  // this point (texture/atlas/appearance/crowd loads, all network-bound)
-  // next suspend this function. The camera is applied immediately after,
-  // in the same synchronous stretch, so `world.position` is already its
-  // final value the instant the first real content becomes a child of
-  // it -- no frame is ever drawn with the world at its own default
-  // `(0, 0)` position while ground tiles or props already sit inside it,
-  // the exact defect (a mount-time jump) this cycle's finding 1 named.
+  // The player's own starting state is computed synchronously from the
+  // start the server gave, so the camera is final before the first real
+  // content becomes a child of `world`.
   let walk: FloorWalkResult = {
     ...initialFloorWalkState(playerStart.x, playerStart.y, playerStart.floor),
     transitioned: false,
   };
 
-  // `app.screen` is the renderer's *logical* size (cycle 2, Quentin's
-  // direction) -- the same space `world.position`/`world.scale` live in.
-  // `app.renderer.width`/`height` are device pixels and match only while
-  // `resolution` is 1; reading them here would silently de-centre the
-  // player the day `autoDensity`/a non-1 `resolution` is ever turned on.
   let lastCamera: Camera | undefined;
   // FR182: the player's flight offset, computed once per move in `tick` and
-  // read by both the sprite and the camera anchor, so the player stays on
-  // the camera centre on the stairs too.
-  // Built once, as soon as the collision world exists (below): the start is
-  // off every flight, so the first camera application is right without it.
+  // read by both the sprite and the camera anchor.
   let flights = new FlightIndex([], movementConfig);
   let playerFlightOffsetPx = 0;
   /** The camera's viewport in floor-0 cells, or none before a camera. */
@@ -967,8 +761,8 @@ export async function mountStreetScene(
     if (b.cellX1 <= b.cellX0 || b.cellY1 <= b.cellY0) return undefined;
     return { x0: b.cellX0, y0: b.cellY0, x1: b.cellX1, y1: b.cellY1 };
   }
-  /** The body zone around the viewport: judged per floor (a point on floor
-   * `f` is drawn `f` storeys north) and over the player's co-visible band. */
+  /** The body zone around the viewport: judged per floor and over the
+   * player's co-visible band. */
   function bodyZone(): BodyZone | undefined {
     const view = viewportRect();
     if (!view) return undefined;
@@ -1004,9 +798,6 @@ export async function mountStreetScene(
   applyCamera();
 
   app.stage.addChild(world);
-  // No screen-space layer exists for a view to be drawn in: the stage holds
-  // the world root and nothing else (container views are floor-stack
-  // children, `FloorStacks.attachTransient`).
   assertStageIsWorld(app.stage, world);
   onWorldReady?.(() => ({
     scaleX: world.scale.x,
@@ -1015,133 +806,214 @@ export async function mountStreetScene(
     y: world.position.y,
   }));
 
-  // Story 1.13 (Tim's direction): one four-pass stack per floor -- three
-  // flat passes then the y-sorted pool, declared in order even while
-  // empty -- with the stacks themselves drawn in ascending floor order.
-  // That is what lets a bridge deck on floor 1 sit over the street it
-  // spans without floor ever entering the FR123 sort key.
+  // Story 1.13: one four-pass stack per floor -- three flat passes then the
+  // y-sorted pool -- with the stacks themselves drawn in ascending floor
+  // order.
   const stacks = new FloorStacks(world);
 
-  // Story 1.7: the flat ground pass of each floor's own stack is toggled
-  // as a unit through the same `VisibilityApplier` the pool goes through,
-  // so a culled floor's flat passes are culled exactly as completely as
-  // its pool sprites are, never a second rule.
-  const groundContainersByFloor = new Map<number, Container>();
-  function groundContainerFor(floor: number): Container {
-    let container = groundContainersByFloor.get(floor);
-    if (!container) {
-      container = stacks.stackFor(floor).ground;
-      groundContainersByFloor.set(floor, container);
-    }
-    return container;
+  // Every def's per-cell art, resolved once and kept: a chunk is drawn
+  // synchronously from here. The overhang each def's art reaches outside
+  // its footprint is measured from the same textures, so a click on the
+  // drawn part of a tall prop still finds it.
+  const cellTextures = new Map<string, Texture>();
+  const overhangByDefId = new Map<number, { up: number; side: number }>();
+  await Promise.all(
+    [...objectDefs].flatMap(([defId, source]) => {
+      if (source.undrawn) return [];
+      const def = objectDefById(objectDefIndex, defId);
+      return decomposeFootprint({
+        x: 0,
+        y: 0,
+        width: source.width,
+        height: source.height,
+      }).map(async (cell) => {
+        const texture = await atlasPageLoader.objectCellTexture(
+          defs,
+          def,
+          cell.sourceCol,
+          tileSizePx,
+          cell.sourceRow,
+        );
+        cellTextures.set(`${defId}:${cell.sourceCol}:${cell.sourceRow}`, texture);
+        const up = Math.max(0, Math.ceil((texture.height - tileSizePx) / tileSizePx));
+        const footprintWidthPx = source.width * tileSizePx;
+        const side = Math.max(0, Math.ceil((texture.width - footprintWidthPx) / 2 / tileSizePx));
+        const current = overhangByDefId.get(defId);
+        overhangByDefId.set(defId, {
+          up: Math.max(current?.up ?? 0, up),
+          side: Math.max(current?.side ?? 0, side),
+        });
+      });
+    }),
+  );
+  function cellTexture(defId: number, col: number, row: number): Texture {
+    const t = cellTextures.get(`${defId}:${col}:${row}`);
+    if (!t) throw new Error(`world-scene: no art resolved for def ${defId} cell ${col},${row}`);
+    return t;
   }
 
-  const groundSprites: Sprite[] = [];
-  for (const tiles of STREET_GROUND_TILES) {
-    const groundTexture =
-      "defId" in tiles
-        ? await atlasPageLoader.objectCellTexture(
-            defs,
-            objectDefById(objectDefIndex, tiles.defId),
-            0,
-            tileSizePx,
-            0,
-          )
-        : textureFor(tiles.assetKey, textures);
-    const container = groundContainerFor(tiles.floor);
-    const offset = floorOffsetPx(tiles.floor, storeyHeightPx);
-    for (let y = tiles.y0; y < tiles.y1; y++) {
-      for (let x = tiles.x0; x < tiles.x1; x++) {
-        // Every ground pass tile is top-left anchored (default Sprite
-        // anchor), unlike the bottom-centre pool sprites -- FR124's
-        // floor offset still applies here too.
-        const tile = new Sprite(groundTexture);
-        tile.x = snapToScreenPx(x * tileSizePx, ZOOM);
-        tile.y = snapToScreenPx(y * tileSizePx + offset, ZOOM);
-        container.addChild(tile);
-        groundSprites.push(tile);
-      }
-    }
-  }
-
-  const ownership = new OwnershipIndex(STREET_BUILDING_AREAS, STREET_ROOM_AREAS);
-
-  const propDrawables: readonly PropDrawable[] = buildPropDrawables({
-    rankOf: (layer) => rankOf(layerCodeByName(layer)),
-    ownership,
-    windowDefIds,
-    thresholdDefIds,
-    objectDefs,
-  });
-
-  const entries: PoolEntry[] = await Promise.all(
-    propDrawables.map(async (drawable) => {
-      const texture = await resolvePropTexture(
-        drawable,
-        defs,
-        objectDefIndex,
-        atlasPageLoader,
-        textures,
-        tileSizePx,
-      );
-      const sprite = createSprite(texture);
-      positionSprite(
-        sprite,
-        fromSortUnits(drawable.x),
-        fromSortUnits(drawable.y),
-        drawable.floor,
-        tileSizePx,
-        storeyHeightPx,
-        assetNudgePx(drawable) - liftPx(drawable),
-        0,
-      );
-      return { drawable, view: sprite, label: debugLabel(drawable) };
+  const objectSources = new Map<number, ObjectSource>(
+    [...objectDefs].map(([defId, source]) => {
+      const overhang = overhangByDefId.get(defId);
+      return [
+        defId,
+        overhang
+          ? { ...source, drawOverhangCellsUp: overhang.up, drawOverhangCellsX: overhang.side }
+          : source,
+      ];
     }),
   );
 
-  // FR173's affordance mark (`render/highlight.ts`/`render/pixi-highlight.ts`):
-  // one `HighlightApplier` per scene, built once from the same
-  // `entries` this scene already has, threaded through picking's own
-  // drawn-rect index below with no second lookup, and given `app.ticker`
-  // itself so it can own its own per-frame `refresh` subscription
-  // (Quentin's direction: that guarantee belongs in the permanent module,
-  // not in this file). `reorderFloor` (the one wrapper that calls
-  // `applyDepthOrder`) is the only place this file calls `refresh()`
-  // directly -- see that function, just below.
-  const spritesByObjectId = new Map<bigint, Sprite[]>();
-  for (const entry of entries) {
-    const id = entry.drawable.stableId;
-    const list = spritesByObjectId.get(id);
-    if (list) list.push(entry.view);
-    else spritesByObjectId.set(id, [entry.view]);
-  }
-  const highlightApplier = new HighlightApplier(
-    spritesByObjectId,
-    highlightAlpha,
-    highlightStrength,
-    app.ticker,
-  );
+  // The derived indexes, fed row by row from the store: the one
+  // `WorldIndex.insert` feeds both the collision grid and the footprint
+  // index. A ground row is walkable art, never a collider or a pick target,
+  // so it never enters them.
+  const GROUND_CODE = layerCodeByName("ground");
+  const ownership = new OwnershipIndex();
+  const worldIndex = new WorldIndex(movementConfig.subcellsPerCell, objectSources);
+  const heldTransitions = new Map<bigint, TransitionSpec>();
+  const heldFlightRows = new Map<bigint, PlacedFlightRow>();
+  let transitionsDirty = false;
+  store.attach({
+    placedInserted(row) {
+      if (row.layer === GROUND_CODE) return;
+      worldIndex.insert(row);
+      if (objectSources.get(row.defId)?.flight !== undefined) {
+        heldFlightRows.set(row.objectId, {
+          defId: row.defId,
+          x: row.x,
+          y: row.y,
+          floor: row.floor,
+        });
+        transitionsDirty = true;
+      }
+    },
+    placedDeleted(row) {
+      if (row.layer === GROUND_CODE) return;
+      worldIndex.delete(row);
+      if (heldFlightRows.delete(row.objectId)) transitionsDirty = true;
+    },
+    buildingAreaInserted(r) {
+      ownership.insertBuilding(r.areaId, {
+        ownerId: r.buildingId,
+        floor: r.floor,
+        rect: { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 },
+      });
+    },
+    buildingAreaDeleted: (r) => ownership.deleteBuilding(r.areaId),
+    roomAreaInserted(r) {
+      ownership.insertRoom(r.areaId, {
+        ownerId: r.roomId,
+        floor: r.floor,
+        rect: { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 },
+      });
+    },
+    roomAreaDeleted: (r) => ownership.deleteRoom(r.areaId),
+    transitionInserted(r) {
+      heldTransitions.set(r.transitionId, {
+        x: r.x,
+        y: r.y,
+        floor: r.floor,
+        targetX: r.targetX,
+        targetY: r.targetY,
+        targetFloor: r.targetFloor,
+      });
+      transitionsDirty = true;
+    },
+    transitionDeleted(r) {
+      heldTransitions.delete(r.transitionId);
+      transitionsDirty = true;
+    },
+  });
 
+  // The flights and transitions, rebuilt whenever a streamed flight or
+  // transition row changed: each far-end cell of a flight must be an anchor
+  // on the real grid, or the build throws.
+  let transitions = new TransitionIndex([], {
+    isStandable: (x, y, floor) => isCellStandable(worldIndex, movementConfig, x, y, floor),
+    entryBand: {
+      subcellsPerCell: movementConfig.subcellsPerCell,
+      isBodyClear: (floor, cx, feet) => isBodyClear(worldIndex, movementConfig, floor, cx, feet),
+    },
+  });
+  function rebuildTransitions(): void {
+    transitionsDirty = false;
+    const specs = [...heldTransitions.values()];
+    flights = new FlightIndex(
+      buildFlights(specs, [...heldFlightRows.values()], objectDefs, tileSizePx, (x, y, floor) =>
+        isCellStandable(worldIndex, movementConfig, x, y, floor),
+      ),
+      movementConfig,
+    );
+    transitions = new TransitionIndex(specs, {
+      isStandable: (x, y, floor) => isCellStandable(worldIndex, movementConfig, x, y, floor),
+      entryBand: {
+        subcellsPerCell: movementConfig.subcellsPerCell,
+        isBodyClear: (floor, cx, feet) =>
+          isBodyClear(worldIndex, movementConfig, floor, cx, feet),
+      },
+    });
+  }
+  if (transitionsDirty) rebuildTransitions();
+
+  // The flat ground pass of each floor's own stack is toggled as a unit
+  // through the same `VisibilityApplier` the pool goes through, so a
+  // culled floor's flat passes are culled exactly as completely as its
+  // pool sprites are.
+  const groundContainersByFloor = new Map<number, Container>();
+  const groundObjectsContainersByFloor = new Map<number, Container>();
+  const groundDecalsContainersByFloor = new Map<number, Container>();
+  /** Every flat pass and the crowd, named the way `window.__bc.visibility`
+   * reports it. */
+  const flatNamedMembers: NamedVisibilityMember[] = [];
+  const flatIds = new Map<VisibilityMember, string>();
+  /** Pool members and the flat passes: what `VisibilityApplier` walks. */
+  const allVisibilityMembers: VisibilityMember[] = [];
+  function flatMember(id: string, floor: number, layerCode: number, view: Container): void {
+    const named: NamedVisibilityMember = {
+      id,
+      member: {
+        drawable: {
+          floor,
+          layerCode,
+          ownerBuildingId: NO_OWNER,
+          isWindow: false,
+          isNearSide: false,
+          isStub: false,
+        },
+        view,
+      },
+    };
+    flatNamedMembers.push(named);
+    flatIds.set(named.member, id);
+    allVisibilityMembers.push(named.member);
+  }
+  /** Creates floor `floor`'s three flat passes and registers each as a
+   * visibility member, once. */
+  function ensureFloorPasses(floor: number): void {
+    if (groundContainersByFloor.has(floor)) return;
+    const stack = stacks.stackFor(floor);
+    groundContainersByFloor.set(floor, stack.ground);
+    groundObjectsContainersByFloor.set(floor, stack.groundObjects);
+    groundDecalsContainersByFloor.set(floor, stack.groundDecals);
+    flatMember(`ground:${floor}`, floor, GROUND_LAYER_CODE, stack.ground);
+    flatMember(`ground_objects:${floor}`, floor, GROUND_OBJECTS_LAYER_CODE, stack.groundObjects);
+    flatMember(`ground_decals:${floor}`, floor, GROUND_DECALS_LAYER_CODE, stack.groundDecals);
+  }
+  ensureFloorPasses(walk.floor);
+  ensureFloorPasses(CROWD_FLOOR);
+
+  // Story 1.10: the player is one generated tuple through the real
+  // pipeline; the cache is shared with every other body.
+  const appearanceCache = new AppearanceTextureCache(defs, atlasBaseUrl);
+  const playerTuple = buildPlayerAppearanceTuple(defs);
+  const playerFrames = await appearanceCache.acquire(playerTuple);
   const playerDrawable = buildCharacterDrawable(
     rankOf(layerCodeByName("characters")),
     walk.x,
     walk.y,
     walk.floor,
   );
-
-  // Story 1.10 (Artie's direction): the player itself is one generated
-  // tuple through the real pipeline, never the placeholder
-  // `Premade_Character_01.png` crop -- shares `appearanceCache` with the
-  // street crowd (`citizensLayer` below), so a player who happens to
-  // match a crowd member's tuple reuses that texture too (AC5).
-  const appearanceCache = new AppearanceTextureCache(defs, atlasBaseUrl);
-  const playerTuple = buildPlayerAppearanceTuple(defs);
-  // The commuter's look is acquired alongside the player's: one round of
-  // character-page fetches, not two.
-  const [playerFrames, commuterFrames] = await Promise.all([
-    appearanceCache.acquire(playerTuple),
-    crowdFrozen ? undefined : appearanceCache.acquire(buildCommuterAppearanceTuple(defs)),
-  ]);
   // The player's body is posed by the same function as every other
   // character's (`l3/body-pose.ts`) and drawn through the same adapter.
   const playerMotion = createBodyMotion();
@@ -1152,47 +1024,35 @@ export async function mountStreetScene(
     view: playerSprite,
     label: "player",
   };
-  // A flat-layer entry (the manholes, the doormat) goes into its floor's
-  // `groundObjects` pass in insertion order and never into the pool, so
-  // nothing ever y-sorts it against an actor. Which pass an entry joins is
-  // read from its layer alone (`layer-table.ts`'s `passOfLayer`).
-  const groundObjectsContainersByFloor = new Map<number, Container>();
-  const poolEntries: PoolEntry[] = [];
-  for (const entry of entries) {
-    const pass = passOfLayer(entry.drawable.layerCode);
-    if (pass === "pool") {
-      poolEntries.push(entry);
-      continue;
-    }
-    if (pass === "ground") {
-      throw new Error(`scene: prop ${entry.label} is on the ground layer, which only tiles use`);
-    }
-    const container = stacks.stackFor(entry.drawable.floor).groundObjects;
-    container.addChild(entry.view);
-    groundObjectsContainersByFloor.set(entry.drawable.floor, container);
-  }
-  const members: PoolEntry[] = [...poolEntries, playerEntry];
 
-  // One pool per floor (`FloorStacks`), so the comparator only ever
-  // orders drawables that share a floor and the stacks themselves settle
-  // what covers what between floors.
+  // One pool per floor (`FloorStacks`), so the comparator only ever orders
+  // drawables that share a floor.
   const membersByFloor = new Map<number, PoolEntry[]>();
   function poolMembersOf(floor: number): PoolEntry[] {
     let list = membersByFloor.get(floor);
     if (!list) {
       list = [];
       membersByFloor.set(floor, list);
-      stacks.stackFor(floor);
+      ensureFloorPasses(floor);
     }
     return list;
   }
-  for (const m of members) poolMembersOf(m.drawable.floor).push(m);
+  poolMembersOf(walk.floor).push(playerEntry);
 
   /** The order every floor's pool is in, concatenated ascending -- what
-   * `window.__bc.renderOrder` reports and what the golden pins. Rebuilt
-   * in place, never reallocated. */
+   * `window.__bc.renderOrder` reports. Rebuilt in place. */
   const renderOrder: bigint[] = [];
   const orderByFloor = new Map<number, bigint[]>();
+
+  // FR173's affordance mark: one applier per scene, over the live
+  // object-id -> sprites map.
+  const spritesByObjectId = new Map<bigint, Sprite[]>();
+  const highlightApplier = new HighlightApplier(
+    spritesByObjectId,
+    highlightAlpha,
+    highlightStrength,
+    app.ticker,
+  );
 
   function reorderFloor(floor: number): void {
     const list = membersByFloor.get(floor);
@@ -1203,16 +1063,14 @@ export async function mountStreetScene(
       orderByFloor.set(floor, order);
     }
     applyDepthOrder(stacks.stackFor(floor).pool, list, order);
-    // The one call site (Tim's direction): `applyDepthOrder`'s own
-    // `removeChildren()` orphans every overlay along with anything else it
-    // does not own, so every re-sort re-attaches whatever is currently
-    // marked (`refresh()` reuses the same overlay instances rather than
-    // rebuilding them). A no-op while nothing is marked.
+    // `applyDepthOrder`'s own `removeChildren()` orphans every overlay along
+    // with anything else it does not own, so every re-sort re-attaches
+    // whatever is currently marked.
     highlightApplier.refresh();
   }
 
   /** Pool members that sort and draw like any other but are not part of the
-   * reported, golden-pinned order: bodies that move with the clock. */
+   * reported order: bodies that move with the clock. */
   const unreportedIds = new Set<bigint>();
 
   function rebuildRenderOrder(): void {
@@ -1225,13 +1083,10 @@ export async function mountStreetScene(
   }
 
   // Re-sorts are batched: placing an actor only marks its floor dirty, and
-  // `flushOrder` (one ticker listener after every placer of the frame)
-  // re-sorts each dirty floor once -- not once per moving actor.
+  // `flushOrder` re-sorts each dirty floor once.
   const dirtyFloors = new Set<number>();
   let reportedMoved = false;
 
-  /** Re-sorts every dirty floor once; reports the order when an actor that
-   * is part of it moved. */
   function flushOrder(): void {
     if (dirtyFloors.size === 0) return;
     for (const floor of dirtyFloors) reorderFloor(floor);
@@ -1250,13 +1105,11 @@ export async function mountStreetScene(
     dirtyFloors.add(floor);
   }
 
-  /** The one placement every actor goes through (the local player, the
-   * commuter, remote players): refresh the drawable, put the sprite at the
-   * point `placeActorAt` gives (flight offset included, returned for the
-   * camera anchor), move it between floor pools at once on a floor change
-   * and mark its floor for the frame's one re-sort when its key moved. A
-   * floor change also re-applies the member's visibility against the
-   * standing viewer. */
+  /** The one placement every actor goes through (the local player, remote
+   * players): refresh the drawable, put the sprite at the point
+   * `placeActorAt` gives (flight offset included), move it between floor
+   * pools at once on a floor change and mark its floor for the frame's one
+   * re-sort when its key moved. */
   function placeActor(entry: PoolEntry, x: number, y: number, floor: number): ActorPlacement {
     const drawable = entry.drawable;
     const floorBefore = drawable.floor;
@@ -1292,361 +1145,218 @@ export async function mountStreetScene(
     rebuildRenderOrder();
   }
 
-  reorderAll();
-  onOrderChange?.(renderOrder);
+  // The player seats itself in its floor's pool like any other actor.
+  stacks.stackFor(walk.floor).pool.addChild(playerEntry.view);
+  allVisibilityMembers.push(playerEntry);
 
-  // `member.view.height` is the sprite's own local (unscaled) pixel
-  // height -- independent of the world container's zoom, set below.
-  // Subtracting one tile is what turns "total sprite height" into
-  // "overhang above the anchor row itself": a sprite exactly as tall as
-  // its own row has zero overhang, and Artie's "factor of thirteen" wall
-  // was measured the same way (624px of overhang against a 48px storey).
-  assertNoOverhangBeyondStorey(
-    [...entries, playerEntry].map((m) => ({
-      label: `${m.label}#${m.drawable.stableId}`,
-      overhangPx: m.view.height - tileSizePx,
-    })),
-    storeyHeightPx,
-  );
-
-  // Story 15.8: the street crowd's own container -- created here,
-  // synchronously, and attached under floor 0's own stack root (after its
-  // pool, so the crowd draws with floor 0 and under any higher floor,
-  // Tim's direction) well before the first `applyVisibilityFor` call
-  // below ever runs. `mountCitizensLayer` (called much later, after every
-  // network-bound texture load) only ever populates this container -- it
-  // is a floor-0 visibility member from the instant it exists, exactly
-  // like the ground/ground-objects passes below, so the crowd's own async
-  // sprites simply inherit whatever this container's `visible` already
-  // says; there is never a second, forced re-apply once they land.
+  // Story 15.8: the crowd's own container -- created here, synchronously,
+  // and attached under floor 0's own stack root, a floor-0 visibility
+  // member from the instant it exists.
   const crowdContainer = new Container();
   stacks.stackFor(CROWD_FLOOR).root.addChild(crowdContainer);
+  flatMember(`crowd:${CROWD_FLOOR}`, CROWD_FLOOR, CROWD_LAYER_CODE, crowdContainer);
 
-  // Story 15.8 (Quentin's finding, cycle 1): the ground-decals pass is
-  // one of `FloorStacks`' own four structural containers, sitting under
-  // every root exactly like `ground`/`groundObjects` do, and it needs the
-  // same real culling they get -- read off the same floors `ground`
-  // already draws on, never a floor list of its own. Nothing is ever
-  // drawn into it yet (no producer routes content onto this pass today),
-  // but it is registered as a visibility member below regardless, so the
-  // first thing that ever is lands inside FR122's culling for free.
-  const groundDecalsContainersByFloor = new Map<number, Container>(
-    [...groundContainersByFloor.keys()].map((floor) => [
-      floor,
-      stacks.stackFor(floor).groundDecals,
-    ]),
-  );
-
-  // FR121: no masking or aperture system anywhere in the real, mounted
-  // display list -- checked directly against every sprite and every
-  // ground-pass container this scene actually built, not only by the
-  // source-level grep `scripts/ci/check-no-masks.sh` runs. Pixi v8's own
-  // default is `undefined`, never `null` (confirmed against a real
-  // `Sprite`/`Container`) -- `== null` covers both, `=== null` alone
-  // would fail every unmasked sprite in this scene.
-  const everyMaskableView = [
-    ...entries.map((m) => m.view),
-    playerEntry.view,
-    ...groundContainersByFloor.values(),
-    ...groundObjectsContainersByFloor.values(),
-    ...groundDecalsContainersByFloor.values(),
-    crowdContainer,
-  ];
-  onMasksChecked?.(everyMaskableView.every((view) => view.mask == null));
-
-  // The derived indexes: real `defs/objects` footprints, colliders and
-  // FR148 reach rects (`objectDefs`, resolved from the fetched document
-  // in `main.ts`) plus the street's own walls and world boundary, fed in as
-  // `PlacedObject`-shaped rows through the one `WorldIndex.insert` that
-  // feeds both the collision grid and the footprint index -- exactly the
-  // shape a later chunk-streaming story's `onInsert` will feed, just
-  // called directly here instead of from a subscription (`placed_object`
-  // stays private in this story).
-  // How far each definition's *art* is drawn outside its own footprint,
-  // measured from the real sprites this scene just built (never a second,
-  // hand-typed height). The footprint index needs it so that a click on
-  // the part of a tall prop drawn over the cells above it still finds
-  // that prop: our sprites are bottom-centre anchored, so a 16x32 bin on
-  // a 1x1 footprint draws a whole cell up into the row behind it.
-  const placedRows = streetPlacedRows();
-  const defIdByObjectId = new Map(placedRows.map((row) => [row.objectId, row.defId]));
-  const overhangByDefId = new Map<number, { up: number; side: number }>();
-  for (const entry of entries) {
-    const defId = defIdByObjectId.get(entry.drawable.stableId);
-    if (defId === undefined) continue;
-    const footprintWidthPx = entry.drawable.footprintWidth * tileSizePx;
-    const up = Math.max(0, Math.ceil((entry.view.height - tileSizePx) / tileSizePx));
-    const side = Math.max(0, Math.ceil((entry.view.width - footprintWidthPx) / 2 / tileSizePx));
-    const current = overhangByDefId.get(defId);
-    overhangByDefId.set(defId, {
-      up: Math.max(current?.up ?? 0, up),
-      side: Math.max(current?.side ?? 0, side),
-    });
-  }
-
-  const objectSources = new Map<number, ObjectSource>(
-    [...objectDefs, ...streetColliderSources(movementConfig.subcellsPerCell)].map(
-      ([defId, source]) => {
-        const overhang = overhangByDefId.get(defId);
-        return [
-          defId,
-          overhang
-            ? { ...source, drawOverhangCellsUp: overhang.up, drawOverhangCellsX: overhang.side }
-            : source,
-        ];
-      },
-    ),
-  );
-  const worldIndex = new WorldIndex(movementConfig.subcellsPerCell, objectSources);
-  for (const placed of placedRows) {
-    worldIndex.insert(placed);
-  }
-  // The flights, validated against the real grid: every standable far-end
-  // cell of a flight is an anchor, or the mount throws.
-  flights = new FlightIndex(
-    buildFlights(STREET_TRANSITIONS, placedRows, objectDefs, tileSizePx, (x, y, floor) =>
-      isCellStandable(worldIndex, movementConfig, x, y, floor),
-    ),
-    movementConfig,
-  );
-  // The player's first placement is the same call every later frame makes
-  // (it may load in standing on a flight).
-  playerFlightOffsetPx = placeActor(playerEntry, walk.x, walk.y, walk.floor).flightOffsetPx;
-  // The transitions, checked against the real grid: a transition onto its own
-  // cell keeps the walker's position, so that position is clear on both floors.
-  const transitions = new TransitionIndex(STREET_TRANSITIONS, {
-    isStandable: (x, y, floor) => isCellStandable(worldIndex, movementConfig, x, y, floor),
-    entryBand: {
-      subcellsPerCell: movementConfig.subcellsPerCell,
-      isBodyClear: (floor, cx, feet) => isBodyClear(worldIndex, movementConfig, floor, cx, feet),
-    },
-  });
-
-  // Story 1.7: the visibility adapter, gated on the viewer's own
-  // (floor, buildingId) tuple actually changing (Tim's direction) --
-  // computed from the player's own cell (`bodyCell`, through the walk
-  // state), never every frame. Applied to the pool and every flat-pass
-  // group (ground, ground objects, the crowd) together, in one call, so
-  // nothing is ever culled halfway.
-  const visibilityApplier = new VisibilityApplier();
   // By value: the renderer's own colour object is overwritten below.
   const originalBackground = app.renderer.background.color.toNumber();
+  const visibilityApplier = new VisibilityApplier();
 
-  // Story 15.8 (Tim's direction): one named list, built once -- every
-  // pool member, flat pass and the crowd, each carrying the id
-  // `window.__bc.visibility` reports it under (a pool member's own
-  // decimal `stableId`, a flat pass's `<layer>:<floor>`, the crowd's own
-  // `crowd:<floor>`, the exact key `regen-golden.ts` derives for the
-  // golden). `allVisibilityMembers` (what `VisibilityApplier` walks) and
-  // the `onVisibilityChange` report below are both read straight off this
-  // one list -- collapsing what were three separately hand-maintained
-  // report loops, so a member that is visibility-managed can never
-  // silently miss the report a reader relies on.
-  const poolNamedMembers: NamedVisibilityMember[] = [...poolEntries, playerEntry].map((entry) => ({
-    id: entry.drawable.stableId.toString(),
-    member: { drawable: entry.drawable, view: entry.view },
-  }));
-  const groundNamedMembers: NamedVisibilityMember[] = [...groundContainersByFloor.entries()].map(
-    ([floor, container]) => ({
-      id: `ground:${floor}`,
-      member: {
-        drawable: {
-          floor,
-          layerCode: GROUND_LAYER_CODE,
-          ownerBuildingId: NO_OWNER,
-          isWindow: false,
-          isNearSide: false,
-          isStub: false,
-        },
-        view: container,
-      },
-    }),
-  );
-  const groundObjectsNamedMembers: NamedVisibilityMember[] = [
-    ...groundObjectsContainersByFloor.entries(),
-  ].map(([floor, container]) => ({
-    id: `ground_objects:${floor}`,
-    member: {
-      drawable: {
-        floor,
-        layerCode: GROUND_OBJECTS_LAYER_CODE,
-        ownerBuildingId: NO_OWNER,
-        isWindow: false,
-        isNearSide: false,
-        isStub: false,
-      },
-      view: container,
-    },
-  }));
-  const groundDecalsNamedMembers: NamedVisibilityMember[] = [
-    ...groundDecalsContainersByFloor.entries(),
-  ].map(([floor, container]) => ({
-    id: `ground_decals:${floor}`,
-    member: {
-      drawable: {
-        floor,
-        layerCode: GROUND_DECALS_LAYER_CODE,
-        ownerBuildingId: NO_OWNER,
-        isWindow: false,
-        isNearSide: false,
-        isStub: false,
-      },
-      view: container,
-    },
-  }));
-  const crowdNamedMember: NamedVisibilityMember = {
-    id: `crowd:${CROWD_FLOOR}`,
-    member: {
-      drawable: {
-        floor: CROWD_FLOOR,
-        layerCode: CROWD_LAYER_CODE,
-        ownerBuildingId: NO_OWNER,
-        isWindow: false,
-        isNearSide: false,
-        isStub: false,
-      },
-      view: crowdContainer,
-    },
+  // ---- the drawn chunks -------------------------------------------------
+
+  /** What one drawn chunk holds, so it can be released whole. */
+  interface DrawnChunk {
+    readonly key: bigint;
+    readonly floor: number;
+    readonly groundLayer: Container;
+    readonly entries: PoolEntry[];
+    readonly flatEntries: PoolEntry[];
+    /** The rows' own revision: a changed chunk is rebuilt. */
+    stale: boolean;
+  }
+  const drawnChunks = new Map<bigint, DrawnChunk>();
+  /** Every pool entry of every drawn chunk, for the reads that walk them. */
+  const liveEntries = new Set<PoolEntry>();
+  /** The rect each object's sprites cover, in the world container's own
+   * pixel space: what lets a click on any drawn part of a prop resolve to
+   * it. */
+  const drawnRects = new Map<bigint, PickRect>();
+
+  const propOptions: BuildPropDrawablesOptions = {
+    rankOf,
+    ownership,
+    windowDefIds,
+    thresholdDefIds,
+    wallStubDefId,
+    objectDefs,
   };
-  const namedVisibilityMembers: NamedVisibilityMember[] = [
-    ...poolNamedMembers,
-    ...groundNamedMembers,
-    ...groundObjectsNamedMembers,
-    ...groundDecalsNamedMembers,
-    crowdNamedMember,
-  ];
-  const allVisibilityMembers: VisibilityMember[] = namedVisibilityMembers.map((n) => n.member);
 
-  // Story 5.1: the commuter -- one L3 body on the pavement, a member of the
-  // street floor's depth-sorted pool on the `characters` rank and of
-  // visibility, positioned through the same `positionSprite` as the player.
-  // Absent from `renderOrder`, `poolDrawables` and the visibility report so
-  // no pinned order or baseline moves; absent altogether while the crowd is
-  // frozen for a screenshot. Posed from city time alone: no clock, no body.
-  const l3Config = loadL3Config(defs);
-  const npcWalk = withStagingKerb(npcWalkability(worldIndex));
-  const l3Path = pathConfigOf(l3Config);
-  const msPerMilliminute = l3Config.realMsPerCityMinute / 1000;
-  // Every ledger-driven citizen on the street -- the commuter and the crowd's
-  // walkers and standers -- is posed, and sidestepped, through this one object.
-  const streetLife = new StreetLife(l3Config, npcWalk);
-  let updateCommuter: (cityMilli: number | undefined) => void = () => {};
-  let commuterDrawn: () => CommuterDrawn | undefined = () => undefined;
-  let commuterDiagnostics: () => readonly L3BodyReport[] = () => [];
-  if (commuterFrames) {
-    const makeCommuter = () => ({
-      timetable: new Timetable(COMMUTER_SPEC, l3Config, npcWalk, l3Path),
-      body: new CitizenBody(
-        npcWalk,
-        l3Path,
-        {
-          strideCells: l3Config.strideCells,
-          framesPerCycle: walkFramesPerCycle(defs, "adult"),
-        },
-        COMMUTER_ID,
-        lifeDialsFor(defs, l3Config, "adult"),
-      ),
-    });
-    const commuterMember = streetLife.add({
-      id: COMMUTER_ID,
-      ...makeCommuter(),
-      look: appearanceCacheKey(buildCommuterAppearanceTuple(defs), null),
-      remake: makeCommuter,
-    });
-    const citizen = commuterMember.body;
-    const frame = commuterMember.frame;
-    const lamppostId = STREET_PROPS.find(
-      (prop) => isDefStreetProp(prop) && prop.defId === LAMPPOST_DEF_ID,
-    )?.id;
-    const home = COMMUTER_SPEC.out[0];
-    if (!home) throw new Error("scene: the commuter timetable has no route");
-    const drawable = buildCharacterDrawable(
-      rankOf(layerCodeByName("characters")),
-      home.x + 0.5,
-      home.y + 0.5,
-      home.floor,
-      COMMUTER_STABLE_ID,
-      "commuter",
-    );
-    const sprite = newBodySprite(commuterFrames, {
-      animation: "idle",
-      direction: COMMUTER_SPEC.homeFacing,
-      frameIndex: 0,
-    });
-    sprite.renderable = false;
-    const entry: PoolEntry = { drawable, view: sprite, label: "commuter" };
-    poolMembersOf(home.floor).push(entry);
-    unreportedIds.add(COMMUTER_STABLE_ID);
-    allVisibilityMembers.push({ drawable, view: sprite });
-    reorderFloor(home.floor);
-    let drawn: Omit<CommuterDrawn, "orderIndex" | "lamppostOrderIndex"> | undefined;
-    commuterDrawn = () => {
-      if (!drawn) return undefined;
-      const order = orderByFloor.get(drawn.floor) ?? [];
-      return {
-        ...drawn,
-        orderIndex: order.indexOf(COMMUTER_STABLE_ID),
-        lamppostOrderIndex: lamppostId === undefined ? -1 : order.lastIndexOf(lamppostId),
-      };
-    };
-    commuterDiagnostics = () => {
-      const report = citizen.diagnostics(msPerMilliminute, l3Config);
-      if (!report || !drawn) return [];
-      return [
-        {
-          id: COMMUTER_ID,
-          x: drawn.x,
-          y: drawn.y,
-          floor: drawn.floor,
-          moving: frame.moving,
-          ...report,
-        },
-      ];
-    };
-    updateCommuter = (cityMilli) => {
-      sprite.renderable = cityMilli !== undefined;
-      if (cityMilli === undefined) {
-        drawn = undefined;
-        return;
-      }
-      // Posed by `streetLife.solve` this tick; drawn where its sidestep puts it.
-      const ox = streetLife.offsetX(commuterMember);
-      const oy = streetLife.offsetY(commuterMember);
-      const drawX = frame.x + ox;
-      const drawY = frame.y + oy;
-      setBodyFrame(sprite, commuterFrames, frame);
-      placeActor(entry, drawX, drawY, frame.floor);
-      drawn = {
-        cityMilli,
-        legKey: frame.legKey,
-        departAt: frame.departAt,
-        arriveAt: frame.arriveAt,
-        distance: frame.distance,
-        x: drawX,
-        y: drawY,
-        floor: frame.floor,
-        screenX: sprite.x,
-        screenY: sprite.y,
-        animation: frame.animation,
-        direction: frame.direction,
-        frameIndex: frame.frameIndex,
-      };
-    };
+  function ownerRow(entry: PoolEntry): bigint {
+    // A companion drawable (stub, band) is owned by its parent's object.
+    const id = entry.drawable.stableId;
+    if (id >= BAND_ID_OFFSET) return id - BAND_ID_OFFSET;
+    if (id >= STUB_ID_OFFSET) return id - STUB_ID_OFFSET;
+    return id;
   }
 
-  // Story 15.8's mount-time guard (Tim's direction, cycle 1): `FloorStacks`
-  // is the one code that ever attaches anything under `world`, so it owns
-  // the check of its own whole tree -- every child of `world` is one of
-  // its own stack roots, and every child of every root is either one of
-  // that stack's own four structural pass containers or a registered
-  // visibility member (`namedVisibilityMembers`' own views, above). This
-  // is what catches a future additive layer (this story's own crowd
-  // defect) parented straight onto `world`, or straight onto a stack root
-  // without also being registered, before it can ever reach a baseline.
-  // Run once, here, now that every visibility member this scene will ever
-  // register already exists.
-  stacks.assertManaged(new Set(namedVisibilityMembers.map((n) => n.member.view)));
+  function buildChunk(key: bigint): void {
+    const data = store.chunk(key);
+    if (!data) return;
+    const { floor } = unpackChunkKey(key);
+    ensureFloorPasses(floor);
+    const groundLayer = new Container();
+    const offset = floorOffsetPx(floor, storeyHeightPx);
+    const propRows: PlacedRowView[] = [];
+    for (const row of data.placed.values()) {
+      if (row.layer === GROUND_CODE) {
+        // Every ground pass tile is top-left anchored, unlike the
+        // bottom-centre pool sprites; FR124's floor offset still applies.
+        const tile = new Sprite(cellTexture(row.defId, 0, 0));
+        tile.x = snapToScreenPx(row.x * tileSizePx, ZOOM);
+        tile.y = snapToScreenPx(row.y * tileSizePx + offset, ZOOM);
+        groundLayer.addChild(tile);
+      } else {
+        propRows.push(row);
+      }
+    }
+    stacks.stackFor(floor).ground.addChild(groundLayer);
 
+    const entries: PoolEntry[] = [];
+    const flatEntries: PoolEntry[] = [];
+    for (const drawable of buildPropDrawables(propRows, propOptions)) {
+      if (!isDefPropDrawable(drawable)) continue;
+      const sprite = createSprite(cellTexture(drawable.defId, drawable.sourceCol, drawable.sourceRow));
+      positionSprite(
+        sprite,
+        fromSortUnits(drawable.x),
+        fromSortUnits(drawable.y),
+        drawable.floor,
+        tileSizePx,
+        storeyHeightPx,
+        0,
+        0,
+      );
+      // The wall-top band sits above its doorway's own sprite.
+      if (drawable.liftSourcePx) sprite.y -= liftPx(drawable);
+      const entry: PoolEntry = { drawable, view: sprite, label: debugLabel(drawable) };
+      const pass = passOfLayer(drawable.layerCode);
+      if (pass === "pool") {
+        entries.push(entry);
+        poolMembersOf(floor).push(entry);
+        stacks.stackFor(floor).pool.addChild(sprite);
+        allVisibilityMembers.push(entry);
+      } else {
+        flatEntries.push(entry);
+        stacks.stackFor(floor).groundObjects.addChild(sprite);
+      }
+      liveEntries.add(entry);
+      const objectId = ownerRow(entry);
+      const sprites = spritesByObjectId.get(objectId);
+      if (sprites) sprites.push(sprite);
+      else spritesByObjectId.set(objectId, [sprite]);
+    }
+    // Per-object drawn rects, from the real sprites just built.
+    for (const entry of [...entries, ...flatEntries]) {
+      const objectId = ownerRow(entry);
+      const sprite = entry.view;
+      const left = sprite.x - sprite.width * sprite.anchor.x;
+      const top = sprite.y - sprite.height * sprite.anchor.y;
+      const held = drawnRects.get(objectId);
+      drawnRects.set(
+        objectId,
+        held
+          ? {
+              x0: Math.min(held.x0, left),
+              y0: Math.min(held.y0, top),
+              x1: Math.max(held.x1, left + sprite.width),
+              y1: Math.max(held.y1, top + sprite.height),
+            }
+          : { x0: left, y0: top, x1: left + sprite.width, y1: top + sprite.height },
+      );
+    }
+    assertNoOverhangBeyondStorey(
+      entries.map((m) => ({
+        label: `${m.label}#${m.drawable.stableId}`,
+        overhangPx: m.view.height - tileSizePx,
+      })),
+      storeyHeightPx,
+    );
+    drawnChunks.set(key, { key, floor, groundLayer, entries, flatEntries, stale: false });
+    dirtyFloors.add(floor);
+  }
+
+  function releaseChunk(key: bigint): void {
+    const drawn = drawnChunks.get(key);
+    if (!drawn) return;
+    drawnChunks.delete(key);
+    drawn.groundLayer.destroy({ children: true });
+    const pool = membersByFloor.get(drawn.floor);
+    const gone = new Set<unknown>(drawn.entries);
+    if (pool) {
+      const kept = pool.filter((m) => !gone.has(m));
+      pool.length = 0;
+      pool.push(...kept);
+    }
+    for (let i = allVisibilityMembers.length - 1; i >= 0; i--) {
+      if (gone.has(allVisibilityMembers[i])) allVisibilityMembers.splice(i, 1);
+    }
+    for (const entry of [...drawn.entries, ...drawn.flatEntries]) {
+      liveEntries.delete(entry);
+      const objectId = ownerRow(entry);
+      spritesByObjectId.delete(objectId);
+      drawnRects.delete(objectId);
+      entry.view.destroy();
+    }
+    dirtyFloors.add(drawn.floor);
+  }
+
+  const FLOOR_SHIFT_CELLS = storeyHeightPx / tileSizePx;
+  let lastResidencyKey = "";
+  let residencyDirty = true;
+  store.onChunkChanged((key) => {
+    const drawn = drawnChunks.get(key);
+    if (drawn) drawn.stale = true;
+    residencyDirty = true;
+  });
+
+  /** Draws and releases chunks for the viewport as it stands; at most
+   * `maxBuilds` chunks are built (the rest wait for a later frame). */
+  function updateResidency(maxBuilds: number): void {
+    const view = viewportRect();
+    if (!view) return;
+    const key = `${view.x0},${view.y0},${view.x1},${view.y1},${walk.floor}`;
+    if (key === lastResidencyKey && !residencyDirty) return;
+    lastResidencyKey = key;
+    residencyDirty = false;
+    const band = bandOf(walk.floor);
+    const { draw, drop } = chunkResidency(
+      store.chunkKeys(),
+      drawnChunks.keys(),
+      view,
+      FLOOR_SHIFT_CELLS,
+      (f) => bandOf(f) === band,
+    );
+    for (const k of drop) releaseChunk(k);
+    let built = 0;
+    for (const k of draw) {
+      const have = drawnChunks.get(k);
+      if (have && !have.stale) continue;
+      if (built >= maxBuilds) {
+        residencyDirty = true;
+        break;
+      }
+      if (have) releaseChunk(k);
+      buildChunk(k);
+      built++;
+    }
+    if (built > 0) {
+      applyVisibilityFor(lastCellX, lastCellY, walk.floor, true);
+      refreshHiddenObjects();
+    }
+  }
+
+  // Story 1.7: the visibility adapter, gated on the viewer's own
+  // (floor, buildingId) tuple actually changing -- computed from the
+  // player's own cell, never every frame -- and forced when ownership
+  // itself moved.
   function applyVisibilityFor(cellX: number, cellY: number, floor: number, force: boolean): void {
     const viewer: VisibilityViewer = {
       floor,
@@ -1659,23 +1369,21 @@ export async function mountStreetScene(
     } else {
       applied = visibilityApplier.apply(allVisibilityMembers, viewer, windowAlpha);
     }
+    lastOwnershipRevision = ownership.revision;
 
-    // Keyed on the same floor-sign rule `isFloorCulled` uses (Tim's
-    // direction): "below ground" is exactly `isFloorCulled(0, floor)`,
-    // since floor 0 is always street-side by construction.
+    // Keyed on the same floor-sign rule `isFloorCulled` uses: "below
+    // ground" is exactly `isFloorCulled(0, floor)`.
     app.renderer.background.color = isFloorCulled(0, floor)
       ? SUBWAY_BACKGROUND
       : originalBackground;
 
     // Built straight from each member's own real, just-written
-    // `view.visible`/`view.alpha` (Quentin/Tim's direction) -- never a
-    // second, recomputed `VisibilityState` this could silently disagree
-    // with what `VisibilityApplier` actually wrote. One loop over the one
-    // named list above, replacing what were three separate ones.
+    // `view.visible`/`view.alpha` -- never a second, recomputed state.
     if (applied && onVisibilityChange) {
       const reportedState: Record<string, string> = {};
       const reportedAlpha: Record<string, number> = {};
-      for (const { id, member } of namedVisibilityMembers) {
+      for (const member of allVisibilityMembers) {
+        const id = flatIds.get(member) ?? (member as PoolEntry).drawable.stableId.toString();
         reportedState[id] = stateFromWrite({
           visible: member.view.visible,
           alpha: member.view.alpha,
@@ -1685,18 +1393,17 @@ export async function mountStreetScene(
       onVisibilityChange(reportedState, reportedAlpha);
     }
   }
+  let lastOwnershipRevision = -1;
 
   // Story 1.9: which objects are currently visible, rebuilt from each
-  // pool member's own just-written `sprite.visible` whenever visibility
-  // is re-applied (a rare event, never per frame). A click resolves
-  // through this: if it cannot be seen it cannot be clicked, so a
-  // retracted front wall is neither clickable itself nor in the way of
-  // what is now visible behind it.
+  // pool member's own just-written `sprite.visible` whenever visibility is
+  // re-applied (a rare event, never per frame). A click resolves through
+  // this: if it cannot be seen it cannot be clicked.
   const hiddenObjectIds = new Set<bigint>();
   function refreshHiddenObjects(): void {
     const anyVisible = new Map<bigint, boolean>();
-    for (const entry of entries) {
-      const id = entry.drawable.stableId;
+    for (const entry of liveEntries) {
+      const id = ownerRow(entry);
       // A flat-pass sprite is culled with its floor's group container.
       const shown = entry.view.visible && (entry.view.parent?.visible ?? true);
       anyVisible.set(id, (anyVisible.get(id) ?? false) || shown);
@@ -1707,22 +1414,79 @@ export async function mountStreetScene(
     }
   }
 
+  // A link carrier or any other local prop the page asked for: a row in
+  // the store like any streamed one, on the standable cell nearest the
+  // player's start.
+  const localProps: readonly LocalProp[] = options.localProps ?? [];
+  function placeLocalProps(): void {
+    for (const prop of localProps) {
+      const cell = nearestStandable(
+        (x, y) => isCellStandable(worldIndex, movementConfig, x, y, walk.floor),
+        walk.cellX,
+        walk.cellY,
+        prop.minDistance ?? 1,
+      );
+      if (!cell) continue;
+      store.insert("placedObject", {
+        objectId: prop.objectId,
+        defId: prop.defId,
+        x: cell.x,
+        y: cell.y,
+        floor: walk.floor,
+        layer: prop.layer,
+        orientation: 0,
+        chunkKey: chunkKey(cell.x, cell.y, walk.floor),
+      });
+    }
+  }
+
   let lastCellX = walk.cellX;
   let lastCellY = walk.cellY;
+
+  // The player's first placement is the same call every later frame makes
+  // (it may load in standing on a flight).
+  placeLocalProps();
+  if (transitionsDirty) rebuildTransitions();
+  playerFlightOffsetPx = placeActor(playerEntry, walk.x, walk.y, walk.floor).flightOffsetPx;
+  // The first chunks are drawn before the first frame, all of them.
+  updateResidency(Number.POSITIVE_INFINITY);
+  reorderAll();
+  onOrderChange?.(renderOrder);
   applyVisibilityFor(lastCellX, lastCellY, walk.floor, true);
   refreshHiddenObjects();
+
+  // FR121: no masking or aperture system anywhere in the real, mounted
+  // display list -- checked directly against every ground-pass container
+  // and every sprite this scene actually built.
+  onMasksChecked?.(
+    [
+      ...[...liveEntries].map((m) => m.view),
+      playerEntry.view,
+      ...groundContainersByFloor.values(),
+      ...groundObjectsContainersByFloor.values(),
+      ...groundDecalsContainersByFloor.values(),
+      crowdContainer,
+    ].every((view) => view.mask == null),
+  );
+
+  // Story 15.8's mount-time guard: `FloorStacks` is the one code that ever
+  // attaches anything under `world`, so it owns the check of its own tree.
+  stacks.assertManaged(
+    new Set<unknown>([
+      ...flatNamedMembers.map((n) => n.member.view),
+      playerEntry.view,
+      ...[...liveEntries].map((e) => e.view),
+    ]) as ReadonlySet<Container>,
+  );
 
   onPlayerMove?.(walk.x, walk.y, walk.floor);
 
   const { keyboard } = options;
   const detachKeyboard = attachKeyboard(keyboard);
 
-  // FR173's affordance mark: `highlightApplier` (built above, straight
-  // after `entries`) owns every overlay sprite this scene ever draws for
-  // it, and its own per-frame `refresh` subscription. `setHighlight` below
-  // is the whole of this file's own opinion on the mark -- gating
-  // `onHighlightChange` on the applier's own report of real change, never
-  // a second, separately-tracked id (Tim's direction).
+  // FR173's affordance mark: `highlightApplier` owns every overlay sprite
+  // this scene ever draws for it, and its own per-frame `refresh`
+  // subscription.
   function setHighlight(objectId: bigint | undefined): void {
     if (highlightApplier.set(objectId)) onHighlightChange?.(objectId);
   }
@@ -1732,30 +1496,7 @@ export async function mountStreetScene(
   }
 
   // FR148's one pointer listener, on the canvas element itself -- no Pixi
-  // `eventMode`, no `interactive`, no per-sprite `on("pointer…")`
-  // anywhere in this client.
-  // The rect each object's sprites actually cover, in the world
-  // container's own pixel space -- measured once from the real sprites
-  // this scene built, never a second hand-typed height. This is what lets
-  // a click on any drawn part of a prop resolve to it, including the part
-  // that overhangs the cells above its own footprint.
-  const drawnRects = new Map<bigint, PickRect>();
-  for (const [objectId, sprites] of spritesByObjectId) {
-    let x0 = Number.POSITIVE_INFINITY;
-    let y0 = Number.POSITIVE_INFINITY;
-    let x1 = Number.NEGATIVE_INFINITY;
-    let y1 = Number.NEGATIVE_INFINITY;
-    for (const sprite of sprites) {
-      const left = sprite.x - sprite.width * sprite.anchor.x;
-      const top = sprite.y - sprite.height * sprite.anchor.y;
-      x0 = Math.min(x0, left);
-      y0 = Math.min(y0, top);
-      x1 = Math.max(x1, left + sprite.width);
-      y1 = Math.max(y1, top + sprite.height);
-    }
-    if (Number.isFinite(x0)) drawnRects.set(objectId, { x0, y0, x1, y1 });
-  }
-
+  // `eventMode`, no `interactive`, no per-sprite `on("pointer...")`.
   const pickContext = (): PickContext => ({
     index: worldIndex,
     objectDefs: objectSources,
@@ -1766,9 +1507,6 @@ export async function mountStreetScene(
   });
   const pointer = attachPointer({
     element: app.canvas,
-    // `clientToWorldPx` (above): the one projection every click, hover
-    // and camera-centring computation in this client shares -- never a
-    // second, hand-derived copy of the camera's own arithmetic.
     toWorldPx: (clientX, clientY) =>
       clientToWorldPx(
         clientX,
@@ -1789,9 +1527,9 @@ export async function mountStreetScene(
   });
 
   // Story 6.10 (FR94): the one open container view, built per open and
-  // destroyed on close (`render/pixi-container-view.ts`), bound to its
-  // object, parented to that object's floor stack. An item's texture is
-  // cropped from the atlas the first time a view has a row for it.
+  // destroyed on close, bound to its object, parented to that object's
+  // floor stack. An item's texture is cropped from the atlas the first time
+  // a view has a row for it.
   const itemTextures = new Map<number, Texture>();
   const itemById = new Map(defs.items.map((i) => [i.id, i]));
   async function prepareItemTextures(defIds: readonly number[]): Promise<void> {
@@ -1815,11 +1553,18 @@ export async function mountStreetScene(
     watchRows: (containerId, onRows, onError) =>
       options.containerRows?.(containerId, onRows, onError) ?? { release: () => {} },
   });
+  function placedRowOf(objectId: bigint): PlacedObject | undefined {
+    for (const key of store.chunkKeys()) {
+      const row = store.chunk(key)?.placed.get(objectId);
+      if (row) return row;
+    }
+    return undefined;
+  }
   function openContainer(intent: Intent): void {
     const source = objectSources.get(intent.defId);
     const grid = source?.grid;
     if (!source || !grid) return;
-    const placed = placedRows.find((r) => r.objectId === intent.objectId);
+    const placed = placedRowOf(intent.objectId);
     if (!placed) return;
     const object = {
       objectId: intent.objectId,
@@ -1849,17 +1594,10 @@ export async function mountStreetScene(
   }
 
   // NFR2's measurement point: the scene's own CPU work for the *whole*
-  // frame, not one system's callback (Quentin/Tim's direction, cycle 1).
-  // Pixi's own `Application` renders through a `TickerPlugin` listener
-  // registered at `UPDATE_PRIORITY.LOW` (confirmed against pixi.js's own
-  // source, `app/TickerPlugin.js`); every other listener this scene adds
-  // below defaults to `NORMAL`, which runs before it. So a listener at
-  // `INTERACTION` (higher than everything) marks the start, and one at
-  // `UTILITY` (lower than `LOW`, so it runs after the render call
-  // returns) marks the end -- between them sits movement, re-sorting,
-  // visibility, the crowd's own update and the render itself: the whole
-  // per-frame cost this app pays, in one pair of `performance.now()`
-  // calls that allocate nothing and cost nothing measurable on their own.
+  // frame. Pixi's own `Application` renders through a `TickerPlugin`
+  // listener at `UPDATE_PRIORITY.LOW`; a listener at `INTERACTION` marks
+  // the start, and one at `UTILITY` (after the render call returns) marks
+  // the end.
   let frameWorkStartMs = 0;
   app.ticker.add(
     () => {
@@ -1873,31 +1611,33 @@ export async function mountStreetScene(
     tick(ticker.deltaMS);
   });
 
+  const l3Config = loadL3Config(defs);
   const playerBodyDials: BodyDials = {
     strideCells: l3Config.strideCells,
     walkFrames: walkFramesPerCycle(defs, "adult"),
-    // A frozen crowd is staged for a screenshot: the idle row is pinned.
-    idleFrames: crowdFrozen ? 1 : (framesByAnimation(defs, "adult").idle ?? 1),
+    // Frozen bodies are staged for a screenshot: the idle row is pinned.
+    idleFrames: bodiesFrozen ? 1 : (framesByAnimation(defs, "adult").idle ?? 1),
     idleFrameMilliminutes: l3Config.idleFrameMilliminutes,
   };
   function drawPlayerBody(dx: number, dy: number, drawn: number): void {
     const id = playerCharacterId?.() ?? "player";
-    const t = crowdFrozen ? 0 : (cityMilliminutes?.() ?? 0);
+    const t = bodiesFrozen ? 0 : (cityMilliminutes?.() ?? 0);
     poseBody(id, playerMotion, dx, dy, drawn, t, playerBodyDials, playerBodyFrame);
     setBodyFrame(playerSprite, playerFrames, playerBodyFrame);
     onPlayerBody?.(playerBodyFrame);
   }
 
   function tick(deltaMS: number): void {
+    if (transitionsDirty) rebuildTransitions();
     const direction =
       options.bodyControl?.isOpen() === false ? { x: 0, y: 0 } : keyboard.direction();
     if (direction.x === 0 && direction.y === 0) {
       drawPlayerBody(0, 0, 0);
-      // Still applied on an idle frame (Quentin's direction): a window
-      // resize does not move the player, but the camera's own offset has
-      // to react to it the instant `app.renderer.width`/`height` do,
-      // never only on the next keypress.
+      // Still applied on an idle frame: a window resize does not move the
+      // player, but the camera's own offset has to react to it the instant
+      // the renderer's size does.
       applyCamera();
+      streamStep();
       return;
     }
 
@@ -1939,9 +1679,8 @@ export async function mountStreetScene(
     playerFlightOffsetPx = placeActor(playerEntry, walk.x, walk.y, walk.floor).flightOffsetPx;
 
     // Ownership is looked up only when the player's own cell actually
-    // changed (Tim's direction) -- never every frame -- and visibility is
-    // re-applied only when that lookup (or the floor) actually differs
-    // from last time (`VisibilityApplier`'s own gate).
+    // changed -- never every frame -- and visibility is re-applied only
+    // when that lookup (or the floor) actually differs from last time.
     if (walk.cellX !== lastCellX || walk.cellY !== lastCellY || walk.transitioned) {
       lastCellX = walk.cellX;
       lastCellY = walk.cellY;
@@ -1952,64 +1691,51 @@ export async function mountStreetScene(
     // The hover has to follow the world, not only the mouse: movement is
     // keyboard-only, so walking into or out of an object's reach with the
     // mouse held still is the normal way a player meets the affordance.
-    // Reach is sub-cell, so this runs on every step that actually moved,
-    // not only when the player enters a new cell. It is still an event --
-    // a frame where nothing moved returns above and never reaches here.
     pointer.refresh();
 
     // The camera, last: a pure function of the *new* position this same
-    // frame just computed, applied in the same tick as the move so there
-    // is never a frame where the player is drawn off-centre (Quentin's
-    // "applied in the same ticker frame as the move" direction).
+    // frame just computed, applied in the same tick as the move.
     applyCamera();
+    streamStep();
   }
 
-  // Story 1.10: the street crowd -- never part of `members`/`poolContainer`
-  // (see `citizens.ts`'s own module doc for why: it must never move this
-  // scene's own committed depth-order goldens). Its own container
-  // (`crowdContainer`, above) was created and registered as a floor-0
-  // visibility member long before this `await`; `mountCitizensLayer` here
-  // only populates it (story 15.8) -- it is mounted last only because its
-  // own sprites need the network-bound texture loads below, not because
-  // its visibility or its place in the draw order are decided here. Every
-  // signal an existing e2e spec's own `ready()` gate depends on
-  // (`onOrderChange`/`onPlayerMove`/`onVisibilityChange`/
-  // `onMasksChecked`, and the keyboard itself) has already fired -- those
-  // all run synchronously, in this same function body, before this
-  // `await`; only `mountStreetScene`'s own promise waits on the crowd's
-  // own network-bound texture loads. The camera/viewport story (Quentin's
-  // direction): there is no second camera fit here any more -- the canvas
-  // was never sized to this scene's own content, crowd included, so the
-  // crowd needs none of its own. `onViewTransform`/`window.__bc.
-  // viewTransform` already fired, live, from `applyCamera()`'s own first
-  // call above; `appearance-test-support.ts`/`intents.spec.ts` wait on
-  // the boot mark below instead of on its mere existence for exactly this
-  // reason -- it is no longer a one-shot readiness signal.
-  const citizensLayer = await mountCitizensLayer(
-    crowdContainer,
-    defs,
-    tileSizePx,
-    storeyHeightPx,
-    ZOOM,
-    appearanceCache,
-    textureFor("sidewalk", textures),
-    atlasBaseUrl,
-    crowdIdenticalTuples ?? false,
-    {
-      walk: npcWalk,
-      config: l3Config,
-      life: streetLife,
-      frozen: crowdFrozen,
-      rush: crowdFrozen ? undefined : rushCrowd,
-    },
-    // A frozen crowd is staged whole for a screenshot.
-    crowdFrozen ? {} : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
-  );
+  /** The streaming half of a frame: ownership that moved re-derives
+   * visibility; the viewport that moved draws and releases chunks. */
+  function streamStep(): void {
+    if (lastOwnershipRevision !== ownership.revision) {
+      applyVisibilityFor(lastCellX, lastCellY, walk.floor, true);
+      refreshHiddenObjects();
+    }
+    updateResidency(CHUNKS_PER_FRAME);
+  }
+
+  // A crowd, when the page asked for one (a DEV harness; L2's citizens
+  // arrive with Epic 5): never part of the depth-sorted pool, drawn in its
+  // own container, posed from city time alone.
+  const npcWalk = npcWalkability(worldIndex);
+  const streetLife = new StreetLife(l3Config, npcWalk);
+  const crowdSource = crowd?.({
+    standable: (x, y) => isCellStandable(worldIndex, movementConfig, x, y, walk.floor),
+    start: { x: walk.cellX, y: walk.cellY },
+  });
+  const citizensLayer = crowdSource
+    ? await mountCitizensLayer(
+        crowdContainer,
+        defs,
+        tileSizePx,
+        storeyHeightPx,
+        ZOOM,
+        appearanceCache,
+        { walk: npcWalk, config: l3Config, life: streetLife, crowd: crowdSource },
+        bodiesFrozen ? {} : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
+      )
+    : undefined;
+  const msPerMilliminute = l3Config.realMsPerCityMinute / 1000;
+
   // Story 4.4/4.9: the other players. Each is a pool member of the floor it
   // stands on, kept out of the reported order, placed by `placeActor` like
-  // the local player and the commuter, and a visibility member -- so what
-  // the viewer sees of it is `VisibilityApplier`'s alone. Spawn and despawn
-  // follow the layer's own spatial hold (the subscription's hysteresis).
+  // the local player, and a visibility member -- so what the viewer sees of
+  // it is `VisibilityApplier`'s alone.
   let nextRemoteStableId = REMOTE_STABLE_ID_BASE;
   const remoteHost: ActorHost = {
     add(sprite, x, y, floor) {
@@ -2054,34 +1780,25 @@ export async function mountStreetScene(
   const remotePlayers = remotePlayersWiring
     ? await mountRemotePlayersLayer(remoteHost, defs, appearanceCache, {
         ...remotePlayersWiring,
-        cityMilliminutes: crowdFrozen ? undefined : cityMilliminutes,
+        cityMilliminutes: bodiesFrozen ? undefined : cityMilliminutes,
         drawnDistance: (x, y, floor, dx, dy) => flights.drawnDistance(x, y, floor, dx, dy),
       })
     : undefined;
   // Story 1.14 (NFR1): the atlas term's own end -- every texture this
-  // scene loads before its first frame (the static tiles above, the
-  // player's own composite and the street crowd's own part sheets just
-  // above) has resolved by this line, not only the small static set. There
-  // is no real atlas yet, so this pairs with Resource Timing's own
-  // per-image request count and byte total for everything awaited above.
+  // scene loads before its first frame has resolved by this line.
   markBoot(BOOT_MARK.ATLAS_READY);
 
-  // Story 1.10: the one walking citizen's own animation, always
-  // ticking -- unlike the player's own ticker above, this must never
-  // early-return while the player stands still, so it is a second,
-  // independent `app.ticker.add` registration rather than folded into
-  // the one above. Still runs before the render (`NORMAL`, the default,
-  // is above the render's own `LOW`), so it stays inside the frame-work
-  // window the two listeners above bound. `crowdFrozen` (story 1.13,
-  // `startWithCrowdFrozen`) is the one exception: a screenshot test needs
-  // every citizen pinned at its initial pose, never this scene's own
-  // concern otherwise.
+  // The ledger-driven bodies' own animation, always ticking -- unlike the
+  // player's own ticker above, this must never early-return while the
+  // player stands still. Still runs before the render (`NORMAL`, the
+  // default, is above the render's own `LOW`), so it stays inside the
+  // frame-work window the two listeners above bound.
   app.ticker.add(() => {
-    if (!crowdFrozen) {
+    if (citizensLayer && !bodiesFrozen) {
       const cityMilli = cityMilliminutes?.();
       if (cityMilli !== undefined) {
         // The L3 window: exactly the work L3 asks of the frame, nothing of
-        // the render or of test plumbing (`onCitizenBodies` is outside it).
+        // the render or of test plumbing.
         const l3Start = onL3Work ? performance.now() : 0;
         const zone = bodyZone();
         streetLife.solve(cityMilli, zone);
@@ -2089,7 +1806,6 @@ export async function mountStreetScene(
         onL3Work?.(performance.now() - l3Start);
         onCitizenBodies?.(citizensLayer.bodyBounds(), app.screen, citizensLayer.citizenCount);
       }
-      updateCommuter(cityMilli);
     }
     remotePlayers?.update();
   });
@@ -2098,18 +1814,16 @@ export async function mountStreetScene(
   // before the render: each dirty floor is re-sorted once.
   app.ticker.add(flushOrder, undefined, UPDATE_PRIORITY.NORMAL - 1);
 
-  // Story 2.7 (Tim's direction): a composite page re-uploads at most
-  // once per frame -- every look's own draw this tick only marks its
-  // page dirty; this is the one place `source.update()` actually runs,
-  // and only for a page a draw actually touched.
+  // Story 2.7: a composite page re-uploads at most once per frame -- every
+  // look's own draw this tick only marks its page dirty; this is the one
+  // place `source.update()` actually runs.
   appearanceCache.flush();
   app.ticker.add(() => {
     appearanceCache.flush();
   });
 
   // The frame-work window's own closing bracket: below the render's own
-  // `LOW` priority, so this always runs after `app.render()` has
-  // returned for the frame just drawn.
+  // `LOW` priority, so this always runs after `app.render()` has returned.
   app.ticker.add(
     () => {
       onFrameWork?.(performance.now() - frameWorkStartMs);
@@ -2119,11 +1833,8 @@ export async function mountStreetScene(
   );
 
   // Story 1.14 (NFR1): fires once, after the first frame has actually
-  // rendered (`UPDATE_PRIORITY.UTILITY` runs after Pixi's own render --
-  // see the frame-work window comment above). Whether the body is the
-  // player's yet is `boot/arrival.ts`'s call, made from this callback
-  // (story 4.6): the keyboard was already attached before the ticker
-  // started, so input is genuinely accepted once the gate opens.
+  // rendered. Whether the body is the player's yet is `boot/arrival.ts`'s
+  // call, made from this callback (story 4.6).
   app.ticker.addOnce(
     () => {
       const at = performance.now();
@@ -2134,44 +1845,54 @@ export async function mountStreetScene(
     UPDATE_PRIORITY.UTILITY,
   );
 
-  // Story 1.12: built once, here -- the pool's membership is fixed at
-  // mount (a floor transition moves the player between floor buckets, it
-  // does not change who is in the pool), and every `Drawable` in it is
-  // mutated in place as the player moves, so this array is always
-  // current without being rebuilt.
-  const allDrawables: readonly Drawable[] = members.map((m) => m.drawable);
+  const emptyCitizens: CitizensLayerHandle = {
+    textureIdsById: {},
+    distinctTextureCount: 0,
+    bodyCount: () => 0,
+    citizenCount: 0,
+    bodyBounds: () => [],
+    update: () => {},
+    l3Bodies: () => [],
+    agreementAt: () => [],
+    liveAt: () => [],
+  };
 
   return {
     app,
+    appearanceCache,
     playerAppearance: playerTuple,
     getRenderOrder: () => renderOrder,
     keyboard,
-    citizensLayer,
+    citizensLayer: citizensLayer ?? emptyCitizens,
     remotePlayers,
-    distinctBoundAtlasPages: countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache),
-    doorways: entries.flatMap((entry) => {
-      const d = entry.drawable;
-      if (!isDefPropDrawable(d) || !(thresholdDefIds.has(d.defId) || d.liftSourcePx)) return [];
-      const sprite = entry.view as Sprite;
-      return [
-        {
-          stableId: String(d.stableId),
-          textureWidth: sprite.texture.width,
-          textureHeight: sprite.texture.height,
-          liftPx: liftPx(d),
-        },
-      ];
-    }),
-    allBoundTextureSources: countAllBoundTextureSources(app.stage),
-    commuterDrawn: () => commuterDrawn(),
-    l3Bodies: () => [...commuterDiagnostics(), ...citizensLayer.l3Bodies()],
+    get distinctBoundAtlasPages() {
+      return countBoundAtlasPages(app.stage, atlasPageLoader, appearanceCache);
+    },
+    doorways: () =>
+      [...liveEntries].flatMap((entry) => {
+        const d = entry.drawable;
+        if (!isDefPropDrawable(d) || !(thresholdDefIds.has(d.defId) || d.liftSourcePx)) return [];
+        const sprite = entry.view as Sprite;
+        return [
+          {
+            stableId: String(d.stableId),
+            textureWidth: sprite.texture.width,
+            textureHeight: sprite.texture.height,
+            liftPx: liftPx(d),
+          },
+        ];
+      }),
+    get allBoundTextureSources() {
+      return countAllBoundTextureSources(app.stage);
+    },
+    l3Bodies: () => citizensLayer?.l3Bodies() ?? [],
     setRender: (on) => {
       world.renderable = on;
     },
     viewportCells: () => viewportRect(),
     l3Sweep: (frames) => {
       const start = cityMilliminutes?.();
-      if (start === undefined) return [];
+      if (start === undefined || !citizensLayer) return [];
       const step = 1000 / 60 / msPerMilliminute;
       const out: number[] = [];
       for (let k = 0; k < frames; k++) {
@@ -2191,7 +1912,10 @@ export async function mountStreetScene(
     },
     setHighlightStrength,
     currentFloor: () => walk.floor,
-    poolDrawables: () => allDrawables,
+    poolDrawables: () => [
+      ...[...liveEntries].filter((e) => passOfLayer(e.drawable.layerCode) === "pool").map((e) => e.drawable),
+      playerEntry.drawable,
+    ],
     orderIndexOf: (stableId) => {
       const index = renderOrder.indexOf(stableId);
       return index === -1 ? undefined : index;
@@ -2210,6 +1934,9 @@ export async function mountStreetScene(
         : { objectId, rects: containerController.drawnRects() };
     },
     stageChildCount: () => app.stage.children.length,
+    drawnChunkCount: () => drawnChunks.size,
+    liveSpriteCount: () => liveEntries.size,
+    ownershipAtPlayer: () => ownership.ownershipAt(walk.cellX, walk.cellY, walk.floor),
     destroy: () => {
       containerController.close();
       detachKeyboard();
@@ -2219,6 +1946,36 @@ export async function mountStreetScene(
   };
 }
 
-// `StreetGroundTiles` is re-exported for callers (tests) that iterate
-// `STREET_GROUND_TILES` without importing `fixture.ts` a second time.
-export type { StreetGroundTiles };
+/** The most chunks one frame builds once the first frame has rendered: a
+ * chunk is on the order of a thousand sprites, and a walk crosses one in
+ * seconds, so one a frame keeps ahead of the player without a hitch. */
+const CHUNKS_PER_FRAME = 1;
+
+/** A local prop: a row the page places itself, in the store like any
+ * streamed one. */
+export interface LocalProp {
+  readonly objectId: bigint;
+  readonly defId: number;
+  readonly layer: number;
+  /** The nearest standable cell at least this many cells from the start. */
+  readonly minDistance?: number;
+}
+
+/** The standable cell nearest `(cx, cy)` at least `minDistance` away, by
+ * expanding Chebyshev rings; `undefined` when none lies within 8. */
+export function nearestStandable(
+  standable: (x: number, y: number) => boolean,
+  cx: number,
+  cy: number,
+  minDistance: number,
+): { x: number; y: number } | undefined {
+  for (let r = Math.max(0, minDistance); r <= 8; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        if (standable(cx + dx, cy + dy)) return { x: cx + dx, y: cy + dy };
+      }
+    }
+  }
+  return undefined;
+}

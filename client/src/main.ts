@@ -34,10 +34,8 @@ import {
   sdkContainerBackend,
 } from "./net/container-subscription";
 import {
-  e2eStartsInShop,
   exposeAppearanceCompareForE2e,
   exposeCityTimeForE2e,
-  exposeCommuterDrawnForE2e,
   exposeConnectionForE2e,
   exposeContainerViewForE2e,
   exposeIdentityActionsForE2e,
@@ -92,11 +90,8 @@ import { visibleCellBounds } from "./render/screen-position";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
-import { HOME_FLAT_SPAWN, PLAYER_START } from "./test-street/fixture";
-import { placeLinkCarrier } from "./test-street/link-carrier";
-import type { RemotePlayersSource } from "./test-street/remote-players-layer";
-import { buildRushCrowd } from "./test-street/rush-crowd";
-import { mountStreetScene, type StreetSceneHandle } from "./test-street/scene";
+import type { RemotePlayersSource } from "./render/remote-players-layer";
+import { type LocalProp, mountWorldScene, type WorldSceneHandle } from "./render/world-scene";
 import { CityClock } from "./time/city-clock";
 import { ServerClock } from "./time/server-clock";
 import { mountConnectionNotice } from "./ui/connection-notice";
@@ -104,6 +99,7 @@ import { adoptNamePrompt } from "./ui/name-prompt";
 import { mountOptionsMenu } from "./ui/options-menu";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, thresholdDefIds, windowDefIds } from "./world/object-defs";
+import { ChunkStore } from "./world/chunk-store";
 import { dequantise } from "./world/position-codec";
 import { loadPositionConfig, type PositionConfig } from "./world/position-config";
 import { handleId } from "./world/region";
@@ -116,9 +112,18 @@ import { REMOTE_MAX_SAMPLES, REMOTE_SNAP_CELLS, RemoteMotion } from "./world/rem
  * place, which is worse than not yet drawn. */
 const NO_CAMERA_YET = { zoom: 0, offsetX: 0, offsetY: 0 } as const;
 
+/** How long the scene waits for the server's `my_start` before it mounts at
+ * the site origin: a world with no district has no start to wait for. */
+const START_WAIT_MS = 8000;
+
+/** The one local prop's object id: far above every streamed row's id. */
+const LINK_CARRIER_OBJECT_ID = 1n << 50n;
+
 /** Story 4.5: the link offer's two touch points with the street scene. */
 interface OfferWiring {
   readonly beforeMount: (defs: VerifiedDefs, handshakeSettled: boolean) => Promise<void>;
+  /** The carrier prop the scene places near the start, when an offer is due. */
+  readonly localProps: () => readonly LocalProp[];
   readonly onIntent: (intent: Intent) => void;
 }
 
@@ -188,6 +193,17 @@ async function main(): Promise<void> {
   // Story 4.3: the interest region. It holds nothing until the defs give
   // it a floor range and the scene gives it a position.
   const region = new RegionController();
+  // Story 3.16: the world the scene draws, held by chunk as the region
+  // delivers it. Rows can arrive before the scene mounts; the store keeps
+  // them and the scene attaches to it.
+  const worldStore = new ChunkStore();
+  // Where this identity starts (the server's `my_start`): the scene mounts
+  // nowhere else. Settles with the first answer.
+  let resolveStart: (start: { x: number; y: number; floor: number }) => void = () => {};
+  const startAnswer = new Promise<{ x: number; y: number; floor: number }>((resolve) => {
+    resolveStart = resolve;
+  });
+  let startAnswered = false;
   // Story 4.4 (FR138): the other players. A DEV build draws none unless the
   // page asks (`?remotePlayers`), so a spec's pixels never depend on whoever
   // else is in the shared instance; a production build always does.
@@ -299,13 +315,34 @@ async function main(): Promise<void> {
         syncSender();
       },
       onCharacterAbsent: () => arrival.characterAbsent(),
+      onStart: (start) => {
+        if (startAnswered) return;
+        startAnswered = true;
+        // The cell plus the fraction of it the position was stored at.
+        resolveStart({
+          x: start.x + start.fracX / 256,
+          y: start.y + start.fracY / 256,
+          floor: start.floor,
+        });
+      },
       region: {
         controller: region,
         rows: {
-          onInsert: (table, row) => recordRegionRowForE2e("inserts", table, row),
-          onUpdate: (table, _old, row) => recordRegionRowForE2e("updates", table, row),
-          onDelete: (table, row) => recordRegionRowForE2e("deletes", table, row),
+          onInsert: (table, row) => {
+            worldStore.insert(table, row);
+            recordRegionRowForE2e("inserts", table, row);
+          },
+          onUpdate: (table, oldRow, row) => {
+            worldStore.update(table, oldRow, row);
+            recordRegionRowForE2e("updates", table, row);
+          },
+          onDelete: (table, row) => {
+            worldStore.delete(table, row);
+            recordRegionRowForE2e("deletes", table, row);
+          },
         },
+        onHandleApplied: (keys) => worldStore.markApplied(keys),
+        onHandleReleased: (keys) => worldStore.markReleased(keys),
         remotePlayers: remotePlayersOn,
         players: {
           onUpsert: (row) => {
@@ -374,6 +411,7 @@ async function main(): Promise<void> {
       beginLink: (code) => beginLink(conn.current(), code),
     });
   let carrierDef: number | undefined;
+  let carrierProp: LocalProp | undefined;
   // Evaluated once per session, as the scene is about to mount, never
   // mid-session. Showing the offer records the city day, so declining is
   // simply not taking it.
@@ -407,12 +445,16 @@ async function main(): Promise<void> {
         },
       });
       if (due && shownOn !== undefined) {
-        placeLinkCarrier(carrier);
         carrierDef = carrier;
+        const layer = defs.objects.find((o) => o.id === carrier)?.layer;
+        if (layer !== undefined) {
+          carrierProp = { objectId: LINK_CARRIER_OBJECT_ID, defId: carrier, layer, minDistance: 2 };
+        }
         saveLastShownDay(identityStorage, shownOn);
       }
       recordLinkOfferForE2e(due);
     },
+    localProps: () => (carrierProp ? [carrierProp] : []),
     onIntent: (intent) => {
       if (carrierDef === undefined || intent.defId !== carrierDef) return;
       startOffer().catch((error: unknown) => {
@@ -422,7 +464,9 @@ async function main(): Promise<void> {
   };
 
   try {
-    await startStreetScene(
+    await startWorldScene(
+      worldStore,
+      startAnswer,
       latch,
       () => notice.setStatus("updating"),
       (guard) => {
@@ -491,7 +535,7 @@ async function main(): Promise<void> {
  *
  * Story 2.8 (FR147): the scene is never mounted before `runBootSequence`
  * resolves a `VerifiedDefs` -- "never draws a stale frame" is structural
- * (`test-street/scene.ts`'s own `MountStreetSceneOptions.defs` type), not
+ * (`render/world-scene.ts`'s own `MountWorldSceneOptions.defs` type), not
  * a convention. `connect()` and the first, unversioned `fetchDefs` still
  * start in parallel exactly as before (`latch` is what `connect()`
  * already started feeding by the time this runs).
@@ -514,7 +558,9 @@ async function main(): Promise<void> {
  * ticker` does not exist until then either, so `stopDrawing` is
  * null-safe.
  */
-async function startStreetScene(
+async function startWorldScene(
+  worldStore: ChunkStore,
+  startAnswer: Promise<{ x: number; y: number; floor: number }>,
   latch: HandshakeLatch,
   onDegrade: () => void,
   setPostMountGuard: (guard: PostMountGuard) => void,
@@ -528,9 +574,9 @@ async function startStreetScene(
   players: PlayersWiring,
   containers: ContainerWiring,
 ): Promise<void> {
-  const mount = document.getElementById("test-street");
+  const mount = document.getElementById("world");
   if (!mount) {
-    console.error("[main] #test-street is missing from index.html");
+    console.error("[main] #world is missing from index.html");
     return;
   }
 
@@ -596,9 +642,16 @@ async function startStreetScene(
   // position drives it (`onPlayerMove`), edge-triggered.
   const remotePlayers = players.setUp(defs);
   region.configure({ minFloor: defs.minFloor, maxFloor: defs.maxFloor });
-  // Story 4.6: a new character is first placed in the home flat; only a DEV
-  // spec that says so starts in the shop.
-  const start = e2eStartsInShop() ? PLAYER_START : HOME_FLAT_SPAWN;
+  // Story 3.16: the player starts where the server says (its stored
+  // position, else the district's arrival cell) -- never a client constant.
+  // A world with no district has no start: the scene mounts at the site
+  // origin and draws the open ground.
+  const start = await Promise.race([
+    startAnswer,
+    new Promise<{ x: number; y: number; floor: number }>((resolve) =>
+      setTimeout(() => resolve({ x: 0, y: 0, floor: 0 }), START_WAIT_MS),
+    ),
+  ]);
   followScene(start.x, start.y, start.floor);
 
   const tileSizePx = getBalance(defs, "render.tile_size_px");
@@ -635,7 +688,7 @@ async function startStreetScene(
   // change that arrives first is still persisted, just not pushed live
   // until the scene handle exists (it reads the persisted value as its
   // own initial `highlightStrength` either way).
-  let sceneHandle: StreetSceneHandle | undefined;
+  let sceneHandle: WorldSceneHandle | undefined;
 
   // FR151's options menu. It takes the keyboard while it is open, so a
   // key pressed to rebind never also walks the avatar; the world behind
@@ -676,33 +729,24 @@ async function startStreetScene(
   });
 
   // DEV-only, like every other `window.__bc`-adjacent test aid: a
-  // `toHaveScreenshot` check needs the street crowd's own walk cycle to
-  // never advance, or which frame of which citizen's animation happens to
-  // be on screen would depend on real wall-clock timing and no baseline
-  // could ever be stable (`test-street.spec.ts`'s own header). Absent
-  // means the crowd walks normally, exactly as it always has.
-  const freezeCrowdForE2e =
-    import.meta.env.DEV && new URLSearchParams(window.location.search).has("freezeCrowd");
-
-  // Story 2.7 (Quentin's direction): `appearance.spec.ts`'s own
-  // "different people cost about as much as identical ones" comparison
-  // mounts this same page twice, once with the crowd's own normal
-  // distinct tuples and once with this flag set, and compares
-  // `allBoundTextureSources` (and, as a secondary check, the atlas-page
-  // count `distinctBoundAtlasPages`) -- never a second crowd fixture
-  // module.
-  const identicalCrowdForE2e =
-    import.meta.env.DEV && new URLSearchParams(window.location.search).has("identicalCrowd");
+  // `toHaveScreenshot` check needs every body's pose pinned, or which frame
+  // of which animation happens to be on screen would depend on real
+  // wall-clock timing and no baseline could ever be stable.
+  const freezeBodiesForE2e =
+    import.meta.env.DEV && new URLSearchParams(window.location.search).has("freezeBodies");
 
   // Story 5.4: `bodyWatch` reads every body's bounds every frame
   // (`getBounds()` and an allocation each), so it runs only for the spec that
   // asked (`?watchBodies`) and never pollutes the L3 timing and allocation
-  // figures with test plumbing. `?rushCrowd` adds the NFR11 load.
+  // figures with test plumbing. `?rushCrowd` adds the NFR11 load, built by
+  // the harness module (`tests/harness/rush-crowd.ts`), which a production
+  // bundle never contains: the import sits in a branch Vite statically
+  // evaluates to `false`.
   const watchBodiesForE2e =
     import.meta.env.DEV && new URLSearchParams(window.location.search).has("watchBodies");
   const rushCrowdForE2e =
     import.meta.env.DEV && new URLSearchParams(window.location.search).has("rushCrowd")
-      ? buildRushCrowd(defs)
+      ? (await import("./debug/rush-crowd")).rushCrowdFor(defs)
       : undefined;
 
   // Story 1.12 (FR165/FR168): set only inside the DEV branch below, and
@@ -720,7 +764,7 @@ async function startStreetScene(
   // every frame to see whether it changed.
   let firstPlaced: { x: number; y: number; floor: number } | undefined;
   let firstStepMarked = false;
-  const handle = await mountStreetScene(app, {
+  const handle = await mountWorldScene(app, {
     defs,
     atlasBaseUrl: `${import.meta.env.BASE_URL}atlas/`,
     tileSizePx,
@@ -732,10 +776,12 @@ async function startStreetScene(
     objectDefs: objectDefsById(defs),
     windowDefIds: windowDefIds(defs),
     thresholdDefIds: thresholdDefIds(defs),
+    wallStubDefId: getBalance(defs, "render.wall_stub_object_id"),
+    world: worldStore,
+    localProps: offer.localProps(),
     playerStart: start,
-    startWithCrowdFrozen: freezeCrowdForE2e,
+    freezeBodies: freezeBodiesForE2e,
     cityMilliminutes,
-    crowdIdenticalTuples: identicalCrowdForE2e,
     highlightStrength: display.highlightStrength,
     onOrderChange: (order) => {
       recordRenderOrderForE2e(order);
@@ -746,7 +792,7 @@ async function startStreetScene(
     onPlayerBody: import.meta.env.DEV ? recordPlayerBodyForE2e : undefined,
     onCitizenBodies: watchBodiesForE2e ? recordCitizenBodiesForE2e : undefined,
     onL3Work: import.meta.env.DEV ? recordL3WorkForE2e : undefined,
-    rushCrowd: rushCrowdForE2e,
+    crowd: rushCrowdForE2e,
     onPlayerMove: (x, y, floor) => {
       recordPlayerPositionForE2e(x, y, floor);
       if (!firstStepMarked) {
@@ -827,14 +873,37 @@ async function startStreetScene(
     handle.citizensLayer.textureIdsById,
     handle.citizensLayer.distinctTextureCount,
   );
-  exposeAppearanceCompareForE2e(handle.citizensLayer.compareForE2e);
+  if (import.meta.env.DEV) {
+    // Compares what the pipeline composites against an independent stack of
+    // the same atlas pages; the harness is test code, never in a production
+    // bundle.
+    const { comparePipelineVsStack } = await import("./debug/compare-pipeline-vs-stack");
+    const { bodyTexture } = await import("./render/body-sprite");
+    const atlasBase = `${import.meta.env.BASE_URL}atlas/`;
+    exposeAppearanceCompareForE2e(async (tuple, override, animation, direction, frame) => {
+      const frames = await handle.appearanceCache.acquire(tuple, override);
+      try {
+        return await comparePipelineVsStack(
+          defs,
+          atlasBase,
+          bodyTexture(frames, { animation, direction, frameIndex: frame }),
+          tuple,
+          override,
+          animation,
+          direction,
+          frame,
+        );
+      } finally {
+        handle.appearanceCache.release(tuple, override);
+      }
+    });
+  }
   recordPlayerAppearanceForE2e(handle.playerAppearance);
   recordDistinctBoundAtlasPagesForE2e(handle.distinctBoundAtlasPages);
-  recordDoorwaysForE2e(handle.doorways);
+  recordDoorwaysForE2e(handle.doorways());
   recordAllBoundTextureSourcesForE2e(handle.allBoundTextureSources);
   exposePlayerScreenBoundsForE2e(handle.playerScreenBounds);
   exposePlayerDrawnPointForE2e(handle.playerDrawnPoint);
-  exposeCommuterDrawnForE2e(handle.commuterDrawn);
   exposeL3AgreementForE2e((t) => handle.citizensLayer.agreementAt(t));
   exposeL3BodiesForE2e(
     () => handle.l3Bodies(),

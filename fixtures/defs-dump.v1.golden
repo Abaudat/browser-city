@@ -274,6 +274,7 @@ balance net.player_position_hz value=10 min=1 max=20
 balance render.highlight_alpha value=50 min=1 max=100
 balance render.storey_height_px value=48 min=1 max=256
 balance render.tile_size_px value=16 min=1 max=64
+balance render.wall_stub_object_id value=6 min=0 max=65535
 balance render.window_alpha value=50 min=1 max=99
 balance routing.floor_change_penalty_milliminutes value=1000 min=0 max=600000
 balance routing.graph.internal_node_min_interior_cells value=100 min=1 max=100000

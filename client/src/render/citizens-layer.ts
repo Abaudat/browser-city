@@ -1,57 +1,24 @@
-// Story 1.10 (AC5, FR61/FR62): the one adapter that turns `citizens.ts`'s
-// fixed fixtures into real, mounted sprites through the real appearance
-// pipeline -- proof this pipeline draws a real street crowd, not only
-// unit-tested pure logic. Never part of `scene.ts`'s own depth-sorted
-// `characters` pool (see `citizens.ts`'s own module doc for why); instead
-// this module only ever populates the floor-0 container `scene.ts`
-// already created, registered as a visibility member and attached under
-// `render/floor-stacks.ts`'s own floor-0 stack before this function is
-// even called (story 15.8) -- it never creates or parents a container of
-// its own against `world`. Takes its `AppearanceTextureCache`
-// from the caller rather than building its own, so the player's own
-// sprite (`scene.ts`) and the crowd share one cache -- a player who
-// happens to match a crowd member's tuple reuses that texture too.
-// Excluded from `client/vitest.config.ts`'s coverage gate alongside the
-// other real-Pixi adapters it composes.
+// Story 1.10 (AC5, FR61/FR62): the one adapter that turns a crowd's
+// fixtures (supplied by the caller: a DEV harness today, L2's citizens
+// from Epic 5) into real, mounted sprites through the real appearance
+// pipeline. Never part of `world-scene.ts`'s own depth-sorted
+// `characters` pool; this module only ever populates the floor-0
+// container the scene already created, registered as a visibility member
+// and attached under `render/floor-stacks.ts`'s own floor-0 stack before
+// this function is even called (story 15.8). Takes its
+// `AppearanceTextureCache` from the caller rather than building its own,
+// so the player's own sprite and the crowd share one cache. Excluded from
+// `client/vitest.config.ts`'s coverage gate alongside the other
+// real-Pixi adapters it composes.
 
-import { Container, Sprite, type Texture } from "pixi.js";
+import { Container, type Sprite } from "pixi.js";
 import type { Defs, Family } from "../defs/types";
 import { type AtState, CitizenBody } from "../l3/citizen";
 import { type L3Config, pathConfigOf, walkFramesPerCycle } from "../l3/config";
 import type { Facing } from "../l3/gait";
+import { Timetable, type TimetableSpec } from "../l3/interim-timetable";
 import { type LedgerPoint, ledgerPositionAt } from "../l3/ledger-position";
 import type { Walkability } from "../l3/micro-path";
-import type {
-  AppearanceTextureCache,
-  CompositeFrames,
-} from "../render/appearance/appearance-texture";
-import {
-  type AppearanceTuple,
-  appearanceCacheKey,
-  resolveUniform,
-  type UniformOverride,
-} from "../render/appearance/composite";
-import type { PixelSnapshot } from "../render/appearance/pixel-snapshot";
-import { bodyTexture, newBodySprite, setBodyFrame } from "../render/body-sprite";
-import { snapToScreenPx, worldPointPx, worldPointPxInto } from "../render/screen-position";
-import { BodyLifecycle } from "../world/body-lifecycle";
-import { type BodyCandidate, type BodyZone, WHOLE_ZONE } from "../world/body-zone";
-import { cellOf } from "../world/ownership";
-import {
-  AVOIDANCE_SPECS,
-  buildAvoidanceFixtures,
-  buildCitizenFixtures,
-  buildUniformedWalkerFixture,
-  buildWalkerFixture,
-  type CitizenFixture,
-  CROWD_FLOOR,
-  isStagingCell,
-  plazaBounds,
-  stagingBounds,
-  WALKER_SPECS,
-} from "./citizens";
-import { comparePipelineVsStack } from "./compare-pipeline-vs-stack";
-import type { RushCrowd } from "./rush-crowd";
 import {
   type LifeMember,
   type LifeSample,
@@ -59,7 +26,42 @@ import {
   type StreetLife,
   standState,
 } from "./street-life";
-import { Timetable, type TimetableSpec } from "./timetable";
+import { BodyLifecycle } from "../world/body-lifecycle";
+import { type BodyCandidate, type BodyZone, WHOLE_ZONE } from "../world/body-zone";
+import { cellOf } from "../world/ownership";
+import type {
+  AppearanceTextureCache,
+  CompositeFrames,
+} from "./appearance/appearance-texture";
+import {
+  type AppearanceTuple,
+  appearanceCacheKey,
+  resolveUniform,
+  type UniformOverride,
+} from "./appearance/composite";
+import { newBodySprite, setBodyFrame } from "./body-sprite";
+import { worldPointPx, worldPointPxInto } from "./screen-position";
+
+/** The floor every crowd body lives on. */
+export const CROWD_FLOOR = 0;
+
+/** One citizen of a crowd: who it looks like and where it stands (or
+ * starts). */
+export interface CitizenFixture {
+  readonly id: string;
+  readonly tuple: AppearanceTuple;
+  /** FR62: resolved through `resolveUniform` at mount time. */
+  readonly professionKey?: string;
+  readonly gridX: number;
+  readonly gridY: number;
+  readonly facing: string;
+}
+
+/** A crowd to mount: its citizens and the timetable of each that walks. */
+export interface CrowdSource {
+  readonly fixtures: readonly CitizenFixture[];
+  readonly specs: Readonly<Record<string, TimetableSpec>>;
+}
 
 /** What the walking citizens need from L3: tile walkability and the dials. */
 export interface WalkerSource {
@@ -67,11 +69,8 @@ export interface WalkerSource {
   readonly config: L3Config;
   /** Every ledger-driven citizen on the street, the layer's own included. */
   readonly life: StreetLife;
-  /** A frozen crowd (a screenshot test) is staged with no avoidance
-   * fixtures and never animated. */
-  readonly frozen?: boolean;
-  /** Story 5.4: the dev-only rush-hour load, added to the street's citizens. */
-  readonly rush?: RushCrowd;
+  /** The citizens to draw. */
+  readonly crowd: CrowdSource;
 }
 
 /** A body's sprite bounds on the renderer, in pixels. */
@@ -120,13 +119,6 @@ export interface CitizensLayerHandle {
   readonly citizenCount: number;
   /** Where each body is on screen, in renderer pixels (a DEV build's e2e). */
   bodyBounds(): readonly BodyScreenBounds[];
-  compareForE2e(
-    tuple: AppearanceTuple,
-    override: UniformOverride | null,
-    animation: string,
-    direction: string,
-    frame: number,
-  ): Promise<{ pipeline: PixelSnapshot; stack: PixelSnapshot }>;
   /** Instantiates and discards bodies for `zone` as judged on each citizen's
    * ledger position at city time `t`, then draws every body as the street's
    * life was last solved -- called from `scene.ts`'s own ticker, never a
@@ -172,59 +164,15 @@ export async function mountCitizensLayer(
   storeyHeightPx: number,
   zoom: number,
   cache: AppearanceTextureCache,
-  sidewalkTexture: Texture,
-  atlasBaseUrl: string,
-  identicalTuples = false,
   l3: WalkerSource,
   /** The zone of the first frame. No zone: everyone has a body. */
   options: { initialZone?: BodyZone; initialCityMilliminutes?: number } = {},
 ): Promise<CitizensLayerHandle> {
-  // The crowd's own pavement, painted before the citizens so it sits
-  // underneath them -- real `ModernTileset` sidewalk tiles, the same
-  // asset the rest of the world uses: a citizen stands on pavement,
-  // never on bare ground or the void. `parent` is `scene.ts`'s own
-  // floor-0 crowd container (story 15.8) -- already attached under the
-  // floor-0 stack and registered as a visibility member before this
-  // function is ever called, so these two containers need no visibility
-  // opinion of their own; they simply draw inside whatever `parent`'s
-  // own `visible` says.
-  const bounds = plazaBounds();
-  const ground = new Container();
-  for (let y = cellOf(bounds.y0); y < Math.ceil(bounds.y1); y++) {
-    for (let x = cellOf(bounds.x0); x < Math.ceil(bounds.x1); x++) {
-      const tile = new Sprite(sidewalkTexture);
-      tile.x = snapToScreenPx(x * tileSizePx, zoom);
-      tile.y = snapToScreenPx(y * tileSizePx, zoom);
-      ground.addChild(tile);
-    }
-  }
-  // The avoidance staging's own patch, south of the street (never mounted for
-  // a frozen crowd, whose baselines it would move).
-  if (!l3.frozen) {
-    const stage = stagingBounds();
-    for (let y = stage.y0; y < stage.y1; y++) {
-      for (let x = stage.x0; x < stage.x1; x++) {
-        if (!isStagingCell(x, y)) continue;
-        const tile = new Sprite(sidewalkTexture);
-        tile.x = snapToScreenPx(x * tileSizePx, zoom);
-        tile.y = snapToScreenPx(y * tileSizePx, zoom);
-        ground.addChild(tile);
-      }
-    }
-  }
-  parent.addChild(ground);
-
   const layer = new Container();
   layer.sortableChildren = true;
   parent.addChild(layer);
 
-  const fixtures = [
-    ...buildCitizenFixtures(defs, identicalTuples),
-    buildWalkerFixture(defs),
-    buildUniformedWalkerFixture(defs),
-    ...(l3.frozen ? [] : buildAvoidanceFixtures(defs)),
-    ...(l3.rush?.fixtures ?? []),
-  ];
+  const fixtures = l3.crowd.fixtures;
   const layoutByFamily = new Map(defs.appearanceLayouts.map((l) => [l.family, l]));
 
   const textureIds = new Map<CompositeFrames, number>();
@@ -251,8 +199,7 @@ export async function mountCitizensLayer(
     if (!layoutByFamily.get(body.family)) {
       throw new Error(`citizens-layer: no appearance layout for family '${body.family}'`);
     }
-    const spec =
-      WALKER_SPECS[fixture.id] ?? AVOIDANCE_SPECS[fixture.id] ?? l3.rush?.specs[fixture.id];
+    const spec = l3.crowd.specs[fixture.id];
     const life = lifeDialsFor(defs, l3.config, body.family);
     const make = (): { body: CitizenBody; timetable?: Timetable } => ({
       timetable: spec ? new Timetable(spec, l3.config, l3.walk, path) : undefined,
@@ -435,39 +382,6 @@ export async function mountCitizensLayer(
     }
   }
 
-  function compareForE2e(
-    tuple: AppearanceTuple,
-    override: UniformOverride | null,
-    animation: string,
-    direction: string,
-    frame: number,
-  ): Promise<{ pipeline: PixelSnapshot; stack: PixelSnapshot }> {
-    // Never a bare `cache.acquire` with no matching `release` -- this is
-    // called dozens of times over, once per grid cell, for a handful of
-    // fixed tuples (`appearance.spec.ts`'s own full comparison grid), and
-    // with no release each call would permanently hold its own slot,
-    // leaking one reference per call forever (Quentin's direction, cycle
-    // 1). `comparePipelineVsStack` reads every pixel it needs out of the
-    // texture synchronously, before its own promise resolves, so the
-    // texture reference is already dropped by the time `release` below
-    // runs -- never the other way (a release before the read completed
-    // could hand this exact slot to a new occupant mid-read).
-    return cache
-      .acquire(tuple, override)
-      .then((frames) =>
-        comparePipelineVsStack(
-          defs,
-          atlasBaseUrl,
-          bodyTexture(frames, { animation, direction, frameIndex: frame }),
-          tuple,
-          override,
-          animation,
-          direction,
-          frame,
-        ).finally(() => cache.release(tuple, override)),
-      );
-  }
-
   return {
     textureIdsById,
     get distinctTextureCount() {
@@ -480,7 +394,6 @@ export async function mountCitizensLayer(
         const b = d.sprite.getBounds();
         return { id, x0: b.minX, y0: b.minY, x1: b.maxX, y1: b.maxY };
       }),
-    compareForE2e,
     update,
     agreementAt: (t) => l3.life.agreementAt(t),
     liveAt: (t) => l3.life.liveAt(t),

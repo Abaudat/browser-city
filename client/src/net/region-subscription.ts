@@ -59,7 +59,11 @@ export interface RegionBackend {
 export interface RegionListener {
   /** A region subscription failed -- routed to the connection status. */
   onError(message: string): void;
-  onApplied?(key: HandleKey): void;
+  /** A handle's rows have all arrived; `chunkKeys` are the chunks it
+   * covers, one per floor of its band. */
+  onApplied?(key: HandleKey, chunkKeys: bigint[]): void;
+  /** A handle was released: its chunks are no longer complete. */
+  onReleased?(key: HandleKey, chunkKeys: bigint[]): void;
   /** Every handle the first position asked for has applied: the initial
    * region is in. Fires once per manager. */
   onInitialApplied?(): void;
@@ -167,7 +171,7 @@ export class RegionSubscriptions {
     if (this.entries.get(id) !== entry) return;
     entry.state = "applied";
     if (entry.releaseWhenApplied) this.unsubscribe(id, entry);
-    else this.listener.onApplied?.(entry.key);
+    else this.listener.onApplied?.(entry.key, chunkKeysOfHandle(entry.key, this.range));
     // A first-region handle settles when it applies, wanted or not.
     if (this.initial?.delete(id) && this.initial.size === 0) this.listener.onInitialApplied?.();
   }
@@ -176,6 +180,7 @@ export class RegionSubscriptions {
     if (!entry.handle) throw new Error(`region handle ${id} applied before it was returned`);
     this.entries.delete(id);
     this.ending.add(entry);
+    this.listener.onReleased?.(entry.key, chunkKeysOfHandle(entry.key, this.range));
     entry.handle.unsubscribe();
   }
 

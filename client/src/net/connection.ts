@@ -60,6 +60,16 @@ export interface ClockWiring {
   ) => void;
 }
 
+/** Story 3.16: where a connection's identity starts, in cells and the
+ * 1/256 fraction of the cell. */
+export interface StartReport {
+  readonly x: number;
+  readonly y: number;
+  readonly floor: number;
+  readonly fracX: number;
+  readonly fracY: number;
+}
+
 /** Story 4.5 (FR141): who this device is, reported once per connection --
  * `persisted` is whether the token is in storage (a character must never
  * be created for an identity that could not be kept). */
@@ -113,6 +123,10 @@ export interface RegionWiring {
   readonly remotePlayers?: boolean;
   /** The new connection's initial region has fully applied. */
   readonly onInitialApplied?: () => void;
+  /** A region handle applied (its chunks hold every row they will) or was
+   * released. */
+  readonly onHandleApplied?: (chunkKeys: bigint[]) => void;
+  readonly onHandleReleased?: (chunkKeys: bigint[]) => void;
 }
 
 /** Story 4.8: the identity a page presents on every connection after its
@@ -135,6 +149,10 @@ export interface ConnectOptions {
   /** Story 4.6: the first subscription applied and the caller's
    * `my_character` is empty -- the stored identity reaches no character. */
   readonly onCharacterAbsent?: () => void;
+  /** Story 3.16: where this identity starts -- its stored position, else
+   * the district's arrival cell (the `my_start` view). Fires again if the
+   * server's answer changes. */
+  readonly onStart?: (start: StartReport) => void;
   /** Story 4.3: the interest region. */
   readonly region?: RegionWiring;
   /** Story 4.8: presented instead of reading `storage`; set on a reconnect. */
@@ -182,6 +200,7 @@ export function connect(options: ConnectOptions): DbConnection {
     onIdentity,
     onCharacter,
     onCharacterAbsent,
+    onStart,
   } = options;
   const mark = (name: Parameters<typeof markBoot>[0]): void => {
     if (options.marks !== false) markBoot(name);
@@ -232,6 +251,7 @@ export function connect(options: ConnectOptions): DbConnection {
           tables.moduleVersion.build(),
           tables.worldClock.build(),
           tables.myCharacter.build(),
+          tables.myStart.build(),
         ]);
       // Story 4.3: a new connection is a new region manager, built around
       // the player's current position.
@@ -243,6 +263,8 @@ export function connect(options: ConnectOptions): DbConnection {
             mark(BOOT_MARK.REGION_APPLIED);
             region.onInitialApplied?.();
           },
+          onApplied: (_key, chunkKeys) => region.onHandleApplied?.(chunkKeys),
+          onReleased: (_key, chunkKeys) => region.onHandleReleased?.(chunkKeys),
         },
       );
       // Story 4.1: the first stamped round trip rides the same connect
@@ -287,6 +309,12 @@ export function connect(options: ConnectOptions): DbConnection {
       linked: row.linked,
       name: row.name,
     });
+  });
+
+  // `my_start` is a per-sender view without a primary key: a change
+  // arrives as a delete-then-insert pair, so `onInsert` alone covers it.
+  conn.db.myStart.onInsert((_ctx, row) => {
+    onStart?.({ x: row.x, y: row.y, floor: row.floor, fracX: row.fracX, fracY: row.fracY });
   });
 
   const rows = region?.rows;

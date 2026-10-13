@@ -16,6 +16,7 @@ pub mod generation_stamp;
 pub mod neighbourhood_evidence;
 pub mod schema;
 pub mod sweep;
+pub mod district_fixture;
 pub mod world_fixture;
 
 pub use sim::table_bounds::{BoundKind, TABLE_BOUNDS, TableBound};

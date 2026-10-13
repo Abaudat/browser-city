@@ -3,12 +3,12 @@
 // between legs. It is data only -- it says which `InTransit` leg holds at a
 // given time. Every pose, frame and facing comes from `l3/`. Zero PixiJS.
 
-import { Body, type Cell, type Leg } from "../l3/body";
-import type { TransitState } from "../l3/citizen";
-import type { L3Config } from "../l3/config";
-import type { Facing } from "../l3/gait";
-import type { PathConfig, Walkability } from "../l3/micro-path";
-import { milliminutesFor, periodOf } from "../l3/timeline";
+import { Body, type Cell, type Leg } from "./body";
+import type { TransitState } from "./citizen";
+import type { L3Config } from "./config";
+import type { Facing } from "./gait";
+import type { PathConfig, Walkability } from "./micro-path";
+import { milliminutesFor, periodOf } from "./timeline";
 
 export interface TimetableSpec {
   /** The route out; the way back is its reverse. */

@@ -18,11 +18,11 @@
 // (`composite-pages.ts`) already trusts for identical work, and is what
 // this file trusts too.
 //
-// Lives under `test-street/`, not `render/appearance/`: this is e2e test harness
+// Lives under `debug/`, not `render/appearance/`: this is e2e test harness
 // wired through the street scene, never part of the production render
 // pipeline, so it belongs where the rest of the street-only code does
-// (`client/vitest.config.ts`'s coverage gate already excludes `test-street/**`
-// wholesale).
+// (the DEV-only debug boundary: a production build holds none of it,
+// `scripts/ci/check-debug-boundary.sh`).
 
 import type { Texture } from "pixi.js";
 import type { Defs } from "../defs/types";

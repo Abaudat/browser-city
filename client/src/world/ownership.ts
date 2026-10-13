@@ -41,32 +41,46 @@ function rectContains(rect: OwnershipRect, x: number, y: number): boolean {
   return x >= rect.x0 && x < rect.x1 && y >= rect.y0 && y < rect.y1;
 }
 
-function buildIndex(areas: readonly OwnershipArea[]): ReadonlyMap<bigint, OwnershipArea[]> {
-  const index = new Map<bigint, OwnershipArea[]>();
-  for (const area of areas) {
-    const key = chunkKey(area.rect.x0, area.rect.y0, area.floor);
-    const bucket = index.get(key);
-    if (bucket) {
-      bucket.push(area);
-    } else {
-      index.set(key, [area]);
-    }
-  }
-  return index;
-}
+/** One kind of area (building or room), bucketed by chunk and addressable
+ * by its row id, so a streamed row can be removed again. */
+class AreaSet {
+  private readonly buckets = new Map<bigint, Map<bigint, OwnershipArea>>();
+  private readonly keyOfRow = new Map<bigint, bigint>();
 
-function findOwner(
-  index: ReadonlyMap<bigint, OwnershipArea[]>,
-  key: bigint,
-  x: number,
-  y: number,
-): bigint {
-  const bucket = index.get(key);
-  if (!bucket) return NO_OWNER;
-  for (const area of bucket) {
-    if (rectContains(area.rect, x, y)) return area.ownerId;
+  insert(rowId: bigint, area: OwnershipArea): void {
+    this.delete(rowId);
+    const key = chunkKey(area.rect.x0, area.rect.y0, area.floor);
+    let bucket = this.buckets.get(key);
+    if (!bucket) {
+      bucket = new Map();
+      this.buckets.set(key, bucket);
+    }
+    bucket.set(rowId, area);
+    this.keyOfRow.set(rowId, key);
   }
-  return NO_OWNER;
+
+  delete(rowId: bigint): void {
+    const key = this.keyOfRow.get(rowId);
+    if (key === undefined) return;
+    this.keyOfRow.delete(rowId);
+    const bucket = this.buckets.get(key);
+    if (!bucket) return;
+    bucket.delete(rowId);
+    if (bucket.size === 0) this.buckets.delete(key);
+  }
+
+  ownerAt(key: bigint, x: number, y: number): bigint {
+    const bucket = this.buckets.get(key);
+    if (!bucket) return NO_OWNER;
+    for (const area of bucket.values()) {
+      if (rectContains(area.rect, x, y)) return area.ownerId;
+    }
+    return NO_OWNER;
+  }
+
+  countInChunk(key: bigint): number {
+    return this.buckets.get(key)?.size ?? 0;
+  }
 }
 
 /** Areas bucketed by `chunk_key`, exactly like `sim::world::World`'s own
@@ -74,12 +88,43 @@ function findOwner(
  * map lookup plus a scan of one chunk's rects, never a scan of every area
  * declared. */
 export class OwnershipIndex {
-  private readonly buildingAreas: ReadonlyMap<bigint, OwnershipArea[]>;
-  private readonly roomAreas: ReadonlyMap<bigint, OwnershipArea[]>;
+  private readonly buildingAreas = new AreaSet();
+  private readonly roomAreas = new AreaSet();
+  private revisionCounter = 0;
 
-  constructor(buildingAreas: readonly OwnershipArea[], roomAreas: readonly OwnershipArea[]) {
-    this.buildingAreas = buildIndex(buildingAreas);
-    this.roomAreas = buildIndex(roomAreas);
+  /** The areas given are anonymous: addressable by position only, never
+   * deletable. A streamed world feeds [`insertBuilding`] and its
+   * siblings by row id instead. */
+  constructor(buildingAreas: readonly OwnershipArea[] = [], roomAreas: readonly OwnershipArea[] = []) {
+    let anonymous = -1n;
+    for (const area of buildingAreas) this.buildingAreas.insert(anonymous--, area);
+    for (const area of roomAreas) this.roomAreas.insert(anonymous--, area);
+  }
+
+  /** Moves on every insert and delete, never on a read: what a derived
+   * value keyed on ownership compares to know it is stale. */
+  get revision(): number {
+    return this.revisionCounter;
+  }
+
+  insertBuilding(rowId: bigint, area: OwnershipArea): void {
+    this.buildingAreas.insert(rowId, area);
+    this.revisionCounter++;
+  }
+
+  deleteBuilding(rowId: bigint): void {
+    this.buildingAreas.delete(rowId);
+    this.revisionCounter++;
+  }
+
+  insertRoom(rowId: bigint, area: OwnershipArea): void {
+    this.roomAreas.insert(rowId, area);
+    this.revisionCounter++;
+  }
+
+  deleteRoom(rowId: bigint): void {
+    this.roomAreas.delete(rowId);
+    this.revisionCounter++;
   }
 
   /** The building/room ownership id for `(x, y, floor)` (FR119). `x`/`y`
@@ -91,8 +136,8 @@ export class OwnershipIndex {
   ownershipAt(x: number, y: number, floor: number): Ownership {
     const key = chunkKey(x, y, floor);
     return {
-      buildingId: findOwner(this.buildingAreas, key, x, y),
-      roomId: findOwner(this.roomAreas, key, x, y),
+      buildingId: this.buildingAreas.ownerAt(key, x, y),
+      roomId: this.roomAreas.ownerAt(key, x, y),
     };
   }
 
@@ -101,7 +146,7 @@ export class OwnershipIndex {
    * [`OwnershipIndex.ownershipAt`] rests on, mirroring
    * `World::building_areas_in_chunk_of`. */
   buildingAreasInChunkOf(x: number, y: number, floor: number): number {
-    return this.buildingAreas.get(chunkKey(x, y, floor))?.length ?? 0;
+    return this.buildingAreas.countInChunk(chunkKey(x, y, floor));
   }
 }
 

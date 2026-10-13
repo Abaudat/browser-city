@@ -122,12 +122,15 @@ export function superviseConnect(
       onHandshake: guard(options.onHandshake),
       onIdentity: guard(options.onIdentity),
       onCharacter: guard(options.onCharacter),
+      onStart: guard(options.onStart),
       onSession: (s) => {
         if (live()) session ??= s;
       },
       clock: clock && { ...clock, onClock: guard(clock.onClock) },
       region: region && {
         ...region,
+        onHandleApplied: guard(region.onHandleApplied),
+        onHandleReleased: guard(region.onHandleReleased),
         controller: {
           attach: (backend, listener) => {
             if (live()) region.controller.attach(backend, listener);
