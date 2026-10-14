@@ -426,3 +426,34 @@ fn inv_starting_possessions_are_in_the_flat() {
         }
     }
 }
+
+// --- bounds: assignment at the district's largest dwelling count ----------
+
+/// Assignment is one pass over the dwellings; at the building ceiling
+/// (`building`'s `max_rows`) it still plans, deterministically, with every
+/// flat but the last taken.
+#[test]
+fn assignment_over_the_largest_stock_is_one_deterministic_pass() {
+    let max = sim::table_bounds::TABLE_BOUNDS
+        .iter()
+        .find(|b| b.accessor == "building")
+        .unwrap()
+        .max_rows;
+    let stock: Vec<Home> = (0..max)
+        .map(|id| Home {
+            id,
+            tier: if id % 3 == 0 { Tier::Edge } else { Tier::Inner },
+            density: (id % 100) as i32,
+            affluence: (id % 50) as i32,
+            rent: 250,
+            spawn: (0, 0),
+            door: (0, 0),
+            kit: (0, 0),
+        })
+        .collect();
+    let last = max - 1;
+    let occupied = |id: u64| id != last;
+    let first = housing::plan_assign(5, &stock, &occupied);
+    assert_eq!(first, Assignment::Fallback(last));
+    assert_eq!(first, housing::plan_assign(5, &stock, &occupied));
+}
