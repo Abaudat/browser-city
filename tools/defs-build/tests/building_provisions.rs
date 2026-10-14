@@ -87,58 +87,53 @@ fn a_vacant_unit_and_a_dwelling_advertise_nothing_public() {
     }
 }
 
+const CAFE: &str = "provisions = [{ provision = \"food\", base_quality = 62 }, { provision = \"social\", base_quality = 63 }, { provision = \"employment\", base_quality = 50 }]";
+
+fn with_cafe(line: &str) -> Result<Defs, String> {
+    build(Some((CAFE, line)))
+}
+
 #[test]
 fn an_unknown_provision_name_is_named() {
-    let err = build(Some((
-        "professions = [\"barista\", \"server\"]",
-        "professions = [\"barista\", \"server\"]\nprovisions = [{ provision = \"nonexistent_need\", base_quality = 50 }]",
-    )))
-    .unwrap_err();
-    assert!(
-        err.contains("unknown provision 'nonexistent_need'") && err.contains("cafe"),
-        "{err}"
-    );
+    let err = with_cafe("provisions = [{ provision = \"nonexistent_need\", base_quality = 50 }, { provision = \"employment\", base_quality = 50 }]").unwrap_err();
+    assert!(err.contains("unknown provision 'nonexistent_need'") && err.contains("cafe"), "{err}");
 }
 
 #[test]
 fn a_duplicate_provision_on_one_type_is_named() {
-    let err = build(Some((
-        "professions = [\"barista\", \"server\"]",
-        "professions = [\"barista\", \"server\"]\nprovisions = [{ provision = \"food\", base_quality = 50 }, { provision = \"food\", base_quality = 60 }, { provision = \"employment\", base_quality = 50 }]",
-    )))
-    .unwrap_err();
+    let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 50 }, { provision = \"food\", base_quality = 60 }, { provision = \"employment\", base_quality = 50 }]").unwrap_err();
     assert!(err.contains("duplicate provision 'food'") && err.contains("cafe"), "{err}");
 }
 
 #[test]
 fn an_enterable_type_that_advertises_nothing_is_named() {
-    // `bank_branch` is enterable and no dwelling: with its provisions
-    // line gone the city's citizens would be blind to it.
-    let err = build(Some((
-        "professions = [\"bank_teller\", \"manager\", \"security_guard\", \"loan_officer\"]\nprovisions = [{ provision = \"employment\", base_quality = 50 }]",
-        "professions = [\"bank_teller\", \"manager\", \"security_guard\", \"loan_officer\"]",
-    )))
-    .unwrap_err();
-    assert!(err.contains("bank_branch") && err.contains("advertises no provision"), "{err}");
+    let err = with_cafe("provisions = []").unwrap_err();
+    assert!(err.contains("cafe") && err.contains("advertises no provision"), "{err}");
 }
 
 #[test]
-fn a_type_with_professions_must_advertise_employment_and_no_other_type_may() {
+fn a_type_with_professions_must_advertise_employment() {
+    let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 50 }]").unwrap_err();
+    assert!(err.contains("cafe") && err.contains("employment"), "{err}");
+}
+
+#[test]
+fn employment_on_a_type_with_no_professions_is_refused() {
     let err = build(Some((
-        "provisions = [{ provision = \"employment\", base_quality = 50 }]\n",
-        "provisions = [{ provision = \"food\", base_quality = 50 }]\n",
-    )));
-    // The first type carrying a lone employment entry is rewritten; the
-    // verdict names the missing employment or the surplus food.
-    let msg = err.unwrap_err();
-    assert!(msg.contains("employment"), "{msg}");
+        "key = \"vacant_unit\"",
+        "key = \"vacant_unit\"
+provisions = [{ provision = \"employment\", base_quality = 50 }]",
+    )))
+    .unwrap_err();
+    assert!(err.contains("vacant_unit"), "{err}");
 }
 
 #[test]
 fn a_dwelling_advertising_rest_is_refused() {
     let err = build(Some((
         "key = \"villa\"",
-        "key = \"villa\"\nprovisions = [{ provision = \"rest\", base_quality = 50 }]",
+        "key = \"villa\"
+provisions = [{ provision = \"rest\", base_quality = 50 }]",
     )))
     .unwrap_err();
     assert!(err.contains("villa") && err.contains("rest"), "{err}");
@@ -146,10 +141,6 @@ fn a_dwelling_advertising_rest_is_refused() {
 
 #[test]
 fn a_base_quality_past_one_hundred_is_refused() {
-    let err = build(Some((
-        "professions = [\"barista\", \"server\"]",
-        "professions = [\"barista\", \"server\"]\nprovisions = [{ provision = \"food\", base_quality = 101 }, { provision = \"employment\", base_quality = 50 }]",
-    )))
-    .unwrap_err();
+    let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 101 }, { provision = \"employment\", base_quality = 50 }]").unwrap_err();
     assert!(err.contains("base_quality") && err.contains("cafe"), "{err}");
 }
