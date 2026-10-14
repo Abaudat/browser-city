@@ -132,7 +132,10 @@ fn the_limit_and_the_radius_are_respected() {
     );
     // Radius 0 sees only the origin's own chunk.
     let own = near(&t, origin(0, 0, 0), &[0], code::FOOD, &query(0, 100));
-    assert_eq!(own.iter().map(|h| h.node_id).collect::<Vec<_>>(), vec![1000]);
+    assert_eq!(
+        own.iter().map(|h| h.node_id).collect::<Vec<_>>(),
+        vec![1000]
+    );
 }
 
 #[test]

@@ -40,7 +40,10 @@ impl QualityDial {
     pub fn from_balance(b: &[BalanceSeed]) -> QualityDial {
         let get = |k| i32::try_from(balance::value(b, k)).expect("bounded by the balance max");
         QualityDial {
-            weight_percent: balance::value(b, "generation.provision.quality_affluence_weight_percent"),
+            weight_percent: balance::value(
+                b,
+                "generation.provision.quality_affluence_weight_percent",
+            ),
             affluence_min: get("generation.neighbourhood.affluence_min"),
             affluence_max: get("generation.neighbourhood.affluence_max"),
         }
@@ -202,12 +205,7 @@ impl ProvisionTable {
             .nodes()
             .iter()
             .enumerate()
-            .map(|(i, n)| {
-                (
-                    node_ids[i],
-                    (*n, business_ids.get(i).copied().flatten()),
-                )
-            })
+            .map(|(i, n)| (node_ids[i], (*n, business_ids.get(i).copied().flatten())))
             .collect();
         ProvisionTable {
             by_chunk,

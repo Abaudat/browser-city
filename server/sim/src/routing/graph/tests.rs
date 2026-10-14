@@ -463,18 +463,32 @@ fn a_built_graph_carries_each_buildings_provisions_on_its_entrance() {
     for p in rows {
         assert_eq!(g.nodes()[p.node as usize].kind, NodeKind::Source);
     }
-    assert!(rows.windows(2).all(|w| (w[0].node, w[0].provision) < (w[1].node, w[1].provision)));
+    assert!(
+        rows.windows(2)
+            .all(|w| (w[0].node, w[0].provision) < (w[1].node, w[1].provision))
+    );
 }
 
 #[test]
 fn a_provision_row_off_a_source_node_is_refused() {
     let g = build(&[building(0, 10, 6)], &[], 1000);
-    let street = g.nodes().iter().position(|n| n.kind == NodeKind::Street).unwrap() as u32;
+    let street = g
+        .nodes()
+        .iter()
+        .position(|n| n.kind == NodeKind::Street)
+        .unwrap() as u32;
     let mut rows = g.provisions().to_vec();
-    rows.push(NodeProvision { node: street, provision: crate::codes::provision::FOOD, quality: 10 });
+    rows.push(NodeProvision {
+        node: street,
+        provision: crate::codes::provision::FOOD,
+        quality: 10,
+    });
     rows.sort();
     let bad = MacroGraph::from_parts_with_provisions(g.nodes().to_vec(), g.edges().to_vec(), rows);
-    assert!(matches!(bad.check(&floors()), Err(GraphError::ProvisionOffSource { .. })));
+    assert!(matches!(
+        bad.check(&floors()),
+        Err(GraphError::ProvisionOffSource { .. })
+    ));
 }
 
 #[test]
@@ -483,13 +497,17 @@ fn the_same_provision_twice_on_one_node_is_refused() {
     let mut rows = g.provisions().to_vec();
     rows.push(rows[0]);
     let bad = MacroGraph::from_parts_with_provisions(g.nodes().to_vec(), g.edges().to_vec(), rows);
-    assert!(matches!(bad.check(&floors()), Err(GraphError::BadProvisions { .. })));
+    assert!(matches!(
+        bad.check(&floors()),
+        Err(GraphError::BadProvisions { .. })
+    ));
 }
 
 #[test]
 fn a_workplace_without_employment_is_refused() {
     let g = build(&[building(0, 10, 6)], &[], 1000);
-    let bad = MacroGraph::from_parts_with_provisions(g.nodes().to_vec(), g.edges().to_vec(), Vec::new());
+    let bad =
+        MacroGraph::from_parts_with_provisions(g.nodes().to_vec(), g.edges().to_vec(), Vec::new());
     assert!(matches!(
         bad.check(&floors()),
         Err(GraphError::WorkplaceEmploymentMismatch { .. })

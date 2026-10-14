@@ -9659,7 +9659,10 @@ fn inv_provisions_are_rows_per_venue() {
                 "node {i}: advertises {got:?}, its type declares {want:?}"
             );
         }
-        ensure!(by_node.is_empty(), "provision rows on nodes the graph lacks");
+        ensure!(
+            by_node.is_empty(),
+            "provision rows on nodes the graph lacks"
+        );
         Ok(())
     });
 }

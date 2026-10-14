@@ -352,7 +352,10 @@ pub const NOT_MEASURED: &[(&str, &str)] = &[
     ("generation.plots.industrial_row_depth_cells", AUTHORED),
     ("generation.plots.industrial_width_max_cells", AUTHORED),
     ("generation.plots.industrial_width_min_cells", AUTHORED),
-    ("generation.provision.quality_affluence_weight_percent", TUNED),
+    (
+        "generation.provision.quality_affluence_weight_percent",
+        TUNED,
+    ),
     ("generation.plots.institutional_row_depth_cells", AUTHORED),
     ("generation.plots.institutional_width_max_cells", AUTHORED),
     ("generation.plots.institutional_width_min_cells", AUTHORED),
