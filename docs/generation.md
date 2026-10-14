@@ -1303,6 +1303,65 @@ look, not tuning, and hold from this document on:
   cadence), never uniform scatter -- noise reads as generated, rhythm
   reads as real.
 
+## Walk the district (A5 judgement, story 3.16)
+
+Seed `city.seed` (20260713), the one seed walked: the committed city,
+streamed from the module's own rows and walked on foot at the shipped
+speed with real key presses (`npm run test:e2e:review`; stills and the
+recording are `docs/generation/walk/`, the route and timings
+`docs/spikes/3.16-walk-the-district.md`). Any seed is walked with
+`scripts/dev/walk-district.sh <seed>`. The district was walked without
+citizens (Epic 5): that absence is set aside, and nothing was faked to fill it.
+
+**Verdict on the built environment: not yet worth walking.** The geometry
+earns the walk -- arterials read wider than side streets, a lamp and a
+planter cadence runs the length of a pavement, the core packs tighter than
+the edge, and the route a player takes is 1.01-1.05 of the straight line --
+but the four things below fail the five tests Artie set, and each reopens
+content rather than being accepted for now.
+
+**Verdict on the generator, apart from the empty city: the layout rules hold.**
+Edge-to-core-to-edge is 527 steps for a 509-cell crossing (stretch 1.04),
+every cell of the site and margin has one ground row, 100+ buildings are
+enterable, furnished and reachable from the arrival (`district_world.rs`).
+
+Findings, each disposed:
+
+- **Roads stop at the site boundary** (north edge, from the arrival
+  street, `02-first-street-screen`): the carriageway and pavement end on a
+  hard line and the margin beyond is plain open ground. *Reopens* the
+  ground catalogue: the road and pavement ground rows continue through the
+  margin (`city.ground.margin_cells`), content in `defs/`, no generator branch.
+- **Open ground is one flat green** between buildings and past the site
+  (`08-site-edge`, `04-affluence-step`): no void and no seam, but nothing
+  from `2_City_Terrains` varies it. *Accepted* for the edge (it is complete
+  and never the canvas background); *reopens* `city.ground.open_object_id`
+  as a terrain choice for block interiors.
+- **Facades do not vary along a block face and building age has no
+  carrier** (`04`, `05`, `07`): every wall is the one flat grey swatch, so
+  the age step at (158, 381) cannot be told from either side. *Filed as a
+  finding against the rule content*: the facade-variant carrier
+  (`4_Generic_Buildings`) is not realised; age is not legible on the walk.
+  Nothing was substituted.
+- **The affluence step reads, the age step does not** (`04-affluence-step`
+  at (329, 256), sharpest affluence step 71; `07-age-step`, sharpest age
+  step 82): shop mix and shuttered share differ across the arterial; the
+  facades do not. See the previous finding.
+- **No container, stair or floor transition exists in the district**:
+  the generator places none, so what the street fixture proved for
+  transitions, containers and the footbridge is not re-proven. *Claims* the
+  must-never-be-seen row for a district with no vertical connection until a
+  rule story places stairs.
+- **Interior walls are flat swatches and a building's front is drawn
+  grey from outside** (`03`, `06`): readable, not yet attractive.
+  *Accepted* until the facade carrier lands.
+- **Core direction is legible only by density and road width**: from a
+  random screen the core is told by the denser, wider-roaded frames; no
+  sharper cue exists and none is added (no minimap, no marker).
+- **A walker on screen over a chunk the bubble has not yet held**
+  (`l3-agreement.spec.ts`, fixme): one frame at a chunk border, rate under
+  0.2%. *Reopens* the bubble margin, tracked with the L3 story.
+
 ## Targets
 
 The Scale Baseline (`docs/gdd.md`, NFR14) is the acceptance target for

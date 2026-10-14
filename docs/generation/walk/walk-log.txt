@@ -1,0 +1,9 @@
+01-arrival-dwelling-interior: wanted 436,5; player at {"x":436.5,"y":5.5}
+02-first-street-screen: wanted 429,8; player at {"x":429.49673999999914,"y":8.506520000000023}
+03-shop-interior: wanted 436,35; player at {"x":437.5263000000001,"y":35.49238000000007}
+04-affluence-step: wanted 329,256; player at {"x":329.47373999999365,"y":256.51054000000613}
+05-core: wanted 168,296; player at {"x":168.47686000000405,"y":296.51247999999555}
+06-workplace-interior: wanted 307,370; player at {"x":306.52091999999743,"y":369.4393999999749}
+07-age-step: wanted 158,381; player at {"x":158.4668600000044,"y":381.50221999997285}
+08-site-edge: wanted 2,296; player at {"x":2.4562800000086815,"y":296.47551999996404}
+walked 639 s of wall clock over 8 stops

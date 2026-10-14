@@ -49,17 +49,18 @@ function nearestObject(from: Cell, defIds: readonly number[]): Cell {
   return best.c;
 }
 
-/** The pavement cell nearest `from` a body fits in: a street, not open ground. */
+/** A street cell nearest `from`: the free cell beside the nearest lamppost
+ * (def 4), which stands on the pavement. */
 function pavementNear(from: Cell): Cell {
-  const pavement = 10;
-  let best: { c: Cell; d: number } | undefined;
-  for (const o of district.objects) {
-    if (o.floor !== 0 || o.defId !== pavement || !fits(o.x, o.y)) continue;
-    const d = Math.abs(o.x - from.x) + Math.abs(o.y - from.y);
-    if (!best || d < best.d) best = { c: { x: o.x, y: o.y }, d };
-  }
-  if (!best) throw new Error("no pavement cell");
-  return best.c;
+  const lamp = nearestObject(from, [4]);
+  const beside = [
+    { x: lamp.x, y: lamp.y + 1 },
+    { x: lamp.x + 1, y: lamp.y },
+    { x: lamp.x - 1, y: lamp.y },
+    { x: lamp.x, y: lamp.y - 1 },
+  ].find((c) => fits(c.x, c.y));
+  if (!beside) throw new Error("no free cell beside the lamppost");
+  return beside;
 }
 
 test("the committed district, walked end to end", async ({ page }) => {
