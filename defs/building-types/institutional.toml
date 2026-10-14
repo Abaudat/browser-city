@@ -33,7 +33,6 @@
 [[building_type]]
 id = 35
 key = "council"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["front_hall", "office"]
 optional_rooms = ["office", "office", "stock_room"]
 tags = ["municipal_service", "council"]
@@ -50,7 +49,6 @@ professions = ["clerk", "administrator", "councillor", "receptionist"]
 [[building_type]]
 id = 36
 key = "hospital"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["front_hall", "ward", "office"]
 optional_rooms = ["ward", "ward", "office"]
 tags = ["municipal_service", "hospital"]
@@ -71,7 +69,6 @@ professions = ["nurse", "orderly", "receptionist", "surgeon", "paramedic", "doct
 [[building_type]]
 id = 37
 key = "welfare_office"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["front_hall", "office"]
 optional_rooms = ["office", "stock_room"]
 tags = ["municipal_service", "welfare_office"]
@@ -87,7 +84,7 @@ professions = ["caseworker", "clerk", "counsellor", "support_worker"]
 [[building_type]]
 id = 38
 key = "shelter"
-provisions = [{ provision = "rest", base_quality = 40 }, { provision = "employment", base_quality = 50 }]
+provisions = [{ provision = "rest", base_quality = 40 }]
 rooms = ["front_hall", "dormitory", "office"]
 optional_rooms = ["dormitory", "stock_room"]
 tags = ["municipal_service", "shelter"]
@@ -103,7 +100,6 @@ professions = ["attendant", "cook", "support_worker", "caseworker", "counsellor"
 [[building_type]]
 id = 39
 key = "school"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["front_hall", "classroom", "office"]
 optional_rooms = ["classroom", "classroom"]
 tags = []
@@ -118,7 +114,6 @@ professions = ["teacher", "teaching_assistant", "administrator", "cleaner", "lib
 [[building_type]]
 id = 40
 key = "clinic"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["front_hall", "ward", "office"]
 optional_rooms = ["ward", "office"]
 tags = []
@@ -133,7 +128,7 @@ professions = ["nurse", "receptionist", "doctor", "pharmacist", "orderly", "admi
 [[building_type]]
 id = 41
 key = "library"
-provisions = [{ provision = "pursuit", base_quality = 60 }, { provision = "employment", base_quality = 50 }]
+provisions = [{ provision = "pursuit", base_quality = 60 }]
 rooms = ["front_hall", "classroom", "office"]
 optional_rooms = ["classroom", "stock_room"]
 tags = []
@@ -148,7 +143,6 @@ professions = ["librarian", "clerk", "archivist", "custodian", "receptionist"]
 [[building_type]]
 id = 42
 key = "police_station"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["front_hall", "office"]
 optional_rooms = ["office", "stock_room", "office", "office"]
 tags = []
@@ -163,7 +157,6 @@ professions = ["officer", "administrator", "detective", "dispatcher", "reception
 [[building_type]]
 id = 43
 key = "fire_station"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["front_hall", "workroom"]
 optional_rooms = ["office", "stock_room", "workroom", "office"]
 tags = []
@@ -178,7 +171,6 @@ professions = ["firefighter", "administrator", "paramedic", "dispatcher", "recep
 [[building_type]]
 id = 44
 key = "transit_office"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["front_hall", "office"]
 optional_rooms = ["office", "stock_room", "office", "office"]
 tags = []

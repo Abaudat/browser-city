@@ -349,7 +349,13 @@ fn check_building_type_profession_refs(
 /// in the codes golden's `provision` set, appears once per type, carries a
 /// base quality in `0..=100`; a dwelling never advertises `rest` (a home is
 /// its citizen's own row); an enterable, non-dwelling type advertises
-/// something; and `employment` is advertised iff the type has professions.
+/// something -- a non-empty `professions` list counts, because it derives
+/// the `employment` entry (never authored, [`EMPLOYMENT_BASE_QUALITY`]).
+/// The base quality of the derived `employment` entry. It only says "there
+/// is work here": the money bar's real number is the post's wage
+/// (stories 7.5, 13.x).
+pub const EMPLOYMENT_BASE_QUALITY: u32 = 50;
+
 fn check_building_type_provisions(
     entries: &[BuildingTypeEntry],
     code_tables: &CodeTables,
@@ -360,6 +366,11 @@ fn check_building_type_provisions(
         let key = &e.key.value;
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for p in &e.provisions {
+            if p.provision == "employment" {
+                return fail(format!(
+                    "building type '{key}' authors employment in provisions: it is derived from a non-empty professions list"
+                ));
+            }
             if !set.contains_key(p.provision.as_str()) {
                 return fail(format!(
                     "building type '{key}' names unknown provision '{}' in provisions",
@@ -385,20 +396,9 @@ fn check_building_type_provisions(
                 "building type '{key}' is a dwelling and advertises rest: a home is its citizen's own row, never an offer to the street"
             ));
         }
-        if e.provisions.is_empty() && !e.rooms.is_empty() && !dwelling {
+        if e.provisions.is_empty() && e.professions.is_empty() && !e.rooms.is_empty() && !dwelling {
             return fail(format!(
                 "building type '{key}' is enterable and advertises no provision: the city's citizens would be blind to it"
-            ));
-        }
-        let employs = seen.contains("employment");
-        if !e.professions.is_empty() && !employs {
-            return fail(format!(
-                "building type '{key}' has professions but advertises no employment"
-            ));
-        }
-        if e.professions.is_empty() && employs {
-            return fail(format!(
-                "building type '{key}' advertises employment but has no professions"
             ));
         }
     }
@@ -3777,6 +3777,12 @@ pub fn validate(
                             p.base_quality,
                         )
                     })
+                    .chain((!b.professions.is_empty()).then(|| {
+                        (
+                            code_tables.set("provision")["employment"],
+                            EMPLOYMENT_BASE_QUALITY,
+                        )
+                    }))
                     .collect();
                 v.sort_unstable();
                 v

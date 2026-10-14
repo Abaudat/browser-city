@@ -36,8 +36,8 @@ override, never fill"); `professions` (`{ profession = "<key>", headcount
 (`municipal_service`, `dwelling`) or from `professions` being non-empty
 -- never a stored category. `provisions` (`{ provision = "<name>", base_quality = <0..=100> }`
 entries, names from `sim::codes::provision`) is what the type advertises to the city's need
-bars: one entry per provision, `employment` iff `professions` is non-empty, no `rest` on a
-dwelling, and an enterable non-dwelling type must advertise at least one.
+bars: one entry per provision, no `rest` on a dwelling, and an enterable non-dwelling type must
+advertise at least one. `employment` is never authored: a non-empty `professions` list derives it.
 
 ## Room types
 

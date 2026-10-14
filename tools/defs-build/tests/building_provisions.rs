@@ -102,30 +102,47 @@ fn with_cafe(line: &str) -> Result<Defs, String> {
 
 #[test]
 fn an_unknown_provision_name_is_named() {
-    let err = with_cafe("provisions = [{ provision = \"nonexistent_need\", base_quality = 50 }]").unwrap_err();
-    assert!(err.contains("unknown provision 'nonexistent_need'") && err.contains("cafe"), "{err}");
+    let err = with_cafe("provisions = [{ provision = \"nonexistent_need\", base_quality = 50 }]")
+        .unwrap_err();
+    assert!(
+        err.contains("unknown provision 'nonexistent_need'") && err.contains("cafe"),
+        "{err}"
+    );
 }
 
 #[test]
 fn a_duplicate_provision_on_one_type_is_named() {
     let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 50 }, { provision = \"food\", base_quality = 60 }]").unwrap_err();
-    assert!(err.contains("duplicate provision 'food'") && err.contains("cafe"), "{err}");
+    assert!(
+        err.contains("duplicate provision 'food'") && err.contains("cafe"),
+        "{err}"
+    );
 }
 
 #[test]
 fn a_type_with_no_professions_and_no_provisions_is_blind_and_named() {
     let err = build_with(&[
         (CAFE, "provisions = []"),
-        ("professions = [\"barista\", \"server\"]", "professions = []"),
+        (
+            "professions = [\"barista\", \"server\"]",
+            "professions = []",
+        ),
     ])
     .unwrap_err();
-    assert!(err.contains("cafe") && err.contains("advertises no provision"), "{err}");
+    assert!(
+        err.contains("cafe") && err.contains("advertises no provision"),
+        "{err}"
+    );
 }
 
 #[test]
 fn employment_is_derived_from_professions_and_never_authored() {
-    let err = with_cafe("provisions = [{ provision = \"employment\", base_quality = 50 }]").unwrap_err();
-    assert!(err.contains("cafe") && err.contains("employment") && err.contains("professions"), "{err}");
+    let err =
+        with_cafe("provisions = [{ provision = \"employment\", base_quality = 50 }]").unwrap_err();
+    assert!(
+        err.contains("cafe") && err.contains("employment") && err.contains("professions"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -152,5 +169,8 @@ provisions = [{ provision = \"rest\", base_quality = 50 }]",
 #[test]
 fn a_base_quality_past_one_hundred_is_refused() {
     let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 101 }]").unwrap_err();
-    assert!(err.contains("base_quality") && err.contains("cafe"), "{err}");
+    assert!(
+        err.contains("base_quality") && err.contains("cafe"),
+        "{err}"
+    );
 }

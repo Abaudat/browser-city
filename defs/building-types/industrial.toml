@@ -13,7 +13,6 @@
 [[building_type]]
 id = 26
 key = "workshop"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["workroom", "stock_room"]
 optional_rooms = ["office", "stock_room", "workroom", "office"]
 tags = ["workshop"]
@@ -28,7 +27,6 @@ professions = ["machinist", "foreman"]
 [[building_type]]
 id = 27
 key = "warehouse"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["stock_room", "office"]
 optional_rooms = ["workroom", "office", "stock_room", "stock_room", "office", "workroom"]
 tags = ["warehouse"]
@@ -43,7 +41,6 @@ professions = ["warehouse_worker", "forklift_operator", "supervisor", "driver"]
 [[building_type]]
 id = 28
 key = "depot"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["workroom", "office"]
 optional_rooms = ["stock_room", "office", "workroom", "stock_room"]
 tags = ["municipal_service", "depot"]
@@ -59,7 +56,6 @@ professions = ["dispatcher", "mechanic", "sanitation_worker", "driver"]
 [[building_type]]
 id = 29
 key = "bottling_plant"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["workroom", "stock_room"]
 optional_rooms = ["office", "stock_room", "workroom", "office"]
 tags = ["workshop"]
@@ -74,7 +70,6 @@ professions = ["machine_operator", "quality_inspector", "warehouse_worker", "sup
 [[building_type]]
 id = 30
 key = "recycling_facility"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["workroom", "stock_room"]
 optional_rooms = ["office", "stock_room", "workroom", "office"]
 tags = ["workshop"]
@@ -89,7 +84,6 @@ professions = ["sorter", "machine_operator", "forklift_operator", "supervisor", 
 [[building_type]]
 id = 31
 key = "print_works"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["workroom", "stock_room"]
 optional_rooms = ["office", "stock_room", "workroom", "office"]
 tags = ["workshop"]
@@ -104,7 +98,6 @@ professions = ["printer_operator", "bookbinder", "machine_operator"]
 [[building_type]]
 id = 32
 key = "vehicle_repair_garage"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["workroom", "stock_room"]
 optional_rooms = ["office", "stock_room", "workroom", "office"]
 tags = ["workshop"]
@@ -119,7 +112,6 @@ professions = ["mechanic", "receptionist", "parts_clerk"]
 [[building_type]]
 id = 33
 key = "builders_yard"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["workroom", "stock_room"]
 optional_rooms = ["office", "stock_room", "workroom", "office"]
 tags = ["workshop"]
@@ -134,7 +126,6 @@ professions = ["yard_worker", "forklift_operator", "sales_assistant", "foreman",
 [[building_type]]
 id = 34
 key = "food_plant"
-provisions = [{ provision = "employment", base_quality = 50 }]
 rooms = ["workroom", "stock_room"]
 optional_rooms = ["office", "stock_room", "workroom", "office"]
 tags = ["workshop"]
