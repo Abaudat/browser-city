@@ -130,9 +130,9 @@ fn the_arrival_cell_is_a_walkable_floor_zero_cell_inside_a_dwelling() {
 /// Shortest walk length (4-neighbour steps over standable floor-0 cells)
 /// from `from` to `to`, `None` when unreachable.
 fn walk_len(district: &District, from: (i32, i32), to: (i32, i32)) -> Option<u32> {
-    use std::collections::{HashMap, VecDeque};
+    use std::collections::{BTreeMap, VecDeque};
     let walk = district.walkability(0);
-    let mut dist: HashMap<(i32, i32), u32> = HashMap::new();
+    let mut dist: BTreeMap<(i32, i32), u32> = BTreeMap::new();
     let mut queue = VecDeque::new();
     dist.insert(from, 0);
     queue.push_back(from);
@@ -153,9 +153,9 @@ fn walk_len(district: &District, from: (i32, i32), to: (i32, i32)) -> Option<u32
 }
 
 /// Every floor-0 cell walkable from `from`.
-fn flood(district: &District, from: (i32, i32)) -> std::collections::HashSet<(i32, i32)> {
+fn flood(district: &District, from: (i32, i32)) -> std::collections::BTreeSet<(i32, i32)> {
     let walk = district.walkability(0);
-    let mut seen = std::collections::HashSet::from([from]);
+    let mut seen = std::collections::BTreeSet::from([from]);
     let mut stack = vec![from];
     while let Some(c) = stack.pop() {
         for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
@@ -187,9 +187,9 @@ fn standable_near(district: &District, want: (i32, i32)) -> (i32, i32) {
     panic!("no standable cell near {want:?}");
 }
 
-/// A route may be this many times the straight Manhattan distance: a grid
-/// street network detours, a mid-block cut cannot.
-const ROUTE_STRETCH_MAX: f64 = 1.6;
+/// A route may be this many percent of the straight Manhattan distance: a
+/// grid street network detours, a mid-block cut cannot.
+const ROUTE_STRETCH_MAX_PCT: u64 = 160;
 
 #[test]
 fn a_walk_crosses_the_site_edge_to_core_to_opposite_edge_within_the_stretch() {
@@ -203,14 +203,20 @@ fn a_walk_crosses_the_site_edge_to_core_to_opposite_edge_within_the_stretch() {
     let west = standable_near(&district, (site.x0 + 1, mid_y));
     let east = standable_near(&district, (site.x1 - 2, mid_y));
     let core = standable_near(&district, (px, py));
-    let manhattan = |a: (i32, i32), b: (i32, i32)| ((a.0 - b.0).abs() + (a.1 - b.1).abs()) as f64;
+    let manhattan = |a: (i32, i32), b: (i32, i32)| {
+        u64::from(
+            ((a.0 - b.0).abs() + (a.1 - b.1).abs())
+                .max(1)
+                .unsigned_abs(),
+        )
+    };
     for (a, b) in [(west, core), (core, east), (west, east)] {
         let len = walk_len(&district, a, b).unwrap_or_else(|| panic!("{a:?} cannot reach {b:?}"));
-        let stretch = f64::from(len) / manhattan(a, b).max(1.0);
-        println!("route {a:?}->{b:?}: {len} steps, stretch {stretch:.2}");
+        let stretch_pct = u64::from(len) * 100 / manhattan(a, b);
+        println!("route {a:?}->{b:?}: {len} steps, {stretch_pct}% of straight");
         assert!(
-            stretch <= ROUTE_STRETCH_MAX,
-            "{a:?}->{b:?} stretch {stretch:.2}"
+            stretch_pct <= ROUTE_STRETCH_MAX_PCT,
+            "{a:?}->{b:?} {stretch_pct}%"
         );
     }
 }
@@ -221,7 +227,7 @@ fn at_least_a_hundred_buildings_are_enterable_furnished_and_reachable_from_arriv
     let content = GenerationContent::committed();
     let arrival = district.arrival_cell(&cfg, &content).unwrap();
     let reached = flood(&district, arrival);
-    let placed_cells: std::collections::HashSet<(i32, i32)> =
+    let placed_cells: std::collections::BTreeSet<(i32, i32)> =
         rows.placed.iter().map(|p| (p.x, p.y)).collect();
     let mut good = 0;
     for (_, _, interior) in district.interiors.laid() {

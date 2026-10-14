@@ -61,4 +61,9 @@ describe("the position dial", () => {
     expect(citizenTxAt20000).toBe(168);
     expect(PLAYERS * dial.max).toBeGreaterThan(citizenTxAt20000);
   });
+
+  it("names the missing key when the dial is absent", () => {
+    const without = { ...defs, balance: defs.balance.filter((b) => b.key !== dial.key) };
+    expect(() => loadPositionConfig(without)).toThrow("net.player_position_hz");
+  });
 });
