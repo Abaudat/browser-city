@@ -62,6 +62,11 @@ fn frozen_config() -> GenerationConfig {
             floor_change_penalty_milliminutes: 1000,
         },
         graph_internal_node_min_interior_cells: 100,
+        provision_quality: sim::routing::provision::QualityDial {
+            weight_percent: 40,
+            affluence_min: 0,
+            affluence_max: 100,
+        },
         coarse_cell_size_cells: 16,
         land_use_min_leaf_cells: 4,
         land_use_max_leaf_cells: 10,

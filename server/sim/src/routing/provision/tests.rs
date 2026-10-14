@@ -1,7 +1,7 @@
 use super::*;
 use crate::codes::provision as code;
 use crate::generated::defs;
-use crate::routing::graph::{Node, NodeKind, SourceRef};
+use crate::routing::graph::{Node, NodeKind, NodeProvision, SourceRef};
 use proptest::prelude::*;
 
 fn dial() -> QualityDial {
@@ -208,7 +208,7 @@ proptest! {
         let q = query(radius, limit);
         let got = near(&t, origin(ox, oy, 0), &[0, 1], code::FOOD, &q);
         let mut want: Vec<(Milliminutes, u64)> = pts.iter().enumerate()
-            .filter(|(_, &(x, y, _))| {
+            .filter(|&(_, &(x, y, _))| {
                 let r = radius as i32;
                 (chunk_of(x) - chunk_of(ox)).abs() <= r
                     && (chunk_of(y) - chunk_of(oy)).abs() <= r

@@ -575,6 +575,22 @@ impl District {
                     workplace: by_plot
                         .get(&plot)
                         .is_some_and(|d| building_types::is_workplace(d)),
+                    provisions: by_plot.get(&plot).map_or_else(Vec::new, |d| {
+                        let affluence = self.skeleton.plots.plots()[plot as usize].affluence;
+                        d.provisions
+                            .iter()
+                            .map(|&(code, base)| {
+                                (
+                                    code,
+                                    crate::routing::provision::quality(
+                                        base,
+                                        affluence,
+                                        &cfg.provision_quality,
+                                    ),
+                                )
+                            })
+                            .collect()
+                    }),
                     front: i.front,
                     entrance: (entrance.x, entrance.y),
                     approach: i.approach.clone(),
@@ -690,6 +706,9 @@ pub struct GenerationConfig {
     /// earns an internal node.
     pub routing_rates: crate::routing::estimate::Rates,
     pub graph_internal_node_min_interior_cells: i64,
+    /// Story 3.10: how a premises' provision quality follows its
+    /// neighbourhood's affluence.
+    pub provision_quality: crate::routing::provision::QualityDial,
 
     pub coarse_cell_size_cells: i32,
     pub land_use_min_leaf_cells: i32,
@@ -1043,6 +1062,7 @@ impl GenerationConfig {
         let cfg = GenerationConfig {
             site_extent_cells: get(balance, "generation.site_extent_cells") as i32,
             routing_rates: crate::routing::estimate::Rates::from_balance(balance),
+            provision_quality: crate::routing::provision::QualityDial::from_balance(balance),
             graph_internal_node_min_interior_cells: get(
                 balance,
                 "routing.graph.internal_node_min_interior_cells",
@@ -1721,6 +1741,12 @@ mod tests {
         vec![
             seed("generation.site_extent_cells", 512, 64, 2048),
             seed("movement.walk_speed_millicells_per_s", 2200, 100, 20000),
+            seed(
+                "generation.provision.quality_affluence_weight_percent",
+                40,
+                0,
+                200,
+            ),
             seed("routing.speed_percent.walk", 100, 100, 100),
             seed("routing.speed_percent.bike", 200, 100, 1000),
             seed("routing.speed_percent.transit", 300, 100, 1000),

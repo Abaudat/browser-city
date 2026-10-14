@@ -40,6 +40,11 @@ fn building(plot: u32, x: i32, room_w: i32) -> BuildingInput {
     BuildingInput {
         plot,
         workplace: plot.is_multiple_of(2),
+        provisions: if plot.is_multiple_of(2) {
+            vec![(crate::codes::provision::EMPLOYMENT, 50)]
+        } else {
+            vec![(crate::codes::provision::FOOD, 40)]
+        },
         front: Side::South,
         entrance: (x, 10),
         approach: (11..=18).map(|y| (x, y)).collect(),
@@ -444,5 +449,63 @@ fn a_diagonal_edge_whose_corner_or_arm_is_blocked_names_that_edge() {
             Err(GraphError::CornerBlocked { edge: 0 }),
             "wall at ({x}, {y})"
         );
+    }
+}
+
+// ---- Story 3.10: provisions ride on source nodes ----
+
+#[test]
+fn a_built_graph_carries_each_buildings_provisions_on_its_entrance() {
+    let g = build(&[building(0, 10, 6), building(1, 20, 6)], &[], 1000);
+    g.check(&floors()).unwrap();
+    let rows = g.provisions();
+    assert_eq!(rows.len(), 2);
+    for p in rows {
+        assert_eq!(g.nodes()[p.node as usize].kind, NodeKind::Source);
+    }
+    assert!(rows.windows(2).all(|w| (w[0].node, w[0].provision) < (w[1].node, w[1].provision)));
+}
+
+#[test]
+fn a_provision_row_off_a_source_node_is_refused() {
+    let g = build(&[building(0, 10, 6)], &[], 1000);
+    let street = g.nodes().iter().position(|n| n.kind == NodeKind::Street).unwrap() as u32;
+    let mut rows = g.provisions().to_vec();
+    rows.push(NodeProvision { node: street, provision: crate::codes::provision::FOOD, quality: 10 });
+    rows.sort();
+    let bad = MacroGraph::from_parts_with_provisions(g.nodes().to_vec(), g.edges().to_vec(), rows);
+    assert!(matches!(bad.check(&floors()), Err(GraphError::ProvisionOffSource { .. })));
+}
+
+#[test]
+fn the_same_provision_twice_on_one_node_is_refused() {
+    let g = build(&[building(0, 10, 6)], &[], 1000);
+    let mut rows = g.provisions().to_vec();
+    rows.push(rows[0]);
+    let bad = MacroGraph::from_parts_with_provisions(g.nodes().to_vec(), g.edges().to_vec(), rows);
+    assert!(matches!(bad.check(&floors()), Err(GraphError::BadProvisions { .. })));
+}
+
+#[test]
+fn a_workplace_without_employment_is_refused() {
+    let g = build(&[building(0, 10, 6)], &[], 1000);
+    let bad = MacroGraph::from_parts_with_provisions(g.nodes().to_vec(), g.edges().to_vec(), Vec::new());
+    assert!(matches!(
+        bad.check(&floors()),
+        Err(GraphError::WorkplaceEmploymentMismatch { .. })
+    ));
+}
+
+#[test]
+fn provision_rows_carry_the_node_id_and_its_chunk() {
+    let g = build(&[building(0, 10, 6)], &[], 1000);
+    let ids: Vec<u64> = (500..500 + g.nodes().len() as u64).collect();
+    let rows = g.provision_rows(&ids);
+    assert_eq!(rows.len(), g.provisions().len());
+    for (r, p) in rows.iter().zip(g.provisions()) {
+        let n = &g.nodes()[p.node as usize];
+        assert_eq!(r.node_id, ids[p.node as usize]);
+        assert_eq!(r.chunk_key, crate::world::chunk_key(n.x, n.y, n.floor));
+        assert_eq!((r.provision, r.quality), (p.provision, p.quality));
     }
 }
