@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "2acfae0f03ff15ff",
+  "defs_version": "aa481bcf8789461b",
   "collider_subcells_per_cell": 16,
   "position_units_per_cell": 256,
   "name_max_chars": 24,
@@ -384,7 +384,7 @@
     { "key": "routing.floor_change_penalty_milliminutes", "max": 600000, "min": 0, "value": 1000 },
     { "key": "routing.graph.internal_node_min_interior_cells", "max": 100000, "min": 1, "value": 100 },
     { "key": "routing.provision.max_results", "max": 1000, "min": 1, "value": 16 },
-    { "key": "routing.provision.query_radius_minutes", "max": 600, "min": 1, "value": 20 },
+    { "key": "routing.provision.query_radius_minutes", "max": 18, "min": 1, "value": 15 },
     { "key": "routing.search.node_budget", "max": 100000, "min": 1000, "value": 12000 },
     { "key": "routing.speed_percent.bike", "max": 1000, "min": 100, "value": 200 },
     { "key": "routing.speed_percent.transit", "max": 1000, "min": 100, "value": 300 },

@@ -52,9 +52,9 @@ max = 100000
 # from the asking point in the asker's own mode, the city looks for a
 # provision. Minutes, never cells: a faster mode widens the same radius.
 key = "routing.provision.query_radius_minutes"
-value = 20
+value = 15
 min = 1
-max = 600
+max = 18
 
 [[balance]]
 # Provision query (story 3.10): the most hits one query returns, nearest by

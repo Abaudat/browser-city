@@ -431,14 +431,21 @@ fn provision_index_at_the_1024_growth_target_is_chunk_bounded() {
         floor: o.floor,
     };
     table.reset_visits();
-    let hits = near(&table, origin, &[0], 9_999, TransportMode::Walk, &q);
-    assert!(hits.is_empty());
-    // The window the radius reaches, a chunk wider at each end at most.
-    let cells = sim::routing::provision::radius_cells(&q.rates, TransportMode::Walk, q.radius);
-    let side = 2 * (cells as usize).div_ceil(sim::world::CHUNK_SIZE as usize) + 2;
-    assert!(
-        table.chunk_visits() <= side * side,
-        "{} chunk lookups for a {side} x {side} window",
-        table.chunk_visits()
-    );
+    for mode in [
+        TransportMode::Walk,
+        TransportMode::Bike,
+        TransportMode::Transit,
+    ] {
+        table.reset_visits();
+        let hits = near(&table, origin, &[0], 9_999, mode, &q);
+        assert!(hits.is_empty());
+        let cells = sim::routing::provision::radius_cells(&q.rates, mode, q.radius);
+        let bound = sim::routing::provision::window_chunks_bound(cells);
+        assert!(
+            table.chunk_visits() as u64 <= bound
+                && bound <= sim::routing::provision::MAX_QUERY_WINDOW_CHUNKS,
+            "{mode:?}: {} chunk lookups, bound {bound}",
+            table.chunk_visits()
+        );
+    }
 }

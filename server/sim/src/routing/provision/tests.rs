@@ -219,6 +219,34 @@ fn quality_is_clamped_and_moves_with_affluence() {
     );
 }
 
+/// No dial retune inside its own bounds turns a query into a table scan:
+/// at the balance maxima of the radius and of every mode's percent, the
+/// window stays under the committed ceiling.
+#[test]
+fn the_window_stays_under_the_ceiling_at_every_dial_maximum() {
+    let max = |k: &str| defs::BALANCE.iter().find(|b| b.key == k).unwrap().max;
+    let committed = rates();
+    let at_max = Rates {
+        walk_percent: max("routing.speed_percent.walk"),
+        bike_percent: max("routing.speed_percent.bike"),
+        transit_percent: max("routing.speed_percent.transit"),
+        ..committed
+    };
+    let radius = minutes(max("routing.provision.query_radius_minutes"));
+    for mode in [
+        TransportMode::Walk,
+        TransportMode::Bike,
+        TransportMode::Transit,
+    ] {
+        let cells = radius_cells(&at_max, mode, radius);
+        assert!(
+            window_chunks_bound(cells) <= MAX_QUERY_WINDOW_CHUNKS,
+            "{mode:?}: {cells} cells is {} chunks",
+            window_chunks_bound(cells)
+        );
+    }
+}
+
 fn edge_biased() -> impl Strategy<Value = i32> {
     prop_oneof![
         -35i32..=-29,

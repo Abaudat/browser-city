@@ -27,6 +27,20 @@ use crate::world::{CHUNK_SIZE, checked_chunk_key, chunk_coord};
 /// `route_provision` row ceiling derives from it.
 pub const MAX_PROVISIONS_PER_SOURCE: u64 = 6;
 
+/// The most chunks one provision query may visit on one floor, whatever the
+/// dials: `routing.provision.query_radius_minutes` and the mode percents are
+/// bounded so that their balance maxima stay under it (a `provision` test
+/// evaluates them), so no retune can turn a query into a table scan.
+pub const MAX_QUERY_WINDOW_CHUNKS: u64 = 4096;
+
+/// An upper bound on the chunks [`near`] visits per floor for a radius of
+/// `cells`: the window is at most `2 * ceil(cells / CHUNK_SIZE) + 2` chunks a
+/// side.
+pub fn window_chunks_bound(cells: i32) -> u64 {
+    let side = 2 * (cells.max(0) as u64).div_ceil(CHUNK_SIZE as u64) + 2;
+    side * side
+}
+
 /// The top of the quality band: `0..=QUALITY_MAX`.
 pub const QUALITY_MAX: u32 = 100;
 
