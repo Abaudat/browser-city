@@ -76,7 +76,10 @@ const sides: Side[] = pairings.flatMap((p) => {
 });
 
 /** Every walk of one side; the failures are collected, never thrown on the first. */
-function sweepSide(side: Side) {
+/** The sweep is cut into `SLICES` interleaved parts of the starts, each a
+ * test of its own, so none comes near the unit-test duration limit. */
+const SLICES = 4;
+function sweepSide(side: Side, slice: number) {
   const perp = { x: -side.direction.y, y: side.direction.x };
   const clear = (cx: number, feet: number) => isBodyClear(world, config, side.floor, cx, feet);
   const blockedAhead = (cx: number, feet: number) =>
@@ -94,7 +97,8 @@ function sweepSide(side: Side) {
   let excluded = 0;
   let wallPressed = 0;
   const back = { x: -side.direction.x, y: -side.direction.y };
-  for (const { cx, feet } of starts) {
+  for (const [index, { cx, feet }] of starts.entries()) {
+    if (index % SLICES !== slice) continue;
     if (blockedAhead(cx, feet)) {
       excluded++;
       continue;
@@ -137,29 +141,36 @@ describe("transitions are reachable from every standable approach (story 15.20)"
     expect(floors.has(STREET_FLOOR) && floors.has(SUBWAY_FLOOR)).toBe(true);
   });
 
-  const outs = new Map<Side, ReturnType<typeof sweepSide>>();
-  const sweep = (side: Side) => {
-    const known = outs.get(side);
+  const outs = new Map<string, ReturnType<typeof sweepSide>>();
+  const sweep = (side: Side, slice: number) => {
+    const key = `${side.name}#${slice}`;
+    const known = outs.get(key);
     if (known) return known;
-    const out = sweepSide(side);
-    outs.set(side, out);
+    const out = sweepSide(side, slice);
+    outs.set(key, out);
     return out;
   };
+  const slices = Array.from({ length: SLICES }, (_, i) => i);
 
   describe("each side of every pairing: every standable start crosses, and walks back", () => {
     for (const side of sides) {
-      it(`${side.name}: every standable start crosses, and walks back`, () => {
-        const out = sweep(side);
-        expect(out.starts).toBeGreaterThan(s);
-        expect(out.wallPressed, "a wall-pressed start").toBeGreaterThan(0);
-        expect(out.excluded).toBe(0);
-        expect(out.failures).toEqual([]);
+      for (const slice of slices) {
+        it(`${side.name} (slice ${slice + 1}/${SLICES}): every standable start crosses, and walks back`, () => {
+          const out = sweep(side, slice);
+          expect(out.starts).toBeGreaterThan(s);
+          expect(out.excluded).toBe(0);
+          expect(out.failures).toEqual([]);
+        });
+      }
+      it(`${side.name}: some start is pressed against a wall`, () => {
+        const pressed = slices.reduce((n, slice) => n + sweep(side, slice).wallPressed, 0);
+        expect(pressed, "a wall-pressed start").toBeGreaterThan(0);
       });
     }
   });
 
   it("inv_transition_reachable_from_every_standable_approach", () => {
-    const all = sides.map((side) => ({ side, out: sweep(side) }));
+    const all = sides.flatMap((side) => slices.map((slice) => ({ side, out: sweep(side, slice) })));
     expect(all.reduce((total, { out }) => total + out.walks, 0)).toBeGreaterThan(1000);
     expect(all.flatMap(({ side, out }) => out.failures.map((f) => `${side.name}: ${f}`))).toEqual(
       [],
