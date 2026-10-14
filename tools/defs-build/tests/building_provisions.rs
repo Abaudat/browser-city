@@ -31,7 +31,10 @@ fn build(edit: Option<(&str, &str)>) -> Result<Defs, String> {
                 replaced += 1;
             }
         }
-        assert_eq!(replaced, 1, "'{old}' must appear once in the building types");
+        assert_eq!(
+            replaced, 1,
+            "'{old}' must appear once in the building types"
+        );
     }
     let raw = parse::parse_all(&files).map_err(|e| e.to_string())?;
     let mut sheets = defs_build::appearance_sheet_paths(&raw);
@@ -96,19 +99,28 @@ fn with_cafe(line: &str) -> Result<Defs, String> {
 #[test]
 fn an_unknown_provision_name_is_named() {
     let err = with_cafe("provisions = [{ provision = \"nonexistent_need\", base_quality = 50 }, { provision = \"employment\", base_quality = 50 }]").unwrap_err();
-    assert!(err.contains("unknown provision 'nonexistent_need'") && err.contains("cafe"), "{err}");
+    assert!(
+        err.contains("unknown provision 'nonexistent_need'") && err.contains("cafe"),
+        "{err}"
+    );
 }
 
 #[test]
 fn a_duplicate_provision_on_one_type_is_named() {
     let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 50 }, { provision = \"food\", base_quality = 60 }, { provision = \"employment\", base_quality = 50 }]").unwrap_err();
-    assert!(err.contains("duplicate provision 'food'") && err.contains("cafe"), "{err}");
+    assert!(
+        err.contains("duplicate provision 'food'") && err.contains("cafe"),
+        "{err}"
+    );
 }
 
 #[test]
 fn an_enterable_type_that_advertises_nothing_is_named() {
     let err = with_cafe("provisions = []").unwrap_err();
-    assert!(err.contains("cafe") && err.contains("advertises no provision"), "{err}");
+    assert!(
+        err.contains("cafe") && err.contains("advertises no provision"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -142,5 +154,8 @@ provisions = [{ provision = \"rest\", base_quality = 50 }]",
 #[test]
 fn a_base_quality_past_one_hundred_is_refused() {
     let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 101 }, { provision = \"employment\", base_quality = 50 }]").unwrap_err();
-    assert!(err.contains("base_quality") && err.contains("cafe"), "{err}");
+    assert!(
+        err.contains("base_quality") && err.contains("cafe"),
+        "{err}"
+    );
 }

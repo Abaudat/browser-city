@@ -226,6 +226,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         prefers_site: b.prefers_site,
                         density_affinity: b.density_affinity,
                         professions: b.professions,
+                        provisions: b.provisions,
                         rooms: b.rooms,
                         optional_rooms: b.optional_rooms,
                     });

@@ -653,6 +653,11 @@ pub struct RawBuildingType {
     pub density_affinity: i32,
     #[serde(default)]
     pub professions: Vec<String>,
+    /// What this type provides to the city's need bars (story 3.10): one
+    /// entry per provision, each with its own base quality. Names are
+    /// `sim::codes::provision` names.
+    #[serde(default)]
+    pub provisions: Vec<RawProvision>,
     /// The room program's required core, an ordered list of
     /// `defs/room-types/` keys, the front room first. Empty means the
     /// type is a solid `Shell` -- legal only for a type with neither
@@ -663,6 +668,16 @@ pub struct RawBuildingType {
     /// still holds it, so size buys rooms rather than bigger rooms.
     #[serde(default)]
     pub optional_rooms: Vec<String>,
+}
+
+/// One provision a building type advertises: a `provision` code name and
+/// the quality a premises of this type has before its neighbourhood moves
+/// it (`0..=100`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawProvision {
+    pub provision: String,
+    pub base_quality: u32,
 }
 
 /// A room type is a def kind. A row carries `tags`, the smallest floor
@@ -1338,6 +1353,7 @@ pub struct BuildingTypeEntry {
     pub prefers_site: Vec<RawSiteContext>,
     pub density_affinity: i32,
     pub professions: Vec<String>,
+    pub provisions: Vec<RawProvision>,
     pub rooms: Vec<String>,
     pub optional_rooms: Vec<String>,
 }
@@ -1724,6 +1740,9 @@ pub struct BuildingTypeDef {
     /// workplace, never a second stored bool. No per-post headcount:
     /// nothing reads one yet.
     pub professions: Vec<String>,
+    /// `(provision code, base quality)`, sorted by code: what the type
+    /// advertises (story 3.10). Never a stored category beside it.
+    pub provisions: Vec<(u32, u32)>,
     /// Resolved room-type ids of the required core, front room first;
     /// empty iff the type is a `Shell`.
     pub rooms: Vec<u32>,
