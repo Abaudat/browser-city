@@ -39,7 +39,7 @@ fn tenancy_has_exactly_its_columns() {
 fn tenancy_is_private_and_one_per_dwelling() {
     let src = std::fs::read_to_string(module_src_dir().join("tables").join("housing.rs"))
         .unwrap()
-        .replace('', "");
+        .replace(char::from(13), "");
     assert!(
         src.contains("accessor = tenancy)"),
         "tenancy must not be public"
