@@ -352,6 +352,7 @@ pub const NOT_MEASURED: &[(&str, &str)] = &[
     ("generation.plots.industrial_row_depth_cells", AUTHORED),
     ("generation.plots.industrial_width_max_cells", AUTHORED),
     ("generation.plots.industrial_width_min_cells", AUTHORED),
+    ("generation.provision.quality_affluence_weight_percent", TUNED),
     ("generation.plots.institutional_row_depth_cells", AUTHORED),
     ("generation.plots.institutional_width_max_cells", AUTHORED),
     ("generation.plots.institutional_width_min_cells", AUTHORED),
@@ -406,6 +407,7 @@ fn building_type_line(t: &BuildingTypeDef) -> String {
         prefers_site,
         density_affinity,
         professions,
+        provisions,
         rooms,
         optional_rooms,
     } = *t;
@@ -424,12 +426,17 @@ fn building_type_line(t: &BuildingTypeDef) -> String {
             .join("")
     }
     format!(
-        "building_type.{id}:{key}:tags={}:land_uses={}:density={density_min}..{density_max}:affluence={affluence_min}..{affluence_max}:min_interior={min_interior_width_cells}x{min_interior_depth_cells}:weight={weight}:requires_site={}:prefers_site={}:density_affinity={density_affinity}:professions={}:rooms={}:optional_rooms={}\n",
+        "building_type.{id}:{key}:tags={}:land_uses={}:density={density_min}..{density_max}:affluence={affluence_min}..{affluence_max}:min_interior={min_interior_width_cells}x{min_interior_depth_cells}:weight={weight}:requires_site={}:prefers_site={}:density_affinity={density_affinity}:professions={}:provisions={}:rooms={}:optional_rooms={}\n",
         join(tags),
         flags(&land_uses),
         flags(&requires_site),
         flags(&prefers_site),
         join(professions),
+        provisions
+            .iter()
+            .map(|(c, q)| format!("{c}={q}"))
+            .collect::<Vec<_>>()
+            .join(","),
         join(rooms),
         join(optional_rooms),
     )

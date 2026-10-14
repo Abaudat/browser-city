@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # A district is generated once and read back as stored (FR108, FR109): the
 # `district` record has one writer, and so do the macro routing graph's
-# `route_node` and `route_edge` rows (FR129), which are written with it.
+# `route_node`, `route_edge` and `route_provision` rows (FR129, FR130),
+# which are written with it.
 # Under server/src/:
 #
 #   - `generation::` (the generator) is named only in tables/district.rs.
-#   - each accessor -- `district`, `route_node`, `route_edge` -- is called
+#   - each accessor -- `district`, `route_node`, `route_edge`, `route_provision` -- is called
 #     only in tables/district.rs (`district`: `create_district` only;
 #     the graph rows: `create_district`'s own writer `write_graph` and the
 #     test-only `debug_write_graph_then_fail`, which calls it), in
@@ -33,6 +34,7 @@ ACCESSORS=(
   "district:district:create_district:begin_restore restore_district"
   "route_node:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_node"
   "route_edge:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_edge"
+  "route_provision:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_provision"
 )
 GEN='(^|[^_[:alnum:]])generation([^_[:alnum:]]|$)'
 
@@ -80,6 +82,15 @@ while IFS= read -r f; do
         [ -z "$OUT" ] || note "$rel: names the $acc accessor outside $restore_fns (in: $(echo "$OUT" | tr '\n' ' '))"
         if flat "$f" | grep -Eq "::[[:space:]]*$acc[[:space:]]*\("; then note "$rel: calls the $acc accessor by path"; fi
       done
+      if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
+      continue ;;
+    tables/routing.rs)
+      # The declaring module also holds the provision query's read-only
+      # view (story 3.10): it names the accessors to read by index, never
+      # to write.
+      if flat "$f" | grep -Eq '\.[[:space:]]*(insert|delete|update)[[:space:]]*\('; then
+        note "$rel: writes a row (it declares the tables and reads them by index; district.rs and restore.rs write)"
+      fi
       if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
       continue ;;
     tables/metrics.rs)

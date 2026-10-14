@@ -76,6 +76,7 @@ pub const REDUCER_CLASSES: &[(&str, ReducerClass)] = &[
     ("debug_write_graph_then_fail", ReducerClass::Operator),
     ("restore_route_node", ReducerClass::Operator),
     ("restore_route_edge", ReducerClass::Operator),
+    ("restore_route_provision", ReducerClass::Operator),
     ("restore_edge_kind", ReducerClass::Operator),
     ("restore_building", ReducerClass::Operator),
     ("restore_building_area", ReducerClass::Operator),

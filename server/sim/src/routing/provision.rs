@@ -20,6 +20,11 @@ use crate::balance;
 use crate::generated::defs::BalanceSeed;
 use crate::world::{CHUNK_SIZE, checked_chunk_key, chunk_key};
 
+/// The most provision rows one source node may carry: the largest list a
+/// building type declares (`defs/building-types`), with headroom. The
+/// `route_provision` row ceiling derives from it.
+pub const MAX_PROVISIONS_PER_SOURCE: u64 = 6;
+
 /// The top of the quality band: `0..=QUALITY_MAX`.
 pub const QUALITY_MAX: u32 = 100;
 

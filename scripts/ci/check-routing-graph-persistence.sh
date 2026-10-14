@@ -8,7 +8,8 @@
 #
 # Legs, in order:
 #   (a) rollback on an empty world: the test reducer is refused and
-#       `district`, `business`, `route_node` and `route_edge` stay empty;
+#       `district`, `business`, `route_node`, `route_edge` and
+#       `route_provision` stay empty;
 #   (b) `create_district` as owner writes a graph and its businesses;
 #   (c) rollback on a world holding a graph: the test reducer is refused
 #       and every graph table is byte-identical;
@@ -54,7 +55,7 @@ table() { # <table> -- every row, one line each, sorted, whitespace removed
 }
 graph_state() { # every table the graph write touches, each tagged
   local t
-  for t in district business route_node route_edge; do
+  for t in district business route_node route_edge route_provision; do
     table "$t" | sed "s/^/$t:/"
   done
 }
@@ -93,6 +94,8 @@ EDGES="$(count_of "$STATE" route_edge)"
 BUSINESSES="$(count_of "$STATE" business)"
 [ "$NODES" -ge "$MIN_NODES" ] || fail "route_node has $NODES rows after create_district, expected at least $MIN_NODES"
 [ "$EDGES" -ge "$NODES" ] || fail "route_edge has $EDGES rows for $NODES nodes -- fewer edges than nodes is not a connected graph"
+PROVISIONS="$(count_of "$STATE" route_provision)"
+[ "$PROVISIONS" -ge 1 ] || fail "create_district wrote no route_provision rows"
 [ "$BUSINESSES" -ge 1 ] || fail "create_district wrote no business rows"
 [ "$(count_of "$STATE" district)" -eq 1 ] || fail "create_district did not write exactly one district row"
 # Every source node's business id resolves to exactly one generated business,
@@ -102,7 +105,7 @@ BUSINESS_IDS="$(grep '^business:' <<<"$STATE" | sed -E 's/^business:([0-9]+).*/\
 [ -n "$BUSINESS_IDS" ] || fail "could not read the business ids out of the business table"
 [ "$NODE_BUSINESS_IDS" = "$BUSINESS_IDS" ]   || fail "the route_node business ids are not exactly the business rows' ids (a source node names no business, one twice, or a business has no node)"
 [ "$(sort -u <<<"$NODE_BUSINESS_IDS" | wc -l)" -eq "$BUSINESSES" ] || fail "two source nodes share a business id"
-ok "create_district wrote $NODES nodes, $EDGES edges and $BUSINESSES businesses, each the business of exactly one source node"
+ok "create_district wrote $PROVISIONS provision rows, $NODES nodes, $EDGES edges and $BUSINESSES businesses, each the business of exactly one source node"
 
 # --- (c) rollback on a populated world -----------------------------------
 if spacetime call "$DB" "${SERVER_ARGS[@]}" -y debug_write_graph_then_fail 8 >"$DATA_DIR/rollback-2.log" 2>&1; then
