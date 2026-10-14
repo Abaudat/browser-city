@@ -910,6 +910,19 @@ yet; each portal endpoint links to the nearest walking node on its floor, and th
 holds the whole graph to one connected component. The size is stamped in the `macro graph` block below, against the bands in
 `sim::routing::graph`.
 
+### Provisions
+
+- **Reads:** each enterable building's type (`provisions` in `defs/building-types`: a
+  `sim::codes::provision` name and a base quality per entry) and its plot's neighbourhood affluence.
+- **Writes:** one `(node, provision, quality)` per entry on the building's entrance node, stored as
+  `route_provision` rows. A type with `professions` advertises `employment`; `vacant_unit` and every
+  dwelling advertise nothing public.
+- **Dial:** `generation.provision.quality_affluence_weight_percent` -- percent of an affluence's
+  distance from the middle of its range added to the base, clamped to `0..=100`. Set once, from
+  the seed's own plots; nothing at runtime writes it.
+- **Query:** `routing::provision::near`, bounded by `routing.provision.query_radius_chunks` and
+  `routing.provision.max_results`.
+
 ## Measured ceilings
 
 Every measured figure lives only in a stamped block below, whose label is
@@ -1343,6 +1356,7 @@ disagree.
 | generation.neighbourhood.building_age_max | committed | Land use | the building-age dial's older end |
 | generation.neighbourhood.affluence_min | committed | Land use | the affluence dial's poorer end; `[[building_type]]` affluence bands and `reads = "affluence"` rows read this range |
 | generation.neighbourhood.affluence_max | committed | Land use | the affluence dial's richer end |
+| generation.provision.quality_affluence_weight_percent | committed | Provisions | how far a neighbourhood's affluence moves a provision's quality from its type's base: percent of the distance from the middle of the affluence range, clamped to 0..100 |
 | generation.neighbourhood.extreme_share_percent | committed | Land use | the percent of neighbourhoods drawn in an end third of a dial rather than its middle third -- wide steps between neighbours, never a smooth ramp |
 | generation.neighbourhood.legible_step | committed | Land use | the smallest gap on one dial between two neighbourhoods that reads as two different places; each dial's two end thirds are at least this far apart |
 | generation.neighbourhood.poor_band_max | committed | Land use | affluence at or below this is the bottom band; every district holds one such neighbourhood with dwellings |
