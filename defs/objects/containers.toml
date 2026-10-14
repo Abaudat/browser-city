@@ -58,3 +58,19 @@ collider = { x0 = 0, y0 = 1, x1 = 15, y1 = 15 }
 interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
 grid = { width = 3, height = 2 }
 tags = ["fixture"]
+
+# Story 7.1: what a new tenant owns, standing on the flat's floor -- a
+# moving box, placed by the tenancy's assignment and never by the prop
+# pass. An indoor box: the crate and pallet above are outdoor props.
+[[object]]
+id = 75
+key = "moving_box"
+name = "Moving box"
+layer = "furniture"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Box.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+collider = { x0 = 0, y0 = 4, x1 = 16, y1 = 16 }
+interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
+grid = { width = 3, height = 2 }
+tags = ["indoor", "fixture"]

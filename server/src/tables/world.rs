@@ -75,10 +75,39 @@ pub struct FloorTransition {
 #[derive(Clone)]
 #[spacetimedb::table(accessor = building)]
 pub struct Building {
+    // bc:wide-table: written once at generation, never rewritten; a dwelling's derived facts (tier, rent, three cells)
     #[primary_key]
     #[auto_inc]
     pub building_id: u64,
     pub created_at: Timestamp,
+    /// Story 7.1: what the generator derived about a dwelling, written once
+    /// with the row. `home_tier` is `sim::housing::Tier::code` (0 is no
+    /// dwelling): the index the assignment reads, so it never scans a
+    /// building that is not a home. Static description, never hot state.
+    #[index(btree)]
+    #[default(0)]
+    pub home_tier: u8,
+    #[default(0)]
+    pub density: i32,
+    #[default(0)]
+    pub affluence: i32,
+    #[default(0)]
+    pub asking_rent: u64,
+    /// The cell a new tenant first stands on.
+    #[default(0)]
+    pub spawn_x: i32,
+    #[default(0)]
+    pub spawn_y: i32,
+    /// The street cell outside the entrance.
+    #[default(0)]
+    pub door_x: i32,
+    #[default(0)]
+    pub door_y: i32,
+    /// The cell the starting moving box stands on.
+    #[default(0)]
+    pub kit_x: i32,
+    #[default(0)]
+    pub kit_y: i32,
 }
 
 /// A room's static description (FR119), always inside exactly one

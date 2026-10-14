@@ -216,6 +216,25 @@ fn check_balance_key_dupes(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
+/// FR20's figures are seeds, not tuned values: every `economy.*` key says
+/// so with `seed = "<requirement>"`, or the build refuses it.
+fn check_economy_seed_markers(entries: &[BalanceEntry]) -> Result<(), DefsError> {
+    for e in entries {
+        if e.key.value.starts_with("economy.") && e.seed.as_deref().is_none_or(str::is_empty) {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                1,
+                format!(
+                    "balance '{}' is an FR20 seed value and must carry `seed = \"FR20\"`",
+                    e.key.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn check_recipe_item_refs(
     recipes: &[RecipeEntry],
     item_keys: &BTreeSet<&str>,
@@ -3366,6 +3385,7 @@ pub fn validate(
     check_id_key_dupes(&raw.building_types, "building_type")?;
     check_id_key_dupes(&raw.room_types, "room_type")?;
     check_balance_key_dupes(&raw.balance)?;
+    check_economy_seed_markers(&raw.balance)?;
     check_id_key_dupes(&raw.bodies, "body")?;
     check_id_key_dupes(&raw.eyes, "eyes")?;
     check_id_key_dupes(&raw.hairstyles, "hairstyle")?;

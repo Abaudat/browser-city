@@ -113,7 +113,7 @@
       "struct_name": "Building",
       "public": false,
       "scheduled_reducer": null,
-      "wide_table_waiver": null,
+      "wide_table_waiver": "written once at generation, never rewritten; a dwelling's derived facts (tier, rent, three cells)",
       "columns": [
         {
           "name": "building_id",
@@ -131,6 +131,96 @@
           "auto_inc": false,
           "unique": false,
           "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "home_tier",
+          "ty": "u8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": true
+        },
+        {
+          "name": "density",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "affluence",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "asking_rent",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "spawn_x",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "spawn_y",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "door_x",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "door_y",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "kit_x",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "kit_y",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
           "indexed": false
         }
       ]
@@ -2272,6 +2362,69 @@
         {
           "name": "over_alert",
           "ty": "bool",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "tenancy",
+      "struct_name": "Tenancy",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "tenancy_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "building_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": true,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "tenant_kind",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "tenant_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "weekly_rent",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "started_at",
+          "ty": "Timestamp",
           "primary_key": false,
           "auto_inc": false,
           "unique": false,

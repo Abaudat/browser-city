@@ -72,7 +72,7 @@ pub mod streets;
 #[allow(dead_code)]
 mod streets;
 
-pub use building_types::{BuildingState, BuildingTypeMap, TypeAssignment};
+pub use building_types::{BuildingState, BuildingTypeMap, TypeAssignment, is_workplace};
 pub use envelopes::{Envelope, EnvelopeMap, EnvelopeOutcome, RejectReason};
 pub use interiors::{Interior, InteriorMap, InteriorOutcome};
 pub use land_use::{LandUse, LandUseCell, LandUseMap, Neighbourhood, NeighbourhoodParams, Region};
@@ -1577,6 +1577,14 @@ impl GenerationConfig {
     /// cells -- the Scale Baseline figure, never a measurement.
     pub fn workplace_count_target(&self, site_cells: i64) -> i64 {
         (self.workplace_target_count_per_million_cells * site_cells) / 1_000_000
+    }
+
+    /// The periphery band's ceiling: the bottom third of
+    /// `density_min..density_max`. One predicate for the street evidence
+    /// (`mean_area_by_density_band`) and for housing's "edge".
+    pub fn periphery_max_density(&self) -> i32 {
+        let span = i64::from(self.density_max - self.density_min).max(1);
+        (i64::from(self.density_min) + span / 3) as i32
     }
 
     /// The most a block at `density` may leave as a core before it becomes

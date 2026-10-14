@@ -55,6 +55,7 @@ import RestoreRouteProvisionReducer from "../restore_route_provision_reducer";
 import RestoreStockReducer from "../restore_stock_reducer";
 import RestoreStorageSampleReducer from "../restore_storage_sample_reducer";
 import RestoreTableSampleReducer from "../restore_table_sample_reducer";
+import RestoreTenancyReducer from "../restore_tenancy_reducer";
 import RestoreUnitReducer from "../restore_unit_reducer";
 import RestoreWorldClockReducer from "../restore_world_clock_reducer";
 import SendPingReducer from "../send_ping_reducer";
@@ -109,6 +110,7 @@ export type RestoreRouteProvisionParams = __Infer<typeof RestoreRouteProvisionRe
 export type RestoreStockParams = __Infer<typeof RestoreStockReducer>;
 export type RestoreStorageSampleParams = __Infer<typeof RestoreStorageSampleReducer>;
 export type RestoreTableSampleParams = __Infer<typeof RestoreTableSampleReducer>;
+export type RestoreTenancyParams = __Infer<typeof RestoreTenancyReducer>;
 export type RestoreUnitParams = __Infer<typeof RestoreUnitReducer>;
 export type RestoreWorldClockParams = __Infer<typeof RestoreWorldClockReducer>;
 export type SendPingParams = __Infer<typeof SendPingReducer>;

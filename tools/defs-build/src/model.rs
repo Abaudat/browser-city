@@ -927,6 +927,10 @@ pub struct RawBalance {
     pub value: Spanned<i64>,
     pub min: i64,
     pub max: i64,
+    /// The requirement whose figure this value seeds (`"FR20"`); required
+    /// on every `economy.*` key.
+    #[serde(default)]
+    pub seed: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1377,6 +1381,7 @@ pub struct BalanceEntry {
     pub value: Located<i64>,
     pub min: i64,
     pub max: i64,
+    pub seed: Option<String>,
 }
 
 #[derive(Debug)]

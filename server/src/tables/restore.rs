@@ -97,6 +97,7 @@ use super::codes::{
     holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
 use super::district::{District, district};
+use super::housing::{Tenancy, tenancy};
 use super::identity::{
     Character, CharacterIdentity, LinkRequest, OidcIssuer, character, character_identity,
     link_request, oidc_issuer,
@@ -201,6 +202,7 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "route_provision",
     "character",
     "character_identity",
+    "tenancy",
     "oidc_issuer",
     "link_request",
     "citizen",
@@ -316,6 +318,9 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.character_identity().iter().next().is_some() {
         nonempty.push("character_identity");
+    }
+    if ctx.db.tenancy().iter().next().is_some() {
+        nonempty.push("tenancy");
     }
     if ctx.db.oidc_issuer().iter().next().is_some() {
         nonempty.push("oidc_issuer");
@@ -526,6 +531,28 @@ impl_autoinc_row!(
     Building {
         building_id: 0,
         created_at: Timestamp::UNIX_EPOCH,
+        home_tier: 0,
+        density: 0,
+        affluence: 0,
+        asking_rent: 0,
+        spawn_x: 0,
+        spawn_y: 0,
+        door_x: 0,
+        door_y: 0,
+        kit_x: 0,
+        kit_y: 0,
+    }
+);
+impl_autoinc_row!(
+    Tenancy,
+    tenancy_id,
+    Tenancy {
+        tenancy_id: 0,
+        building_id: 0,
+        tenant_kind: 0,
+        tenant_id: 0,
+        weekly_rent: 0,
+        started_at: Timestamp::UNIX_EPOCH,
     }
 );
 impl_autoinc_row!(
@@ -960,6 +987,26 @@ pub fn restore_character_identity(
             ctx.db.character_identity().mapping_id().delete(id);
         },
         "character_identity",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_tenancy(
+    ctx: &ReducerContext,
+    rows: Vec<Tenancy>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.tenancy().insert(r),
+        |id| {
+            ctx.db.tenancy().tenancy_id().delete(id);
+        },
+        "tenancy",
         sequence_floor,
     )
 }

@@ -73,3 +73,41 @@ pub fn set_player_position(
     }
     Ok(())
 }
+
+/// The one other writer: a character's first row, at the cell its flat
+/// puts it on, written in the transaction that creates the character. Every
+/// later write is `set_player_position`. A cell the world cannot address
+/// writes nothing.
+pub(super) fn write_first_position(
+    ctx: &ReducerContext,
+    character_id: u64,
+    x: i32,
+    y: i32,
+    floor: i8,
+) {
+    if ctx
+        .db
+        .player_position()
+        .character_id()
+        .find(character_id)
+        .is_some()
+    {
+        return;
+    }
+    let Ok(Write::Insert(r) | Write::Update(r)) = plan_position(false, x, y, floor, 0, 0) else {
+        return;
+    };
+    ctx.db.player_position().insert(PlayerPosition {
+        character_id,
+        chunk_key: r.chunk_key,
+        x: r.x,
+        y: r.y,
+        floor: r.floor,
+        frac_x: HALF_CELL,
+        frac_y: HALF_CELL,
+        updated_at: ctx.timestamp,
+    });
+}
+
+/// Half a cell, in `POSITION_UNITS_PER_CELL`: a tenant stands mid-cell.
+const HALF_CELL: u8 = (sim::generated::defs::POSITION_UNITS_PER_CELL / 2) as u8;

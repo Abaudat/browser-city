@@ -107,6 +107,15 @@ fn an_out_of_range_balance_value_is_named() {
     );
 }
 
+#[test]
+fn an_economy_balance_value_without_a_seed_marker_is_named() {
+    let err = build_err("economy-balance-without-seed-marker");
+    assert_eq!(
+        err.to_string(),
+        "defs/balance/economy.toml:2:1: balance 'economy.rent.edge_flat_per_week' is an FR20 seed value and must carry `seed = \"FR20\"`"
+    );
+}
+
 // --- story 2.10: tags and the five rule kinds -------------------------------
 
 #[test]
@@ -1204,6 +1213,7 @@ fn every_known_category_has_a_fixture_directory() {
         "distribution-max-distance-zero",
         "placement-floor-min-above-max",
         "duplicate-rule-id",
+        "economy-balance-without-seed-marker",
         "prop-no-collider-not-underfoot",
         "manhole-not-tagged-underfoot",
         "underfoot-tag-with-collider",

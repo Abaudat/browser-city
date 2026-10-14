@@ -1,0 +1,53 @@
+# Story 7.1 (FR20): the opening economy. Every figure here is a seed, a
+# starting value to be tuned against play, never a derived or promised
+# one -- `seed = "FR20"` is what says so, and the build refuses an
+# `economy.*` key without it. The 45 per cent rent share is derived from
+# these keys by `server/sim/tests/housing.rs`, never stored.
+
+[[balance]]
+# The entry wage, per in-city hour.
+key = "economy.wage.entry_per_city_hour"
+value = 10
+min = 1
+max = 10000
+seed = "FR20"
+
+[[balance]]
+# Paid hours in one in-city working day.
+key = "economy.wage.paid_hours_per_day"
+value = 8
+min = 1
+max = 24
+seed = "FR20"
+
+[[balance]]
+# In-city days in the week the wage and the rent are both counted over.
+key = "economy.week_days"
+value = 7
+min = 1
+max = 7
+seed = "FR20"
+
+[[balance]]
+# What the cheapest starting flat asks each week: the bottom affluence band's figure.
+key = "economy.rent.edge_flat_per_week"
+value = 250
+min = 1
+max = 100000
+seed = "FR20"
+
+[[balance]]
+# Per cent added to the asked rent for each affluence point above the bottom band (`generation.neighbourhood.poor_band_max`).
+key = "economy.rent.per_affluence_point_percent"
+value = 1
+min = 0
+max = 100
+seed = "FR20"
+
+[[balance]]
+# Food and necessities for one week, in the currency's smallest unit: what a character starts with in hand.
+key = "economy.starting_cash"
+value = 90
+min = 0
+max = 100000
+seed = "FR20"

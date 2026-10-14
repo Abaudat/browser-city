@@ -72,6 +72,7 @@ object 71 cupboard
 object 72 crate
 object 73 pallet
 object 74 bag
+object 75 moving_box
 item 1 bottle
 item 2 recycled_glass
 item 3 coin_1

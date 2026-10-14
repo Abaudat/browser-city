@@ -5,6 +5,7 @@
 //! Nothing here merges characters or removes a mapping.
 
 use crate::generated::defs::NAME_MAX_CHARS;
+use crate::housing::{Assignment, Home, plan_assign};
 
 /// `character_identity.issuer_id` for a server-issued anonymous identity.
 pub const ANONYMOUS_ISSUER: u64 = 0;
@@ -22,6 +23,49 @@ pub fn plan_create(caller_character: Option<u64>) -> CreatePlan {
     match caller_character {
         Some(id) => CreatePlan::Existing(id),
         None => CreatePlan::New,
+    }
+}
+
+/// A flat let to a character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tenancy {
+    /// The dwelling's building id.
+    pub home: u64,
+    /// The asked rent, frozen at signing.
+    pub weekly_rent: u64,
+}
+
+/// What a new character is written with, together: its tenancy (none only
+/// when no dwelling is vacant) and the cell of its first position row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Arrival {
+    pub tenancy: Option<Tenancy>,
+    pub spawn: (i32, i32),
+}
+
+/// A new character's flat and first cell, planned as one: the spawn is the
+/// let dwelling's own. A full stock is a character on the street at the
+/// edgemost dwelling's door, never an error.
+pub fn plan_arrival(character_id: u64, stock: &[Home], occupied: &dyn Fn(u64) -> bool) -> Arrival {
+    let chosen = match plan_assign(character_id, stock, occupied) {
+        Assignment::Edge(id) | Assignment::Fallback(id) => stock.iter().find(|h| h.id == id),
+        Assignment::NoVacancy => None,
+    };
+    match chosen {
+        Some(h) => Arrival {
+            tenancy: Some(Tenancy {
+                home: h.id,
+                weekly_rent: h.rent,
+            }),
+            spawn: h.spawn,
+        },
+        None => Arrival {
+            tenancy: None,
+            spawn: stock
+                .iter()
+                .min_by_key(|h| (h.density, h.id))
+                .map_or((0, 0), |h| h.door),
+        },
     }
 }
 

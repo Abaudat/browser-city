@@ -34,6 +34,16 @@ export type BudgetReviewSchedule = __Infer<typeof BudgetReviewSchedule>;
 export const Building = __t.object("Building", {
   buildingId: __t.u64(),
   createdAt: __t.timestamp(),
+  homeTier: __t.u8(),
+  density: __t.i32(),
+  affluence: __t.i32(),
+  askingRent: __t.u64(),
+  spawnX: __t.i32(),
+  spawnY: __t.i32(),
+  doorX: __t.i32(),
+  doorY: __t.i32(),
+  kitX: __t.i32(),
+  kitY: __t.i32(),
 });
 export type Building = __Infer<typeof Building>;
 
@@ -426,6 +436,16 @@ export const TableSample = __t.object("TableSample", {
   overAlert: __t.bool(),
 });
 export type TableSample = __Infer<typeof TableSample>;
+
+export const Tenancy = __t.object("Tenancy", {
+  tenancyId: __t.u64(),
+  buildingId: __t.u64(),
+  tenantKind: __t.u32(),
+  tenantId: __t.u64(),
+  weeklyRent: __t.u64(),
+  startedAt: __t.timestamp(),
+});
+export type Tenancy = __Infer<typeof Tenancy>;
 
 export const Unit = __t.object("Unit", {
   code: __t.u32(),

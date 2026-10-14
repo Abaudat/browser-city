@@ -64,6 +64,15 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 375_000,
         kind: BoundKind::Engineering,
     },
+    // Story 7.1: at most one tenancy per tenant (a character or a citizen),
+    // so `character`'s ceiling plus `citizen`'s.
+    TableBound {
+        accessor: "tenancy",
+        max_rows: 120_000,
+        expected_rows: 17_000,
+        alert_rows: 90_000,
+        kind: BoundKind::Mechanical,
+    },
     // Story 4.5: accepted OIDC providers -- a handful, ever.
     TableBound {
         accessor: "oidc_issuer",
