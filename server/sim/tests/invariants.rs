@@ -76,6 +76,10 @@ pub const INV_ROUTING_GRAPH_IS_DETERMINISTIC: &str =
     "two builds of the macro routing graph from one seed are identical (FR129)";
 pub const INV_ROUTING_GRAPH_EDGE_COUNT_IS_LINEAR_IN_NODE_COUNT: &str =
     "the graph's edge count is at most a constant times its node count";
+pub const INV_PROVISIONS_ARE_ROWS_PER_VENUE: &str = "every enterable building advertises exactly the provisions its type declares, one row per provision on its entrance, and nothing else (FR130)";
+pub const INV_PROVISION_QUALITY_IS_A_FUNCTION_OF_TYPE_AND_AFFLUENCE: &str = "every stored provision quality equals the one quality function of its type's base and its plot's affluence (FR50)";
+pub const INV_PROVISION_QUERY_MATCHES_BRUTE_FORCE: &str = "the provision query returns exactly the sorted, truncated estimate scan of every provision row within the radius (FR130, FR131)";
+pub const INV_PROVISION_HIT_CARRIES_ITS_NODES_BUSINESS_ID: &str = "every hit's business id is its source node's: a workplace has one, a housing source none (FR130)";
 pub const INV_NO_MATTER_STARVES: &str = "no matter starves indefinitely";
 pub const INV_INVENTORY_SUPERSET_AFTER_ABSENCE: &str = "inventory is a superset after any absence";
 pub const INV_NO_OWNED_ITEM_DEGRADES_DURING_ABSENCE: &str = "no owned item degrades during absence";
@@ -4144,6 +4148,7 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        provisions: &[],
         rooms: &[],
         optional_rooms: &[],
     };
@@ -4163,6 +4168,7 @@ fn a_too_small_envelope_never_draws_a_type_whose_own_minimum_interior_does_not_f
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        provisions: &[],
         rooms: &[],
         optional_rooms: &[],
     };
@@ -4456,6 +4462,7 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        provisions: &[],
         rooms: &[],
         optional_rooms: &[],
     };
@@ -4478,6 +4485,7 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &["test_clerk"],
+        provisions: &[(1, 50)],
         rooms: &[],
         optional_rooms: &[],
     };
@@ -4503,6 +4511,7 @@ fn starved_catchment_placed_shops(scope: sim::rules::DistributionScope) -> usize
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        provisions: &[],
         rooms: &[],
         optional_rooms: &[],
     };
@@ -9609,6 +9618,214 @@ fn inv_route_search_stays_within_its_node_budget() {
         let view = SearchGraph::from_graph(g);
         let last = g.nodes().len() as u64 - 1;
         search(&view, 0, last, &rates(), budget).map_err(|e| format!("{e:?}"))?;
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------
+// Story 3.10: the provision index (FR50, FR130).
+// ---------------------------------------------------------------------
+
+/// `inv_provisions_are_rows_per_venue` (story 3.10 AC2): each source
+/// node's provision codes are exactly its building type's declared ones,
+/// once each; a cafe has a food row and a social row, never one column.
+#[test]
+fn inv_provisions_are_rows_per_venue() {
+    use sim::routing::graph::NodeKind;
+    over_pool("inv_provisions_are_rows_per_venue", |c| {
+        let g = pooled_graph(c)?;
+        let types: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+            defs::BUILDING_TYPES.iter().map(|b| (b.id, b)).collect();
+        let mut by_node: std::collections::BTreeMap<u32, Vec<u32>> = Default::default();
+        for p in g.provisions() {
+            by_node.entry(p.node).or_default().push(p.provision);
+        }
+        for (i, n) in g.nodes().iter().enumerate() {
+            let want: Vec<u32> = match (n.kind, n.source) {
+                (NodeKind::Source, Some(src)) => {
+                    let (_, ty, _) = c
+                        .district
+                        .interiors
+                        .laid()
+                        .find(|(p, _, _)| *p == src.plot)
+                        .ok_or("a source names no laid building")?;
+                    types[&ty].provisions.iter().map(|p| p.0).collect()
+                }
+                _ => Vec::new(),
+            };
+            let got = by_node.remove(&(i as u32)).unwrap_or_default();
+            ensure!(
+                got == want,
+                "node {i}: advertises {got:?}, its type declares {want:?}"
+            );
+        }
+        ensure!(by_node.is_empty(), "provision rows on nodes the graph lacks");
+        Ok(())
+    });
+}
+
+/// `inv_provision_quality_is_a_function_of_type_and_affluence` (story 3.10
+/// AC3): every stored quality is recomputed from its building type's base
+/// and its plot's affluence and must match -- no drift, no second author.
+#[test]
+fn inv_provision_quality_is_a_function_of_type_and_affluence() {
+    use sim::routing::provision::{QualityDial, quality};
+    let dial = QualityDial::from_balance(defs::BALANCE);
+    over_pool(
+        "inv_provision_quality_is_a_function_of_type_and_affluence",
+        |c| {
+            let g = pooled_graph(c)?;
+            let types: std::collections::BTreeMap<u32, &defs::BuildingTypeDef> =
+                defs::BUILDING_TYPES.iter().map(|b| (b.id, b)).collect();
+            for p in g.provisions() {
+                let src = g.nodes()[p.node as usize]
+                    .source
+                    .ok_or("a provision row on a node with no building")?;
+                let (_, ty, _) = c
+                    .district
+                    .interiors
+                    .laid()
+                    .find(|(pl, _, _)| *pl == src.plot)
+                    .ok_or("a source names no laid building")?;
+                let base = types[&ty]
+                    .provisions
+                    .iter()
+                    .find(|e| e.0 == p.provision)
+                    .ok_or("a row the type never declared")?
+                    .1;
+                let affluence = c.district.skeleton.plots.plots()[src.plot as usize].affluence;
+                let want = quality(base, affluence, &dial);
+                ensure!(
+                    p.quality == want,
+                    "plot {}: stored quality {} but its inputs give {want}",
+                    src.plot,
+                    p.quality
+                );
+                ensure!(p.quality <= 100, "quality {} past the band", p.quality);
+            }
+            Ok(())
+        },
+    );
+}
+
+fn pooled_table(
+    g: &sim::routing::graph::MacroGraph,
+) -> (sim::routing::provision::ProvisionTable, Vec<Option<u64>>) {
+    use sim::routing::graph::NodeKind;
+    // The ids a table would assign (offset, so an id is never an index)
+    // and a business per workplace source.
+    let ids: Vec<u64> = (0..g.nodes().len() as u64).map(|i| 10_000 + i).collect();
+    let business: Vec<Option<u64>> = g
+        .nodes()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            (n.kind == NodeKind::Source && n.source.is_some_and(|s| s.workplace))
+                .then_some(500_000 + i as u64)
+        })
+        .collect();
+    (
+        sim::routing::provision::ProvisionTable::from_graph(g, &ids, &business),
+        business,
+    )
+}
+
+/// `inv_provision_query_matches_brute_force` (story 3.10 AC1): from a
+/// sample of origins and for every provision code, the index-bounded query
+/// equals a scan of every provision row within the radius, sorted by the
+/// estimate then node id and truncated.
+#[test]
+fn inv_provision_query_matches_brute_force() {
+    use sim::routing::estimate::{Correction, estimate};
+    use sim::routing::provision::{ProvisionQuery, chunk_of, near};
+    use sim::routing::{Point, TransportMode};
+    let q = ProvisionQuery::from_balance(defs::BALANCE);
+    over_pool("inv_provision_query_matches_brute_force", |c| {
+        let g = pooled_graph(c)?;
+        let (table, _) = pooled_table(g);
+        let n = g.nodes().len();
+        for k in 0..12usize {
+            let o = &g.nodes()[(k * 7_919 + 13) % n];
+            let origin = Point {
+                x: o.x,
+                y: o.y,
+                floor: o.floor,
+            };
+            for code in sim::codes::provision::CODES.iter().map(|c| c.code) {
+                let got = near(&table, origin, &[0], code, &q);
+                let mut want: Vec<(sim::routing::Milliminutes, u64)> = g
+                    .provisions()
+                    .iter()
+                    .filter(|p| p.provision == code)
+                    .filter(|p| {
+                        let m = &g.nodes()[p.node as usize];
+                        let r = q.radius_chunks as i32;
+                        m.floor == 0
+                            && (chunk_of(m.x) - chunk_of(origin.x)).abs() <= r
+                            && (chunk_of(m.y) - chunk_of(origin.y)).abs() <= r
+                    })
+                    .map(|p| {
+                        let m = &g.nodes()[p.node as usize];
+                        (
+                            estimate(
+                                &q.rates,
+                                origin,
+                                m.point(),
+                                TransportMode::Walk,
+                                Correction::NONE,
+                            ),
+                            10_000 + p.node as u64,
+                        )
+                    })
+                    .collect();
+                want.sort();
+                want.truncate(q.max_results as usize);
+                let got: Vec<_> = got.iter().map(|h| (h.estimate, h.node_id)).collect();
+                ensure!(
+                    got == want,
+                    "origin {k}, provision {code}: {got:?} != {want:?}"
+                );
+            }
+        }
+        Ok(())
+    });
+}
+
+/// `inv_provision_hit_carries_its_nodes_business_id` (story 3.10 AC4):
+/// every result's business id is the one its source node carries, with no
+/// second lookup; every employment hit has one.
+#[test]
+fn inv_provision_hit_carries_its_nodes_business_id() {
+    use sim::routing::Point;
+    use sim::routing::provision::{ProvisionQuery, near};
+    let q = ProvisionQuery::from_balance(defs::BALANCE);
+    over_pool("inv_provision_hit_carries_its_nodes_business_id", |c| {
+        let g = pooled_graph(c)?;
+        let (table, business) = pooled_table(g);
+        let n = g.nodes().len();
+        for k in 0..12usize {
+            let o = &g.nodes()[(k * 104_729 + 5_003) % n];
+            let origin = Point {
+                x: o.x,
+                y: o.y,
+                floor: o.floor,
+            };
+            for code in sim::codes::provision::CODES.iter().map(|c| c.code) {
+                for h in near(&table, origin, &[0], code, &q) {
+                    let idx = (h.node_id - 10_000) as usize;
+                    ensure!(
+                        h.business_id == business[idx],
+                        "hit {h:?}: business id is not its node's"
+                    );
+                    if code == sim::codes::provision::EMPLOYMENT {
+                        ensure!(
+                            h.business_id.is_some(),
+                            "an employment hit with no business"
+                        );
+                    }
+                }
+            }
+        }
         Ok(())
     });
 }
