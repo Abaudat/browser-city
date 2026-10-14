@@ -344,6 +344,67 @@ fn check_building_type_profession_refs(
     Ok(())
 }
 
+/// Story 3.10 (FR50, FR130): what a building type provides is data, and
+/// the city's citizens must never be blind to a place. Every name resolves
+/// in the codes golden's `provision` set, appears once per type, carries a
+/// base quality in `0..=100`; a dwelling never advertises `rest` (a home is
+/// its citizen's own row); an enterable, non-dwelling type advertises
+/// something -- a non-empty `professions` list counts, because it derives
+/// the `employment` entry (never authored, [`EMPLOYMENT_BASE_QUALITY`]).
+/// The base quality of the derived `employment` entry. It only says "there
+/// is work here": the money bar's real number is the post's wage
+/// (stories 7.5, 13.x).
+pub const EMPLOYMENT_BASE_QUALITY: u32 = 50;
+
+fn check_building_type_provisions(
+    entries: &[BuildingTypeEntry],
+    code_tables: &CodeTables,
+) -> Result<(), DefsError> {
+    let set = code_tables.set("provision");
+    for e in entries {
+        let fail = |msg: String| Err(DefsError::new(&e.path, e.key.line, e.key.col, msg));
+        let key = &e.key.value;
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for p in &e.provisions {
+            if p.provision == "employment" {
+                return fail(format!(
+                    "building type '{key}' authors employment in provisions: it is derived from a non-empty professions list"
+                ));
+            }
+            if !set.contains_key(p.provision.as_str()) {
+                return fail(format!(
+                    "building type '{key}' names unknown provision '{}' in provisions",
+                    p.provision
+                ));
+            }
+            if !seen.insert(p.provision.as_str()) {
+                return fail(format!(
+                    "building type '{key}' declares duplicate provision '{}' in provisions",
+                    p.provision
+                ));
+            }
+            if p.base_quality > 100 {
+                return fail(format!(
+                    "building type '{key}' declares provision '{}' with base_quality {} above 100",
+                    p.provision, p.base_quality
+                ));
+            }
+        }
+        let dwelling = e.tags.iter().any(|t| t == "dwelling");
+        if dwelling && seen.contains("rest") {
+            return fail(format!(
+                "building type '{key}' is a dwelling and advertises rest: a home is its citizen's own row, never an offer to the street"
+            ));
+        }
+        if e.provisions.is_empty() && e.professions.is_empty() && !e.rooms.is_empty() && !dwelling {
+            return fail(format!(
+                "building type '{key}' is enterable and advertises no provision: the city's citizens would be blind to it"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Story 3.5: resolves one room type's own `tags` against the declared
 /// tag set -- the same shape [`resolve_building_type_tags`] has.
 fn resolve_room_type_tags(
@@ -3448,6 +3509,7 @@ pub fn validate(
         .collect();
     check_chain_profession_refs(&raw.chains, &profession_keys)?;
     check_building_type_profession_refs(&raw.building_types, &profession_keys)?;
+    check_building_type_provisions(&raw.building_types, code_tables)?;
 
     check_balance_range(&raw.balance)?;
 
@@ -3703,6 +3765,26 @@ pub fn validate(
                 let mut v: Vec<String> = b.professions.clone();
                 v.sort();
                 v.dedup();
+                v
+            },
+            provisions: {
+                let mut v: Vec<(u32, u32)> = b
+                    .provisions
+                    .iter()
+                    .map(|p| {
+                        (
+                            code_tables.set("provision")[p.provision.as_str()],
+                            p.base_quality,
+                        )
+                    })
+                    .chain((!b.professions.is_empty()).then(|| {
+                        (
+                            code_tables.set("provision")["employment"],
+                            EMPLOYMENT_BASE_QUALITY,
+                        )
+                    }))
+                    .collect();
+                v.sort_unstable();
                 v
             },
             rooms: b.rooms.iter().map(|n| room_ids[n.as_str()]).collect(),

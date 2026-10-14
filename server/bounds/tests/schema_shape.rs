@@ -262,8 +262,9 @@ fn routing_tables_are_never_public() {
         .collect();
     assert!(
         routing.iter().any(|t| t.accessor == "route_node")
-            && routing.iter().any(|t| t.accessor == "route_edge"),
-        "the schema no longer has route_node and route_edge"
+            && routing.iter().any(|t| t.accessor == "route_edge")
+            && routing.iter().any(|t| t.accessor == "route_provision"),
+        "the schema no longer has route_node, route_edge and route_provision"
     );
     for t in routing {
         assert!(!t.public, "`{}` must stay private (FR135)", t.accessor);

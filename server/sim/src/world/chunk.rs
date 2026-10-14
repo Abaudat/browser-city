@@ -31,7 +31,7 @@ const FLOOR_MASK: u64 = (1u64 << FLOOR_BITS) - 1;
 /// truncation, so negative coordinates chunk the same way positive ones do
 /// (`-1` is in chunk `-1`, not chunk `0`). `div_euclid` never overflows for
 /// any `i32` dividend and this constant, positive divisor.
-fn chunk_coord(v: i32) -> i32 {
+pub fn chunk_coord(v: i32) -> i32 {
     v.div_euclid(CHUNK_SIZE)
 }
 

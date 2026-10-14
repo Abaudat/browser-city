@@ -1445,3 +1445,10 @@ key = "generation.props.max_solid_percent_of_room_floor"
 value = 50
 min = 10
 max = 90
+
+[[balance]]
+# Provision quality (story 3.10, FR50): percent of the distance an affluence sits from the middle of the affluence range that is added to a provision's base quality. 40 puts a richest neighbourhood's cafe 20 above its base and a poorest one's 20 below, clamped to 0..100. Quality is set once at generation and nothing at runtime writes to it.
+key = "generation.provision.quality_affluence_weight_percent"
+value = 40
+min = 0
+max = 200

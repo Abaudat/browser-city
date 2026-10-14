@@ -172,5 +172,39 @@ check "a graph delete in district.rs fails" 1 bash "$CHECK" "$d"
 
 check "the real server/src passes" 0 bash "$CHECK"
 
+# Story 3.10: the provision rows have the same single writer.
+d="$(plant tables/other.rs 'fn f(ctx: &ReducerContext) { ctx.db.route_provision().insert(x); }')"
+check "another file calling the route_provision accessor fails" 1 bash "$CHECK" "$d"
+check_contains "names the accessor" "route_provision" "$(bash "$CHECK" "$d" 2>&1)"
+
+d="$(plant tables/other.rs 'use super::routing::{RouteProvision, route_provision};')"
+check "importing the route_provision accessor fails" 1 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s\n' 'fn write_graph(ctx: &ReducerContext) { ctx.db.route_provision().insert(x); }' >> "$d/tables/district.rs"
+check "the provision writer inside write_graph passes" 0 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s\n' 'fn regen_provisions(ctx: &ReducerContext) { ctx.db.route_provision().insert(x); }' >> "$d/tables/district.rs"
+check "another provision writer inside district.rs fails" 1 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s\n' 'pub fn restore_route_provision(ctx: &ReducerContext) { ctx.db.route_provision().insert(s); }' >> "$d/tables/restore.rs"
+check "restore_route_provision inserting route_provision passes" 0 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s\n' 'pub fn restore_route_node(ctx: &ReducerContext) { ctx.db.route_provision().insert(s); }' >> "$d/tables/restore.rs"
+check "restore_route_node touching route_provision fails" 1 bash "$CHECK" "$d"
+
+d="$(tree)"
+printf '%s\n' 'fn sneaky(ctx: &ReducerContext) { ctx.db.route_provision().iter(); }' >> "$d/tables/metrics.rs"
+check "a route_provision call in metrics.rs fails" 1 bash "$CHECK" "$d"
+
+d="$(plant tables/routing.rs 'fn read(ctx: &ReducerContext) { ctx.db.route_provision().by_provision_chunk().filter((1, 2)); }')"
+check "reading route_provision by index in the declaring module passes" 0 bash "$CHECK" "$d"
+
+d="$(plant tables/routing.rs 'fn bad(ctx: &ReducerContext) { ctx.db.route_provision().insert(x); }')"
+check "writing a row from the declaring module fails" 1 bash "$CHECK" "$d"
+
 summary
 exit $?

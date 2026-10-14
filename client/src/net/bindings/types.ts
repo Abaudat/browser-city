@@ -397,6 +397,15 @@ export const RouteNode = __t.object("RouteNode", {
 });
 export type RouteNode = __Infer<typeof RouteNode>;
 
+export const RouteProvision = __t.object("RouteProvision", {
+  provisionId: __t.u64(),
+  nodeId: __t.u64(),
+  provision: __t.u32(),
+  quality: __t.u32(),
+  chunkKey: __t.u64(),
+});
+export type RouteProvision = __Infer<typeof RouteProvision>;
+
 export const Stock = __t.object("Stock", {
   stockId: __t.u64(),
   holderKind: __t.u32(),

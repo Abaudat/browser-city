@@ -124,12 +124,11 @@ impl EdgeKind {
     }
 }
 
-/// The building a `Source` node is the entrance of: its plot index, and
-/// whether it is a workplace (and so owes a business row).
+/// The building a `Source` node is the entrance of: its plot index.
+/// Whether it is a workplace is its `employment` provision, nothing else.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SourceRef {
     pub plot: u32,
-    pub workplace: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -142,6 +141,12 @@ pub struct Node {
 }
 
 impl Node {
+    /// The chunk the node's cell is in: the one derivation of a provision
+    /// row's `chunk_key` (nodes never move).
+    pub fn chunk_key(&self) -> u64 {
+        crate::world::chunk_key(self.x, self.y, self.floor)
+    }
+
     pub fn point(&self) -> Point {
         Point {
             x: self.x,
@@ -204,6 +209,15 @@ pub enum GraphError {
     EntranceOffStreet {
         plot: u32,
     },
+    /// A provision row on a node that is not a building's entrance.
+    ProvisionOffSource {
+        node: u32,
+    },
+    /// The same provision twice on one node, a row naming no node, or rows
+    /// out of (node, provision) order.
+    BadProvisions {
+        node: u32,
+    },
     /// A row's kind code names no kind.
     UnknownKind {
         code: u32,
@@ -242,17 +256,39 @@ pub struct EdgeRow {
     pub cost_milliminutes: i64,
 }
 
+/// One provision a source node advertises: its quality is set once at
+/// generation. Sorted by (node, provision) in a graph.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NodeProvision {
+    pub node: u32,
+    pub provision: u32,
+    pub quality: u32,
+}
+
+/// One `route_provision` table row, in its shape; `provision_id` is 0 for
+/// a freshly mapped row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProvisionRow {
+    pub provision_id: u64,
+    pub node_id: u64,
+    pub provision: u32,
+    pub quality: u32,
+    pub chunk_key: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct MacroGraph {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
+    provisions: Vec<NodeProvision>,
 }
 
 /// One enterable building, as the builder reads it.
 #[derive(Clone, Debug)]
 pub struct BuildingInput {
     pub plot: u32,
-    pub workplace: bool,
+    /// `(provision code, quality)` the building advertises.
+    pub provisions: Vec<(u32, u32)>,
     pub front: Side,
     /// The street door cell, ground floor.
     pub entrance: (i32, i32),
@@ -348,8 +384,29 @@ impl MacroGraph {
 
     /// A graph from raw parts, for tests and for [`Self::from_rows`];
     /// [`Self::check`] is the verdict on it.
-    pub fn from_parts(nodes: Vec<Node>, edges: Vec<Edge>) -> MacroGraph {
-        MacroGraph { nodes, edges }
+    pub fn from_parts(
+        nodes: Vec<Node>,
+        edges: Vec<Edge>,
+        provisions: Vec<NodeProvision>,
+    ) -> MacroGraph {
+        MacroGraph {
+            nodes,
+            edges,
+            provisions,
+        }
+    }
+
+    /// Whether node `node` (an index) advertises `provision`. A workplace
+    /// is a source that advertises `employment`.
+    pub fn advertises(&self, node: u32, provision: u32) -> bool {
+        self.provisions
+            .binary_search_by_key(&(node, provision), |p| (p.node, p.provision))
+            .is_ok()
+    }
+
+    /// Every provision a source node advertises, by (node, provision).
+    pub fn provisions(&self) -> &[NodeProvision] {
+        &self.provisions
     }
 
     /// Builds the graph. No pairwise scan: street edges split at the
@@ -390,7 +447,7 @@ impl MacroGraph {
         // Per building: (entrance, split cell, internal cell).
         struct Placed {
             plot: u32,
-            workplace: bool,
+            provisions: Vec<(u32, u32)>,
             entrance: (i32, i32),
             split: (i32, i32),
             street_edge: usize,
@@ -433,7 +490,7 @@ impl MacroGraph {
                     .flatten();
             placed.push(Placed {
                 plot: b.plot,
-                workplace: b.workplace,
+                provisions: b.provisions.clone(),
                 entrance: b.entrance,
                 split,
                 street_edge: ei,
@@ -448,10 +505,7 @@ impl MacroGraph {
                 p.entrance.1,
                 0,
                 NodeKind::Source,
-                Some(SourceRef {
-                    plot: p.plot,
-                    workplace: p.workplace,
-                }),
+                Some(SourceRef { plot: p.plot }),
             );
             if let Some((x, y)) = p.internal {
                 put(x, y, 0, NodeKind::Internal, None);
@@ -580,7 +634,23 @@ impl MacroGraph {
                 }
             })
             .collect();
-        Ok(MacroGraph { nodes, edges })
+        let mut provisions: Vec<NodeProvision> = Vec::new();
+        for p in &placed {
+            let node = at(p.entrance.0, p.entrance.1, 0);
+            for &(provision, quality) in &p.provisions {
+                provisions.push(NodeProvision {
+                    node,
+                    provision,
+                    quality,
+                });
+            }
+        }
+        provisions.sort_unstable();
+        Ok(MacroGraph {
+            nodes,
+            edges,
+            provisions,
+        })
     }
 
     /// Every verdict on the graph's shape: no dangling or self-looping or
@@ -631,7 +701,42 @@ impl MacroGraph {
                 return Err(GraphError::CornerBlocked { edge: i as u32 });
             }
         }
+        self.check_provisions()?;
         self.check_connected()
+    }
+
+    /// A provision sits only on a building's entrance, once per code per
+    /// node, in order.
+    fn check_provisions(&self) -> Result<(), GraphError> {
+        let mut prev: Option<(u32, u32)> = None;
+        for p in &self.provisions {
+            let Some(n) = self.nodes.get(p.node as usize) else {
+                return Err(GraphError::BadProvisions { node: p.node });
+            };
+            if n.kind != NodeKind::Source {
+                return Err(GraphError::ProvisionOffSource { node: p.node });
+            }
+            if prev.is_some_and(|q| q >= (p.node, p.provision)) {
+                return Err(GraphError::BadProvisions { node: p.node });
+            }
+            prev = Some((p.node, p.provision));
+        }
+        Ok(())
+    }
+
+    /// The provision table rows, in (node, provision) order. `node_ids[i]`
+    /// is the id the table assigned node `i`; `provision_id` is left 0.
+    pub fn provision_rows(&self, node_ids: &[u64]) -> Vec<ProvisionRow> {
+        self.provisions
+            .iter()
+            .map(|p| ProvisionRow {
+                provision_id: 0,
+                node_id: node_ids[p.node as usize],
+                provision: p.provision,
+                quality: p.quality,
+                chunk_key: self.nodes[p.node as usize].chunk_key(),
+            })
+            .collect()
     }
 
     /// One component: every node, portals included, is reachable from
@@ -696,12 +801,14 @@ impl MacroGraph {
             .collect()
     }
 
-    /// The inverse of the two row mappings: the graph and each node's
+    /// The inverse of the three row mappings: the graph and each node's
     /// business id, in the rows' order. Rows must be sorted by id, as a
-    /// table scan returns them.
+    /// table scan returns them; a provision row naming an unknown node is
+    /// `BadRows`.
     pub fn from_rows(
         nodes: &[NodeRow],
         edges: &[EdgeRow],
+        provisions: &[ProvisionRow],
     ) -> Result<(MacroGraph, Vec<Option<u64>>), GraphError> {
         let mut index: BTreeMap<u64, u32> = BTreeMap::new();
         let mut out_nodes = Vec::with_capacity(nodes.len());
@@ -734,10 +841,21 @@ impl MacroGraph {
                 cost: Milliminutes(r.cost_milliminutes),
             });
         }
+        let mut out_provisions = Vec::with_capacity(provisions.len());
+        for r in provisions {
+            let node = *index.get(&r.node_id).ok_or(GraphError::BadRows)?;
+            out_provisions.push(NodeProvision {
+                node,
+                provision: r.provision,
+                quality: r.quality,
+            });
+        }
+        out_provisions.sort_unstable();
         Ok((
             MacroGraph {
                 nodes: out_nodes,
                 edges: out_edges,
+                provisions: out_provisions,
             },
             business,
         ))

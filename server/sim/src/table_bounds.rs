@@ -198,6 +198,23 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
             / 10,
         kind: BoundKind::Engineering,
     },
+    // Story 3.10: what source nodes advertise -- at most
+    // `MAX_PROVISIONS_PER_SOURCE` rows per source node, so the node
+    // ceiling times that; `expected_rows` is the measured 1024 figure
+    // (`tests/generation_perf.rs`).
+    TableBound {
+        accessor: "route_provision",
+        max_rows: crate::routing::graph::max_nodes_for_side(
+            crate::routing::graph::GROWTH_TARGET_SIDE_CELLS,
+        ) * crate::routing::provision::MAX_PROVISIONS_PER_SOURCE,
+        expected_rows: 2_000,
+        alert_rows: crate::routing::graph::max_nodes_for_side(
+            crate::routing::graph::GROWTH_TARGET_SIDE_CELLS,
+        ) * crate::routing::provision::MAX_PROVISIONS_PER_SOURCE
+            * 9
+            / 10,
+        kind: BoundKind::Engineering,
+    },
     // The edge kinds of `sim::codes::edge_kind`, one row per code.
     TableBound {
         accessor: "edge_kind",

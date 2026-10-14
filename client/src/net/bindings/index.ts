@@ -79,6 +79,7 @@ import RestoreRoomReducer from "./restore_room_reducer";
 import RestoreRoomAreaReducer from "./restore_room_area_reducer";
 import RestoreRouteEdgeReducer from "./restore_route_edge_reducer";
 import RestoreRouteNodeReducer from "./restore_route_node_reducer";
+import RestoreRouteProvisionReducer from "./restore_route_provision_reducer";
 import RestoreStockReducer from "./restore_stock_reducer";
 import RestoreStorageSampleReducer from "./restore_storage_sample_reducer";
 import RestoreTableSampleReducer from "./restore_table_sample_reducer";
@@ -331,6 +332,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_room_area", RestoreRoomAreaReducer),
   __reducerSchema("restore_route_edge", RestoreRouteEdgeReducer),
   __reducerSchema("restore_route_node", RestoreRouteNodeReducer),
+  __reducerSchema("restore_route_provision", RestoreRouteProvisionReducer),
   __reducerSchema("restore_stock", RestoreStockReducer),
   __reducerSchema("restore_storage_sample", RestoreStorageSampleReducer),
   __reducerSchema("restore_table_sample", RestoreTableSampleReducer),

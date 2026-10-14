@@ -119,3 +119,27 @@ fn the_routing_graph_tables_are_bounded_by_the_graph_bands() {
         assert!(b.expected_rows <= b.alert_rows && b.alert_rows <= b.max_rows);
     }
 }
+
+/// Story 3.10: the provision rows are bounded by the node ceiling times the
+/// widest source's provision list, and no building type declares more than
+/// that list allows.
+#[test]
+fn the_provision_table_is_bounded_by_the_node_band() {
+    use sim::routing::graph::max_nodes_for_side;
+    use sim::routing::provision::MAX_PROVISIONS_PER_SOURCE;
+    let b = bound("route_provision");
+    assert_eq!(
+        b.max_rows,
+        max_nodes_for_side(1024) * MAX_PROVISIONS_PER_SOURCE
+    );
+    assert!(b.expected_rows <= b.alert_rows && b.alert_rows <= b.max_rows);
+    let widest = sim::generated::defs::BUILDING_TYPES
+        .iter()
+        .map(|t| t.provisions.len() as u64)
+        .max()
+        .unwrap_or(0);
+    assert!(
+        widest <= MAX_PROVISIONS_PER_SOURCE,
+        "a building type declares {widest} provisions, past MAX_PROVISIONS_PER_SOURCE"
+    );
+}

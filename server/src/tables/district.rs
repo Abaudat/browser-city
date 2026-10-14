@@ -11,6 +11,7 @@
 //! outside the places listed there, and any writer of the four region
 //! tables other than this file and `restore.rs`.
 
+use sim::codes::provision;
 use sim::generated::defs;
 use sim::generation::{
     DistrictRecord, GenerationConfig, GenerationContent, GroundConfig, RegionRows, RuleSetVersion,
@@ -23,7 +24,9 @@ use spacetimedb::{ReducerContext, Table, Timestamp};
 use super::metrics::count_call;
 use super::ops::require_owner;
 use super::player_position::relocate_stranded;
-use super::routing::{RouteEdge, RouteNode, route_edge, route_node};
+use super::routing::{
+    RouteEdge, RouteNode, RouteProvision, route_edge, route_node, route_provision,
+};
 use super::stock::{Business, business};
 use super::world::{
     BuildingArea, FloorTransition, PlacedObject, RoomArea, building_area, floor_transition,
@@ -206,23 +209,26 @@ fn write_world(ctx: &ReducerContext, rows: &RegionRows) {
 
 /// The one graph writer: one `business` row per workplace source node,
 /// then every node in graph order (the ids the table assigns are kept),
-/// then every edge through those ids. Inside the caller's transaction, so
+/// then every edge and every provision row through those ids. Inside the caller's transaction, so
 /// a later `Err` rolls the graph back with everything else.
 fn write_graph(ctx: &ReducerContext, graph: &MacroGraph) {
     let business_ids: Vec<Option<u64>> = graph
         .nodes()
         .iter()
-        .map(|n| match (n.kind, n.source) {
-            (NodeKind::Source, Some(s)) if s.workplace => Some(
-                ctx.db
-                    .business()
-                    .insert(Business {
-                        business_id: 0,
-                        created_at: ctx.timestamp,
-                    })
-                    .business_id,
-            ),
-            _ => None,
+        .enumerate()
+        .map(|(i, n)| {
+            // A workplace is a source that advertises employment.
+            (n.kind == NodeKind::Source && graph.advertises(i as u32, provision::EMPLOYMENT)).then(
+                || {
+                    ctx.db
+                        .business()
+                        .insert(Business {
+                            business_id: 0,
+                            created_at: ctx.timestamp,
+                        })
+                        .business_id
+                },
+            )
         })
         .collect();
     let node_ids: Vec<u64> = graph
@@ -249,6 +255,15 @@ fn write_graph(ctx: &ReducerContext, graph: &MacroGraph) {
             node_b: r.node_b,
             kind: r.kind,
             cost_milliminutes: r.cost_milliminutes,
+        });
+    }
+    for r in graph.provision_rows(&node_ids) {
+        ctx.db.route_provision().insert(RouteProvision {
+            provision_id: 0,
+            node_id: r.node_id,
+            provision: r.provision,
+            quality: r.quality,
+            chunk_key: r.chunk_key,
         });
     }
 }

@@ -60,7 +60,7 @@ fn lattice() -> MacroGraph {
             }
         }
     }
-    MacroGraph::from_parts(nodes, edges)
+    MacroGraph::from_parts(nodes, edges, Vec::new())
 }
 
 fn run(g: &MacroGraph, a: u64, b: u64) -> Result<Route, SearchError> {
@@ -109,7 +109,7 @@ fn origin_equal_destination_is_a_one_node_route() {
 fn a_disconnected_goal_is_a_typed_error() {
     let nodes = vec![node(0, 0, 0), node(5, 0, 0), node(50, 50, 0)];
     let edges = vec![edge(&nodes, 0, 1, EdgeKind::Street)];
-    let g = MacroGraph::from_parts(nodes, edges);
+    let g = MacroGraph::from_parts(nodes, edges, Vec::new());
     assert_eq!(run(&g, 0, 2), Err(SearchError::Unreachable));
 }
 
@@ -145,7 +145,7 @@ fn a_portal_edge_splits_the_route_into_single_floor_legs() {
         edge(&nodes, 2, 3, EdgeKind::Street),
     ];
     let c: Vec<i64> = edges.iter().map(|e| e.cost.0).collect();
-    let g = MacroGraph::from_parts(nodes, edges);
+    let g = MacroGraph::from_parts(nodes, edges, Vec::new());
     let r = run(&g, 0, 3).unwrap();
     assert_eq!(r.legs.len(), 2);
     assert_eq!(r.legs[0].waypoints, vec![(0, 0, 0), (10, 0, 0)]);
@@ -172,8 +172,16 @@ fn ties_break_on_node_id_not_on_edge_order() {
             .map(|&(a, b)| edge(&nodes, a, b, EdgeKind::Street))
             .collect::<Vec<_>>()
     };
-    let fwd = MacroGraph::from_parts(nodes.clone(), es(&[(0, 1), (0, 2), (1, 3), (2, 3)]));
-    let rev = MacroGraph::from_parts(nodes.clone(), es(&[(2, 3), (1, 3), (0, 2), (0, 1)]));
+    let fwd = MacroGraph::from_parts(
+        nodes.clone(),
+        es(&[(0, 1), (0, 2), (1, 3), (2, 3)]),
+        Vec::new(),
+    );
+    let rev = MacroGraph::from_parts(
+        nodes.clone(),
+        es(&[(2, 3), (1, 3), (0, 2), (0, 1)]),
+        Vec::new(),
+    );
     let a = run(&fwd, 0, 3).unwrap();
     assert_eq!(a.nodes, vec![0, 1, 3]);
     assert_eq!(a, run(&rev, 0, 3).unwrap());
@@ -287,7 +295,7 @@ fn a_diagonal_edge_is_issued_at_walking_pace() {
     use crate::time::REAL_MS_PER_CITY_MINUTE;
     let nodes = vec![node(0, 0, 0), node(12, 9, 0)];
     let edges = vec![edge(&nodes, 0, 1, EdgeKind::Street)];
-    let g = MacroGraph::from_parts(nodes, edges);
+    let g = MacroGraph::from_parts(nodes, edges, Vec::new());
     let r = run(&g, 0, 1).unwrap();
     assert_eq!(r.legs.len(), 1);
     let w = &r.legs[0].waypoints;

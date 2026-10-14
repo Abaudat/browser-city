@@ -58,6 +58,7 @@ weight = 25
 [[building_type]]
 id = 4
 key = "corner_shop"
+provisions = [{ provision = "food", base_quality = 45 }]
 rooms = ["shop_floor", "stock_room", "kitchen_diner", "bedroom", "bathroom"]
 optional_rooms = ["living_room"]
 tags = ["dwelling", "shop", "form_mid"]
