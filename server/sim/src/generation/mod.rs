@@ -1737,7 +1737,7 @@ mod tests {
     fn valid_balance() -> Vec<defs::BalanceSeed> {
         vec![
             seed("generation.site_extent_cells", 512, 64, 2048),
-            seed("movement.walk_speed_millicells_per_s", 2200, 100, 20000),
+            seed("movement.walk_speed_millicells_per_s", 2200, 100, 4400),
             seed(
                 "generation.provision.quality_affluence_weight_percent",
                 40,
@@ -1745,8 +1745,8 @@ mod tests {
                 200,
             ),
             seed("routing.speed_percent.walk", 100, 100, 100),
-            seed("routing.speed_percent.bike", 200, 100, 1000),
-            seed("routing.speed_percent.transit", 300, 100, 1000),
+            seed("routing.speed_percent.bike", 200, 100, 500),
+            seed("routing.speed_percent.transit", 300, 100, 500),
             seed("routing.floor_change_penalty_milliminutes", 1000, 0, 600000),
             seed(
                 "routing.graph.internal_node_min_interior_cells",

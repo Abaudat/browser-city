@@ -20,6 +20,23 @@ pub enum TransportMode {
     Transit,
 }
 
+impl TransportMode {
+    /// Every mode. The exhaustive `match` fails to compile when a variant
+    /// is added, until it is also added to the list.
+    pub const ALL: [TransportMode; 3] = [
+        TransportMode::Walk,
+        TransportMode::Bike,
+        TransportMode::Transit,
+    ];
+
+    #[allow(dead_code)]
+    fn _all_is_exhaustive(self) {
+        match self {
+            TransportMode::Walk | TransportMode::Bike | TransportMode::Transit => {}
+        }
+    }
+}
+
 /// A cell address: world x, y and floor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Point {

@@ -225,19 +225,17 @@ fn quality_is_clamped_and_moves_with_affluence() {
 #[test]
 fn the_window_stays_under_the_ceiling_at_every_dial_maximum() {
     let max = |k: &str| defs::BALANCE.iter().find(|b| b.key == k).unwrap().max;
-    let committed = rates();
+    // Every dial that sets the window at its balance maximum. Only the
+    // floor-change penalty stays committed: it can only shrink the window.
     let at_max = Rates {
+        walk_speed_millicells_per_s: max("movement.walk_speed_millicells_per_s"),
         walk_percent: max("routing.speed_percent.walk"),
         bike_percent: max("routing.speed_percent.bike"),
         transit_percent: max("routing.speed_percent.transit"),
-        ..committed
+        ..rates()
     };
     let radius = minutes(max("routing.provision.query_radius_minutes"));
-    for mode in [
-        TransportMode::Walk,
-        TransportMode::Bike,
-        TransportMode::Transit,
-    ] {
+    for mode in TransportMode::ALL {
         let cells = radius_cells(&at_max, mode, radius);
         assert!(
             window_chunks_bound(cells) <= MAX_QUERY_WINDOW_CHUNKS,

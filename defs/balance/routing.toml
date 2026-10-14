@@ -13,13 +13,13 @@ max = 100
 key = "routing.speed_percent.bike"
 value = 200
 min = 100
-max = 1000
+max = 500
 
 [[balance]]
 key = "routing.speed_percent.transit"
 value = 300
 min = 100
-max = 1000
+max = 500
 
 [[balance]]
 # Charged once per floor of |floor difference| between the two endpoints.

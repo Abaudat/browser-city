@@ -431,11 +431,7 @@ fn provision_index_at_the_1024_growth_target_is_chunk_bounded() {
         floor: o.floor,
     };
     table.reset_visits();
-    for mode in [
-        TransportMode::Walk,
-        TransportMode::Bike,
-        TransportMode::Transit,
-    ] {
+    for mode in TransportMode::ALL {
         table.reset_visits();
         let hits = near(&table, origin, &[0], 9_999, mode, &q);
         assert!(hits.is_empty());
