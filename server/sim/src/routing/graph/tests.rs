@@ -395,3 +395,54 @@ fn two_street_components_with_no_link_are_disconnected() {
         Err(GraphError::Disconnected { node: 2 })
     );
 }
+
+#[test]
+fn corner_is_the_same_whichever_way_the_segment_is_walked() {
+    let p = |x, y| Point { x, y, floor: 0 };
+    assert_eq!(corner(p(2, 3), p(9, 8)), Some(p(9, 3)));
+    assert_eq!(corner(p(9, 8), p(2, 3)), Some(p(9, 3)));
+    assert_eq!(corner(p(9, 3), p(2, 8)), Some(p(2, 3)));
+    assert_eq!(corner(p(2, 8), p(9, 3)), Some(p(2, 3)));
+    assert_eq!(corner(p(2, 3), p(9, 3)), None);
+    assert_eq!(corner(p(2, 3), p(2, 9)), None);
+    assert_eq!(
+        corner(
+            p(2, 3),
+            Point {
+                floor: 1,
+                ..p(9, 8)
+            }
+        ),
+        None
+    );
+}
+
+#[test]
+fn a_diagonal_edge_whose_corner_or_arm_is_blocked_names_that_edge() {
+    let at = |x, y| Node {
+        kind: NodeKind::Street,
+        x,
+        y,
+        floor: 0,
+        source: None,
+    };
+    // (1,1) to (6,5): the corner is (6,1); its arms run along row 1 and
+    // down column 6.
+    let g = MacroGraph::from_parts(vec![at(1, 1), at(6, 5)], vec![edge(0, 1, EdgeKind::Street)]);
+    assert_eq!(g.check(&floors()), Ok(()));
+    for (x, y) in [(6, 1), (3, 1), (6, 3)] {
+        let wall = Rect {
+            x0: x,
+            y0: y,
+            x1: x + 1,
+            y1: y + 1,
+        };
+        let mut f = floors();
+        f.insert(0, FloorCollision::build(SITE, &[wall]).unwrap()); // collision-inference: allow (a hand-laid test grid)
+        assert_eq!(
+            g.check(&f),
+            Err(GraphError::CornerBlocked { edge: 0 }),
+            "wall at ({x}, {y})"
+        );
+    }
+}

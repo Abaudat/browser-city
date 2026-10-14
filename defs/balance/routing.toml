@@ -36,3 +36,13 @@ key = "routing.graph.internal_node_min_interior_cells"
 value = 100
 min = 1
 max = 100000
+
+[[balance]]
+# Route search (story 3.12, FR131): the most nodes one search may expand
+# before it is refused. Sized from the largest generated district, 1024
+# cells a side: `max_nodes_for_side(1024)` = 9,620 nodes, a search expands
+# at most all of them, plus 25% headroom.
+key = "routing.search.node_budget"
+value = 12000
+min = 1000
+max = 100000

@@ -103,6 +103,36 @@ check "read_clock is banned in cadences.rs" 1 bash "$CHECK" "$d"
 
 d="$(plant 'let at = ctx.timestamp; let e = read_clock(ctx);')"
 check "ctx.timestamp and read_clock stay allowed outside cadences.rs" 0 bash "$CHECK" "$d"
+d="$(plant 'for n in ctx.db.route_node().iter() {}')"
+check "iterating route_node in a reducer file is banned" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'for n in ctx.db.route_edge().iter() {}' > "$d/restore.rs"
+check "iterating route_edge in restore.rs is allowed" 0 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'use sim::routing::search::search;' > "$d/a.rs"
+check "one file naming routing::search is allowed" 0 bash "$CHECK" "$d"
+printf '%s\n' 'use sim::routing::search::search;' > "$d/b.rs"
+check "a second file naming routing::search is banned" 1 bash "$CHECK" "$d"
+d="$(fake_dir)"
+printf '%s\n' 'use sim::routing::{estimate, search};' > "$d/a.rs"
+printf '%s\n' 'use sim::routing::search::search;' > "$d/b.rs"
+check "a grouped import naming search counts as a second call site" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'use sim::routing::{' '    estimate,' '    search::search,' '};' > "$d/a.rs"
+printf '%s\n' 'use sim::routing::search::search;' > "$d/b.rs"
+check "a multi-line grouped import counts too" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'use sim::routing::{estimate, graph};' > "$d/a.rs"
+printf '%s\n' 'use sim::routing::search::search;' > "$d/b.rs"
+check "a grouped import not naming search is fine" 0 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'let n = ctx.db' '    .route_edge()' '    .iter()' '    .filter(|e| e.kind == 1)' '    .count();' > "$d/reducer.rs"
+check "a rustfmt-split route_edge iteration is banned" 1 bash "$CHECK" "$d"
 
 summary
 exit $?

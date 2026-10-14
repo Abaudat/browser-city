@@ -249,3 +249,30 @@ fn identity_tables_are_private() {
         );
     }
 }
+
+/// FR135: the macro routing graph is never client-visible. Any table whose
+/// name starts `route_` is private, and so are `edge_kind` and `node_kind`.
+#[test]
+fn routing_tables_are_never_public() {
+    let s = schema();
+    let routing: Vec<_> = s
+        .tables
+        .iter()
+        .filter(|t| t.accessor.starts_with("route_"))
+        .collect();
+    assert!(
+        routing.iter().any(|t| t.accessor == "route_node")
+            && routing.iter().any(|t| t.accessor == "route_edge"),
+        "the schema no longer has route_node and route_edge"
+    );
+    for t in routing {
+        assert!(!t.public, "`{}` must stay private (FR135)", t.accessor);
+    }
+    for t in s
+        .tables
+        .iter()
+        .filter(|t| t.accessor == "edge_kind" || t.accessor == "node_kind")
+    {
+        assert!(!t.public, "`{}` must stay private (FR135)", t.accessor);
+    }
+}

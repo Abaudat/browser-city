@@ -176,16 +176,26 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
     // 1024 figure (`tests/generation_perf.rs`).
     TableBound {
         accessor: "route_node",
-        max_rows: crate::routing::graph::max_nodes_for_side(1024),
+        max_rows: crate::routing::graph::max_nodes_for_side(
+            crate::routing::graph::GROWTH_TARGET_SIDE_CELLS,
+        ),
         expected_rows: 7_400,
-        alert_rows: crate::routing::graph::max_nodes_for_side(1024) * 9 / 10,
+        alert_rows: crate::routing::graph::max_nodes_for_side(
+            crate::routing::graph::GROWTH_TARGET_SIDE_CELLS,
+        ) * 9
+            / 10,
         kind: BoundKind::Engineering,
     },
     TableBound {
         accessor: "route_edge",
-        max_rows: crate::routing::graph::max_edges_for_side(1024),
+        max_rows: crate::routing::graph::max_edges_for_side(
+            crate::routing::graph::GROWTH_TARGET_SIDE_CELLS,
+        ),
         expected_rows: 7_600,
-        alert_rows: crate::routing::graph::max_edges_for_side(1024) * 9 / 10,
+        alert_rows: crate::routing::graph::max_edges_for_side(
+            crate::routing::graph::GROWTH_TARGET_SIDE_CELLS,
+        ) * 9
+            / 10,
         kind: BoundKind::Engineering,
     },
     // The edge kinds of `sim::codes::edge_kind`, one row per code.
