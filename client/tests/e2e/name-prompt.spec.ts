@@ -101,6 +101,11 @@ test("after submit nothing new is fetched before the player is controllable, and
     BOOT_MARK.FIRST_FRAME_RENDERED,
     { timeout: 30_000 },
   );
+  // The dev build lazy-loads the debug tooling once the scene is up; it is
+  // not the player's fetch, so it must have landed before the window opens.
+  await page.waitForFunction(() => window.__bcDebug !== undefined, undefined, {
+    timeout: 30_000,
+  });
   await page.waitForLoadState("networkidle");
 
   const started: string[] = [];

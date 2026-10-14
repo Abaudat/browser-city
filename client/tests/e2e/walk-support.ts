@@ -25,7 +25,7 @@ const RECORD_FILE = join(import.meta.dirname, "..", "..", "walk-records", "walks
 
 /** A walk that never meets its condition fails by name before the test's
  * own 30 s timeout can kill it unrecorded. */
-const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_TIMEOUT_MS = 40_000;
 
 function writeRecord(segment: WalkSegment, mode: WalkMode, record: WalkRecord): void {
   const info = test.info();

@@ -65,64 +65,70 @@ describe("the footbridge flight on the real grid (FR117)", () => {
     expect(bridgeFlights.map((r) => r.floor).sort()).toEqual([STREET_FLOOR, BRIDGE_FLOOR]);
   });
 
-  it("one step in each of the four directions from any standable position on the flight changes the floor only by entering an explicit transition cell", () => {
+  describe("one step in each of the four directions from any standable position on the flight changes the floor only by entering an explicit transition cell", () => {
     const flightRows = allRows.filter(
       (r) => isBridgeStairs(r) && defs.objects.find((o) => o.id === r.defId)?.flight,
     );
-    expect(flightRows.length).toBe(2);
-    let positions = 0;
-    let entered = 0;
-    for (const row of flightRows) {
-      const source = sources.get(row.defId);
-      if (!source) throw new Error("no source");
-      const cells = footprintCells(row.x, row.y, source).filter(
-        (c) => !anchors.has(cellKey(row.floor, c.x, c.y)),
-      );
-      const x0 = Math.min(...cells.map((c) => c.x));
-      const y0 = Math.min(...cells.map((c) => c.y));
-      const x1 = Math.max(...cells.map((c) => c.x)) + 1;
-      const y1 = Math.max(...cells.map((c) => c.y)) + 1;
-      for (let cx = x0 * sub; cx <= x1 * sub; cx++) {
-        for (let feet = y0 * sub; feet <= y1 * sub; feet++) {
-          if (!isBodyClear(world, config, row.floor, cx, feet)) continue;
-          const x = cx / sub;
-          const y = feet / sub;
-          // Only positions whose own cell is a flight cell, never an anchor.
-          const here = bodyCell({ x, y });
-          if (!cells.some((c) => c.x === here.x && c.y === here.y)) continue;
-          positions++;
-          for (const dir of [
-            { x: 0, y: -1 },
-            { x: 0, y: 1 },
-            { x: -1, y: 0 },
-            { x: 1, y: 0 },
-          ]) {
-            const next = step({ x, y }, dir, 16, world, row.floor, config, 1);
-            const nextCell = bodyCell(next);
-            const walkedInto = cellKey(row.floor, nextCell.x, nextCell.y);
-            const changedCell = nextCell.x !== here.x || nextCell.y !== here.y;
-            const result = stepAndTransition(
-              initialFloorWalkState(x, y, row.floor),
-              dir,
-              16,
-              world,
-              config,
-              transitions,
-              streetFlightIndex(),
-            );
-            const intoAnchor = changedCell && anchors.has(walkedInto);
-            if (intoAnchor) entered++;
-            expect(
-              result.transitioned,
-              `from (${x}, ${y}) floor ${row.floor} step ${JSON.stringify(dir)}`,
-            ).toBe(intoAnchor);
-            expect(result.floor !== row.floor).toBe(intoAnchor);
+    let enteredTotal = 0;
+    it("is the two flights", () => {
+      expect(flightRows.length).toBe(2);
+    });
+    for (const [index, row] of flightRows.entries()) {
+      it(`flight ${index} (floor ${row.floor})`, () => {
+        let positions = 0;
+        const source = sources.get(row.defId);
+        if (!source) throw new Error("no source");
+        const cells = footprintCells(row.x, row.y, source).filter(
+          (c) => !anchors.has(cellKey(row.floor, c.x, c.y)),
+        );
+        const x0 = Math.min(...cells.map((c) => c.x));
+        const y0 = Math.min(...cells.map((c) => c.y));
+        const x1 = Math.max(...cells.map((c) => c.x)) + 1;
+        const y1 = Math.max(...cells.map((c) => c.y)) + 1;
+        for (let cx = x0 * sub; cx <= x1 * sub; cx++) {
+          for (let feet = y0 * sub; feet <= y1 * sub; feet++) {
+            if (!isBodyClear(world, config, row.floor, cx, feet)) continue;
+            const x = cx / sub;
+            const y = feet / sub;
+            // Only positions whose own cell is a flight cell, never an anchor.
+            const here = bodyCell({ x, y });
+            if (!cells.some((c) => c.x === here.x && c.y === here.y)) continue;
+            positions++;
+            for (const dir of [
+              { x: 0, y: -1 },
+              { x: 0, y: 1 },
+              { x: -1, y: 0 },
+              { x: 1, y: 0 },
+            ]) {
+              const next = step({ x, y }, dir, 16, world, row.floor, config, 1);
+              const nextCell = bodyCell(next);
+              const walkedInto = cellKey(row.floor, nextCell.x, nextCell.y);
+              const changedCell = nextCell.x !== here.x || nextCell.y !== here.y;
+              const result = stepAndTransition(
+                initialFloorWalkState(x, y, row.floor),
+                dir,
+                16,
+                world,
+                config,
+                transitions,
+                streetFlightIndex(),
+              );
+              const intoAnchor = changedCell && anchors.has(walkedInto);
+              if (intoAnchor) enteredTotal++;
+              expect(
+                result.transitioned,
+                `from (${x}, ${y}) floor ${row.floor} step ${JSON.stringify(dir)}`,
+              ).toBe(intoAnchor);
+              expect(result.floor !== row.floor).toBe(intoAnchor);
+            }
           }
         }
-      }
+        expect(positions, "the sweep covered the flight").toBeGreaterThan(0);
+      });
     }
-    expect(positions, "the sweep covered both flights").toBeGreaterThan(0);
-    expect(entered, "and some step did enter an anchor").toBeGreaterThan(0);
+    it("and some step did enter an anchor", () => {
+      expect(enteredTotal).toBeGreaterThan(0);
+    });
   });
 });
 
