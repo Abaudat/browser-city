@@ -21,6 +21,9 @@
 #      connection, never supervised), and `connect` from net/connection is
 #      called and imported only by net/supervised-connect.ts.
 #
+#   5. Story 3.12 (FR135): no client file outside the bindings names a
+#      routing graph table.
+#
 # An optional first argument overrides the scanned directory, for
 # scripts/ci/tests/test-check-subscription-shape.sh.
 set -euo pipefail
@@ -86,6 +89,14 @@ BAD="$(printf '%s\n' "$LINES" | grep -F 'DbConnection.builder' | grep -vE '^net/
 $BAD"
 BAD="$(printf '%s\n' "$LINES" | grep -vE '^net/(connection|supervised-connect)\.ts:'   | grep -E '(^|[^A-Za-z0-9_.])connect\(|import .*[{, ]connect[ ,}].* from "[./a-z-]*connection"' || true)"
 [ -z "$BAD" ] || fail "connect() from net/connection used outside net/supervised-connect.ts (a connection nothing supervises):
+$BAD"
+
+
+# 5. Story 3.12 (FR135): the routing graph is never client-visible, and the
+#    client names none of its rows -- its only routing input is the route in
+#    a citizen's state.
+BAD="$(printf '%s\n' "$LINES" | grep -E '\b(RouteNode|RouteEdge|routeNode|routeEdge|route_node|route_edge)\b' || true)"
+[ -z "$BAD" ] || fail "the client names a routing graph table (FR135):
 $BAD"
 
 [ "$FAILED" -eq 0 ] || exit 1

@@ -9100,13 +9100,9 @@ fn inv_routing_graph_is_deterministic() {
     }
 }
 
-/// `inv_routing_fixture_world_portals_validate` (story 3.9 AC5): the
-/// conformance world's real floor transitions (bridge, manhole,
-/// staircase) become portal nodes and cross-floor edges that pass
-/// `check`; the generated cities alone only ever see floor 0.
-#[test]
-fn inv_routing_fixture_world_portals_validate() {
-    use sim::routing::graph::{BuildInput, EdgeKind, MacroGraph, NodeKind, PortalPair};
+/// The conformance world's routing graph and its floors.
+fn fixture_world() -> (sim::routing::graph::MacroGraph, sim::routing::graph::Floors) {
+    use sim::routing::graph::{BuildInput, MacroGraph, PortalPair};
     let spec = fixture::canonical_world_spec();
     let floors: sim::routing::graph::Floors = spec
         .floors
@@ -9165,6 +9161,17 @@ fn inv_routing_fixture_world_portals_validate() {
         walkability: &floors,
     })
     .unwrap();
+    (g, floors)
+}
+
+/// `inv_routing_fixture_world_portals_validate` (story 3.9 AC5): the
+/// conformance world's real floor transitions (bridge, manhole,
+/// staircase) become portal nodes and cross-floor edges that pass
+/// `check`; the generated cities alone only ever see floor 0.
+#[test]
+fn inv_routing_fixture_world_portals_validate() {
+    use sim::routing::graph::{EdgeKind, NodeKind};
+    let (g, floors) = fixture_world();
     // Every portal is reachable from a non-portal node on its own floor.
     for n in g.nodes().iter().filter(|n| n.kind == NodeKind::Portal) {
         assert!(
@@ -9205,4 +9212,403 @@ fn inv_routing_graph_edge_count_is_linear_in_node_count() {
             Ok(())
         },
     );
+}
+
+// ---------------------------------------------------------------------
+// Route search (story 3.12): one A* to one destination, over the pool.
+// ---------------------------------------------------------------------
+
+pub const INV_ROUTE_SEARCH_COST_EQUALS_DIJKSTRA: &str = "the route search cost equals a plain Dijkstra for any node pair of a generated district (FR131)";
+pub const INV_ROUTE_SEARCH_HEURISTIC_IS_CONSISTENT: &str =
+    "for every edge and goal, h(u) <= cost(u,v) + h(v), so a closed set is optimal (FR131)";
+pub const INV_ROUTE_IS_A_VALID_WALK_WITH_DERIVABLE_INSTANTS: &str = "a route starts and ends on its endpoints, walks real edges once each, costs the sum of them, stays on one floor per leg and has leg_instants (FR56, FR131)";
+pub const INV_ROUTING_DIAGONAL_EDGES_HAVE_WALKABLE_CORNERS: &str = "both arms of every diagonal edge's corner are walkable, so a route is never issued through a wall (FR135)";
+pub const INV_ROUTE_SEARCH_IGNORES_ROW_ORDER: &str =
+    "the same endpoints over a graph rebuilt from shuffled rows give the identical route (FR129)";
+pub const INV_ROUTE_SEARCH_STAYS_WITHIN_ITS_NODE_BUDGET: &str =
+    "a generated district has fewer nodes than routing.search.node_budget, so no pair is refused";
+
+/// A deterministic spread of `n` node-index pairs in a graph of `len` nodes.
+fn route_pairs(seed: u64, len: usize, n: u64) -> Vec<(u64, u64)> {
+    let len = len as u64;
+    (0..n)
+        .map(|i| {
+            let a = seed.wrapping_mul(2_654_435_761).wrapping_add(i * 7_919) % len;
+            let b = seed.wrapping_mul(40_503).wrapping_add(i * 104_729 + 1) % len;
+            (a, b)
+        })
+        .collect()
+}
+
+fn dijkstra_cost(g: &sim::routing::graph::MacroGraph, from: usize, to: usize) -> Option<i64> {
+    let mut adj: Vec<Vec<(usize, i64)>> = vec![Vec::new(); g.nodes().len()];
+    for e in g.edges() {
+        adj[e.a as usize].push((e.b as usize, e.cost.0));
+        adj[e.b as usize].push((e.a as usize, e.cost.0));
+    }
+    let mut dist = vec![i64::MAX; adj.len()];
+    let mut heap = std::collections::BinaryHeap::new();
+    dist[from] = 0;
+    heap.push(std::cmp::Reverse((0i64, from)));
+    while let Some(std::cmp::Reverse((d, u))) = heap.pop() {
+        if d > dist[u] {
+            continue;
+        }
+        if u == to {
+            return Some(d);
+        }
+        for &(v, c) in &adj[u] {
+            if d + c < dist[v] {
+                dist[v] = d + c;
+                heap.push(std::cmp::Reverse((d + c, v)));
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn inv_route_search_cost_equals_dijkstra() {
+    use sim::routing::search::{SearchGraph, node_budget, search};
+    over_pool("inv_route_search_cost_equals_dijkstra", |c| {
+        let g = pooled_graph(c)?;
+        let view = SearchGraph::from_graph(g);
+        let budget = node_budget(defs::BALANCE);
+        for (a, b) in route_pairs(c.seed, g.nodes().len(), 6) {
+            let r = search(&view, a, b, &rates(), budget).map_err(|e| format!("{a}>{b}: {e:?}"))?;
+            let want = dijkstra_cost(g, a as usize, b as usize).ok_or("disconnected")?;
+            ensure!(
+                r.cost.0 == want,
+                "{a}>{b}: A* {} vs Dijkstra {want}",
+                r.cost.0
+            );
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn inv_route_search_heuristic_is_consistent() {
+    over_pool("inv_route_search_heuristic_is_consistent", |c| {
+        let g = pooled_graph(c)?;
+        let h = |u: usize, goal: usize| {
+            estimate(
+                &rates(),
+                g.nodes()[u].point(),
+                g.nodes()[goal].point(),
+                TransportMode::Walk,
+                Correction::NONE,
+            )
+            .0
+        };
+        for (goal, _) in route_pairs(c.seed, g.nodes().len(), 3) {
+            let goal = goal as usize;
+            for e in g.edges() {
+                let (a, b) = (e.a as usize, e.b as usize);
+                ensure!(
+                    h(a, goal) <= e.cost.0 + h(b, goal) && h(b, goal) <= e.cost.0 + h(a, goal),
+                    "edge {a}-{b} breaks consistency towards {goal}"
+                );
+            }
+        }
+        Ok(())
+    });
+}
+
+/// One route's contract; returns its leg count and how many corner
+/// waypoints it carries. Shared by the pooled (floor 0) test and the
+/// fixture world, which has portals.
+fn check_route(
+    g: &sim::routing::graph::MacroGraph,
+    view: &sim::routing::search::SearchGraph,
+    standable: &dyn Fn(i8, i32, i32) -> bool,
+    a: u64,
+    b: u64,
+) -> Result<(usize, usize), String> {
+    use sim::actor_location::{crossings, leg_instants};
+    use sim::routing::graph::EdgeKind;
+    use sim::routing::search::{GraphView, node_budget, search};
+    use sim::time::REAL_MS_PER_CITY_MINUTE;
+    let band = sim::balance::value(defs::BALANCE, "l3.walk_pace_band_percent") as i128;
+    let speed = sim::balance::value(defs::BALANCE, "movement.walk_speed_millicells_per_s") as i128;
+    let r = search(view, a, b, &rates(), node_budget(defs::BALANCE))
+        .map_err(|e| format!("{a}>{b}: {e:?}"))?;
+    ensure!(
+        r.nodes.first() == Some(&a) && r.nodes.last() == Some(&b),
+        "{a}>{b}: wrong ends"
+    );
+    let mut seen = std::collections::BTreeSet::new();
+    let mut sum = 0;
+    for w in r.nodes.windows(2) {
+        ensure!(seen.insert(w[0]), "{a}>{b}: node {} repeats", w[0]);
+        let mut out = Vec::new();
+        view.neighbours(w[0], &mut out);
+        let cost = out
+            .iter()
+            .filter(|&&(id, _, _)| id == w[1])
+            .map(|&(_, _, c)| c.0)
+            .min();
+        sum += cost.ok_or_else(|| format!("{a}>{b}: {}-{} is no edge", w[0], w[1]))?;
+    }
+    ensure!(
+        sum == r.cost.0,
+        "{a}>{b}: cost {} vs edge sum {sum}",
+        r.cost.0
+    );
+    // [0, cost] is covered: the first leg departs at 0, each gap between
+    // legs is exactly the portal edge between them, and legs plus gaps add
+    // up to the route's cost.
+    ensure!(
+        r.legs.first().map(|l| l.t_depart) == Some(0),
+        "{a}>{b}: the first leg does not depart at 0"
+    );
+    ensure!(
+        r.legs.last().map(|l| l.t_arrive) == Some(sum),
+        "{a}>{b}: the last leg does not arrive at the total cost"
+    );
+    let at = |w: (i32, i32, i8)| {
+        g.nodes()
+            .iter()
+            .position(|n| (n.x, n.y, n.floor) == w)
+            .ok_or_else(|| format!("{a}>{b}: waypoint {w:?} is no node"))
+    };
+    let mut covered = 0;
+    for pair in r.legs.windows(2) {
+        let (from, to) = (
+            at(*pair[0].waypoints.last().ok_or("an empty leg")?)?,
+            at(pair[1].waypoints[0])?,
+        );
+        let portal = g
+            .edges()
+            .iter()
+            .find(|e| {
+                e.kind == EdgeKind::Portal
+                    && ((e.a as usize, e.b as usize) == (from, to)
+                        || (e.a as usize, e.b as usize) == (to, from))
+            })
+            .ok_or_else(|| format!("{a}>{b}: legs {from} and {to} share no portal edge"))?;
+        let gap = pair[1].t_depart - pair[0].t_arrive;
+        ensure!(
+            gap == portal.cost.0,
+            "{a}>{b}: a leg gap of {gap} is not its portal edge cost {}",
+            portal.cost.0
+        );
+        covered += gap;
+    }
+    covered += r.legs.iter().map(|l| l.t_arrive - l.t_depart).sum::<i64>();
+    ensure!(
+        covered == r.cost.0,
+        "{a}>{b}: legs and gaps cover {covered} of {}",
+        r.cost.0
+    );
+    for leg in &r.legs {
+        ensure!(
+            leg.waypoints.iter().all(|w| w.2 == leg.waypoints[0].2),
+            "{a}>{b}: a leg spans floors"
+        );
+        ensure!(
+            leg_instants(&leg.waypoints, leg.t_depart, leg.t_arrive).is_some(),
+            "{a}>{b}: a segment is over MAX_SEGMENT_CELLS"
+        );
+        let _ = crossings(&leg.waypoints, leg.t_depart, leg.t_arrive, None);
+        // The pace the leg demands: straight-line length (1/1024 cells,
+        // as leg_instants and an open-ground L3 walk measure it) over the
+        // time it is given, against walking pace. Distance in no time is
+        // an infinite pace.
+        let len: i128 = leg
+            .waypoints
+            .windows(2)
+            .map(|w| {
+                let (dx, dy) = ((w[0].0 - w[1].0) as i64, (w[0].1 - w[1].1) as i64);
+                (((dx * dx + dy * dy) as u64) << 20).isqrt() as i128
+            })
+            .sum();
+        let dur = (leg.t_arrive - leg.t_depart) as i128;
+        ensure!(
+            len == 0 || dur > 0,
+            "{a}>{b}: a leg covers distance in no time"
+        );
+        if len > 0 {
+            // 1/1024 cells per milliminute at walking pace, x100.
+            let walk = speed * REAL_MS_PER_CITY_MINUTE as i128 * 1024 / 10_000_000;
+            let pace = len * 100 / dur;
+            let (lo, hi) = (walk * (100 - band) / 100, walk * (100 + band) / 100);
+            ensure!(
+                (lo..=hi).contains(&pace),
+                "{a}>{b}: a leg pace {pace} is outside [{lo}, {hi}]"
+            );
+        }
+    }
+    // Every waypoint is a standable tile, the corners this route invented
+    // (waypoints that are no node) included.
+    let node_cells: std::collections::BTreeSet<(i32, i32, i8)> =
+        g.nodes().iter().map(|n| (n.x, n.y, n.floor)).collect();
+    let mut corners = 0;
+    for leg in &r.legs {
+        for w in &leg.waypoints {
+            ensure!(
+                standable(w.2, w.0, w.1),
+                "{a}>{b}: waypoint {w:?} is not walkable"
+            );
+            if !node_cells.contains(w) {
+                corners += 1;
+            }
+        }
+    }
+    Ok((r.legs.len(), corners))
+}
+
+#[test]
+fn inv_route_is_a_valid_walk_with_derivable_instants() {
+    use sim::routing::search::SearchGraph;
+    over_pool("inv_route_is_a_valid_walk_with_derivable_instants", |c| {
+        let g = pooled_graph(c)?;
+        let view = SearchGraph::from_graph(g);
+        let standable =
+            |f: i8, x: i32, y: i32| f == 0 && c.district.walkability(0).is_standable(x, y);
+        for (a, b) in route_pairs(c.seed, g.nodes().len(), 6) {
+            check_route(g, &view, &standable, a, b)?;
+        }
+        Ok(())
+    });
+    // Generated cities are one floor; the conformance world has portals
+    // and diagonal links, so the multi-leg and corner halves of the
+    // contract are exercised on every pair.
+    let (g, floors) = fixture_world();
+    let view = sim::routing::search::SearchGraph::from_graph(&g);
+    let standable = |f: i8, x: i32, y: i32| floors[&f].is_standable(x, y);
+    let (mut multi_leg, mut corners) = (0, 0);
+    for a in 0..g.nodes().len() as u64 {
+        for b in 0..g.nodes().len() as u64 {
+            let (legs, c) =
+                check_route(&g, &view, &standable, a, b).unwrap_or_else(|e| panic!("{e}"));
+            multi_leg += usize::from(legs > 1);
+            corners += c;
+        }
+    }
+    assert!(multi_leg > 0, "no fixture-world route crossed a floor");
+    assert!(corners > 0, "no fixture-world route carried a corner");
+}
+
+/// Every non-axis-aligned edge of every pooled district and of the
+/// conformance world has both arms of its `corner` walkable: the corner
+/// waypoint a route is issued through is never in a wall (FR135).
+#[test]
+fn inv_routing_diagonal_edges_have_walkable_corners() {
+    use sim::routing::graph::{MacroGraph, corner};
+    fn arms_walkable(
+        g: &MacroGraph,
+        standable: &dyn Fn(i8, i32, i32) -> bool,
+    ) -> Result<usize, String> {
+        let mut diagonals = 0;
+        for (i, e) in g.edges().iter().enumerate() {
+            let (a, b) = (
+                g.nodes()[e.a as usize].point(),
+                g.nodes()[e.b as usize].point(),
+            );
+            let Some(c) = corner(a, b) else { continue };
+            diagonals += 1;
+            let (lo, hi) = if (a.y, a.x) <= (b.y, b.x) {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            let row = (lo.x.min(c.x)..=lo.x.max(c.x)).map(|x| (x, lo.y));
+            let col = (lo.y.min(hi.y)..=lo.y.max(hi.y)).map(|y| (c.x, y));
+            for (x, y) in row.chain(col) {
+                ensure!(
+                    standable(c.floor, x, y),
+                    "edge {i} ({a:?} to {b:?}): ({x}, {y}) on its arms is blocked"
+                );
+            }
+        }
+        Ok(diagonals)
+    }
+    over_pool("inv_routing_diagonal_edges_have_walkable_corners", |c| {
+        let g = pooled_graph(c)?;
+        arms_walkable(g, &|f, x, y| {
+            f == 0 && c.district.walkability(0).is_standable(x, y)
+        })
+        .map(|_| ())
+    });
+    let (g, floors) = fixture_world();
+    let diagonals = arms_walkable(&g, &|f, x, y| floors[&f].is_standable(x, y)).unwrap();
+    assert!(diagonals > 0, "the conformance world has no diagonal edge");
+}
+
+#[test]
+fn inv_route_search_ignores_row_order() {
+    use sim::routing::graph::{EdgeRow, NodeRow};
+    use sim::routing::search::{SearchGraph, node_budget, search};
+    over_pool("inv_route_search_ignores_row_order", |c| {
+        let g = pooled_graph(c)?;
+        let nodes: Vec<NodeRow> = g
+            .nodes()
+            .iter()
+            .enumerate()
+            .map(|(i, n)| NodeRow {
+                node_id: 1 + i as u64,
+                kind: n.kind.code(),
+                x: n.x,
+                y: n.y,
+                floor: n.floor,
+                business_id: None,
+            })
+            .collect();
+        let edges: Vec<EdgeRow> = g
+            .edges()
+            .iter()
+            .enumerate()
+            .map(|(i, e)| EdgeRow {
+                edge_id: 1 + i as u64,
+                node_a: 1 + e.a as u64,
+                node_b: 1 + e.b as u64,
+                kind: e.kind.code(),
+                cost_milliminutes: e.cost.0,
+            })
+            .collect();
+        let shuffled_order = |len: usize| {
+            let mut order: Vec<usize> = (0..len).collect();
+            order.sort_by_key(|&i| ((i as u64).wrapping_mul(2_654_435_761) ^ c.seed, i));
+            order
+        };
+        let n2: Vec<NodeRow> = shuffled_order(nodes.len())
+            .iter()
+            .map(|&i| nodes[i])
+            .collect();
+        let e2: Vec<EdgeRow> = shuffled_order(edges.len())
+            .iter()
+            .map(|&i| edges[i])
+            .collect();
+        let base = SearchGraph::from_rows(&nodes, &edges).map_err(|e| format!("{e:?}"))?;
+        let shuffled = SearchGraph::from_rows(&n2, &e2).map_err(|e| format!("{e:?}"))?;
+        let budget = node_budget(defs::BALANCE);
+        for (a, b) in route_pairs(c.seed, nodes.len(), 6) {
+            let one = search(&base, 1 + a, 1 + b, &rates(), budget);
+            let two = search(&shuffled, 1 + a, 1 + b, &rates(), budget);
+            ensure!(
+                one.is_ok() && one == two,
+                "{a}>{b}: row order changed the route"
+            );
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn inv_route_search_stays_within_its_node_budget() {
+    use sim::routing::search::{SearchGraph, node_budget, search};
+    let budget = node_budget(defs::BALANCE);
+    over_pool("inv_route_search_stays_within_its_node_budget", |c| {
+        let g = pooled_graph(c)?;
+        ensure!(
+            (g.nodes().len() as u64) < u64::from(budget),
+            "{} nodes reach the budget {budget}",
+            g.nodes().len()
+        );
+        let view = SearchGraph::from_graph(g);
+        let last = g.nodes().len() as u64 - 1;
+        search(&view, 0, last, &rates(), budget).map_err(|e| format!("{e:?}"))?;
+        Ok(())
+    });
 }

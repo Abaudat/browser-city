@@ -21,6 +21,9 @@
 #     restart or republish finds it; a global cache of it would not be
 #     rolled back and would not survive. Nothing under server/src/ keeps
 #     state outside a table.
+#   - `route_node().iter()` / `route_edge().iter()` outside restore.rs and
+#     metrics.rs, and `routing::search` named in more than one file (story
+#     3.12).
 #   - `unwrap(`, `expect(`, `panic!`, `todo!`, `unimplemented!`,
 #     `unreachable!` -- banned across server/src/**, excluding
 #     `generated/` (defs-build's own emitted code, never hand-written).
@@ -79,6 +82,38 @@ GLOBAL_MATCHES="$(grep -rnE "$GLOBAL_PATTERN" "$SRC_DIR" --include='*.rs' --excl
 if [ -n "$GLOBAL_MATCHES" ]; then
   echo "check-server-src-bans: FAIL -- module-global state under server/src/ (a static item, thread_local!, OnceLock/OnceCell/LazyLock, lazy_static!): the macro routing graph and everything else lives in tables, so an aborted reducer rolls it back and a restart or republish finds it (story 3.9):" >&2
   echo "$GLOBAL_MATCHES" >&2
+  FAILED=1
+fi
+
+# Story 3.12 (FR131, FR135): a search costs its expanded nodes, never the
+# graph's size, so the whole of `route_node` / `route_edge` is only ever
+# iterated by the restore reducers and the metrics sampler; and there is one
+# call site for the route search, the destination-commit path. Each file is
+# joined onto one line first (comment lines dropped), so a rustfmt-split
+# chain or a grouped `use sim::routing::{estimate, search};` is still seen.
+ITER_MATCHES=""
+SEARCH_FILES=""
+while IFS= read -r -d '' f; do
+  flat="$(tr -d '\r' <"$f" | grep -vE '^[[:space:]]*//' | tr '\n' ' ' || true)"
+  base="$(basename "$f")"
+  if [ "$base" != restore.rs ] && [ "$base" != metrics.rs ] \
+    && grep -qE 'route_(node|edge)\(\)[[:space:]]*\.iter\(\)' <<<"$flat"; then
+    ITER_MATCHES="$ITER_MATCHES$f
+"
+  fi
+  if grep -qE 'routing::(search|\{[^}]*\bsearch\b)' <<<"$flat"; then
+    SEARCH_FILES="$SEARCH_FILES$f
+"
+  fi
+done < <(find "$SRC_DIR" -name '*.rs' -not -path '*/generated/*' -print0 | sort -z)
+if [ -n "$ITER_MATCHES" ]; then
+  echo "check-server-src-bans: FAIL -- route_node()/route_edge() iterated outside restore.rs and metrics.rs: a route search reads the graph through its indexes, never a whole table (story 3.12):" >&2
+  printf '%s' "$ITER_MATCHES" >&2
+  FAILED=1
+fi
+if [ "$(printf '%s' "$SEARCH_FILES" | grep -c .)" -gt 1 ]; then
+  echo "check-server-src-bans: FAIL -- routing::search is used from more than one file under server/src/ (one search, from the one destination-commit path, story 3.12):" >&2
+  printf '%s' "$SEARCH_FILES" >&2
   FAILED=1
 fi
 
