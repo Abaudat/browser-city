@@ -20,10 +20,14 @@ fn tables() -> codes::CodeTables {
 /// The real tree with `old` replaced by `new` once in whichever building
 /// type file holds it; `None` replacement leaves the tree as committed.
 fn build(edit: Option<(&str, &str)>) -> Result<Defs, String> {
+    build_with(&edit.into_iter().collect::<Vec<_>>())
+}
+
+fn build_with(edits: &[(&str, &str)]) -> Result<Defs, String> {
     let root = repo_root();
     let mut files = fsio::read_text(&root, &fsio::list_defs_sources(&root).unwrap()).unwrap();
     files.sort_by(|a, b| a.0.cmp(&b.0));
-    if let Some((old, new)) = edit {
+    for &(old, new) in edits {
         let mut replaced = 0;
         for (path, text) in &mut files {
             if path.to_string_lossy().contains("building-types") && text.contains(old) {
@@ -90,7 +94,7 @@ fn a_vacant_unit_and_a_dwelling_advertise_nothing_public() {
     }
 }
 
-const CAFE: &str = "provisions = [{ provision = \"food\", base_quality = 62 }, { provision = \"social\", base_quality = 63 }, { provision = \"employment\", base_quality = 50 }]";
+const CAFE: &str = "provisions = [{ provision = \"food\", base_quality = 62 }, { provision = \"social\", base_quality = 63 }]";
 
 fn with_cafe(line: &str) -> Result<Defs, String> {
     build(Some((CAFE, line)))
@@ -98,46 +102,40 @@ fn with_cafe(line: &str) -> Result<Defs, String> {
 
 #[test]
 fn an_unknown_provision_name_is_named() {
-    let err = with_cafe("provisions = [{ provision = \"nonexistent_need\", base_quality = 50 }, { provision = \"employment\", base_quality = 50 }]").unwrap_err();
-    assert!(
-        err.contains("unknown provision 'nonexistent_need'") && err.contains("cafe"),
-        "{err}"
-    );
+    let err = with_cafe("provisions = [{ provision = \"nonexistent_need\", base_quality = 50 }]").unwrap_err();
+    assert!(err.contains("unknown provision 'nonexistent_need'") && err.contains("cafe"), "{err}");
 }
 
 #[test]
 fn a_duplicate_provision_on_one_type_is_named() {
-    let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 50 }, { provision = \"food\", base_quality = 60 }, { provision = \"employment\", base_quality = 50 }]").unwrap_err();
-    assert!(
-        err.contains("duplicate provision 'food'") && err.contains("cafe"),
-        "{err}"
-    );
+    let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 50 }, { provision = \"food\", base_quality = 60 }]").unwrap_err();
+    assert!(err.contains("duplicate provision 'food'") && err.contains("cafe"), "{err}");
 }
 
 #[test]
-fn an_enterable_type_that_advertises_nothing_is_named() {
-    let err = with_cafe("provisions = []").unwrap_err();
-    assert!(
-        err.contains("cafe") && err.contains("advertises no provision"),
-        "{err}"
-    );
-}
-
-#[test]
-fn a_type_with_professions_must_advertise_employment() {
-    let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 50 }]").unwrap_err();
-    assert!(err.contains("cafe") && err.contains("employment"), "{err}");
-}
-
-#[test]
-fn employment_on_a_type_with_no_professions_is_refused() {
-    let err = build(Some((
-        "key = \"vacant_unit\"",
-        "key = \"vacant_unit\"
-provisions = [{ provision = \"employment\", base_quality = 50 }]",
-    )))
+fn a_type_with_no_professions_and_no_provisions_is_blind_and_named() {
+    let err = build_with(&[
+        (CAFE, "provisions = []"),
+        ("professions = [\"barista\", \"server\"]", "professions = []"),
+    ])
     .unwrap_err();
-    assert!(err.contains("vacant_unit"), "{err}");
+    assert!(err.contains("cafe") && err.contains("advertises no provision"), "{err}");
+}
+
+#[test]
+fn employment_is_derived_from_professions_and_never_authored() {
+    let err = with_cafe("provisions = [{ provision = \"employment\", base_quality = 50 }]").unwrap_err();
+    assert!(err.contains("cafe") && err.contains("employment") && err.contains("professions"), "{err}");
+}
+
+#[test]
+fn a_type_with_professions_gets_one_derived_employment_entry() {
+    let defs = build(None).unwrap();
+    let employment = code("employment");
+    for b in &defs.building_types {
+        let n = b.provisions.iter().filter(|p| p.0 == employment).count();
+        assert_eq!(n, usize::from(!b.professions.is_empty()), "{}", b.key);
+    }
 }
 
 #[test]
@@ -153,9 +151,6 @@ provisions = [{ provision = \"rest\", base_quality = 50 }]",
 
 #[test]
 fn a_base_quality_past_one_hundred_is_refused() {
-    let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 101 }, { provision = \"employment\", base_quality = 50 }]").unwrap_err();
-    assert!(
-        err.contains("base_quality") && err.contains("cafe"),
-        "{err}"
-    );
+    let err = with_cafe("provisions = [{ provision = \"food\", base_quality = 101 }]").unwrap_err();
+    assert!(err.contains("base_quality") && err.contains("cafe"), "{err}");
 }
