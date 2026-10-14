@@ -910,6 +910,20 @@ yet; each portal endpoint links to the nearest walking node on its floor, and th
 holds the whole graph to one connected component. The size is stamped in the `macro graph` block below, against the bands in
 `sim::routing::graph`.
 
+### Provisions
+
+- **Reads:** each enterable building's type (`provisions` in `defs/building-types`: a
+  `sim::codes::provision` name and a base quality per entry) and its plot's neighbourhood affluence.
+- **Writes:** one `(node, provision, quality)` per entry on the building's entrance node, stored as
+  `route_provision` rows. A type with `professions` also advertises `employment`, derived by
+  defs-build and never authored; `vacant_unit` and every dwelling advertise nothing public.
+- **Dial:** `generation.provision.quality_affluence_weight_percent` -- percent of an affluence's
+  distance from the middle of its range added to the base, clamped to `0..=100`. Set once, from
+  the seed's own plots; nothing at runtime writes it.
+- **Query:** `routing::provision::near`: every source within
+  `routing.provision.query_radius_minutes` for the asker's mode, nearest first, at most
+  `routing.provision.max_results`.
+
 ## Measured ceilings
 
 Every measured figure lives only in a stamped block below, whose label is
@@ -981,7 +995,8 @@ block is reproducible bar thread count and wall-clock.
 `cargo run -p bounds --release --bin measure-generation -- detour 1000000`
 
 ```text
-detour-bounds sweep at GENERATION_VERSION=14 fingerprint=4009cf20f2108cf8: 1000000 seeds, 32 threads, passes 1-2 only
+
+detour-bounds sweep at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 1000000 seeds, 32 threads, passes 1-2 only
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
@@ -1022,7 +1037,7 @@ detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worst
   171% at seed 4929245716913353663
   178% at seed 4832727318219098284
   189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 218.0s (0.218ms/seed)
+detour-bounds sweep wall-clock: 203.8s (0.204ms/seed)
 ```
 
 ### band sweep
@@ -1030,7 +1045,8 @@ detour-bounds sweep wall-clock: 218.0s (0.218ms/seed)
 `cargo run -p bounds --release --bin measure-generation -- bands 1000000`
 
 ```text
-band sweep at GENERATION_VERSION=14 fingerprint=4009cf20f2108cf8: 1000000 seeds, all five passes (salt 0xb0f05ee4)
+
+band sweep at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 1000000 seeds, all five passes (salt 0xb0f05ee4)
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
 land_use_share_commercial deviation from its key (18%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.6 stddev=6.0
   5.5-sigma share tolerance implied: 3.32 percentage points
@@ -1073,7 +1089,7 @@ largest_institutional_pocket_share_basis_points: min=87 p1=117 p50=205 p99=234 m
 profession_depth_per_city: min=44 p1=55 p50=61 p99=67 max=67 mean=61.4 stddev=2.3
   profession_count_per_city_min = 36: 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-band sweep wall-clock: 156.1s (0.156ms/seed)
+band sweep wall-clock: 147.8s (0.148ms/seed)
 ```
 
 ### exhaustive loop
@@ -1081,7 +1097,7 @@ band sweep wall-clock: 156.1s (0.156ms/seed)
 `cargo run -p bounds --release --bin measure-generation`
 
 ```text
-exhaustive loop at GENERATION_VERSION=14 fingerprint=4009cf20f2108cf8: 50000 seeds at 512x512 cells
+exhaustive loop at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 50000 seeds at 512x512 cells
 building_count: min=778 p1=829 p50=889 p99=949 max=990 mean=889.2 stddev=25.6
 building_count extremes: min 778 at seed 11805315485014167829, max 990 at seed 11123925265906853341 (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)
 rejected_percent: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
@@ -1178,7 +1194,8 @@ ad hoc presence tags (never distributed) -- seeds with 0 placed:
 `cargo run -p bounds --release --bin measure-generation -- rows 1000000`
 
 ```text
-rows sweep at GENERATION_VERSION=14 fingerprint=4009cf20f2108cf8: 1000000 seeds, 32 threads
+
+rows sweep at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 1000000 seeds, 32 threads
 CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
   committed rules hold (inv_generation_committed_rules_hold_for_any_seed): 0 of 1000000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 96-case CI failure probability <= 0.0288%)
@@ -1195,7 +1212,8 @@ CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 `cargo run -p bounds --release --bin measure-generation -- regions 1000000`
 
 ```text
-region-loss sweep at GENERATION_VERSION=14 fingerprint=4009cf20f2108cf8: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
+
+region-loss sweep at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   seeds with any region carried by no block: 20769 of 1000000 (first: Some(11091164158115210688)) -- by design, a block takes its majority use
   every institutional region carried by no block (inv_generation_an_institutional_region_is_carried_by_a_block): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
@@ -1207,7 +1225,7 @@ CI judges these ceilings at 4096 cases in the test job and 256 in the coverage j
 `cargo run -p bounds --release --bin measure-generation -- pooled`
 
 ```text
-pooled evidence at GENERATION_VERSION=14 fingerprint=4009cf20f2108cf8: seeds 0..256 pooled, evidence seeds 1, 2, 3
+pooled evidence at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: seeds 0..256 pooled, evidence seeds 1, 2, 3
 pooled low-band / high-band mean block area over seeds 0..256: 289% (peripheral_pooled_min_ratio_percent = 150%)
 pooled chopped share of low-band blocks over seeds 0..256: 1886 of 5600 (33%)
 evidence seed 1: low-band / high-band mean block area 2.65x (Artie's bar 2x)
@@ -1225,7 +1243,7 @@ pooled core over city mean screen: 190% (busy_core_over_city_min_percent = 150%)
 `cargo run -p bounds --release --bin measure-generation -- interiors`
 
 ```text
-interiors sweep at GENERATION_VERSION=14 fingerprint=4009cf20f2108cf8: 30000 seeds, 32 threads (salt 0xb0f05ee7)
+interiors sweep at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 30000 seeds, 32 threads (salt 0xb0f05ee7)
 CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 enterable_count: min=766 p1=805 p50=868 p99=932 max=973 mean=868.5 stddev=27.3
 enterable_share_percent: min=92 p1=95 p50=97 p99=99 max=100 mean=97.2 stddev=1.2
@@ -1277,7 +1295,7 @@ pooled_enterable_share_x1000_per_8_city_pool: min=96042 p1=96691 p50=97683 p99=9
 `cargo run -p bounds --release --bin measure-generation -- graph`
 
 ```text
-macro graph at GENERATION_VERSION=14 fingerprint=4009cf20f2108cf8: seeds 0..32 at the committed site, 0..4 at 1024
+macro graph at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: seeds 0..32 at the committed site, 0..4 at 1024
 committed site (512 x 512, 32 seeds): nodes min 1697 mean 1843 max 1963; edges min 1744 mean 1895 max 2016; internal nodes 13% of entrances
 growth target (1024 x 1024, 4 seeds): nodes min 7086 mean 7371 max 7730; edges min 7309 mean 7604 max 8002; internal nodes 13% of entrances
 ```
@@ -1343,6 +1361,7 @@ disagree.
 | generation.neighbourhood.building_age_max | committed | Land use | the building-age dial's older end |
 | generation.neighbourhood.affluence_min | committed | Land use | the affluence dial's poorer end; `[[building_type]]` affluence bands and `reads = "affluence"` rows read this range |
 | generation.neighbourhood.affluence_max | committed | Land use | the affluence dial's richer end |
+| generation.provision.quality_affluence_weight_percent | committed | Provisions | how far a neighbourhood's affluence moves a provision's quality from its type's base: percent of the distance from the middle of the affluence range, clamped to 0..100 |
 | generation.neighbourhood.extreme_share_percent | committed | Land use | the percent of neighbourhoods drawn in an end third of a dial rather than its middle third -- wide steps between neighbours, never a smooth ramp |
 | generation.neighbourhood.legible_step | committed | Land use | the smallest gap on one dial between two neighbourhoods that reads as two different places; each dial's two end thirds are at least this far apart |
 | generation.neighbourhood.poor_band_max | committed | Land use | affluence at or below this is the bottom band; every district holds one such neighbourhood with dwellings |

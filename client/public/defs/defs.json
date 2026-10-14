@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "7e8ecf8ed029c232",
+  "defs_version": "2daa7c19be811bf5",
   "collider_subcells_per_cell": 16,
   "position_units_per_cell": 256,
   "name_max_chars": 24,
@@ -327,6 +327,7 @@
     { "key": "generation.props.lane_pavement_cells", "max": 8, "min": 1, "value": 1 },
     { "key": "generation.props.max_solid_percent_of_room_floor", "max": 90, "min": 10, "value": 50 },
     { "key": "generation.props.street_pavement_cells", "max": 8, "min": 1, "value": 2 },
+    { "key": "generation.provision.quality_affluence_weight_percent", "max": 200, "min": 0, "value": 40 },
     { "key": "generation.site_extent_cells", "max": 2048, "min": 64, "value": 512 },
     { "key": "generation.streets.arterial_count_ew_max", "max": 4, "min": 0, "value": 2 },
     { "key": "generation.streets.arterial_count_ew_min", "max": 4, "min": 0, "value": 1 },
@@ -373,7 +374,7 @@
     { "key": "movement.gait_stride_millicells_per_cycle", "max": 8000, "min": 200, "value": 1300 },
     { "key": "movement.player_body_height_subcells", "max": 16, "min": 1, "value": 4 },
     { "key": "movement.player_body_width_subcells", "max": 16, "min": 1, "value": 8 },
-    { "key": "movement.walk_speed_millicells_per_s", "max": 20000, "min": 100, "value": 2200 },
+    { "key": "movement.walk_speed_millicells_per_s", "max": 4400, "min": 100, "value": 2200 },
     { "key": "net.player_interpolation_delay_ms", "max": 1000, "min": 100, "value": 250 },
     { "key": "net.player_position_hz", "max": 20, "min": 1, "value": 10 },
     { "key": "render.highlight_alpha", "max": 100, "min": 1, "value": 50 },
@@ -382,9 +383,11 @@
     { "key": "render.window_alpha", "max": 99, "min": 1, "value": 50 },
     { "key": "routing.floor_change_penalty_milliminutes", "max": 600000, "min": 0, "value": 1000 },
     { "key": "routing.graph.internal_node_min_interior_cells", "max": 100000, "min": 1, "value": 100 },
+    { "key": "routing.provision.max_results", "max": 1000, "min": 1, "value": 16 },
+    { "key": "routing.provision.query_radius_minutes", "max": 18, "min": 1, "value": 15 },
     { "key": "routing.search.node_budget", "max": 100000, "min": 1000, "value": 12000 },
-    { "key": "routing.speed_percent.bike", "max": 1000, "min": 100, "value": 200 },
-    { "key": "routing.speed_percent.transit", "max": 1000, "min": 100, "value": 300 },
+    { "key": "routing.speed_percent.bike", "max": 500, "min": 100, "value": 200 },
+    { "key": "routing.speed_percent.transit", "max": 500, "min": 100, "value": 300 },
     { "key": "routing.speed_percent.walk", "max": 100, "min": 100, "value": 100 }
   ],
   "bodies": [

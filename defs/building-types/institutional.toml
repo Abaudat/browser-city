@@ -84,6 +84,7 @@ professions = ["caseworker", "clerk", "counsellor", "support_worker"]
 [[building_type]]
 id = 38
 key = "shelter"
+provisions = [{ provision = "rest", base_quality = 40 }]
 rooms = ["front_hall", "dormitory", "office"]
 optional_rooms = ["dormitory", "stock_room"]
 tags = ["municipal_service", "shelter"]
@@ -127,6 +128,7 @@ professions = ["nurse", "receptionist", "doctor", "pharmacist", "orderly", "admi
 [[building_type]]
 id = 41
 key = "library"
+provisions = [{ provision = "pursuit", base_quality = 60 }]
 rooms = ["front_hall", "classroom", "office"]
 optional_rooms = ["classroom", "stock_room"]
 tags = []

@@ -1,7 +1,7 @@
 //! The determinism harness for stories 3.2-3.4 (FR110 passes 1-5): same
 //! idiom as `determinism_golden.rs`/`appearance_golden.rs`. Regenerates
 //! all six passes for a fixed seed set and compares a readable summary
-//! plus a digest against the committed `tests/goldens/generation_v14.
+//! plus a digest against the committed `tests/goldens/generation_v15.
 //! golden`, so a diff names what moved rather than just "hash differs".
 //! Keyed by `sim::generation::GENERATION_VERSION`; `check-golden-version-
 //! bump.sh` fails a PR that touches the golden without bumping that
@@ -43,7 +43,7 @@ use sim::rules::{CoherenceMode, RuleDef, RuleKind, RuleSet};
 
 const SEEDS: [u64; 5] = [1, 2, 3, 42, 123_456_789];
 
-const GOLDEN: &str = include_str!("goldens/generation_v14.golden");
+const GOLDEN: &str = include_str!("goldens/generation_v15.golden");
 
 /// A frozen snapshot of `defs/balance/generation.toml`'s own values at
 /// the time this golden was last regenerated -- never read from `defs::
@@ -62,6 +62,11 @@ fn frozen_config() -> GenerationConfig {
             floor_change_penalty_milliminutes: 1000,
         },
         graph_internal_node_min_interior_cells: 100,
+        provision_quality: sim::routing::provision::QualityDial {
+            weight_percent: 40,
+            affluence_min: 0,
+            affluence_max: 100,
+        },
         coarse_cell_size_cells: 16,
         land_use_min_leaf_cells: 4,
         land_use_max_leaf_cells: 10,
@@ -199,6 +204,7 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        provisions: &[],
         rooms: &[9401],
         optional_rooms: &[9402],
     },
@@ -218,6 +224,7 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        provisions: &[],
         rooms: &[9402],
         optional_rooms: &[],
     },
@@ -237,6 +244,7 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &["frozen_clerk"],
+        provisions: &[(1, 50)],
         rooms: &[9401, 9403],
         optional_rooms: &[],
     },
@@ -256,6 +264,7 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        provisions: &[],
         rooms: &[9403, 9401],
         optional_rooms: &[],
     },
@@ -275,6 +284,7 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        provisions: &[],
         rooms: &[9401, 9402],
         optional_rooms: &[],
     },
@@ -294,6 +304,7 @@ const FROZEN_BUILDING_TYPES: &[BuildingTypeDef] = &[
         prefers_site: [false, false, false, false],
         density_affinity: 0,
         professions: &[],
+        provisions: &[],
         rooms: &[9401],
         optional_rooms: &[],
     },
@@ -889,6 +900,13 @@ fn graph_lines(g: &sim::routing::graph::MacroGraph) -> String {
             r.node_a, r.node_b, r.kind, r.cost_milliminutes
         ));
     }
+    for r in g.provision_rows(&ids) {
+        out.push_str(&format!(
+            "provision node={} code={} quality={} chunk={}
+",
+            r.node_id, r.provision, r.quality, r.chunk_key
+        ));
+    }
     out
 }
 
@@ -960,7 +978,7 @@ fn generation_output_matches_committed_golden() {
         });
     assert_eq!(
         golden_version, GENERATION_VERSION,
-        "tests/goldens/generation_v14.golden is keyed to version {golden_version} but \
+        "tests/goldens/generation_v15.golden is keyed to version {golden_version} but \
          sim::generation::GENERATION_VERSION is {GENERATION_VERSION} -- regenerate the golden \
          whenever GENERATION_VERSION changes"
     );

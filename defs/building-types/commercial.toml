@@ -30,6 +30,7 @@ professions = ["shop_clerk", "cashier"]
 [[building_type]]
 id = 6
 key = "cafe"
+provisions = [{ provision = "food", base_quality = 62 }, { provision = "social", base_quality = 63 }]
 rooms = ["cafe_floor", "stock_room"]
 tags = ["cafe"]
 land_uses = ["commercial"]
@@ -57,6 +58,7 @@ professions = ["clerk", "accountant", "receptionist", "secretary", "manager", "a
 [[building_type]]
 id = 8
 key = "market_hall"
+provisions = [{ provision = "food", base_quality = 50 }]
 rooms = ["shop_floor", "stock_room"]
 optional_rooms = ["stock_room", "office", "stock_room", "office"]
 tags = ["market"]
@@ -72,6 +74,7 @@ professions = ["market_vendor", "market_porter"]
 [[building_type]]
 id = 9
 key = "bakery"
+provisions = [{ provision = "food", base_quality = 65 }]
 rooms = ["shop_floor", "stock_room"]
 optional_rooms = ["office", "stock_room"]
 tags = ["shop"]
@@ -86,6 +89,7 @@ professions = ["baker", "shop_clerk"]
 [[building_type]]
 id = 10
 key = "butcher"
+provisions = [{ provision = "food", base_quality = 60 }]
 rooms = ["shop_floor", "stock_room"]
 optional_rooms = ["office", "stock_room"]
 tags = ["shop"]
@@ -100,6 +104,7 @@ professions = ["butcher", "shop_clerk"]
 [[building_type]]
 id = 11
 key = "greengrocer"
+provisions = [{ provision = "food", base_quality = 58 }]
 rooms = ["shop_floor", "stock_room"]
 optional_rooms = ["office", "stock_room"]
 tags = ["shop"]
@@ -142,6 +147,7 @@ professions = ["shop_clerk", "sales_assistant"]
 [[building_type]]
 id = 14
 key = "bookshop"
+provisions = [{ provision = "pursuit", base_quality = 55 }]
 rooms = ["shop_floor", "stock_room"]
 optional_rooms = ["office", "stock_room"]
 tags = ["shop"]
@@ -201,6 +207,7 @@ professions = ["hairdresser"]
 [[building_type]]
 id = 18
 key = "restaurant"
+provisions = [{ provision = "food", base_quality = 70 }, { provision = "social", base_quality = 50 }]
 rooms = ["cafe_floor", "stock_room"]
 optional_rooms = ["office", "stock_room"]
 tags = ["shop"]
@@ -216,6 +223,7 @@ professions = ["cook", "server"]
 [[building_type]]
 id = 19
 key = "pub"
+provisions = [{ provision = "food", base_quality = 40 }, { provision = "social", base_quality = 70 }, { provision = "pursuit", base_quality = 40 }]
 rooms = ["cafe_floor", "stock_room"]
 optional_rooms = ["office", "stock_room"]
 tags = ["shop"]
@@ -260,6 +268,7 @@ professions = ["clerk", "postal_worker", "driver"]
 [[building_type]]
 id = 22
 key = "supermarket"
+provisions = [{ provision = "food", base_quality = 55 }]
 rooms = ["shop_floor", "stock_room"]
 optional_rooms = ["stock_room", "office", "stock_room", "office"]
 tags = ["shop"]
@@ -282,6 +291,7 @@ professions = [
 [[building_type]]
 id = 23
 key = "hotel"
+provisions = [{ provision = "rest", base_quality = 70 }]
 rooms = ["front_hall", "bedroom", "office"]
 optional_rooms = ["bedroom", "bedroom", "bedroom"]
 tags = ["shop"]
@@ -305,6 +315,7 @@ professions = [
 [[building_type]]
 id = 24
 key = "gym"
+provisions = [{ provision = "pursuit", base_quality = 60 }]
 rooms = ["front_hall", "office"]
 optional_rooms = ["stock_room", "office"]
 tags = ["shop"]
@@ -320,6 +331,7 @@ professions = ["receptionist", "trainer", "cleaner"]
 [[building_type]]
 id = 25
 key = "cinema"
+provisions = [{ provision = "pursuit", base_quality = 60 }, { provision = "social", base_quality = 40 }]
 rooms = ["front_hall", "stock_room"]
 optional_rooms = ["office", "stock_room", "office", "stock_room"]
 tags = ["shop"]

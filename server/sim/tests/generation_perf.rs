@@ -394,3 +394,54 @@ fn macro_graph_at_the_1024_growth_target_stays_linear_in_site_area() {
     );
     assert!(e <= 3 * n, "{e} edges for {n} nodes is not linear");
 }
+
+/// Story 3.10 AC1: the provision rows stay inside the ceiling
+/// `TABLE_BOUNDS` derives from the node band, and the worst case query --
+/// a provision nobody offers -- visits only the chunks within its radius,
+/// never rows: cost is counted in chunk lookups, not wall-clock time.
+#[test]
+fn provision_index_at_the_1024_growth_target_is_chunk_bounded() {
+    use sim::routing::graph::{NodeKind, max_nodes_for_side};
+    use sim::routing::provision::{
+        MAX_PROVISIONS_PER_SOURCE, ProvisionQuery, ProvisionTable, near,
+    };
+    use sim::routing::{Point, TransportMode};
+    let mut cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
+    cfg.site_extent_cells = 1024;
+    let content = GenerationContent::committed();
+    let (_, g) = generate(7, &cfg, &content).unwrap();
+    let rows = g.provisions().len() as u64;
+    println!("provision rows at 1024: {rows}");
+    assert!(
+        rows <= max_nodes_for_side(1024) * MAX_PROVISIONS_PER_SOURCE,
+        "{rows} provision rows exceed the ceiling"
+    );
+    let ids: Vec<u64> = (0..g.nodes().len() as u64).collect();
+    let business = vec![None; g.nodes().len()];
+    let table = ProvisionTable::from_graph(&g, &ids, &business);
+    let q = ProvisionQuery::from_balance(defs::BALANCE);
+    let o = g
+        .nodes()
+        .iter()
+        .find(|n| n.kind == NodeKind::Source)
+        .expect("a district has sources");
+    let origin = Point {
+        x: o.x,
+        y: o.y,
+        floor: o.floor,
+    };
+    table.reset_visits();
+    for mode in TransportMode::ALL {
+        table.reset_visits();
+        let hits = near(&table, origin, &[0], 9_999, mode, &q);
+        assert!(hits.is_empty());
+        let cells = sim::routing::provision::radius_cells(&q.rates, mode, q.radius);
+        let bound = sim::routing::provision::window_chunks_bound(cells);
+        assert!(
+            table.chunk_visits() as u64 <= bound
+                && bound <= sim::routing::provision::MAX_QUERY_WINDOW_CHUNKS,
+            "{mode:?}: {} chunk lookups, bound {bound}",
+            table.chunk_visits()
+        );
+    }
+}

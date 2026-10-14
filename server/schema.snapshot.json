@@ -1995,6 +1995,75 @@
       ]
     },
     {
+      "accessor": "route_provision",
+      "struct_name": "RouteProvision",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "provision_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "node_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "provision",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "quality",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "chunk_key",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ],
+      "indexes": [
+        {
+          "accessor": "by_node",
+          "columns": [
+            "node_id"
+          ]
+        },
+        {
+          "accessor": "by_provision_chunk",
+          "columns": [
+            "provision",
+            "chunk_key"
+          ]
+        }
+      ]
+    },
+    {
       "accessor": "stock",
       "struct_name": "Stock",
       "public": false,

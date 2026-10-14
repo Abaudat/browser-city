@@ -6,6 +6,10 @@ provision 0 retail
 provision 1 employment
 provision 2 transit
 provision 3 housing
+provision 4 food
+provision 5 social
+provision 6 rest
+provision 7 pursuit
 reason_code 0 insufficient_budget
 reason_code 1 low_severity
 reason_code 2 duplicate_complaint

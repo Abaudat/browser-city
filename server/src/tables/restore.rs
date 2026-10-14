@@ -111,7 +111,10 @@ use super::metrics::{
 };
 use super::ops::{ModuleOwner, module_owner, require_owner};
 use super::player_position::{PlayerPosition, player_position};
-use super::routing::{EdgeKind, RouteEdge, RouteNode, edge_kind, route_edge, route_node};
+use super::routing::{
+    EdgeKind, RouteEdge, RouteNode, RouteProvision, edge_kind, route_edge, route_node,
+    route_provision,
+};
 use super::schedules::{CadenceLiveness, cadence_liveness};
 use super::stock::{Business, Stock, business, stock};
 use super::world::{
@@ -195,6 +198,7 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "district",
     "route_node",
     "route_edge",
+    "route_provision",
     "character",
     "character_identity",
     "oidc_issuer",
@@ -303,6 +307,9 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.route_edge().iter().next().is_some() {
         nonempty.push("route_edge");
+    }
+    if ctx.db.route_provision().iter().next().is_some() {
+        nonempty.push("route_provision");
     }
     if ctx.db.character().iter().next().is_some() {
         nonempty.push("character");
@@ -627,6 +634,17 @@ impl_autoinc_row!(
     }
 );
 impl_autoinc_row!(
+    RouteProvision,
+    provision_id,
+    RouteProvision {
+        provision_id: 0,
+        node_id: 0,
+        provision: 0,
+        quality: 0,
+        chunk_key: 0,
+    }
+);
+impl_autoinc_row!(
     Business,
     business_id,
     Business {
@@ -862,6 +880,26 @@ pub fn restore_route_edge(
             ctx.db.route_edge().edge_id().delete(id);
         },
         "route_edge",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_route_provision(
+    ctx: &ReducerContext,
+    rows: Vec<RouteProvision>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.route_provision().insert(r),
+        |id| {
+            ctx.db.route_provision().provision_id().delete(id);
+        },
+        "route_provision",
         sequence_floor,
     )
 }

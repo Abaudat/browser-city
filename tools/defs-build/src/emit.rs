@@ -213,7 +213,7 @@ pub const MAX_ITEMS_PER_CONTAINER: u64 = {MAX_ITEMS_PER_CONTAINER};
 
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub struct BuildingTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub land_uses: [bool; 4],\n    pub density_min: i32,\n    pub density_max: i32,\n    pub affluence_min: i32,\n    pub affluence_max: i32,\n    pub min_interior_width_cells: u32,\n    pub min_interior_depth_cells: u32,\n    pub weight: u32,\n    pub requires_site: [bool; 4],\n    pub prefers_site: [bool; 4],\n    pub density_affinity: i32,\n    pub professions: &'static [&'static str],\n    pub rooms: &'static [u32],\n    pub optional_rooms: &'static [u32],\n}\n\n",
+        "pub struct BuildingTypeDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub tags: &'static [u32],\n    pub land_uses: [bool; 4],\n    pub density_min: i32,\n    pub density_max: i32,\n    pub affluence_min: i32,\n    pub affluence_max: i32,\n    pub min_interior_width_cells: u32,\n    pub min_interior_depth_cells: u32,\n    pub weight: u32,\n    pub requires_site: [bool; 4],\n    pub prefers_site: [bool; 4],\n    pub density_affinity: i32,\n    pub professions: &'static [&'static str],\n    pub provisions: &'static [(u32, u32)],\n    pub rooms: &'static [u32],\n    pub optional_rooms: &'static [u32],\n}\n\n",
     );
     out.push_str("pub const BUILDING_TYPES: &[BuildingTypeDef] = &[\n");
     for b in &defs.building_types {
@@ -231,10 +231,18 @@ pub const MAX_ITEMS_PER_CONTAINER: u64 = {MAX_ITEMS_PER_CONTAINER};
             b.prefers_site[0], b.prefers_site[1], b.prefers_site[2], b.prefers_site[3]
         );
         let professions = fmt_str_slice(&b.professions);
+        let provisions = format!(
+            "[{}]",
+            b.provisions
+                .iter()
+                .map(|(c, q)| format!("({c}, {q})"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         let rooms = fmt_u32_slice(&b.rooms);
         let optional_rooms = fmt_u32_slice(&b.optional_rooms);
         out.push_str(&format!(
-            "    BuildingTypeDef {{ id: {}, key: {:?}, tags: &{tags}, land_uses: {land_uses}, density_min: {}, density_max: {}, affluence_min: {}, affluence_max: {}, min_interior_width_cells: {}, min_interior_depth_cells: {}, weight: {}, requires_site: {requires_site}, prefers_site: {prefers_site}, density_affinity: {}, professions: &{professions}, rooms: &{rooms}, optional_rooms: &{optional_rooms} }},\n",
+            "    BuildingTypeDef {{ id: {}, key: {:?}, tags: &{tags}, land_uses: {land_uses}, density_min: {}, density_max: {}, affluence_min: {}, affluence_max: {}, min_interior_width_cells: {}, min_interior_depth_cells: {}, weight: {}, requires_site: {requires_site}, prefers_site: {prefers_site}, density_affinity: {}, professions: &{professions}, provisions: &{provisions}, rooms: &{rooms}, optional_rooms: &{optional_rooms} }},\n",
             b.id,
             b.key,
             b.density_min,
@@ -1327,6 +1335,7 @@ mod tests {
                 prefers_site: [false, false, false, false],
                 density_affinity: 0,
                 professions: vec!["sanitation_worker".into()],
+                provisions: vec![],
                 rooms: vec![],
                 optional_rooms: vec![],
             }],

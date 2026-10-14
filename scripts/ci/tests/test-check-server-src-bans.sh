@@ -134,5 +134,31 @@ d="$(fake_dir)"
 printf '%s\n' 'let n = ctx.db' '    .route_edge()' '    .iter()' '    .filter(|e| e.kind == 1)' '    .count();' > "$d/reducer.rs"
 check "a rustfmt-split route_edge iteration is banned" 1 bash "$CHECK" "$d"
 
+# Story 3.10: the provision rows are read by one index reader and never
+# iterated whole outside the restore and metrics files.
+d="$(fake_dir)"
+printf '%s\n' 'let n = ctx.db.route_provision().iter().count();' > "$d/reducer.rs"
+check "iterating route_provision outside restore.rs and metrics.rs is banned" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'for r in ctx.db.route_provision().iter() {}' > "$d/restore.rs"
+check "iterating route_provision in restore.rs is allowed" 0 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'let v = ctx.db.route_provision().by_provision_chunk().filter((1, 2));' > "$d/second_index.rs"
+check "a second reader of the provision index is banned" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'let v = ctx.db' '    .route_provision()' '    .by_node()' '    .filter(1);' > "$d/split.rs"
+check "a rustfmt-split provision index read is banned" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'let v = ctx.db.route_provision().by_provision_chunk().filter((1, 2));' > "$d/routing.rs"
+check "the provision index read in routing.rs is allowed" 0 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
+printf '%s\n' 'static PROVISION_CACHE: OnceLock<Vec<u64>> = OnceLock::new();' > "$d/cache.rs"
+check "a module-global provision cache is banned" 1 bash "$CHECK" "$d"
+
 summary
 exit $?

@@ -212,7 +212,7 @@ impl SearchGraph {
     }
 
     pub fn from_rows(nodes: &[NodeRow], edges: &[EdgeRow]) -> Result<SearchGraph, GraphError> {
-        let (g, _) = MacroGraph::from_rows(nodes, edges)?;
+        let (g, _) = MacroGraph::from_rows(nodes, edges, &[])?;
         Ok(Self::new(&g, nodes.iter().map(|r| r.node_id).collect()))
     }
 

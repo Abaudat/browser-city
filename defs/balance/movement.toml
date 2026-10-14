@@ -13,7 +13,7 @@
 key = "movement.walk_speed_millicells_per_s"
 value = 2200
 min = 100
-max = 20000
+max = 4400
 
 [[balance]]
 # The player's collision body (never the sprite rect): a small rect at

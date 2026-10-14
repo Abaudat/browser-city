@@ -95,7 +95,7 @@ $BAD"
 # 5. Story 3.12 (FR135): the routing graph is never client-visible, and the
 #    client names none of its rows -- its only routing input is the route in
 #    a citizen's state.
-BAD="$(printf '%s\n' "$LINES" | grep -E '\b(RouteNode|RouteEdge|routeNode|routeEdge|route_node|route_edge)\b' || true)"
+BAD="$(printf '%s\n' "$LINES" | grep -E '\b(RouteNode|RouteEdge|RouteProvision|routeNode|routeEdge|routeProvision|route_node|route_edge|route_provision)\b' || true)"
 [ -z "$BAD" ] || fail "the client names a routing graph table (FR135):
 $BAD"
 

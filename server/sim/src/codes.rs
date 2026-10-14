@@ -66,7 +66,31 @@ pub mod provision {
             code: 3,
             name: "housing",
         },
+        Code {
+            code: 4,
+            name: "food",
+        },
+        Code {
+            code: 5,
+            name: "social",
+        },
+        Code {
+            code: 6,
+            name: "rest",
+        },
+        Code {
+            code: 7,
+            name: "pursuit",
+        },
     ];
+
+    /// The codes a building type's `provisions` and the provision query
+    /// speak in: the need bars' own names (FR50).
+    pub const EMPLOYMENT: u32 = 1;
+    pub const FOOD: u32 = 4;
+    pub const SOCIAL: u32 = 5;
+    pub const REST: u32 = 6;
+    pub const PURSUIT: u32 = 7;
 }
 
 /// Why a decider acted on a matter (FR75), carried on the decision record

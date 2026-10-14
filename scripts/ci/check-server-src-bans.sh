@@ -92,13 +92,21 @@ fi
 # joined onto one line first (comment lines dropped), so a rustfmt-split
 # chain or a grouped `use sim::routing::{estimate, search};` is still seen.
 ITER_MATCHES=""
+PROVISION_INDEX_MATCHES=""
 SEARCH_FILES=""
 while IFS= read -r -d '' f; do
   flat="$(tr -d '\r' <"$f" | grep -vE '^[[:space:]]*//' | tr '\n' ' ' || true)"
   base="$(basename "$f")"
   if [ "$base" != restore.rs ] && [ "$base" != metrics.rs ] \
-    && grep -qE 'route_(node|edge)\(\)[[:space:]]*\.iter\(\)' <<<"$flat"; then
+    && grep -qE 'route_(node|edge|provision)\(\)[[:space:]]*\.iter\(\)' <<<"$flat"; then
     ITER_MATCHES="$ITER_MATCHES$f
+"
+  fi
+  # Story 3.10: the provision index has one reader, in
+  # tables/routing.rs -- no second index, grid or cache over the rows.
+  if [ "$base" != routing.rs ] \
+    && grep -qE 'route_provision\(\)[[:space:]]*\.by_[a-z_]+\(\)' <<<"$flat"; then
+    PROVISION_INDEX_MATCHES="$PROVISION_INDEX_MATCHES$f
 "
   fi
   if grep -qE 'routing::(search|\{[^}]*\bsearch\b)' <<<"$flat"; then
@@ -107,8 +115,13 @@ while IFS= read -r -d '' f; do
   fi
 done < <(find "$SRC_DIR" -name '*.rs' -not -path '*/generated/*' -print0 | sort -z)
 if [ -n "$ITER_MATCHES" ]; then
-  echo "check-server-src-bans: FAIL -- route_node()/route_edge() iterated outside restore.rs and metrics.rs: a route search reads the graph through its indexes, never a whole table (story 3.12):" >&2
+  echo "check-server-src-bans: FAIL -- route_node()/route_edge()/route_provision() iterated outside restore.rs and metrics.rs: a route search reads the graph through its indexes, never a whole table (story 3.12):" >&2
   printf '%s' "$ITER_MATCHES" >&2
+  FAILED=1
+fi
+if [ -n "$PROVISION_INDEX_MATCHES" ]; then
+  echo "check-server-src-bans: FAIL -- route_provision read by index outside tables/routing.rs: the provision query has one reader, in tables/routing.rs (story 3.10):" >&2
+  printf '%s' "$PROVISION_INDEX_MATCHES" >&2
   FAILED=1
 fi
 if [ "$(printf '%s' "$SEARCH_FILES" | grep -c .)" -gt 1 ]; then
