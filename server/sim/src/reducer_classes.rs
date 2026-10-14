@@ -73,6 +73,7 @@ pub const REDUCER_CLASSES: &[(&str, ReducerClass)] = &[
     ("jump_clock", ReducerClass::Operator),
     ("set_clock_speed", ReducerClass::Operator),
     ("create_district", ReducerClass::Operator),
+    ("debug_create_district", ReducerClass::Operator),
     ("debug_write_graph_then_fail", ReducerClass::Operator),
     ("restore_route_node", ReducerClass::Operator),
     ("restore_route_edge", ReducerClass::Operator),

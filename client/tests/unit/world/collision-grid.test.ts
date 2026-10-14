@@ -42,6 +42,26 @@ function gridWith(defs: ReadonlyMap<number, ColliderSource>): CollisionGrid {
 }
 
 describe("CollisionGrid", () => {
+  it("answers across chunks, an absent one repeatedly, and after a change retires the cache", () => {
+    const grid = gridWith(new Map([[1, DEF_WITH_COLLIDER]]));
+    expect(grid.entriesInCell(0, 100, 100)).toEqual([]);
+    expect(grid.entriesInCell(0, 101, 100)).toEqual([]);
+    grid.insert(row({ objectId: 1n, x: 100, y: 100 }));
+    expect(grid.entriesInCell(0, 100, 100)).toHaveLength(1);
+    expect(grid.entriesInCell(0, 0, 0)).toEqual([]);
+    expect(grid.entriesInCell(0, 100, 100)).toHaveLength(1);
+  });
+
+  it("answers for a chunk too far out for the cache, and for a negative one", () => {
+    const grid = gridWith(new Map([[1, DEF_WITH_COLLIDER]]));
+    const far = 40_000;
+    grid.insert(row({ objectId: 2n, x: far, y: 0 }));
+    grid.insert(row({ objectId: 3n, x: -5, y: -5 }));
+    expect(grid.entriesInCell(0, far, 0)).toHaveLength(1);
+    expect(grid.entriesInCell(0, far, 0)).toHaveLength(1);
+    expect(grid.entriesInCell(0, -5, -5)).toHaveLength(1);
+  });
+
   // A def with no collider contributes nothing on insert or delete.
   it("inv_absent_collider_is_walkable", () => {
     const grid = gridWith(new Map([[1, DEF_WITHOUT_COLLIDER]]));

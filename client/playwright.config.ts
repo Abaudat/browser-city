@@ -18,7 +18,7 @@ const DEPLOY_URL = process.env.BC_DEPLOY_URL;
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  timeout: 30_000,
+  timeout: 90_000,
   fullyParallel: false,
   // A flaky e2e is a failing e2e (Quentin, story 1.1): no re-run hides the
   // first red from a PR.

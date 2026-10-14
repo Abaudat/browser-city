@@ -59,6 +59,8 @@ async function waitForSceneReady(page: Page): Promise<void> {
  * anchoring), so this reads the anchor (`bounds.x + width/2`,
  * `bounds.y + height`), never the box's geometric middle. */
 async function assertPlayerCentred(page: Page): Promise<void> {
+  // The scene exposes its hooks once it has mounted; wait for the one read.
+  await page.waitForFunction(() => window.__bc?.playerScreenBounds !== undefined);
   const deviation = await page.evaluate(() => {
     const canvas = document.querySelector("#world canvas");
     if (!(canvas instanceof HTMLCanvasElement)) throw new Error("no street canvas");

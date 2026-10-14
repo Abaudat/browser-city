@@ -40,6 +40,14 @@ export const MIN_MEASURED_FRAMES = 3_000;
  * moves, never above measured + 25%. */
 export const MAX_L3_ALLOC_BYTES_PER_FRAME = 20_480;
 
+/** Major collections per minute of the window, and the longest one. A
+ * streamed district holds ~10 MB of rows (the SDK's cache, the chunk store,
+ * the indexes), so V8's old-generation slack lets an incremental major land
+ * now and then in a minute with no L3 garbage to blame; what would be L3's
+ * fault is a major every few seconds or one long enough to drop a frame. */
+export const MAX_L3_MAJOR_GCS_PER_MINUTE = 4;
+export const MAX_L3_MAJOR_GC_PAUSE_MS = 8;
+
 /** Retained heap, last window against the first, after a forced GC at each
  * end -- the same method and bound as `street-perf.spec.ts`. */
 export const MAX_L3_HEAP_GROWTH_RATIO = 1.5;
@@ -266,7 +274,13 @@ export function verdict(m: L3Measurement): Verdict {
       `L3 allocates ${m.allocBytesPerFrame.toFixed(0)} B/frame over ${MAX_L3_ALLOC_BYTES_PER_FRAME}`,
     );
   }
-  if (m.gc.majorCount > 0) gate.push(`${m.gc.majorCount} major GCs in the window`);
+  const minutes = Math.max(1, m.l3Ms.frames / 3600);
+  if (m.gc.majorCount > Math.ceil(MAX_L3_MAJOR_GCS_PER_MINUTE * minutes)) {
+    gate.push(`${m.gc.majorCount} major GCs in the window`);
+  }
+  if (m.gc.longestMajorPauseMs > MAX_L3_MAJOR_GC_PAUSE_MS) {
+    gate.push(`a major GC paused ${m.gc.longestMajorPauseMs.toFixed(1)} ms`);
+  }
   if (!(m.heapGrowthRatio <= MAX_L3_HEAP_GROWTH_RATIO)) {
     gate.push(`retained heap grew ${m.heapGrowthRatio.toFixed(2)}x`);
   }

@@ -34,6 +34,19 @@ export function chunkKey(x: number, y: number, floor: number): bigint {
   return (cx << (CHUNK_Y_BITS + FLOOR_BITS)) | (cy << FLOOR_BITS) | f;
 }
 
+/** A small integer naming chunk `(cx, cy, floor)`: a cache key for hot
+ * lookups, where the `bigint` of [`chunkKey`] would allocate per call. It
+ * stays a small integer (a double key would box per call), so it covers
+ * `cx`/`cy` in [-512, 512) and `floor` in [-8, 8); `-1` outside, which a
+ * caller treats as "do not cache". */
+export function chunkSlot(cx: number, cy: number, floor: number): number {
+  const x = cx + 512;
+  const y = cy + 512;
+  const f = floor + 8;
+  if (x < 0 || x >= 1024 || y < 0 || y >= 1024 || f < 0 || f >= 16) return -1;
+  return (f * 1024 + x) * 1024 + y;
+}
+
 /** The chunk coordinates and floor a chunk key names -- the inverse of
  * [`chunkKey`] on its three packed fields. */
 export function unpackChunkKey(key: bigint): { cx: number; cy: number; floor: number } {

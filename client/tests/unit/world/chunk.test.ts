@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { CHUNK_SIZE, chunkKey } from "../../../src/world/chunk";
+import { CHUNK_SIZE, chunkKey, chunkSlot } from "../../../src/world/chunk";
 
 describe("chunkKey", () => {
   it("two cells in the same chunk pack to the same key", () => {
@@ -54,5 +54,25 @@ describe("unpackChunkKey (story 3.16)", () => {
       const k = unpackChunkKey(chunkKeyOf(x, y, f));
       expect(k).toEqual({ cx: Math.floor(x / 32), cy: Math.floor(y / 32), floor: f });
     }
+  });
+});
+
+describe("chunkSlot", () => {
+  it("is -1 outside the cached range, so the caller falls back", () => {
+    expect(chunkSlot(600, 0, 0)).toBe(-1);
+    expect(chunkSlot(0, -600, 0)).toBe(-1);
+    expect(chunkSlot(0, 0, 20)).toBe(-1);
+  });
+
+  it("names a chunk and floor uniquely, negative coordinates included", () => {
+    const seen = new Map<number, string>();
+    for (const cx of [-3, -1, 0, 1, 200])
+      for (const cy of [-2, 0, 5, 300])
+        for (const floor of [-2, 0, 1, 3]) {
+          const slot = chunkSlot(cx, cy, floor);
+          const id = `${cx},${cy},${floor}`;
+          expect(seen.get(slot) ?? id).toBe(id);
+          seen.set(slot, id);
+        }
   });
 });

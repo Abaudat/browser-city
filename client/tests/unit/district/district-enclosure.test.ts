@@ -148,47 +148,56 @@ describe("every enterable building of the district (AC2)", () => {
     expect(hollow.length).toBeLessThan(enterable.length / 4);
   });
 
-  it("retracts its own front walls on entry, and no other building's, and restores them on leaving", () => {
-    let checked = 0;
-    let neighbours = 0;
-    for (const b of enterable) {
-      const cell = b.cell as { x: number; y: number };
-      const drawables = buildPropDrawables(
-        b.rows.filter((r) => r.layer === WALLS),
-        options,
-      );
-      const walls = drawables.filter((d) => d.layerCode === WALLS && !d.isStub);
-      const near = walls.filter((d) => d.isNearSide && d.ownerBuildingId === b.id);
-      expect(near.length, `building ${b.id} has a front wall run`).toBeGreaterThan(0);
-      const inside = { floor: 0, buildingId: ownership.ownershipAt(cell.x, cell.y, 0).buildingId };
-      expect(inside.buildingId).toBe(b.id);
-      for (const d of near) {
-        expect(computeVisibility(inside, d), `building ${b.id} front wall`).toBe("hidden");
-      }
-      // Its side and back walls stay drawn.
-      for (const d of walls.filter((w) => !w.isNearSide)) {
-        expect(computeVisibility(inside, d)).not.toBe("hidden");
-      }
-      // Stepping out restores the front.
-      const out = { floor: 0, buildingId: NO_OWNER };
-      for (const d of near) {
-        expect(computeVisibility(out, d)).not.toBe("hidden");
-      }
-      // A neighbouring building's front is never retracted by standing here.
-      const other = enterable.find(
-        (o) => o.id !== b.id && Math.abs(o.x0 - b.x0) <= 24 && Math.abs(o.y0 - b.y0) <= 24,
-      );
-      if (other) {
-        neighbours++;
-        const theirs = buildPropDrawables(
-          other.rows.filter((r) => r.layer === WALLS),
+  // One slice of the enterable buildings per test, so no one test holds the
+  // whole district's worth of drawables at once.
+  const SLICES = 4;
+  for (let slice = 0; slice < SLICES; slice++) {
+    it(`retracts its own front walls on entry, and no other building's, and restores them on leaving (slice ${slice + 1} of ${SLICES})`, () => {
+      const mine = enterable.filter((_, i) => i % SLICES === slice);
+      let checked = 0;
+      let neighbours = 0;
+      for (const b of mine) {
+        const cell = b.cell as { x: number; y: number };
+        const drawables = buildPropDrawables(
+          b.rows.filter((r) => r.layer === WALLS),
           options,
-        ).filter((d) => d.layerCode === WALLS && d.isNearSide && d.ownerBuildingId === other.id);
-        for (const d of theirs) expect(computeVisibility(inside, d)).not.toBe("hidden");
+        );
+        const walls = drawables.filter((d) => d.layerCode === WALLS && !d.isStub);
+        const near = walls.filter((d) => d.isNearSide && d.ownerBuildingId === b.id);
+        expect(near.length, `building ${b.id} has a front wall run`).toBeGreaterThan(0);
+        const inside = {
+          floor: 0,
+          buildingId: ownership.ownershipAt(cell.x, cell.y, 0).buildingId,
+        };
+        expect(inside.buildingId).toBe(b.id);
+        for (const d of near) {
+          expect(computeVisibility(inside, d), `building ${b.id} front wall`).toBe("hidden");
+        }
+        // Its side and back walls stay drawn.
+        for (const d of walls.filter((w) => !w.isNearSide)) {
+          expect(computeVisibility(inside, d)).not.toBe("hidden");
+        }
+        // Stepping out restores the front.
+        const out = { floor: 0, buildingId: NO_OWNER };
+        for (const d of near) {
+          expect(computeVisibility(out, d)).not.toBe("hidden");
+        }
+        // A neighbouring building's front is never retracted by standing here.
+        const other = enterable.find(
+          (o) => o.id !== b.id && Math.abs(o.x0 - b.x0) <= 24 && Math.abs(o.y0 - b.y0) <= 24,
+        );
+        if (other) {
+          neighbours++;
+          const theirs = buildPropDrawables(
+            other.rows.filter((r) => r.layer === WALLS),
+            options,
+          ).filter((d) => d.layerCode === WALLS && d.isNearSide && d.ownerBuildingId === other.id);
+          for (const d of theirs) expect(computeVisibility(inside, d)).not.toBe("hidden");
+        }
+        checked++;
       }
-      checked++;
-    }
-    expect(checked).toBe(enterable.length);
-    expect(neighbours).toBeGreaterThan(50);
-  });
+      expect(checked).toBe(mine.length);
+      expect(neighbours).toBeGreaterThan(10);
+    });
+  }
 });

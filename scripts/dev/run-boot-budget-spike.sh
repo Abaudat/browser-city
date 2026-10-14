@@ -175,6 +175,11 @@ MAIN_DB="bc-boot-budget-main-$$"
 spacetime publish --server "$SERVER_URL" --no-config -y "$MAIN_DB" --module-path "$REPO_ROOT/server" >"$DATA_DIR/publish-main.log" 2>&1 \
   || fail "could not publish server/ (browser_city)" "$DATA_DIR/publish-main.log"
 
+# The world a player boots into holds the generated district (deploy.yml's
+# ensure-district step); a world without one has no start for the client to
+# wait on, and NFR1 would be measured against a city nobody plays in.
+spacetime call --server "$SERVER_URL" --no-config -y "$MAIN_DB" create_district >"$DATA_DIR/create-district.log" 2>&1   || fail "could not create the district in the boot-budget world" "$DATA_DIR/create-district.log"
+
 # Story 4.5: production is built with an OIDC provider configured, so the link
 # offer's decision is on the mount path and NFR1 is measured with it there (any
 # value: the OIDC chunk never loads on a boot with nothing pending).

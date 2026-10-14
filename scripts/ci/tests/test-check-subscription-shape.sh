@@ -13,7 +13,7 @@ plant() { # <dir> <subpath> <content>
   printf '%s\n' "$3" > "$1/$2"
 }
 
-GLOBALS='.subscribe([tables.demoPing.build(), tables.moduleVersion.build(), tables.worldClock.build(), tables.myCharacter.build()]);'
+GLOBALS='.subscribe([tables.demoPing.build(), tables.moduleVersion.build(), tables.worldClock.build(), tables.myCharacter.build(), tables.myStart.build()]);'
 REGION='conn.subscriptionBuilder().subscribe(queries);'
 
 clean_tree() {

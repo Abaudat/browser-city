@@ -87,6 +87,21 @@ async function createCharacter(page: Page): Promise<string> {
 // These specs own when a character exists, so none arrives by itself.
 test.use({ arrive: false });
 
+/** The axis a straight walk travelled most along, from the received samples. */
+function walkedAxis(samples: readonly { x: number; y: number }[]): "x" | "y" {
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  if (!first || !last) return "x";
+  return Math.abs(last.x - first.x) >= Math.abs(last.y - first.y) ? "x" : "y";
+}
+
+/** Never changes direction: non-decreasing or non-increasing throughout. */
+function isMonotonic(values: readonly number[]): boolean {
+  const up = values.every((v, i) => i === 0 || v >= (values[i - 1] ?? v));
+  const down = values.every((v, i) => i === 0 || v <= (values[i - 1] ?? v));
+  return up || down;
+}
+
 test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a standing player costs nothing", async ({
   browser,
 }) => {
@@ -147,17 +162,19 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   expect(received.length, "B received nothing of A").toBeGreaterThan(1);
   expect((await rowUpdates(characterId)) - updatesBefore).toBeGreaterThan(0);
 
-  // On a straight walk it never steps backwards.
-  for (let i = 1; i < drawn.length; i++) {
-    expect(drawn[i]?.x ?? 0).toBeGreaterThanOrEqual(drawn[i - 1]?.x ?? 0);
-  }
+  // On a straight walk it never steps backwards, along whichever axis the
+  // walk took (the player walks wherever the district leaves room).
+  const axis = walkedAxis(received);
+  expect(isMonotonic(drawn.map((f) => f[axis])), "drawn positions stepped backwards").toBe(true);
   // It interpolates rather than snaps: at least one drawn position lies
   // strictly between two consecutive samples B received. Holds at any frame
   // pacing that draws a frame while a segment is being walked.
   const between = drawn.some((f) =>
     received.some((s, i) => {
       const next = received[i + 1];
-      return next !== undefined && s.x < f.x && f.x < next.x;
+      if (next === undefined) return false;
+      const [lo, hi] = [Math.min(s[axis], next[axis]), Math.max(s[axis], next[axis])];
+      return lo < f[axis] && f[axis] < hi;
     }),
   );
   expect(between, "no drawn position fell between two received samples").toBe(true);
@@ -203,9 +220,10 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   );
   const bDrawn = seen.frames[bId] ?? [];
   expect(bDrawn.length, "A drew nothing of B").toBeGreaterThan(0);
-  for (let i = 1; i < bDrawn.length; i++) {
-    expect(bDrawn[i]?.x ?? 0).toBeGreaterThanOrEqual(bDrawn[i - 1]?.x ?? 0);
-  }
+  const bAxis = walkedAxis(seen.samples[bId] ?? []);
+  expect(isMonotonic(bDrawn.map((f) => f[bAxis])), "B's drawn positions stepped backwards").toBe(
+    true,
+  );
 
   // Lazy despawn (AC2), through the real handle release: with B's region
   // centred where A's column is inside the leave radius but outside the enter
