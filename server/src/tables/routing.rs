@@ -43,11 +43,11 @@ pub struct RouteEdge {
 
 /// What a source node advertises (story 3.10, FR50, FR130): one row per
 /// (node, provision code), so a venue answers many needs. `quality` is set
-/// once at generation. `chunk_key` is the node's cell's `world::chunk_key`
-/// (`NodeRow::chunk_key`), derived once: nodes never move. The business a
-/// hit belongs to is the node's own (`route_node.business_id`), never
-/// copied here. Written only by `create_district` and the restore
-/// reducers; read by index through [`RouteProvisionView`].
+/// once at generation. `chunk_key` is `Node::chunk_key`, derived in that one
+/// place: nodes never move. The business a hit belongs to is the node's own
+/// (`route_node.business_id`), never copied here. Written only by
+/// `create_district` and the restore reducers; its first reader, the
+/// provision query's server view, arrives with its first caller (5.10).
 #[derive(Clone)]
 #[spacetimedb::table(
     accessor = route_provision,
@@ -63,49 +63,6 @@ pub struct RouteProvision {
     pub provision: u32,
     pub quality: u32,
     pub chunk_key: u64,
-}
-
-/// The server's [`ProvisionView`]: the rows of one `(provision, chunk)`
-/// through the composite index, and a node with its business id by key.
-/// The only `server/src` code that reads `route_provision` by index
-/// (`scripts/ci/check-server-src-bans.sh`).
-#[allow(dead_code)] // first caller: the decision stories (5.10), which choose among hits
-pub struct RouteProvisionView<'a>(pub &'a spacetimedb::ReducerContext);
-
-impl sim::routing::provision::ProvisionView for RouteProvisionView<'_> {
-    fn in_chunk(
-        &self,
-        provision: u32,
-        chunk_key: u64,
-        out: &mut Vec<sim::routing::provision::ProvisionAt>,
-    ) {
-        out.extend(
-            self.0
-                .db
-                .route_provision()
-                .by_provision_chunk()
-                .filter((provision, chunk_key))
-                .map(|r| sim::routing::provision::ProvisionAt {
-                    node_id: r.node_id,
-                    quality: r.quality,
-                }),
-        );
-    }
-
-    fn node(&self, id: u64) -> Option<(sim::routing::graph::Node, Option<u64>)> {
-        let r = self.0.db.route_node().node_id().find(id)?;
-        let kind = sim::routing::graph::NodeKind::from_code(r.kind)?;
-        Some((
-            sim::routing::graph::Node {
-                kind,
-                x: r.x,
-                y: r.y,
-                floor: r.floor,
-                source: None,
-            },
-            r.business_id,
-        ))
-    }
 }
 
 /// The `edge_kind` extensible set's companion table (NFR36), seeded by

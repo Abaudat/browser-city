@@ -39,7 +39,6 @@ fn network() -> StreetNetwork {
 fn building(plot: u32, x: i32, room_w: i32) -> BuildingInput {
     BuildingInput {
         plot,
-        workplace: plot.is_multiple_of(2),
         provisions: if plot.is_multiple_of(2) {
             vec![(crate::codes::provision::EMPLOYMENT, 50)]
         } else {
@@ -232,6 +231,7 @@ fn a_cross_floor_edge_that_is_not_a_portal_names_that_edge() {
             node(NodeKind::Street, 3, 1),
         ],
         vec![edge(0, 1, EdgeKind::Street), edge(1, 2, EdgeKind::Street)],
+        Vec::new(),
     );
     assert_eq!(
         g.check(&floors()),
@@ -244,6 +244,7 @@ fn a_portal_edge_between_non_portal_nodes_or_one_floor_is_malformed() {
     let on_two_floors = MacroGraph::from_parts(
         vec![node(NodeKind::Street, 1, 0), node(NodeKind::Street, 2, 1)],
         vec![edge(0, 1, EdgeKind::Portal)],
+        Vec::new(),
     );
     assert_eq!(
         on_two_floors.check(&floors()),
@@ -252,6 +253,7 @@ fn a_portal_edge_between_non_portal_nodes_or_one_floor_is_malformed() {
     let same_floor = MacroGraph::from_parts(
         vec![node(NodeKind::Portal, 1, 0), node(NodeKind::Portal, 2, 0)],
         vec![edge(0, 1, EdgeKind::Portal)],
+        Vec::new(),
     );
     assert_eq!(
         same_floor.check(&floors()),
@@ -264,6 +266,7 @@ fn an_edge_to_a_missing_node_names_that_edge() {
     let g = MacroGraph::from_parts(
         vec![node(NodeKind::Street, 1, 0), node(NodeKind::Street, 2, 0)],
         vec![edge(0, 1, EdgeKind::Street), edge(1, 7, EdgeKind::Street)],
+        Vec::new(),
     );
     assert_eq!(
         g.check(&floors()),
@@ -275,13 +278,15 @@ fn an_edge_to_a_missing_node_names_that_edge() {
 fn self_loops_duplicates_and_zero_costs_are_refused() {
     let two = vec![node(NodeKind::Street, 1, 0), node(NodeKind::Street, 2, 0)];
     assert_eq!(
-        MacroGraph::from_parts(two.clone(), vec![edge(1, 1, EdgeKind::Street)]).check(&floors()),
+        MacroGraph::from_parts(two.clone(), vec![edge(1, 1, EdgeKind::Street)], Vec::new())
+            .check(&floors()),
         Err(GraphError::SelfLoop { edge: 0 })
     );
     assert_eq!(
         MacroGraph::from_parts(
             two.clone(),
-            vec![edge(0, 1, EdgeKind::Street), edge(0, 1, EdgeKind::Street)]
+            vec![edge(0, 1, EdgeKind::Street), edge(0, 1, EdgeKind::Street)],
+            Vec::new()
         )
         .check(&floors()),
         Err(GraphError::UnorderedEdge { edge: 1 })
@@ -289,7 +294,7 @@ fn self_loops_duplicates_and_zero_costs_are_refused() {
     let mut free = edge(0, 1, EdgeKind::Street);
     free.cost = Milliminutes(0);
     assert_eq!(
-        MacroGraph::from_parts(two, vec![free]).check(&floors()),
+        MacroGraph::from_parts(two, vec![free], Vec::new()).check(&floors()),
         Err(GraphError::NonPositiveCost { edge: 0 })
     );
 }
@@ -304,9 +309,9 @@ fn a_node_on_a_blocked_tile_or_off_the_grid_is_refused() {
     };
     let mut f = floors();
     f.insert(0, FloorCollision::build(SITE, &[blocked]).unwrap()); // collision-inference: allow (a hand-laid test grid)
-    let g = MacroGraph::from_parts(vec![node(NodeKind::Street, 2, 0)], Vec::new());
+    let g = MacroGraph::from_parts(vec![node(NodeKind::Street, 2, 0)], Vec::new(), Vec::new());
     assert_eq!(g.check(&f), Err(GraphError::NodeNotWalkable { node: 0 }));
-    let off = MacroGraph::from_parts(vec![node(NodeKind::Street, 90, 0)], Vec::new());
+    let off = MacroGraph::from_parts(vec![node(NodeKind::Street, 90, 0)], Vec::new(), Vec::new());
     assert_eq!(off.check(&f), Err(GraphError::NodeNotWalkable { node: 0 }));
 }
 
@@ -314,6 +319,7 @@ fn a_node_on_a_blocked_tile_or_off_the_grid_is_refused() {
 fn a_source_with_no_path_to_a_transit_node_is_refused() {
     let g = MacroGraph::from_parts(
         vec![node(NodeKind::Street, 1, 0), node(NodeKind::Source, 2, 0)],
+        Vec::new(),
         Vec::new(),
     );
     assert_eq!(
@@ -340,7 +346,18 @@ fn rows_to_graph_to_rows_is_identical() {
     for (i, r) in edge_rows.iter_mut().enumerate() {
         r.edge_id = 1 + i as u64;
     }
-    let (back, biz) = MacroGraph::from_rows(&node_rows, &edge_rows).unwrap();
+    let mut prov_rows = g.provision_rows(&ids);
+    for (i, r) in prov_rows.iter_mut().enumerate() {
+        r.provision_id = 1 + i as u64;
+    }
+    assert!(!prov_rows.is_empty(), "the fixture has provisions to carry");
+    let (back, biz) = MacroGraph::from_rows(&node_rows, &edge_rows, &prov_rows).unwrap();
+    assert_eq!(back.provisions(), g.provisions());
+    let mut again_prov = back.provision_rows(&ids);
+    for (r, o) in again_prov.iter_mut().zip(&prov_rows) {
+        r.provision_id = o.provision_id;
+    }
+    assert_eq!(again_prov, prov_rows);
     let mut again = back.node_rows(&biz);
     for (r, o) in again.iter_mut().zip(&node_rows) {
         r.node_id = o.node_id;
@@ -377,6 +394,7 @@ fn an_isolated_portal_pair_is_disconnected() {
             node(NodeKind::Portal, 2, 1),
         ],
         vec![edge(1, 2, EdgeKind::Portal)],
+        Vec::new(),
     );
     assert_eq!(
         g.check(&floors()),
@@ -394,6 +412,7 @@ fn two_street_components_with_no_link_are_disconnected() {
             node(NodeKind::Street, 6, 0),
         ],
         vec![edge(0, 1, EdgeKind::Street), edge(2, 3, EdgeKind::Street)],
+        Vec::new(),
     );
     assert_eq!(
         g.check(&floors()),
@@ -433,7 +452,11 @@ fn a_diagonal_edge_whose_corner_or_arm_is_blocked_names_that_edge() {
     };
     // (1,1) to (6,5): the corner is (6,1); its arms run along row 1 and
     // down column 6.
-    let g = MacroGraph::from_parts(vec![at(1, 1), at(6, 5)], vec![edge(0, 1, EdgeKind::Street)]);
+    let g = MacroGraph::from_parts(
+        vec![at(1, 1), at(6, 5)],
+        vec![edge(0, 1, EdgeKind::Street)],
+        Vec::new(),
+    );
     assert_eq!(g.check(&floors()), Ok(()));
     for (x, y) in [(6, 1), (3, 1), (6, 3)] {
         let wall = Rect {
@@ -484,7 +507,7 @@ fn a_provision_row_off_a_source_node_is_refused() {
         quality: 10,
     });
     rows.sort();
-    let bad = MacroGraph::from_parts_with_provisions(g.nodes().to_vec(), g.edges().to_vec(), rows);
+    let bad = MacroGraph::from_parts(g.nodes().to_vec(), g.edges().to_vec(), rows);
     assert!(matches!(
         bad.check(&floors()),
         Err(GraphError::ProvisionOffSource { .. })
@@ -496,7 +519,7 @@ fn the_same_provision_twice_on_one_node_is_refused() {
     let g = build(&[building(0, 10, 6)], &[], 1000);
     let mut rows = g.provisions().to_vec();
     rows.push(rows[0]);
-    let bad = MacroGraph::from_parts_with_provisions(g.nodes().to_vec(), g.edges().to_vec(), rows);
+    let bad = MacroGraph::from_parts(g.nodes().to_vec(), g.edges().to_vec(), rows);
     assert!(matches!(
         bad.check(&floors()),
         Err(GraphError::BadProvisions { .. })
@@ -504,14 +527,32 @@ fn the_same_provision_twice_on_one_node_is_refused() {
 }
 
 #[test]
-fn a_workplace_without_employment_is_refused() {
+fn a_provision_row_naming_an_unknown_node_is_bad_rows() {
     let g = build(&[building(0, 10, 6)], &[], 1000);
-    let bad =
-        MacroGraph::from_parts_with_provisions(g.nodes().to_vec(), g.edges().to_vec(), Vec::new());
-    assert!(matches!(
-        bad.check(&floors()),
-        Err(GraphError::WorkplaceEmploymentMismatch { .. })
-    ));
+    let ids: Vec<u64> = (500..500 + g.nodes().len() as u64).collect();
+    let nodes = g.node_rows(&vec![None; ids.len()]);
+    let nodes: Vec<NodeRow> = nodes
+        .into_iter()
+        .zip(&ids)
+        .map(|(mut r, id)| {
+            r.node_id = *id;
+            r
+        })
+        .collect();
+    let mut prov = g.provision_rows(&ids);
+    prov[0].node_id = 1;
+    assert_eq!(
+        MacroGraph::from_rows(&nodes, &g.edge_rows(&ids), &prov).err(),
+        Some(GraphError::BadRows)
+    );
+}
+
+#[test]
+fn a_node_advertises_what_its_rows_say() {
+    let g = build(&[building(0, 10, 6), building(1, 20, 6)], &[], 1000);
+    let p = g.provisions();
+    assert!(g.advertises(p[0].node, p[0].provision));
+    assert!(!g.advertises(p[0].node, 999));
 }
 
 #[test]

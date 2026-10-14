@@ -102,7 +102,7 @@ while IFS= read -r -d '' f; do
     ITER_MATCHES="$ITER_MATCHES$f
 "
   fi
-  # Story 3.10: the provision index has one reader, `RouteProvisionView` in
+  # Story 3.10: the provision index has one reader, in
   # tables/routing.rs -- no second index, grid or cache over the rows.
   if [ "$base" != routing.rs ] \
     && grep -qE 'route_provision\(\)[[:space:]]*\.by_[a-z_]+\(\)' <<<"$flat"; then
@@ -120,7 +120,7 @@ if [ -n "$ITER_MATCHES" ]; then
   FAILED=1
 fi
 if [ -n "$PROVISION_INDEX_MATCHES" ]; then
-  echo "check-server-src-bans: FAIL -- route_provision read by index outside tables/routing.rs: the provision query has one reader, RouteProvisionView (story 3.10):" >&2
+  echo "check-server-src-bans: FAIL -- route_provision read by index outside tables/routing.rs: the provision query has one reader, in tables/routing.rs (story 3.10):" >&2
   printf '%s' "$PROVISION_INDEX_MATCHES" >&2
   FAILED=1
 fi

@@ -915,12 +915,13 @@ holds the whole graph to one connected component. The size is stamped in the `ma
 - **Reads:** each enterable building's type (`provisions` in `defs/building-types`: a
   `sim::codes::provision` name and a base quality per entry) and its plot's neighbourhood affluence.
 - **Writes:** one `(node, provision, quality)` per entry on the building's entrance node, stored as
-  `route_provision` rows. A type with `professions` advertises `employment`; `vacant_unit` and every
-  dwelling advertise nothing public.
+  `route_provision` rows. A type with `professions` also advertises `employment`, derived by
+  defs-build and never authored; `vacant_unit` and every dwelling advertise nothing public.
 - **Dial:** `generation.provision.quality_affluence_weight_percent` -- percent of an affluence's
   distance from the middle of its range added to the base, clamped to `0..=100`. Set once, from
   the seed's own plots; nothing at runtime writes it.
-- **Query:** `routing::provision::near`, bounded by `routing.provision.query_radius_chunks` and
+- **Query:** `routing::provision::near`: every source within
+  `routing.provision.query_radius_minutes` for the asker's mode, nearest first, at most
   `routing.provision.max_results`.
 
 ## Measured ceilings

@@ -48,16 +48,19 @@ min = 1000
 max = 100000
 
 [[balance]]
-# Provision query (story 3.10, FR130): how many chunks out from the asking
-# point's own chunk the query looks, in each direction. A chunk is 32 cells.
-key = "routing.provision.query_radius_chunks"
-value = 4
-min = 0
-max = 64
+# Provision query (story 3.10, FR130, FR131): how far, as the estimate
+# from the asking point in the asker's own mode, the city looks for a
+# provision. Minutes, never cells: a faster mode widens the same radius.
+key = "routing.provision.query_radius_minutes"
+value = 20
+min = 1
+max = 600
 
 [[balance]]
 # Provision query (story 3.10): the most hits one query returns, nearest by
-# estimate first.
+# estimate first. A cut by locality, not a performance guard: in a dense
+# core the nearest few hide a better place further out, which is the design
+# ("the local cafe tends to win"); do not halve it to save time.
 key = "routing.provision.max_results"
 value = 16
 min = 1

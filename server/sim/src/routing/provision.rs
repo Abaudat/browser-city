@@ -4,10 +4,12 @@
 //! keyed to the node. Pure -- a function of a [`ProvisionView`] and
 //! [`Rates`]; the table is the server's, the structure is this module's.
 //!
-//! [`near`] is index-bounded: it visits the chunks within a radius of the
-//! asking point, never the whole table, ranks by the walking estimate
-//! (FR131) and returns the node ids [`super::search::search`] accepts as a
-//! destination. Choosing among hits is the caller's.
+//! [`near`] answers "every source within R minutes, nearest first": the
+//! radius is a [`Milliminutes`] estimate for the asker's mode, the chunks
+//! visited are the ones that radius can reach (index-bounded, never the
+//! whole table), and the ranking is the estimate (FR131) then node id. The
+//! node ids are the ones [`super::search::search`] accepts as a destination.
+//! Choosing among hits is the caller's.
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -18,7 +20,7 @@ use super::search::NodeId;
 use super::{Milliminutes, Point, TransportMode};
 use crate::balance;
 use crate::generated::defs::BalanceSeed;
-use crate::world::{CHUNK_SIZE, checked_chunk_key, chunk_key};
+use crate::world::{CHUNK_SIZE, checked_chunk_key, chunk_coord};
 
 /// The most provision rows one source node may carry: the largest list a
 /// building type declares (`defs/building-types`), with headroom. The
@@ -65,8 +67,8 @@ pub fn quality(base: u32, affluence: i32, dial: &QualityDial) -> u32 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProvisionQuery {
     pub rates: Rates,
-    /// Chunks out from the asking point's own, in each direction.
-    pub radius_chunks: u32,
+    /// How far the city looks, as the estimate from the asking point.
+    pub radius: Milliminutes,
     pub max_results: u32,
 }
 
@@ -75,7 +77,7 @@ impl ProvisionQuery {
         let get = |k| u32::try_from(balance::value(b, k)).expect("bounded by the balance max");
         ProvisionQuery {
             rates: Rates::from_balance(b),
-            radius_chunks: get("routing.provision.query_radius_chunks"),
+            radius: Milliminutes(i64::from(get("routing.provision.query_radius_minutes")) * 1000),
             max_results: get("routing.provision.max_results"),
         }
     }
@@ -107,32 +109,70 @@ pub trait ProvisionView {
     fn node(&self, id: NodeId) -> Option<(Node, Option<u64>)>;
 }
 
-/// The chunk coordinate of a cell coordinate; the one place a chunk
-/// coordinate is derived beside `world::chunk_key`'s own.
-pub fn chunk_of(v: i32) -> i32 {
-    v.div_euclid(CHUNK_SIZE)
+/// The most cells one step of `radius` can span for `mode`: the largest `c`
+/// whose same-floor estimate over `c` cells is within `radius`. The estimate
+/// is monotone in distance, so a bisection finds it; it is what turns the
+/// minute radius into a window of chunks without a cell unit in the dial.
+pub fn radius_cells(rates: &Rates, mode: TransportMode, radius: Milliminutes) -> i32 {
+    let at = |c: i64| {
+        estimate(
+            rates,
+            Point {
+                x: 0,
+                y: 0,
+                floor: 0,
+            },
+            Point {
+                x: c as i32,
+                y: 0,
+                floor: 0,
+            },
+            mode,
+            Correction::NONE,
+        )
+    };
+    let (mut lo, mut hi) = (0i64, 1i64 << 20);
+    if at(hi) <= radius {
+        return hi as i32;
+    }
+    while lo + 1 < hi {
+        let mid = (lo + hi) / 2;
+        if at(mid) <= radius {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    lo as i32
 }
 
-/// The `n` nearest sources advertising `provision`, by estimate then node
-/// id, within `query.radius_chunks` chunks of `origin` on each of
-/// `floors`. Visits `(2r + 1)^2` chunks per floor, whatever the table's
-/// size; a provision nobody offers is an empty answer.
+/// Every source advertising `provision` on `floors` whose estimate from
+/// `origin` in `mode` is within `query.radius`, nearest first (estimate,
+/// then node id), at most `query.max_results`. The chunks visited are those
+/// the radius can reach on each floor, whatever the table's size; a
+/// provision nobody offers is an empty answer.
 pub fn near(
     view: &impl ProvisionView,
     origin: Point,
     floors: &[i8],
     provision: u32,
+    mode: TransportMode,
     query: &ProvisionQuery,
 ) -> Vec<ProvisionHit> {
-    let r = i64::from(query.radius_chunks);
-    let (cx, cy) = (i64::from(chunk_of(origin.x)), i64::from(chunk_of(origin.y)));
+    let c = i64::from(radius_cells(&query.rates, mode, query.radius));
+    let span = |v: i32| {
+        let lo = (i64::from(v) - c).max(i64::from(i32::MIN));
+        let hi = (i64::from(v) + c).min(i64::from(i32::MAX));
+        (chunk_coord(lo as i32), chunk_coord(hi as i32))
+    };
+    let ((x0, x1), (y0, y1)) = (span(origin.x), span(origin.y));
     let size = i64::from(CHUNK_SIZE);
     let mut found: BTreeMap<(Milliminutes, NodeId), ProvisionHit> = BTreeMap::new();
     let mut rows = Vec::new();
     for &floor in floors {
-        for dy in -r..=r {
-            for dx in -r..=r {
-                let (x, y) = ((cx + dx) * size, (cy + dy) * size);
+        for cy in y0..=y1 {
+            for cx in x0..=x1 {
+                let (x, y) = (i64::from(cx) * size, i64::from(cy) * size);
                 let Some(key) = i32::try_from(x)
                     .ok()
                     .zip(i32::try_from(y).ok())
@@ -146,13 +186,11 @@ pub fn near(
                     let Some((node, business_id)) = view.node(row.node_id) else {
                         continue;
                     };
-                    let estimate = estimate(
-                        &query.rates,
-                        origin,
-                        node.point(),
-                        TransportMode::Walk,
-                        Correction::NONE,
-                    );
+                    let estimate =
+                        estimate(&query.rates, origin, node.point(), mode, Correction::NONE);
+                    if estimate > query.radius {
+                        continue;
+                    }
                     found.insert(
                         (estimate, row.node_id),
                         ProvisionHit {
@@ -174,7 +212,7 @@ pub fn near(
 }
 
 /// An in-memory [`ProvisionView`] of one graph, for tests and tools. The
-/// server's is the `node_provision` table through its index.
+/// server's is the `route_provision` table through its index.
 #[derive(Debug)]
 pub struct ProvisionTable {
     by_chunk: BTreeMap<(u32, u64), Vec<ProvisionAt>>,
@@ -194,7 +232,7 @@ impl ProvisionTable {
         for p in graph.provisions() {
             let n = &graph.nodes()[p.node as usize];
             by_chunk
-                .entry((p.provision, chunk_key(n.x, n.y, n.floor)))
+                .entry((p.provision, n.chunk_key()))
                 .or_default()
                 .push(ProvisionAt {
                     node_id: node_ids[p.node as usize],

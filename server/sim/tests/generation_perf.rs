@@ -405,7 +405,7 @@ fn provision_index_at_the_1024_growth_target_is_chunk_bounded() {
     use sim::routing::provision::{
         MAX_PROVISIONS_PER_SOURCE, ProvisionQuery, ProvisionTable, near,
     };
-    use sim::routing::{Point, estimate::Rates};
+    use sim::routing::{Point, TransportMode};
     let mut cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
     cfg.site_extent_cells = 1024;
     let content = GenerationContent::committed();
@@ -420,7 +420,6 @@ fn provision_index_at_the_1024_growth_target_is_chunk_bounded() {
     let business = vec![None; g.nodes().len()];
     let table = ProvisionTable::from_graph(&g, &ids, &business);
     let q = ProvisionQuery::from_balance(defs::BALANCE);
-    let _ = Rates::from_balance(defs::BALANCE);
     let o = g
         .nodes()
         .iter()
@@ -432,8 +431,14 @@ fn provision_index_at_the_1024_growth_target_is_chunk_bounded() {
         floor: o.floor,
     };
     table.reset_visits();
-    let hits = near(&table, origin, &[0], 9_999, &q);
+    let hits = near(&table, origin, &[0], 9_999, TransportMode::Walk, &q);
     assert!(hits.is_empty());
-    let side = 2 * q.radius_chunks as usize + 1;
-    assert_eq!(table.chunk_visits(), side * side);
+    // The window the radius reaches, a chunk wider at each end at most.
+    let cells = sim::routing::provision::radius_cells(&q.rates, TransportMode::Walk, q.radius);
+    let side = 2 * (cells as usize).div_ceil(sim::world::CHUNK_SIZE as usize) + 2;
+    assert!(
+        table.chunk_visits() <= side * side,
+        "{} chunk lookups for a {side} x {side} window",
+        table.chunk_visits()
+    );
 }

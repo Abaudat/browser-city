@@ -8897,8 +8897,8 @@ fn inv_routing_graph_size_is_a_few_thousand_nodes() {
 /// `inv_routing_node_has_floor_position_and_source_has_one_business`
 /// (story 3.9 AC2): every node has a floor in range and stands on a tile
 /// that floor's walkability grid leaves free; every source node is the
-/// entrance of exactly one laid building, no two share one, and its
-/// workplace flag is the building type's own.
+/// entrance of exactly one laid building, no two share one, and it
+/// advertises employment iff its type has professions.
 #[test]
 fn inv_routing_node_has_floor_position_and_source_has_one_business() {
     use sim::routing::graph::NodeKind;
@@ -8932,9 +8932,13 @@ fn inv_routing_node_has_floor_position_and_source_has_one_business() {
                     .ok_or("a source names a building that is not laid")?;
                 let e = i.entrance().ok_or("a laid building has no door")?;
                 ensure!((e.x, e.y) == (n.x, n.y), "source is not on the door");
+                let employs = g.provisions().iter().any(|p| {
+                    p.provision == sim::codes::provision::EMPLOYMENT
+                        && g.nodes()[p.node as usize].source == Some(src)
+                });
                 ensure!(
-                    src.workplace == !types[&ty].professions.is_empty(),
-                    "plot {}: workplace flag disagrees with its type",
+                    employs == !types[&ty].professions.is_empty(),
+                    "plot {}: employment row disagrees with its type's professions",
                     src.plot
                 );
             }
@@ -9723,8 +9727,9 @@ fn pooled_table(
         .iter()
         .enumerate()
         .map(|(i, n)| {
-            (n.kind == NodeKind::Source && n.source.is_some_and(|s| s.workplace))
-                .then_some(500_000 + i as u64)
+            (n.kind == NodeKind::Source
+                && g.advertises(i as u32, sim::codes::provision::EMPLOYMENT))
+            .then_some(500_000 + i as u64)
         })
         .collect();
     (
@@ -9734,13 +9739,14 @@ fn pooled_table(
 }
 
 /// `inv_provision_query_matches_brute_force` (story 3.10 AC1): from a
-/// sample of origins and for every provision code, the index-bounded query
-/// equals a scan of every provision row within the radius, sorted by the
-/// estimate then node id and truncated.
+/// sample of origins, for every provision code and every mode, the
+/// index-bounded query equals a scan of every provision row on the floor
+/// with no chunk logic: kept when its estimate is within the radius,
+/// sorted by estimate then node id, truncated.
 #[test]
 fn inv_provision_query_matches_brute_force() {
     use sim::routing::estimate::{Correction, estimate};
-    use sim::routing::provision::{ProvisionQuery, chunk_of, near};
+    use sim::routing::provision::{ProvisionQuery, near};
     use sim::routing::{Point, TransportMode};
     let q = ProvisionQuery::from_balance(defs::BALANCE);
     over_pool("inv_provision_query_matches_brute_force", |c| {
@@ -9754,40 +9760,31 @@ fn inv_provision_query_matches_brute_force() {
                 y: o.y,
                 floor: o.floor,
             };
-            for code in sim::codes::provision::CODES.iter().map(|c| c.code) {
-                let got = near(&table, origin, &[0], code, &q);
-                let mut want: Vec<(sim::routing::Milliminutes, u64)> = g
-                    .provisions()
-                    .iter()
-                    .filter(|p| p.provision == code)
-                    .filter(|p| {
-                        let m = &g.nodes()[p.node as usize];
-                        let r = q.radius_chunks as i32;
-                        m.floor == 0
-                            && (chunk_of(m.x) - chunk_of(origin.x)).abs() <= r
-                            && (chunk_of(m.y) - chunk_of(origin.y)).abs() <= r
-                    })
-                    .map(|p| {
-                        let m = &g.nodes()[p.node as usize];
-                        (
-                            estimate(
-                                &q.rates,
-                                origin,
-                                m.point(),
-                                TransportMode::Walk,
-                                Correction::NONE,
-                            ),
-                            10_000 + p.node as u64,
-                        )
-                    })
-                    .collect();
-                want.sort();
-                want.truncate(q.max_results as usize);
-                let got: Vec<_> = got.iter().map(|h| (h.estimate, h.node_id)).collect();
-                ensure!(
-                    got == want,
-                    "origin {k}, provision {code}: {got:?} != {want:?}"
-                );
+            for mode in [TransportMode::Walk, TransportMode::Transit] {
+                for code in sim::codes::provision::CODES.iter().map(|c| c.code) {
+                    let got = near(&table, origin, &[0], code, mode, &q);
+                    let mut want: Vec<(sim::routing::Milliminutes, u64)> = g
+                        .provisions()
+                        .iter()
+                        .filter(|p| p.provision == code)
+                        .filter(|p| g.nodes()[p.node as usize].floor == 0)
+                        .map(|p| {
+                            let m = &g.nodes()[p.node as usize];
+                            (
+                                estimate(&q.rates, origin, m.point(), mode, Correction::NONE),
+                                10_000 + p.node as u64,
+                            )
+                        })
+                        .filter(|(e, _)| *e <= q.radius)
+                        .collect();
+                    want.sort();
+                    want.truncate(q.max_results as usize);
+                    let got: Vec<_> = got.iter().map(|h| (h.estimate, h.node_id)).collect();
+                    ensure!(
+                        got == want,
+                        "origin {k}, provision {code}: {got:?} != {want:?}"
+                    );
+                }
             }
         }
         Ok(())
@@ -9799,8 +9796,8 @@ fn inv_provision_query_matches_brute_force() {
 /// second lookup; every employment hit has one.
 #[test]
 fn inv_provision_hit_carries_its_nodes_business_id() {
-    use sim::routing::Point;
     use sim::routing::provision::{ProvisionQuery, near};
+    use sim::routing::{Point, TransportMode};
     let q = ProvisionQuery::from_balance(defs::BALANCE);
     over_pool("inv_provision_hit_carries_its_nodes_business_id", |c| {
         let g = pooled_graph(c)?;
@@ -9814,7 +9811,7 @@ fn inv_provision_hit_carries_its_nodes_business_id() {
                 floor: o.floor,
             };
             for code in sim::codes::provision::CODES.iter().map(|c| c.code) {
-                for h in near(&table, origin, &[0], code, &q) {
+                for h in near(&table, origin, &[0], code, TransportMode::Walk, &q) {
                     let idx = (h.node_id - 10_000) as usize;
                     ensure!(
                         h.business_id == business[idx],

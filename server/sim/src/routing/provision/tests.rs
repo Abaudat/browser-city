@@ -12,13 +12,19 @@ fn rates() -> Rates {
     Rates::from_balance(defs::BALANCE)
 }
 
-fn query(radius_chunks: u32, max_results: u32) -> ProvisionQuery {
+fn minutes(m: i64) -> Milliminutes {
+    Milliminutes(m * 1000)
+}
+
+fn query(radius_minutes: i64, max_results: u32) -> ProvisionQuery {
     ProvisionQuery {
         rates: rates(),
-        radius_chunks,
+        radius: minutes(radius_minutes),
         max_results,
     }
 }
+
+const WALK: TransportMode = TransportMode::Walk;
 
 fn source(x: i32, y: i32, floor: i8, plot: u32) -> Node {
     Node {
@@ -26,10 +32,7 @@ fn source(x: i32, y: i32, floor: i8, plot: u32) -> Node {
         x,
         y,
         floor,
-        source: Some(SourceRef {
-            plot,
-            workplace: false,
-        }),
+        source: Some(SourceRef { plot }),
     }
 }
 
@@ -53,7 +56,7 @@ fn table(rows: &[Row]) -> ProvisionTable {
             });
         }
     }
-    let graph = MacroGraph::from_parts_with_provisions(nodes, Vec::new(), provisions);
+    let graph = MacroGraph::from_parts(nodes, Vec::new(), provisions);
     let ids: Vec<u64> = (0..rows.len() as u64).map(|i| 1000 + i).collect();
     let business: Vec<Option<u64>> = rows.iter().map(|r| r.4).collect();
     ProvisionTable::from_graph(&graph, &ids, &business)
@@ -63,6 +66,10 @@ fn origin(x: i32, y: i32, floor: i8) -> Point {
     Point { x, y, floor }
 }
 
+fn est(q: &ProvisionQuery, mode: TransportMode, o: Point, p: Point) -> Milliminutes {
+    estimate(&q.rates, o, p, mode, Correction::NONE)
+}
+
 const FOOD50: &[(u32, u32)] = &[(code::FOOD, 50)];
 
 // ---- AC2: rows, many per venue ----
@@ -70,44 +77,36 @@ const FOOD50: &[(u32, u32)] = &[(code::FOOD, 50)];
 #[test]
 fn one_venue_with_two_provisions_answers_two_queries() {
     let t = table(&[(10, 0, 0, &[(code::FOOD, 60), (code::SOCIAL, 70)], None)]);
-    let q = query(2, 8);
-    let food = near(&t, origin(0, 0, 0), &[0], code::FOOD, &q);
-    let social = near(&t, origin(0, 0, 0), &[0], code::SOCIAL, &q);
+    let q = query(20, 8);
+    let food = near(&t, origin(0, 0, 0), &[0], code::FOOD, WALK, &q);
+    let social = near(&t, origin(0, 0, 0), &[0], code::SOCIAL, WALK, &q);
     assert_eq!(food.len(), 1);
     assert_eq!(social.len(), 1);
     assert_eq!(food[0].node_id, social[0].node_id);
     assert_eq!((food[0].quality, social[0].quality), (60, 70));
-    assert!(near(&t, origin(0, 0, 0), &[0], code::REST, &q).is_empty());
+    assert!(near(&t, origin(0, 0, 0), &[0], code::REST, WALK, &q).is_empty());
 }
 
 #[test]
 fn a_provision_nobody_offers_is_empty_not_a_panic() {
     let t = table(&[]);
-    assert!(near(&t, origin(0, 0, 0), &[0], code::FOOD, &query(2, 8)).is_empty());
+    assert!(near(&t, origin(0, 0, 0), &[0], code::FOOD, WALK, &query(20, 8)).is_empty());
 }
 
-// ---- AC1: nearest in minutes, deterministic ----
+// ---- AC1: every source within R minutes, nearest first ----
 
 #[test]
 fn nearer_in_minutes_wins_even_when_further_in_cells() {
     // 20 cells off on this floor; the other is 5 cells off but on another
     // floor, whose change penalty makes it dearer in minutes.
     let t = table(&[(5, 0, 1, FOOD50, None), (20, 0, 0, FOOD50, None)]);
-    let hits = near(&t, origin(0, 0, 0), &[0, 1], code::FOOD, &query(2, 8));
-    let est = |p: Point| {
-        estimate(
-            &rates(),
-            origin(0, 0, 0),
-            p,
-            TransportMode::Walk,
-            Correction::NONE,
-        )
-    };
+    let q = query(20, 8);
+    let hits = near(&t, origin(0, 0, 0), &[0, 1], code::FOOD, WALK, &q);
+    let a = est(&q, WALK, origin(0, 0, 0), origin(5, 0, 1));
+    let b = est(&q, WALK, origin(0, 0, 0), origin(20, 0, 0));
+    assert_ne!(a, b);
     assert_eq!(hits.len(), 2);
-    let best = est(origin(5, 0, 1)).min(est(origin(20, 0, 0)));
-    assert_eq!(hits[0].estimate, best);
-    assert!(hits[0].estimate <= hits[1].estimate);
-    assert_ne!(est(origin(5, 0, 1)), est(origin(20, 0, 0)));
+    assert_eq!(hits[0].estimate, a.min(b));
 }
 
 #[test]
@@ -117,25 +116,54 @@ fn a_tie_breaks_on_node_id() {
         (-10, 0, 0, &[(code::FOOD, 90)], None),
         (0, 10, 0, &[(code::FOOD, 10)], None),
     ]);
-    let hits = near(&t, origin(0, 0, 0), &[0], code::FOOD, &query(2, 8));
+    let hits = near(&t, origin(0, 0, 0), &[0], code::FOOD, WALK, &query(20, 8));
     let ids: Vec<u64> = hits.iter().map(|h| h.node_id).collect();
     assert_eq!(ids, vec![1000, 1001, 1002]);
 }
 
 #[test]
-fn the_limit_and_the_radius_are_respected() {
+fn the_radius_is_minutes_and_the_limit_is_respected() {
     let rows: Vec<Row> = (0..10).map(|i| (i * 40, 0, 0, FOOD50, None)).collect();
     let t = table(&rows);
+    let o = origin(0, 0, 0);
+    // 40 cells is about 7.3 minutes on foot, 80 about 14.5.
+    let ids = |r: i64| -> Vec<u64> {
+        near(&t, o, &[0], code::FOOD, WALK, &query(r, 100))
+            .iter()
+            .map(|h| h.node_id)
+            .collect()
+    };
+    assert_eq!(ids(0), vec![1000]);
+    assert_eq!(ids(10), vec![1000, 1001]);
+    assert_eq!(ids(600).len(), 10);
+    assert_eq!(near(&t, o, &[0], code::FOOD, WALK, &query(600, 3)).len(), 3);
+}
+
+#[test]
+fn a_faster_mode_widens_the_same_radius() {
+    let t = table(&[(100, 0, 0, FOOD50, None)]);
+    let q = query(10, 8);
+    let o = origin(0, 0, 0);
+    assert!(near(&t, o, &[0], code::FOOD, TransportMode::Walk, &q).is_empty());
     assert_eq!(
-        near(&t, origin(0, 0, 0), &[0], code::FOOD, &query(64, 3)).len(),
-        3
+        near(&t, o, &[0], code::FOOD, TransportMode::Transit, &q).len(),
+        1
     );
-    // Radius 0 sees only the origin's own chunk.
-    let own = near(&t, origin(0, 0, 0), &[0], code::FOOD, &query(0, 100));
-    assert_eq!(
-        own.iter().map(|h| h.node_id).collect::<Vec<_>>(),
-        vec![1000]
-    );
+}
+
+#[test]
+fn a_source_just_outside_a_chunk_window_is_not_beaten_by_one_in_the_far_corner() {
+    // The origin sits on the west edge of its chunk, so a window sized in
+    // chunks around it reaches far less to the west than to the east. The
+    // source 120 cells west is nearer than the one 130 cells north-east.
+    let q = query(25, 1);
+    let t = table(&[
+        (100, 30, 0, FOOD50, None), // 130 cells away
+        (-120, 0, 0, FOOD50, None), // 120 cells away
+    ]);
+    let hits = near(&t, origin(0, 0, 0), &[0], code::FOOD, WALK, &q);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].node_id, 1001);
 }
 
 #[test]
@@ -143,8 +171,9 @@ fn the_query_visits_chunks_not_rows() {
     let rows: Vec<Row> = (0..200).map(|i| (i * 40, 0, 0, FOOD50, None)).collect();
     let t = table(&rows);
     t.reset_visits();
-    near(&t, origin(0, 0, 0), &[0], code::FOOD, &query(1, 100));
-    assert!(t.chunk_visits() <= 9, "visited {}", t.chunk_visits());
+    near(&t, origin(0, 0, 0), &[0], code::FOOD, WALK, &query(10, 100));
+    // 10 minutes is under 60 cells: at most four chunks a side.
+    assert!(t.chunk_visits() <= 16, "visited {}", t.chunk_visits());
 }
 
 // ---- AC4: the business id comes with the hit ----
@@ -155,17 +184,17 @@ fn a_hit_carries_its_nodes_business_id() {
         (5, 0, 0, &[(code::EMPLOYMENT, 50)], Some(77)),
         (9, 0, 0, &[(code::REST, 50)], None),
     ]);
-    let q = query(2, 8);
-    let work = near(&t, origin(0, 0, 0), &[0], code::EMPLOYMENT, &q);
+    let q = query(20, 8);
+    let work = near(&t, origin(0, 0, 0), &[0], code::EMPLOYMENT, WALK, &q);
     assert_eq!(work[0].business_id, Some(77));
-    let rest = near(&t, origin(0, 0, 0), &[0], code::REST, &q);
+    let rest = near(&t, origin(0, 0, 0), &[0], code::REST, WALK, &q);
     assert_eq!(rest[0].business_id, None);
 }
 
 #[test]
 fn the_hit_node_id_is_a_node_the_search_accepts() {
     let t = table(&[(5, 0, 0, FOOD50, None)]);
-    let h = &near(&t, origin(0, 0, 0), &[0], code::FOOD, &query(2, 8))[0];
+    let h = &near(&t, origin(0, 0, 0), &[0], code::FOOD, WALK, &query(20, 8))[0];
     assert!(ProvisionView::node(&t, h.node_id).is_some());
 }
 
@@ -190,6 +219,16 @@ fn quality_is_clamped_and_moves_with_affluence() {
     );
 }
 
+fn edge_biased() -> impl Strategy<Value = i32> {
+    prop_oneof![
+        -35i32..=-29,
+        -3i32..=3,
+        29i32..=35,
+        61i32..=67,
+        -200i32..200
+    ]
+}
+
 proptest! {
     #[test]
     fn quality_stays_in_range_and_never_falls_as_affluence_rises(
@@ -201,25 +240,24 @@ proptest! {
         prop_assert!(quality(base, hi, &d) <= 100);
     }
 
+    /// The oracle has no chunk logic: every row on the floors, kept when
+    /// its estimate is within the radius, sorted, truncated.
     #[test]
-    fn near_equals_a_brute_force_scan(
-        pts in proptest::collection::vec((-200i32..200, -200i32..200, 0i8..2), 1..40),
-        ox in -100i32..100, oy in -100i32..100, radius in 0u32..4, limit in 1u32..10,
+    fn near_equals_a_scan_of_every_row(
+        pts in proptest::collection::vec((edge_biased(), edge_biased(), 0i8..2), 1..40),
+        ox in edge_biased(), oy in edge_biased(), radius in 0i64..40, limit in 1u32..10,
+        mode in prop_oneof![
+            Just(TransportMode::Walk), Just(TransportMode::Bike), Just(TransportMode::Transit)
+        ],
     ) {
         let rows: Vec<Row> = pts.iter().map(|&(x, y, f)| (x, y, f, FOOD50, None)).collect();
         let t = table(&rows);
         let q = query(radius, limit);
-        let got = near(&t, origin(ox, oy, 0), &[0, 1], code::FOOD, &q);
+        let o = origin(ox, oy, 0);
+        let got = near(&t, o, &[0, 1], code::FOOD, mode, &q);
         let mut want: Vec<(Milliminutes, u64)> = pts.iter().enumerate()
-            .filter(|&(_, &(x, y, _))| {
-                let r = radius as i32;
-                (chunk_of(x) - chunk_of(ox)).abs() <= r
-                    && (chunk_of(y) - chunk_of(oy)).abs() <= r
-            })
-            .map(|(i, &(x, y, f))| (
-                estimate(&q.rates, origin(ox, oy, 0), origin(x, y, f), TransportMode::Walk, Correction::NONE),
-                1000 + i as u64,
-            ))
+            .map(|(i, &(x, y, f))| (est(&q, mode, o, origin(x, y, f)), 1000 + i as u64))
+            .filter(|(e, _)| *e <= q.radius)
             .collect();
         want.sort();
         want.truncate(limit as usize);

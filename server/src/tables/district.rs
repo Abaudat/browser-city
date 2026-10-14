@@ -9,6 +9,7 @@
 //! other file under `server/src/` that names `generation::` or the
 //! `district` accessor outside the places listed there.
 
+use sim::codes::provision;
 use sim::generated::defs;
 use sim::generation::{
     DistrictRecord, GenerationConfig, GenerationContent, RuleSetVersion, SiteBounds, create,
@@ -96,17 +97,20 @@ fn write_graph(ctx: &ReducerContext, graph: &MacroGraph) {
     let business_ids: Vec<Option<u64>> = graph
         .nodes()
         .iter()
-        .map(|n| match (n.kind, n.source) {
-            (NodeKind::Source, Some(s)) if s.workplace => Some(
-                ctx.db
-                    .business()
-                    .insert(Business {
-                        business_id: 0,
-                        created_at: ctx.timestamp,
-                    })
-                    .business_id,
-            ),
-            _ => None,
+        .enumerate()
+        .map(|(i, n)| {
+            // A workplace is a source that advertises employment.
+            (n.kind == NodeKind::Source && graph.advertises(i as u32, provision::EMPLOYMENT)).then(
+                || {
+                    ctx.db
+                        .business()
+                        .insert(Business {
+                            business_id: 0,
+                            created_at: ctx.timestamp,
+                        })
+                        .business_id
+                },
+            )
         })
         .collect();
     let node_ids: Vec<u64> = graph

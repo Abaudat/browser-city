@@ -572,9 +572,6 @@ impl District {
                 let entrance = i.entrance()?;
                 Some(BuildingInput {
                     plot,
-                    workplace: by_plot
-                        .get(&plot)
-                        .is_some_and(|d| building_types::is_workplace(d)),
                     provisions: by_plot.get(&plot).map_or_else(Vec::new, |d| {
                         let affluence = self.skeleton.plots.plots()[plot as usize].affluence;
                         d.provisions
