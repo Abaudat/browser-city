@@ -195,14 +195,14 @@ export function routeBetween(from: Cell, to: Cell): Cell[] {
 
 /** Walks the player (wherever it stands now) to `to`, with real key presses,
  * along the cheapest route over the real grid. */
-export async function walkTo(page: Page, to: Cell): Promise<void> {
+export async function walkTo(page: Page, to: Cell, segmentTimeoutMs = 40_000): Promise<void> {
   const here = await page.evaluate(() => window.__bc?.playerPosition);
   if (!here) throw new Error("no player position");
   const from = bodyCell(here);
   const route = routeBetween(from, to);
   for (const segment of segmentsOf(route)) {
     try {
-      await walkRealSegment(page, segment, 40_000);
+      await walkRealSegment(page, segment, segmentTimeoutMs);
     } catch (error) {
       const at = await page.evaluate(() => window.__bc?.playerPosition);
       throw new Error(

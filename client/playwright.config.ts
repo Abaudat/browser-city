@@ -63,7 +63,16 @@ export default defineConfig({
         /l3-budget\.spec\.ts/,
         /boot-budget\.spec\.ts/,
         /deploy-smoke\.spec\.ts/,
+        /district-review.spec.ts/,
       ],
+    },
+    {
+      // Story 3.16's review capture: the committed district walked end to
+      // end, screenshots and recording under docs/generation/walk/. Only
+      // `npm run test:e2e:review` selects it.
+      name: "review",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /district-review.spec.ts/,
     },
     {
       // NFR2's measurement harness and regression gate. Never part of

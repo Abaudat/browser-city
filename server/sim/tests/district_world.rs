@@ -248,3 +248,61 @@ fn at_least_a_hundred_buildings_are_enterable_furnished_and_reachable_from_arriv
         "only {good} enterable furnished reachable buildings"
     );
 }
+
+/// Two neighbourhoods across one arterial: the dial differences at the
+/// midpoint of their shared edge (a world cell on each side).
+struct Step {
+    affluence: i32,
+    age: i32,
+    cell: (i32, i32),
+}
+
+fn adjacent_steps(district: &District) -> Vec<Step> {
+    let hoods = district.skeleton.land_use.neighbourhoods();
+    let mut out = Vec::new();
+    for (i, a) in hoods.iter().enumerate() {
+        for b in &hoods[i + 1..] {
+            let (ab, bb) = (a.bounds, b.bounds);
+            let ys = ab.y0.max(bb.y0)..ab.y1.min(bb.y1);
+            let xs = ab.x0.max(bb.x0)..ab.x1.min(bb.x1);
+            let cell = if (ab.x1 == bb.x0 || bb.x1 == ab.x0) && !ys.is_empty() {
+                let x = if ab.x1 == bb.x0 { ab.x1 } else { ab.x0 };
+                (x, (ys.start + ys.end) / 2)
+            } else if (ab.y1 == bb.y0 || bb.y1 == ab.y0) && !xs.is_empty() {
+                let y = if ab.y1 == bb.y0 { ab.y1 } else { ab.y0 };
+                ((xs.start + xs.end) / 2, y)
+            } else {
+                continue;
+            };
+            out.push(Step {
+                affluence: (a.affluence - b.affluence).abs(),
+                age: (a.building_age - b.building_age).abs(),
+                cell,
+            });
+        }
+    }
+    out
+}
+
+/// The least dial step across an arterial a screenshot can tell apart: the
+/// sharpest adjacent pair of the committed seed must reach it, per dial.
+const LEGIBLE_DIAL_STEP_MIN: i32 = 20;
+
+#[test]
+fn the_committed_seed_has_an_arterial_where_each_dial_steps_enough_to_read() {
+    let (district, _, _) = world();
+    let steps = adjacent_steps(&district);
+    assert!(!steps.is_empty(), "no adjacent neighbourhoods");
+    let sharpest_aff = steps.iter().max_by_key(|s| s.affluence).unwrap();
+    let sharpest_age = steps.iter().max_by_key(|s| s.age).unwrap();
+    println!(
+        "sharpest affluence step {} at {:?}; sharpest age step {} at {:?}; {} adjacent pairs",
+        sharpest_aff.affluence,
+        sharpest_aff.cell,
+        sharpest_age.age,
+        sharpest_age.cell,
+        steps.len()
+    );
+    assert!(sharpest_aff.affluence >= LEGIBLE_DIAL_STEP_MIN);
+    assert!(sharpest_age.age >= LEGIBLE_DIAL_STEP_MIN);
+}
