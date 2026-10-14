@@ -1,7 +1,7 @@
 # Story 7.1 (FR20): the opening economy. Every figure here is a seed, a
 # starting value to be tuned against play, never a derived or promised
-# one -- `seed = "FR20"` is what says so, and the build refuses an
-# `economy.*` key without it. The 45 per cent rent share is derived from
+# one -- `seed = "FR<n>"` names the requirement whose figure it seeds, and
+# the build refuses an `economy.*` key without it. The 45 per cent rent share is derived from
 # these keys by `server/sim/tests/housing.rs`, never stored.
 
 [[balance]]
@@ -42,12 +42,4 @@ key = "economy.rent.per_affluence_point_percent"
 value = 1
 min = 0
 max = 100
-seed = "FR20"
-
-[[balance]]
-# Food and necessities for one week, in the currency's smallest unit: what a character starts with in hand.
-key = "economy.starting_cash"
-value = 90
-min = 0
-max = 100000
-seed = "FR20"
+seed = "FR27"

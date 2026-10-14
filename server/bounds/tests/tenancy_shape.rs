@@ -59,3 +59,33 @@ fn tenancy_bound_covers_every_character_and_every_citizen() {
     assert!(max("tenancy") >= max("citizen") + max("character") / 5);
     assert!(max("tenancy") >= max("citizen"));
 }
+
+#[test]
+fn dwelling_is_one_row_per_building_and_building_stays_narrow() {
+    let d = table("dwelling");
+    assert_eq!(d.columns[0].name, "building_id");
+    assert!(d.columns[0].primary_key && !d.columns[0].auto_inc);
+    let b = table("building");
+    let names: Vec<&str> = b.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["building_id", "created_at"]);
+    let max = |a: &str| {
+        TABLE_BOUNDS
+            .iter()
+            .find(|x| x.accessor == a)
+            .unwrap_or_else(|| panic!("no bound for {a}"))
+            .max_rows
+    };
+    assert!(max("dwelling") <= max("building"));
+}
+
+#[test]
+fn a_tenancy_document_is_keyed_by_its_instance() {
+    let t = table("tenancy_document");
+    let cols: Vec<(&str, &str)> = t
+        .columns
+        .iter()
+        .map(|c| (c.name.as_str(), c.ty.as_str()))
+        .collect();
+    assert_eq!(cols, [("instance_id", "u64"), ("tenancy_id", "u64")]);
+    assert!(t.columns[0].primary_key);
+}

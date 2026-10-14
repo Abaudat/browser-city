@@ -73,6 +73,23 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 90_000,
         kind: BoundKind::Mechanical,
     },
+    // Story 7.1: one row per dwelling, so at most one per building. Vacant
+    // dwellings are `dwelling` rows less `tenancy` rows, both sampled.
+    TableBound {
+        accessor: "dwelling",
+        max_rows: 50_000,
+        expected_rows: 8_000,
+        alert_rows: 37_500,
+        kind: BoundKind::Mechanical,
+    },
+    // Story 7.1: one agreement per signed tenancy.
+    TableBound {
+        accessor: "tenancy_document",
+        max_rows: 120_000,
+        expected_rows: 17_000,
+        alert_rows: 90_000,
+        kind: BoundKind::Mechanical,
+    },
     // Story 4.5: accepted OIDC providers -- a handful, ever.
     TableBound {
         accessor: "oidc_issuer",

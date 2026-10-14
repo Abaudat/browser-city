@@ -18,6 +18,7 @@ use sim::reducer_classes::ReducerClass;
 use sim::routing::graph::{MacroGraph, NodeKind};
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
+use super::housing::{Dwelling, dwelling};
 use super::metrics::count_call;
 use super::ops::require_owner;
 use super::routing::{
@@ -27,6 +28,7 @@ use super::stock::{Business, business};
 use super::world::{
     Building, BuildingArea, Room, RoomArea, building, building_area, room, room_area,
 };
+use super::world::{PlacedObject, placed_object};
 use sim::world::clip_rect_to_chunks;
 
 #[derive(Clone)]
@@ -109,22 +111,34 @@ fn write_buildings(
             .into_iter()
             .map(|d| (d.plot, d.home))
             .collect();
+    // Pass 7: every placed row, anchored in its chunk. The same
+    // transaction as the graph and the buildings.
+    for r in district.props.rows() {
+        if let Some(chunk_key) = sim::world::checked_chunk_key(r.x, r.y, r.floor) {
+            ctx.db.placed_object().insert(PlacedObject {
+                object_id: 0,
+                def_id: r.def_id,
+                x: r.x,
+                y: r.y,
+                floor: r.floor,
+                layer: r.layer,
+                orientation: r.orientation,
+                chunk_key,
+            });
+        }
+    }
     for (plot, _ty, interior) in district.interiors.laid() {
-        let h = homes.get(&plot);
         let b = ctx.db.building().insert(Building {
             building_id: 0,
             created_at: ctx.timestamp,
-            home_tier: h.map_or(0, |h| h.tier.code()),
-            density: h.map_or(0, |h| h.density),
-            affluence: h.map_or(0, |h| h.affluence),
-            asking_rent: h.map_or(0, |h| h.rent),
-            spawn_x: h.map_or(0, |h| h.spawn.0),
-            spawn_y: h.map_or(0, |h| h.spawn.1),
-            door_x: h.map_or(0, |h| h.door.0),
-            door_y: h.map_or(0, |h| h.door.1),
-            kit_x: h.map_or(0, |h| h.kit.0),
-            kit_y: h.map_or(0, |h| h.kit.1),
         });
+        if let Some(h) = homes.get(&plot) {
+            let home = sim::housing::Home {
+                id: b.building_id,
+                ..*h
+            };
+            ctx.db.dwelling().insert(Dwelling::of_home(&home));
+        }
         for (piece, chunk_key) in clip_rect_to_chunks(interior.footprint, 0) {
             ctx.db.building_area().insert(BuildingArea {
                 area_id: 0,

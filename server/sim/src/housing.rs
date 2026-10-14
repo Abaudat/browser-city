@@ -5,10 +5,7 @@
 //! the starting kit are pure functions of the generated rows. Nothing here
 //! reads a table, a clock or a quoted content key.
 
-use std::collections::BTreeMap;
-
 use crate::balance;
-use crate::cash;
 use crate::generated::defs;
 
 use crate::generation::Interior;
@@ -38,6 +35,26 @@ pub struct Home {
     pub door: (i32, i32),
     /// The cell the moving box stands on.
     pub kit: (i32, i32),
+    /// Laid cells of the interior: the smaller flat is let first.
+    pub area: u32,
+}
+
+/// A dwelling's `open_rank` once let: past every rank a vacant one has.
+pub const OCCUPIED: u64 = u64::MAX;
+
+impl Home {
+    /// The order flats are let in, lowest first: the edge before the
+    /// inside; on the edge the cheapest asked, inside the nearest the
+    /// edge; then the smaller interior. Equal ranks are drawn from the
+    /// character id.
+    pub fn rank(&self) -> u64 {
+        let key = match self.tier {
+            Tier::Edge => self.affluence,
+            Tier::Inner => self.density,
+        };
+        let tier = u64::from(self.tier.code() - 1);
+        (tier << 48) | ((key.clamp(0, 0xFFFF) as u64) << 32) | u64::from(self.area)
+    }
 }
 
 impl Tier {
@@ -113,17 +130,6 @@ pub fn rent_share_percent(bal: &[defs::BalanceSeed]) -> u64 {
     (rent * 100 + gross / 2) / gross
 }
 
-/// The whole pieces a new character starts with in hand: the starting
-/// cash in the fewest denominations.
-pub fn starting_pieces(
-    denoms: &[defs::Denomination],
-    bal: &[defs::BalanceSeed],
-) -> Option<BTreeMap<u32, u64>> {
-    let amount = balance::value(bal, "economy.starting_cash").max(0) as u64;
-    let plenty: BTreeMap<u32, u64> = denoms.iter().map(|d| (d.item_id, amount)).collect();
-    cash::choose_change(&plenty, amount, denoms).ok().flatten()
-}
-
 /// The cells of the entry room, nearest `from` first, ties by row then
 /// column -- a deterministic scan order.
 fn entry_cells_by_distance(interior: &Interior, from: (i32, i32)) -> Vec<(i32, i32)> {
@@ -168,6 +174,8 @@ pub fn box_cell(
         .into_iter()
         .find(|&(x, y)| {
             (x, y) != spawn
+                && (x - door.x).abs() + (y - door.y).abs() > 1
+                && (x - door.x).abs().max((y - door.y).abs()) > 1
                 && !((lx0..=lx1).contains(&x) && (ly0..=ly1).contains(&y))
                 && is_clear(interior, blocked, x, y)
         })
@@ -225,48 +233,69 @@ pub fn dwellings(
                 spawn,
                 door,
                 kit,
+                area: interior.laid_cells() as u32,
             },
         });
     }
     out
 }
 
-/// One of the tied homes, drawn from the character's stable id: the ties
-/// are put in id order first, so the draw never sees insertion order.
-fn draw(character_id: u64, mut tied: Vec<&Home>) -> Option<u64> {
-    tied.sort_by_key(|h| h.id);
-    if tied.is_empty() {
-        return None;
+/// Picks among the lowest-ranked open homes, drawn from the character id.
+/// `open` yields vacant homes in ascending [`Home::rank`]; only the first
+/// rank group and the one home that ends it are ever pulled, so an index
+/// range read costs the group, never the stock.
+pub fn plan_assign_ranked(character_id: u64, open: impl IntoIterator<Item = Home>) -> Assignment {
+    let mut group: Vec<Home> = Vec::new();
+    for h in open {
+        if let Some(first) = group.first() {
+            if h.rank() != first.rank() {
+                break;
+            }
+        }
+        group.push(h);
     }
+    if group.is_empty() {
+        return Assignment::NoVacancy;
+    }
+    group.sort_by_key(|h| h.id);
     let mut rng = Rng::new(seed_from_ids(character_id, 0));
-    let i = rng.below(tied.len() as u64) as usize;
-    Some(tied[i].id)
+    let h = group[rng.below(group.len() as u64) as usize];
+    match h.tier {
+        Tier::Edge => Assignment::Edge(h.id),
+        Tier::Inner => Assignment::Fallback(h.id),
+    }
 }
 
-/// Picks a flat: the cheapest vacant edge dwelling; failing any, the
-/// vacant dwelling nearest the edge; failing any, `NoVacancy`. Ties are
-/// drawn from `character_id`. Pure and independent of the order of `stock`.
+/// Picks a flat from a whole stock: the open homes in rank order, through
+/// [`plan_assign_ranked`]. Pure and independent of the order of `stock`.
 pub fn plan_assign(
     character_id: u64,
     stock: &[Home],
     occupied: &dyn Fn(u64) -> bool,
 ) -> Assignment {
-    let vacant = |tier: Tier| {
-        stock
-            .iter()
-            .filter(move |h| h.tier == tier && !occupied(h.id))
-    };
-    if let Some(min) = vacant(Tier::Edge).map(|h| h.affluence).min() {
-        let tied = vacant(Tier::Edge).filter(|h| h.affluence == min).collect();
-        if let Some(id) = draw(character_id, tied) {
-            return Assignment::Edge(id);
-        }
+    let mut open: Vec<Home> = stock.iter().filter(|h| !occupied(h.id)).copied().collect();
+    open.sort_by_key(|h| (h.rank(), h.id));
+    plan_assign_ranked(character_id, open)
+}
+
+/// Where a let flat's two starting possessions go: the moving box on its
+/// cell, and the tenancy agreement on the box with a visible offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KitPlan {
+    pub box_cell: (i32, i32),
+    pub letter_cell: (i32, i32),
+    pub letter_offset: (u8, u8),
+}
+
+/// The letter's offset in its cell, in sub-cells: off-centre, so it reads
+/// as paper on the box.
+pub const LETTER_OFFSET: (u8, u8) = (8, 2);
+
+/// The starting kit's placements for `home`. Pure: the reducer applies it.
+pub fn plan_kit(home: &Home) -> KitPlan {
+    KitPlan {
+        box_cell: home.kit,
+        letter_cell: home.kit,
+        letter_offset: LETTER_OFFSET,
     }
-    if let Some(min) = vacant(Tier::Inner).map(|h| h.density).min() {
-        let tied = vacant(Tier::Inner).filter(|h| h.density == min).collect();
-        if let Some(id) = draw(character_id, tied) {
-            return Assignment::Fallback(id);
-        }
-    }
-    Assignment::NoVacancy
 }

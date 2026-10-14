@@ -28,6 +28,7 @@ interface FakeModuleVersionRow {
 
 interface FakeState {
   myCharacterRows: number;
+  onMyPositionInsertCb?: (ctx: unknown, row: FakePositionRow) => void;
   uri?: string;
   databaseName?: string;
   onConnectCb?: (connection: unknown, identity?: unknown, token?: string) => void;
@@ -58,6 +59,14 @@ interface FakeState {
   disconnectCalls: number;
   builds: number;
   onMyCharacterInsertCb?: (ctx: unknown, row: FakeMyCharacterRow) => void;
+}
+
+interface FakePositionRow {
+  x: number;
+  y: number;
+  floor: number;
+  fracX: number;
+  fracY: number;
 }
 
 interface FakeMyCharacterRow {
@@ -141,6 +150,11 @@ const fakeConn = {
         state.onMyCharacterInsertCb = cb;
       },
     },
+    myPosition: {
+      onInsert: (cb: (ctx: unknown, row: FakePositionRow) => void) => {
+        state.onMyPositionInsertCb = cb;
+      },
+    },
     moduleVersion: {
       onInsert: (cb: (ctx: unknown, row: FakeModuleVersionRow) => void) => {
         state.onModuleVersionInsertCb = cb;
@@ -197,6 +211,7 @@ vi.mock("../../src/net/bindings", () => ({
     moduleVersion: fakeTable("module_version"),
     worldClock: fakeTable("world_clock"),
     myCharacter: fakeTable("my_character"),
+    myPosition: fakeTable("my_position"),
     placedObject: fakeTable("placed_object"),
     floorTransition: fakeTable("floor_transition"),
     buildingArea: fakeTable("building_area"),
@@ -245,6 +260,7 @@ beforeEach(() => {
   state.disconnectCalls = 0;
   state.builds = 0;
   state.onMyCharacterInsertCb = undefined;
+  state.onMyPositionInsertCb = undefined;
 });
 
 describe("connect", () => {
@@ -268,6 +284,7 @@ describe("connect", () => {
       "query:module_version",
       "query:world_clock",
       "query:my_character",
+      "query:my_position",
     ]);
   });
 
@@ -817,6 +834,19 @@ describe("identity token (story 4.5, FR141)", () => {
       state.onConnectCb?.(fakeConn, identity, "new-anon");
       expect(f.writes).toEqual([]);
       expect(f.data.get(IDENTITY_STORAGE_KEY)).toBe("{corrupt");
+    });
+  });
+
+  it("reports the caller's stored position from the my_position view (story 7.1)", () => {
+    const onStoredPosition = vi.fn();
+    connect(() => {}, undefined, undefined, undefined, { onStoredPosition });
+    state.onMyPositionInsertCb?.({}, { x: 436, y: 416, floor: 0, fracX: 128, fracY: 128 });
+    expect(onStoredPosition).toHaveBeenCalledWith({
+      x: 436,
+      y: 416,
+      floor: 0,
+      fracX: 128,
+      fracY: 128,
     });
   });
 

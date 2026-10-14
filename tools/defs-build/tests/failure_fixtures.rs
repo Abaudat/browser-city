@@ -112,7 +112,16 @@ fn an_economy_balance_value_without_a_seed_marker_is_named() {
     let err = build_err("economy-balance-without-seed-marker");
     assert_eq!(
         err.to_string(),
-        "defs/balance/economy.toml:2:1: balance 'economy.rent.edge_flat_per_week' is an FR20 seed value and must carry `seed = \"FR20\"`"
+        "defs/balance/economy.toml:2:1: balance 'economy.rent.edge_flat_per_week' is a seed value and must carry `seed = \"FR<n>\"` naming its requirement"
+    );
+}
+
+#[test]
+fn a_seed_marker_that_names_no_requirement_is_named() {
+    let err = build_err("economy-balance-seed-marker-not-a-requirement");
+    assert_eq!(
+        err.to_string(),
+        "defs/balance/economy.toml:2:1: balance 'economy.rent.edge_flat_per_week' has seed marker 'tuned', which does not name a requirement (expected `FR<n>`)"
     );
 }
 
@@ -1213,6 +1222,7 @@ fn every_known_category_has_a_fixture_directory() {
         "distribution-max-distance-zero",
         "placement-floor-min-above-max",
         "duplicate-rule-id",
+        "economy-balance-seed-marker-not-a-requirement",
         "economy-balance-without-seed-marker",
         "prop-no-collider-not-underfoot",
         "manhole-not-tagged-underfoot",

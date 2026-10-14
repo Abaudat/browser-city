@@ -5,7 +5,7 @@
 //! Nothing here merges characters or removes a mapping.
 
 use crate::generated::defs::NAME_MAX_CHARS;
-use crate::housing::{Assignment, Home, plan_assign};
+use crate::housing::{Assignment, Home, plan_assign_ranked};
 
 /// `character_identity.issuer_id` for a server-issued anonymous identity.
 pub const ANONYMOUS_ISSUER: u64 = 0;
@@ -44,11 +44,17 @@ pub struct Arrival {
 }
 
 /// A new character's flat and first cell, planned as one: the spawn is the
-/// let dwelling's own. A full stock is a character on the street at the
-/// edgemost dwelling's door, never an error.
-pub fn plan_arrival(character_id: u64, stock: &[Home], occupied: &dyn Fn(u64) -> bool) -> Arrival {
-    let chosen = match plan_assign(character_id, stock, occupied) {
-        Assignment::Edge(id) | Assignment::Fallback(id) => stock.iter().find(|h| h.id == id),
+/// let dwelling's own. `open` is the vacant homes in rank order
+/// ([`Home::rank`]); `street` is where a character stands when none is
+/// open -- a full stock is a character on the street, never an error.
+pub fn plan_arrival(
+    character_id: u64,
+    open: impl IntoIterator<Item = Home>,
+    street: (i32, i32),
+) -> Arrival {
+    let homes: Vec<Home> = open.into_iter().collect();
+    let chosen = match plan_assign_ranked(character_id, homes.iter().copied()) {
+        Assignment::Edge(id) | Assignment::Fallback(id) => homes.iter().find(|h| h.id == id),
         Assignment::NoVacancy => None,
     };
     match chosen {
@@ -61,10 +67,7 @@ pub fn plan_arrival(character_id: u64, stock: &[Home], occupied: &dyn Fn(u64) ->
         },
         None => Arrival {
             tenancy: None,
-            spawn: stock
-                .iter()
-                .min_by_key(|h| (h.density, h.id))
-                .map_or((0, 0), |h| h.door),
+            spawn: street,
         },
     }
 }

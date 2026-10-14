@@ -45,7 +45,7 @@ use super::codes::{
     container_kind, holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
 use super::district::district;
-use super::housing::tenancy;
+use super::housing::{dwelling, tenancy, tenancy_document};
 use super::identity::{character, character_identity, link_request, oidc_issuer};
 use super::item_instance::{item_held, item_instance, item_placed};
 use super::ops::module_owner;
@@ -466,6 +466,8 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(character);
     sample!(character_identity);
     sample!(tenancy);
+    sample!(dwelling);
+    sample!(tenancy_document);
     sample!(oidc_issuer);
     sample!(link_request);
     sample!(module_owner);

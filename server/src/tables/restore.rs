@@ -97,7 +97,7 @@ use super::codes::{
     holder_kind, matter_kind, node_kind, provision, reason_code, unit,
 };
 use super::district::{District, district};
-use super::housing::{Tenancy, tenancy};
+use super::housing::{Dwelling, Tenancy, TenancyDocument, dwelling, tenancy, tenancy_document};
 use super::identity::{
     Character, CharacterIdentity, LinkRequest, OidcIssuer, character, character_identity,
     link_request, oidc_issuer,
@@ -203,6 +203,8 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "character",
     "character_identity",
     "tenancy",
+    "dwelling",
+    "tenancy_document",
     "oidc_issuer",
     "link_request",
     "citizen",
@@ -321,6 +323,12 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.tenancy().iter().next().is_some() {
         nonempty.push("tenancy");
+    }
+    if ctx.db.dwelling().iter().next().is_some() {
+        nonempty.push("dwelling");
+    }
+    if ctx.db.tenancy_document().iter().next().is_some() {
+        nonempty.push("tenancy_document");
     }
     if ctx.db.oidc_issuer().iter().next().is_some() {
         nonempty.push("oidc_issuer");
@@ -531,16 +539,6 @@ impl_autoinc_row!(
     Building {
         building_id: 0,
         created_at: Timestamp::UNIX_EPOCH,
-        home_tier: 0,
-        density: 0,
-        affluence: 0,
-        asking_rent: 0,
-        spawn_x: 0,
-        spawn_y: 0,
-        door_x: 0,
-        door_y: 0,
-        kit_x: 0,
-        kit_y: 0,
     }
 );
 impl_autoinc_row!(
@@ -1009,6 +1007,31 @@ pub fn restore_tenancy(
         "tenancy",
         sequence_floor,
     )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_dwelling(ctx: &ReducerContext, rows: Vec<Dwelling>) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    for row in rows {
+        ctx.db.dwelling().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn restore_tenancy_document(
+    ctx: &ReducerContext,
+    rows: Vec<TenancyDocument>,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    for row in rows {
+        ctx.db.tenancy_document().insert(row);
+    }
+    Ok(())
 }
 
 #[spacetimedb::reducer]

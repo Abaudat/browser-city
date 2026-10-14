@@ -113,7 +113,7 @@
       "struct_name": "Building",
       "public": false,
       "scheduled_reducer": null,
-      "wide_table_waiver": "written once at generation, never rewritten; a dwelling's derived facts (tier, rent, three cells)",
+      "wide_table_waiver": null,
       "columns": [
         {
           "name": "building_id",
@@ -131,96 +131,6 @@
           "auto_inc": false,
           "unique": false,
           "has_default": false,
-          "indexed": false
-        },
-        {
-          "name": "home_tier",
-          "ty": "u8",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": true,
-          "indexed": true
-        },
-        {
-          "name": "density",
-          "ty": "i32",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": true,
-          "indexed": false
-        },
-        {
-          "name": "affluence",
-          "ty": "i32",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": true,
-          "indexed": false
-        },
-        {
-          "name": "asking_rent",
-          "ty": "u64",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": true,
-          "indexed": false
-        },
-        {
-          "name": "spawn_x",
-          "ty": "i32",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": true,
-          "indexed": false
-        },
-        {
-          "name": "spawn_y",
-          "ty": "i32",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": true,
-          "indexed": false
-        },
-        {
-          "name": "door_x",
-          "ty": "i32",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": true,
-          "indexed": false
-        },
-        {
-          "name": "door_y",
-          "ty": "i32",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": true,
-          "indexed": false
-        },
-        {
-          "name": "kit_x",
-          "ty": "i32",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": true,
-          "indexed": false
-        },
-        {
-          "name": "kit_y",
-          "ty": "i32",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": true,
           "indexed": false
         }
       ]
@@ -784,6 +694,141 @@
         {
           "name": "generated_at",
           "ty": "Timestamp",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "dwelling",
+      "struct_name": "Dwelling",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": "written once at generation; one row of derived facts per dwelling",
+      "columns": [
+        {
+          "name": "building_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "tier",
+          "ty": "u8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "density",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "affluence",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "area",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "asking_rent",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "rank",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "open_rank",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "spawn_x",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "spawn_y",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "door_x",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "door_y",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "kit_x",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "kit_y",
+          "ty": "i32",
           "primary_key": false,
           "auto_inc": false,
           "unique": false,
@@ -2430,6 +2475,33 @@
           "unique": false,
           "has_default": false,
           "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "tenancy_document",
+      "struct_name": "TenancyDocument",
+      "public": false,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "instance_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "tenancy_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
         }
       ]
     },

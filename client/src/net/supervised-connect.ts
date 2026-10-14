@@ -122,6 +122,7 @@ export function superviseConnect(
       onHandshake: guard(options.onHandshake),
       onIdentity: guard(options.onIdentity),
       onCharacter: guard(options.onCharacter),
+      onStoredPosition: guard(options.onStoredPosition),
       onSession: (s) => {
         if (live()) session ??= s;
       },

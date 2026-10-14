@@ -34,16 +34,6 @@ export type BudgetReviewSchedule = __Infer<typeof BudgetReviewSchedule>;
 export const Building = __t.object("Building", {
   buildingId: __t.u64(),
   createdAt: __t.timestamp(),
-  homeTier: __t.u8(),
-  density: __t.i32(),
-  affluence: __t.i32(),
-  askingRent: __t.u64(),
-  spawnX: __t.i32(),
-  spawnY: __t.i32(),
-  doorX: __t.i32(),
-  doorY: __t.i32(),
-  kitX: __t.i32(),
-  kitY: __t.i32(),
 });
 export type Building = __Infer<typeof Building>;
 
@@ -152,6 +142,24 @@ export const District = __t.object("District", {
   generatedAt: __t.timestamp(),
 });
 export type District = __Infer<typeof District>;
+
+export const Dwelling = __t.object("Dwelling", {
+  buildingId: __t.u64(),
+  tier: __t.u8(),
+  density: __t.i32(),
+  affluence: __t.i32(),
+  area: __t.u32(),
+  askingRent: __t.u64(),
+  rank: __t.u64(),
+  openRank: __t.u64(),
+  spawnX: __t.i32(),
+  spawnY: __t.i32(),
+  doorX: __t.i32(),
+  doorY: __t.i32(),
+  kitX: __t.i32(),
+  kitY: __t.i32(),
+});
+export type Dwelling = __Infer<typeof Dwelling>;
 
 export const EconomySchedule = __t.object("EconomySchedule", {
   scheduledId: __t.u64(),
@@ -446,6 +454,12 @@ export const Tenancy = __t.object("Tenancy", {
   startedAt: __t.timestamp(),
 });
 export type Tenancy = __Infer<typeof Tenancy>;
+
+export const TenancyDocument = __t.object("TenancyDocument", {
+  instanceId: __t.u64(),
+  tenancyId: __t.u64(),
+});
+export type TenancyDocument = __Infer<typeof TenancyDocument>;
 
 export const Unit = __t.object("Unit", {
   code: __t.u32(),

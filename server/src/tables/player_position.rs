@@ -6,7 +6,7 @@ use sim::player_position::{Write, plan_position};
 use sim::reducer_classes::ReducerClass;
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
-use super::identity::character_of;
+use super::identity::{character_of, viewer_character};
 use super::metrics::count_call;
 
 /// A character's feet point: the cell plus the fraction of the cell in
@@ -74,17 +74,17 @@ pub fn set_player_position(
     Ok(())
 }
 
-/// The one other writer: a character's first row, at the cell its flat
+/// The one other writer: a character first row, at the cell its flat
 /// puts it on, written in the transaction that creates the character. Every
-/// later write is `set_player_position`. A cell the world cannot address
-/// writes nothing.
+/// later write is `set_player_position`. A cell the world cannot address is
+/// an `Err`, so the creating transaction rolls back.
 pub(super) fn write_first_position(
     ctx: &ReducerContext,
     character_id: u64,
     x: i32,
     y: i32,
     floor: i8,
-) {
+) -> Result<(), String> {
     if ctx
         .db
         .player_position()
@@ -92,22 +92,38 @@ pub(super) fn write_first_position(
         .find(character_id)
         .is_some()
     {
-        return;
+        return Ok(());
     }
-    let Ok(Write::Insert(r) | Write::Update(r)) = plan_position(false, x, y, floor, 0, 0) else {
-        return;
-    };
+    let (Write::Insert(r) | Write::Update(r)) =
+        plan_position(false, x, y, floor, HALF_CELL, HALF_CELL)
+            .map_err(|e| e.message().to_string())?;
     ctx.db.player_position().insert(PlayerPosition {
         character_id,
         chunk_key: r.chunk_key,
         x: r.x,
         y: r.y,
         floor: r.floor,
-        frac_x: HALF_CELL,
-        frac_y: HALF_CELL,
+        frac_x: r.frac_x,
+        frac_y: r.frac_y,
         updated_at: ctx.timestamp,
     });
+    Ok(())
 }
 
 /// Half a cell, in `POSITION_UNITS_PER_CELL`: a tenant stands mid-cell.
 const HALF_CELL: u8 = (sim::generated::defs::POSITION_UNITS_PER_CELL / 2) as u8;
+
+/// The caller own stored position: the row the client starts its scene
+/// from, so a first send never overwrites a server spawn.
+#[spacetimedb::view(accessor = my_position, public)]
+pub fn my_position(ctx: &spacetimedb::ViewContext) -> Vec<PlayerPosition> {
+    let Some(character_id) = viewer_character(ctx) else {
+        return Vec::new();
+    };
+    ctx.db
+        .player_position()
+        .character_id()
+        .find(character_id)
+        .into_iter()
+        .collect()
+}

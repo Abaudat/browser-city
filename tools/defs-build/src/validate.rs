@@ -216,20 +216,40 @@ fn check_balance_key_dupes(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
-/// FR20's figures are seeds, not tuned values: every `economy.*` key says
-/// so with `seed = "<requirement>"`, or the build refuses it.
+/// An `economy.*` figure is a seed, not a tuned value: it says so with
+/// `seed = "FR<n>"`, naming the requirement whose figure it seeds, or the
+/// build refuses it.
 fn check_economy_seed_markers(entries: &[BalanceEntry]) -> Result<(), DefsError> {
+    let well_formed = |s: &str| {
+        s.strip_prefix("FR")
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    };
     for e in entries {
-        if e.key.value.starts_with("economy.") && e.seed.as_deref().is_none_or(str::is_empty) {
-            return Err(DefsError::new(
-                &e.path,
-                e.key.line,
-                1,
-                format!(
-                    "balance '{}' is an FR20 seed value and must carry `seed = \"FR20\"`",
-                    e.key.value
-                ),
-            ));
+        let is_economy = e.key.value.starts_with("economy.");
+        match e.seed.as_deref() {
+            None if is_economy => {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    1,
+                    format!(
+                        "balance '{}' is a seed value and must carry `seed = \"FR<n>\"` naming its requirement",
+                        e.key.value
+                    ),
+                ));
+            }
+            Some(m) if !well_formed(m) => {
+                return Err(DefsError::new(
+                    &e.path,
+                    e.key.line,
+                    1,
+                    format!(
+                        "balance '{}' has seed marker '{m}', which does not name a requirement (expected `FR<n>`)",
+                        e.key.value
+                    ),
+                ));
+            }
+            _ => {}
         }
     }
     Ok(())
