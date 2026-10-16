@@ -13,18 +13,17 @@ import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import { buildFlights, FlightIndex } from "../../src/world/flights";
 import {
-  BRIDGE_DECK_Y,
-  BRIDGE_FLIGHT_X0,
+  BLOCK_STARTS,
+  blockFootbridgeRoute,
+  blockNearRailingRoute,
+  blockSubwayRoute,
+} from "../unit/fixture-block/street-world";
+import {
   BRIDGE_FLOOR,
-  BRIDGE_FOOT_Y,
-  BRIDGE_X0,
   committedDefs,
   PLATFORM_LANDING_X,
-  STAIRS_Y,
-  STAIRWELL_X0,
   STREET_FLOOR,
   STREET_TRANSITIONS,
-  SUBWAY_ENTRANCE_X0,
   SUBWAY_FLOOR,
   streetMovementConfig,
   streetObjectSources,
@@ -109,13 +108,6 @@ function drawnOffsetPx(s: Sample): number {
   return feetWorldY - logicalWorldY;
 }
 
-/** Holds `key` until the player stands on `floor`. */
-const toFloor = (label: string, key: WalkSegment["key"], floor: number): WalkSegment => ({
-  label,
-  key,
-  until: { kind: "floor", value: floor },
-});
-
 /** The wiring claims of a mounted flight walk, over every frame sampled. */
 function assertFlightFrames(
   samples: readonly Sample[],
@@ -183,16 +175,18 @@ test("down the subway stairs pressed against the bottom wall and back up, the sp
   await enterBlock(page, PLATFORM_LANDING_X + 0.5, 3.5, SUBWAY_FLOOR);
   // The posture of story 15.20: flush against the stairwell's bottom
   // railing, one cell east of the opening, holding the flight's direction.
-  await standInBlock(page, SUBWAY_ENTRANCE_X0 + 0.5, STAIRS_Y + 1, STREET_FLOOR);
+  const start = BLOCK_STARTS.subway;
+  await standInBlock(page, start.x, start.y, start.floor);
   await startSampling(page);
   await page.screenshot({ path: join(SHOT_DIR, "subway-01-street.png") });
 
-  await walkRealSegment(page, toFloor("down-the-stairs", "ArrowLeft", SUBWAY_FLOOR));
+  const [down, up] = blockSubwayRoute();
+  await walkRealSegment(page, down as WalkSegment);
   expect(await page.evaluate(() => window.__bc?.playerFloor)).toBe(SUBWAY_FLOOR);
   await page.screenshot({ path: join(SHOT_DIR, "subway-02-platform.png") });
 
   // Back up the platform's flight, east then up its own anchor.
-  await walkRealSegment(page, toFloor("up-the-stairs", "ArrowRight", STREET_FLOOR));
+  await walkRealSegment(page, up as WalkSegment);
   expect(await page.evaluate(() => window.__bc?.playerFloor)).toBe(STREET_FLOOR);
   await page.screenshot({ path: join(SHOT_DIR, "subway-03-street-again.png") });
 
@@ -210,35 +204,22 @@ test("up the footbridge's flight to the deck and back down, the sprite sits at t
 }) => {
   test.setTimeout(120_000);
   mkdirSync(SHOT_DIR, { recursive: true });
-  const column = BRIDGE_FLIGHT_X0 + 0.5;
-  await enterBlock(page, column, BRIDGE_FOOT_Y + 0.5, STREET_FLOOR);
+  const foot = BLOCK_STARTS.footbridge;
+  await enterBlock(page, foot.x, foot.y, foot.floor);
   await startSampling(page);
   await page.screenshot({ path: join(SHOT_DIR, "bridge-01-foot.png") });
 
-  await walkRealSegment(page, toFloor("up-the-flight", "ArrowUp", BRIDGE_FLOOR));
+  // Up the flight, off it onto the deck's own row, then west along it:
+  // still on the deck's floor; back to the flight's own column and down it.
+  const [upFlight, ontoDeck, alongDeck, backAlong, downFlight] = blockFootbridgeRoute();
+  await walkRealSegment(page, upFlight as WalkSegment);
   expect(await page.evaluate(() => window.__bc?.playerFloor)).toBe(BRIDGE_FLOOR);
-  // Off the flight onto the deck's own row, then west along it: still on
-  // the deck's floor.
-  await walkRealSegment(page, {
-    label: "onto-the-deck",
-    key: "ArrowUp",
-    until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.5 },
-  });
-  await walkRealSegment(page, {
-    label: "along-the-deck",
-    key: "ArrowLeft",
-    until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
-  });
+  await walkRealSegment(page, ontoDeck as WalkSegment);
+  await walkRealSegment(page, alongDeck as WalkSegment);
   expect(await page.evaluate(() => window.__bc?.playerFloor)).toBe(BRIDGE_FLOOR);
   await page.screenshot({ path: join(SHOT_DIR, "bridge-02-deck.png") });
-
-  // Back along the deck to the flight's own column and down it.
-  await walkRealSegment(page, {
-    label: "back-along-the-deck",
-    key: "ArrowRight",
-    until: { kind: "x-at-least", value: column },
-  });
-  await walkRealSegment(page, toFloor("down-the-flight", "ArrowDown", STREET_FLOOR));
+  await walkRealSegment(page, backAlong as WalkSegment);
+  await walkRealSegment(page, downFlight as WalkSegment);
   expect(await page.evaluate(() => window.__bc?.playerFloor)).toBe(STREET_FLOOR);
 
   const samples = await stopSampling(page);
@@ -254,12 +235,10 @@ test("pressed south along the near railing, the player draws after the top raili
   // railing (ids 1..4); the player's stable id is 1000.
   const [topRailing, , , bottomRailing] = ["1", "2", "3", "4"];
   const player = "1000";
-  await enterBlock(page, STAIRWELL_X0 + 1.5, STAIRS_Y + 0.2, STREET_FLOOR);
-  await walkRealSegment(page, {
-    label: "pressed-south-on-the-treads",
-    key: "ArrowDown",
-    until: { kind: "y-at-least", value: STAIRS_Y + 0.6 },
-  });
+  const near = BLOCK_STARTS.nearRailing;
+  await enterBlock(page, near.x, near.y, near.floor);
+  for (const segment of blockNearRailingRoute()) await walkRealSegment(page, segment);
+
   const order = await page.evaluate(() => window.__bc?.renderOrder ?? []);
   const at = (id: string) => order.indexOf(id);
   expect(at(topRailing as string), "top railing drawn").toBeGreaterThanOrEqual(0);

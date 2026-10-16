@@ -26,7 +26,7 @@ import {
   world,
 } from "./district-support";
 import { expect, test } from "./fixtures";
-import { segmentsOf, walkRealSegment } from "./walk-support";
+import { segmentsOf, walkRealCellsDir, walkRealSegment } from "./walk-support";
 
 test.use({ viewport: { width: 1920, height: 1080 } });
 
@@ -160,6 +160,11 @@ test("the lamppost stops the player where it is drawn, walking into it from open
   if (!lamp) throw new Error("no lamppost with open pavement to its west");
   const start = { x: lamp.x - 3, y: lamp.y };
   await walkTo(page, start);
+  // On the row's centre line: the post is met head-on, never slid past.
+  await page.evaluate(
+    ([x, y]) => window.__bc?.teleport?.(x as number, y as number, 0),
+    [start.x + 0.5, start.y + 0.5],
+  );
 
   const from = await page.evaluate(() => window.__bc?.playerPosition);
   if (!from) throw new Error("no position");
@@ -170,11 +175,7 @@ test("the lamppost stops the player where it is drawn, walking into it from open
     simulated = step(simulated, { x: 1, y: 0 }, 16, world, 0, config, 1);
   }
   expect(simulated.x).toBeLessThan(lamp.x + 0.5);
-  await walkRealSegment(page, {
-    label: "into-the-lamppost",
-    key: "ArrowRight",
-    until: { kind: "x-at-least", value: simulated.x - 1e-6 },
-  });
+  await walkRealCellsDir(page, "into-the-lamppost", simulated.x - 1e-6 - from.x, "ArrowRight");
   // The real scene rests exactly where the resolver does ...
   await expect
     .poll(() => page.evaluate(() => window.__bc?.playerPosition?.x))

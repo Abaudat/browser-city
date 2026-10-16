@@ -17,7 +17,7 @@ import { BLOCK_CUPBOARD_ID, enterBlock } from "./block-support";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
 import { expect, test } from "./fixtures";
 import { E2E_CUPBOARD } from "./spacetime-harness.mjs";
-import { walkRealSegment } from "./walk-support";
+import { walkRealCellsDir } from "./walk-support";
 
 const SHOT_DIR = "test-results/review-shots/story-6.10";
 
@@ -90,11 +90,9 @@ test("clicking the cupboard from within reach opens its view; walking away close
   await page.screenshot({ path: `${SHOT_DIR}/cupboard-open.png` });
 
   // Walking out of reach closes it, with the pointer left where it was.
-  await walkRealSegment(page, {
-    label: "out-of-reach",
-    key: "ArrowRight",
-    until: { kind: "x-at-least", value: E2E_CUPBOARD.x + 1.6 },
-  });
+  const here = await page.evaluate(() => window.__bc?.playerPosition);
+  if (!here) throw new Error("no position");
+  await walkRealCellsDir(page, "out-of-reach", E2E_CUPBOARD.x + 1.6 - here.x, "ArrowRight");
   await page.waitForFunction(() => window.__bc?.containerView?.() == null, undefined, {
     timeout: 10_000,
   });

@@ -1608,7 +1608,7 @@ export interface StreetWalkSegment {
  * simulate every walked route at this lag. Measured on the runner (run
  * 37139923845, attempts 1 to 3, 424 walks): the worst rest past a threshold
  * was 0.881 clamped steps, and no frame moved after a release. */
-export const RELEASE_LAG = { stepMs: MAX_DELTA_MS, releaseLagSteps: 1 } as const;
+export { RELEASE_LAG } from "../e2e/walk-types";
 
 /** Whether a held key's own release condition is met, for a walker at
  * `(x, y)` on `floor`. The one rule both the simulated and the real walk

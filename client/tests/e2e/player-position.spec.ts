@@ -17,11 +17,11 @@ import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
 import { CHUNK_SIZE } from "../../src/world/chunk";
 import { REGION_LEAVE_RADIUS_CHUNKS, REGION_RADIUS_CHUNKS } from "../../src/world/region";
+import { BLOCK_STARTS, blockFootbridgeDeckRoute } from "../unit/fixture-block/street-world";
 import {
   BRIDGE_FLIGHT_X0,
   BRIDGE_FLOOR,
   BRIDGE_FOOT_Y,
-  BRIDGE_X0,
   STREET_FLOOR,
 } from "../unit/support/stairs-world";
 import { standInBlock } from "./block-support";
@@ -339,17 +339,10 @@ test("a player on the footbridge deck is drawn on floor 1, in the deck's stack, 
   // A at all, and each is the other's remote.
   await standInBlock(b.page, BRIDGE_FLIGHT_X0 + 0.5, BRIDGE_FOOT_Y + 1.5, STREET_FLOOR);
   // Up the fixture block's footbridge flight and a little along the deck.
-  await standInBlock(a.page, BRIDGE_FLIGHT_X0 + 0.5, BRIDGE_FOOT_Y + 0.5, STREET_FLOOR);
-  await walkRealSegment(a.page, {
-    label: "up-the-flight",
-    key: "ArrowUp",
-    until: { kind: "floor", value: BRIDGE_FLOOR },
-  });
-  await walkRealSegment(a.page, {
-    label: "along-the-deck",
-    key: "ArrowLeft",
-    until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
-  });
+  const foot = BLOCK_STARTS.footbridge;
+  await standInBlock(a.page, foot.x, foot.y, foot.floor);
+  for (const segment of blockFootbridgeDeckRoute()) await walkRealSegment(a.page, segment);
+
   const rest = await a.page.evaluate(() => window.__bc?.playerPosition);
   if (!rest) throw new Error("no rest position");
   await b.page.waitForFunction(

@@ -33,9 +33,13 @@ import { WorldIndex } from "../../../src/world/world-index";
 import {
   BOLLARD_COLLIDER,
   BRIDGE_DECK_Y,
+  BRIDGE_FLIGHT_X0,
+  BRIDGE_FLOOR,
+  BRIDGE_FOOT_Y,
   BRIDGE_UNDER_CURB_X,
   BRIDGE_UNDER_EXIT_Y,
   BRIDGE_UNDER_PILLAR_X,
+  BRIDGE_X0,
   CUPBOARD_PROP_ID,
   isDefStreetProp,
   LAMPPOST_CELL,
@@ -49,6 +53,7 @@ import {
   STAIRS_X,
   STAIRS_Y,
   STAIRWELL_BOTTOM_RAILING_DEF_ID,
+  STAIRWELL_X0,
   STREET_BUILDING_AREAS,
   STREET_FLOOR,
   STREET_PROPS,
@@ -696,6 +701,86 @@ export function flightWalkRoute(): readonly StreetWalkSegment[] {
   ];
 }
 
+/** Story 3.16: where the fixture block's e2e specs stand the player before
+ * each of their walks (the block is this world's stairwell and footbridge,
+ * at the same cells). */
+export const BLOCK_STARTS = {
+  subway: { x: SUBWAY_ENTRANCE_X0 + 0.5, y: STAIRS_Y + 1, floor: STREET_FLOOR },
+  footbridge: { x: BRIDGE_FLIGHT_X0 + 0.5, y: BRIDGE_FOOT_Y + 0.5, floor: STREET_FLOOR },
+  nearRailing: { x: STAIRWELL_X0 + 1.5, y: STAIRS_Y + 0.2, floor: STREET_FLOOR },
+} as const;
+
+const toFloor = (
+  label: string,
+  key: StreetWalkSegment["key"],
+  floor: number,
+): StreetWalkSegment => ({
+  label,
+  key,
+  until: { kind: "floor", value: floor },
+});
+
+/** Down the subway stairs pressed against the bottom railing, and back up. */
+export function blockSubwayRoute(): readonly StreetWalkSegment[] {
+  return [
+    toFloor("down-the-stairs", "ArrowLeft", SUBWAY_FLOOR),
+    toFloor("up-the-stairs", "ArrowRight", STREET_FLOOR),
+  ];
+}
+
+/** Up the footbridge's flight onto the deck's own row, then along the deck
+ * to its west end. */
+export function blockFootbridgeDeckRoute(): readonly StreetWalkSegment[] {
+  return [
+    toFloor("up-the-flight", "ArrowUp", BRIDGE_FLOOR),
+    {
+      label: "onto-the-deck",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.5 },
+    },
+    {
+      label: "along-the-deck",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
+    },
+  ];
+}
+
+/** Up the footbridge's flight onto the deck's own row, west along it, back
+ * to the flight's column and down it. */
+export function blockFootbridgeRoute(): readonly StreetWalkSegment[] {
+  return [
+    toFloor("up-the-flight", "ArrowUp", BRIDGE_FLOOR),
+    {
+      label: "onto-the-deck",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.5 },
+    },
+    {
+      label: "along-the-deck",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
+    },
+    {
+      label: "back-along-the-deck",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BLOCK_STARTS.footbridge.x },
+    },
+    toFloor("down-the-flight", "ArrowDown", STREET_FLOOR),
+  ];
+}
+
+/** Pressed south on the stairwell's treads, along its near railing. */
+export function blockNearRailingRoute(): readonly StreetWalkSegment[] {
+  return [
+    {
+      label: "pressed-south-on-the-treads",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: STAIRS_Y + 0.6 },
+    },
+  ];
+}
+
 export interface WalkedRoute {
   readonly name: string;
   readonly segments: readonly StreetWalkSegment[];
@@ -707,6 +792,10 @@ export interface WalkedRoute {
 export function walkedRoutes(): readonly WalkedRoute[] {
   const inputs = streetWalkInputs();
   const fresh = (): undefined => undefined;
+  const at = (p: { x: number; y: number; floor: number }) => (): FloorWalkResult => ({
+    ...initialFloorWalkState(p.x, p.y, p.floor),
+    transitioned: false,
+  });
   const afterStreetWalk = (): FloorWalkResult | undefined => {
     const out = simulateStreetWalk(streetWalkRoute(inputs));
     return out[out.length - 1]?.state;
@@ -734,6 +823,22 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     { name: "railing-foot", segments: railingFootRoute(), start: fresh },
     { name: "flight-walk", segments: flightWalkRoute(), start: fresh },
     { name: "footbridge-walk", segments: streetFootbridgeRoute(inputs), start: fresh },
+    { name: "block-subway", segments: blockSubwayRoute(), start: at(BLOCK_STARTS.subway) },
+    {
+      name: "block-footbridge",
+      segments: blockFootbridgeRoute(),
+      start: at(BLOCK_STARTS.footbridge),
+    },
+    {
+      name: "block-footbridge-deck",
+      segments: blockFootbridgeDeckRoute(),
+      start: at(BLOCK_STARTS.footbridge),
+    },
+    {
+      name: "block-near-railing",
+      segments: blockNearRailingRoute(),
+      start: at(BLOCK_STARTS.nearRailing),
+    },
   ];
 }
 
