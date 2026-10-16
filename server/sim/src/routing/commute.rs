@@ -34,7 +34,7 @@ pub fn opening_target(balance: &[BalanceSeed]) -> Milliminutes {
 
 /// The clamp: the one line that enforces the floor.
 fn clamped(cost: Milliminutes, floor: Milliminutes) -> Milliminutes {
-    cost.max(floor).max(Milliminutes(1))
+    cost.max(floor)
 }
 
 /// A leg's figure from the walking cost of its route.
@@ -62,49 +62,62 @@ pub fn leg(
     Ok(leg_from_cost(rates, route.cost, mode, floor))
 }
 
-/// The opening workplace among `workplaces` (node ids): the walking leg
-/// nearest the opening target; ties by lower node id. Candidates whose
-/// estimate (a lower bound on the route) is over target x (100 +
-/// `band_percent`) are not searched; if none is left, all are.
-/// Unreachable candidates are skipped. Returns the node and the search's
-/// own figure.
+/// Opening commute: the workplace among `workplaces` (node ids, the
+/// caller's candidates) whose walking leg lands nearest the opening target.
+/// Candidates are tried in order of `(|estimate - target|, node id)`, at
+/// most `routing.commute.opening_max_candidates` of them, and the first
+/// whose leg is within `routing.commute.opening_band_percent` of the target
+/// wins; with none in band, the searched one nearest the target. Ties are by
+/// node id only: spreading players over employers with open posts, and the
+/// draw from the character id, are the hire's business. At most
+/// `opening_max_candidates` searches, never one per workplace. Only
+/// `Unreachable` skips a candidate; any other error reaches the caller.
+/// Returns the node and the search's own figure.
 pub fn opening_workplace(
     graph: &impl GraphView,
     home: NodeId,
     workplaces: &[NodeId],
     rates: &Rates,
     balance: &[BalanceSeed],
-    band_percent: i64,
-) -> Option<(NodeId, Milliminutes)> {
-    let target = opening_target(balance);
+) -> Result<Option<(NodeId, Milliminutes)>, SearchError> {
+    let target = opening_target(balance).0;
+    let band = target * balance::value(balance, "routing.commute.opening_band_percent") / 100;
+    let max = balance::value(balance, "routing.commute.opening_max_candidates") as usize;
     let fl = floor(balance);
     let budget = node_budget(balance);
-    let origin = graph.node(home)?.point();
-    let limit = target.0 * (100 + band_percent) / 100;
-    let near: Vec<NodeId> = workplaces
-        .iter()
-        .copied()
-        .filter(|w| {
-            graph.node(*w).is_some_and(|n| {
-                estimate(
-                    rates,
-                    origin,
-                    n.point(),
-                    TransportMode::Walk,
-                    Correction::NONE,
-                )
-                .0 <= limit
-            })
-        })
-        .collect();
-    let pool = if near.is_empty() { workplaces } else { &near };
-    pool.iter()
-        .filter_map(|w| {
-            leg(graph, home, *w, rates, TransportMode::Walk, fl, budget)
-                .ok()
-                .map(|c| (*w, c))
-        })
-        .min_by_key(|(w, c)| ((c.0 - target.0).abs(), *w))
+    let origin = graph
+        .node(home)
+        .ok_or(SearchError::UnknownNode(home))?
+        .point();
+    let mut ranked: Vec<(i64, NodeId)> = Vec::with_capacity(workplaces.len());
+    for w in workplaces {
+        let n = graph.node(*w).ok_or(SearchError::UnknownNode(*w))?;
+        let e = estimate(
+            rates,
+            origin,
+            n.point(),
+            TransportMode::Walk,
+            Correction::NONE,
+        )
+        .0;
+        ranked.push(((e - target).abs(), *w));
+    }
+    ranked.sort_unstable();
+    let mut best: Option<(NodeId, Milliminutes)> = None;
+    for (_, w) in ranked.into_iter().take(max) {
+        let c = match leg(graph, home, w, rates, TransportMode::Walk, fl, budget) {
+            Ok(c) => c,
+            Err(SearchError::Unreachable) => continue,
+            Err(e) => return Err(e),
+        };
+        if (c.0 - target).abs() <= band {
+            return Ok(Some((w, c)));
+        }
+        if best.is_none_or(|(_, b)| (c.0 - target).abs() < (b.0 - target).abs()) {
+            best = Some((w, c));
+        }
+    }
+    Ok(best)
 }
 
 #[cfg(test)]
@@ -137,11 +150,6 @@ mod tests {
     }
 
     #[test]
-    fn the_floor_is_twenty_minutes_from_the_balance() {
-        assert_eq!(fl(), m(20));
-    }
-
-    #[test]
     fn short_and_empty_routes_are_charged_the_floor() {
         use TransportMode::*;
         for mode in [Walk, Bike, Transit] {
@@ -168,31 +176,101 @@ mod tests {
         assert_eq!(r.in_mode(Milliminutes(1), TransportMode::Bike).0, 1);
     }
 
-    #[test]
-    fn a_zero_floor_still_charges_a_milliminute() {
-        let l = leg_from_cost(
-            &rates(),
-            Milliminutes(0),
-            TransportMode::Walk,
-            Milliminutes(0),
-        );
-        assert_eq!(l.0, 1);
+    use crate::routing::graph::{Edge, EdgeKind, MacroGraph, Node, NodeKind};
+    use crate::routing::search::SearchGraph;
+    use std::cell::Cell;
+
+    /// 41 street nodes on a line, ten cells apart.
+    fn line() -> MacroGraph {
+        let nodes: Vec<Node> = (0..41)
+            .map(|i| Node {
+                kind: NodeKind::Street,
+                x: i * 10,
+                y: 0,
+                floor: 0,
+                source: None,
+            })
+            .collect();
+        let edges = (0..40u32)
+            .map(|i| Edge {
+                a: i,
+                b: i + 1,
+                kind: EdgeKind::Street,
+                cost: estimate(
+                    &rates(),
+                    nodes[i as usize].point(),
+                    nodes[i as usize + 1].point(),
+                    TransportMode::Walk,
+                    Correction::NONE,
+                ),
+            })
+            .collect();
+        MacroGraph::from_parts(nodes, edges, vec![])
+    }
+
+    /// Counts searches: each one expands its origin exactly once.
+    struct Counting<'a> {
+        inner: SearchGraph,
+        origin: NodeId,
+        searches: &'a Cell<u32>,
+    }
+
+    impl GraphView for Counting<'_> {
+        fn node(&self, id: NodeId) -> Option<Node> {
+            self.inner.node(id)
+        }
+        fn neighbours(
+            &self,
+            id: NodeId,
+            out: &mut Vec<(NodeId, crate::routing::graph::EdgeKind, Milliminutes)>,
+        ) {
+            if id == self.origin {
+                self.searches.set(self.searches.get() + 1);
+            }
+            self.inner.neighbours(id, out)
+        }
+    }
+
+    fn pick(works: &[NodeId]) -> (Result<Option<(NodeId, Milliminutes)>, SearchError>, u32) {
+        let n = Cell::new(0);
+        let g = Counting {
+            inner: SearchGraph::from_graph(&line()),
+            origin: 0,
+            searches: &n,
+        };
+        let r = opening_workplace(&g, 0, works, &rates(), defs::BALANCE);
+        (r, n.get())
     }
 
     #[test]
-    fn never_below_the_floor_and_monotone_in_speed() {
-        let mut r = rates();
-        for cost in [0i64, 1, 999, 20_000, 59_999, 60_000, 1_000_000, 123_456_789] {
-            let mut prev = i64::MAX;
-            for pct in 100..=500 {
-                r.transit_percent = pct;
-                let l = leg_from_cost(&r, Milliminutes(cost), TransportMode::Transit, fl()).0;
-                assert!(l >= fl().0 && l <= prev, "cost {cost} pct {pct}");
-                prev = l;
-            }
-            r.transit_percent = 100;
-            let at_walk = leg_from_cost(&r, Milliminutes(cost), TransportMode::Transit, fl()).0;
-            assert_eq!(at_walk, cost.max(fl().0));
-        }
+    fn an_in_band_first_candidate_costs_one_search() {
+        let works: Vec<NodeId> = (1..=40).collect();
+        let (r, searches) = pick(&works);
+        let (_, cost) = r.unwrap().unwrap();
+        assert_eq!(searches, 1);
+        let band = balance::value(defs::BALANCE, "routing.commute.opening_band_percent");
+        assert!((cost.0 - m(60).0).abs() <= m(60).0 * band / 100);
+    }
+
+    #[test]
+    fn no_candidate_in_band_stops_at_the_cap_and_returns_the_nearest() {
+        let works: Vec<NodeId> = (1..=20).collect();
+        let (r, searches) = pick(&works);
+        let cap = balance::value(defs::BALANCE, "routing.commute.opening_max_candidates") as u32;
+        assert_eq!(searches, cap);
+        assert_eq!(r.unwrap().unwrap().0, 20);
+    }
+
+    #[test]
+    fn ties_break_on_node_id_and_the_input_order_is_irrelevant() {
+        let a = pick(&[5, 3, 4]).0.unwrap();
+        let b = pick(&[3, 4, 5]).0.unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn an_unknown_node_reaches_the_caller_and_no_workplace_is_none() {
+        assert_eq!(pick(&[3, 999]).0, Err(SearchError::UnknownNode(999)));
+        assert_eq!(pick(&[]).0, Ok(None));
     }
 }

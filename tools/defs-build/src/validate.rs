@@ -3351,14 +3351,17 @@ fn check_commute_budget(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     }
     if let (Some(sleep), Some(shift)) = (get("day.sleep_minutes"), get("day.shift_minutes")) {
         let used = sleep.value.value + shift.value.value + 2 * opening.value.value;
-        if used > 1440 {
+        if used > crate::model::CITY_MINUTES_PER_DAY {
             return Err(DefsError::new(
                 &sleep.path,
                 sleep.value.line,
                 sleep.value.col,
                 format!(
-                    "the day is overbooked: sleep {} + shift {} + 2 x opening commute {} is {used} minutes, over 1440",
-                    sleep.value.value, shift.value.value, opening.value.value
+                    "the day is overbooked: sleep {} + shift {} + 2 x opening commute {} is {used} minutes, over {}",
+                    sleep.value.value,
+                    shift.value.value,
+                    opening.value.value,
+                    crate::model::CITY_MINUTES_PER_DAY
                 ),
             ));
         }

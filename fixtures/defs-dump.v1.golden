@@ -280,7 +280,10 @@ balance render.storey_height_px value=48 min=1 max=256
 balance render.tile_size_px value=16 min=1 max=64
 balance render.window_alpha value=50 min=1 max=99
 balance routing.commute.floor_minutes value=20 min=1 max=59
+balance routing.commute.opening_band_percent value=10 min=1 max=50
+balance routing.commute.opening_max_candidates value=8 min=1 max=64
 balance routing.commute.opening_minutes value=60 min=1 max=600
+balance routing.commute.opening_profession_id value=3 min=1 max=100000
 balance routing.floor_change_penalty_milliminutes value=1000 min=0 max=600000
 balance routing.graph.internal_node_min_interior_cells value=100 min=1 max=100000
 balance routing.provision.max_results value=16 min=1 max=1000

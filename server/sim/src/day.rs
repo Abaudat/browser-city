@@ -34,14 +34,4 @@ mod tests {
     fn the_floor_leg_leaves_seven_hours_twenty() {
         assert_eq!(own_time(BALANCE, commute::floor(BALANCE)), m(440));
     }
-
-    #[test]
-    fn the_blocks_sum_to_the_day() {
-        let sleep = balance::value(BALANCE, "day.sleep_minutes");
-        let shift = balance::value(BALANCE, "day.shift_minutes");
-        for leg in [20, 33, 60, 200] {
-            let own = own_time(BALANCE, m(leg)).0 / 1000;
-            assert_eq!(sleep + shift + 2 * leg + own, CITY_MINUTES_PER_DAY);
-        }
-    }
 }

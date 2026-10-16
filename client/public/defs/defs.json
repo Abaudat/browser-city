@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/defs-build -- do not edit by hand",
-  "defs_version": "3709fd5b8e957d33",
+  "defs_version": "da44aee114e2f7c3",
   "collider_subcells_per_cell": 16,
   "position_units_per_cell": 256,
   "name_max_chars": 24,
@@ -393,7 +393,10 @@
     { "key": "render.tile_size_px", "max": 64, "min": 1, "value": 16 },
     { "key": "render.window_alpha", "max": 99, "min": 1, "value": 50 },
     { "key": "routing.commute.floor_minutes", "max": 59, "min": 1, "value": 20 },
+    { "key": "routing.commute.opening_band_percent", "max": 50, "min": 1, "value": 10 },
+    { "key": "routing.commute.opening_max_candidates", "max": 64, "min": 1, "value": 8 },
     { "key": "routing.commute.opening_minutes", "max": 600, "min": 1, "value": 60 },
+    { "key": "routing.commute.opening_profession_id", "max": 100000, "min": 1, "value": 3 },
     { "key": "routing.floor_change_penalty_milliminutes", "max": 600000, "min": 0, "value": 1000 },
     { "key": "routing.graph.internal_node_min_interior_cells", "max": 100000, "min": 1, "value": 100 },
     { "key": "routing.provision.max_results", "max": 1000, "min": 1, "value": 16 },

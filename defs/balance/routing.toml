@@ -84,3 +84,29 @@ value = 60
 min = 1
 max = 600
 seed = "FR4"
+
+[[balance]]
+# The opening commute (story 7.2): a workplace's leg is in band when within
+# this many percent of the opening minutes.
+key = "routing.commute.opening_band_percent"
+value = 10
+min = 1
+max = 50
+seed = "FR4"
+
+[[balance]]
+# The opening commute (story 7.2): the most workplaces one opening-job pick
+# may search, nearest the target by estimate first.
+key = "routing.commute.opening_max_candidates"
+value = 8
+min = 1
+max = 64
+
+[[balance]]
+# The id of the profession (`defs/professions`) the opening job is a post
+# of: `cashier`, and a sim test holds that this id names it.
+key = "routing.commute.opening_profession_id"
+value = 3
+min = 1
+max = 100000
+seed = "FR181"
