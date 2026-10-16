@@ -87,7 +87,7 @@ jobs:
       # `--update-snapshots` over the whole project would also rewrite
       # any baseline a spec added later without anybody deciding to.
       - working-directory: client
-        run: npx playwright test --project=chromium --update-snapshots tests/e2e/district-baselines.spec.ts --grep @visual-baseline
+        run: npx playwright test tests/e2e/district-baselines.spec.ts --project=chromium --update-snapshots --grep @visual-baseline
       - name: commit any changed or new baselines
         run: |
           git config user.name "github-actions[bot]"
