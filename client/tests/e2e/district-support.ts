@@ -293,44 +293,45 @@ export function nearestInteractable(from: Cell, defIds?: readonly number[]): Int
       .filter((o) => o.interactAt)
       .map((o) => [o.id, o.interactAt as NonNullable<typeof o.interactAt>]),
   );
-  let best: { o: (typeof district.objects)[number]; d: number } | undefined;
-  for (const o of district.objects) {
-    if (!reachOf.has(o.defId) || (defIds && !defIds.includes(o.defId))) continue;
-    const d = Math.abs(o.x - from.x) + Math.abs(o.y - from.y);
-    if (!best || d < best.d) best = { o, d };
-  }
-  if (!best) throw new Error("the district holds no interactable object");
-  const { o } = best;
-  const { reachCell, rect } = reachCellOf(o.defId, o.x, o.y);
-  const r = rect;
-  // Out of reach: a fitting cell a few cells from the reach cell whose own
-  // centre is outside the rect.
-  let outOfReachCell: Cell | undefined;
-  for (let r2 = 2; r2 <= 6 && !outOfReachCell; r2++) {
-    for (let dy = -r2; dy <= r2 && !outOfReachCell; dy++) {
-      for (let dx = -r2; dx <= r2; dx++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r2) continue;
-        const c = { x: reachCell.x + dx, y: reachCell.y + dy };
-        const cx = c.x + 0.5;
-        const cy = c.y + 0.5;
-        const inside = cx >= r.x0 && cx < r.x1 && cy >= r.y0 && cy < r.y1;
-        if (!inside && fits(c.x, c.y)) {
-          outOfReachCell = c;
-          break;
+  const candidates = district.objects
+    .filter((o) => reachOf.has(o.defId) && (!defIds || defIds.includes(o.defId)))
+    .map((o) => ({ o, d: Math.abs(o.x - from.x) + Math.abs(o.y - from.y) }))
+    .sort((a, b) => a.d - b.d);
+  if (candidates.length === 0) throw new Error("the district holds no interactable object");
+  for (const { o } of candidates) {
+    const { reachCell, rect: r } = reachCellOf(o.defId, o.x, o.y);
+    // Out of reach: a fitting cell a few cells from the reach cell, its own
+    // centre outside the rect, in the object's own building -- what stands
+    // in a roofed building is drawn only to a viewer inside it.
+    const home = buildingOf({ x: o.x, y: o.y });
+    let outOfReachCell: Cell | undefined;
+    for (let r2 = 2; r2 <= 6 && !outOfReachCell; r2++) {
+      for (let dy = -r2; dy <= r2 && !outOfReachCell; dy++) {
+        for (let dx = -r2; dx <= r2; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r2) continue;
+          const c = { x: reachCell.x + dx, y: reachCell.y + dy };
+          const cx = c.x + 0.5;
+          const cy = c.y + 0.5;
+          const inside = cx >= r.x0 && cx < r.x1 && cy >= r.y0 && cy < r.y1;
+          if (!inside && fits(c.x, c.y) && buildingOf(c) === home) {
+            outOfReachCell = c;
+            break;
+          }
         }
       }
     }
+    if (!outOfReachCell) continue;
+    return {
+      objectId: o.objectId,
+      defId: o.defId,
+      x: o.x,
+      y: o.y,
+      floor: o.floor,
+      reachCell,
+      outOfReachCell,
+    };
   }
-  if (!outOfReachCell) throw new Error(`no out-of-reach cell near object ${o.objectId}`);
-  return {
-    objectId: o.objectId,
-    defId: o.defId,
-    x: o.x,
-    y: o.y,
-    floor: o.floor,
-    reachCell,
-    outOfReachCell,
-  };
+  throw new Error("no interactable object has an out-of-reach cell in its own building");
 }
 
 /** The nearest cell beside `from` (never `from` itself) a body fits in,
@@ -522,7 +523,7 @@ export async function walkFreeCells(page: Page, label: string, cells: number): P
 }
 
 /** The nearest cell to `from` with a clear `side` x `side` block of fitting
- * cells to its south-east: where a body can walk a small square. */
+ * outdoor cells to its south-east: where a body can walk a small square. */
 export function openSquareNear(from: Cell, side: number): Cell {
   for (let r = 0; r <= 60; r++) {
     for (let dy = -r; dy <= r; dy++) {
@@ -531,7 +532,7 @@ export function openSquareNear(from: Cell, side: number): Cell {
         const c = { x: from.x + dx, y: from.y + dy };
         let ok = true;
         for (let y = c.y; ok && y < c.y + side; y++) {
-          for (let x = c.x; ok && x < c.x + side; x++) ok = fits(x, y);
+          for (let x = c.x; ok && x < c.x + side; x++) ok = fits(x, y) && buildingOf({ x, y }) === 0n;
         }
         if (ok) return c;
       }

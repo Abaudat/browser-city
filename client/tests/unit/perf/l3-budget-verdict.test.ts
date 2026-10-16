@@ -89,14 +89,8 @@ describe("L3 budget verdict (NFR11)", () => {
     expect(v.gateFailures.join()).toContain("B/frame");
   });
 
-  it("FAILS on a churn of major GCs, a long one and heap growth, but never on one short major or a scavenge's duration", () => {
-    expect(
-      verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 3 } }).met,
-    ).toBe(true);
-    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 30 } }).met).toBe(false);
-    expect(
-      verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 12 } }).met,
-    ).toBe(false);
+  it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
+    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1 } }).met).toBe(false);
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);
     const slowScavenges = { ...GOOD.gc, minorPausesMs: [4.5, 5], longestMinorPauseMs: 9 };
     expect(verdict({ ...GOOD, gc: slowScavenges }).met).toBe(true);

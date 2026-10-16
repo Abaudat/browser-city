@@ -17,7 +17,15 @@
 // D17: no debug text, no rank numbers, no sort-key readouts on the
 // canvas. This module draws the scene and nothing else.
 
-import { type Application, Container, Sprite, type Texture, UPDATE_PRIORITY } from "pixi.js";
+import {
+  type Application,
+  Container,
+  Mesh,
+  MeshGeometry,
+  Sprite,
+  Texture,
+  UPDATE_PRIORITY,
+} from "pixi.js";
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import type { VerifiedDefs } from "../boot/handshake";
 import type { BodyControl } from "../input/body-control";
@@ -68,6 +76,7 @@ import {
 } from "./citizens-layer";
 import { decomposeFootprint } from "./decompose";
 import { assertStageIsWorld, FloorStacks } from "./floor-stacks";
+import { type GroundCell, type GroundFrame, groundQuads } from "./ground-mesh";
 import {
   openGroundDefId as findOpenGroundDefId,
   NO_GROUND,
@@ -860,6 +869,21 @@ export async function mountWorldScene(
       });
     }),
   );
+  /** A whole atlas page as a texture, so a mesh's UVs are the page's own. */
+  const pageTextures = new Map<Texture["source"], Texture>();
+  function pageTexture(source: Texture["source"]): Texture {
+    let t = pageTextures.get(source);
+    if (!t) {
+      t = new Texture({ source });
+      pageTextures.set(source, t);
+    }
+    return t;
+  }
+  function groundFrameOf(defId: number): GroundFrame {
+    const t = cellTexture(defId, 0, 0);
+    return { page: t.source, u0: t.uvs.x0, v0: t.uvs.y0, u1: t.uvs.x2, v1: t.uvs.y2 };
+  }
+
   function cellTexture(defId: number, col: number, row: number): Texture {
     const t = cellTextures.get(`${defId}:${col}:${row}`);
     if (!t) throw new Error(`world-scene: no art resolved for def ${defId} cell ${col},${row}`);
@@ -1334,6 +1358,9 @@ export async function mountWorldScene(
     ensureFloorPasses(floor);
     const groundLayer = new Container();
     const offset = floorOffsetPx(floor, storeyHeightPx);
+    // The chunk's ground is one static mesh per atlas page, not a sprite
+    // per cell (`ground-mesh.ts`).
+    const cells: GroundCell[] = [];
     // Ground rects, painted in row order over open ground; a floor with no
     // open ground draws only the rects it holds.
     const painted = paintChunkGround(
@@ -1345,25 +1372,24 @@ export async function mountWorldScene(
     for (let i = 0; i < painted.length; i++) {
       const defId = painted[i] as number;
       if (defId === NO_GROUND) continue;
-      const tile = new Sprite(cellTexture(defId, 0, 0));
-      const x = cx * CHUNK_SIZE + (i % CHUNK_SIZE);
-      const y = cy * CHUNK_SIZE + Math.floor(i / CHUNK_SIZE);
-      tile.x = snapToScreenPx(x * tileSizePx, ZOOM);
-      tile.y = snapToScreenPx(y * tileSizePx + offset, ZOOM);
-      groundLayer.addChild(tile);
+      cells.push({ defId, lx: i % CHUNK_SIZE, ly: Math.floor(i / CHUNK_SIZE) });
     }
     const propRows: PlacedRowView[] = [];
     for (const row of data.placed.values()) {
       if (row.layer === GROUND_CODE) {
-        // Every ground pass tile is top-left anchored, unlike the
-        // bottom-centre pool sprites; FR124's floor offset still applies.
-        const tile = new Sprite(cellTexture(row.defId, 0, 0));
-        tile.x = snapToScreenPx(row.x * tileSizePx, ZOOM);
-        tile.y = snapToScreenPx(row.y * tileSizePx + offset, ZOOM);
-        groundLayer.addChild(tile);
+        cells.push({ defId: row.defId, lx: row.x - cx * CHUNK_SIZE, ly: row.y - cy * CHUNK_SIZE });
       } else {
         propRows.push(row);
       }
+    }
+    for (const [page, quads] of groundQuads(cells, groundFrameOf, tileSizePx)) {
+      const mesh = new Mesh({
+        geometry: new MeshGeometry(quads),
+        texture: pageTexture(page as Texture["source"]),
+      });
+      mesh.x = snapToScreenPx(cx * CHUNK_SIZE * tileSizePx, ZOOM);
+      mesh.y = snapToScreenPx(cy * CHUNK_SIZE * tileSizePx + offset, ZOOM);
+      groundLayer.addChild(mesh);
     }
     stacks.stackFor(floor).ground.addChild(groundLayer);
 

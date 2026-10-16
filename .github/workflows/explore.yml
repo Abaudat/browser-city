@@ -42,7 +42,9 @@ jobs:
       - name: property suite
         run: cargo test -p sim --release
       - name: fresh districts (edge-to-core crossing, a hundred furnished buildings)
-        run: cargo test -p sim --release --test district_explore -- --ignored
+        env:
+          BC_DISTRICT_WORLDS: 12
+        run: cargo test -p sim --release --test district_explore
       - if: failure() || cancelled()
         working-directory: .
         env:

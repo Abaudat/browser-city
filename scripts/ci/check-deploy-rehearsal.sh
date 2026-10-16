@@ -16,7 +16,7 @@
 #   5. the generate-once record: the post-publish sequence's
 #      `ensure-district.sh` writes exactly one `district` row carrying
 #      `city.seed` and this build's three versions, its world rows
-#      (`placed_object` at the arrival cell), and moves a position that was
+#      (a `room_area` over the arrival cell), and moves a position that was
 #      stranded off the new district to the arrival cell; a second run, a
 #      second `create_district` call (refused), an anonymous call
 #      (refused), a republish plus `finish_publish` and a restart on the
@@ -160,9 +160,9 @@ spacetime sql "$DB" --server "$SERVER_URL" --no-config -y "SELECT arrival_x, arr
   || fail "could not read the arrival cell" "$PLACED"
 ARRIVAL="$(awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$PLACED" | tr -d ' ')"
 AX="${ARRIVAL%%|*}"; AY="${ARRIVAL##*|}"
-spacetime sql "$DB" --server "$SERVER_URL" --no-config -y "SELECT object_id FROM placed_object WHERE x = $AX AND y = $AY" >"$PLACED" 2>&1 \
-  || fail "could not read placed_object" "$PLACED"
-[ -n "$(awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$PLACED")" ] || fail "no placed_object row at the arrival cell ($AX, $AY)"
+spacetime sql "$DB" --server "$SERVER_URL" --no-config -y "SELECT area_id FROM room_area WHERE x0 <= $AX AND x1 > $AX AND y0 <= $AY AND y1 > $AY" >"$PLACED" 2>&1 \
+  || fail "could not read room_area" "$PLACED"
+[ -n "$(awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$PLACED")" ] || fail "no room_area row covers the arrival cell ($AX, $AY)"
 spacetime sql "$DB" --server "$SERVER_URL" --no-config -y "SELECT * FROM player_position" >"$PLACED" 2>&1 \
   || fail "could not read player_position" "$PLACED"
 # character_id | chunk_key | x | y | floor | ...

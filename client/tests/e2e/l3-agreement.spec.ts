@@ -244,8 +244,7 @@ test("two clients with different bubbles agree on every shared body of the 200-b
     // A body drawn on a client's own screen has a resolved offset there --
     // up to the screen's own edge: a walker crossing the edge of a viewport
     // that straddles a chunk border is, for a frame, on screen over a chunk
-    // the bubble does not hold yet. The generated city found it (its arrival
-    // lies near a chunk border); it is recorded in docs/generation.md.
+    // the bubble does not hold yet.
     expect(onScreenObservations).toBeGreaterThan(INSTANTS.length * 10);
     expect(report.unresolvedOnScreen / onScreenObservations).toBeLessThan(0.002);
     expect(split.onBothScreens.shared).toBeGreaterThan(INSTANTS.length * 10);

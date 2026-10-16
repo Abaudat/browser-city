@@ -987,6 +987,10 @@ reorders a pool member.
   owned by the viewer's own building is hidden; a building's floors above
   the viewer's own current floor are hidden the same way while the viewer
   is inside it.
+- Roofs: a building's `roof_area` rects draw as near-side `walls`
+  drawables of that building (so retraction hides them from inside), sorted
+  at the roof's south edge; anything else owned by a building whose roof is
+  drawn is hidden from a viewer outside that building (`isUnderRoof`).
 - Windows: an `[[object]]` with `window = true` in `defs/` draws at
   `render.window_alpha` percent (`defs/balance/render.toml`, never a
   TypeScript literal) once it is not hidden; masks, filters, render
@@ -1876,8 +1880,9 @@ the build if the committed files and a fresh render ever disagree.
   as `placed_object`, the `building_area`, `room_area` and
   `floor_transition` rows, the ground as `ground_area` rects and each
   building's roof as `roof_area` rects (its interior net and its north rim
-  but a door cell, all keyed on the chunk of the net's south-west cell; the
-  client sorts them at the net's south edge). Ground is never a row per cell: the
+  but a door cell, all keyed on the chunk of the net's south-west cell). The
+  client draws a chunk's ground as one static mesh per atlas page
+  (`render/ground-mesh.ts`), never a sprite per cell. Ground is never a row per cell: the
   street's pavement and carriageway (carried `city.ground.margin_cells`
   past a site edge they meet), each built plot's yard and forecourt, each
   footprint's floor (under its wall ring) and every room's floor, each def chosen by tag (the `city.ground.*_tag_id`

@@ -8,7 +8,7 @@
 //
 // What is drawn is deterministic: the city is generated from `city.seed`,
 // bodies are frozen (`?freezeBodies=1`), animations are disabled and the
-// player stands where a collider or a cell fixes it.
+// player stands on a cell centre the spec sets.
 import type { Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 import {
@@ -37,6 +37,18 @@ async function settle(page: Page): Promise<void> {
   );
 }
 
+/** The first street screen: walked to (so its chunks stream in), then the
+ * player set on the cell's centre, wherever the walk's last frame left it. */
+async function streetScreen(page: Page): Promise<void> {
+  const cell = nearestCell(arrivalCell(), false);
+  await walkTo(page, cell);
+  await page.evaluate(
+    ([x, y]) => window.__bc?.teleport?.(x as number, y as number, 0),
+    [cell.x + 0.5, cell.y + 0.5],
+  );
+  await settle(page);
+}
+
 async function arrive(page: Page): Promise<void> {
   await page.goto("/?freezeBodies=1");
   await awaitScene(page);
@@ -59,8 +71,7 @@ test.describe("@visual-baseline the generated city and the fixture block", () =>
   test("@visual-baseline the first street screen", async ({ page }) => {
     test.setTimeout(180_000);
     await arrive(page);
-    await walkTo(page, nearestCell(arrivalCell(), false));
-    await settle(page);
+    await streetScreen(page);
     await expect(canvasOf(page)).toHaveScreenshot("first-street.png", {
       ...SCREENSHOT_OPTIONS,
       maxDiffPixels: MAX_DIFF_PIXELS,
@@ -94,8 +105,7 @@ test.describe("@visual-baseline at NFR48's largest viewport", () => {
   test("@visual-baseline the first street screen at 2560x1440", async ({ page }) => {
     test.setTimeout(180_000);
     await arrive(page);
-    await walkTo(page, nearestCell(arrivalCell(), false));
-    await settle(page);
+    await streetScreen(page);
     await expect(canvasOf(page)).toHaveScreenshot("first-street-2560.png", {
       ...SCREENSHOT_OPTIONS,
       maxDiffPixels: MAX_DIFF_PIXELS * 2,

@@ -161,15 +161,15 @@ test("the lamppost stops the player where it is drawn, walking into it from open
   const start = { x: lamp.x - 3, y: lamp.y };
   await walkTo(page, start);
 
-  // What the resolver, alone, does with a body held east into the post.
-  let simulated = { x: start.x + 0.5, y: start.y + 0.5 };
+  const from = await page.evaluate(() => window.__bc?.playerPosition);
+  if (!from) throw new Error("no position");
+  // What the resolver, alone, does with a body held east into the post from
+  // where the walk left it.
+  let simulated = { x: from.x, y: from.y };
   for (let i = 0; i < 400; i++) {
     simulated = step(simulated, { x: 1, y: 0 }, 16, world, 0, config, 1);
   }
   expect(simulated.x).toBeLessThan(lamp.x + 0.5);
-
-  const from = await page.evaluate(() => window.__bc?.playerPosition);
-  if (!from) throw new Error("no position");
   await walkRealSegment(page, {
     label: "into-the-lamppost",
     key: "ArrowRight",

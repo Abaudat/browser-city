@@ -68,20 +68,33 @@ function street(walk: ReturnType<typeof revisable>["walk"], keep?: (id: string) 
   const s = new StreetLife(cfg, walk);
   const bodies = new Map<string, CitizenBody>();
   for (const f of crowd.fixtures) {
-    if (keep && !keep(f.id)) continue;
     const spec = crowd.specs[f.id];
     const make = () => ({
       timetable: spec ? new Timetable(spec, cfg, walk, path) : undefined,
       body: new CitizenBody(walk, path, gait, f.id, life),
     });
+    const stand = spec
+      ? undefined
+      : standState({ x: Math.floor(f.gridX), y: Math.floor(f.gridY) }, 0, f.facing as never);
+    const standAt = spec ? undefined : { x: f.gridX, y: f.gridY };
+    if (keep && !keep(f.id)) {
+      // Not held here: declared, as every citizen of the street is.
+      s.declare({
+        id: f.id,
+        remake: make,
+        timetable: make().timetable,
+        stand,
+        standAt,
+        look: f.id,
+      });
+      continue;
+    }
     const built = make();
     const member = s.add({
       id: f.id,
       ...built,
-      stand: spec
-        ? undefined
-        : standState({ x: Math.floor(f.gridX), y: Math.floor(f.gridY) }, 0, f.facing as never),
-      standAt: spec ? undefined : { x: f.gridX, y: f.gridY },
+      stand,
+      standAt,
       look: f.id,
       remake: make,
     });
@@ -267,6 +280,52 @@ describe("avoidance scoping at density (bubble independence)", () => {
       }
       expect(compared).toBeGreaterThan(100);
       expect(sidestepping).toBeGreaterThan(0);
+    },
+    T_LONG,
+  );
+});
+
+describe("sampling a bubble off its frame (story 3.16)", () => {
+  const rect = (x0: number, x1: number) => ({
+    x0: START.x + x0,
+    y0: START.y - 20,
+    x1: START.x + x1,
+    y1: START.y + 20,
+  });
+
+  it(
+    "two bubbles sampled at an instant other than their frame agree on every body both resolve",
+    () => {
+      const left = bodyZoneOf(rect(-30, 24), 0, 0, 0);
+      const right = bodyZoneOf(rect(-14, 40), 0, 0, 0);
+      const { walk } = revisable();
+      let compared = 0;
+      for (let k = 0; k < 12; k++) {
+        const t0 = 5_000 + k * 800;
+        const ref = street(walk);
+        ref.s.solve(t0);
+        const at = new Map(ref.s.members.map((m) => [m.id, m.frame.x]));
+        const holds = (zone: typeof left) => (id: string) => {
+          const x = at.get(id) as number;
+          return x >= zone.spawn.x0 && x <= zone.spawn.x1;
+        };
+        // Each client's bodies are those of its frame at t0; it is sampled
+        // later, as the e2e divergence check samples.
+        const a = street(walk, holds(left));
+        const b = street(walk, holds(right));
+        a.s.solve(t0, left);
+        b.s.solve(t0, right);
+        const t1 = t0 + 3_000;
+        const inB = new Map(b.s.liveAt(t1).map((x) => [x.id, x]));
+        for (const sa of a.s.liveAt(t1)) {
+          const sb = inB.get(sa.id);
+          if (!sb || !sa.agreed || !sb.agreed) continue;
+          compared++;
+          expect(sa.offsetX).toBe(sb.offsetX);
+          expect(sa.offsetY).toBe(sb.offsetY);
+        }
+      }
+      expect(compared).toBeGreaterThan(100);
     },
     T_LONG,
   );

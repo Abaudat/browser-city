@@ -23,7 +23,7 @@ import {
 import { framesByAnimation, type L3Config } from "../l3/config";
 import type { Facing } from "../l3/gait";
 import type { Walkability } from "../l3/micro-path";
-import { type BodyZone, zoneHoldsRect } from "../world/body-zone";
+import { type BodyCandidate, type BodyZone, planBodies, zoneHoldsRect } from "../world/body-zone";
 import { CHUNK_SIZE } from "../world/chunk";
 
 /** No body zone (an agreement sample, a frozen crowd): every chunk counts as
@@ -188,21 +188,36 @@ export class StreetLife {
     return this.#field.offsetY(member.index);
   }
 
-  /** The bodies this client holds, solved at `t` as they are, sorted by id.
-   * What the e2e divergence check compares between two clients whose bubbles
-   * differ. A read, not a step: afterwards the poses and the field are put
-   * back to the last `solve`, so nothing the next frame draws from changes. */
+  /** The bodies this client would hold at `t`, solved there, sorted by id:
+   * its bodies the zone keeps at `t`, and a fresh body for every citizen the
+   * zone would spawn -- what a frame at `t` would draw. What the e2e
+   * divergence check compares between two clients whose bubbles differ. A
+   * read, not a step: afterwards the poses and the field are put back to the
+   * last `solve`, so nothing the next frame draws from changes. */
   liveAt(t: number): readonly LifeSample[] {
-    this.#run(this.#members, t, this.#field);
-    const sample = sampleOf(this.#members, this.#field);
+    const members = this.#zone ? this.#heldAt(t, this.#zone) : this.#members;
+    this.#run(members, t, this.#field);
+    const sample = sampleOf(members, this.#field);
     if (this.#lastT !== undefined) this.#run(this.#members, this.#lastT, this.#field);
     return sample;
   }
 
-  /** Every citizen's agreed state at `t`, computed from scratch with fresh
-   * bodies, sorted by id: citizens mount in whatever order their textures
-   * arrive. */
-  agreementAt(t: number): readonly LifeSample[] {
+  #heldAt(t: number, zone: BodyZone): readonly LifeMember[] {
+    const scratch = this.#scratchMembers();
+    const candidates: BodyCandidate[] = scratch.map((m) => {
+      poseMember(m, t);
+      return { id: m.id, x: m.frame.x, y: m.frame.y, floor: m.frame.floor };
+    });
+    const plan = planBodies(new Set(this.#members.map((m) => m.id)), candidates, zone);
+    const keep = new Set(plan.keep);
+    const spawn = new Set(plan.spawn);
+    return [
+      ...this.#members.filter((m) => keep.has(m.id)),
+      ...scratch.filter((m) => spawn.has(m.id)),
+    ];
+  }
+
+  #scratchMembers(): LifeMember[] {
     if (!this.#scratch) {
       this.#scratch = {
         members: [...this.#declared.values()].map((m) => ({
@@ -214,7 +229,15 @@ export class StreetLife {
         field: new AvoidanceField(),
       };
     }
-    const { members, field } = this.#scratch;
+    return this.#scratch.members;
+  }
+
+  /** Every citizen's agreed state at `t`, computed from scratch with fresh
+   * bodies, sorted by id: citizens mount in whatever order their textures
+   * arrive. */
+  agreementAt(t: number): readonly LifeSample[] {
+    const members = this.#scratchMembers();
+    const field = (this.#scratch as { field: AvoidanceField }).field;
     solveAll(members, t, field, this.#dials, this.#walk, ALL_CHUNKS_HELD);
     return sampleOf(members, field);
   }
