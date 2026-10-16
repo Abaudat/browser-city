@@ -1,6 +1,7 @@
 //! Routing (FR130, FR131): the travel-time estimator, and later the graph
 //! and search that share its cost unit, and the provision index.
 
+pub mod commute;
 pub mod estimate;
 pub mod graph;
 pub mod provision;

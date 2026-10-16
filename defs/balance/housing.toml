@@ -14,3 +14,12 @@ key = "housing.starting_document_item_id"
 value = 15
 min = 1
 max = 100000
+
+[[balance]]
+# The opening flat-and-job pairing (story 7.2): the most first-group flats
+# one arrival tries, in character-id-drawn order, looking for one whose
+# opening workplace lands in band.
+key = "housing.opening_max_flats"
+value = 4
+min = 1
+max = 64

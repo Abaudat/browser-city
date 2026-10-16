@@ -94,6 +94,7 @@ fi
 ITER_MATCHES=""
 PROVISION_INDEX_MATCHES=""
 SEARCH_FILES=""
+COMMUTE_FILES=""
 while IFS= read -r -d '' f; do
   flat="$(tr -d '\r' <"$f" | grep -vE '^[[:space:]]*//' | tr '\n' ' ' || true)"
   base="$(basename "$f")"
@@ -113,6 +114,11 @@ while IFS= read -r -d '' f; do
     SEARCH_FILES="$SEARCH_FILES$f
 "
   fi
+  # Story 7.2: the commute leg has the same single caller.
+  if grep -qE 'routing::(commute|\{[^}]*\bcommute\b)' <<<"$flat"; then
+    COMMUTE_FILES="$COMMUTE_FILES$f
+"
+  fi
 done < <(find "$SRC_DIR" -name '*.rs' -not -path '*/generated/*' -print0 | sort -z)
 if [ -n "$ITER_MATCHES" ]; then
   echo "check-server-src-bans: FAIL -- route_node()/route_edge()/route_provision() iterated outside restore.rs and metrics.rs: a route search reads the graph through its indexes, never a whole table (story 3.12):" >&2
@@ -127,6 +133,11 @@ fi
 if [ "$(printf '%s' "$SEARCH_FILES" | grep -c .)" -gt 1 ]; then
   echo "check-server-src-bans: FAIL -- routing::search is used from more than one file under server/src/ (one search, from the one destination-commit path, story 3.12):" >&2
   printf '%s' "$SEARCH_FILES" >&2
+  FAILED=1
+fi
+if [ "$(printf '%s' "$COMMUTE_FILES" | grep -c .)" -gt 1 ]; then
+  echo "check-server-src-bans: FAIL -- routing::commute is used from more than one file under server/src/ (one commute caller, story 7.2):" >&2
+  printf '%s' "$COMMUTE_FILES" >&2
   FAILED=1
 fi
 

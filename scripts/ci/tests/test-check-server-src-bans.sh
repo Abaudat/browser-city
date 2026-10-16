@@ -126,6 +126,12 @@ printf '%s\n' 'use sim::routing::search::search;' > "$d/b.rs"
 check "a multi-line grouped import counts too" 1 bash "$CHECK" "$d"
 
 d="$(fake_dir)"
+printf '%s\n' 'use sim::routing::commute::leg;' > "$d/a.rs"
+check "one file naming routing::commute is allowed" 0 bash "$CHECK" "$d"
+printf '%s\n' 'use sim::routing::{estimate, commute};' > "$d/b.rs"
+check "a second file naming routing::commute is banned" 1 bash "$CHECK" "$d"
+
+d="$(fake_dir)"
 printf '%s\n' 'use sim::routing::{estimate, graph};' > "$d/a.rs"
 printf '%s\n' 'use sim::routing::search::search;' > "$d/b.rs"
 check "a grouped import not naming search is fine" 0 bash "$CHECK" "$d"
