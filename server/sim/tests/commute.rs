@@ -89,6 +89,9 @@ struct Opening {
     first_group: bool,
     cells: i64,
     cost: Milliminutes,
+    /// Whether any workplace at all is in band from this flat: an exhaustive
+    /// search over every candidate (test code only).
+    exists_in_band: bool,
 }
 
 /// The opening commute from every edge-tier dwelling of `seed` (each is
@@ -156,10 +159,19 @@ fn compute_openings(seed: u64) -> Vec<Opening> {
             .windows(2)
             .map(|w| ((w[0].x - w[1].x).abs() + (w[0].y - w[1].y).abs()) as i64)
             .sum();
+        let target = bal("routing.commute.opening_minutes") * 1000;
+        let band = target * bal("routing.commute.opening_band_percent") / 100;
+        let near = |c: Milliminutes| (c.0 - target).abs() <= band;
+        let exists_in_band = near(cost)
+            || works.iter().any(|w| {
+                let c = search(&view, home, *w, &rates(), node_budget(BALANCE)).map(|r| r.cost);
+                c.is_ok_and(near)
+            });
         out.push(Opening {
             first_group: d.home.rank() == best,
             cells,
             cost,
+            exists_in_band,
         });
     }
     assert!(!out.is_empty(), "seed {seed}: no edge dwelling");
@@ -191,20 +203,27 @@ fn in_band(o: &Opening) -> bool {
     (o.cost.0 - target).abs() <= band
 }
 
-/// The share of edge flats that must reach the opening band. A finding, not
-/// a tolerance: the seeds under it are reported to Derek and Tim on the
-/// issue, and the band itself is `routing.commute.opening_band_percent`.
+/// The share of edge flats that must reach the opening band: a reporting
+/// floor under the exact committed counts below.
 const MIN_IN_BAND_PERCENT: usize = 85;
 
 /// The generated district delivers the opening commute from the edge
-/// flats: most land within the balance band of the opening minutes, those
-/// that do over roughly the design's cells and real seconds. Per-seed
-/// counts are committed below.
+/// flats. A flat out of band is out of band because no workplace reaches
+/// the band from it (`none exists`), never because the candidate cap hid
+/// one (`cap missed`, which must be 0). The arrival's flat and job are
+/// chosen together (architecture.md, Housing): the first-group flats whose
+/// pick is in band are what a new player is dealt, so "a first-group flat
+/// in band" is the guarantee 7.4's `plan_arrival` builds on. Those in band
+/// are over roughly the design's cells and real seconds.
 #[test]
 fn the_generated_district_delivers_the_opening_commute() {
     for seed in SEEDS {
         let all = openings(seed);
         let banded: Vec<&Opening> = all.iter().filter(|o| in_band(o)).collect();
+        assert!(
+            all.iter().all(|o| in_band(o) || !o.exists_in_band),
+            "seed {seed}: the candidate cap hid an in-band workplace"
+        );
         assert!(
             banded.len() * 100 >= all.len() * MIN_IN_BAND_PERCENT,
             "seed {seed}: {} of {} edge flats in band",
@@ -230,38 +249,48 @@ fn the_generated_district_delivers_the_opening_commute() {
     }
 }
 
-/// Per seed over every edge dwelling: (dwellings, dwellings in band, least
-/// cost, greatest cost) of the opening commute in milliminutes. A move is a
-/// generation or search change; re-bless deliberately with
+/// Per seed over every edge dwelling: (dwellings, in band, out of band with
+/// none in band from that flat, out of band with one the cap missed, first-
+/// group flats, first-group flats in band, least cost, greatest cost); costs
+/// in milliminutes. A move is a generation or search change; re-bless
+/// deliberately with
 /// `COMMUTE_PRINT_GOLDEN=1 cargo test -p sim --test commute -- --nocapture`.
-const OPENING_COSTS: [(u64, usize, usize, i64, i64); 5] = [
-    (1, 189, 184, 57_107, 73_839),
-    (2, 162, 156, 57_648, 70_924),
-    (3, 190, 178, 58_198, 76_935),
-    (42, 171, 153, 58_557, 76_384),
-    (123_456_789, 162, 162, 57_285, 65_836),
+const OPENING_COSTS: [(u64, [usize; 6], i64, i64); 5] = [
+    (1, [189, 184, 5, 0, 9, 9], 57_107, 73_839),
+    (2, [162, 156, 6, 0, 1, 1], 57_648, 70_924),
+    (3, [190, 178, 12, 0, 1, 1], 58_198, 76_935),
+    (42, [171, 153, 18, 0, 4, 1], 58_557, 76_384),
+    (123_456_789, [162, 162, 0, 0, 3, 3], 57_285, 65_836),
 ];
 
 #[test]
 fn opening_commute_matches_committed_figures() {
     let print = std::env::var_os("COMMUTE_PRINT_GOLDEN").is_some();
-    for (seed, count, banded, lo, hi) in OPENING_COSTS {
+    for (seed, counts, lo, hi) in OPENING_COSTS {
         let o = openings(seed);
         let got = (
-            o.len(),
-            o.iter().filter(|x| in_band(x)).count(),
+            [
+                o.len(),
+                o.iter().filter(|x| in_band(x)).count(),
+                o.iter()
+                    .filter(|x| !in_band(x) && !x.exists_in_band)
+                    .count(),
+                o.iter().filter(|x| !in_band(x) && x.exists_in_band).count(),
+                o.iter().filter(|x| x.first_group).count(),
+                o.iter().filter(|x| x.first_group && in_band(x)).count(),
+            ],
             o.iter().map(|x| x.cost.0).min().unwrap(),
             o.iter().map(|x| x.cost.0).max().unwrap(),
         );
         if print {
             println!(
-                "commute-golden ({seed}, {}, {}, {}, {}),",
-                got.0, got.1, got.2, got.3
+                "commute-golden ({seed}, {:?}, {}, {}),",
+                got.0, got.1, got.2
             );
         } else {
             assert_eq!(
                 got,
-                (count, banded, lo, hi),
+                (counts, lo, hi),
                 "seed {seed}: the opening commute moved"
             );
         }
