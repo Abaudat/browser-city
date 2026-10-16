@@ -95,7 +95,7 @@ struct Opening {
 /// some player's starting flat as the district fills): from its entrance
 /// node to the workplace `opening_workplace` picks among the businesses
 /// whose building type employs the opening profession.
-fn openings(seed: u64) -> Vec<Opening> {
+fn compute_openings(seed: u64) -> Vec<Opening> {
     let cfg = GenerationConfig::from_balance(BALANCE).unwrap();
     let content = GenerationContent::committed();
     let (district, _) = generate(seed, &cfg, &content).unwrap();
@@ -164,6 +164,25 @@ fn openings(seed: u64) -> Vec<Opening> {
     }
     assert!(!out.is_empty(), "seed {seed}: no edge dwelling");
     out
+}
+
+/// Every seed's openings, computed once (in parallel) and shared by the
+/// tests that read them: the generation is the cost.
+fn openings(seed: u64) -> &'static [Opening] {
+    static ALL: std::sync::OnceLock<Vec<(u64, Vec<Opening>)>> = std::sync::OnceLock::new();
+    let all = ALL.get_or_init(|| {
+        std::thread::scope(|s| {
+            let hs: Vec<_> = SEEDS
+                .iter()
+                .map(|seed| s.spawn(move || (*seed, compute_openings(*seed))))
+                .collect();
+            hs.into_iter().map(|h| h.join().unwrap()).collect()
+        })
+    });
+    &all.iter()
+        .find(|(s, _)| *s == seed)
+        .expect("a committed seed")
+        .1
 }
 
 fn in_band(o: &Opening) -> bool {
