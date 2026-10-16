@@ -110,3 +110,8 @@ group = "shared"
 [[page_group]]
 theme = "grocery_store_black_shadow"
 group = "shared"
+
+# The whole-sheet exterior building art, from which a roof tile is cut.
+[[page_group]]
+theme = "generic_buildings_16x16.png"
+group = "shared"

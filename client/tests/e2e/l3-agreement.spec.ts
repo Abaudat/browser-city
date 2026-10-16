@@ -107,7 +107,7 @@ const DENSE_BODIES = 120;
 // beside the crowd) or from the live field's history. Not isolated in this
 // story; the test stays in the suite, fixme'd by name, so the finding is
 // visible in every report until story 5.5 (L2) reopens the scoping rule.
-test.fixme("two clients with different bubbles agree on every shared body of the 200-body crowd", async ({
+test("two clients with different bubbles agree on every shared body of the 200-body crowd", async ({
   browser,
 }) => {
   test.setTimeout(120_000);

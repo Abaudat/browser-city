@@ -6,7 +6,12 @@
 // fixture data (story 5.5 deletes them).
 
 import type { Defs, Family } from "../defs/types";
-import { AvoidanceField, type AvoidDials, type HeldPredicate } from "../l3/avoidance";
+import {
+  AvoidanceField,
+  type AvoidDials,
+  type HeldPredicate,
+  type HeldRect,
+} from "../l3/avoidance";
 import {
   type AtState,
   type CitizenBody,
@@ -18,7 +23,7 @@ import {
 import { framesByAnimation, type L3Config } from "../l3/config";
 import type { Facing } from "../l3/gait";
 import type { Walkability } from "../l3/micro-path";
-import { type BodyZone, zoneHoldsChunk } from "../world/body-zone";
+import { type BodyZone, zoneHoldsRect } from "../world/body-zone";
 import { CHUNK_SIZE } from "../world/chunk";
 
 /** No body zone (an agreement sample, a frozen crowd): every chunk counts as
@@ -80,14 +85,13 @@ export class StreetLife {
   /** The same dials with chunks as small as a sidestep's reach, so "held"
    * is judged against the body zone to within a few cells. */
   readonly #zoneDials: AvoidDials;
-  /** How far a pose strays from its ledger position: the micro path's box. */
-  readonly #strayCells: number;
   #zone: BodyZone | undefined;
   /** The instant of the last `solve`: what `liveAt` puts back. */
   #lastT: number | undefined;
-  readonly #zoneHeld: HeldPredicate = (floor, cx, cy) =>
-    this.#zone === undefined ||
-    zoneHoldsChunk(this.#zone, floor, cx, cy, this.#zoneDials.chunkSize, this.#strayCells);
+  readonly #zoneHeld: HeldRect = {
+    rect: (floor, x0, y0, x1, y1) =>
+      this.#zone === undefined || zoneHoldsRect(this.#zone, floor, x0, y0, x1, y1),
+  };
   readonly #walk: Walkability;
   /** Citizens with a body: what `solve` poses and sidesteps. */
   readonly #members: LifeMember[] = [];
@@ -107,8 +111,11 @@ export class StreetLife {
       halfWidthCells: config.bodyHalfWidthCells,
       chunkSize: CHUNK_SIZE,
     };
-    this.#strayCells = config.marginCells;
-    this.#zoneDials = { ...this.#dials, chunkSize: Math.ceil(config.avoidRadiusCells) };
+    this.#zoneDials = {
+      ...this.#dials,
+      chunkSize: Math.ceil(config.avoidRadiusCells),
+      strayCells: config.marginCells,
+    };
   }
 
   /** Registers a citizen with a body; returns it. It is also declared. */
@@ -251,7 +258,7 @@ function solveAll(
   field: AvoidanceField,
   dials: AvoidDials,
   walk: Walkability,
-  held: HeldPredicate,
+  held: HeldPredicate | HeldRect,
 ): void {
   field.reset();
   for (const m of members) {

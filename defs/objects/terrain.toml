@@ -29,3 +29,80 @@ sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_
 width = 1
 height = 1
 tags = ["underfoot", "road"]
+
+# Ground surfaces the district lays by tag (story 3.16): a forecourt and
+# the bare yard behind a building. `ground_area` rows name them by id; the
+# generator finds them by their tag.
+[[object]]
+id = 75
+key = "forecourt_paving"
+name = "Forecourt Paving"
+layer = "ground"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/2_City_Terrains_Singles_16x16/ME_Singles_City_Terrains_16x16_Sidewalk_2_26.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "pavement", "forecourt"]
+
+[[object]]
+id = 76
+key = "yard_dirt"
+name = "Yard"
+layer = "ground"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/1_Terrains_and_Fences_Singles_16x16/ME_Singles_Terrains_and_Fences_16x16_Grass_2_21.png", x = 0, y = 0, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "ground", "backyard"]
+
+# Roof tiles (`roof_area`): one per family, the dwelling's in three age
+# bands (old dark taupe, middle beige, new blue-grey). Each is a flat fill
+# from a rooftop panel of `4_Generic_Buildings`, stretched over the roof
+# rect. Drawn above everything inside the footprint, hidden from within.
+[[object]]
+id = 77
+key = "roof_dwelling_old"
+name = "Dwelling Roof (old)"
+layer = "ground"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 64, y = 440, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "ground", "roof", "dwelling", "aged_old"]
+
+[[object]]
+id = 78
+key = "roof_dwelling_mid"
+name = "Dwelling Roof (middle)"
+layer = "ground"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 416, y = 826, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "ground", "roof", "dwelling", "aged_mid"]
+
+[[object]]
+id = 79
+key = "roof_dwelling_new"
+name = "Dwelling Roof (new)"
+layer = "ground"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 218, y = 32, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "ground", "roof", "dwelling", "aged_new"]
+
+[[object]]
+id = 80
+key = "roof_trade"
+name = "Trade Roof"
+layer = "ground"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 10, y = 32, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "ground", "roof", "shop", "cafe", "market", "office"]
+
+[[object]]
+id = 81
+key = "roof_works"
+name = "Works Roof"
+layer = "ground"
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 28, y = 2042, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "ground", "roof", "workshop", "warehouse", "municipal_service"]

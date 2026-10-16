@@ -28,3 +28,77 @@ sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Bui
 width = 1
 archetype = "underfoot_flat"
 tags = ["underfoot", "threshold", "wall_run"]
+
+# Room floors by what the room is (story 3.16): the generator lays each
+# room's floor with the tile whose tags overlap the room's own most, the
+# `affluent` twin in an affluent neighbourhood. Each is the unshadowed
+# bottom-middle tile of its finish on the Floors sheet.
+[[object]]
+id = 82
+key = "floor_wet_plain"
+name = "Tiled Floor"
+layer = "ground"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png", x = 16, y = 48, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "floor", "washing", "cooking"]
+
+[[object]]
+id = 83
+key = "floor_wet_affluent"
+name = "Checked Tile Floor"
+layer = "ground"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png", x = 208, y = 80, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "floor", "washing", "cooking", "affluent"]
+
+[[object]]
+id = 84
+key = "floor_warm_plain"
+name = "Boarded Floor"
+layer = "ground"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png", x = 16, y = 208, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "floor", "sleeping", "dining"]
+
+[[object]]
+id = 85
+key = "floor_warm_affluent"
+name = "Parquet Floor"
+layer = "ground"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png", x = 144, y = 176, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "floor", "sleeping", "dining", "affluent"]
+
+[[object]]
+id = 86
+key = "floor_public_plain"
+name = "Shop Floor"
+layer = "ground"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png", x = 80, y = 112, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "floor", "trading", "public"]
+
+[[object]]
+id = 87
+key = "floor_public_affluent"
+name = "Polished Shop Floor"
+layer = "ground"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png", x = 80, y = 48, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "floor", "trading", "public", "affluent"]
+
+[[object]]
+id = 88
+key = "floor_back_room"
+name = "Back-Room Floor"
+layer = "ground"
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Room_Builder_subfiles/Room_Builder_Floors_16x16.png", x = 208, y = 304, w = 16, h = 16 }
+width = 1
+height = 1
+tags = ["underfoot", "floor", "staff", "working", "making"]

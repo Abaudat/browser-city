@@ -66,7 +66,8 @@ for t in $CODE_TABLES; do
   [ "$n" -ge 1 ] || bad "code table '$t' is empty"
 done
 
-# The city exists: exactly one district, and a world row at its arrival cell.
+# The city exists: exactly one district, and a room floor under its arrival
+# cell (a chunk_key lookup: the key is `sim::world::chunk_key`'s packing).
 DISTRICTS="$(rows "SELECT arrival_x, arrival_y FROM district")"
 N_DISTRICTS="$(printf '%s\n' "$DISTRICTS" | grep -c . || true)"
 if [ "$N_DISTRICTS" -ne 1 ]; then
@@ -74,8 +75,12 @@ if [ "$N_DISTRICTS" -ne 1 ]; then
 else
   AX="$(printf '%s' "$DISTRICTS" | tr -d ' ' | cut -d'|' -f1)"
   AY="$(printf '%s' "$DISTRICTS" | tr -d ' ' | cut -d'|' -f2)"
-  ARRIVAL_ROWS="$(rows "SELECT object_id FROM placed_object WHERE x = $AX AND y = $AY" | grep -c . || true)"
-  [ "$ARRIVAL_ROWS" -ge 1 ] || bad "no placed_object row at the arrival cell ($AX, $AY) -- the district's world rows were not written"
+  floor_div() { echo $(( ($1 - (($1 % 32) + 32) % 32) / 32 )); }
+  CX="$(floor_div "$AX")"
+  CY="$(floor_div "$AY")"
+  KEY=$(( ((CX & 0xFFFFFF) << 32) | ((CY & 0xFFFFFF) << 8) ))
+  ARRIVAL_ROWS="$(rows "SELECT area_id FROM room_area WHERE chunk_key = $KEY AND x0 <= $AX AND x1 > $AX AND y0 <= $AY AND y1 > $AY" | grep -c . || true)"
+  [ "$ARRIVAL_ROWS" -ge 1 ] || bad "no room_area row covers the arrival cell ($AX, $AY) -- the district's world rows were not written"
 fi
 
 LIVENESS="$(rows "SELECT fires FROM cadence_liveness")"

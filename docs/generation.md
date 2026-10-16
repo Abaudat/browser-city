@@ -996,7 +996,7 @@ block is reproducible bar thread count and wall-clock.
 
 ```text
 
-detour-bounds sweep at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 1000000 seeds, 32 threads, passes 1-2 only
+detour-bounds sweep at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 1000000 seeds, 32 threads, passes 1-2 only
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
@@ -1037,7 +1037,7 @@ detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worst
   171% at seed 4929245716913353663
   178% at seed 4832727318219098284
   189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 203.8s (0.204ms/seed)
+detour-bounds sweep wall-clock: 192.0s (0.192ms/seed)
 ```
 
 ### band sweep
@@ -1046,7 +1046,7 @@ detour-bounds sweep wall-clock: 203.8s (0.204ms/seed)
 
 ```text
 
-band sweep at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 1000000 seeds, all five passes (salt 0xb0f05ee4)
+band sweep at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 1000000 seeds, all five passes (salt 0xb0f05ee4)
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
 land_use_share_commercial deviation from its key (18%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.6 stddev=6.0
   5.5-sigma share tolerance implied: 3.32 percentage points
@@ -1089,7 +1089,7 @@ largest_institutional_pocket_share_basis_points: min=87 p1=117 p50=205 p99=234 m
 profession_depth_per_city: min=44 p1=55 p50=61 p99=67 max=67 mean=61.4 stddev=2.3
   profession_count_per_city_min = 36: 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-band sweep wall-clock: 147.8s (0.148ms/seed)
+band sweep wall-clock: 131.0s (0.131ms/seed)
 ```
 
 ### exhaustive loop
@@ -1097,7 +1097,7 @@ band sweep wall-clock: 147.8s (0.148ms/seed)
 `cargo run -p bounds --release --bin measure-generation`
 
 ```text
-exhaustive loop at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 50000 seeds at 512x512 cells
+exhaustive loop at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 50000 seeds at 512x512 cells
 building_count: min=778 p1=829 p50=889 p99=949 max=990 mean=889.2 stddev=25.6
 building_count extremes: min 778 at seed 11805315485014167829, max 990 at seed 11123925265906853341 (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)
 rejected_percent: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
@@ -1195,7 +1195,7 @@ ad hoc presence tags (never distributed) -- seeds with 0 placed:
 
 ```text
 
-rows sweep at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 1000000 seeds, 32 threads
+rows sweep at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 1000000 seeds, 32 threads
 CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
   committed rules hold (inv_generation_committed_rules_hold_for_any_seed): 0 of 1000000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 96-case CI failure probability <= 0.0288%)
@@ -1213,7 +1213,7 @@ CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 
 ```text
 
-region-loss sweep at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
+region-loss sweep at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   seeds with any region carried by no block: 20769 of 1000000 (first: Some(11091164158115210688)) -- by design, a block takes its majority use
   every institutional region carried by no block (inv_generation_an_institutional_region_is_carried_by_a_block): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
@@ -1225,7 +1225,7 @@ CI judges these ceilings at 4096 cases in the test job and 256 in the coverage j
 `cargo run -p bounds --release --bin measure-generation -- pooled`
 
 ```text
-pooled evidence at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: seeds 0..256 pooled, evidence seeds 1, 2, 3
+pooled evidence at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: seeds 0..256 pooled, evidence seeds 1, 2, 3
 pooled low-band / high-band mean block area over seeds 0..256: 289% (peripheral_pooled_min_ratio_percent = 150%)
 pooled chopped share of low-band blocks over seeds 0..256: 1886 of 5600 (33%)
 evidence seed 1: low-band / high-band mean block area 2.65x (Artie's bar 2x)
@@ -1243,7 +1243,7 @@ pooled core over city mean screen: 190% (busy_core_over_city_min_percent = 150%)
 `cargo run -p bounds --release --bin measure-generation -- interiors`
 
 ```text
-interiors sweep at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: 30000 seeds, 32 threads (salt 0xb0f05ee7)
+interiors sweep at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 30000 seeds, 32 threads (salt 0xb0f05ee7)
 CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 enterable_count: min=766 p1=805 p50=868 p99=932 max=973 mean=868.5 stddev=27.3
 enterable_share_percent: min=92 p1=95 p50=97 p99=99 max=100 mean=97.2 stddev=1.2
@@ -1295,7 +1295,7 @@ pooled_enterable_share_x1000_per_8_city_pool: min=96042 p1=96691 p50=97683 p99=9
 `cargo run -p bounds --release --bin measure-generation -- graph`
 
 ```text
-macro graph at GENERATION_VERSION=15 fingerprint=6102de36e5bf8302: seeds 0..32 at the committed site, 0..4 at 1024
+macro graph at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: seeds 0..32 at the committed site, 0..4 at 1024
 committed site (512 x 512, 32 seeds): nodes min 1697 mean 1843 max 1963; edges min 1744 mean 1895 max 2016; internal nodes 13% of entrances
 growth target (1024 x 1024, 4 seeds): nodes min 7086 mean 7371 max 7730; edges min 7309 mean 7604 max 8002; internal nodes 13% of entrances
 ```
@@ -1325,60 +1325,88 @@ look, not tuning, and hold from this document on:
 
 Seed `city.seed` (20260713), the one seed walked: the committed city,
 streamed from the module's own rows and walked on foot at the shipped
-speed with real key presses (`npm run test:e2e:review`; stills and the
-recording are `docs/generation/walk/`, the route and timings
+speed with real key presses (`npm run test:e2e:review`; stills, recording
+and `walk-log.txt` are `docs/generation/walk/`, the route
 `docs/spikes/3.16-walk-the-district.md`). Any seed is walked with
 `scripts/dev/walk-district.sh <seed>`. The district was walked without
 citizens (Epic 5): that absence is set aside, and nothing was faked to fill it.
 
-**Verdict on the built environment: not yet worth walking.** The geometry
-earns the walk -- arterials read wider than side streets, a lamp and a
-planter cadence runs the length of a pavement, the core packs tighter than
-the edge, and the route a player takes is 1.01-1.05 of the straight line --
-but the four things below fail the five tests Artie set, and each reopens
-content rather than being accepted for now.
+**Verdict on the built environment: reads as a city of buildings from the
+street, not yet worth walking.** Every building is a sealed shell: a roof
+over its interior and north rim (a dwelling's by its building-age band) inside
+its wall ring, hiding what stands inside until the player crosses its door,
+when the roof and the front wall retract. Streets run on through the margin.
+The arrival stands a viewport in from the site edge, and doors open onto a
+paved forecourt. The findings below keep it from being worth walking. Each one
+is disposed to a row or a task.
 
-**Verdict on the generator, apart from the empty city: the layout rules hold.**
-Edge-to-core-to-edge is 527 steps for a 509-cell crossing (stretch 1.04),
-every cell of the site and margin has one ground row, 100+ buildings are
-enterable, furnished and reachable from the arrival (`district_world.rs`).
+**Verdict on the generator, apart from the empty city: the layout rules
+hold.** On foot at the shipped 2.2 cells/s, the site's west edge (2, 296)
+to the core (168, 296) took 100.7 s: 218 steps in 8 key-held runs, so
+99.1 s of walking and 1.6 s of turning. That is 2.16 steps/s. The edge-to-core-to-edge crossing
+is 527 steps for a 509-cell line (stretch 1.04, `district_world.rs`), so
+on foot it is about 243 s against the 233 s of a straight 512-cell line:
+6.5 s from the route's length and 3.9 s from turning. Every one of 944 laid buildings is
+enterable, furnished (each room holds the fixtures its room program owes,
+each a placed row), reachable from the arrival and walkable into every
+room (`district_world.rs`; fresh seeds weekly, `district_explore.rs`).
 
-Findings, each disposed:
+Fixed in this story, from the first walk:
+- Roads stopped at the site boundary. They now run `city.ground.margin_cells`
+  through it.
+- Every building was a floor plan seen through its roof. It is now roofed per
+  family, a dwelling by age band, and its interior is hidden from outside.
+- Ground was one object per cell, chosen by id. It is now `ground_area`
+  rects chosen by tag: carriageway, pavement, forecourt, yard, a footprint's
+  floor and each room's floor, by room kind and the neighbourhood's
+  affluence.
+- The arrival sat five cells from the site edge.
+- Two clients disagreed on the sidestep of a shared body near a wall.
 
-- **Roads stop at the site boundary** (north edge, from the arrival
-  street, `02-first-street-screen`): the carriageway and pavement end on a
-  hard line and the margin beyond is plain open ground. *Reopens* the
-  ground catalogue: the road and pavement ground rows continue through the
-  margin (`city.ground.margin_cells`), content in `defs/`, no generator branch.
-- **Open ground is one flat green** between buildings and past the site
-  (`08-site-edge`, `04-affluence-step`): no void and no seam, but nothing
-  from `2_City_Terrains` varies it. *Accepted* for the edge (it is complete
-  and never the canvas background); *reopens* `city.ground.open_object_id`
-  as a terrain choice for block interiors.
-- **Facades do not vary along a block face and building age has no
-  carrier** (`04`, `05`, `07`): every wall is the one flat grey swatch, so
-  the age step at (158, 381) cannot be told from either side. *Filed as a
-  finding against the rule content*: the facade-variant carrier
-  (`4_Generic_Buildings`) is not realised; age is not legible on the walk.
-  Nothing was substituted.
-- **The affluence step reads, the age step does not** (`04-affluence-step`
-  at (329, 256), sharpest affluence step 71; `07-age-step`, sharpest age
-  step 82): shop mix and shuttered share differ across the arterial; the
-  facades do not. See the previous finding.
-- **No container, stair or floor transition exists in the district**:
-  the generator places none, so what the street fixture proved for
-  transitions, containers and the footbridge is not re-proven. *Claims* the
-  must-never-be-seen row for a district with no vertical connection until a
-  rule story places stairs.
-- **Interior walls are flat swatches and a building's front is drawn
-  grey from outside** (`03`, `06`): readable, not yet attractive.
-  *Accepted* until the facade carrier lands.
-- **Core direction is legible only by density and road width**: from a
-  random screen the core is told by the denser, wider-roaded frames; no
-  sharper cue exists and none is added (no minimap, no marker).
-- **A walker on screen over a chunk the bubble has not yet held**
-  (`l3-agreement.spec.ts`, fixme): one frame at a chunk border, rate under
-  0.2%. *Reopens* the bubble margin, tracked with the L3 story.
+Findings that remain, each disposed:
+
+- **A building's front is the wall swatch, not a facade**
+  (`02-first-street-screen`, `04`, `05`, `07`). The roof gives a building a
+  top and hides its inside, but the street face is the one flat wall cell
+  repeated. *Reopens* the facade carrier, story #458: the `4_Generic_Buildings`
+  front elevation per residential envelope, chosen by age. It claims
+  "The same facade repeated side by side with no variation". Interior walls
+  are the same Room Builder cell with no wall face; the wall face is drawn
+  above its cell like a facade, and goes with the same carrier.
+- **Building age reads on the roof** (`07-age-step`, sharpest age step 82
+  at (158, 381)). An old dwelling's roof is dark taupe and a new one's is
+  blue-grey, and they differ 100% across that arterial
+  (`across_the_sharpest_arterial_each_dial_changes_what_the_district_is_made_of`).
+  Nothing else reads age. The front elevation is #458.
+- **Affluence does not read from the street** (`04-affluence-step`, sharpest
+  affluence step 71 at (329, 256)). Room floors differ 93% across the arterial,
+  but they are under the roofs. What stands on the pavement differs by 2%. In
+  this frame no shopfront and no shuttered unit can be told apart, because a
+  shuttered unit has no visible carrier yet. *Reopens* pass 7's distribution
+  rows (a prop set per affluence band) in story #459, and the shopfront in
+  #458.
+- **Interiors do not cohere** (`01`, `03`, `06`). In the arrival dwelling
+  (seed 20260713, footprint (435, 23)-(443, 32)), the toilet stands in its
+  bathroom (436-438, 24-25), but that bathroom opens onto the kitchen-diner's
+  stove through a doorless doorway at (436, 26) with one-cell swatch walls. It
+  reads as a toilet beside a stove. The same red/blue standing-lamp pair stands
+  against the north wall of nearly every room. Rooms are told apart only by
+  their floor. The room-kind requirement (`bathroom_has_a_toilet`) holds, and
+  nothing in the rules keeps a sanitary room off the kitchen or stops a sprite
+  repeating within a building. *Reopens* passes 6 and 7 as story #459. It
+  claims "The same prop sprite repeated side by side with no variation".
+- **The west edge is a full viewport of lawn** (`08-site-edge`, (2, 296)).
+  The edge cell meets no street, and nothing stands within a viewport of it. This is the "uniform, symmetric empty ring" row,
+  unclaimed. *Reopens* the periphery's ground and streets, story #461.
+- **Open ground inside a block is one flat green**. The yard behind a
+  building and the forecourt before it are tagged ground now, but block
+  interiors are not. *Reopens* terrain variety, story #461.
+- **Core direction is legible only by density and road width**. *Accepted*:
+  density is the design's only core cue. No minimap and no marker.
+- **No container, stair or floor transition exists in the district**.
+  The generator places none. Their mechanics are proven mounted on the e2e
+  fixture block (`block-*.spec.ts`) and in the in-memory stairs world.
+  *Reopens* the row "A district with no vertical connection", story #460.
 
 ## Targets
 
@@ -1638,6 +1666,7 @@ names; `unclaimed` otherwise -- checked mechanically, not by eye.
 | A street that jogs sideways within less than a minimum block length | coherence | | unclaimed |
 | A road that stops a few tiles short of the site edge instead of exiting cleanly through it | adjacency | | unclaimed |
 | A uniform, symmetric empty ring around the site's own periphery | distribution | | unclaimed |
+| A district with no vertical connection: no stair, footbridge or subway reached from the street | requirement | | unclaimed |
 | A plot with no street frontage | adjacency | | unclaimed |
 | A building standing off its block face's shared build line | coherence | | unclaimed |
 | A 1-cell slit between two buildings | adjacency | | unclaimed |

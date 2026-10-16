@@ -45,10 +45,21 @@ export interface AvoidDials {
   readonly halfWidthCells: number;
   /** The side of a chunk, in cells; the radius must not exceed it. */
   readonly chunkSize: number;
+  /** How far a neighbour's pose strays from its ledger position (cells):
+   * the held reach is the radius plus this, or the wall scan span if more. */
+  readonly strayCells?: number;
 }
 
-/** Whether the client holds the chunk `(cx, cy)` of `floor`. */
+/** Whether the client holds the chunk `(cx, cy)` of `floor`: its rows are
+ * in the grid and its bodies are all posed. */
 export type HeldPredicate = (floor: number, cx: number, cy: number) => boolean;
+
+/** Whether the client holds the whole square `[x0, x1] x [y0, y1]` (cells) of
+ * `floor`: the same question at the grain of a body's own reach, for a
+ * holder that can answer it directly (the body zone is one rect). */
+export interface HeldRect {
+  readonly rect: (floor: number, x0: number, y0: number, x1: number, y1: number) => boolean;
+}
 
 /** The most a wall may limit a sidestep faster than the body walks towards it:
  * one cell sideways in three along. */
@@ -363,7 +374,7 @@ export class AvoidanceField {
   /** Resolves every held body's sidestep. `isHeld` says which chunks the
    * client holds; a body is resolved only when its chunk and the eight round
    * it are. */
-  resolve(dials: AvoidDials, walk: Walkability, isHeld: HeldPredicate): void {
+  resolve(dials: AvoidDials, walk: Walkability, isHeld: HeldPredicate | HeldRect): void {
     if (dials.radiusCells > dials.chunkSize) {
       throw new Error("L3 avoidance: the radius must not exceed a chunk");
     }
@@ -380,6 +391,11 @@ export class AvoidanceField {
       this.#cellY[i] = Math.floor((this.#y[i] as number) / radius);
     }
     sortIndices(cells, n, this.#byCell);
+    // A body's answer reads every neighbour within the radius (whose own
+    // pose strays from its ledger by up to `strayCells`) and every wall tile
+    // within the scan span, so it is agreed on only when every chunk that
+    // reach touches is held.
+    const reach = Math.max(scanSpan(dials), dials.radiusCells + (dials.strayCells ?? 0));
     this.pairChecks = 0;
     this.capHits = 0;
     this.blockedSteps = 0;
@@ -388,9 +404,13 @@ export class AvoidanceField {
       const i = order[p] as number;
       if (!this.#moving[i] || (this.#ramp[i] as number) <= 0) continue;
       const floor = this.#floor[i] as number;
-      if (!heldWhole(isHeld, floor, this.#x[i] as number, this.#y[i] as number, dials.chunkSize)) {
-        continue;
-      }
+      const bx = this.#x[i] as number;
+      const by = this.#y[i] as number;
+      const whole =
+        typeof isHeld === "function"
+          ? heldWhole(isHeld, floor, bx, by, reach, dials.chunkSize)
+          : isHeld.rect(floor, bx - reach, by - reach, bx + reach, by + reach);
+      if (!whole) continue;
       this.#flags[i] = (this.#flags[i] as number) | RESOLVED;
       this.#resolveBody(i, dials, walk);
     }
@@ -744,18 +764,23 @@ export function scanSpan(dials: AvoidDials): number {
   return Math.ceil(reach + (dials.clearanceCells + reach) / WALL_SLOPE + dials.radiusCells);
 }
 
+/** Whether every chunk the square of half-side `reach` round `(x, y)` touches
+ * is held: what a body there reads, neighbours and walls alike. */
 function heldWhole(
   isHeld: HeldPredicate,
   floor: number,
   x: number,
   y: number,
+  reach: number,
   chunkSize: number,
 ): boolean {
-  const cx = Math.floor(x / chunkSize);
-  const cy = Math.floor(y / chunkSize);
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (!isHeld(floor, cx + dx, cy + dy)) return false;
+  const cx0 = Math.floor((x - reach) / chunkSize);
+  const cx1 = Math.floor((x + reach) / chunkSize);
+  const cy0 = Math.floor((y - reach) / chunkSize);
+  const cy1 = Math.floor((y + reach) / chunkSize);
+  for (let cy = cy0; cy <= cy1; cy++) {
+    for (let cx = cx0; cx <= cx1; cx++) {
+      if (!isHeld(floor, cx, cy)) return false;
     }
   }
   return true;

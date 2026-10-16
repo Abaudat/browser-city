@@ -118,6 +118,15 @@ test("the committed district, walked end to end", async ({ page }) => {
   await shot("08-site-edge", edge);
 
   const seconds = Math.round((Date.now() - started) / 1000);
-  log.push(`walked ${seconds} s of wall clock over ${log.length} stops`);
+  const stops = log.length;
+
+  // AC1's figure: the site edge back to the core on foot, timed alone.
+  const legStart = Date.now();
+  const leg = await walkTo(page, core, LONG_SEGMENT_MS);
+  const legSeconds = ((Date.now() - legStart) / 1000).toFixed(1);
+  log.push(
+    `edge-to-core: ${edge.x},${edge.y} to ${core.x},${core.y} (${Math.abs(core.x - edge.x)} cells apart), ${leg.steps} steps in ${leg.segments} key-held runs, ${legSeconds} s on foot`,
+  );
+  log.push(`walked ${seconds} s of wall clock over ${stops} stops`);
   writeFileSync(join(OUT, "walk-log.txt"), `${log.join("\n")}\n`);
 });

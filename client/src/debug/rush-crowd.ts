@@ -75,6 +75,91 @@ function leg(a: Cell, b: Cell, dwellMs: number, facing: Facing): TimetableSpec {
   };
 }
 
+/** Whether a walk over standable cells (four neighbours) joins `a` to `b`
+ * inside the box of the two plus `margin` cells. */
+function walkableWithin(
+  world: { standable(x: number, y: number): boolean },
+  a: Cell,
+  b: Cell,
+  margin: number,
+): boolean {
+  if (a.x === b.x && a.y === b.y) return true;
+  const x0 = Math.min(a.x, b.x) - margin;
+  const x1 = Math.max(a.x, b.x) + margin;
+  const y0 = Math.min(a.y, b.y) - margin;
+  const y1 = Math.max(a.y, b.y) + margin;
+  const width = x1 - x0 + 1;
+  const seen = new Set<number>([(a.y - y0) * width + (a.x - x0)]);
+  const queue: Cell[] = [a];
+  for (let head = 0; head < queue.length; head++) {
+    const c = queue[head] as Cell;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const x = c.x + dx;
+      const y = c.y + dy;
+      if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+      const k = (y - y0) * width + (x - x0);
+      if (seen.has(k) || !world.standable(x, y)) continue;
+      if (x === b.x && y === b.y) return true;
+      seen.add(k);
+      queue.push({ x, y });
+    }
+  }
+  return false;
+}
+
+/** The standable cells of the crowd's window reachable on foot (four
+ * neighbours) from the cell nearest the start, in row-major order. */
+function connectedStandable(world: {
+  standable(x: number, y: number): boolean;
+  start: Cell;
+}): Cell[] {
+  const r = RUSH_RADIUS_CELLS;
+  const x0 = world.start.x - RUSH_REACH_X_CELLS;
+  const x1 = world.start.x + RUSH_REACH_X_CELLS;
+  const y0 = world.start.y - r;
+  const y1 = world.start.y + r;
+  const key = (x: number, y: number): number => (y - y0) * (x1 - x0 + 1) + (x - x0);
+  const inside = (x: number, y: number): boolean => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+  // The seed: the standable cell nearest the start (the start itself, in a
+  // world that has the player standing).
+  let seed: Cell | undefined;
+  let best = Number.POSITIVE_INFINITY;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (!world.standable(x, y)) continue;
+      const d = Math.abs(x - world.start.x) + Math.abs(y - world.start.y);
+      if (d < best) {
+        best = d;
+        seed = { x, y };
+      }
+    }
+  }
+  if (!seed) return [];
+  const seen = new Set<number>([key(seed.x, seed.y)]);
+  const queue: Cell[] = [seed];
+  for (let head = 0; head < queue.length; head++) {
+    const c = queue[head] as Cell;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const nx = c.x + dx;
+      const ny = c.y + dy;
+      if (!inside(nx, ny) || seen.has(key(nx, ny)) || !world.standable(nx, ny)) continue;
+      seen.add(key(nx, ny));
+      queue.push({ x: nx, y: ny });
+    }
+  }
+  return queue.sort((a, b) => a.y - b.y || a.x - b.x);
+}
+
 /**
  * The crowd for a world: `standable` is the world's own answer for a cell,
  * `start` where the player is. Every body starts (and every leg ends) on a
@@ -86,14 +171,9 @@ export function buildRushCrowd(
   count = RUSH_CROWD_SIZE,
   looks = RUSH_LOOKS,
 ): RushCrowd {
-  const pool: Cell[] = [];
-  const r = RUSH_RADIUS_CELLS;
-  for (let dy = -r; dy <= r; dy++) {
-    for (let dx = -RUSH_REACH_X_CELLS; dx <= RUSH_REACH_X_CELLS; dx++) {
-      const c = { x: world.start.x + dx, y: world.start.y + dy };
-      if (world.standable(c.x, c.y)) pool.push(c);
-    }
-  }
+  // The cells a leg may run between: the standable cells of the window that
+  // can be walked to from the start's own, so no leg crosses a wall.
+  const pool: Cell[] = connectedStandable(world);
   if (pool.length === 0) return { fixtures: [], specs: {}, walkerCount: 0 };
   const pick = (n: number, salt: number): Cell =>
     pool[hash32(n * 2654435761 + salt) % pool.length] as Cell;
@@ -120,6 +200,21 @@ export function buildRushCrowd(
   const pile = percentOf(count, 10);
   const pilePoint = pick(0, 0x77);
   const facings: readonly Facing[] = ["down", "up", "left", "right"];
+  // A leg is only laid between cells joined by a walk inside the path box
+  // the micro path searches (the legs' own bounding box plus its margin):
+  // anything else would be walked as a straight line through a wall.
+  const margin = defs.balance.find((b) => b.key === "l3.path_box_margin_cells")?.value ?? 0;
+  const pathable = (a: Cell, b: Cell): boolean => walkableWithin(world, a, b, margin);
+  /** `to` if a walk joins it to `from`, else the first of a few other
+   * draws that does, else `from`'s own cell (a body that stays). */
+  const joined = (from: Cell, to: Cell, n: number, salt: number): Cell => {
+    if (pathable(from, to)) return to;
+    for (let k = 1; k <= 8; k++) {
+      const c = pick(n, salt + k * 31);
+      if (Math.abs(c.x - from.x) + Math.abs(c.y - from.y) <= 12 && pathable(from, c)) return c;
+    }
+    return from;
+  };
 
   function add(i: number, kind: string, at: Cell, facing: Facing, spec?: TimetableSpec): void {
     const id = `rush-${kind}-${i}`;
@@ -138,13 +233,14 @@ export function buildRushCrowd(
   let n = 0;
   for (let k = 0; k < count - standers - pile; k++, n++) {
     const from = startOf(n);
-    const to = near(from, n, 0x12, 4 + (n % 9));
+    const to = joined(from, near(from, n, 0x12, 4 + (n % 9)), n, 0x12);
     const facing = facings[hash32(n) % 4] as Facing;
     add(n, k % 3 === 0 ? "column" : "lane", from, facing, leg(from, to, 100 + (n % 400), facing));
   }
   for (let k = 0; k < pile; k++, n++) {
     const from = near(pilePoint, n, 0x31, 6);
-    add(n, "pile", from, "right", leg(from, pilePoint, 100 + (n % 200), "right"));
+    const to = joined(from, pilePoint, n, 0x31);
+    add(n, "pile", from, "right", leg(from, to, 100 + (n % 200), "right"));
   }
   for (let k = 0; k < standers; k++, n++) {
     add(n, "stand", startOf(n), facings[hash32(n) % 4] as Facing);

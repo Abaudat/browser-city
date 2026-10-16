@@ -80,7 +80,9 @@ pub use land_use::{LandUse, LandUseCell, LandUseMap, Neighbourhood, Neighbourhoo
 pub use plots::{Plot, PlotMap};
 pub use props::{PlacedRow, Prop, PropMap, Role};
 pub use record::{DistrictRecord, RuleSetVersion, create};
-pub use region_rows::{AreaOut, GroundConfig, PlacedOut, RegionRows, TransitionOut};
+pub use region_rows::{
+    AreaOut, GroundConfig, GroundOut, PlacedOut, RegionRows, RoofOut, TransitionOut,
+};
 
 // `plan` and `generate` are reachable outside this crate only with
 // `test-fixtures`: production (`browser_city`) never enables it, so a reducer

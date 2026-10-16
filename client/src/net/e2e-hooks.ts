@@ -224,6 +224,8 @@ declare global {
       /** The local player's sprite point in world pixels -- the same space a
        * remote's `drawn()` screen point is in. */
       playerDrawnPoint?: () => { x: number; y: number };
+      /** DEV only: stands the player at a point and draws what is there. */
+      teleport?: (x: number, y: number, floor: number) => void;
       /** Story 3.16: the streamed world as the scene holds it right now --
        * how many chunks are drawn, how many sprites they hold, and the
        * building and room the player's own cell is in. A callable read
@@ -563,6 +565,16 @@ export function exposePlayerScreenBoundsForE2e(
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
   bucket.playerScreenBounds = getter;
+  window.__bc = bucket;
+}
+
+/** The e2e harness's way to stand the player somewhere, DEV only. */
+export function exposeTeleportForE2e(
+  teleport: NonNullable<NonNullable<Window["__bc"]>["teleport"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.teleport = teleport;
   window.__bc = bucket;
 }
 

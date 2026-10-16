@@ -147,11 +147,90 @@ export async function startSpacetime({ timeControl = false } = {}) {
   }
 
   const handle = { pid: child.pid, port, serverUrl, dbName, dataDir };
-  // The city: generated once, by the module's own owner-only reducer, from
-  // `city.seed` -- the world every spec walks. Nothing is seeded by hand.
+  // The functional e2e world is the city -- generated once, by the module's
+  // own owner-only reducer, from `city.seed` -- with the fixture block
+  // (`fixtures/fixture-block.v1.json`) standing in its north-west corner:
+  // restored first, through the module's own restore path, so its ids are
+  // its own; the district's rows under it are cleared after generation.
+  // The deploy-smoke flavour has neither the block nor the reducer that
+  // clears under it, and walks the city as deployed.
+  if (timeControl) restoreBlock(handle);
   callReducer(handle, "create_district");
+  if (timeControl) {
+    clearUnderBlock(handle);
+    // The district's ids follow the block's (the restore leaves a gap of
+    // its own after them): the pinned dump's first row is the district's
+    // first placed row, so its id is the shift a spec reading the dump
+    // applies (`district-support.ts`).
+    handle.blockPlaced = firstDistrictId(handle, "placed_object", "object_id", E2E_BLOCK.maxId) - 1;
+    handle.blockGround =
+      firstDistrictId(handle, "ground_area", "area_id", E2E_BLOCK.ground.length) - 1;
+  }
   writeFileSync(STATE_FILE, JSON.stringify(handle), "utf-8");
   return handle;
+}
+
+/** The fixture block as the harness reads it. */
+export const E2E_BLOCK = JSON.parse(
+  readFileSync(path.join(REPO_ROOT, "fixtures", "fixture-block.v1.json"), "utf-8"),
+);
+
+/** The block's cupboard and what is in it, for the container spec. */
+export const E2E_CUPBOARD = E2E_BLOCK.cupboard;
+
+const rowsJson = (rows) => `[${rows.map((r) => `[${r.join(",")}]`).join(",")}]`;
+
+function restoreBlock(handle) {
+  const count = (rows) => String(rows.length);
+  callReducer(handle, "begin_restore");
+  callReducer(handle, "restore_placed_object", rowsJson(E2E_BLOCK.placed), count(E2E_BLOCK.placed));
+  callReducer(
+    handle,
+    "restore_floor_transition",
+    rowsJson(E2E_BLOCK.transitions),
+    count(E2E_BLOCK.transitions),
+  );
+  callReducer(handle, "restore_ground_area", rowsJson(E2E_BLOCK.ground), count(E2E_BLOCK.ground));
+  // The cupboard holds five known items: instance `i` is the cupboard's
+  // `i - 1`th seeded item, held at its slot.
+  const items = E2E_CUPBOARD.items;
+  const instances = items.map((it, i) => `[${i + 1},${it.defId},[0]]`);
+  const held = items.map(
+    (it, i) => `[${i + 1},0,${E2E_CUPBOARD.objectId},${it.slotX},${it.slotY},${it.orientation}]`,
+  );
+  callReducer(
+    handle,
+    "restore_item_instance",
+    `[${instances.join(",")}]`,
+    String(instances.length),
+  );
+  callReducer(handle, "restore_item_held", `[${held.join(",")}]`);
+  callReducer(handle, "finish_restore");
+}
+
+/** The id the module gave the district's first row of `table`: the first id
+ * above the block's own that exists. */
+function firstDistrictId(handle, table, column, blockMax) {
+  for (let id = blockMax + 1; id <= blockMax + 16; id++) {
+    if (ownerSql(handle, `SELECT ${column} FROM ${table} WHERE ${column} = ${id}`).length > 0) {
+      return id;
+    }
+  }
+  throw new Error(`the district's first ${table} row was not found above the block's ids`);
+}
+
+function clearUnderBlock(handle) {
+  const c = E2E_BLOCK.chunks;
+  callReducer(
+    handle,
+    "debug_clear_chunks",
+    String(c.cx0),
+    String(c.cy0),
+    String(c.cx1),
+    String(c.cy1),
+    "0",
+    String(E2E_BLOCK.maxId),
+  );
 }
 
 /** Adds fields to the persisted handle (story 4.5: the local OIDC issuer's

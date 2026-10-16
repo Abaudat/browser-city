@@ -21,7 +21,7 @@ import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import { REGION_RADIUS_CHUNKS } from "../../src/world/region";
 import { waitForPlayerControllable } from "./boot-test-support";
-import { areaRowsInChunk, arrivalCell, placedRowsInChunk } from "./district-support";
+import { areaRowsInChunk, arrivalCell, district, placedRowsInChunk } from "./district-support";
 import { expect, test } from "./fixtures";
 
 declare global {
@@ -257,7 +257,7 @@ test("the rows delivered by the time the initial region has applied are exactly 
   }
   // The precondition that lets the assertion fail: the district is bigger
   // than the region.
-  expect(placedRowsInChunk(0, 0)).toBeGreaterThan(0);
+  expect(district.objects.length).toBeGreaterThan(expected);
 
   await page.goto("/");
   await page.waitForFunction(

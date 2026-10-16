@@ -391,6 +391,26 @@ pub const TABLE_BOUNDS: &[TableBound] = &[
         alert_rows: 1_125_000,
         kind: BoundKind::Engineering,
     },
+    // One rect per building footprint piece, as `building_area`: the
+    // roof the client hides while its viewer is inside.
+    TableBound {
+        accessor: "roof_area",
+        max_rows: 150_000,
+        expected_rows: 90_000,
+        alert_rows: 112_500,
+        kind: BoundKind::Engineering,
+    },
+    // Ground is rects, never a row per cell: each built plot's yard and
+    // forecourt, each room floor and doorway sill (`room`'s own ceiling
+    // times a doorway or two), and the street's pavement and carriageway
+    // rects, every one clipped to chunk pieces.
+    TableBound {
+        accessor: "ground_area",
+        max_rows: 1_500_000,
+        expected_rows: 900_000,
+        alert_rows: 1_125_000,
+        kind: BoundKind::Engineering,
+    },
     // Scheduled tables (NFR34): each carries at most a handful of pending
     // rows in practice; the ceiling is a safety net against a runaway
     // scheduling bug, not a game rule.

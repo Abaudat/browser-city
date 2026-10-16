@@ -24,6 +24,8 @@ export type VisibilityState = "hidden" | "translucent" | "normal";
 export interface VisibilityViewer {
   readonly floor: number;
   readonly buildingId: bigint;
+  /** The buildings whose roof is drawn (story 3.16). */
+  readonly roofed?: ReadonlySet<bigint>;
 }
 
 /** The minimal shape [`computeVisibility`] needs from a drawable --
@@ -131,11 +133,22 @@ export function isStoreyAboveCulled(
   return drawable.floor > viewer.floor;
 }
 
+/** Story 3.16: what stands inside a roofed building other than the
+ * viewer's is under its roof, so hidden -- a tall fixture against the
+ * north wall would otherwise show above the roof's edge. The building's
+ * walls and windows stay: they are its outside. */
+export function isUnderRoof(viewer: VisibilityViewer, drawable: VisibilityDrawable): boolean {
+  if (drawable.layerCode === WALLS_LAYER_CODE) return false;
+  if (drawable.ownerBuildingId === NO_OWNER) return false;
+  if (drawable.ownerBuildingId === viewer.buildingId) return false;
+  return viewer.roofed?.has(drawable.ownerBuildingId) ?? false;
+}
+
 /**
  * The one function every one of FR120/FR121/FR122's rules is decided by,
  * in a fixed order: floor culling first (a drawable on a co-invisible
  * floor is simply `hidden`, regardless of anything else about it), then
- * storey-above culling, then a stub's own inverse-of-retraction rule (a
+ * storey-above culling, then the under-a-roof rule, then a stub's own inverse-of-retraction rule (a
  * stub is `normal` exactly when its parent wall would retract, `hidden`
  * otherwise -- never `translucent`, and never subject to the ordinary
  * retraction/window rules below, which are a real wall's own), then
@@ -149,6 +162,7 @@ export function computeVisibility(
 ): VisibilityState {
   if (isFloorCulled(viewer.floor, drawable.floor)) return "hidden";
   if (isStoreyAboveCulled(viewer, drawable)) return "hidden";
+  if (isUnderRoof(viewer, drawable)) return "hidden";
   if (drawable.isStub) return isNearSideOwnedByViewer(viewer, drawable) ? "normal" : "hidden";
   if (isRetracted(viewer, drawable)) return "hidden";
   if (drawable.isWindow) return "translucent";

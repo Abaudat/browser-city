@@ -7,19 +7,36 @@
 // walk helper), never a teleport.
 
 import type { Page } from "@playwright/test";
+import { chunkKey } from "../../src/world/chunk";
 import { footprintOrigin } from "../../src/world/footprint";
 import { bodyCell } from "../../src/world/movement";
 import { isBodyClear } from "../../src/world/standable";
 import { committedDefs, committedMovementConfig } from "../unit/support/committed-defs";
 import { districtWorld } from "../unit/support/district-fixture";
+import { readSpacetimeHandle } from "./spacetime-harness.mjs";
 import { segmentsOf, walkRealAxes, walkRealCellsDir, walkRealSegment } from "./walk-support";
 import type { WalkKey } from "./walk-types";
 
-const { district, world, ownership } = districtWorld();
+// The e2e world holds the fixture block's rows before the district's own, so
+// the district's object ids are the dump's shifted by their count.
+function blockOffsets(): { placed: number; ground: number } {
+  try {
+    const handle = readSpacetimeHandle() as {
+      blockPlaced?: number;
+      blockGround?: number;
+    };
+    return { placed: handle.blockPlaced ?? 0, ground: handle.blockGround ?? 0 };
+  } catch {
+    // No e2e server state (the deploy-smoke flavour): no block.
+    return { placed: 0, ground: 0 };
+  }
+}
+const offsets = blockOffsets();
+const { district, world, ownership } = districtWorld(offsets.placed, offsets.ground);
 const config = committedMovementConfig();
 const sub = config.subcellsPerCell;
 
-export { district, ownership };
+export { district, ownership, world };
 
 export interface Cell {
   readonly x: number;
@@ -194,13 +211,19 @@ export function routeBetween(from: Cell, to: Cell): Cell[] {
 }
 
 /** Walks the player (wherever it stands now) to `to`, with real key presses,
- * along the cheapest route over the real grid. */
-export async function walkTo(page: Page, to: Cell, segmentTimeoutMs = 40_000): Promise<void> {
+ * along the cheapest route over the real grid: the route's steps and its
+ * straight key-held segments. */
+export async function walkTo(
+  page: Page,
+  to: Cell,
+  segmentTimeoutMs = 40_000,
+): Promise<{ steps: number; segments: number }> {
   const here = await page.evaluate(() => window.__bc?.playerPosition);
   if (!here) throw new Error("no player position");
   const from = bodyCell(here);
   const route = routeBetween(from, to);
-  for (const segment of segmentsOf(route)) {
+  const segments = segmentsOf(route);
+  for (const segment of segments) {
     try {
       await walkRealSegment(page, segment, segmentTimeoutMs);
     } catch (error) {
@@ -210,6 +233,7 @@ export async function walkTo(page: Page, to: Cell, segmentTimeoutMs = 40_000): P
       );
     }
   }
+  return { steps: route.length - 1, segments: segments.length };
 }
 
 /** Waits until the scene holds a position and has drawn something. */
@@ -331,12 +355,18 @@ export function reachCellOf(
   defId: number,
   x: number,
   y: number,
-): { reachCell: Cell; rect: { x0: number; y0: number; x1: number; y1: number } } {
+): {
+  reachCell: Cell;
+  rect: { x0: number; y0: number; x1: number; y1: number };
+} {
   const defs = committedDefs();
   const def = defs.objects.find((o) => o.id === defId);
   const reach = def?.interactAt;
   if (!def || !reach) throw new Error(`def ${defId} declares no interact_at`);
-  const origin = footprintOrigin(x, y, { width: def.width, height: def.height });
+  const origin = footprintOrigin(x, y, {
+    width: def.width,
+    height: def.height,
+  });
   const r = {
     x0: origin.x + reach.x0 / sub,
     y0: origin.y + reach.y0 / sub,
@@ -383,7 +413,10 @@ export function reachPositionOf(
   const def = committedDefs().objects.find((o) => o.id === defId);
   const reach = def?.interactAt;
   if (!def || !reach) throw new Error(`def ${defId} declares no interact_at`);
-  const origin = footprintOrigin(x, y, { width: def.width, height: def.height });
+  const origin = footprintOrigin(x, y, {
+    width: def.width,
+    height: def.height,
+  });
   const r = {
     x0: origin.x + reach.x0 / sub,
     y0: origin.y + reach.y0 / sub,
@@ -547,49 +580,38 @@ export function streetAcrossChunkBorder(
 const CHUNK = 32;
 
 /** How many `placed_object` rows the module holds in chunk `(cx, cy)` of
- * floor 0: one ground row per cell of the site and its margin, plus the
- * dump's objects. The same arithmetic `District::region_rows` writes. */
+ * floor 0: the dump's objects (ground is rects, never placed rows). */
 export function placedRowsInChunk(cx: number, cy: number): number {
-  const margin = districtMargin();
-  const x0 = Math.max(cx * CHUNK, district.site.x0 - margin);
-  const x1 = Math.min((cx + 1) * CHUNK, district.site.x1 + margin);
-  const y0 = Math.max(cy * CHUNK, district.site.y0 - margin);
-  const y1 = Math.min((cy + 1) * CHUNK, district.site.y1 + margin);
-  const ground = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
-  const props = district.objects.filter(
+  return district.objects.filter(
     (o) => o.floor === 0 && Math.floor(o.x / CHUNK) === cx && Math.floor(o.y / CHUNK) === cy,
   ).length;
-  return ground + props;
 }
 
-/** Building and room area rows in chunk `(cx, cy)` of floor 0. */
+/** Building, room, ground and roof area rows in chunk `(cx, cy)` of floor 0. */
 export function areaRowsInChunk(cx: number, cy: number): number {
   const inChunk = (a: { x0: number; y0: number }) =>
     Math.floor(a.x0 / CHUNK) === cx && Math.floor(a.y0 / CHUNK) === cy;
-  return district.buildingAreas.filter(inChunk).length + district.roomAreas.filter(inChunk).length;
+  return (
+    district.buildingAreas.filter(inChunk).length +
+    district.roomAreas.filter(inChunk).length +
+    district.ground.filter(inChunk).length +
+    district.roofs.filter((r) => r.chunkKey === chunkKey(cx * CHUNK, cy * CHUNK, 0)).length
+  );
 }
 
-/** A row to watch come and go in chunk `(cx, cy)` of floor 0: the first dump
- * object anchored there, else the ground row of the chunk's first cell (the
- * ground is written first, row-major over the site and its margin, so its
- * id is its position in that walk). */
-export function firstObjectIn(cx: number, cy: number): bigint {
+/** A row of chunk `(cx, cy)` of floor 0 to watch come and go, as the
+ * region's callbacks key it (`<table>:<id>`): the first dump object
+ * anchored there, else the chunk's first ground rect. */
+export function firstRowKeyIn(cx: number, cy: number): string {
   const o = district.objects.find(
     (r) => r.floor === 0 && Math.floor(r.x / CHUNK) === cx && Math.floor(r.y / CHUNK) === cy,
   );
-  if (o) return o.objectId;
-  const margin = districtMargin();
-  const x = Math.max(cx * CHUNK, district.site.x0 - margin);
-  const y = Math.max(cy * CHUNK, district.site.y0 - margin);
-  const width = district.site.x1 - district.site.x0 + 2 * margin;
-  return BigInt((y - (district.site.y0 - margin)) * width + (x - (district.site.x0 - margin)) + 1);
-}
-
-/** `city.ground.margin_cells`, from the committed defs. */
-function districtMargin(): number {
-  const entry = committedDefs().balance.find((b) => b.key === "city.ground.margin_cells");
-  if (!entry) throw new Error("no city.ground.margin_cells balance key");
-  return entry.value;
+  if (o) return `placedObject:${o.objectId}`;
+  const g = district.ground.find(
+    (r) => r.floor === 0 && Math.floor(r.x0 / CHUNK) === cx && Math.floor(r.y0 / CHUNK) === cy,
+  );
+  if (g) return `groundArea:${g.areaId}`;
+  throw new Error(`chunk ${cx},${cy} holds no object and no ground rect`);
 }
 
 /** The nearest cell to `from` with `cells` of open ground ahead of it along

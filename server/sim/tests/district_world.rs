@@ -3,12 +3,15 @@
 //! produces (what `create_district` inserts), never over the generator's
 //! own structs.
 
+mod support;
+
 use sim::generated::defs;
 use sim::generation::{
     District, GenerationConfig, GenerationContent, GroundConfig, RegionRows, generate,
 };
 use sim::table_bounds::TABLE_BOUNDS;
 use sim::world::{CHUNK_SIZE, chunk_key, clip_rect_to_chunks};
+use support::district_checks;
 
 fn city() -> (GenerationConfig, GenerationContent<'static>, u64) {
     let cfg = GenerationConfig::from_balance(defs::BALANCE).unwrap();
@@ -23,7 +26,7 @@ fn world() -> (District, RegionRows, GenerationConfig) {
     let (cfg, content, seed) = city();
     let (district, _) = generate(seed, &cfg, &content).expect("the committed city generates");
     let ground = GroundConfig::from_balance(defs::BALANCE);
-    let rows = district.region_rows(&ground, &content);
+    let rows = district.region_rows(&ground, &content, &cfg);
     (district, rows, cfg)
 }
 
@@ -61,6 +64,8 @@ fn row_counts_sit_inside_the_declared_table_bounds() {
         ("building_area", rows.building_areas.len()),
         ("room_area", rows.room_areas.len()),
         ("floor_transition", rows.transitions.len()),
+        ("ground_area", rows.ground.len()),
+        ("roof_area", rows.roofs.len()),
     ] {
         assert!(
             (n as u64) <= bound(name).expected_rows,
@@ -69,45 +74,234 @@ fn row_counts_sit_inside_the_declared_table_bounds() {
         );
     }
     println!(
-        "rows: placed_object={} building_area={} room_area={} floor_transition={}",
+        "rows: placed_object={} building_area={} room_area={} floor_transition={} ground_area={} roof_area={}",
         rows.placed.len(),
         rows.building_areas.len(),
         rows.room_areas.len(),
-        rows.transitions.len()
+        rows.transitions.len(),
+        rows.ground.len(),
+        rows.roofs.len()
+    );
+}
+
+/// The tag keys of a def.
+fn tag_keys(content: &GenerationContent, def_id: u32) -> Vec<&'static str> {
+    let def = content.objects.iter().find(|o| o.id == def_id).unwrap();
+    def.tags
+        .iter()
+        .filter_map(|t| content.tags.iter().find(|g| g.id == *t).map(|g| g.key))
+        .collect()
+}
+
+/// The def painted on `(x, y)` after every ground rect, in order.
+fn painted(rows: &RegionRows, x: i32, y: i32) -> Option<u32> {
+    rows.ground
+        .iter()
+        .rev()
+        .find(|g| x >= g.x0 && x < g.x1 && y >= g.y0 && y < g.y1)
+        .map(|g| g.def_id)
+}
+
+#[test]
+fn ground_is_rects_inside_one_chunk_each_and_never_a_row_per_cell() {
+    let (_, rows, _) = world();
+    let content = GenerationContent::committed();
+    for g in &rows.ground {
+        let pieces = clip_rect_to_chunks(
+            sim::world::Rect {
+                x0: g.x0,
+                y0: g.y0,
+                x1: g.x1,
+                y1: g.y1,
+            },
+            g.floor,
+        );
+        assert_eq!(
+            pieces.len(),
+            1,
+            "a ground rect lies inside one chunk: {g:?}"
+        );
+        assert_eq!(pieces[0].1, g.chunk_key);
+        let tags = tag_keys(&content, g.def_id);
+        assert!(
+            ["ground", "pavement", "road", "floor"]
+                .iter()
+                .any(|t| tags.contains(t)),
+            "{g:?} is painted with a non-ground def {tags:?}"
+        );
+    }
+    let cells: i64 = rows
+        .ground
+        .iter()
+        .map(|g| i64::from(g.x1 - g.x0) * i64::from(g.y1 - g.y0))
+        .sum();
+    assert!(
+        (rows.ground.len() as i64) * 8 < cells,
+        "{} rows over {cells} cells: ground is rects, not tiles",
+        rows.ground.len()
     );
 }
 
 #[test]
-fn every_cell_of_the_site_and_its_margin_has_exactly_one_ground_row() {
-    let (_, rows, cfg) = world();
-    let ground = GroundConfig::from_balance(defs::BALANCE);
-    let site = cfg.site();
-    let m = ground.margin_cells;
-    let w = (site.x1 - site.x0 + 2 * m) as usize;
-    let h = (site.y1 - site.y0 + 2 * m) as usize;
-    let mut seen = vec![0u8; w * h];
-    let ground_ids = [
-        ground.open_object_id,
-        ground.pavement_object_id,
-        ground.road_object_id,
-        ground.floor_object_id,
-    ];
-    for p in rows
-        .placed
-        .iter()
-        .filter(|p| ground_ids.contains(&p.def_id))
-    {
-        assert_eq!(p.layer, 0, "ground is the ground layer");
-        let (x, y) = (p.x - (site.x0 - m), p.y - (site.y0 - m));
-        assert!(
-            x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h,
-            "{p:?}"
-        );
-        seen[y as usize * w + x as usize] += 1;
+fn every_footprint_cell_is_laid_with_a_floor_and_every_street_cell_with_its_surface() {
+    let (district, rows, _) = world();
+    let content = GenerationContent::committed();
+    // The whole footprint, wall ring included: a window in the wall shows
+    // floor through it, never the lawn.
+    for (_, _, i) in district.interiors.laid() {
+        let f = i.footprint;
+        for y in f.y0..f.y1 {
+            for x in f.x0..f.x1 {
+                let def = painted(&rows, x, y).expect("a footprint cell is painted");
+                assert!(tag_keys(&content, def).contains(&"floor"), "({x},{y})");
+            }
+        }
     }
-    let bare = seen.iter().filter(|&&n| n == 0).count();
-    let doubled = seen.iter().filter(|&&n| n > 1).count();
-    assert_eq!((bare, doubled), (0, 0), "bare cells, doubled cells");
+    let street = district.props.street();
+    let site = district.skeleton.plots.site();
+    for y in site.y0..site.y1 {
+        for x in site.x0..site.x1 {
+            if street.is_road(x, y) {
+                let def = painted(&rows, x, y).expect("a carriageway cell is painted");
+                assert!(tag_keys(&content, def).contains(&"road"), "({x},{y})");
+            } else if street.is_pavement(x, y) {
+                assert!(painted(&rows, x, y).is_some(), "pavement ({x},{y})");
+            }
+        }
+    }
+}
+
+#[test]
+fn every_street_that_meets_the_site_edge_continues_through_the_margin() {
+    let (district, rows, cfg) = world();
+    let ground = GroundConfig::from_balance(defs::BALANCE);
+    let content = GenerationContent::committed();
+    let site = cfg.site();
+    let street = district.props.street();
+    let mut crossings = 0;
+    let check = |x: i32, y: i32| {
+        let def = painted(&rows, x, y).expect("margin road is painted");
+        assert!(tag_keys(&content, def).contains(&"road"), "({x},{y})");
+    };
+    for t in site.x0..site.x1 {
+        for (edge, outward) in [(site.y0, -1), (site.y1 - 1, 1)] {
+            if street.is_road(t, edge) {
+                crossings += 1;
+                for k in 1..=ground.margin_cells {
+                    check(t, edge + outward * k);
+                }
+            }
+        }
+    }
+    for t in site.y0..site.y1 {
+        for (edge, outward) in [(site.x0, -1), (site.x1 - 1, 1)] {
+            if street.is_road(edge, t) {
+                crossings += 1;
+                for k in 1..=ground.margin_cells {
+                    check(edge + outward * k, t);
+                }
+            }
+        }
+    }
+    assert!(crossings > 0, "the committed city has streets at its edge");
+}
+
+#[test]
+fn every_building_has_a_roof_over_its_interior_net_and_its_north_rim_but_the_door() {
+    let (district, rows, cfg) = world();
+    let content = GenerationContent::committed();
+    let t = cfg.envelope_wall_thickness_cells;
+    let mut roofed = 0;
+    let mut notched = 0;
+    for (_, _, i) in district.interiors.laid() {
+        let id = sim::generation::rect_seed_key(i.footprint);
+        let pieces: Vec<_> = rows.roofs.iter().filter(|r| r.building_id == id).collect();
+        // Every cell of the interior net and of the north rim between the
+        // side walls is roofed exactly once, except a door cell in the rim.
+        let (x0, x1, y1) = (i.footprint.x0 + t, i.footprint.x1 - t, i.footprint.y1 - t);
+        let door = |x: i32, y: i32| i.thresholds.iter().any(|d| d.x == x && d.y == y);
+        for y in i.footprint.y0..y1 {
+            for x in x0..x1 {
+                let n = pieces
+                    .iter()
+                    .filter(|r| x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1)
+                    .count();
+                let want = usize::from(!(y < i.footprint.y0 + t && door(x, y)));
+                assert_eq!(n, want, "{id}: cell ({x},{y}) roofed {n} times");
+            }
+        }
+        if i.thresholds.iter().any(|d| d.y < i.footprint.y0 + t) {
+            notched += 1;
+        }
+        // Nothing outside that span is roofed.
+        for r in &pieces {
+            assert!(
+                r.x0 >= x0 && r.x1 <= x1 && r.y0 >= i.footprint.y0 && r.y1 <= y1,
+                "{r:?}"
+            );
+        }
+        // One building's roof is one chunk's rows: keyed on the chunk of the
+        // net's south-west cell, so a client holds all of it or none.
+        let anchor = chunk_key(x0, y1 - 1, 0);
+        assert!(pieces.iter().all(|r| r.chunk_key == anchor), "{id}");
+        assert!(
+            pieces
+                .iter()
+                .all(|r| tag_keys(&content, r.def_id).contains(&"roof")),
+            "a roof is a roof-tagged def"
+        );
+        roofed += 1;
+    }
+    assert!(roofed >= 100);
+    assert!(notched > 0, "the committed city has doors in a north rim");
+}
+
+#[test]
+fn a_dwelling_roof_reads_the_building_age_band() {
+    let (district, rows, cfg) = world();
+    let content = GenerationContent::committed();
+    let plots = district.skeleton.plots.plots();
+    let nb = &cfg.neighbourhood;
+    let span = nb.building_age_max - nb.building_age_min + 1;
+    let dwelling = content
+        .tags
+        .iter()
+        .find(|t| t.key == "dwelling")
+        .map(|t| t.id)
+        .unwrap();
+    let mut seen = std::collections::BTreeSet::new();
+    for (plot, ty, i) in district.interiors.laid() {
+        let def = content.building_types.iter().find(|b| b.id == ty).unwrap();
+        if !def.tags.contains(&dwelling) {
+            continue;
+        }
+        let band =
+            ((plots[plot as usize].building_age - nb.building_age_min) * 3 / span).clamp(0, 2);
+        let id = sim::generation::rect_seed_key(i.footprint);
+        let roof = rows.roofs.iter().find(|r| r.building_id == id).unwrap();
+        let tags = tag_keys(&content, roof.def_id);
+        let want = ["aged_new", "aged_mid", "aged_old"][band as usize];
+        assert!(tags.contains(&want), "band {band}: roof tags {tags:?}");
+        seen.insert(want);
+    }
+    assert!(
+        seen.len() >= 2,
+        "the committed city shows more than one age band: {seen:?}"
+    );
+}
+
+#[test]
+fn the_arrival_is_a_viewport_in_from_the_site_edge() {
+    let (district, _, cfg) = world();
+    let content = GenerationContent::committed();
+    let (x, y) = district.arrival_cell(&cfg, &content).unwrap();
+    let site = cfg.site();
+    let (vw, vh) = (
+        cfg.neighbourhood.viewport_width_cells,
+        cfg.neighbourhood.viewport_height_cells,
+    );
+    assert!(x - site.x0 >= vw && site.x1 - x > vw, "x {x}");
+    assert!(y - site.y0 >= vh && site.y1 - y > vh, "y {y}");
 }
 
 #[test]
@@ -127,96 +321,30 @@ fn the_arrival_cell_is_a_walkable_floor_zero_cell_inside_a_dwelling() {
     assert_eq!(cell, again, "deterministic");
 }
 
-/// Shortest walk length (4-neighbour steps over standable floor-0 cells)
-/// from `from` to `to`, `None` when unreachable.
-fn walk_len(district: &District, from: (i32, i32), to: (i32, i32)) -> Option<u32> {
-    use std::collections::{BTreeMap, VecDeque};
-    let walk = district.walkability(0);
-    let mut dist: BTreeMap<(i32, i32), u32> = BTreeMap::new();
-    let mut queue = VecDeque::new();
-    dist.insert(from, 0);
-    queue.push_back(from);
-    while let Some(c) = queue.pop_front() {
-        if c == to {
-            return dist.get(&c).copied();
-        }
-        let d = dist[&c];
-        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let n = (c.0 + dx, c.1 + dy);
-            if walk.is_standable(n.0, n.1) && !dist.contains_key(&n) {
-                dist.insert(n, d + 1);
-                queue.push_back(n);
-            }
-        }
-    }
-    None
-}
-
-/// Every floor-0 cell walkable from `from`.
-fn flood(district: &District, from: (i32, i32)) -> std::collections::BTreeSet<(i32, i32)> {
-    let walk = district.walkability(0);
-    let mut seen = std::collections::BTreeSet::from([from]);
-    let mut stack = vec![from];
-    while let Some(c) = stack.pop() {
-        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let n = (c.0 + dx, c.1 + dy);
-            if walk.is_standable(n.0, n.1) && seen.insert(n) {
-                stack.push(n);
-            }
-        }
-    }
-    seen
-}
-
-/// The nearest standable cell to `want`, scanning outward.
-fn standable_near(district: &District, want: (i32, i32)) -> (i32, i32) {
-    let walk = district.walkability(0);
-    for r in 0..64_i32 {
-        for dx in -r..=r {
-            for dy in -r..=r {
-                if dx.abs().max(dy.abs()) != r {
-                    continue;
-                }
-                let c = (want.0 + dx, want.1 + dy);
-                if walk.is_standable(c.0, c.1) {
-                    return c;
-                }
-            }
-        }
-    }
-    panic!("no standable cell near {want:?}");
-}
-
-/// A route may be this many percent of the straight Manhattan distance: a
-/// grid street network detours, a mid-block cut cannot.
-const ROUTE_STRETCH_MAX_PCT: u64 = 160;
-
 #[test]
 fn a_walk_crosses_the_site_edge_to_core_to_opposite_edge_within_the_stretch() {
     let (district, _, cfg) = world();
-    let site = cfg.site();
-    let lu = &district.skeleton.land_use;
-    let (gx, gy) = lu.density_peak();
-    let cs = lu.cell_size();
-    let (px, py) = (gx * cs + cs / 2, gy * cs + cs / 2);
-    let mid_y = (site.y0 + site.y1) / 2;
-    let west = standable_near(&district, (site.x0 + 1, mid_y));
-    let east = standable_near(&district, (site.x1 - 2, mid_y));
-    let core = standable_near(&district, (px, py));
-    let manhattan = |a: (i32, i32), b: (i32, i32)| {
-        u64::from(
-            ((a.0 - b.0).abs() + (a.1 - b.1).abs())
-                .max(1)
-                .unsigned_abs(),
-        )
-    };
-    for (a, b) in [(west, core), (core, east), (west, east)] {
-        let len = walk_len(&district, a, b).unwrap_or_else(|| panic!("{a:?} cannot reach {b:?}"));
-        let stretch_pct = u64::from(len) * 100 / manhattan(a, b);
-        println!("route {a:?}->{b:?}: {len} steps, {stretch_pct}% of straight");
+    let crossings = district_checks::crossings(&district, &cfg);
+    assert_eq!(
+        crossings.len(),
+        3,
+        "edge, core and edge each have a standable cell"
+    );
+    for c in crossings {
+        let stretch = c
+            .stretch_pct
+            .unwrap_or_else(|| panic!("{:?} cannot reach {:?}", c.from, c.to));
+        println!(
+            "route {:?}->{:?}: {} steps, {stretch}% of straight",
+            c.from,
+            c.to,
+            c.steps.unwrap()
+        );
         assert!(
-            stretch_pct <= ROUTE_STRETCH_MAX_PCT,
-            "{a:?}->{b:?} {stretch_pct}%"
+            stretch <= district_checks::ROUTE_STRETCH_MAX_PCT,
+            "{:?}->{:?} {stretch}%",
+            c.from,
+            c.to
         );
     }
 }
@@ -226,29 +354,11 @@ fn at_least_a_hundred_buildings_are_enterable_furnished_and_reachable_from_arriv
     let (district, rows, cfg) = world();
     let content = GenerationContent::committed();
     let arrival = district.arrival_cell(&cfg, &content).unwrap();
-    let reached = flood(&district, arrival);
-    let placed_cells: std::collections::BTreeSet<(i32, i32)> =
-        rows.placed.iter().map(|p| (p.x, p.y)).collect();
-    let mut good = 0;
-    for (_, _, interior) in district.interiors.laid() {
-        let Some(door) = interior.entrance() else {
-            continue;
-        };
-        let furnished = !interior.fixtures.is_empty()
-            && interior
-                .fixtures
-                .iter()
-                .all(|f| placed_cells.contains(&(f.x, f.y)));
-        let door_cell = (door.x, door.y);
-        if furnished
-            && district
-                .walkability(0)
-                .is_standable(door_cell.0, door_cell.1)
-            && reached.contains(&door_cell)
-        {
-            good += 1;
-        }
-    }
+    let good = district_checks::furnished_reachable(&district, &rows, &content, arrival);
+    println!(
+        "{good} of {} laid buildings are enterable, furnished and reachable",
+        district.interiors.laid().count()
+    );
     assert!(
         good >= 100,
         "only {good} enterable furnished reachable buildings"
@@ -261,6 +371,8 @@ struct Step {
     affluence: i32,
     age: i32,
     cell: (i32, i32),
+    a: sim::world::Rect,
+    b: sim::world::Rect,
 }
 
 fn adjacent_steps(district: &District) -> Vec<Step> {
@@ -284,6 +396,8 @@ fn adjacent_steps(district: &District) -> Vec<Step> {
                 affluence: (a.affluence - b.affluence).abs(),
                 age: (a.building_age - b.building_age).abs(),
                 cell,
+                a: ab,
+                b: bb,
             });
         }
     }
@@ -311,4 +425,122 @@ fn the_committed_seed_has_an_arterial_where_each_dial_steps_enough_to_read() {
     );
     assert!(sharpest_aff.affluence >= LEGIBLE_DIAL_STEP_MIN);
     assert!(sharpest_age.age >= LEGIBLE_DIAL_STEP_MIN);
+}
+
+/// Total-variation distance between two def histograms, in percent: 0 when
+/// the two sides are made of the same things in the same shares, 100 when
+/// they share nothing.
+fn tv_pct(
+    a: &std::collections::BTreeMap<u32, i64>,
+    b: &std::collections::BTreeMap<u32, i64>,
+) -> i64 {
+    let (ta, tb): (i64, i64) = (a.values().sum(), b.values().sum());
+    if ta == 0 || tb == 0 {
+        return if ta == tb { 0 } else { 100 };
+    }
+    let keys: std::collections::BTreeSet<u32> = a.keys().chain(b.keys()).copied().collect();
+    let twice: i64 = keys
+        .iter()
+        .map(|k| {
+            let pa = a.get(k).copied().unwrap_or(0) * 10_000 / ta;
+            let pb = b.get(k).copied().unwrap_or(0) * 10_000 / tb;
+            (pa - pb).abs()
+        })
+        .sum();
+    twice / 200
+}
+
+fn inside(r: &sim::world::Rect, x: i32, y: i32) -> bool {
+    r.contains(x, y)
+}
+
+/// What a neighbourhood's rect is made of, as a player sees it: the props
+/// standing in it, the floors its rooms are laid with (by area) and the roofs
+/// over its buildings (by area).
+struct Made {
+    props: std::collections::BTreeMap<u32, i64>,
+    floors: std::collections::BTreeMap<u32, i64>,
+    roofs: std::collections::BTreeMap<u32, i64>,
+}
+
+fn made_of(rows: &RegionRows, content: &GenerationContent, r: &sim::world::Rect) -> Made {
+    let mut m = Made {
+        props: Default::default(),
+        floors: Default::default(),
+        roofs: Default::default(),
+    };
+    for p in &rows.placed {
+        if inside(r, p.x, p.y) {
+            *m.props.entry(p.def_id).or_default() += 1;
+        }
+    }
+    let floor_tag = content.tags.iter().find(|t| t.key == "floor").unwrap().id;
+    let area_in = |x0: i32, y0: i32, x1: i32, y1: i32| -> i64 {
+        let w = (x1.min(r.x1) - x0.max(r.x0)).max(0);
+        let h = (y1.min(r.y1) - y0.max(r.y0)).max(0);
+        i64::from(w) * i64::from(h)
+    };
+    for g in &rows.ground {
+        let is_floor = content
+            .objects
+            .iter()
+            .find(|o| o.id == g.def_id)
+            .is_some_and(|o| o.tags.contains(&floor_tag));
+        if is_floor {
+            *m.floors.entry(g.def_id).or_default() += area_in(g.x0, g.y0, g.x1, g.y1);
+        }
+    }
+    for g in &rows.roofs {
+        *m.roofs.entry(g.def_id).or_default() += area_in(g.x0, g.y0, g.x1, g.y1);
+    }
+    m
+}
+
+/// The least a screenshot can tell apart on output: two sides of the
+/// sharpest arterial of the committed seed differ by at least this many
+/// percent (total variation) in what they are made of, per dial.
+const LEGIBLE_OUTPUT_DISTANCE_PCT: i64 = 15;
+
+#[test]
+fn across_the_sharpest_arterial_each_dial_changes_what_the_district_is_made_of() {
+    let (district, rows, _) = world();
+    let content = GenerationContent::committed();
+    let steps = adjacent_steps(&district);
+    let by_aff = steps.iter().max_by_key(|s| s.affluence).unwrap();
+    let by_age = steps.iter().max_by_key(|s| s.age).unwrap();
+
+    // Affluence: floors and props. The tile a room is laid with and the
+    // furniture standing on it are the carriers the generator reads it by.
+    let (fa, fb) = (
+        made_of(&rows, &content, &by_aff.a),
+        made_of(&rows, &content, &by_aff.b),
+    );
+    let floors = tv_pct(&fa.floors, &fb.floors);
+    let props = tv_pct(&fa.props, &fb.props);
+    println!(
+        "affluence step {} at {:?}: floors differ {floors}%, props {props}%",
+        by_aff.affluence, by_aff.cell
+    );
+    assert!(
+        floors.max(props) >= LEGIBLE_OUTPUT_DISTANCE_PCT,
+        "affluence steps {} across the arterial but the output differs by only floors {floors}% / props {props}%",
+        by_aff.affluence
+    );
+
+    // Building age: roofs. The dwelling's roof reads its age band; nothing
+    // else in the district reads it yet (the facade variant is a later story).
+    let (ra, rb) = (
+        made_of(&rows, &content, &by_age.a),
+        made_of(&rows, &content, &by_age.b),
+    );
+    let roofs = tv_pct(&ra.roofs, &rb.roofs);
+    println!(
+        "age step {} at {:?}: roofs differ {roofs}%",
+        by_age.age, by_age.cell
+    );
+    assert!(
+        roofs >= LEGIBLE_OUTPUT_DISTANCE_PCT,
+        "age steps {} across the arterial but the roofs differ by only {roofs}%",
+        by_age.age
+    );
 }

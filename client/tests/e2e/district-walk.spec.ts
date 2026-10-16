@@ -10,17 +10,20 @@
 //     full 233 s crossing is `perf-soak.yml`'s, never PR CI's).
 
 import { computeVisibility } from "../../src/render/visibility";
-import { committedMovementConfig } from "../unit/support/committed-defs";
+import { step } from "../../src/world/movement";
+import { committedDefs, committedMovementConfig } from "../unit/support/committed-defs";
 import {
   arrivalCell,
   awaitScene,
   buildingOf,
   district,
+  fits,
   nearestCell,
   ownership,
   routeBetween,
   straightStreet,
   walkTo,
+  world,
 } from "./district-support";
 import { expect, test } from "./fixtures";
 import { segmentsOf, walkRealSegment } from "./walk-support";
@@ -28,6 +31,7 @@ import { segmentsOf, walkRealSegment } from "./walk-support";
 test.use({ viewport: { width: 1920, height: 1080 } });
 
 const STUB_ID_OFFSET = 500_000_000_000n;
+const LAMPPOST_DEF_ID = 4;
 const WALLS_LAYER = 4;
 
 /** The near-side wall rows of the building around `cell`: walls it owns
@@ -132,4 +136,52 @@ test("a walk on foot makes the settled walking speed, within a band", async ({ p
   expect(measured).toBeGreaterThanOrEqual(speed * 0.6);
   const reached = await page.evaluate(() => window.__bc?.playerPosition);
   expect(reached?.x).toBeGreaterThanOrEqual(end.x + 0.5 - 0.05);
+});
+
+test("the lamppost stops the player where it is drawn, walking into it from open pavement (FR117, FR128)", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto("/");
+  await awaitScene(page);
+  const config = committedMovementConfig();
+  const arrival = arrivalCell();
+
+  // The nearest lamppost with three free cells to its west on its own row.
+  const lamps = district.objects
+    .filter((o) => o.floor === 0 && o.defId === LAMPPOST_DEF_ID)
+    .sort(
+      (a, b) =>
+        Math.abs(a.x - arrival.x) +
+        Math.abs(a.y - arrival.y) -
+        (Math.abs(b.x - arrival.x) + Math.abs(b.y - arrival.y)),
+    );
+  const lamp = lamps.find((o) => [1, 2, 3].every((d) => fits(o.x - d, o.y)));
+  if (!lamp) throw new Error("no lamppost with open pavement to its west");
+  const start = { x: lamp.x - 3, y: lamp.y };
+  await walkTo(page, start);
+
+  // What the resolver, alone, does with a body held east into the post.
+  let simulated = { x: start.x + 0.5, y: start.y + 0.5 };
+  for (let i = 0; i < 400; i++) {
+    simulated = step(simulated, { x: 1, y: 0 }, 16, world, 0, config, 1);
+  }
+  expect(simulated.x).toBeLessThan(lamp.x + 0.5);
+
+  const from = await page.evaluate(() => window.__bc?.playerPosition);
+  if (!from) throw new Error("no position");
+  await walkRealSegment(page, {
+    label: "into-the-lamppost",
+    key: "ArrowRight",
+    until: { kind: "x-at-least", value: simulated.x - 1e-6 },
+  });
+  // The real scene rests exactly where the resolver does ...
+  await expect
+    .poll(() => page.evaluate(() => window.__bc?.playerPosition?.x))
+    .toBeCloseTo(simulated.x, 6);
+  // ... and the drawn sprite is where that position projects to.
+  const drawn = await page.evaluate(() => window.__bc?.playerDrawnPoint?.());
+  expect(drawn).toBeTruthy();
+  const tile = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value ?? 16;
+  expect(Math.abs((drawn?.x ?? 0) - simulated.x * tile)).toBeLessThanOrEqual(1);
 });

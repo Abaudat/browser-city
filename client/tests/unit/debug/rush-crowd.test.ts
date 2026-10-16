@@ -12,6 +12,7 @@ import {
   rushCrowdFor,
 } from "../../../src/debug/rush-crowd";
 import { type AvoidDials, scanSpan } from "../../../src/l3/avoidance";
+import { Body, createBodyPose } from "../../../src/l3/body";
 import { CitizenBody } from "../../../src/l3/citizen";
 import { pathConfigOf, walkFramesPerCycle } from "../../../src/l3/config";
 import { Timetable } from "../../../src/l3/interim-timetable";
@@ -21,10 +22,13 @@ import {
   StreetLife,
   standState,
 } from "../../../src/render/street-life";
-import { bodyZoneOf, zoneHoldsChunk } from "../../../src/world/body-zone";
+import { bodyZoneOf, zoneHoldsChunk, zoneHoldsRect } from "../../../src/world/body-zone";
 import { CHUNK_SIZE } from "../../../src/world/chunk";
+import { npcWalkability } from "../../../src/world/npc-walkable";
+import { isCellStandable } from "../../../src/world/standable";
 import { l3Config } from "../l3/defs-config";
-import { committedDefs } from "../support/committed-defs";
+import { committedDefs, committedMovementConfig } from "../support/committed-defs";
+import { districtWorld } from "../support/district-fixture";
 
 /** An open field around the start: the crowd is laid over whatever the
  * world says is standable, so a field is the plainest world there is. */
@@ -284,5 +288,44 @@ describe("laying the crowd over a world", () => {
     expect(built.fixtures).toHaveLength(RUSH_CROWD_SIZE);
     for (const f of built.fixtures)
       expect(lane(Math.floor(f.gridX), Math.floor(f.gridY))).toBe(true);
+  });
+});
+
+describe("the rush-hour crowd over the pinned district (story 3.16)", () => {
+  // The crowd stands in for L2 until story 5.5 deletes it: every leg of its
+  // interim timetable must be a walk on the generated city's own grid, never
+  // a straight line across a wall.
+  it("lays every leg, out and back, on walkable ground of the real district: a path everywhere, no straight-line fallback", () => {
+    const { district, world } = districtWorld();
+    const config = committedMovementConfig();
+    const start = district.arrival;
+    const cityStandable = (x: number, y: number) => isCellStandable(world, config, x, y, 0);
+    const laid = buildRushCrowd(defs, { standable: cityStandable, start });
+    expect(Object.keys(laid.specs).length).toBeGreaterThan(0);
+    const walk = npcWalkability(world);
+    let fallbacks = 0;
+    for (const spec of Object.values(laid.specs)) {
+      for (const cell of spec.out) expect(cityStandable(cell.x, cell.y)).toBe(true);
+      const timetable = new Timetable(spec, cfg, walk, path);
+      // Both legs of the period: out, then back.
+      for (const t of [0, timetable.halfMilli]) {
+        const leg = timetable.stateAt(t).leg;
+        const body = new Body(leg, walk, path);
+        body.poseAt(leg.departAt + 1, createBodyPose());
+        fallbacks += body.fallbackCount;
+      }
+    }
+    expect(fallbacks).toBe(0);
+  }, 60_000);
+});
+
+describe("a body's reach is judged at its own grain (story 3.16)", () => {
+  it("is held only when the whole square it reads lies inside the spawn rect and the band", () => {
+    const zone = bodyZoneOf({ x0: 0, y0: 0, x1: 100, y1: 60 });
+    const margin = zone.spawn;
+    expect(zoneHoldsRect(zone, 0, margin.x0, margin.y0, margin.x1, margin.y1)).toBe(true);
+    expect(zoneHoldsRect(zone, 0, margin.x0 - 1, 0, 10, 10)).toBe(false);
+    expect(zoneHoldsRect(zone, 0, 0, 0, margin.x1 + 1, 10)).toBe(false);
+    expect(zoneHoldsRect(zone, -1, 0, 0, 10, 10)).toBe(false);
   });
 });

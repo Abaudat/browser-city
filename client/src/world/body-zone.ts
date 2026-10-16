@@ -111,6 +111,23 @@ export function zoneHoldsChunk(
   );
 }
 
+/** Whether the square `[x0, x1] x [y0, y1]` (cells, as drawn on `floor`) lies
+ * wholly inside the spawn rect and the zone's band: what a body's reach must
+ * be for its answer not to depend on the bubble. */
+export function zoneHoldsRect(
+  zone: BodyZone,
+  floor: number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): boolean {
+  if (bandOf(floor) !== zone.band) return false;
+  const lift = floor * zone.storeyCells;
+  const r = zone.spawn;
+  return x0 >= r.x0 && x1 <= r.x1 && y0 - lift >= r.y0 && y1 - lift <= r.y1;
+}
+
 /** What to spawn, keep and discard, given the ids that hold a body and every
  * candidate's ledger position, written into `out` (cleared first; reuse one to
  * allocate nothing in steady state). A held id that is not a candidate any

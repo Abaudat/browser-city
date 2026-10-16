@@ -45,6 +45,7 @@ import {
   exposePlayerScreenBoundsForE2e,
   exposeRegionForE2e,
   exposeRemotePlayersForE2e,
+  exposeTeleportForE2e,
   exposeWorldForE2e,
   exposeWorldTransformForE2e,
   markArrivalForE2e,
@@ -89,7 +90,7 @@ import { buildLayerRankTable, resolveRank } from "./render/layer-ranks";
 import { LAYER_TABLE } from "./render/layer-table";
 import type { RemotePlayersSource } from "./render/remote-players-layer";
 import { visibleCellBounds } from "./render/screen-position";
-import { type LocalProp, mountWorldScene, type WorldSceneHandle } from "./render/world-scene";
+import { type CarrierSpec, mountWorldScene, type WorldSceneHandle } from "./render/world-scene";
 import { loadAudioSettings, saveAudioSettings } from "./settings/audio-settings";
 import { loadDisplaySettings, saveDisplaySettings } from "./settings/display-settings";
 import { resolveStorage as resolveSessionStorage } from "./settings/settings-storage";
@@ -123,8 +124,8 @@ const LINK_CARRIER_OBJECT_ID = 1n << 50n;
 /** Story 4.5: the link offer's two touch points with the street scene. */
 interface OfferWiring {
   readonly beforeMount: (defs: VerifiedDefs, handshakeSettled: boolean) => Promise<void>;
-  /** The carrier prop the scene places near the start, when an offer is due. */
-  readonly localProps: () => readonly LocalProp[];
+  /** The carrier the scene draws near the start, when an offer is due. */
+  readonly carrier: () => CarrierSpec | undefined;
   readonly onIntent: (intent: Intent) => void;
 }
 
@@ -412,7 +413,7 @@ async function main(): Promise<void> {
       beginLink: (code) => beginLink(conn.current(), code),
     });
   let carrierDef: number | undefined;
-  let carrierProp: LocalProp | undefined;
+  let carrierProp: CarrierSpec | undefined;
   // Evaluated once per session, as the scene is about to mount, never
   // mid-session. Showing the offer records the city day, so declining is
   // simply not taking it.
@@ -455,7 +456,7 @@ async function main(): Promise<void> {
       }
       recordLinkOfferForE2e(due);
     },
-    localProps: () => (carrierProp ? [carrierProp] : []),
+    carrier: () => carrierProp,
     onIntent: (intent) => {
       if (carrierDef === undefined || intent.defId !== carrierDef) return;
       startOffer().catch((error: unknown) => {
@@ -782,7 +783,6 @@ async function startWorldScene(
     thresholdDefIds: thresholdDefIds(defs),
     wallStubDefId: getBalance(defs, "render.wall_stub_object_id"),
     world: worldStore,
-    localProps: offer.localProps(),
     playerStart: start,
     freezeBodies: freezeBodiesForE2e,
     cityMilliminutes,
@@ -866,6 +866,9 @@ async function startWorldScene(
     },
     stageChildren: () => handle.stageChildCount(),
   });
+  // Story 4.5: the link offer's carrier, a scene-local sprite near the start.
+  const carrier = offer.carrier();
+  if (carrier) handle.placeCarrier(carrier);
   players.onMounted();
   exposeRemotePlayersForE2e();
 
@@ -921,6 +924,7 @@ async function startWorldScene(
     };
   });
   exposePlayerDrawnPointForE2e(handle.playerDrawnPoint);
+  exposeTeleportForE2e(handle.teleport);
   exposeL3AgreementForE2e((t) => handle.citizensLayer.agreementAt(t));
   exposeL3BodiesForE2e(
     () => handle.l3Bodies(),

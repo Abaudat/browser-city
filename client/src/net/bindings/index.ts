@@ -59,6 +59,7 @@ import RestoreDistrictReducer from "./restore_district_reducer";
 import RestoreEdgeKindReducer from "./restore_edge_kind_reducer";
 import RestoreFloorTransitionReducer from "./restore_floor_transition_reducer";
 import RestoreGameplayMetricSampleReducer from "./restore_gameplay_metric_sample_reducer";
+import RestoreGroundAreaReducer from "./restore_ground_area_reducer";
 import RestoreHolderKindReducer from "./restore_holder_kind_reducer";
 import RestoreItemHeldReducer from "./restore_item_held_reducer";
 import RestoreItemInstanceReducer from "./restore_item_instance_reducer";
@@ -75,6 +76,7 @@ import RestoreProvisionReducer from "./restore_provision_reducer";
 import RestoreReasonCodeReducer from "./restore_reason_code_reducer";
 import RestoreReducerClassCounterReducer from "./restore_reducer_class_counter_reducer";
 import RestoreReducerClassSampleReducer from "./restore_reducer_class_sample_reducer";
+import RestoreRoofAreaReducer from "./restore_roof_area_reducer";
 import RestoreRoomReducer from "./restore_room_reducer";
 import RestoreRoomAreaReducer from "./restore_room_area_reducer";
 import RestoreRouteEdgeReducer from "./restore_route_edge_reducer";
@@ -97,6 +99,7 @@ import BuildingAreaRow from "./building_area_table";
 import CadenceLivenessRow from "./cadence_liveness_table";
 import DemoPingRow from "./demo_ping_table";
 import FloorTransitionRow from "./floor_transition_table";
+import GroundAreaRow from "./ground_area_table";
 import ItemHeldRow from "./item_held_table";
 import ItemInstanceRow from "./item_instance_table";
 import ModuleVersionRow from "./module_version_table";
@@ -104,6 +107,7 @@ import MyCharacterRow from "./my_character_table";
 import MyStartRow from "./my_start_table";
 import PlacedObjectRow from "./placed_object_table";
 import PlayerPositionRow from "./player_position_table";
+import RoofAreaRow from "./roof_area_table";
 import RoomAreaRow from "./room_area_table";
 import WorldClockRow from "./world_clock_table";
 
@@ -181,6 +185,20 @@ const tablesSchema = __schema({
       { name: 'floor_transition_transition_id_key', constraint: 'unique', columns: ['transitionId'] },
     ],
   }, FloorTransitionRow),
+  groundArea: __table({
+    name: 'ground_area',
+    indexes: [
+      { accessor: 'area_id', name: 'ground_area_area_id_idx_btree', algorithm: 'btree', columns: [
+        'areaId',
+      ] },
+      { accessor: 'chunk_key', name: 'ground_area_chunk_key_idx_btree', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+    ],
+    constraints: [
+      { name: 'ground_area_area_id_key', constraint: 'unique', columns: ['areaId'] },
+    ],
+  }, GroundAreaRow),
   itemHeld: __table({
     name: 'item_held',
     indexes: [
@@ -234,6 +252,23 @@ const tablesSchema = __schema({
       { name: 'player_position_character_id_key', constraint: 'unique', columns: ['characterId'] },
     ],
   }, PlayerPositionRow),
+  roofArea: __table({
+    name: 'roof_area',
+    indexes: [
+      { accessor: 'area_id', name: 'roof_area_area_id_idx_btree', algorithm: 'btree', columns: [
+        'areaId',
+      ] },
+      { accessor: 'building_id', name: 'roof_area_building_id_idx_btree', algorithm: 'btree', columns: [
+        'buildingId',
+      ] },
+      { accessor: 'chunk_key', name: 'roof_area_chunk_key_idx_btree', algorithm: 'btree', columns: [
+        'chunkKey',
+      ] },
+    ],
+    constraints: [
+      { name: 'roof_area_area_id_key', constraint: 'unique', columns: ['areaId'] },
+    ],
+  }, RoofAreaRow),
   roomArea: __table({
     name: 'room_area',
     indexes: [
@@ -312,6 +347,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_edge_kind", RestoreEdgeKindReducer),
   __reducerSchema("restore_floor_transition", RestoreFloorTransitionReducer),
   __reducerSchema("restore_gameplay_metric_sample", RestoreGameplayMetricSampleReducer),
+  __reducerSchema("restore_ground_area", RestoreGroundAreaReducer),
   __reducerSchema("restore_holder_kind", RestoreHolderKindReducer),
   __reducerSchema("restore_item_held", RestoreItemHeldReducer),
   __reducerSchema("restore_item_instance", RestoreItemInstanceReducer),
@@ -328,6 +364,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_reason_code", RestoreReasonCodeReducer),
   __reducerSchema("restore_reducer_class_counter", RestoreReducerClassCounterReducer),
   __reducerSchema("restore_reducer_class_sample", RestoreReducerClassSampleReducer),
+  __reducerSchema("restore_roof_area", RestoreRoofAreaReducer),
   __reducerSchema("restore_room", RestoreRoomReducer),
   __reducerSchema("restore_room_area", RestoreRoomAreaReducer),
   __reducerSchema("restore_route_edge", RestoreRouteEdgeReducer),
@@ -359,6 +396,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "demo_ping": Omit<typeof tablesSchema.schemaType.tables["demoPing"], "accessorName"> & { readonly accessorName: "demo_ping" };
     /** @deprecated Use `floorTransition` instead. This alias will be removed in the next major version. */
     readonly "floor_transition": Omit<typeof tablesSchema.schemaType.tables["floorTransition"], "accessorName"> & { readonly accessorName: "floor_transition" };
+    /** @deprecated Use `groundArea` instead. This alias will be removed in the next major version. */
+    readonly "ground_area": Omit<typeof tablesSchema.schemaType.tables["groundArea"], "accessorName"> & { readonly accessorName: "ground_area" };
     /** @deprecated Use `itemHeld` instead. This alias will be removed in the next major version. */
     readonly "item_held": Omit<typeof tablesSchema.schemaType.tables["itemHeld"], "accessorName"> & { readonly accessorName: "item_held" };
     /** @deprecated Use `itemInstance` instead. This alias will be removed in the next major version. */
@@ -367,6 +406,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "placed_object": Omit<typeof tablesSchema.schemaType.tables["placedObject"], "accessorName"> & { readonly accessorName: "placed_object" };
     /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
     readonly "player_position": Omit<typeof tablesSchema.schemaType.tables["playerPosition"], "accessorName"> & { readonly accessorName: "player_position" };
+    /** @deprecated Use `roofArea` instead. This alias will be removed in the next major version. */
+    readonly "roof_area": Omit<typeof tablesSchema.schemaType.tables["roofArea"], "accessorName"> & { readonly accessorName: "roof_area" };
     /** @deprecated Use `roomArea` instead. This alias will be removed in the next major version. */
     readonly "room_area": Omit<typeof tablesSchema.schemaType.tables["roomArea"], "accessorName"> & { readonly accessorName: "room_area" };
     /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
@@ -400,10 +441,12 @@ const tableAccessorAliases = {
   "cadence_liveness": "cadenceLiveness",
   "demo_ping": "demoPing",
   "floor_transition": "floorTransition",
+  "ground_area": "groundArea",
   "item_held": "itemHeld",
   "item_instance": "itemInstance",
   "placed_object": "placedObject",
   "player_position": "playerPosition",
+  "roof_area": "roofArea",
   "room_area": "roomArea",
   "world_clock": "worldClock",
   "module_version": "moduleVersion",
@@ -439,6 +482,8 @@ export type DbView = __DbViewBase & {
   readonly "demo_ping": __DbViewBase["demoPing"];
   /** @deprecated Use `floorTransition` instead. This alias will be removed in the next major version. */
   readonly "floor_transition": __DbViewBase["floorTransition"];
+  /** @deprecated Use `groundArea` instead. This alias will be removed in the next major version. */
+  readonly "ground_area": __DbViewBase["groundArea"];
   /** @deprecated Use `itemHeld` instead. This alias will be removed in the next major version. */
   readonly "item_held": __DbViewBase["itemHeld"];
   /** @deprecated Use `itemInstance` instead. This alias will be removed in the next major version. */
@@ -447,6 +492,8 @@ export type DbView = __DbViewBase & {
   readonly "placed_object": __DbViewBase["placedObject"];
   /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
   readonly "player_position": __DbViewBase["playerPosition"];
+  /** @deprecated Use `roofArea` instead. This alias will be removed in the next major version. */
+  readonly "roof_area": __DbViewBase["roofArea"];
   /** @deprecated Use `roomArea` instead. This alias will be removed in the next major version. */
   readonly "room_area": __DbViewBase["roomArea"];
   /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */
@@ -471,6 +518,8 @@ export type Tables = __TablesBase & {
   readonly "demo_ping": __TablesBase["demoPing"];
   /** @deprecated Use `floorTransition` instead. This alias will be removed in the next major version. */
   readonly "floor_transition": __TablesBase["floorTransition"];
+  /** @deprecated Use `groundArea` instead. This alias will be removed in the next major version. */
+  readonly "ground_area": __TablesBase["groundArea"];
   /** @deprecated Use `itemHeld` instead. This alias will be removed in the next major version. */
   readonly "item_held": __TablesBase["itemHeld"];
   /** @deprecated Use `itemInstance` instead. This alias will be removed in the next major version. */
@@ -479,6 +528,8 @@ export type Tables = __TablesBase & {
   readonly "placed_object": __TablesBase["placedObject"];
   /** @deprecated Use `playerPosition` instead. This alias will be removed in the next major version. */
   readonly "player_position": __TablesBase["playerPosition"];
+  /** @deprecated Use `roofArea` instead. This alias will be removed in the next major version. */
+  readonly "roof_area": __TablesBase["roofArea"];
   /** @deprecated Use `roomArea` instead. This alias will be removed in the next major version. */
   readonly "room_area": __TablesBase["roomArea"];
   /** @deprecated Use `worldClock` instead. This alias will be removed in the next major version. */

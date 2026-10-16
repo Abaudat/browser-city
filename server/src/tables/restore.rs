@@ -118,8 +118,9 @@ use super::routing::{
 use super::schedules::{CadenceLiveness, cadence_liveness};
 use super::stock::{Business, Stock, business, stock};
 use super::world::{
-    Building, BuildingArea, FloorTransition, LayerCode, PlacedObject, Room, RoomArea, building,
-    building_area, floor_transition, layer_code, placed_object, room, room_area,
+    Building, BuildingArea, FloorTransition, GroundArea, LayerCode, PlacedObject, RoofArea, Room,
+    RoomArea, building, building_area, floor_transition, ground_area, layer_code, placed_object,
+    roof_area, room, room_area,
 };
 use sim::reducer_classes::ReducerClass;
 
@@ -209,6 +210,8 @@ const NON_INIT_SEEDED_TABLES: &[&str] = &[
     "placed_object",
     "room",
     "room_area",
+    "ground_area",
+    "roof_area",
 ];
 
 /// Opens a restore. Disarms every scheduled table first
@@ -340,6 +343,12 @@ pub fn begin_restore(ctx: &ReducerContext) -> Result<(), String> {
     }
     if ctx.db.room_area().iter().next().is_some() {
         nonempty.push("room_area");
+    }
+    if ctx.db.ground_area().iter().next().is_some() {
+        nonempty.push("ground_area");
+    }
+    if ctx.db.roof_area().iter().next().is_some() {
+        nonempty.push("roof_area");
     }
     if !nonempty.is_empty() {
         return Err(format!(
@@ -777,6 +786,36 @@ impl_autoinc_row!(
     RoomArea {
         area_id: 0,
         room_id: 0,
+        x0: 0,
+        y0: 0,
+        x1: 0,
+        y1: 0,
+        floor: 0,
+        chunk_key: 0,
+    }
+);
+
+impl_autoinc_row!(
+    GroundArea,
+    area_id,
+    GroundArea {
+        area_id: 0,
+        def_id: 0,
+        x0: 0,
+        y0: 0,
+        x1: 0,
+        y1: 0,
+        floor: 0,
+        chunk_key: 0,
+    }
+);
+impl_autoinc_row!(
+    RoofArea,
+    area_id,
+    RoofArea {
+        area_id: 0,
+        building_id: 0,
+        def_id: 0,
         x0: 0,
         y0: 0,
         x1: 0,
@@ -1341,6 +1380,46 @@ pub fn restore_room_area(
             ctx.db.room_area().area_id().delete(id);
         },
         "room_area",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_ground_area(
+    ctx: &ReducerContext,
+    rows: Vec<GroundArea>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.ground_area().insert(r),
+        |id| {
+            ctx.db.ground_area().area_id().delete(id);
+        },
+        "ground_area",
+        sequence_floor,
+    )
+}
+
+#[spacetimedb::reducer]
+pub fn restore_roof_area(
+    ctx: &ReducerContext,
+    rows: Vec<RoofArea>,
+    sequence_floor: u64,
+) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    require_restore_open(ctx)?;
+    restore_autoinc_rows(
+        rows,
+        |r| ctx.db.roof_area().insert(r),
+        |id| {
+            ctx.db.roof_area().area_id().delete(id);
+        },
+        "roof_area",
         sequence_floor,
     )
 }

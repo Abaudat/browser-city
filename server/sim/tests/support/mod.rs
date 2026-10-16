@@ -167,3 +167,8 @@ pub fn assert_persistence_reads_committed_file(path: &'static str, source: &'sta
         "the configured persistence must read the committed {path}"
     );
 }
+
+// Story 3.16: the district's AC1/AC2 claims, shared by the pinned test and
+// the fresh-seed exploration.
+#[allow(dead_code)]
+pub mod district_checks;

@@ -2,8 +2,8 @@ name: update-visual-baselines
 
 # Regenerates the committed visual baselines (`client/tests/e2e/<spec>-snapshots/*.png`, for every spec
 # `scripts/ci/check-visual-baseline-specs.sh` finds calling
-# `toHaveScreenshot` -- none since story 3.16 retired the hand-laid street;
-# the district's committed review shots live in `docs/generation/`) on the
+# `toHaveScreenshot` -- `district-baselines.spec.ts-snapshots`; the district's review
+# shots live in `docs/generation/`) on the
 # CI image (story 1.13, Quentin's direction: baselines must be generated
 # on linux chromium, never on a contributor's own machine, whose font
 # hinting and GPU rasteriser render different pixels than CI's).
@@ -87,12 +87,12 @@ jobs:
       # `--update-snapshots` over the whole project would also rewrite
       # any baseline a spec added later without anybody deciding to.
       - working-directory: client
-        run: npx playwright test --project=chromium --update-snapshots --grep @visual-baseline
+        run: npx playwright test --project=chromium --update-snapshots tests/e2e/district-baselines.spec.ts --grep @visual-baseline
       - name: commit any changed or new baselines
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add 'client/tests/e2e/*-snapshots/**'
+          git add 'client/tests/e2e/district-baselines.spec.ts-snapshots/**'
           if git diff --cached --quiet; then
             echo "update-visual-baselines: no baseline changed" >&2
             exit 0

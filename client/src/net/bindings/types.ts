@@ -178,6 +178,18 @@ export const GameplayMetricSample = __t.object("GameplayMetricSample", {
 });
 export type GameplayMetricSample = __Infer<typeof GameplayMetricSample>;
 
+export const GroundArea = __t.object("GroundArea", {
+  areaId: __t.u64(),
+  defId: __t.u32(),
+  x0: __t.i32(),
+  y0: __t.i32(),
+  x1: __t.i32(),
+  y1: __t.i32(),
+  floor: __t.i8(),
+  chunkKey: __t.u64(),
+});
+export type GroundArea = __Infer<typeof GroundArea>;
+
 export const GrowthSchedule = __t.object("GrowthSchedule", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),
@@ -358,6 +370,19 @@ export const RestoreState = __t.object("RestoreState", {
   open: __t.bool(),
 });
 export type RestoreState = __Infer<typeof RestoreState>;
+
+export const RoofArea = __t.object("RoofArea", {
+  areaId: __t.u64(),
+  buildingId: __t.u64(),
+  defId: __t.u32(),
+  x0: __t.i32(),
+  y0: __t.i32(),
+  x1: __t.i32(),
+  y1: __t.i32(),
+  floor: __t.i8(),
+  chunkKey: __t.u64(),
+});
+export type RoofArea = __Infer<typeof RoofArea>;
 
 export const Room = __t.object("Room", {
   roomId: __t.u64(),

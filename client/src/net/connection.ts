@@ -15,8 +15,10 @@ import type {
   ActorLocation,
   BuildingArea,
   FloorTransition,
+  GroundArea,
   PlacedObject,
   PlayerPosition,
+  RoofArea,
   RoomArea,
 } from "./bindings/types";
 import { startNetClockSync, type VisibilitySource } from "./clock-sync";
@@ -94,6 +96,8 @@ export type RegionRow =
   | FloorTransition
   | BuildingArea
   | RoomArea
+  | GroundArea
+  | RoofArea
   | ActorLocation
   | PlayerPosition;
 

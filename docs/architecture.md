@@ -615,7 +615,7 @@ fixture is checked from the client side too
 The client holds only the world around the player. Subscriptions are client-issued queries over public, chunk-keyed tables.
 
 - A query is one pure equality, `WHERE chunk_key = <key>`, built with the typed query builder. The engine parameterises, prunes and shares only that shape; a range, an `OR` or an extra `AND` is re-evaluated on every write to its table. Never a SQL string, never a whole table beyond the three singletons (`demo_ping`, `module_version`, `world_clock`) and the per-sender `my_character` view.
-- One handle per (chunk column, floor band), holding the equality for every floor of the band on every table in `REGION_QUERIES` (`net/region-subscription.ts`, the one place a region table is declared): `placed_object`, `floor_transition`, `building_area`, `room_area`, `actor_location`, `player_position`. Columns are disjoint, so a shifting region re-sends nothing.
+- One handle per (chunk column, floor band), holding the equality for every floor of the band on every table in `REGION_QUERIES` (`net/region-subscription.ts`, the one place a region table is declared): `placed_object`, `floor_transition`, `building_area`, `room_area`, `ground_area`, `roof_area`, `actor_location`, `player_position`. Columns are disjoint, so a shifting region re-sends nothing.
 - `world/region.ts` declares the constants once and plans the region as a pure function of the player's cell and floor: wanted within `REGION_RADIUS_CHUNKS` (2) Chebyshev distance of the player's column, released only beyond `REGION_RADIUS_CHUNKS + REGION_HYSTERESIS_CHUNKS` (1). No timer. `REGION_MAX_HANDLES` bounds what is held. The radius covers a maximum half-viewport, `REGION_BODY_MARGIN_CELLS`, `MAX_FOOTPRINT_CELLS` and, to the south, `MAX_FLOOR * storey_height_px / tile_size_px`; a unit test holds it to that.
 - A band is the floors co-visible with the player's: `0..=MAX_FLOOR` or `MIN_FLOOR..=-1`. A band change adds the new band's handles; the old band's leave by the distance rule.
 - The region is recomputed only when the player's chunk column or band changes, never per frame. A handle is released only once applied (`unsubscribe()` throws on a pending or ended handle); a handle no longer wanted while pending is released on its `onApplied`. A handle ends on `onEnded` or `onError`, whichever comes first, and `onError` can come in any state. A region `onError` goes through `onStatus("disconnected")`. A reconnect is a new `connect()` and a new manager, built around the current position.
@@ -624,7 +624,7 @@ The client holds only the world around the player. Subscriptions are client-issu
 - `actor_location` (`actor_kind`, `actor_id`, `chunk_key`, `floor`) says which chunk an actor is in, and exists solely so a chunk filter is expressible as a subscription; no `x` or `y` is ever added. `actor_kind` is a code set (`character`, `citizen`) in `sim::codes`; a citizen names its table in `sim::actor_location::ACTOR_TABLES`, and a character never has an `actor_location` row (its chunk is `player_position.chunk_key`). The row is rewritten only when the actor's chunk or floor changes, decided by `sim::actor_location::plan_move`, which derives the chunk through `sim::world::chunk_key`. `tables/actor.rs`'s `place_actor(ctx, kind, id, x, y, floor)` is the one writer (no write when unchanged, an update in place on a chunk or floor change, an insert the first time); `scripts/ci/check-actor-location-path.sh` holds the accessor to that file, `restore.rs` and `metrics.rs`, and `bounds/tests/actor_location_shape.rs`'s `no_second_presence_table` fails on any other table carrying an actor id with a `chunk_key` (`player_position` is the character's own row).
 - A citizen has one pending scheduled event: its next arrival or its next chunk crossing, whichever is sooner. A crossing does one thing: `place_actor`, then schedule the next event. `sim::actor_location::crossings(route, t_depart, t_arrive, start)` is the pure plan: instants from L3's waypoint rule (`leg_instants`, pinned with the client by `fixtures/leg-instants.v1.json`), placements from `plan_move`. Crossing calls count under `ReducerClass::Scheduled`.
 - A table is split by how often it is written, not by the entity it describes: anything rewritten more often than a chunk change is its own table, joined through `actor_id`.
-- `placed_object`, `floor_transition`, `building_area` and `room_area` are public; `item_placed`, `building` and `room` stay private until a client reader exists.
+- `placed_object`, `floor_transition`, `building_area`, `room_area`, `ground_area` and `roof_area` are public; `item_placed`, `building` and `room` stay private until a client reader exists.
 - An open container's contents are a per-view handle, never part of the region: `net/container-subscription.ts` issues `item_held WHERE container_id = <id>` and a typed-builder semijoin from those rows onto `item_instance` (for each row's `def_id`) when a view opens and releases the one handle when it closes (`unsubscribe()` only once applied). It is the third file allowed to call `.subscribe(`.
 - `scripts/ci/check-subscription-shape.sh` holds the query shape (`.subscribe(` only in `net/connection.ts`, `net/region-subscription.ts` and `net/container-subscription.ts`, no `SELECT` literal under `client/src`, the whole-table set exactly the three singletons); `scripts/ci/check-interest-region.sh` proves it against a real instance.
 
@@ -1872,15 +1872,25 @@ the build if the committed files and a fresh render ever disagree.
 - The `create_district` reducer (operator class) is the only caller of
   `generation::`; `check-district-write-path.sh` enforces it.
 - `create_district` materialises the district's world rows in the same
-  transaction as the record: one ground `placed_object` per cell of the
-  site and its `city.ground.margin_cells` margin, the generated props, and
-  the `building_area`, `room_area` and `floor_transition` rows
-  (`District::region_rows`). The seed is the `city.seed` balance key.
+  transaction as the record (`District::region_rows`): the generated props
+  as `placed_object`, the `building_area`, `room_area` and
+  `floor_transition` rows, the ground as `ground_area` rects and each
+  building's roof as `roof_area` rects (its interior net and its north rim
+  but a door cell, all keyed on the chunk of the net's south-west cell; the
+  client sorts them at the net's south edge). Ground is never a row per cell: the
+  street's pavement and carriageway (carried `city.ground.margin_cells`
+  past a site edge they meet), each built plot's yard and forecourt, each
+  footprint's floor (under its wall ring) and every room's floor, each def chosen by tag (the `city.ground.*_tag_id`
+  balance keys name the tags) from what the cell is; a cell no rect covers
+  is open ground, the client's default. A dwelling's roof is chosen by its
+  building-age band. The seed is the `city.seed` balance key.
 - The district's `arrival_*` columns hold the arrival cell
   (`District::arrival_cell`: a floor-0 standable cell inside a dwelling,
-  poor-band dwellings preferred); `create_character` places a new
-  character there, `relocate_stranded` moves a stored position that no
-  longer stands, and the `my_start` view hands a client its first position.
+  poor-band dwellings preferred, a viewport in from the site edge);
+  `create_character` places a new character there, `relocate_stranded`
+  moves a stored position that no longer stands, and the `my_start` view
+  hands a client its first position. The city's first district (id 1) is
+  the one a character arrives in.
 - `scripts/ops/ensure-district.sh` is the deploy step that creates the
   district when none exists and `scripts/ops/assert-world-invariants.sh`
   then asserts the rows; `init` and `finish_publish` never generate.
@@ -1937,7 +1947,7 @@ the build if the committed files and a fresh render ever disagree.
 
 ### L3 -- must agree
 
-Every client agrees on, for a citizen at a city time: the segment and ledger position (gross position), the activity (walk, idle, a flavour), the walk frame, the idle frame, the facing, the appearance (the five stored indices and the uniform override), the arrival instant, and the avoidance offset of a body in a fully held region. A divergence on this list is a defect.
+Every client agrees on, for a citizen at a city time: the segment and ledger position (gross position), the activity (walk, idle, a flavour), the walk frame, the idle frame, the facing, the appearance (the five stored indices and the uniform override), the arrival instant, and the avoidance offset of a body in a fully held region -- every chunk its neighbours (the radius plus a pose's stray) and its wall scan span can reach lies in the body zone, which the region subscription covers, so the collision grid it reads is the same on every client. A divergence on this list is a defect.
 
 Nobody checks: render-only easing and snapping, anything not listed.
 

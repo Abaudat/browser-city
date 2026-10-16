@@ -66,6 +66,65 @@ export const STUB_ID_OFFSET = 500_000_000_000n;
  * the threshold's own sprite height, retracted with the threshold. */
 export const BAND_ID_OFFSET = 600_000_000_000n;
 
+/** A roof rect's stable-id offset (above [`BAND_ID_OFFSET`]): a roof is a
+ * pool member of its own, never a placed object's companion. */
+export const ROOF_ID_OFFSET = 700_000_000_000n;
+
+/** One streamed `roof_area` row, as the builder reads it. */
+export interface RoofRowView {
+  readonly areaId: bigint;
+  readonly buildingId: bigint;
+  readonly defId: number;
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+  readonly floor: number;
+}
+
+/** The south edge of each building's roof: the largest `y1` among the
+ * building's roof rects. */
+export function roofBottoms(rows: Iterable<RoofRowView>): Map<bigint, number> {
+  const out = new Map<bigint, number>();
+  for (const row of rows) {
+    const held = out.get(row.buildingId);
+    if (held === undefined || row.y1 > held) out.set(row.buildingId, row.y1);
+  }
+  return out;
+}
+
+/** The drawable of one roof rect (story 3.16). It sorts half a cell south
+ * of its building's roof bottom edge (`bottom`, the rect's own by default),
+ * so a north-rim strip sorts with the net it borders: after every fixture and body inside the
+ * building (their feet are at or north of that edge), before the front
+ * wall's own face (its foot is a whole cell south of it) -- so the roof
+ * hides the interior and the facade stands in front of it. It is a
+ * near-side wall of its own building, which `isRetracted` already hides
+ * while the viewer is inside that building: no second rule. */
+export function buildRoofDrawable(
+  row: RoofRowView,
+  wallsRank: number,
+  bottom: number = row.y1,
+): PropDrawableByDef {
+  return {
+    x: toSortUnits((row.x0 + row.x1) / 2),
+    y: toSortUnits(bottom + 0.5),
+    rank: wallsRank,
+    stableId: row.areaId + ROOF_ID_OFFSET,
+    floor: row.floor,
+    defId: row.defId,
+    sourceCol: 0,
+    sourceRow: 0,
+    footprintWidth: row.x1 - row.x0,
+    footprintHeight: row.y1 - row.y0,
+    layerCode: WALLS_LAYER_CODE,
+    ownerBuildingId: row.buildingId,
+    isWindow: false,
+    isNearSide: true,
+    isStub: false,
+  };
+}
+
 /** One streamed row, as the builder reads it. */
 export interface PlacedRowView {
   readonly objectId: bigint;

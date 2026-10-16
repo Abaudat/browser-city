@@ -31,8 +31,10 @@ import type {
   ActorLocation,
   BuildingArea,
   FloorTransition,
+  GroundArea,
   PlacedObject,
   PlayerPosition,
+  RoofArea,
   RoomArea,
 } from "./bindings/types";
 
@@ -239,6 +241,8 @@ export const REGION_QUERIES = {
   floorTransition: (k: bigint) => tables.floorTransition.where((r) => r.chunkKey.eq(k)).build(),
   buildingArea: (k: bigint) => tables.buildingArea.where((r) => r.chunkKey.eq(k)).build(),
   roomArea: (k: bigint) => tables.roomArea.where((r) => r.chunkKey.eq(k)).build(),
+  groundArea: (k: bigint) => tables.groundArea.where((r) => r.chunkKey.eq(k)).build(),
+  roofArea: (k: bigint) => tables.roofArea.where((r) => r.chunkKey.eq(k)).build(),
   actorLocation: (k: bigint) => tables.actorLocation.where((r) => r.chunkKey.eq(k)).build(),
   playerPosition: (k: bigint) => tables.playerPosition.where((r) => r.chunkKey.eq(k)).build(),
 } as const;
@@ -258,6 +262,8 @@ export interface RegionRows {
   floorTransition: FloorTransition;
   buildingArea: BuildingArea;
   roomArea: RoomArea;
+  groundArea: GroundArea;
+  roofArea: RoofArea;
   actorLocation: ActorLocation;
   playerPosition: PlayerPosition;
 }
@@ -270,6 +276,8 @@ export const REGION_KEY_COLUMNS: { [K in RegionTableName]: keyof RegionRows[K] &
   floorTransition: "transitionId",
   buildingArea: "areaId",
   roomArea: "areaId",
+  groundArea: "areaId",
+  roofArea: "areaId",
   actorLocation: "locationId",
   playerPosition: "characterId",
 };

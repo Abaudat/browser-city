@@ -37,6 +37,12 @@ ACCESSORS=(
   "route_node:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_node"
   "route_edge:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_edge"
   "route_provision:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_provision"
+  "placed_object:world:write_world:begin_restore restore_placed_object"
+  "floor_transition:world:write_world:begin_restore restore_floor_transition"
+  "building_area:world:write_world:begin_restore restore_building_area"
+  "room_area:world:write_world:begin_restore restore_room_area"
+  "ground_area:world:write_world:begin_restore restore_ground_area"
+  "roof_area:world:write_world:begin_restore restore_roof_area"
 )
 GEN='(^|[^_[:alnum:]])generation([^_[:alnum:]]|$)'
 
@@ -93,6 +99,23 @@ while IFS= read -r f; do
       if flat "$f" | grep -Eq '\.[[:space:]]*(insert|delete|update)[[:space:]]*\('; then
         note "$rel: writes a row (it declares the tables and reads them by index; district.rs and restore.rs write)"
       fi
+      if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
+      continue ;;
+    tables/time_control.rs)
+      # The time-control flavour's one world writer: it clears district-written
+      # rows under a hand-laid block (e2e only; the flavour is never
+      # deployed). It names the world accessors inside `debug_clear_chunks`
+      # and nothing else, and never the district, the graph or the generator.
+      for spec in "${ACCESSORS[@]}"; do
+        IFS=: read -r acc mod _rest <<<"$spec"
+        if [ "$mod" = world ]; then
+          OUT="$(calls_outside "$f" "$acc" debug_clear_chunks)"
+          [ -z "$OUT" ] || note "$rel: names the $acc accessor outside debug_clear_chunks (in: $(echo "$OUT" | tr '
+' ' '))"
+        elif flat "$f" | grep -Eq ".[[:space:]]*$acc[[:space:]]*()"; then
+          note "$rel: names the $acc accessor"
+        fi
+      done
       if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
       continue ;;
     tables/metrics.rs)

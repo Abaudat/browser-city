@@ -29,8 +29,8 @@ import { type BodyDials, type BodyFrame, createBodyMotion, poseBody } from "../l
 import { framesByAnimation, loadL3Config, walkFramesPerCycle } from "../l3/config";
 import type { PlacedObject } from "../net/bindings/types";
 import { type BodyZone, bodyZoneOf, type Rect } from "../world/body-zone";
-import { chunkKey, unpackChunkKey } from "../world/chunk";
-import type { ChunkStore } from "../world/chunk-store";
+import { CHUNK_SIZE, chunkKey, unpackChunkKey } from "../world/chunk";
+import type { ChunkData, ChunkStore } from "../world/chunk-store";
 import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
 import { type CellRect, type HeldRow, shouldClose } from "../world/container-view";
 import { buildFlights, FlightIndex, type PlacedFlightRow } from "../world/flights";
@@ -57,7 +57,7 @@ import { buildPlayerAppearanceTuple } from "./appearance/player-look";
 import { AtlasPageLoader, countAllBoundTextureSources, countBoundAtlasPages } from "./atlas-pages";
 import { newBodySprite, setBodyFrame } from "./body-sprite";
 import { type Camera, computeCamera, worldPxFromClient, ZOOM } from "./camera";
-import { chunkResidency } from "./chunk-residency";
+import { chunkResidency, DRAW_MARGIN_CELLS } from "./chunk-residency";
 import {
   type BodyScreenBounds,
   type CitizensLayerHandle,
@@ -68,6 +68,11 @@ import {
 } from "./citizens-layer";
 import { decomposeFootprint } from "./decompose";
 import { assertStageIsWorld, FloorStacks } from "./floor-stacks";
+import {
+  openGroundDefId as findOpenGroundDefId,
+  NO_GROUND,
+  paintChunkGround,
+} from "./ground-paint";
 import { layerCodeByName, passOfLayer } from "./layer-table";
 import { ContainerViewController } from "./pixi-container-view";
 import { HighlightApplier } from "./pixi-highlight";
@@ -78,10 +83,12 @@ import {
   type BuildPropDrawablesOptions,
   buildCharacterDrawable,
   buildPropDrawables,
+  buildRoofDrawable,
   isDefPropDrawable,
   type PlacedRowView,
   type PropDrawable,
   REMOTE_STABLE_ID_BASE,
+  roofBottoms,
   STUB_ID_OFFSET,
   updateCharacterDrawable,
 } from "./prop-drawables";
@@ -178,9 +185,6 @@ export interface MountWorldSceneOptions {
   readonly wallStubDefId: number;
   /** The streamed world: every row the scene draws and collides with. */
   readonly world: ChunkStore;
-  /** Rows the page places itself, nearest the player's start (the link
-   * offer's carrier). */
-  readonly localProps?: readonly LocalProp[];
   /** A crowd to mount (a DEV harness), built once the world is held and
    * told which cells a body may stand on: absent means the street is drawn
    * with nobody on it. */
@@ -226,7 +230,11 @@ export interface MountWorldSceneOptions {
   readonly onFrameWork?: (ms: number) => void;
   /** Where the player starts: the server's `my_start` -- its stored
    * position, else the district's arrival cell. Never a client constant. */
-  readonly playerStart: { readonly x: number; readonly y: number; readonly floor: number };
+  readonly playerStart: {
+    readonly x: number;
+    readonly y: number;
+    readonly floor: number;
+  };
   /** The scene's first frame has rendered (story 4.6). */
   readonly onFirstFrame?: (at: number) => void;
   /** Story 5.4 (NFR11): how long L3 took this frame, in ms -- the pose,
@@ -274,7 +282,12 @@ export interface MountWorldSceneOptions {
    * whole load, not only after `mountStreetScene`'s own promise
    * resolves. */
   readonly onWorldReady?: (
-    worldTransform: () => { scaleX: number; scaleY: number; x: number; y: number },
+    worldTransform: () => {
+      scaleX: number;
+      scaleY: number;
+      x: number;
+      y: number;
+    },
   ) => void;
   /** Story 1.9 (FR148): where a click's intent goes. One injected sink,
    * and the only thing Epic 8 has to replace -- this scene neither knows
@@ -342,8 +355,13 @@ export interface WorldSceneHandle {
   /** How many chunks are drawn right now, and how many pool and flat
    * sprites they hold: what the leak check compares. */
   drawnChunkCount(): number;
-  /** The cells the page's own local props were placed on. */
+  /** The cells the page's own carrier sprites were placed on. */
   localPropCells(): readonly { objectId: bigint; x: number; y: number }[];
+  /** Draws the page's own carrier (the link offer's post) on the standable
+   * cell nearest the player, at least `minDistance` away: a scene-local
+   * sprite the pointer can pick, never a row of the streamed world and
+   * never in the collision grid. `undefined` when no cell qualifies. */
+  placeCarrier(spec: CarrierSpec): { readonly x: number; readonly y: number } | undefined;
   liveSpriteCount(): number;
   /** The building and room the player's own cell is in. */
   ownershipAtPlayer(): { readonly buildingId: bigint; readonly roomId: bigint };
@@ -389,6 +407,9 @@ export interface WorldSceneHandle {
   playerScreenBounds(): { x: number; y: number; width: number; height: number };
   /** The player's sprite point in world pixels, for the e2e hook. */
   playerDrawnPoint(): { x: number; y: number };
+  /** DEV harness only (`window.__bc.teleport`): stands the player at a
+   * point, as the server's start would have, and draws what is there. */
+  teleport(x: number, y: number, floor: number): void;
   /** What each live L3 body says about itself, for the debug tooling. */
   l3Bodies(): readonly L3BodyReport[];
   /** Story 6.10: opens the view of the container `intent` names, replacing
@@ -851,7 +872,11 @@ export async function mountWorldScene(
       return [
         defId,
         overhang
-          ? { ...source, drawOverhangCellsUp: overhang.up, drawOverhangCellsX: overhang.side }
+          ? {
+              ...source,
+              drawOverhangCellsUp: overhang.up,
+              drawOverhangCellsX: overhang.side,
+            }
           : source,
       ];
     }),
@@ -862,6 +887,20 @@ export async function mountWorldScene(
   // index. A ground row is walkable art, never a collider or a pick target,
   // so it never enters them.
   const GROUND_CODE = layerCodeByName("ground");
+  // The open-ground def (found by its tags) and the empty chunk an
+  // unwritten one is drawn from.
+  const openTag = defs.balance.find((b) => b.key === "city.ground.open_tag_id")?.value;
+  const openGroundDefId =
+    openTag === undefined ? undefined : findOpenGroundDefId(defs.objects, openTag);
+  const EMPTY_CHUNK: ChunkData = {
+    placed: new Map(),
+    buildingAreas: new Map(),
+    roomAreas: new Map(),
+    transitions: new Map(),
+    ground: new Map(),
+    roofs: new Map(),
+  };
+  const WALLS_RANK = rankOf(layerCodeByName("walls"));
   const ownership = new OwnershipIndex();
   const worldIndex = new WorldIndex(movementConfig.subcellsPerCell, objectSources);
   const heldTransitions = new Map<bigint, TransitionSpec>();
@@ -928,6 +967,9 @@ export async function mountWorldScene(
       subcellsPerCell: movementConfig.subcellsPerCell,
       isBodyClear: (floor, cx, feet) => isBodyClear(worldIndex, movementConfig, floor, cx, feet),
     },
+    // The held rows are a region of the world: a pair's far half may lie in
+    // a band not subscribed. Symmetry is the generator's and `WorldSpec`'s.
+    skipPairSymmetry: true,
   });
   function rebuildTransitions(): void {
     transitionsDirty = false;
@@ -944,6 +986,9 @@ export async function mountWorldScene(
         subcellsPerCell: movementConfig.subcellsPerCell,
         isBodyClear: (floor, cx, feet) => isBodyClear(worldIndex, movementConfig, floor, cx, feet),
       },
+      // The held rows are a region of the world: a pair's far half may lie in
+      // a band not subscribed. Symmetry is the generator's and `WorldSpec`'s.
+      skipPairSymmetry: true,
     });
   }
   if (transitionsDirty) rebuildTransitions();
@@ -1009,7 +1054,11 @@ export async function mountWorldScene(
   // The player's body is posed by the same function as every other
   // character's (`l3/body-pose.ts`) and drawn through the same adapter.
   const playerMotion = createBodyMotion();
-  const playerBodyFrame: BodyFrame = { animation: "idle", direction: "down", frameIndex: 0 };
+  const playerBodyFrame: BodyFrame = {
+    animation: "idle",
+    direction: "down",
+    frameIndex: 0,
+  };
   const playerSprite = newBodySprite(playerFrames, playerBodyFrame);
   const playerEntry: PoolEntry = {
     drawable: playerDrawable,
@@ -1161,10 +1210,16 @@ export async function mountWorldScene(
     readonly groundLayer: Container;
     readonly entries: PoolEntry[];
     readonly flatEntries: PoolEntry[];
+    /** The buildings this chunk draws a roof for. */
+    readonly roofed: readonly bigint[];
     /** The rows' own revision: a changed chunk is rebuilt. */
     stale: boolean;
   }
   const drawnChunks = new Map<bigint, DrawnChunk>();
+  /** The buildings whose roof is drawn: what stands inside one is hidden
+   * from a viewer outside it (`isUnderRoof`). A building's roof rows are
+   * all one chunk's. */
+  const roofedBuildings = new Set<bigint>();
   /** Every pool entry of every drawn chunk, for the reads that walk them. */
   const liveEntries = new Set<PoolEntry>();
   /** The rect each object's sprites cover, in the world container's own
@@ -1189,28 +1244,13 @@ export async function mountWorldScene(
     return id;
   }
 
-  function buildChunk(key: bigint): void {
-    const data = store.chunk(key);
-    if (!data) return;
-    const { floor } = unpackChunkKey(key);
-    ensureFloorPasses(floor);
-    const groundLayer = new Container();
-    const offset = floorOffsetPx(floor, storeyHeightPx);
-    const propRows: PlacedRowView[] = [];
-    for (const row of data.placed.values()) {
-      if (row.layer === GROUND_CODE) {
-        // Every ground pass tile is top-left anchored, unlike the
-        // bottom-centre pool sprites; FR124's floor offset still applies.
-        const tile = new Sprite(cellTexture(row.defId, 0, 0));
-        tile.x = snapToScreenPx(row.x * tileSizePx, ZOOM);
-        tile.y = snapToScreenPx(row.y * tileSizePx + offset, ZOOM);
-        groundLayer.addChild(tile);
-      } else {
-        propRows.push(row);
-      }
-    }
-    stacks.stackFor(floor).ground.addChild(groundLayer);
-
+  /** Draws `propRows` on `floor`: pool entries into the floor's pool and
+   * the visibility members, flat ones into its ground-object pass, each
+   * registered for picking. Returns what it drew, for release. */
+  function drawPropRows(
+    propRows: PlacedRowView[],
+    floor: number,
+  ): { entries: PoolEntry[]; flatEntries: PoolEntry[] } {
     const entries: PoolEntry[] = [];
     const flatEntries: PoolEntry[] = [];
     for (const drawable of buildPropDrawables(propRows, propOptions)) {
@@ -1230,7 +1270,11 @@ export async function mountWorldScene(
       );
       // The wall-top band sits above its doorway's own sprite.
       if (drawable.liftSourcePx) sprite.y -= liftPx(drawable);
-      const entry: PoolEntry = { drawable, view: sprite, label: debugLabel(drawable) };
+      const entry: PoolEntry = {
+        drawable,
+        view: sprite,
+        label: debugLabel(drawable),
+      };
       const pass = passOfLayer(drawable.layerCode);
       if (pass === "pool") {
         entries.push(entry);
@@ -1263,7 +1307,12 @@ export async function mountWorldScene(
               x1: Math.max(held.x1, left + sprite.width),
               y1: Math.max(held.y1, top + sprite.height),
             }
-          : { x0: left, y0: top, x1: left + sprite.width, y1: top + sprite.height },
+          : {
+              x0: left,
+              y0: top,
+              x1: left + sprite.width,
+              y1: top + sprite.height,
+            },
       );
     }
     assertNoOverhangBeyondStorey(
@@ -1273,14 +1322,102 @@ export async function mountWorldScene(
       })),
       storeyHeightPx,
     );
-    drawnChunks.set(key, { key, floor, groundLayer, entries, flatEntries, stale: false });
+    return { entries, flatEntries };
+  }
+
+  function buildChunk(key: bigint): void {
+    const { cx, cy, floor } = unpackChunkKey(key);
+    const held = store.chunk(key);
+    // A chunk with no rows is drawn only as open ground, on floor 0.
+    if (!held && !(floor === 0 && openGroundDefId !== undefined)) return;
+    const data = held ?? EMPTY_CHUNK;
+    ensureFloorPasses(floor);
+    const groundLayer = new Container();
+    const offset = floorOffsetPx(floor, storeyHeightPx);
+    // Ground rects, painted in row order over open ground; a floor with no
+    // open ground draws only the rects it holds.
+    const painted = paintChunkGround(
+      data.ground.values(),
+      cx,
+      cy,
+      floor === 0 && openGroundDefId !== undefined ? openGroundDefId : NO_GROUND,
+    );
+    for (let i = 0; i < painted.length; i++) {
+      const defId = painted[i] as number;
+      if (defId === NO_GROUND) continue;
+      const tile = new Sprite(cellTexture(defId, 0, 0));
+      const x = cx * CHUNK_SIZE + (i % CHUNK_SIZE);
+      const y = cy * CHUNK_SIZE + Math.floor(i / CHUNK_SIZE);
+      tile.x = snapToScreenPx(x * tileSizePx, ZOOM);
+      tile.y = snapToScreenPx(y * tileSizePx + offset, ZOOM);
+      groundLayer.addChild(tile);
+    }
+    const propRows: PlacedRowView[] = [];
+    for (const row of data.placed.values()) {
+      if (row.layer === GROUND_CODE) {
+        // Every ground pass tile is top-left anchored, unlike the
+        // bottom-centre pool sprites; FR124's floor offset still applies.
+        const tile = new Sprite(cellTexture(row.defId, 0, 0));
+        tile.x = snapToScreenPx(row.x * tileSizePx, ZOOM);
+        tile.y = snapToScreenPx(row.y * tileSizePx + offset, ZOOM);
+        groundLayer.addChild(tile);
+      } else {
+        propRows.push(row);
+      }
+    }
+    stacks.stackFor(floor).ground.addChild(groundLayer);
+
+    const { entries, flatEntries } = drawPropRows(propRows, floor);
+    // Roofs: one stretched tile per roof rect, in the pool behind the
+    // front wall's face and over what stands inside (`buildRoofDrawable`).
+    // A building's roof rects are all one chunk's rows: each sorts at the
+    // building's roof bottom.
+    const bottoms = roofBottoms(data.roofs.values());
+    for (const id of bottoms.keys()) roofedBuildings.add(id);
+    for (const roof of data.roofs.values()) {
+      const drawable = buildRoofDrawable(roof, WALLS_RANK, bottoms.get(roof.buildingId));
+      const sprite = createSprite(cellTexture(roof.defId, 0, 0));
+      sprite.width = (roof.x1 - roof.x0) * tileSizePx;
+      sprite.height = (roof.y1 - roof.y0) * tileSizePx;
+      positionSprite(
+        sprite,
+        (roof.x0 + roof.x1) / 2,
+        roof.y1,
+        floor,
+        tileSizePx,
+        storeyHeightPx,
+        0,
+        0,
+      );
+      const entry: PoolEntry = {
+        drawable,
+        view: sprite,
+        label: `roof:${roof.defId}`,
+      };
+      entries.push(entry);
+      poolMembersOf(floor).push(entry);
+      stacks.stackFor(floor).pool.addChild(sprite);
+      allVisibilityMembers.push(entry);
+    }
+    drawnChunks.set(key, {
+      key,
+      floor,
+      groundLayer,
+      entries,
+      flatEntries,
+      roofed: [...bottoms.keys()],
+      stale: false,
+    });
     dirtyFloors.add(floor);
+    // The pool changed: the reported order is current once the floor is re-sorted.
+    reportedMoved = true;
   }
 
   function releaseChunk(key: bigint): void {
     const drawn = drawnChunks.get(key);
     if (!drawn) return;
     drawnChunks.delete(key);
+    for (const id of drawn.roofed) roofedBuildings.delete(id);
     drawn.groundLayer.destroy({ children: true });
     const pool = membersByFloor.get(drawn.floor);
     const gone = new Set<unknown>(drawn.entries);
@@ -1300,6 +1437,7 @@ export async function mountWorldScene(
       entry.view.destroy();
     }
     dirtyFloors.add(drawn.floor);
+    reportedMoved = true;
   }
 
   const FLOOR_SHIFT_CELLS = storeyHeightPx / tileSizePx;
@@ -1321,8 +1459,21 @@ export async function mountWorldScene(
     lastResidencyKey = key;
     residencyDirty = false;
     const band = bandOf(walk.floor);
+    // Floor 0's open ground is drawn wherever the viewport reaches, rows
+    // or none: its chunks are held implicitly.
+    const held = new Set<bigint>(store.chunkKeys());
+    if (openGroundDefId !== undefined) {
+      const m = DRAW_MARGIN_CELLS;
+      const cx0 = Math.floor((view.x0 - m) / CHUNK_SIZE);
+      const cx1 = Math.floor((view.x1 + m) / CHUNK_SIZE);
+      const cy0 = Math.floor((view.y0 - m) / CHUNK_SIZE);
+      const cy1 = Math.floor((view.y1 + m) / CHUNK_SIZE);
+      for (let cy = cy0; cy <= cy1; cy++) {
+        for (let cx = cx0; cx <= cx1; cx++) held.add(chunkKey(cx * CHUNK_SIZE, cy * CHUNK_SIZE, 0));
+      }
+    }
     const { draw, drop } = chunkResidency(
-      store.chunkKeys(),
+      held,
       drawnChunks.keys(),
       view,
       FLOOR_SHIFT_CELLS,
@@ -1355,6 +1506,7 @@ export async function mountWorldScene(
     const viewer: VisibilityViewer = {
       floor,
       buildingId: ownership.ownershipAt(cellX, cellY, floor).buildingId,
+      roofed: roofedBuildings,
     };
 
     let applied = true;
@@ -1408,32 +1560,39 @@ export async function mountWorldScene(
     }
   }
 
-  // A link carrier or any other local prop the page asked for: a row in
-  // the store like any streamed one, on the standable cell nearest the
-  // player's start.
-  const localProps: readonly LocalProp[] = options.localProps ?? [];
+  // The page's own carrier sprites: drawn and pickable, held outside the
+  // chunk store and the collision grid -- the grid is the streamed rows'
+  // alone; the world index keeps a pick-only footprint for them.
+  const localRows = new Map<bigint, PlacedObject>();
   const placedLocal: { objectId: bigint; x: number; y: number }[] = [];
-  function placeLocalProps(): void {
-    for (const prop of localProps) {
-      const cell = nearestStandable(
-        (x, y) => isCellStandable(worldIndex, movementConfig, x, y, walk.floor),
-        walk.cellX,
-        walk.cellY,
-        prop.minDistance ?? 1,
-      );
-      if (!cell) continue;
-      placedLocal.push({ objectId: prop.objectId, x: cell.x, y: cell.y });
-      store.insert("placedObject", {
-        objectId: prop.objectId,
-        defId: prop.defId,
-        x: cell.x,
-        y: cell.y,
-        floor: walk.floor,
-        layer: prop.layer,
-        orientation: 0,
-        chunkKey: chunkKey(cell.x, cell.y, walk.floor),
-      });
-    }
+  function placeCarrier(spec: CarrierSpec): { x: number; y: number } | undefined {
+    const cell = nearestStandable(
+      (x, y) => isCellStandable(worldIndex, movementConfig, x, y, walk.floor),
+      walk.cellX,
+      walk.cellY,
+      spec.minDistance ?? 1,
+    );
+    if (!cell) return undefined;
+    const row: PlacedObject = {
+      objectId: spec.objectId,
+      defId: spec.defId,
+      x: cell.x,
+      y: cell.y,
+      floor: walk.floor,
+      layer: spec.layer,
+      orientation: 0,
+      chunkKey: chunkKey(cell.x, cell.y, walk.floor),
+    };
+    placedLocal.push({ objectId: spec.objectId, x: cell.x, y: cell.y });
+    localRows.set(row.objectId, row);
+    worldIndex.insertPickOnly(row);
+    ensureFloorPasses(row.floor);
+    drawPropRows([row], row.floor);
+    dirtyFloors.add(row.floor);
+    reportedMoved = true;
+    applyVisibilityFor(lastCellX, lastCellY, walk.floor, true);
+    refreshHiddenObjects();
+    return { x: cell.x, y: cell.y };
   }
 
   let lastCellX = walk.cellX;
@@ -1441,7 +1600,6 @@ export async function mountWorldScene(
 
   // The player's first placement is the same call every later frame makes
   // (it may load in standing on a flight).
-  placeLocalProps();
   if (transitionsDirty) rebuildTransitions();
   playerFlightOffsetPx = placeActor(playerEntry, walk.x, walk.y, walk.floor).flightOffsetPx;
   // The first chunks are drawn before the first frame, all of them.
@@ -1547,9 +1705,13 @@ export async function mountWorldScene(
     bulkOf: (defId) => itemBulk.get(defId),
     prepare: prepareItemTextures,
     watchRows: (containerId, onRows, onError) =>
-      options.containerRows?.(containerId, onRows, onError) ?? { release: () => {} },
+      options.containerRows?.(containerId, onRows, onError) ?? {
+        release: () => {},
+      },
   });
   function placedRowOf(objectId: bigint): PlacedObject | undefined {
+    const local = localRows.get(objectId);
+    if (local) return local;
     for (const key of store.chunkKeys()) {
       const row = store.chunk(key)?.placed.get(objectId);
       if (row) return row;
@@ -1572,7 +1734,11 @@ export async function mountWorldScene(
       height: source.height,
       spriteHeightPx: source.spriteHeightPx ?? tileSizePx * source.height,
     };
-    const def = { width: source.width, height: source.height, interactAt: source.interactAt };
+    const def = {
+      width: source.width,
+      height: source.height,
+      interactAt: source.interactAt,
+    };
     containerController.open({
       object,
       grid,
@@ -1695,6 +1861,24 @@ export async function mountWorldScene(
     streamStep();
   }
 
+  /** Stands the player at `(x, y, floor)` outright (a DEV harness): the
+   * same placement a start gets, then the viewport's chunks and the
+   * visibility for the new cell. */
+  function teleport(x: number, y: number, floor: number): void {
+    ensureFloorPasses(floor);
+    walk = { ...initialFloorWalkState(x, y, floor), transitioned: false };
+    lastCellX = walk.cellX;
+    lastCellY = walk.cellY;
+    playerFlightOffsetPx = placeActor(playerEntry, walk.x, walk.y, walk.floor).flightOffsetPx;
+    applyCamera();
+    onPlayerMove?.(walk.x, walk.y, walk.floor);
+    residencyDirty = true;
+    updateResidency(Number.POSITIVE_INFINITY);
+    applyVisibilityFor(lastCellX, lastCellY, walk.floor, true);
+    refreshHiddenObjects();
+    reorderAll();
+  }
+
   /** The streaming half of a frame: ownership that moved re-derives
    * visibility; the viewport that moved draws and releases chunks. */
   function streamStep(): void {
@@ -1722,10 +1906,18 @@ export async function mountWorldScene(
         storeyHeightPx,
         ZOOM,
         appearanceCache,
-        { walk: npcWalk, config: l3Config, life: streetLife, crowd: crowdSource },
+        {
+          walk: npcWalk,
+          config: l3Config,
+          life: streetLife,
+          crowd: crowdSource,
+        },
         bodiesFrozen
           ? {}
-          : { initialZone: bodyZone(), initialCityMilliminutes: cityMilliminutes?.() },
+          : {
+              initialZone: bodyZone(),
+              initialCityMilliminutes: cityMilliminutes?.(),
+            },
       )
     : undefined;
   const msPerMilliminute = l3Config.realMsPerCityMinute / 1000;
@@ -1904,6 +2096,7 @@ export async function mountWorldScene(
       return out;
     },
     playerDrawnPoint: () => ({ x: playerSprite.x, y: playerSprite.y }),
+    teleport,
     playerScreenBounds: () => {
       const b = playerSprite.getBounds();
       return { x: b.x, y: b.y, width: b.width, height: b.height };
@@ -1936,6 +2129,7 @@ export async function mountWorldScene(
     stageChildCount: () => app.stage.children.length,
     drawnChunkCount: () => drawnChunks.size,
     localPropCells: () => placedLocal,
+    placeCarrier,
     liveSpriteCount: () => liveEntries.size,
     ownershipAtPlayer: () => ownership.ownershipAt(walk.cellX, walk.cellY, walk.floor),
     destroy: () => {
@@ -1952,9 +2146,9 @@ export async function mountWorldScene(
  * seconds, so one a frame keeps ahead of the player without a hitch. */
 const CHUNKS_PER_FRAME = 1;
 
-/** A local prop: a row the page places itself, in the store like any
- * streamed one. */
-export interface LocalProp {
+/** The page's own carrier sprite (the link offer's post): drawn in the
+ * scene and pickable, but not a row of the streamed world. */
+export interface CarrierSpec {
   readonly objectId: bigint;
   readonly defId: number;
   readonly layer: number;

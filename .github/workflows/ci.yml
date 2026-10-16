@@ -642,6 +642,17 @@ jobs:
         run: bash ../scripts/ci/check-identity-token-confined.sh
       - name: client-side trace-matrix symmetry (no cargo)
         run: bash ../scripts/ci/check-trace-matrix.sh --client-only
+      # A matrix row leaves only by being named `retired:` with its story:
+      # compared with the base branch's matrix, so a fixture swap cannot
+      # drop a promise silently (story 3.16).
+      - name: no trace-matrix row leaves without a retired line
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --depth=1 origin "$BASE_REF"
+          git show FETCH_HEAD:docs/trace-matrix.md > "$RUNNER_TEMP/base-trace-matrix.md"
+          bash ../scripts/ci/check-trace-matrix-retired.sh "$RUNNER_TEMP/base-trace-matrix.md"
       - name: story 6.17 NFR50, no client property bypasses the one seed
         run: bash ../scripts/ci/check-client-property-seed.sh
       - name: story 15.18 NFR51, every client property explores the size it states

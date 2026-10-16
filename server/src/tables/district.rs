@@ -29,8 +29,8 @@ use super::routing::{
 };
 use super::stock::{Business, business};
 use super::world::{
-    BuildingArea, FloorTransition, PlacedObject, RoomArea, building_area, floor_transition,
-    placed_object, room_area,
+    BuildingArea, FloorTransition, GroundArea, PlacedObject, RoofArea, RoomArea, building_area,
+    floor_transition, ground_area, placed_object, roof_area, room_area,
 };
 
 #[derive(Clone)]
@@ -40,9 +40,6 @@ pub struct District {
     #[primary_key]
     #[auto_inc]
     pub district_id: u64,
-    /// Indexed only so `arrival_cell_in_view` can read the row: a view has
-    /// no table scan.
-    #[index(btree)]
     pub seed: u64,
     pub x0: i32,
     pub y0: i32,
@@ -60,13 +57,17 @@ pub struct District {
     pub arrival_y: i32,
 }
 
+/// The city's first district: the one a new character arrives in. The
+/// table's ids start at 1 and are never reused, so the first district ever
+/// created keeps this id for the life of the world.
+pub const FIRST_DISTRICT_ID: u64 = 1;
+
 /// The same cell, read from a view.
 pub fn arrival_cell_in_view(ctx: &spacetimedb::ViewContext) -> Option<(i32, i32)> {
     ctx.db
         .district()
-        .seed()
-        .filter(0u64..)
-        .next()
+        .district_id()
+        .find(FIRST_DISTRICT_ID)
         .map(|d| (d.arrival_x, d.arrival_y))
 }
 
@@ -74,8 +75,8 @@ pub fn arrival_cell_in_view(ctx: &spacetimedb::ViewContext) -> Option<(i32, i32)
 pub fn arrival_cell_of(ctx: &ReducerContext) -> Option<(i32, i32)> {
     ctx.db
         .district()
-        .iter()
-        .next()
+        .district_id()
+        .find(FIRST_DISTRICT_ID)
         .map(|d| (d.arrival_x, d.arrival_y))
 }
 
@@ -146,7 +147,7 @@ fn create_district_at(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
     });
     write_graph(ctx, &graph);
     let ground = GroundConfig::from_balance(defs::BALANCE);
-    write_world(ctx, &district.region_rows(&ground, &content));
+    write_world(ctx, &district.region_rows(&ground, &content, &cfg));
     relocate_stranded(ctx, arrival, |x, y, f| {
         f == 0 && district.is_standable_at(x, y, f)
     });
@@ -155,7 +156,7 @@ fn create_district_at(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
 
 /// The one world writer: every row of `rows`, as given, inside the
 /// caller's transaction (`restore.rs` is the only other writer of these
-/// four tables).
+/// six tables).
 fn write_world(ctx: &ReducerContext, rows: &RegionRows) {
     for r in &rows.placed {
         ctx.db.placed_object().insert(PlacedObject {
@@ -185,6 +186,31 @@ fn write_world(ctx: &ReducerContext, rows: &RegionRows) {
         ctx.db.building_area().insert(BuildingArea {
             area_id: 0,
             building_id: r.owner_id,
+            x0: r.x0,
+            y0: r.y0,
+            x1: r.x1,
+            y1: r.y1,
+            floor: r.floor,
+            chunk_key: r.chunk_key,
+        });
+    }
+    for r in &rows.ground {
+        ctx.db.ground_area().insert(GroundArea {
+            area_id: 0,
+            def_id: r.def_id,
+            x0: r.x0,
+            y0: r.y0,
+            x1: r.x1,
+            y1: r.y1,
+            floor: r.floor,
+            chunk_key: r.chunk_key,
+        });
+    }
+    for r in &rows.roofs {
+        ctx.db.roof_area().insert(RoofArea {
+            area_id: 0,
+            building_id: r.building_id,
+            def_id: r.def_id,
             x0: r.x0,
             y0: r.y0,
             x1: r.x1,

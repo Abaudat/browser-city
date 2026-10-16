@@ -56,8 +56,8 @@ describe("ChunkStore (story 3.16)", () => {
     store.insert("buildingArea", building(1n, 0, 0, 6, 6));
     store.insert("roomArea", room(1n, 1, 1, 5, 5));
     expect(log).toEqual(["+p1", "+p2", "+b1", "+r1"]);
-    expect([...store.chunk(chunkKey(3, 3, 0))!.placed.keys()]).toEqual([1n]);
-    expect([...store.chunk(chunkKey(40, 3, 0))!.placed.keys()]).toEqual([2n]);
+    expect([...(store.chunk(chunkKey(3, 3, 0))?.placed.keys() ?? [])]).toEqual([1n]);
+    expect([...(store.chunk(chunkKey(40, 3, 0))?.placed.keys() ?? [])]).toEqual([2n]);
     store.delete("placedObject", placed(1n, 3, 3));
     expect(log.at(-1)).toBe("-p1");
     expect(store.chunk(chunkKey(3, 3, 0))?.placed.size ?? 0).toBe(0);
@@ -79,7 +79,7 @@ describe("ChunkStore (story 3.16)", () => {
     store.insert("placedObject", placed(1n, 3, 3));
     store.insert("placedObject", placed(1n, 3, 3));
     expect(log).toEqual(["+p1", "-p1", "+p1"]);
-    expect(store.chunk(chunkKey(3, 3, 0))!.placed.size).toBe(1);
+    expect(store.chunk(chunkKey(3, 3, 0))?.placed.size).toBe(1);
   });
 
   it("reports an update as a delete of the old row and an insert of the new", () => {
@@ -203,6 +203,59 @@ describe("ChunkStore: the other tables and the edges", () => {
     const { sink, log } = recorder();
     store.attach(sink);
     store.delete("placedObject", placed(9n, 1, 1));
+    expect(log).toEqual([]);
+  });
+});
+
+describe("ChunkStore ground and roofs (story 3.16)", () => {
+  const ground = (id: bigint, x0: number, y0: number, x1: number, y1: number) => ({
+    areaId: id,
+    defId: 10,
+    x0,
+    y0,
+    x1,
+    y1,
+    floor: 0,
+    chunkKey: chunkKey(x0, y0, 0),
+  });
+  const roof = (id: bigint, x0: number, y0: number, x1: number, y1: number) => ({
+    areaId: id,
+    buildingId: 100n,
+    defId: 78,
+    x0,
+    y0,
+    x1,
+    y1,
+    floor: 0,
+    chunkKey: chunkKey(x0, y0, 0),
+  });
+
+  it("holds ground and roof rects by chunk, and a chunk holding only them still exists", () => {
+    const store = new ChunkStore();
+    store.insert("groundArea", ground(1n, 0, 0, 4, 4));
+    store.insert("roofArea", roof(1n, 40, 0, 44, 4));
+    expect([...(store.chunk(chunkKey(0, 0, 0))?.ground.keys() ?? [])]).toEqual([1n]);
+    expect([...(store.chunk(chunkKey(40, 0, 0))?.roofs.keys() ?? [])]).toEqual([1n]);
+    expect(store.chunkKeys().length).toBe(2);
+  });
+
+  it("drops the chunk when its last ground rect goes, and tells listeners", () => {
+    const store = new ChunkStore();
+    const seen: bigint[] = [];
+    store.onChunkChanged((k) => seen.push(k));
+    store.insert("groundArea", ground(1n, 0, 0, 4, 4));
+    store.delete("groundArea", ground(1n, 0, 0, 4, 4));
+    expect(store.chunk(chunkKey(0, 0, 0))).toBeUndefined();
+    expect(seen).toEqual([chunkKey(0, 0, 0), chunkKey(0, 0, 0)]);
+  });
+
+  it("replaces a row on update, never sinks it into the collision index", () => {
+    const store = new ChunkStore();
+    const { sink, log } = recorder();
+    store.attach(sink);
+    store.insert("roofArea", roof(1n, 0, 0, 4, 4));
+    store.update("roofArea", roof(1n, 0, 0, 4, 4), roof(1n, 0, 0, 6, 4));
+    expect(store.chunk(chunkKey(0, 0, 0))?.roofs.get(1n)?.x1).toBe(6);
     expect(log).toEqual([]);
   });
 });

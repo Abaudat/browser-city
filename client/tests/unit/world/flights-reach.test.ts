@@ -39,10 +39,14 @@ function sourceFiles(dir: string): string[] {
 
 describe("the flight offset is draw-only (FR182)", () => {
   it("only the scene, the walk step and the remote gait read flights; only the walk step scales a step", () => {
+    const sources = sourceFiles(SRC).map((file) => ({
+      name: relative(SRC, file).split(sep).join("/"),
+      text: readFileSync(file, "utf-8"),
+    }));
     const readers = (pattern: RegExp) =>
-      sourceFiles(SRC)
-        .filter((file) => pattern.test(readFileSync(file, "utf-8")))
-        .map((file) => relative(SRC, file).split(sep).join("/"))
+      sources
+        .filter((source) => pattern.test(source.text))
+        .map((source) => source.name)
         .sort();
     expect(readers(/from\s+"[^"]*world\/flights"|from\s+"\.\/flights"/)).toEqual([
       "render/world-scene.ts",

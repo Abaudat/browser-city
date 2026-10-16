@@ -7,7 +7,14 @@
 // The world is never built from anything but these rows: no client code
 // derives geometry the server already knows.
 
-import type { BuildingArea, FloorTransition, PlacedObject, RoomArea } from "../net/bindings/types";
+import type {
+  BuildingArea,
+  FloorTransition,
+  GroundArea,
+  PlacedObject,
+  RoofArea,
+  RoomArea,
+} from "../net/bindings/types";
 
 /** What a chunk's rows come to, keyed by each table's own primary key. */
 export interface ChunkData {
@@ -15,6 +22,10 @@ export interface ChunkData {
   readonly buildingAreas: Map<bigint, BuildingArea>;
   readonly roomAreas: Map<bigint, RoomArea>;
   readonly transitions: Map<bigint, FloorTransition>;
+  /** Ground rects, painted in `areaId` order. Draw-only: no sink. */
+  readonly ground: Map<bigint, GroundArea>;
+  /** Roof rects. Draw-only: no sink. */
+  readonly roofs: Map<bigint, RoofArea>;
 }
 
 /** The consumers of row changes: the collision/footprint index, the
@@ -36,6 +47,8 @@ function emptyChunk(): ChunkData {
     buildingAreas: new Map(),
     roomAreas: new Map(),
     transitions: new Map(),
+    ground: new Map(),
+    roofs: new Map(),
   };
 }
 
@@ -169,6 +182,24 @@ export class ChunkStore {
         this.changed(r.chunkKey);
         return;
       }
+      case "groundArea": {
+        const r = row as GroundArea;
+        const data = this.dataFor(r.chunkKey, insert);
+        if (!data) return;
+        if (insert) data.ground.set(r.areaId, r);
+        else data.ground.delete(r.areaId);
+        this.changed(r.chunkKey);
+        return;
+      }
+      case "roofArea": {
+        const r = row as RoofArea;
+        const data = this.dataFor(r.chunkKey, insert);
+        if (!data) return;
+        if (insert) data.roofs.set(r.areaId, r);
+        else data.roofs.delete(r.areaId);
+        this.changed(r.chunkKey);
+        return;
+      }
       default:
         // Other region tables (actors, players) are not the world's.
         return;
@@ -191,7 +222,9 @@ export class ChunkStore {
       data.placed.size === 0 &&
       data.buildingAreas.size === 0 &&
       data.roomAreas.size === 0 &&
-      data.transitions.size === 0
+      data.transitions.size === 0 &&
+      data.ground.size === 0 &&
+      data.roofs.size === 0
     ) {
       this.chunks.delete(key);
     }

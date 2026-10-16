@@ -17,9 +17,18 @@ import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
 import { CHUNK_SIZE } from "../../src/world/chunk";
 import { REGION_LEAVE_RADIUS_CHUNKS, REGION_RADIUS_CHUNKS } from "../../src/world/region";
+import {
+  BRIDGE_FLIGHT_X0,
+  BRIDGE_FLOOR,
+  BRIDGE_FOOT_Y,
+  BRIDGE_X0,
+  STREET_FLOOR,
+} from "../unit/support/stairs-world";
+import { standInBlock } from "./block-support";
 import { walkFreeCells } from "./district-support";
 import { expect, test } from "./fixtures";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
+import { walkRealSegment } from "./walk-support";
 
 const DEFS = parseDefs(
   JSON.parse(
@@ -36,7 +45,6 @@ const QUANTUM = 1 / DEFS.positionUnitsPerCell;
 const WALK_CELLS = 2.5;
 /** The one floor the generated city has. */
 const GROUND_FLOOR = 0;
-const HOP_CELLS = 0.2;
 
 /** A page whose position writes are counted from the first frame it sends. */
 async function countedPage(browser: Browser): Promise<{ page: Page; sends: () => number }> {
@@ -293,5 +301,63 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   expect(after.drawn?.screenX).toBe(before?.screenX);
   expect(after.drawn?.screenY).toBe(before?.screenY);
 
+  await b.page.context().close();
+});
+
+test("a player on the footbridge deck is drawn on floor 1, in the deck's stack, where they draw themselves (FR120-FR122, FR124)", async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const a = await countedPage(browser);
+  const b = await countedPage(browser);
+  const id = await createCharacter(a.page);
+  await b.page.bringToFront();
+  await b.page.waitForFunction(
+    (cid) => window.__bc?.remotePlayers?.poses()[cid] !== undefined,
+    id,
+    { timeout: 20_000 },
+  );
+  // Both stand at the fixture block: B must hold the chunks A is in to see
+  // A at all, and each is the other's remote.
+  await standInBlock(b.page, BRIDGE_FLIGHT_X0 + 0.5, BRIDGE_FOOT_Y + 1.5, STREET_FLOOR);
+  // Up the fixture block's footbridge flight and a little along the deck.
+  await standInBlock(a.page, BRIDGE_FLIGHT_X0 + 0.5, BRIDGE_FOOT_Y + 0.5, STREET_FLOOR);
+  await walkRealSegment(a.page, {
+    label: "up-the-flight",
+    key: "ArrowUp",
+    until: { kind: "floor", value: BRIDGE_FLOOR },
+  });
+  await walkRealSegment(a.page, {
+    label: "along-the-deck",
+    key: "ArrowLeft",
+    until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
+  });
+  const rest = await a.page.evaluate(() => window.__bc?.playerPosition);
+  if (!rest) throw new Error("no rest position");
+  await b.page.waitForFunction(
+    ({ cid, x, y, floor, q }) => {
+      const p = window.__bc?.remotePlayers?.poses()[cid];
+      return (
+        p !== undefined && p.floor === floor && Math.abs(p.x - x) <= q && Math.abs(p.y - y) <= q
+      );
+    },
+    { cid: id, x: rest.x, y: rest.y, floor: BRIDGE_FLOOR, q: QUANTUM },
+    { timeout: 30_000 },
+  );
+
+  const seen = await b.page.evaluate(
+    (cid) => ({ drawn: window.__bc?.remotePlayers?.drawn()[cid] }),
+    id,
+  );
+  const own = await a.page.evaluate(() => window.__bc?.playerDrawnPoint?.());
+  if (!seen.drawn || !own) throw new Error("nothing drawn to compare");
+  expect(seen.drawn.visible, "the remote is hidden on the deck").toBe(true);
+  // The sprite's real parent is the deck floor's pool (re-parented on the
+  // floor change), not merely listed under it.
+  expect(seen.drawn.stackFloor).toBe(BRIDGE_FLOOR);
+  expect(Math.abs(seen.drawn.screenX - own.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(seen.drawn.screenY - own.y)).toBeLessThanOrEqual(1);
+
+  await a.page.context().close();
   await b.page.context().close();
 });

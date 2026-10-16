@@ -85,3 +85,41 @@ key = "upright"
 [[tag]]
 id = 35
 key = "registry_post"
+
+# Ground-surface vocabulary (story 3.16): the district's ground rects are
+# chosen by these tags, never by object key.
+# A tile an affluent neighbourhood's room floor is laid with, preferred
+# over its plain twin there.
+[[tag]]
+id = 62
+key = "affluent"
+
+# The paved strip between a building's front wall and the street pavement.
+[[tag]]
+id = 63
+key = "forecourt"
+
+# The bare ground at a plot's rear and sides.
+[[tag]]
+id = 64
+key = "backyard"
+
+# A roof tile: drawn over a building's footprint, hidden while the viewer
+# is inside that building (`roof_area`). Never a placed object.
+[[tag]]
+id = 65
+key = "roof"
+
+# A roof's building-age band: the oldest, middle and newest thirds of the
+# age dial's range.
+[[tag]]
+id = 66
+key = "aged_old"
+
+[[tag]]
+id = 67
+key = "aged_mid"
+
+[[tag]]
+id = 68
+key = "aged_new"

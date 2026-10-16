@@ -20,7 +20,7 @@ import { computeCamera, ZOOM } from "../../src/render/camera";
 import { visibleCellBounds, worldPointPx } from "../../src/render/screen-position";
 import { CHUNK_SIZE, chunkKey } from "../../src/world/chunk";
 import { columnOf, REGION_LEAVE_RADIUS_CHUNKS, REGION_RADIUS_CHUNKS } from "../../src/world/region";
-import { arrivalCell, firstObjectIn, placedRowsInChunk } from "./district-support";
+import { arrivalCell, firstRowKeyIn, placedRowsInChunk } from "./district-support";
 import { expect, test } from "./fixtures";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
 
@@ -54,15 +54,14 @@ const HOME = {
 };
 /** A chunk that is held before and after the crossing below. */
 const STAY = { cx: HOME.cx, cy: HOME.cy };
-/** A chunk held at the start, still held at the boundary, gone past the hysteresis distance. */
-const LEFT_BEHIND = { cx: HOME.cx - 2, cy: HOME.cy };
+/** A chunk holding rows, held at the start, still held at the boundary, gone past the hysteresis distance. */
+const LEFT_BEHIND = { cx: HOME.cx - 2, cy: HOME.cy + 1 };
 /** Well outside any region the spawn could ever ask for. */
 const FAR = { cx: 3, cy: 12 };
 
 const keyOf = (c: { cx: number; cy: number }): string =>
   String(chunkKey(c.cx * CHUNK_SIZE, c.cy * CHUNK_SIZE, 0));
-const objectId = (c: { cx: number; cy: number }): string =>
-  `placedObject:${firstObjectIn(c.cx, c.cy)}`;
+const objectId = (c: { cx: number; cy: number }): string => firstRowKeyIn(c.cx, c.cy);
 
 /** Every placed row the module holds in the region around the arrival chunk. */
 function regionPlacedRows(): number {

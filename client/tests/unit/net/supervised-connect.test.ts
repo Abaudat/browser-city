@@ -11,6 +11,8 @@ const TABLES = [
   "floorTransition",
   "buildingArea",
   "roomArea",
+  "groundArea",
+  "roofArea",
   "actorLocation",
   "playerPosition",
 ] as const;

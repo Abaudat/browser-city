@@ -216,6 +216,8 @@ vi.mock("../../src/net/bindings", () => ({
     floorTransition: fakeTable("floor_transition"),
     buildingArea: fakeTable("building_area"),
     roomArea: fakeTable("room_area"),
+    groundArea: fakeTable("ground_area"),
+    roofArea: fakeTable("roof_area"),
     actorLocation: fakeTable("actor_location"),
     playerPosition: fakeTable("player_position"),
   },
@@ -361,6 +363,8 @@ describe("connect", () => {
         "floorTransition",
         "buildingArea",
         "roomArea",
+        "groundArea",
+        "roofArea",
         "actorLocation",
         "playerPosition",
       ]) {
@@ -389,11 +393,13 @@ describe("connect", () => {
         "actorLocation",
         "buildingArea",
         "floorTransition",
+        "groundArea",
         "placedObject",
         "playerPosition",
+        "roofArea",
         "roomArea",
       ]);
-      expect(inserted).toHaveLength(6);
+      expect(inserted).toHaveLength(8);
       for (const t of registered) delete db[t];
     });
   });
