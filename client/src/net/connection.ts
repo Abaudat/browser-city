@@ -4,13 +4,13 @@
 // data and a plain callback, never the SDK's own types, to the rest of the
 // client.
 
-import type { WirePosition } from "../world/position-codec";
 import { BOOT_MARK, markBoot } from "../boot/boot-marks";
 import type { HandshakeVersion } from "../boot/handshake";
 import { readStoredToken, rememberFirstToken } from "../identity/identity-storage";
 import type { SettingsStorage } from "../settings/settings-storage";
 import type { ClockSync } from "../time/clock-sync";
 import type { ServerClock } from "../time/server-clock";
+import type { WirePosition } from "../world/position-codec";
 import { DbConnection, tables } from "./bindings";
 import type {
   ActorLocation,
