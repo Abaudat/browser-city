@@ -102,8 +102,10 @@ import { ServerClock } from "./time/server-clock";
 import { mountConnectionNotice } from "./ui/connection-notice";
 import { adoptNamePrompt } from "./ui/name-prompt";
 import { mountOptionsMenu } from "./ui/options-menu";
+import { createArrivalPosition } from "./world/arrival-position";
 import { loadMovementConfig } from "./world/movement-config";
 import { objectDefsById, thresholdDefIds, windowDefIds } from "./world/object-defs";
+import type { WirePosition } from "./world/position-codec";
 import { dequantise } from "./world/position-codec";
 import { loadPositionConfig, type PositionConfig } from "./world/position-config";
 import { handleId } from "./world/region";
@@ -132,6 +134,16 @@ interface PlayersWiring {
   /** The local character's id, once it exists. */
   readonly characterId: () => string | undefined;
   readonly onMounted: () => void;
+  /** Story 7.1: the scene exists; `relocate` moves its body (an arrival row
+   * that came after the start was chosen). */
+  readonly onSceneReady: (relocate: (x: number, y: number, floor: number) => void) => void;
+  /** Story 7.1: where the scene starts -- the caller's stored row when one
+   * exists, else `fallback`. Called once, as the scene mounts. */
+  readonly arrivalStart: (fallback: { x: number; y: number; floor: number }) => {
+    x: number;
+    y: number;
+    floor: number;
+  };
 }
 
 async function main(): Promise<void> {
@@ -196,6 +208,13 @@ async function main(): Promise<void> {
   let positionConfig: PositionConfig | undefined;
   let motion: RemoteMotion | undefined;
   let playerPosition: { x: number; y: number; floor: number } | undefined;
+  // Story 7.1: the caller's stored row decides where the scene starts, and
+  // the sender never runs over a spawn the scene did not adopt.
+  let arrivalPosition: ReturnType<typeof createArrivalPosition> | undefined;
+  let storedRow: WirePosition | undefined;
+  // An arrival row that came between choosing the start and the scene existing.
+  let pendingRelocation: { x: number; y: number; floor: number } | undefined;
+  let relocateScene: ((x: number, y: number, floor: number) => void) | undefined;
   let sceneMounted = false;
   // The sender runs while the connection is `connected` and the caller has a
   // character and the scene a position; it restarts on every `connected`
@@ -208,7 +227,7 @@ async function main(): Promise<void> {
     markArrivalForE2e("sender-started");
     return startPositionSender({
       conn: () => conn.current(),
-      position: () => playerPosition,
+      position: () => (arrivalPosition?.senderMayRun() === false ? undefined : playerPosition),
       periodMs: p.periodMs,
       unitsPerCell: p.unitsPerCell,
     });
@@ -289,6 +308,13 @@ async function main(): Promise<void> {
       onIdentity: (identity) => {
         latestIdentity = identity;
         recordIdentityForE2e(identity);
+      },
+      onStoredPosition: (row) => {
+        storedRow = row;
+        const to = arrivalPosition?.stored(row);
+        if (!to) return;
+        if (relocateScene) relocateScene(to.x, to.y, to.floor);
+        else pendingRelocation = to;
       },
       onCharacter: (character) => {
         latestCharacter = character;
@@ -460,6 +486,18 @@ async function main(): Promise<void> {
         onPlayerMove: (x, y, floor) => {
           playerPosition = { x, y, floor };
         },
+        arrivalStart: (fallback) => {
+          const p = positionConfig as PositionConfig;
+          arrivalPosition = createArrivalPosition(p.unitsPerCell, fallback);
+          if (storedRow) arrivalPosition.stored(storedRow);
+          return arrivalPosition.mount();
+        },
+        onSceneReady: (relocate) => {
+          relocateScene = relocate;
+          if (!pendingRelocation) return;
+          relocate(pendingRelocation.x, pendingRelocation.y, pendingRelocation.floor);
+          pendingRelocation = undefined;
+        },
         onMounted: () => {
           sceneMounted = true;
           syncSender();
@@ -596,9 +634,12 @@ async function startStreetScene(
   // position drives it (`onPlayerMove`), edge-triggered.
   const remotePlayers = players.setUp(defs);
   region.configure({ minFloor: defs.minFloor, maxFloor: defs.maxFloor });
-  // Story 4.6: a new character is first placed in the home flat; only a DEV
-  // spec that says so starts in the shop.
-  const start = e2eStartsInShop() ? PLAYER_START : HOME_FLAT_SPAWN;
+  // Story 7.1: the scene starts at the caller's stored `player_position`
+  // when there is one (the server writes a new tenant's spawn inside its
+  // flat, and a return visit stands where it left). The test street's flat
+  // is only the fallback while no row exists, until Story 3.16 draws the
+  // generated district; a DEV spec that says so starts in the shop.
+  const start = players.arrivalStart(e2eStartsInShop() ? PLAYER_START : HOME_FLAT_SPAWN);
   followScene(start.x, start.y, start.floor);
 
   const tileSizePx = getBalance(defs, "render.tile_size_px");
@@ -805,6 +846,7 @@ async function startStreetScene(
     onHighlightChange: recordHighlightForE2e,
   });
   sceneHandle = handle;
+  players.onSceneReady((x, y, floor) => handle.relocate(x, y, floor));
   exposeContainerViewForE2e({
     containerView: () => {
       const view = handle.containerView();

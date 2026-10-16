@@ -9,6 +9,8 @@
 #   - <title> is the product's name and the favicon is a data URI;
 #   - FR177's ban: no <progress>, no role="progressbar", and nothing named
 #     spinner/loading/loader in the shell or in src/ui/ (code, not prose).
+#   - NFR21/NFR22's ban: nothing named inventory/possessions/belongings in the
+#     shell or in src/ui/ -- what a player owns is in the world, never a list.
 # Usage: check-boot-shell.sh [dist-dir] [ui-src-dir]
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -45,9 +47,13 @@ printf '%s' "$HEAD" | grep -Eq '<link[^>]*rel="icon"[^>]*href="data:' || bad "th
 printf '%s' "$FLAT" | grep -Eiq '<progress|role="progressbar"' && bad "a progress indicator in the shell (FR177)"
 # Names, not prose: class/id/data-* attribute values in the shell...
 printf '%s' "$FLAT" | grep -Eiq '(class|id|data-[a-z-]+)="[^"]*(spinner|loading|loader)' && bad "an element named spinner/loading/loader in the shell (FR177)"
+printf '%s' "$FLAT" | grep -Eiq '(class|id|data-[a-z-]+)="[^"]*(inventory|possessions|belongings)' && bad "an element named inventory/possessions/belongings in the shell (NFR21)"
 # ...and code (not comment lines) under src/ui.
 if [ -d "$UI" ]; then
   while IFS= read -r f; do
+    if grep -Ev '^\s*(//|\*|/\*)' "$f" | grep -Eiq 'inventory|possessions|belongings'; then
+      bad "$f names an inventory/possessions/belongings list (NFR21)"
+    fi
     if grep -Ev '^\s*(//|\*|/\*)' "$f" | grep -Eiq 'spinner|loader|\bloading\b'; then
       bad "$f names a spinner/loading/loader (FR177)"
     fi

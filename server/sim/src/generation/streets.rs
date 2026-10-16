@@ -372,7 +372,7 @@ impl StreetNetwork {
         cfg: &GenerationConfig,
     ) -> Option<(i64, i64)> {
         let span = (cfg.density_max - cfg.density_min).max(1) as i64;
-        let low_max = cfg.density_min as i64 + span / 3;
+        let low_max = cfg.periphery_max_density() as i64;
         let high_min = cfg.density_min as i64 + span - span / 3;
         let site = land_use.site();
         let density_of = |b: &Block| -> i64 {

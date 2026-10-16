@@ -18,12 +18,18 @@ use sim::reducer_classes::ReducerClass;
 use sim::routing::graph::{MacroGraph, NodeKind};
 use spacetimedb::{ReducerContext, Table, Timestamp};
 
+use super::housing::{Dwelling, dwelling};
 use super::metrics::count_call;
 use super::ops::require_owner;
 use super::routing::{
     RouteEdge, RouteNode, RouteProvision, route_edge, route_node, route_provision,
 };
 use super::stock::{Business, business};
+use super::world::{
+    Building, BuildingArea, Room, RoomArea, building, building_area, room, room_area,
+};
+use super::world::{PlacedObject, placed_object};
+use sim::world::clip_rect_to_chunks;
 
 #[derive(Clone)]
 #[spacetimedb::table(accessor = district)]
@@ -71,7 +77,7 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
         .collect();
     let cfg = GenerationConfig::from_balance(defs::BALANCE).map_err(|e| e.to_string())?;
     let content = GenerationContent::committed();
-    let (record, _district, graph) =
+    let (record, district, graph) =
         create(&existing, seed, &cfg, &content).map_err(|e| e.to_string())?;
     ctx.db.district().insert(District {
         district_id: 0,
@@ -86,7 +92,85 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
         generated_at: ctx.timestamp,
     });
     write_graph(ctx, &graph);
+    write_buildings(ctx, &district, &cfg, &content);
     Ok(())
+}
+
+/// One `building` row per laid interior, in plot order, carrying what
+/// `sim::housing` derived for a dwelling; its ownership areas and its
+/// rooms, each clipped to the chunk it lies in. Inside the caller's
+/// transaction, with the graph.
+fn write_buildings(
+    ctx: &ReducerContext,
+    district: &sim::generation::District,
+    cfg: &GenerationConfig,
+    content: &GenerationContent,
+) {
+    let homes: std::collections::BTreeMap<u32, sim::housing::Home> =
+        sim::housing::dwellings(district, cfg, content, defs::BALANCE)
+            .into_iter()
+            .map(|d| (d.plot, d.home))
+            .collect();
+    // Pass 7: every placed row, anchored in its chunk. The same
+    // transaction as the graph and the buildings.
+    for r in district.props.rows() {
+        if let Some(chunk_key) = sim::world::checked_chunk_key(r.x, r.y, r.floor) {
+            ctx.db.placed_object().insert(PlacedObject {
+                object_id: 0,
+                def_id: r.def_id,
+                x: r.x,
+                y: r.y,
+                floor: r.floor,
+                layer: r.layer,
+                orientation: r.orientation,
+                chunk_key,
+            });
+        }
+    }
+    for (plot, _ty, interior) in district.interiors.laid() {
+        let b = ctx.db.building().insert(Building {
+            building_id: 0,
+            created_at: ctx.timestamp,
+        });
+        if let Some(h) = homes.get(&plot) {
+            let home = sim::housing::Home {
+                id: b.building_id,
+                ..*h
+            };
+            ctx.db.dwelling().insert(Dwelling::of_home(&home));
+        }
+        for (piece, chunk_key) in clip_rect_to_chunks(interior.footprint, 0) {
+            ctx.db.building_area().insert(BuildingArea {
+                area_id: 0,
+                building_id: b.building_id,
+                x0: piece.x0,
+                y0: piece.y0,
+                x1: piece.x1,
+                y1: piece.y1,
+                floor: 0,
+                chunk_key,
+            });
+        }
+        for r in &interior.rooms {
+            let room = ctx.db.room().insert(Room {
+                room_id: 0,
+                building_id: b.building_id,
+                created_at: ctx.timestamp,
+            });
+            for (piece, chunk_key) in clip_rect_to_chunks(r.rect, 0) {
+                ctx.db.room_area().insert(RoomArea {
+                    area_id: 0,
+                    room_id: room.room_id,
+                    x0: piece.x0,
+                    y0: piece.y0,
+                    x1: piece.x1,
+                    y1: piece.y1,
+                    floor: 0,
+                    chunk_key,
+                });
+            }
+        }
+    }
 }
 
 /// The one graph writer: one `business` row per workplace source node,

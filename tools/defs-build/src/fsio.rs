@@ -21,6 +21,13 @@ pub fn read_codes_golden(repo_root: &Path) -> io::Result<String> {
     std::fs::read_to_string(&path).map_err(|e| io::Error::other(format!("{}: {e}", path.display())))
 }
 
+/// Reads `docs/requirements.md` relative to `repo_root`: the ids a `seed`
+/// marker may name. A missing file is a hard error naming the path.
+pub fn read_requirements(repo_root: &Path) -> io::Result<String> {
+    let path = repo_root.join("docs/requirements.md");
+    std::fs::read_to_string(&path).map_err(|e| io::Error::other(format!("{}: {e}", path.display())))
+}
+
 fn run_git_ls_files(repo_root: &Path, args: &[&str]) -> io::Result<Vec<PathBuf>> {
     let output = Command::new("git")
         .arg("-C")

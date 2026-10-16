@@ -1,0 +1,12 @@
+# Story 7.1: the generic paper kind. Every payslip, rent receipt and council
+# notice is one of these: the item is the paper, and what it says lives in
+# its own per-instance state table keyed by `instance_id`, never in this
+# def. The tenancy agreement is the first instance; it is the physical
+# carrier for the rent a player signed for.
+[[item]]
+id = 15
+key = "tenancy_agreement"
+unit = "piece"
+shelf_life_minutes = 0
+bulk = { width = 1, height = 1 }
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/22_Post_Office_Singles_16x16/22_Post_Office_16x16_Letter_1.png", x = 0, y = 0, w = 16, h = 16 }

@@ -107,6 +107,24 @@ fn an_out_of_range_balance_value_is_named() {
     );
 }
 
+#[test]
+fn a_seed_marker_that_names_no_requirement_is_named() {
+    let err = build_err("economy-balance-seed-marker-not-a-requirement");
+    assert_eq!(
+        err.to_string(),
+        "defs/balance/economy.toml:2:1: balance 'economy.rent.edge_flat_per_week' has seed marker 'tuned', which is not a requirement in docs/requirements.md"
+    );
+}
+
+#[test]
+fn a_well_formed_seed_marker_for_a_requirement_that_does_not_exist_is_named() {
+    let err = build_err("economy-balance-seed-marker-unknown-requirement");
+    assert_eq!(
+        err.to_string(),
+        "defs/balance/economy.toml:2:1: balance 'economy.rent.edge_flat_per_week' has seed marker 'FR99999', which is not a requirement in docs/requirements.md"
+    );
+}
+
 // --- story 2.10: tags and the five rule kinds -------------------------------
 
 #[test]
@@ -1204,6 +1222,8 @@ fn every_known_category_has_a_fixture_directory() {
         "distribution-max-distance-zero",
         "placement-floor-min-above-max",
         "duplicate-rule-id",
+        "economy-balance-seed-marker-not-a-requirement",
+        "economy-balance-seed-marker-unknown-requirement",
         "prop-no-collider-not-underfoot",
         "manhole-not-tagged-underfoot",
         "underfoot-tag-with-collider",

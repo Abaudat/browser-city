@@ -100,6 +100,7 @@ test("every spatial subscription on the wire carries a chunk predicate, and the 
       'SELECT * FROM "module_version"',
       'SELECT * FROM "world_clock"',
       'SELECT * FROM "my_character"',
+      'SELECT * FROM "my_position"',
     ]),
   );
 

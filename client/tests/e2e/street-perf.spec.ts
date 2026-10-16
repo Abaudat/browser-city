@@ -302,6 +302,12 @@ test("the frame path stays inside its work budget for a whole walked session (NF
   // `interact_at` with this file's own proven route segments, without
   // threading a second route through wherever the lap above happened to
   // leave the player.
+  // A returning character resumes at its stored position (story 7.1), so
+  // the reload arrives as a new identity to start in the shop again.
+  await page.evaluate(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
   await page.reload();
   await page.waitForFunction(() => window.__bc?.playerAppearance !== undefined, undefined, {
     timeout: 60_000,

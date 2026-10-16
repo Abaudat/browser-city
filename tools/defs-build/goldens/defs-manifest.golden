@@ -72,6 +72,7 @@ object 71 cupboard
 object 72 crate
 object 73 pallet
 object 74 bag
+object 75 moving_box
 item 1 bottle
 item 2 recycled_glass
 item 3 coin_1
@@ -86,6 +87,7 @@ item 11 potted_flower
 item 12 seed_sack
 item 13 apron
 item 14 produce_crate
+item 15 tenancy_agreement
 denomination 1 coin_1
 denomination 2 coin_2
 denomination 5 coin_5
