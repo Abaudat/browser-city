@@ -256,6 +256,7 @@ pub fn parse_all(files: &[(PathBuf, String)]) -> Result<RawDefs, DefsError> {
                         value: located(text, &b.value),
                         min: b.min,
                         max: b.max,
+                        seed: b.seed,
                     });
                 }
             }

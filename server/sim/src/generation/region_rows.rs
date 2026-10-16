@@ -12,7 +12,7 @@
 //! by the client while its viewer is inside.
 
 use super::streets::Side;
-use super::{District, GenerationConfig, GenerationContent, building_types, props, rect_seed_key};
+use super::{District, GenerationConfig, GenerationContent, building_types, props};
 use crate::generated::defs;
 use crate::world::{CHUNK_SIZE, Rect, chunk_key, clip_rect_to_chunks};
 use std::collections::BTreeMap;
@@ -290,11 +290,17 @@ impl District {
                 chunk_key: chunk_key(r.x, r.y, r.floor),
             });
         }
-        for (plot, ty, i) in self.interiors.laid() {
-            let b = rect_seed_key(i.footprint);
+        // A building is named by its place in laid order and a room by its
+        // place across the laid buildings' rooms, from 1: the ids a fresh
+        // `building` and `room` table assign as `create_district` inserts
+        // them in that order.
+        let mut room_no = 0u64;
+        for (n_building, (plot, ty, i)) in self.interiors.laid().enumerate() {
+            let b = n_building as u64 + 1;
             push_area(&mut out.building_areas, b, i.footprint);
             for (n, room) in i.rooms.iter().enumerate() {
-                let owner = rect_seed_key(room.rect);
+                room_no += 1;
+                let owner = room_no;
                 push_area(&mut out.room_areas, owner, room.rect);
                 for t in i.thresholds.iter().filter(|t| t.room == n) {
                     push_area(&mut out.room_areas, owner, cell(t.x, t.y));

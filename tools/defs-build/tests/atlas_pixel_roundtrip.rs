@@ -45,7 +45,8 @@ fn every_real_objects_atlas_pixels_match_its_source_sprite_rect_exactly() {
         .collect();
 
     let codes_golden = fsio::read_codes_golden(&root).unwrap();
-    let code_tables = codes::CodeTables::parse(&codes_golden);
+    let code_tables = codes::CodeTables::parse(&codes_golden)
+        .with_requirements(&fsio::read_requirements(&root).unwrap());
     let defs = validate::validate(
         &raw,
         &sheet_dims,

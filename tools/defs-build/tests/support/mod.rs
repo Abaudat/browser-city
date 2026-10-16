@@ -165,6 +165,12 @@ pub fn code_tables() -> defs_build::codes::CodeTables {
         ("walls", 30),
         ("ground_objects", 5),
     ])
+    .with_requirements(
+        "- **FR20** - a requirement
+- **FR27** - another
+- **NFR3** - a non-functional one
+",
+    )
 }
 
 /// `""` (never `defs_build::model::SPRITE_SHEET_ALLOWED_ROOT`): every

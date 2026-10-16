@@ -546,6 +546,8 @@ jobs:
       # above.
       - name: story 4.2, the authoritative loop fires with zero clients connected and survives a rebuild
         run: bash scripts/ci/check-authoritative-loop.sh
+      - name: "story 7.1, a generated district then a new character: the tenancy, spawn and kit land together in one dwelling"
+        run: bash scripts/ci/check-housing-live.sh
       # Story 4.3: its own disposable local instance and port (3992),
       # never 3987-3991 -- same job, same reasoning as the steps above.
       - name: story 4.3, the dev-only clock jumps, replays every skipped fire and runs the loop faster
@@ -726,6 +728,8 @@ jobs:
         run: bash ../scripts/ci/check-no-frame-rate-reducers.sh
       - name: story 4.4 FR138, one home for the player_position accessor and for the position reducer call
         run: bash ../scripts/ci/check-player-position-path.sh
+      - name: story 7.1, the placed_object accessor has its three writers and no more
+        run: bash ../scripts/ci/check-placed-object-path.sh
       - name: story 5.3 FR58, one writer for the actor_location accessor
         run: bash ../scripts/ci/check-actor-location-path.sh
       - name: story 4.4 NFR32, the client calls exactly the allow-listed reducers and procedures

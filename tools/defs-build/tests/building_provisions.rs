@@ -15,6 +15,7 @@ fn repo_root() -> PathBuf {
 
 fn tables() -> codes::CodeTables {
     codes::CodeTables::parse(&fsio::read_codes_golden(&repo_root()).unwrap())
+        .with_requirements(&fsio::read_requirements(&repo_root()).unwrap())
 }
 
 /// The real tree with `old` replaced by `new` once in whichever building

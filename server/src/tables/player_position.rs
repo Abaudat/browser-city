@@ -6,8 +6,8 @@ use sim::player_position::{Write, plan_position};
 use sim::reducer_classes::ReducerClass;
 use spacetimedb::{ReducerContext, SpacetimeType, Table, Timestamp, ViewContext};
 
-use super::district::{arrival_cell_in_view, arrival_cell_of};
-use super::identity::character_of;
+use super::district::arrival_cell_in_view;
+use super::identity::{character_of, viewer_character};
 use super::metrics::count_call;
 
 /// A character's feet point: the cell plus the fraction of the cell in
@@ -33,10 +33,9 @@ pub struct PlayerPosition {
     pub updated_at: Timestamp,
 }
 
-/// Where the caller starts: its own character's stored position when it
-/// has one, else the district's arrival cell. Empty before a district
-/// exists. The client takes its first position from the `my_start` view
-/// and from nowhere else.
+/// Where a scene with no stored position starts: the district's arrival
+/// cell, mid-cell. Empty before a district exists. A stored position is
+/// `my_position`.
 #[derive(SpacetimeType, Clone, Debug, PartialEq, Eq)]
 pub struct MyStart {
     pub x: i32,
@@ -46,18 +45,8 @@ pub struct MyStart {
     pub frac_y: u8,
 }
 
-/// The `my_start` row for a caller whose character is `character_id`
-/// (none when it has no character yet).
-pub fn start_of(ctx: &ViewContext, character_id: Option<u64>) -> Vec<MyStart> {
-    if let Some(p) = character_id.and_then(|id| ctx.db.player_position().character_id().find(id)) {
-        return vec![MyStart {
-            x: p.x,
-            y: p.y,
-            floor: p.floor,
-            frac_x: p.frac_x,
-            frac_y: p.frac_y,
-        }];
-    }
+/// The `my_start` row.
+pub fn start_of(ctx: &ViewContext) -> Vec<MyStart> {
     let half = (sim::generated::defs::POSITION_UNITS_PER_CELL / 2) as u8;
     arrival_cell_in_view(ctx)
         .map(|(x, y)| MyStart {
@@ -113,12 +102,17 @@ pub fn set_player_position(
     Ok(())
 }
 
-/// Places a character that has no position yet at the district's arrival
-/// cell; a no-op before a district exists or once a row is there.
-pub fn place_at_arrival(ctx: &ReducerContext, character_id: u64) {
-    let Some((x, y)) = arrival_cell_of(ctx) else {
-        return;
-    };
+/// The one other writer: a character first row, at the cell its flat
+/// puts it on, written in the transaction that creates the character. Every
+/// later write is `set_player_position`. A cell the world cannot address is
+/// an `Err`, so the creating transaction rolls back.
+pub(super) fn write_first_position(
+    ctx: &ReducerContext,
+    character_id: u64,
+    x: i32,
+    y: i32,
+    floor: i8,
+) -> Result<(), String> {
     if ctx
         .db
         .player_position()
@@ -126,21 +120,40 @@ pub fn place_at_arrival(ctx: &ReducerContext, character_id: u64) {
         .find(character_id)
         .is_some()
     {
-        return;
+        return Ok(());
     }
-    let half = (sim::generated::defs::POSITION_UNITS_PER_CELL / 2) as u8;
-    if let Ok(Write::Insert(r) | Write::Update(r)) = plan_position(false, x, y, 0, half, half) {
-        ctx.db.player_position().insert(PlayerPosition {
-            character_id,
-            chunk_key: r.chunk_key,
-            x: r.x,
-            y: r.y,
-            floor: r.floor,
-            frac_x: r.frac_x,
-            frac_y: r.frac_y,
-            updated_at: ctx.timestamp,
-        });
-    }
+    let (Write::Insert(r) | Write::Update(r)) =
+        plan_position(false, x, y, floor, HALF_CELL, HALF_CELL)
+            .map_err(|e| e.message().to_string())?;
+    ctx.db.player_position().insert(PlayerPosition {
+        character_id,
+        chunk_key: r.chunk_key,
+        x: r.x,
+        y: r.y,
+        floor: r.floor,
+        frac_x: r.frac_x,
+        frac_y: r.frac_y,
+        updated_at: ctx.timestamp,
+    });
+    Ok(())
+}
+
+/// Half a cell, in `POSITION_UNITS_PER_CELL`: a tenant stands mid-cell.
+const HALF_CELL: u8 = (sim::generated::defs::POSITION_UNITS_PER_CELL / 2) as u8;
+
+/// The caller own stored position: the row the client starts its scene
+/// from, so a first send never overwrites a server spawn.
+#[spacetimedb::view(accessor = my_position, public)]
+pub fn my_position(ctx: &spacetimedb::ViewContext) -> Vec<PlayerPosition> {
+    let Some(character_id) = viewer_character(ctx) else {
+        return Vec::new();
+    };
+    ctx.db
+        .player_position()
+        .character_id()
+        .find(character_id)
+        .into_iter()
+        .collect()
 }
 
 /// Moves, in place, every position whose cell `standable` refuses to

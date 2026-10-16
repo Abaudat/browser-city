@@ -692,6 +692,15 @@ export function exposeIdentityActionsForE2e(actions: {
   window.__bc = bucket;
 }
 
+/** Stories 4.6, 7.1, 3.16: a spec that assumes the fixed start (the
+ * district's arrival cell, `my_start`) says so with
+ * `window.__bcStart = "arrival"` before the page's scripts run: its scene
+ * stays there instead of moving to the flat a tenancy assigns. Everyone
+ * else, and every production build, starts in its own flat. */
+export function e2eStartsAtArrival(): boolean {
+  return import.meta.env.DEV && (window as { __bcStart?: string }).__bcStart === "arrival";
+}
+
 /** Story 4.1: exposes the client's derived in-city time as a callable. */
 export function exposeCityTimeForE2e(getter: () => CityTime | undefined): void {
   if (!import.meta.env.DEV) return;

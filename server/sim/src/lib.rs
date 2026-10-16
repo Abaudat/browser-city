@@ -14,6 +14,7 @@ pub mod container_grid;
 pub mod demo_ping;
 pub mod gameplay_metrics;
 pub mod generation;
+pub mod housing;
 pub mod identity;
 // `tools/defs-build` emits already-formatted text (docs/architecture.md's
 // "defs/" section), never by shelling out to `rustfmt` -- but its own

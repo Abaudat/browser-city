@@ -95,6 +95,22 @@ async function createCharacter(page: Page): Promise<string> {
 // These specs own when a character exists, so none arrives by itself.
 test.use({ arrive: false });
 
+/** Waits until `viewer` draws `id` where `walker`'s own scene stands: a
+ * new character's server row is its flat's spawn until its sender's first
+ * send, and a trace started before that would record the jump. */
+async function drawnWhereItStands(viewer: Page, walker: Page, id: string): Promise<void> {
+  const at = await walker.evaluate(() => window.__bc?.playerPosition);
+  if (!at) throw new Error("no position");
+  await viewer.waitForFunction(
+    ({ cid, x, y, q }) => {
+      const p = window.__bc?.remotePlayers?.poses()[cid];
+      return p !== undefined && Math.abs(p.x - x) <= q && Math.abs(p.y - y) <= q;
+    },
+    { cid: id, x: at.x, y: at.y, q: QUANTUM },
+    { timeout: 20_000 },
+  );
+}
+
 /** The axis a straight walk travelled most along, from the received samples. */
 function walkedAxis(samples: readonly { x: number; y: number }[]): "x" | "y" {
   const first = samples[0];
@@ -142,6 +158,7 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
         (r?.inserts[`playerPosition:${cid}`] ?? 0) + (r?.updates[`playerPosition:${cid}`] ?? 0)
       );
     }, id);
+  await drawnWhereItStands(b.page, a.page, characterId);
   const updatesBefore = await rowUpdates(characterId);
 
   await b.page.evaluate(() => window.__bc?.remotePlayers?.startTrace());
@@ -211,6 +228,7 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   await a.page.waitForFunction((id) => window.__bc?.remotePlayers?.poses()[id] !== undefined, bId, {
     timeout: 20_000,
   });
+  await drawnWhereItStands(a.page, b.page, bId);
   await a.page.evaluate(() => window.__bc?.remotePlayers?.startTrace());
   await walkFreeCells(b.page, "walk-b", WALK_CELLS);
   const bRest = await b.page.evaluate(() => window.__bc?.playerPosition);

@@ -20,7 +20,7 @@ import { computeCamera, ZOOM } from "../../src/render/camera";
 import { visibleCellBounds, worldPointPx } from "../../src/render/screen-position";
 import { CHUNK_SIZE, chunkKey } from "../../src/world/chunk";
 import { columnOf, REGION_LEAVE_RADIUS_CHUNKS, REGION_RADIUS_CHUNKS } from "../../src/world/region";
-import { arrivalCell, firstRowKeyIn, placedRowsInChunk } from "./district-support";
+import { arrivalCell, chunksAround, firstRowKeyIn, moduleRowsInChunks } from "./district-support";
 import { expect, test } from "./fixtures";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
 
@@ -65,13 +65,9 @@ const objectId = (c: { cx: number; cy: number }): string => firstRowKeyIn(c.cx, 
 
 /** Every placed row the module holds in the region around the arrival chunk. */
 function regionPlacedRows(): number {
-  let n = 0;
-  for (let dx = -REGION_RADIUS_CHUNKS; dx <= REGION_RADIUS_CHUNKS; dx++) {
-    for (let dy = -REGION_RADIUS_CHUNKS; dy <= REGION_RADIUS_CHUNKS; dy++) {
-      n += placedRowsInChunk(HOME.cx + dx, HOME.cy + dy);
-    }
-  }
-  return n;
+  return moduleRowsInChunks(chunksAround(HOME.cx, HOME.cy, REGION_RADIUS_CHUNKS), [
+    "placed_object",
+  ]);
 }
 
 async function initialRegionApplied(page: Page): Promise<void> {
@@ -82,51 +78,57 @@ async function initialRegionApplied(page: Page): Promise<void> {
   );
 }
 
-test("every spatial subscription on the wire carries a chunk predicate, and the far world never enters the client cache", async ({
-  page,
-}) => {
-  const handle = readSpacetimeHandle();
-  const dbWsPrefix = handle.serverUrl.replace(/^http/, "ws");
-  const sentQueries: string[] = [];
-  page.on("websocket", (ws) => {
-    if (!ws.url().startsWith(dbWsPrefix)) return; // never Vite's own HMR socket
-    ws.on("framesent", ({ payload }) => {
-      const text = typeof payload === "string" ? payload : payload.toString("latin1");
-      for (const m of text.matchAll(
-        /SELECT \* FROM "[a-z_]+"(?: WHERE "[a-z_]+"\."[a-z_]+" = \d+)?/g,
-      )) {
-        sentQueries.push(m[0]);
-      }
+test.describe("before a character exists", () => {
+  // No name is submitted, so no tenancy writes a starting box while the
+  // cache is counted.
+  test.use({ arrive: false });
+  test("every spatial subscription on the wire carries a chunk predicate, and the far world never enters the client cache", async ({
+    page,
+  }) => {
+    const handle = readSpacetimeHandle();
+    const dbWsPrefix = handle.serverUrl.replace(/^http/, "ws");
+    const sentQueries: string[] = [];
+    page.on("websocket", (ws) => {
+      if (!ws.url().startsWith(dbWsPrefix)) return; // never Vite's own HMR socket
+      ws.on("framesent", ({ payload }) => {
+        const text = typeof payload === "string" ? payload : payload.toString("latin1");
+        for (const m of text.matchAll(
+          /SELECT \* FROM "[a-z_]+"(?: WHERE "[a-z_]+"\."[a-z_]+" = \d+)?/g,
+        )) {
+          sentQueries.push(m[0]);
+        }
+      });
     });
+
+    await page.goto("/");
+    await initialRegionApplied(page);
+
+    // Every spatial query names a chunk_key equality; none is a whole table.
+    const spatial = sentQueries.filter((q) => SPATIAL.some((t) => q.includes(`FROM "${t}"`)));
+    expect(spatial.length).toBe(INITIAL_HANDLES * SPATIAL.length * 8); // 8 floors in the ground band
+    for (const q of spatial) expect(q).toMatch(/WHERE "[a-z_]+"\."chunk_key" = \d+$/);
+    // The whole-table queries are the three global singletons and the caller's
+    // own character view (one row, never spatial), nothing else.
+    const whole = sentQueries.filter((q) => !q.includes("WHERE"));
+    expect(new Set(whole)).toEqual(
+      new Set([
+        'SELECT * FROM "demo_ping"',
+        'SELECT * FROM "module_version"',
+        'SELECT * FROM "world_clock"',
+        'SELECT * FROM "my_character"',
+        'SELECT * FROM "my_start"',
+        'SELECT * FROM "my_position"',
+      ]),
+    );
+
+    // A far chunk never reaches the cache, and what does is exactly the 5x5
+    // around the spawn: every row the module holds there, and no other.
+    const cached = await page.evaluate(() => window.__bc?.region?.cachedChunkKeys("placedObject"));
+    expect(cached).not.toContain(keyOf(FAR));
+    expect(cached?.length).toBe(regionPlacedRows());
+    expect(cached).toContain(keyOf(STAY));
+    expect(cached).toContain(keyOf(LEFT_BEHIND));
   });
-
-  await page.goto("/");
-  await initialRegionApplied(page);
-
-  // Every spatial query names a chunk_key equality; none is a whole table.
-  const spatial = sentQueries.filter((q) => SPATIAL.some((t) => q.includes(`FROM "${t}"`)));
-  expect(spatial.length).toBe(INITIAL_HANDLES * SPATIAL.length * 8); // 8 floors in the ground band
-  for (const q of spatial) expect(q).toMatch(/WHERE "[a-z_]+"\."chunk_key" = \d+$/);
-  // The whole-table queries are the three global singletons and the caller's
-  // own character view (one row, never spatial), nothing else.
-  const whole = sentQueries.filter((q) => !q.includes("WHERE"));
-  expect(new Set(whole)).toEqual(
-    new Set([
-      'SELECT * FROM "demo_ping"',
-      'SELECT * FROM "module_version"',
-      'SELECT * FROM "world_clock"',
-      'SELECT * FROM "my_character"',
-      'SELECT * FROM "my_start"',
-    ]),
-  );
-
-  // A far chunk never reaches the cache, and what does is exactly the 5x5
-  // around the spawn: every row the module holds there, and no other.
-  const cached = await page.evaluate(() => window.__bc?.region?.cachedChunkKeys("placedObject"));
-  expect(cached).not.toContain(keyOf(FAR));
-  expect(cached?.length).toBe(regionPlacedRows());
-  expect(cached).toContain(keyOf(STAY));
-  expect(cached).toContain(keyOf(LEFT_BEHIND));
 });
 
 test("walking across a chunk boundary: every chunk the viewport shows is applied, the shared chunk never pops, the left-behind chunk goes only past the hysteresis distance", async ({

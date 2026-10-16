@@ -123,6 +123,7 @@ export function superviseConnect(
       onIdentity: guard(options.onIdentity),
       onCharacter: guard(options.onCharacter),
       onStart: guard(options.onStart),
+      onStoredPosition: guard(options.onStoredPosition),
       onSession: (s) => {
         if (live()) session ??= s;
       },

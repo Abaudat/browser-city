@@ -13,7 +13,7 @@ import { bodyCell } from "../../src/world/movement";
 import { isBodyClear } from "../../src/world/standable";
 import { committedDefs, committedMovementConfig } from "../unit/support/committed-defs";
 import { districtWorld } from "../unit/support/district-fixture";
-import { readSpacetimeHandle } from "./spacetime-harness.mjs";
+import { ownerSql, readSpacetimeHandle } from "./spacetime-harness.mjs";
 import { segmentsOf, walkRealAxes, walkRealCellsDir, walkRealSegment } from "./walk-support";
 import type { WalkKey } from "./walk-types";
 
@@ -532,7 +532,8 @@ export function openSquareNear(from: Cell, side: number): Cell {
         const c = { x: from.x + dx, y: from.y + dy };
         let ok = true;
         for (let y = c.y; ok && y < c.y + side; y++) {
-          for (let x = c.x; ok && x < c.x + side; x++) ok = fits(x, y) && buildingOf({ x, y }) === 0n;
+          for (let x = c.x; ok && x < c.x + side; x++)
+            ok = fits(x, y) && buildingOf({ x, y }) === 0n;
         }
         if (ok) return c;
       }
@@ -580,24 +581,30 @@ export function streetAcrossChunkBorder(
 
 const CHUNK = 32;
 
-/** How many `placed_object` rows the module holds in chunk `(cx, cy)` of
- * floor 0: the dump's objects (ground is rects, never placed rows). */
-export function placedRowsInChunk(cx: number, cy: number): number {
-  return district.objects.filter(
-    (o) => o.floor === 0 && Math.floor(o.x / CHUNK) === cx && Math.floor(o.y / CHUNK) === cy,
-  ).length;
+/** The rows the module holds in `tables` over the floor-0 chunks
+ * `chunks`, read as owner -- what a region over them streams, whoever
+ * wrote them (the generator, a tenancy's starting box, a restore). */
+export function moduleRowsInChunks(
+  chunks: readonly { cx: number; cy: number }[],
+  tables: readonly string[],
+): number {
+  const handle = readSpacetimeHandle();
+  const keys = chunks.map((c) => chunkKey(c.cx * CHUNK, c.cy * CHUNK, 0).toString());
+  let n = 0;
+  for (const table of tables) {
+    const where = keys.map((k) => `chunk_key = ${k}`).join(" OR ");
+    n += ownerSql(handle, `SELECT chunk_key FROM ${table} WHERE ${where}`).length;
+  }
+  return n;
 }
 
-/** Building, room, ground and roof area rows in chunk `(cx, cy)` of floor 0. */
-export function areaRowsInChunk(cx: number, cy: number): number {
-  const inChunk = (a: { x0: number; y0: number }) =>
-    Math.floor(a.x0 / CHUNK) === cx && Math.floor(a.y0 / CHUNK) === cy;
-  return (
-    district.buildingAreas.filter(inChunk).length +
-    district.roomAreas.filter(inChunk).length +
-    district.ground.filter(inChunk).length +
-    district.roofs.filter((r) => r.chunkKey === chunkKey(cx * CHUNK, cy * CHUNK, 0)).length
-  );
+/** The (2 * radius + 1)-square of chunks around `(cx, cy)`. */
+export function chunksAround(cx: number, cy: number, radius: number): { cx: number; cy: number }[] {
+  const out: { cx: number; cy: number }[] = [];
+  for (let dx = -radius; dx <= radius; dx++) {
+    for (let dy = -radius; dy <= radius; dy++) out.push({ cx: cx + dx, cy: cy + dy });
+  }
+  return out;
 }
 
 /** A row of chunk `(cx, cy)` of floor 0 to watch come and go, as the

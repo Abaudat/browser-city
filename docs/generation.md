@@ -1336,8 +1336,9 @@ street, not yet worth walking.** Every building is a sealed shell: a roof
 over its interior and north rim (a dwelling's by its building-age band) inside
 its wall ring, hiding what stands inside until the player crosses its door,
 when the roof and the front wall retract. Streets run on through the margin.
-The arrival stands a viewport in from the site edge, and doors open onto a
-paved forecourt. The findings below keep it from being worth walking. Each one
+The district's arrival cell, where a scene with no stored position mounts,
+stands a viewport in from the site edge, and doors open onto a paved
+forecourt. The findings below keep it from being worth walking. Each one
 is disposed to a row or a task.
 
 **Verdict on the generator, apart from the empty city: the layout rules
@@ -1401,6 +1402,11 @@ Findings that remain, each disposed:
 - **Open ground inside a block is one flat green**. The yard behind a
   building and the forecourt before it are tagged ground now, but block
   interiors are not. *Reopens* terrain variety, story #461.
+- **A new character's first screen can be the site edge**. It is the flat
+  its tenancy assigns (story 7.1: edge tier first, cheapest asked), and some
+  of the first flats let stand within a viewport of the north edge, e.g.
+  (425, 5). *Reopens* the let order against the arrival rule: a lead
+  decision between stories 7.1 and 3.16, raised on #455.
 - **Core direction is legible only by density and road width**. *Accepted*:
   density is the design's only core cue. No minimap and no marker.
 - **No container, stair or floor transition exists in the district**.

@@ -1,0 +1,16 @@
+# Story 7.1: the starting flat's kit. The id of the object def (`defs/
+# objects`) a new tenant's possessions are held in; ids are append-only,
+# and a sim test holds that this id names `moving_box`.
+
+[[balance]]
+key = "housing.starting_box_object_id"
+value = 75
+min = 1
+max = 100000
+
+[[balance]]
+# The id of the item (`defs/items`) laid on the box at signing: the generic paper kind's first instance, and a sim test holds that this id names `tenancy_agreement`.
+key = "housing.starting_document_item_id"
+value = 15
+min = 1
+max = 100000

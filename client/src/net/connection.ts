@@ -10,6 +10,7 @@ import { readStoredToken, rememberFirstToken } from "../identity/identity-storag
 import type { SettingsStorage } from "../settings/settings-storage";
 import type { ClockSync } from "../time/clock-sync";
 import type { ServerClock } from "../time/server-clock";
+import type { WirePosition } from "../world/position-codec";
 import { DbConnection, tables } from "./bindings";
 import type {
   ActorLocation,
@@ -150,6 +151,9 @@ export interface ConnectOptions {
   readonly storage?: SettingsStorage | null;
   readonly onIdentity?: (identity: IdentityReport) => void;
   readonly onCharacter?: (character: CharacterReport) => void;
+  /** Story 7.1: the caller's stored `player_position` (`my_position`), on
+   * every insert -- the row the scene starts from. */
+  readonly onStoredPosition?: (row: WirePosition) => void;
   /** Story 4.6: the first subscription applied and the caller's
    * `my_character` is empty -- the stored identity reaches no character. */
   readonly onCharacterAbsent?: () => void;
@@ -205,6 +209,7 @@ export function connect(options: ConnectOptions): DbConnection {
     onCharacter,
     onCharacterAbsent,
     onStart,
+    onStoredPosition,
   } = options;
   const mark = (name: Parameters<typeof markBoot>[0]): void => {
     if (options.marks !== false) markBoot(name);
@@ -256,6 +261,7 @@ export function connect(options: ConnectOptions): DbConnection {
           tables.worldClock.build(),
           tables.myCharacter.build(),
           tables.myStart.build(),
+          tables.myPosition.build(),
         ]);
       // Story 4.3: a new connection is a new region manager, built around
       // the player's current position.
@@ -319,6 +325,15 @@ export function connect(options: ConnectOptions): DbConnection {
   // arrives as a delete-then-insert pair, so `onInsert` alone covers it.
   conn.db.myStart.onInsert((_ctx, row) => {
     onStart?.({ x: row.x, y: row.y, floor: row.floor, fracX: row.fracX, fracY: row.fracY });
+  });
+  conn.db.myPosition.onInsert((_ctx, row) => {
+    onStoredPosition?.({
+      x: row.x,
+      y: row.y,
+      floor: row.floor,
+      fracX: row.fracX,
+      fracY: row.fracY,
+    });
   });
 
   const rows = region?.rows;

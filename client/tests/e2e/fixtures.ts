@@ -36,18 +36,31 @@ export async function arriveNow(page: Page, name = ARRIVE_NAME): Promise<void> {
   await page.keyboard.press("Enter");
 }
 
+/** Installs, before any page script runs, the DEV-only note that this spec
+ * starts at the district's arrival cell rather than its character's flat. */
+async function startAtArrival(target: Page | BrowserContext): Promise<void> {
+  await target.addInitScript(() => {
+    (window as { __bcStart?: string }).__bcStart = "arrival";
+  });
+}
+
 export const test = base.extend<{
   arrive: boolean;
+  /** Where the player starts: the district's arrival cell the mechanics
+   * specs assume (default), or the flat a new character really arrives in. */
+  startAt: "arrival" | "flat";
   arrivingContexts: undefined;
 }>({
   arrive: [true, { option: true }],
+  startAt: ["arrival", { option: true }],
   // A spec that opens its own contexts (`browser.newContext`) arrives them
   // too: the method is wrapped for the length of the test.
   arrivingContexts: [
-    async ({ browser, arrive }, use) => {
+    async ({ browser, arrive, startAt }, use) => {
       const original = browser.newContext.bind(browser);
       browser.newContext = async (options) => {
         const context = await original(options);
+        if (startAt === "arrival") await startAtArrival(context);
         if (arrive) await arriveOnLoad(context);
         return context;
       };
@@ -56,7 +69,8 @@ export const test = base.extend<{
     },
     { auto: true },
   ],
-  page: async ({ page, arrive }, use) => {
+  page: async ({ page, arrive, startAt }, use) => {
+    if (startAt === "arrival") await startAtArrival(page);
     if (arrive) await arriveOnLoad(page);
     await use(page);
   },

@@ -34,7 +34,7 @@ tags = ["underfoot", "road"]
 # the bare yard behind a building. `ground_area` rows name them by id; the
 # generator finds them by their tag.
 [[object]]
-id = 75
+id = 76
 key = "forecourt_paving"
 name = "Forecourt Paving"
 layer = "ground"
@@ -44,7 +44,7 @@ height = 1
 tags = ["underfoot", "pavement", "forecourt"]
 
 [[object]]
-id = 76
+id = 77
 key = "yard_dirt"
 name = "Yard"
 layer = "ground"
@@ -58,7 +58,7 @@ tags = ["underfoot", "ground", "backyard"]
 # from a rooftop panel of `4_Generic_Buildings`, stretched over the roof
 # rect. Drawn above everything inside the footprint, hidden from within.
 [[object]]
-id = 77
+id = 78
 key = "roof_dwelling_old"
 name = "Dwelling Roof (old)"
 layer = "ground"
@@ -68,7 +68,7 @@ height = 1
 tags = ["underfoot", "ground", "roof", "dwelling", "aged_old"]
 
 [[object]]
-id = 78
+id = 79
 key = "roof_dwelling_mid"
 name = "Dwelling Roof (middle)"
 layer = "ground"
@@ -78,7 +78,7 @@ height = 1
 tags = ["underfoot", "ground", "roof", "dwelling", "aged_mid"]
 
 [[object]]
-id = 79
+id = 80
 key = "roof_dwelling_new"
 name = "Dwelling Roof (new)"
 layer = "ground"
@@ -88,7 +88,7 @@ height = 1
 tags = ["underfoot", "ground", "roof", "dwelling", "aged_new"]
 
 [[object]]
-id = 80
+id = 81
 key = "roof_trade"
 name = "Trade Roof"
 layer = "ground"
@@ -98,7 +98,7 @@ height = 1
 tags = ["underfoot", "ground", "roof", "shop", "cafe", "market", "office"]
 
 [[object]]
-id = 81
+id = 82
 key = "roof_works"
 name = "Works Roof"
 layer = "ground"

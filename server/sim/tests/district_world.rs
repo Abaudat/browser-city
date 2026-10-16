@@ -51,6 +51,30 @@ fn every_row_carries_the_chunk_key_of_its_anchor_or_its_clipped_rect() {
 }
 
 #[test]
+fn buildings_and_rooms_are_named_in_laid_order_from_one() {
+    let (district, rows, _) = world();
+    let n_buildings = district.interiors.laid().count() as u64;
+    let n_rooms: u64 = district
+        .interiors
+        .laid()
+        .map(|(_, _, i)| i.rooms.len() as u64)
+        .sum();
+    let buildings: std::collections::BTreeSet<u64> =
+        rows.building_areas.iter().map(|a| a.owner_id).collect();
+    let rooms: std::collections::BTreeSet<u64> =
+        rows.room_areas.iter().map(|a| a.owner_id).collect();
+    assert_eq!(buildings, (1..=n_buildings).collect());
+    assert_eq!(rooms, (1..=n_rooms).collect());
+    let first = district.interiors.laid().next().unwrap().2.footprint;
+    let a = rows
+        .building_areas
+        .iter()
+        .find(|a| a.owner_id == 1)
+        .unwrap();
+    assert!(a.x0 >= first.x0 && a.x1 <= first.x1 && a.y0 >= first.y0 && a.y1 <= first.y1);
+}
+
+#[test]
 fn row_counts_sit_inside_the_declared_table_bounds() {
     let (_, rows, _) = world();
     let bound = |name: &str| {
@@ -213,8 +237,8 @@ fn every_building_has_a_roof_over_its_interior_net_and_its_north_rim_but_the_doo
     let t = cfg.envelope_wall_thickness_cells;
     let mut roofed = 0;
     let mut notched = 0;
-    for (_, _, i) in district.interiors.laid() {
-        let id = sim::generation::rect_seed_key(i.footprint);
+    for (n, (_, _, i)) in district.interiors.laid().enumerate() {
+        let id = n as u64 + 1;
         let pieces: Vec<_> = rows.roofs.iter().filter(|r| r.building_id == id).collect();
         // Every cell of the interior net and of the north rim between the
         // side walls is roofed exactly once, except a door cell in the rim.
@@ -270,14 +294,14 @@ fn a_dwelling_roof_reads_the_building_age_band() {
         .map(|t| t.id)
         .unwrap();
     let mut seen = std::collections::BTreeSet::new();
-    for (plot, ty, i) in district.interiors.laid() {
+    for (n, (plot, ty, _)) in district.interiors.laid().enumerate() {
         let def = content.building_types.iter().find(|b| b.id == ty).unwrap();
         if !def.tags.contains(&dwelling) {
             continue;
         }
         let band =
             ((plots[plot as usize].building_age - nb.building_age_min) * 3 / span).clamp(0, 2);
-        let id = sim::generation::rect_seed_key(i.footprint);
+        let id = n as u64 + 1;
         let roof = rows.roofs.iter().find(|r| r.building_id == id).unwrap();
         let tags = tag_keys(&content, roof.def_id);
         let want = ["aged_new", "aged_mid", "aged_old"][band as usize];

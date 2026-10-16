@@ -20,7 +20,9 @@ use sim::generation::{
 use sim::reducer_classes::ReducerClass;
 use sim::routing::graph::{MacroGraph, NodeKind};
 use spacetimedb::{ReducerContext, Table, Timestamp};
+use std::collections::BTreeMap;
 
+use super::housing::{Dwelling, dwelling};
 use super::metrics::count_call;
 use super::ops::require_owner;
 use super::player_position::relocate_stranded;
@@ -29,8 +31,9 @@ use super::routing::{
 };
 use super::stock::{Business, business};
 use super::world::{
-    BuildingArea, FloorTransition, GroundArea, PlacedObject, RoofArea, RoomArea, building_area,
-    floor_transition, ground_area, placed_object, roof_area, room_area,
+    Building, BuildingArea, FloorTransition, GroundArea, PlacedObject, RoofArea, Room, RoomArea,
+    building, building_area, floor_transition, ground_area, placed_object, roof_area, room,
+    room_area,
 };
 
 #[derive(Clone)]
@@ -64,15 +67,6 @@ pub const FIRST_DISTRICT_ID: u64 = 1;
 
 /// The same cell, read from a view.
 pub fn arrival_cell_in_view(ctx: &spacetimedb::ViewContext) -> Option<(i32, i32)> {
-    ctx.db
-        .district()
-        .district_id()
-        .find(FIRST_DISTRICT_ID)
-        .map(|d| (d.arrival_x, d.arrival_y))
-}
-
-/// The district's arrival cell, floor 0: none before the district exists.
-pub fn arrival_cell_of(ctx: &ReducerContext) -> Option<(i32, i32)> {
     ctx.db
         .district()
         .district_id()
@@ -147,17 +141,57 @@ fn create_district_at(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
     });
     write_graph(ctx, &graph);
     let ground = GroundConfig::from_balance(defs::BALANCE);
-    write_world(ctx, &district.region_rows(&ground, &content, &cfg));
+    let rows = district.region_rows(&ground, &content, &cfg);
+    write_world(ctx, &district, &cfg, &content, &rows);
     relocate_stranded(ctx, arrival, |x, y, f| {
         f == 0 && district.is_standable_at(x, y, f)
     });
     Ok(())
 }
 
-/// The one world writer: every row of `rows`, as given, inside the
-/// caller's transaction (`restore.rs` is the only other writer of these
-/// six tables).
-fn write_world(ctx: &ReducerContext, rows: &RegionRows) {
+/// The one world writer, inside the caller's transaction (`restore.rs` is
+/// the only other writer of these tables): one `building` row per laid
+/// interior, in plot order, carrying what `sim::housing` derived for a
+/// dwelling, and its `room` rows; then every row of `rows`, its ownership
+/// and roof rows keyed on those ids.
+fn write_world(
+    ctx: &ReducerContext,
+    district: &sim::generation::District,
+    cfg: &GenerationConfig,
+    content: &GenerationContent,
+    rows: &RegionRows,
+) {
+    let homes: BTreeMap<u32, sim::housing::Home> =
+        sim::housing::dwellings(district, cfg, content, defs::BALANCE)
+            .into_iter()
+            .map(|d| (d.plot, d.home))
+            .collect();
+    // `rows` names a building by its place in laid order and a room by its
+    // place across their rooms, from 1 (`District::region_rows`).
+    let mut building_ids: BTreeMap<u64, u64> = BTreeMap::new();
+    let mut room_ids: BTreeMap<u64, u64> = BTreeMap::new();
+    for (n, (plot, _ty, interior)) in district.interiors.laid().enumerate() {
+        let b = ctx.db.building().insert(Building {
+            building_id: 0,
+            created_at: ctx.timestamp,
+        });
+        building_ids.insert(n as u64 + 1, b.building_id);
+        if let Some(h) = homes.get(&plot) {
+            let home = sim::housing::Home {
+                id: b.building_id,
+                ..*h
+            };
+            ctx.db.dwelling().insert(Dwelling::of_home(&home));
+        }
+        for _ in &interior.rooms {
+            let room = ctx.db.room().insert(Room {
+                room_id: 0,
+                building_id: b.building_id,
+                created_at: ctx.timestamp,
+            });
+            room_ids.insert(room_ids.len() as u64 + 1, room.room_id);
+        }
+    }
     for r in &rows.placed {
         ctx.db.placed_object().insert(PlacedObject {
             object_id: 0,
@@ -185,7 +219,7 @@ fn write_world(ctx: &ReducerContext, rows: &RegionRows) {
     for r in &rows.building_areas {
         ctx.db.building_area().insert(BuildingArea {
             area_id: 0,
-            building_id: r.owner_id,
+            building_id: building_ids[&r.owner_id],
             x0: r.x0,
             y0: r.y0,
             x1: r.x1,
@@ -209,7 +243,7 @@ fn write_world(ctx: &ReducerContext, rows: &RegionRows) {
     for r in &rows.roofs {
         ctx.db.roof_area().insert(RoofArea {
             area_id: 0,
-            building_id: r.building_id,
+            building_id: building_ids[&r.building_id],
             def_id: r.def_id,
             x0: r.x0,
             y0: r.y0,
@@ -222,7 +256,7 @@ fn write_world(ctx: &ReducerContext, rows: &RegionRows) {
     for r in &rows.room_areas {
         ctx.db.room_area().insert(RoomArea {
             area_id: 0,
-            room_id: r.owner_id,
+            room_id: room_ids[&r.owner_id],
             x0: r.x0,
             y0: r.y0,
             x1: r.x1,

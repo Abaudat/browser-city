@@ -28,6 +28,7 @@ interface FakeModuleVersionRow {
 
 interface FakeState {
   myCharacterRows: number;
+  onMyPositionInsertCb?: (ctx: unknown, row: FakePositionRow) => void;
   uri?: string;
   databaseName?: string;
   onConnectCb?: (connection: unknown, identity?: unknown, token?: string) => void;
@@ -62,6 +63,14 @@ interface FakeState {
 }
 
 interface FakeMyStartRow {
+  x: number;
+  y: number;
+  floor: number;
+  fracX: number;
+  fracY: number;
+}
+
+interface FakePositionRow {
   x: number;
   y: number;
   floor: number;
@@ -155,6 +164,11 @@ const fakeConn = {
         state.onMyStartInsertCb = cb;
       },
     },
+    myPosition: {
+      onInsert: (cb: (ctx: unknown, row: FakePositionRow) => void) => {
+        state.onMyPositionInsertCb = cb;
+      },
+    },
     moduleVersion: {
       onInsert: (cb: (ctx: unknown, row: FakeModuleVersionRow) => void) => {
         state.onModuleVersionInsertCb = cb;
@@ -212,6 +226,7 @@ vi.mock("../../src/net/bindings", () => ({
     worldClock: fakeTable("world_clock"),
     myCharacter: fakeTable("my_character"),
     myStart: fakeTable("my_start"),
+    myPosition: fakeTable("my_position"),
     placedObject: fakeTable("placed_object"),
     floorTransition: fakeTable("floor_transition"),
     buildingArea: fakeTable("building_area"),
@@ -263,6 +278,7 @@ beforeEach(() => {
   state.builds = 0;
   state.onMyCharacterInsertCb = undefined;
   state.onMyStartInsertCb = undefined;
+  state.onMyPositionInsertCb = undefined;
 });
 
 describe("connect", () => {
@@ -287,6 +303,7 @@ describe("connect", () => {
       "query:world_clock",
       "query:my_character",
       "query:my_start",
+      "query:my_position",
     ]);
   });
 
@@ -851,6 +868,19 @@ describe("identity token (story 4.5, FR141)", () => {
     });
     state.onMyStartInsertCb?.({}, { x: 436, y: 5, floor: 0, fracX: 128, fracY: 128 });
     expect(seen).toEqual([{ x: 436, y: 5, floor: 0, fracX: 128, fracY: 128 }]);
+  });
+
+  it("reports the caller's stored position from the my_position view (story 7.1)", () => {
+    const onStoredPosition = vi.fn();
+    connect(() => {}, undefined, undefined, undefined, { onStoredPosition });
+    state.onMyPositionInsertCb?.({}, { x: 436, y: 416, floor: 0, fracX: 128, fracY: 128 });
+    expect(onStoredPosition).toHaveBeenCalledWith({
+      x: 436,
+      y: 416,
+      floor: 0,
+      fracX: 128,
+      fracY: 128,
+    });
   });
 
   it("reports the player's own character from the my_character view", () => {

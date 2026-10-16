@@ -41,6 +41,9 @@ check "a <progress> element" 1 bash "$CHECK" "$(shell "$GOOD_HEAD" "$GOOD_BODY<p
 check "role=progressbar" 1 bash "$CHECK" "$(shell "$GOOD_HEAD" "$GOOD_BODY<div role=\"progressbar\"></div>")" "$NOUI"
 check "an element classed spinner" 1 bash "$CHECK" "$(shell "$GOOD_HEAD" "$GOOD_BODY<div class=\"app-spinner\"></div>")" "$NOUI"
 check "src/ui naming a loader" 1 bash "$CHECK" "$(shell "$GOOD_HEAD" "$GOOD_BODY")" "$(ui 'el.className = "loader";')"
+check "an element classed inventory" 1 bash "$CHECK" "$(shell "$GOOD_HEAD" "$GOOD_BODY<ul class=\"inventory\"></ul>")" "$NOUI"
+check "src/ui naming a possessions list" 1 bash "$CHECK" "$(shell "$GOOD_HEAD" "$GOOD_BODY")" "$(ui 'el.id = "possessions";')"
+check "src/ui mentioning an inventory only in a comment" 0 bash "$CHECK" "$(shell "$GOOD_HEAD" "$GOOD_BODY")" "$(ui '// no inventory list, ever')"
 check "src/ui mentioning loading only in a comment" 0 bash "$CHECK" "$(shell "$GOOD_HEAD" "$GOOD_BODY")" "$(ui '// never a loading screen')"
 
 summary

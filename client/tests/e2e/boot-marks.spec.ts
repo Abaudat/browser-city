@@ -21,7 +21,7 @@ import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import { REGION_RADIUS_CHUNKS } from "../../src/world/region";
 import { waitForPlayerControllable } from "./boot-test-support";
-import { areaRowsInChunk, arrivalCell, district, placedRowsInChunk } from "./district-support";
+import { arrivalCell, chunksAround, district, moduleRowsInChunks } from "./district-support";
 import { expect, test } from "./fixtures";
 
 declare global {
@@ -241,37 +241,43 @@ test("the atlas request count and byte total the mount actually fetches, once se
 // district holds rows in every chunk of its site; the region is the
 // (2 * radius + 1)-square around spawn. A client that subscribed any region
 // table whole would deliver the whole district and fail the exact count.
-test("the rows delivered by the time the initial region has applied are exactly the region's, not the world's", async ({
-  page,
-}) => {
-  const home = {
-    cx: Math.floor(arrivalCell().x / 32),
-    cy: Math.floor(arrivalCell().y / 32),
-  };
-  let expected = 0;
-  for (let dx = -REGION_RADIUS_CHUNKS; dx <= REGION_RADIUS_CHUNKS; dx++) {
-    for (let dy = -REGION_RADIUS_CHUNKS; dy <= REGION_RADIUS_CHUNKS; dy++) {
-      expected += placedRowsInChunk(home.cx + dx, home.cy + dy);
-      expected += areaRowsInChunk(home.cx + dx, home.cy + dy);
-    }
-  }
-  // The precondition that lets the assertion fail: the district is bigger
-  // than the region.
-  expect(district.objects.length).toBeGreaterThan(expected);
+test.describe("before a character exists", () => {
+  // No name is submitted, so no tenancy writes a starting box while the
+  // region is counted.
+  test.use({ arrive: false });
+  test("the rows delivered by the time the initial region has applied are exactly the region's, not the world's", async ({
+    page,
+  }) => {
+    const home = {
+      cx: Math.floor(arrivalCell().x / 32),
+      cy: Math.floor(arrivalCell().y / 32),
+    };
+    const expected = moduleRowsInChunks(chunksAround(home.cx, home.cy, REGION_RADIUS_CHUNKS), [
+      "placed_object",
+      "floor_transition",
+      "building_area",
+      "room_area",
+      "ground_area",
+      "roof_area",
+      "actor_location",
+    ]);
+    // The precondition that lets the assertion fail: the district is bigger
+    // than the region.
+    expect(district.objects.length).toBeGreaterThan(expected);
 
-  await page.goto("/");
-  await page.waitForFunction(
-    () => performance.getEntriesByName("bc-boot:region-applied").length > 0,
-    undefined,
-    { timeout: 30_000 },
-  );
-  const rows = await page.evaluate(() => {
-    const inserts = window.__bc?.region?.inserts ?? {};
-    return Object.values(inserts).reduce((sum, n) => sum + n, 0);
+    await page.goto("/");
+    await page.waitForFunction(
+      () => performance.getEntriesByName("bc-boot:region-applied").length > 0,
+      undefined,
+      { timeout: 30_000 },
+    );
+    const rows = await page.evaluate(() => {
+      const inserts = window.__bc?.region?.inserts ?? {};
+      return Object.values(inserts).reduce((sum, n) => sum + n, 0);
+    });
+    // Every row the module holds in the region's chunks, and nothing else.
+    expect(rows).toBe(expected);
   });
-  // Every placed_object, building_area and room_area of the region's
-  // chunks, and nothing else (the district places no actor or transition).
-  expect(rows).toBe(expected);
 });
 
 test("FIRST_STEP is honest: absent until a key moves the body, then set after it and never before PLAYER_CONTROLLABLE", async ({

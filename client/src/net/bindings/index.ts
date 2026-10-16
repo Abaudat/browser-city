@@ -56,6 +56,7 @@ import RestoreCitizenStateReducer from "./restore_citizen_state_reducer";
 import RestoreContainerKindReducer from "./restore_container_kind_reducer";
 import RestoreDemoPingReducer from "./restore_demo_ping_reducer";
 import RestoreDistrictReducer from "./restore_district_reducer";
+import RestoreDwellingReducer from "./restore_dwelling_reducer";
 import RestoreEdgeKindReducer from "./restore_edge_kind_reducer";
 import RestoreFloorTransitionReducer from "./restore_floor_transition_reducer";
 import RestoreGameplayMetricSampleReducer from "./restore_gameplay_metric_sample_reducer";
@@ -85,6 +86,8 @@ import RestoreRouteProvisionReducer from "./restore_route_provision_reducer";
 import RestoreStockReducer from "./restore_stock_reducer";
 import RestoreStorageSampleReducer from "./restore_storage_sample_reducer";
 import RestoreTableSampleReducer from "./restore_table_sample_reducer";
+import RestoreTenancyReducer from "./restore_tenancy_reducer";
+import RestoreTenancyDocumentReducer from "./restore_tenancy_document_reducer";
 import RestoreUnitReducer from "./restore_unit_reducer";
 import RestoreWorldClockReducer from "./restore_world_clock_reducer";
 import SendPingReducer from "./send_ping_reducer";
@@ -104,6 +107,7 @@ import ItemHeldRow from "./item_held_table";
 import ItemInstanceRow from "./item_instance_table";
 import ModuleVersionRow from "./module_version_table";
 import MyCharacterRow from "./my_character_table";
+import MyPositionRow from "./my_position_table";
 import MyStartRow from "./my_start_table";
 import PlacedObjectRow from "./placed_object_table";
 import PlayerPositionRow from "./player_position_table";
@@ -311,6 +315,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyCharacterRow),
+  myPosition: __table({
+    name: 'my_position',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyPositionRow),
   myStart: __table({
     name: 'my_start',
     indexes: [
@@ -344,6 +355,7 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_container_kind", RestoreContainerKindReducer),
   __reducerSchema("restore_demo_ping", RestoreDemoPingReducer),
   __reducerSchema("restore_district", RestoreDistrictReducer),
+  __reducerSchema("restore_dwelling", RestoreDwellingReducer),
   __reducerSchema("restore_edge_kind", RestoreEdgeKindReducer),
   __reducerSchema("restore_floor_transition", RestoreFloorTransitionReducer),
   __reducerSchema("restore_gameplay_metric_sample", RestoreGameplayMetricSampleReducer),
@@ -373,6 +385,8 @@ const reducersSchema = __reducers(
   __reducerSchema("restore_stock", RestoreStockReducer),
   __reducerSchema("restore_storage_sample", RestoreStorageSampleReducer),
   __reducerSchema("restore_table_sample", RestoreTableSampleReducer),
+  __reducerSchema("restore_tenancy", RestoreTenancyReducer),
+  __reducerSchema("restore_tenancy_document", RestoreTenancyDocumentReducer),
   __reducerSchema("restore_unit", RestoreUnitReducer),
   __reducerSchema("restore_world_clock", RestoreWorldClockReducer),
   __reducerSchema("send_ping", SendPingReducer),
@@ -416,6 +430,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "module_version": Omit<typeof tablesSchema.schemaType.tables["moduleVersion"], "accessorName"> & { readonly accessorName: "module_version" };
     /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
     readonly "my_character": Omit<typeof tablesSchema.schemaType.tables["myCharacter"], "accessorName"> & { readonly accessorName: "my_character" };
+    /** @deprecated Use `myPosition` instead. This alias will be removed in the next major version. */
+    readonly "my_position": Omit<typeof tablesSchema.schemaType.tables["myPosition"], "accessorName"> & { readonly accessorName: "my_position" };
     /** @deprecated Use `myStart` instead. This alias will be removed in the next major version. */
     readonly "my_start": Omit<typeof tablesSchema.schemaType.tables["myStart"], "accessorName"> & { readonly accessorName: "my_start" };
   };
@@ -451,6 +467,7 @@ const tableAccessorAliases = {
   "world_clock": "worldClock",
   "module_version": "moduleVersion",
   "my_character": "myCharacter",
+  "my_position": "myPosition",
   "my_start": "myStart",
 } as const;
 
@@ -502,6 +519,8 @@ export type DbView = __DbViewBase & {
   readonly "module_version": __DbViewBase["moduleVersion"];
   /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
   readonly "my_character": __DbViewBase["myCharacter"];
+  /** @deprecated Use `myPosition` instead. This alias will be removed in the next major version. */
+  readonly "my_position": __DbViewBase["myPosition"];
   /** @deprecated Use `myStart` instead. This alias will be removed in the next major version. */
   readonly "my_start": __DbViewBase["myStart"];
 };
@@ -538,6 +557,8 @@ export type Tables = __TablesBase & {
   readonly "module_version": __TablesBase["moduleVersion"];
   /** @deprecated Use `myCharacter` instead. This alias will be removed in the next major version. */
   readonly "my_character": __TablesBase["myCharacter"];
+  /** @deprecated Use `myPosition` instead. This alias will be removed in the next major version. */
+  readonly "my_position": __TablesBase["myPosition"];
   /** @deprecated Use `myStart` instead. This alias will be removed in the next major version. */
   readonly "my_start": __TablesBase["myStart"];
 };

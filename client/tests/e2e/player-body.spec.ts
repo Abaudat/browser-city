@@ -63,7 +63,7 @@ test.describe("the player's body", () => {
     await ready(page);
     // Out into the open, to the middle of a clear block of street.
     const block = openSquareNear(arrivalCell(), 4);
-    await walkTo(page, { x: block.x + 1, y: block.y + 1 });
+    await walkTo(page, { x: block.x + 2, y: block.y + 2 });
 
     for (const [label, facing, key] of LEGS) {
       await startRecording(page);

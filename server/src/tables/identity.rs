@@ -121,17 +121,11 @@ pub fn my_character(ctx: &ViewContext) -> Vec<MyCharacter> {
     }]
 }
 
-/// Where the caller starts (`player_position::start_of`): its stored
-/// position, else the district's arrival cell.
+/// Where a scene with no stored position starts
+/// (`player_position::start_of`): the district's arrival cell.
 #[view(accessor = my_start, public)]
 pub fn my_start(ctx: &ViewContext) -> Vec<super::player_position::MyStart> {
-    let me = ctx
-        .db
-        .character_identity()
-        .identity()
-        .find(ctx.sender())
-        .map(|m| m.character_id);
-    super::player_position::start_of(ctx, me)
+    super::player_position::start_of(ctx)
 }
 
 fn issuer_rows(ctx: &ReducerContext) -> Vec<IssuerRow> {
@@ -168,6 +162,16 @@ pub(super) fn character_of(ctx: &ReducerContext, identity: Identity) -> Option<u
         .map(|m| m.character_id)
 }
 
+/// The character a view caller reaches: the one path from a viewing
+/// identity to its character, for views outside this file.
+pub(super) fn viewer_character(ctx: &ViewContext) -> Option<u64> {
+    ctx.db
+        .character_identity()
+        .identity()
+        .find(ctx.sender())
+        .map(|m| m.character_id)
+}
+
 /// `identity_connected`'s check: writes nothing. The module owner is
 /// exempt so a deploy can never lock itself out.
 pub fn check_connecting(ctx: &ReducerContext) -> Result<(), String> {
@@ -201,8 +205,7 @@ pub fn create_character(ctx: &ReducerContext, name: String) -> Result<(), String
                 character_id: ch.character_id,
                 issuer_id,
             });
-            super::player_position::place_at_arrival(ctx, ch.character_id);
-            Ok(())
+            super::housing::arrive(ctx, ch.character_id)
         }
     }
 }

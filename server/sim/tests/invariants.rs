@@ -89,6 +89,14 @@ pub const INV_STOCK_MOVES_ONLY_BY_HAND: &str = "stock moves only by hand: across
 pub const INV_STOCK_MOVE_CONSERVES_QUANTITY: &str = "a stock move conserves quantity: the per-item sum across holders is unchanged by any sequence of moves, and a move the receiver refuses takes nothing from the giver";
 pub const INV_CHARACTER_NAME_RULE_NEVER_PANICS: &str =
     "the character-name rule never panics: any string returns a name or a typed refusal";
+pub const INV_STARTING_FLAT_IS_A_GENERATED_DWELLING: &str =
+    "the flat assigned to a first character is a laid building whose type carries the dwelling tag";
+pub const INV_STARTING_FLAT_IS_ON_THE_DISTRICT_EDGE: &str =
+    "the assigned flat lies in the generator's own periphery band";
+pub const INV_TENANCY_ASSIGNED_ONCE: &str =
+    "a character is let one flat once, and two characters never hold the same flat";
+pub const INV_STARTING_POSSESSIONS_ARE_IN_THE_FLAT: &str =
+    "every starting possession has a world form inside the flat";
 pub const INV_ACCEPTED_NAME_IS_NORMALISED: &str = "an accepted name is trimmed, within the length bound and non-empty, and normalising it again gives the same name";
 pub const INV_CASH_PAYMENT_CONSERVES_EVERY_DENOMINATION: &str = "a cash payment conserves every denomination: after any payment outcome the count of each denomination across all holders is unchanged, a completed payment moves exactly the price of value from customer to till, and every other outcome moves nothing";
 pub const INV_ACTOR_LOCATION_WRITTEN_ONLY_ON_CHUNK_CHANGE: &str = "actor_location is written only on a chunk or floor change: the planner returns no write for any move that keeps chunk and floor, and exactly one write, naming the chunk sim::world::chunk_key derives, for any move that changes either";

@@ -29,7 +29,8 @@ fn real_defs() -> Defs {
         .unwrap()
         .into_iter()
         .collect();
-    let tables = codes::CodeTables::parse(&fsio::read_codes_golden(&root).unwrap());
+    let tables = codes::CodeTables::parse(&fsio::read_codes_golden(&root).unwrap())
+        .with_requirements(&fsio::read_requirements(&root).unwrap());
     validate::validate(&raw, &dims, &tables, SPRITE_SHEET_ALLOWED_ROOT).unwrap()
 }
 

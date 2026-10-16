@@ -33,7 +33,7 @@ flat() { code "$1" | tr '\n' ' '; }
 
 # <accessor>:<declaring module>:<fns of district.rs that may name it>:<fns of restore.rs>
 ACCESSORS=(
-  "district:district:create_district create_district_at arrival_cell_of arrival_cell_in_view:begin_restore restore_district"
+  "district:district:create_district create_district_at arrival_cell_in_view:begin_restore restore_district"
   "route_node:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_node"
   "route_edge:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_edge"
   "route_provision:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_provision"
@@ -99,6 +99,22 @@ while IFS= read -r f; do
       if flat "$f" | grep -Eq '\.[[:space:]]*(insert|delete|update)[[:space:]]*\('; then
         note "$rel: writes a row (it declares the tables and reads them by index; district.rs and restore.rs write)"
       fi
+      if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
+      continue ;;
+    tables/housing.rs)
+      # Story 7.1: a tenancy's starting box is a placed object, written in
+      # `place_kit` alone; housing names no other world accessor, the
+      # district, the graph or the generator.
+      for spec in "${ACCESSORS[@]}"; do
+        IFS=: read -r acc _rest <<<"$spec"
+        if [ "$acc" = placed_object ]; then
+          OUT="$(calls_outside "$f" "$acc" place_kit)"
+          [ -z "$OUT" ] || note "$rel: names the $acc accessor outside place_kit (in: $(echo "$OUT" | tr '
+' ' '))"
+        elif flat "$f" | grep -Eq ".[[:space:]]*$acc[[:space:]]*()"; then
+          note "$rel: names the $acc accessor"
+        fi
+      done
       if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
       continue ;;
     tables/time_control.rs)
