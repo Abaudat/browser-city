@@ -5,8 +5,13 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  ARRIVAL_DESTINATIONS,
   BRIDGE_DECK_DEF_ID,
   BRIDGE_FLOOR,
+  HOME_FLAT_SPAWN,
+  PLAYER_START,
+  STAIRS_X,
+  STAIRS_Y,
   STREET_FLOOR,
   STREET_TRANSITIONS,
   streetPlacedRows,
@@ -224,5 +229,27 @@ describe("the street and the deck stay reachable (FR117)", () => {
     const y = deckRow[0]?.y ?? 0;
     expect(now.seen.has(cellKey(STREET_FLOOR, westMost, y))).toBe(true);
     expect(now.seen.has(cellKey(STREET_FLOOR, westMost - 1, y))).toBe(true);
+  });
+});
+
+// --- the arrival flat reaches the street (story 4.26) -----------------------
+
+describe("a real player's start reaches every destination on foot (FR117, FR128)", () => {
+  const fromFlat = reachableCells(world, undefined, HOME_FLAT_SPAWN);
+
+  it("the flat reaches the front of each shop and the subway stairwell, and enters it", () => {
+    // Walking into the stairwell's anchor descends, so it is `crossed`, not `seen`.
+    const unreachable = ARRIVAL_DESTINATIONS.filter(
+      (d) =>
+        !(d.x === STAIRS_X && d.y === STAIRS_Y ? fromFlat.crossed : fromFlat.seen).has(
+          cellKey(STREET_FLOOR, d.x, d.y),
+        ),
+    ).map((d) => `${d.name} (${d.x}, ${d.y})`);
+    expect(unreachable, `HOME_FLAT_SPAWN cannot reach: ${unreachable.join("; ")}`).toEqual([]);
+  });
+
+  it("the street is one connected region whichever start a spec uses", () => {
+    const fromShop = reachableCells(world, undefined, PLAYER_START);
+    expect([...fromFlat.seen].sort()).toEqual([...fromShop.seen].sort());
   });
 });

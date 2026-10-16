@@ -1148,6 +1148,16 @@ export interface StreetBoundaryRect {
   };
 }
 
+/** Where a real player must be able to walk to from the arrival flat, on
+ * floor 0 (FR117): the cell in front of each shop's door, and the street
+ * stairwell's anchor (entering it descends to the subway). One list, read by
+ * the reachability unit test and the arrival e2e walk. */
+export const ARRIVAL_DESTINATIONS = [
+  { name: "the front of shop B", x: DOOR_X_B, y: SHOPFRONT_EXIT_Y },
+  { name: "the front of shop A", x: DOOR_X_A, y: SHOPFRONT_EXIT_Y },
+  { name: "the subway stairwell", x: STAIRS_X, y: STAIRS_Y },
+] as const;
+
 /** The edge of the drawn world (FR137 has no world-boundary concept yet):
  * a closed ring of solid, undrawn cells around every street ground pass,
  * so the avatar can never walk off the ground into the void. Every cell

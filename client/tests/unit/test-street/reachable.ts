@@ -4,6 +4,7 @@
 
 import {
   PLAYER_START,
+  STREET_GROUND_TILES,
   STREET_TRANSITIONS,
   streetPlacedRows,
 } from "../../../src/test-street/fixture";
@@ -32,6 +33,23 @@ export function fixtureExtent(): { readonly widthCells: number; readonly heightC
 /** The floors the fixture's transitions join, lowest first. */
 export function fixtureFloors(specs: readonly TransitionSpec[] = STREET_TRANSITIONS): number[] {
   return [...new Set(specs.flatMap((t) => [t.floor, t.targetFloor]))].sort((a, b) => a - b);
+}
+
+/** Whether a body's feet cell is inside the drawn world: on a floor with painted
+ * ground, within the box the ground passes span. Past it is the void, which a
+ * closed ring keeps a walker out of; a flood that wandered round the ring's
+ * far side would reach cells no walker can, and hide a pocket the ring really
+ * seals. Floors with no painted ground (the deck is a prop) are bounded by
+ * their own ring. */
+function onDrawnGround(floor: number, cellX: number, cellY: number): boolean {
+  const groups = STREET_GROUND_TILES.filter((tiles) => tiles.floor === floor);
+  if (groups.length === 0) return true;
+  return (
+    cellX >= Math.min(...groups.map((t) => t.x0)) &&
+    cellX < Math.max(...groups.map((t) => t.x1)) &&
+    cellY >= Math.min(...groups.map((t) => t.y0)) &&
+    cellY < Math.max(...groups.map((t) => t.y1))
+  );
 }
 
 /** Every cell a body can reach on foot from `start`, crossing transitions: a
@@ -85,6 +103,7 @@ export function reachableCells(
       const ny = feet + dy;
       if (nx < 0 || ny < 0 || nx >= maxX || ny >= maxY) continue;
       if (!isBodyClear(world, config, floor, nx, ny)) continue;
+      if (!onDrawnGround(floor, cellOf(nx / sub), cellOf((ny - 1) / sub))) continue;
       const cellX = cellOf(nx / sub);
       const cellY = cellOf(ny / sub);
       const changed = cellX !== cellOf(cx / sub) || cellY !== cellOf(feet / sub);
