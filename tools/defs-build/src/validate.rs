@@ -3329,12 +3329,15 @@ fn check_commute_budget(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     ) else {
         return Ok(());
     };
-    let fastest = ["routing.speed_percent.bike", "routing.speed_percent.transit"]
-        .iter()
-        .filter_map(|k| get(k))
-        .map(|e| e.max)
-        .max()
-        .unwrap_or(100);
+    let fastest = [
+        "routing.speed_percent.bike",
+        "routing.speed_percent.transit",
+    ]
+    .iter()
+    .filter_map(|k| get(k))
+    .map(|e| e.max)
+    .max()
+    .unwrap_or(100);
     if opening.value.value * 100 / fastest < floor.value.value {
         return Err(DefsError::new(
             &floor.path,
