@@ -48,4 +48,12 @@ describe("arrival position (story 7.1, FR145)", () => {
     a.stored({ ...ROW, x: 437 });
     expect(a.senderMayRun()).toBe(true);
   });
+
+  it("once the sender has run, rows are its own echo and never stop it", () => {
+    const a = createArrivalPosition(UNITS, FALLBACK);
+    a.mount();
+    expect(a.senderMayRun()).toBe(true);
+    a.stored(ROW);
+    expect(a.senderMayRun()).toBe(true);
+  });
 });

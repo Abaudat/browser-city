@@ -247,10 +247,10 @@ pub fn dwellings(
 pub fn plan_assign_ranked(character_id: u64, open: impl IntoIterator<Item = Home>) -> Assignment {
     let mut group: Vec<Home> = Vec::new();
     for h in open {
-        if let Some(first) = group.first() {
-            if h.rank() != first.rank() {
-                break;
-            }
+        if let Some(first) = group.first()
+            && h.rank() != first.rank()
+        {
+            break;
         }
         group.push(h);
     }

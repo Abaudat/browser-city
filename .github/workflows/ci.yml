@@ -546,7 +546,7 @@ jobs:
       # above.
       - name: story 4.2, the authoritative loop fires with zero clients connected and survives a rebuild
         run: bash scripts/ci/check-authoritative-loop.sh
-      - name: "story 7.1, create_district then create_character: the tenancy, spawn and kit land together in one dwelling"
+      - name: "story 7.1, a generated district then a new character: the tenancy, spawn and kit land together in one dwelling"
         run: bash scripts/ci/check-housing-live.sh
       # Story 4.3: its own disposable local instance and port (3992),
       # never 3987-3991 -- same job, same reasoning as the steps above.
