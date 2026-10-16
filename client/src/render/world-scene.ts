@@ -37,7 +37,7 @@ import { type BodyDials, type BodyFrame, createBodyMotion, poseBody } from "../l
 import { framesByAnimation, loadL3Config, walkFramesPerCycle } from "../l3/config";
 import type { PlacedObject } from "../net/bindings/types";
 import { type BodyZone, bodyZoneOf, type Rect } from "../world/body-zone";
-import { CHUNK_SIZE, chunkKey, unpackChunkKey } from "../world/chunk";
+import { CHUNK_SIZE, chunkKey, chunkKeysCovering, unpackChunkKey } from "../world/chunk";
 import type { ChunkData, ChunkStore } from "../world/chunk-store";
 import type { ColliderRectSubcells, GridEntry } from "../world/collision-grid";
 import { type CellRect, type HeldRow, shouldClose } from "../world/container-view";
@@ -76,7 +76,7 @@ import {
 } from "./citizens-layer";
 import { decomposeFootprint } from "./decompose";
 import { assertStageIsWorld, FloorStacks } from "./floor-stacks";
-import { type GroundCell, type GroundFrame, groundQuads } from "./ground-mesh";
+import { type GroundFrame, groundQuads, paintedCells } from "./ground-mesh";
 import {
   openGroundDefId as findOpenGroundDefId,
   NO_GROUND,
@@ -1365,7 +1365,6 @@ export async function mountWorldScene(
     const offset = floorOffsetPx(floor, storeyHeightPx);
     // The chunk's ground is one static mesh per atlas page, not a sprite
     // per cell (`ground-mesh.ts`).
-    const cells: GroundCell[] = [];
     // Ground rects, painted in row order over open ground; a floor with no
     // open ground draws only the rects it holds.
     const painted = paintChunkGround(
@@ -1374,11 +1373,7 @@ export async function mountWorldScene(
       cy,
       floor === 0 && openGroundDefId !== undefined ? openGroundDefId : NO_GROUND,
     );
-    for (let i = 0; i < painted.length; i++) {
-      const defId = painted[i] as number;
-      if (defId === NO_GROUND) continue;
-      cells.push({ defId, lx: i % CHUNK_SIZE, ly: Math.floor(i / CHUNK_SIZE) });
-    }
+    const cells = paintedCells(painted, CHUNK_SIZE, NO_GROUND);
     const propRows: PlacedRowView[] = [];
     for (const row of data.placed.values()) {
       if (row.layer === GROUND_CODE) {
@@ -1495,12 +1490,8 @@ export async function mountWorldScene(
     const held = new Set<bigint>(store.chunkKeys());
     if (openGroundDefId !== undefined) {
       const m = DRAW_MARGIN_CELLS;
-      const cx0 = Math.floor((view.x0 - m) / CHUNK_SIZE);
-      const cx1 = Math.floor((view.x1 + m) / CHUNK_SIZE);
-      const cy0 = Math.floor((view.y0 - m) / CHUNK_SIZE);
-      const cy1 = Math.floor((view.y1 + m) / CHUNK_SIZE);
-      for (let cy = cy0; cy <= cy1; cy++) {
-        for (let cx = cx0; cx <= cx1; cx++) held.add(chunkKey(cx * CHUNK_SIZE, cy * CHUNK_SIZE, 0));
+      for (const k of chunkKeysCovering(view.x0 - m, view.y0 - m, view.x1 + m, view.y1 + m, 0)) {
+        held.add(k);
       }
     }
     const { draw, drop } = chunkResidency(

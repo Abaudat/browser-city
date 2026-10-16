@@ -24,6 +24,19 @@ export interface GroundQuads {
   readonly indices: Uint32Array;
 }
 
+/** The drawn cells of a painted chunk (`paintChunkGround`'s row-major
+ * defs, `side` cells a row), skipping `none`. */
+export function paintedCells(painted: ArrayLike<number>, side: number, none: number): GroundCell[] {
+  const out: GroundCell[] = [];
+  for (let ly = 0, i = 0; ly < side; ly++) {
+    for (let lx = 0; lx < side; lx++, i++) {
+      const defId = painted[i] as number;
+      if (defId !== none) out.push({ defId, lx, ly });
+    }
+  }
+  return out;
+}
+
 /** The cells' quads, grouped by atlas page, in cell order: each cell a
  * `tileSizePx` square at its whole-pixel offset inside the chunk. */
 export function groundQuads(

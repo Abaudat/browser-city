@@ -2,7 +2,7 @@
 // a sprite per cell.
 
 import { describe, expect, it } from "vitest";
-import { groundQuads } from "../../../src/render/ground-mesh";
+import { groundQuads, paintedCells } from "../../../src/render/ground-mesh";
 
 /** Two pages; def 1 and 2 on page "a", def 3 on page "b". */
 const frames = new Map([
@@ -10,6 +10,15 @@ const frames = new Map([
   [2, { page: "a", u0: 0.5, v0: 0, u1: 1, v1: 0.5 }],
   [3, { page: "b", u0: 0, v0: 0.5, u1: 0.25, v1: 1 }],
 ]);
+
+describe("paintedCells", () => {
+  it("reads a row-major chunk into cells, skipping the none def", () => {
+    expect(paintedCells([7, -1, -1, 8], 2, -1)).toEqual([
+      { defId: 7, lx: 0, ly: 0 },
+      { defId: 8, lx: 1, ly: 1 },
+    ]);
+  });
+});
 
 describe("groundQuads", () => {
   it("groups the cells by page, one quad per cell at its whole-pixel offset", () => {

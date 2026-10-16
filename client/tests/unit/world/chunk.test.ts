@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { CHUNK_SIZE, chunkKey, chunkSlot } from "../../../src/world/chunk";
+import { CHUNK_SIZE, chunkKey, chunkKeysCovering, chunkSlot } from "../../../src/world/chunk";
 
 describe("chunkKey", () => {
   it("two cells in the same chunk pack to the same key", () => {
@@ -54,6 +54,18 @@ describe("unpackChunkKey (story 3.16)", () => {
       const k = unpackChunkKey(chunkKeyOf(x, y, f));
       expect(k).toEqual({ cx: Math.floor(x / 32), cy: Math.floor(y / 32), floor: f });
     }
+  });
+});
+
+describe("chunkKeysCovering (story 3.16)", () => {
+  it("lists every chunk a cell rect touches, negative cells and fractions included", () => {
+    const keys = chunkKeysCovering(-0.5, 3, CHUNK_SIZE + 0.2, 4, 0);
+    expect(keys).toEqual([
+      chunkKey(-CHUNK_SIZE, 0, 0),
+      chunkKey(0, 0, 0),
+      chunkKey(CHUNK_SIZE, 0, 0),
+    ]);
+    expect(chunkKeysCovering(1, 1, 2, 2, 1)).toEqual([chunkKey(0, 0, 1)]);
   });
 });
 

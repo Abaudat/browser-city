@@ -39,6 +39,24 @@ export function chunkKey(x: number, y: number, floor: number): bigint {
  * stays a small integer (a double key would box per call), so it covers
  * `cx`/`cy` in [-512, 512) and `floor` in [-8, 8); `-1` outside, which a
  * caller treats as "do not cache". */
+/** The keys of the floor-`floor` chunks the cell rect `[x0, x1] x [y0, y1]`
+ * touches (bounds inclusive, fractional cells allowed). */
+export function chunkKeysCovering(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  floor: number,
+): bigint[] {
+  const out: bigint[] = [];
+  for (let cy = Math.floor(y0 / CHUNK_SIZE); cy <= Math.floor(y1 / CHUNK_SIZE); cy++) {
+    for (let cx = Math.floor(x0 / CHUNK_SIZE); cx <= Math.floor(x1 / CHUNK_SIZE); cx++) {
+      out.push(chunkKey(cx * CHUNK_SIZE, cy * CHUNK_SIZE, floor));
+    }
+  }
+  return out;
+}
+
 export function chunkSlot(cx: number, cy: number, floor: number): number {
   const x = cx + 512;
   const y = cy + 512;
