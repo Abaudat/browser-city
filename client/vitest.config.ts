@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: ["tests/unit/**/*.test.ts"],
     environment: "node",
+    maxWorkers: process.env.VITEST_MAX_WORKERS ? Number(process.env.VITEST_MAX_WORKERS) : undefined,
     // The one per-test budget (NFR49): scripts/ci/check-unit-test-durations.sh
     // and docs/architecture.md measure against it.
     testTimeout: 5_000,
