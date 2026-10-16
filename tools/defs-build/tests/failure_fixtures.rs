@@ -125,6 +125,35 @@ fn a_well_formed_seed_marker_for_a_requirement_that_does_not_exist_is_named() {
     );
 }
 
+// --- story 7.2: the commute floor and the day ---------------------------------
+
+#[test]
+fn a_zero_commute_floor_is_refused() {
+    let err = build_err("commute-floor-zero");
+    assert_eq!(
+        err.to_string(),
+        "defs/balance/routing.toml:21:9: balance 'routing.commute.floor_minutes' value 0 is out of its own declared range [1, 59]"
+    );
+}
+
+#[test]
+fn a_floor_above_the_opening_commute_at_top_speed_is_refused() {
+    let err = build_err("commute-floor-above-fastest-leg");
+    assert_eq!(
+        err.to_string(),
+        "defs/balance/routing.toml:21:9: balance 'routing.commute.floor_minutes' value 21 is above the opening commute over the fastest legal mode (60 x 100 / 300)"
+    );
+}
+
+#[test]
+fn an_overbooked_day_is_refused() {
+    let err = build_err("day-overbooked");
+    assert_eq!(
+        err.to_string(),
+        "defs/balance/day.toml:3:9: the day is overbooked: sleep 1000 + shift 480 + 2 x opening commute 60 is 1600 minutes, over 1440"
+    );
+}
+
 // --- story 2.10: tags and the five rule kinds -------------------------------
 
 #[test]

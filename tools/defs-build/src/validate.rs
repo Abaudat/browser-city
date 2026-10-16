@@ -3317,6 +3317,52 @@ fn check_uniforms(
     Ok(())
 }
 
+/// The commute and the day (story 7.2, FR4, FR7): the opening commute over
+/// the fastest legal mode may not fall under the floor, and the opening
+/// day's sleep, shift and two commute legs may not exceed the day. Checked
+/// only when the keys are declared.
+fn check_commute_budget(entries: &[BalanceEntry]) -> Result<(), DefsError> {
+    let get = |k: &str| entries.iter().find(|e| e.key.value == k);
+    let (Some(opening), Some(floor)) = (
+        get("routing.commute.opening_minutes"),
+        get("routing.commute.floor_minutes"),
+    ) else {
+        return Ok(());
+    };
+    let fastest = ["routing.speed_percent.bike", "routing.speed_percent.transit"]
+        .iter()
+        .filter_map(|k| get(k))
+        .map(|e| e.max)
+        .max()
+        .unwrap_or(100);
+    if opening.value.value * 100 / fastest < floor.value.value {
+        return Err(DefsError::new(
+            &floor.path,
+            floor.value.line,
+            floor.value.col,
+            format!(
+                "balance '{}' value {} is above the opening commute over the fastest legal mode ({} x 100 / {})",
+                floor.key.value, floor.value.value, opening.value.value, fastest
+            ),
+        ));
+    }
+    if let (Some(sleep), Some(shift)) = (get("day.sleep_minutes"), get("day.shift_minutes")) {
+        let used = sleep.value.value + shift.value.value + 2 * opening.value.value;
+        if used > 1440 {
+            return Err(DefsError::new(
+                &sleep.path,
+                sleep.value.line,
+                sleep.value.col,
+                format!(
+                    "the day is overbooked: sleep {} + shift {} + 2 x opening commute {} is {used} minutes, over 1440",
+                    sleep.value.value, shift.value.value, opening.value.value
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn check_balance_range(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     for e in entries {
         if e.value.value < e.min || e.value.value > e.max {
@@ -3536,6 +3582,7 @@ pub fn validate(
     check_building_type_provisions(&raw.building_types, code_tables)?;
 
     check_balance_range(&raw.balance)?;
+    check_commute_budget(&raw.balance)?;
 
     check_one_layout_per_family(&raw.appearance_layouts)?;
     for b in &raw.bodies {

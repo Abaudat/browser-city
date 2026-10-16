@@ -89,6 +89,8 @@ pub const INV_STOCK_MOVES_ONLY_BY_HAND: &str = "stock moves only by hand: across
 pub const INV_STOCK_MOVE_CONSERVES_QUANTITY: &str = "a stock move conserves quantity: the per-item sum across holders is unchanged by any sequence of moves, and a move the receiver refuses takes nothing from the giver";
 pub const INV_CHARACTER_NAME_RULE_NEVER_PANICS: &str =
     "the character-name rule never panics: any string returns a name or a typed refusal";
+pub const INV_COMMUTE_LEG_NEVER_BELOW_FLOOR: &str = "any route cost, floor in range and mode percent up to 500 gives a leg at or above the floor and one milliminute (FR7)";
+pub const INV_COMMUTE_LEG_MONOTONE_IN_SPEED: &str = "a faster mode never lengthens a leg; at walking pace the leg is the raw cost above the floor (FR7)";
 pub const INV_STARTING_FLAT_IS_A_GENERATED_DWELLING: &str =
     "the flat assigned to a first character is a laid building whose type carries the dwelling tag";
 pub const INV_STARTING_FLAT_IS_ON_THE_DISTRICT_EDGE: &str =
@@ -9836,4 +9838,48 @@ fn inv_provision_hit_carries_its_nodes_business_id() {
         }
         Ok(())
     });
+}
+
+// Story 7.2 (FR7): the commute floor is enforced, not emergent.
+proptest! {
+    /// For any route cost, any floor in its balance range and any mode
+    /// percent in the key's full range, a leg is never under the floor and
+    /// never under one milliminute.
+    #[test]
+    fn inv_commute_leg_never_below_floor(
+        cost in 0i64..=2_000_000_000,
+        floor_min in 1i64..=59,
+        bike in 100i64..=500,
+        transit in 100i64..=500,
+        mode in arb_mode(),
+    ) {
+        let mut r = rates();
+        r.bike_percent = bike;
+        r.transit_percent = transit;
+        let floor = sim::routing::Milliminutes(floor_min * 1000);
+        let l = sim::routing::commute::leg_from_cost(&r, sim::routing::Milliminutes(cost), mode, floor);
+        prop_assert!(l >= floor && l.0 >= 1);
+    }
+
+    /// A faster mode never lengthens a leg; at walking pace the leg is the
+    /// raw cost once above the floor.
+    #[test]
+    fn inv_commute_leg_monotone_in_speed(
+        cost in 0i64..=2_000_000_000,
+        floor_min in 1i64..=59,
+        slow in 100i64..=500,
+        fast in 100i64..=500,
+    ) {
+        let (slow, fast) = (slow.min(fast), slow.max(fast));
+        let mut r = rates();
+        let floor = sim::routing::Milliminutes(floor_min * 1000);
+        let c = sim::routing::Milliminutes(cost);
+        r.transit_percent = slow;
+        let a = sim::routing::commute::leg_from_cost(&r, c, TransportMode::Transit, floor);
+        r.transit_percent = fast;
+        let b = sim::routing::commute::leg_from_cost(&r, c, TransportMode::Transit, floor);
+        prop_assert!(b <= a);
+        let walk = sim::routing::commute::leg_from_cost(&r, c, TransportMode::Walk, floor);
+        prop_assert_eq!(walk, c.max(floor));
+    }
 }

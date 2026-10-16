@@ -1,0 +1,23 @@
+[[balance]]
+key = "routing.speed_percent.bike"
+value = 200
+min = 100
+max = 300
+
+[[balance]]
+key = "routing.speed_percent.transit"
+value = 300
+min = 100
+max = 300
+
+[[balance]]
+key = "routing.commute.opening_minutes"
+value = 60
+min = 1
+max = 600
+
+[[balance]]
+key = "routing.commute.floor_minutes"
+value = 21
+min = 1
+max = 59

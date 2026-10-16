@@ -253,6 +253,8 @@ with no row here.
 | `inv_jump_preserves_city_time_arithmetic` | For any epoch, any positive jump and any now, `city_time(jumped_epoch, now)` equals `city_time(epoch, now + delta)` field for field, at every valid speed, without panicking or wrapping (FR163, NFR41) | covered | `inv_jump_preserves_city_time_arithmetic` | 4.3 |
 | `inv_jump_never_drops_a_fire` | For any cadence origin, period, speed and jumped interval, the skipped grid points `sim::cadence::replay_plan` returns equal a brute-force enumeration of them, in ascending city-minute order, and a target the cadence had already passed is never counted (FR163) | covered | `inv_jump_never_drops_a_fire` | 4.3 |
 | `inv_multiplier_switch_is_continuous` | At the instant a multiplier changes the whole city minute is unchanged, and thereafter exactly k city minutes elapse per k new-speed minutes: switching speeds back and forth never moves the clock backward or skips a minute (FR163) | covered | `inv_multiplier_switch_is_continuous` | 4.3 |
+| `inv_commute_leg_never_below_floor` | Any route cost, floor in its balance range and mode percent up to 500 gives a leg at or above the floor and one milliminute (FR7) | covered | `inv_commute_leg_never_below_floor` | 7.2 |
+| `inv_commute_leg_monotone_in_speed` | A faster mode never lengthens a leg; at walking pace the leg is the raw cost above the floor (FR7) | covered | `inv_commute_leg_monotone_in_speed` | 7.2 |
 
 ## Coverage scale (NFR29)
 
@@ -1449,6 +1451,22 @@ Story 4.6 (FR144, FR145, FR177): the first boot is one question, asked on a page
 | FR177: nothing in the shell or `src/ui/` is, or is named for, a spinner, a progress bar or a loading indication | covered | `scripts/ci/check-boot-shell.sh` |
 | FR172: a first boot is never reported as `Boot` | covered | `client/tests/unit/net/measure-reporter.test.ts` -- `is never sent for a first boot, which includes the player typing` |
 | The deploy smoke never submits a name against the live database | covered | `client/tests/e2e/deploy-smoke.spec.ts` |
+
+## The commute
+
+Story 7.2 (FR4, FR6, FR7): the commute is one walking search, converted to the mode and clamped to the floor; the day it leaves is derived. One row per claim.
+
+| Requirement | Status | Guard |
+| --- | --- | --- |
+| AC1 (FR4): 333 cells at the walking speed are 60 city minutes and 151 real seconds, from the balance | covered | `server/sim/tests/commute.rs` -- `the_design_commute_is_sixty_minutes_and_151_real_seconds`, `route_cost_in_real_ms_is_cells_over_the_walk_speed` |
+| AC1 (FR4): the generated district delivers the opening commute from the first flat, in a 50-70 minute band and near 333 cells and 151 s, with a committed figure per seed | covered | `server/sim/tests/commute.rs` -- `the_generated_district_delivers_the_opening_commute`, `opening_commute_matches_committed_figures` |
+| AC2 (FR4): two legs fill the commute block and own time is derived (360 at the opening, 440 at the floor), never stored; a day over 1440 is refused by the build | covered | `server/sim/tests/commute.rs` -- `two_legs_fill_the_commute_block_and_own_time_is_derived`; `server/sim/src/day.rs` -- `a_sixty_minute_leg_leaves_six_hours`, `the_floor_leg_leaves_seven_hours_twenty`, `the_blocks_sum_to_the_day`; `tools/defs-build/tests/failure_fixtures.rs` -- `an_overbooked_day_is_refused` |
+| AC3 (FR7): the floor is enforced by the clamp, over the whole input space, not at the ladder rungs; a zero floor, or one above the opening commute at top speed, is refused by the build | covered | `server/sim/src/routing/commute.rs` -- `the_ladder_rungs`, `short_and_empty_routes_are_charged_the_floor`, `the_clamp_is_what_holds_the_floor`, `a_zero_floor_still_charges_a_milliminute`; `server/sim/tests/commute.rs` -- `a_zero_length_route_is_charged_the_floor`; `inv_commute_leg_never_below_floor`, `inv_commute_leg_monotone_in_speed`; `tools/defs-build/tests/failure_fixtures.rs` -- `a_zero_commute_floor_is_refused`, `a_floor_above_the_opening_commute_at_top_speed_is_refused` |
+| AC4 (FR6, FR131): one search, then each mode is the walking cost x 100 / percent rounded up, then the floor; no second search | covered | `server/sim/tests/commute.rs` -- `every_mode_is_one_search_scaled_by_its_percent`, `search_errors_propagate_unchanged`; `server/sim/src/routing/commute.rs` -- `conversion_rounds_up` |
+| `routing::commute` is named from at most one `server/src` file | covered | `scripts/ci/tests/test-check-server-src-bans.sh` -- `a second file naming routing::commute is banned` |
+| FR4: the full day (sleep, work, commute, own time) is audited | partial | `server/sim/tests/commute.rs` -- `two_legs_fill_the_commute_block_and_own_time_is_derived`; only the commute block is proven here; story 7.12 closes the day audit |
+| FR6: the commute is the player's primary sensor on the city's state | deferred | story 7.3 |
+| FR7: the commute never reaches zero | covered | `server/sim/tests/invariants.rs` -- `inv_commute_leg_never_below_floor` |
 
 ## Live declaration
 

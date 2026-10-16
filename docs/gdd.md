@@ -213,6 +213,8 @@ Emergence reaches the player on the way to and from work. The bin that is full, 
 | Edge flat + bike | 30 min | 7h (17.5 real min) | **+17%** |
 | Transit pass / closer flat | 20 min | 7h 20m (18.3 real min) | +22% from start |
 
+**The floor is a clamp and a promise.** No leg is charged under the floor (`routing.commute.floor_minutes`), and the data is refused if the opening commute at the fastest mode would fall under it. The first story that makes a physical leg shorter than the floor owes the physical carrier of the difference: the walk to the stop, the wait at it, the walk from it.
+
 **These figures are load-bearing on map scale.** The commute arithmetic above is true only at the settled scale: walking speed is **2.2 cells/sec**, which is what makes a ~333-cell starting commute take exactly 60 in-city minutes on a 512-cell map. The ladder then lands precisely on the design's stated floor — bike at 2x gives 30 in-city minutes, transit pass at 3x gives 20. Because `commute_in_city_minutes = 0.26 x map_width / walk_speed`, **any change to map size or walking speed must be made together, or the ladder and its floor stop being true.**
 
 **Stated tension:** P1 pushes the player to buy the commute down, but the commute is the loop's variance source. Optimise perfectly and you see less of the city. This is a deliberate trade, not a leak, and it is resolved three ways:
