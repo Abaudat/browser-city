@@ -167,7 +167,8 @@ export const BRIDGE_POST_COLLIDER = { x0: 5, y0: 0, x1: 12, y1: 16 } as const;
 /** The footbridge's four `defs/objects` rows (story 15.19): the street flight
  * and the deck flight (each an undrawn `flight`, the walk data), and the one
  * staircase drawn on the street floor: the treads where it is walked and the
- * closed abutment over the street cells above them. Which floors the flights join is a `floor_transition` row per column,
+ * abutment drawn over the street cells above them (open ground, no collider).
+ * Which floors the flights join is a `floor_transition` row per column,
  * never a field on the prop. */
 export const BRIDGE_STAIRS_STREET_DEF_ID = 20;
 export const BRIDGE_STAIRS_DECK_DEF_ID = 21;
@@ -984,9 +985,11 @@ const STREET_PROP_LIST: StreetProp[] = [
   },
   // The one staircase, drawn once, on the street floor: the treads where it
   // is walked (flat, under the walker on both floors), and above them the
-  // abutment over the street cells the art covers on screen (drawn and closed,
-  // so a walker never stands in front of treads it is not climbing). A riser
-  // line falls every 8 px from the foot to the deck.
+  // abutment over the street cells the art covers on screen (drawn only: the
+  // solid thing on them is the deck's underside a storey up, so the street is
+  // open ground under it, except for the one face `STREET_BOUNDARY` keeps at
+  // the up-anchor's north edge). A riser line falls every 8 px from the foot
+  // to the deck.
   ...Array.from({ length: BRIDGE_FLIGHT_DEPTH }, (_, index) => ({
     id: BigInt(90 + index),
     x: BRIDGE_FLIGHT_X0,
@@ -1197,6 +1200,19 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
     y: SOUTH_WALL_Y - 1,
     width: 21 - (EAST_WALL_X_B + 1) + 1,
     height: 1,
+  },
+  // The one floor-0 face under the deck (story 4.26): the flight's up-anchor
+  // refuses a step in from the north (the stairwell rule), so a walker on the
+  // deck row cannot step south onto the flight and be lifted through the
+  // landing's underside. A thin strip along the south edge of the row, like
+  // 110: the rest of the row is open ground to walk under the deck.
+  {
+    id: 137n,
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_UP_ANCHOR_Y - 1,
+    width: BRIDGE_FLIGHT_WIDTH,
+    height: 1,
+    collider: { x0: 0, y0: 14, x1: BRIDGE_FLIGHT_WIDTH * 16, y1: 16 },
   },
   // Around the subway entrance: west of the treads and below the entrance
   // cells. East of them the pavement runs on, along the footbridge flight's

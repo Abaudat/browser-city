@@ -7,7 +7,12 @@ import { describe, expect, it } from "vitest";
 import {
   ARRIVAL_DESTINATIONS,
   BRIDGE_DECK_DEF_ID,
+  BRIDGE_DECK_Y,
+  BRIDGE_FLIGHT_X0,
   BRIDGE_FLOOR,
+  BRIDGE_UNDER_PILLAR_X,
+  BRIDGE_X0,
+  BRIDGE_X1,
   HOME_FLAT_SPAWN,
   PLAYER_START,
   STAIRS_X,
@@ -22,7 +27,7 @@ import { bodyCell, step } from "../../../src/world/movement";
 import { isBodyClear, isCellStandable } from "../../../src/world/standable";
 import { pairTransitions, TransitionIndex } from "../../../src/world/transitions";
 import { WorldIndex } from "../../../src/world/world-index";
-import { cellKey, reachableCells, reachableGrid } from "./reachable";
+import { cellKey, fixtureExtent, fixtureFloors, reachableCells, reachableGrid } from "./reachable";
 import { REACHABLE_GRID } from "./reachable-golden";
 import {
   committedDefs,
@@ -251,5 +256,65 @@ describe("a real player's start reaches every destination on foot (FR117, FR128)
   it("the street is one connected region whichever start a spec uses", () => {
     const fromShop = reachableCells(world, undefined, PLAYER_START);
     expect([...fromFlat.seen].sort()).toEqual([...fromShop.seen].sort());
+  });
+});
+
+// --- floor isolation and the open ground under the deck (FR117, FR128) -------
+
+describe("what is solid on one floor never closes cells on another (FR117)", () => {
+  it("for every floor the fixture uses, the grid from all rows equals the grid from that floor's rows alone", () => {
+    const { widthCells, heightCells } = fixtureExtent();
+    const shape = (w: WorldIndex, floor: number, x: number, y: number) =>
+      JSON.stringify(
+        w
+          .entriesInCell(floor, x, y)
+          .map((e) => [String(e.objectId), e.rect])
+          .sort(),
+      );
+    for (const floor of fixtureFloors()) {
+      const alone = worldOf(allRows.filter((r) => r.floor === floor));
+      for (let y = 0; y < heightCells; y++) {
+        for (let x = 0; x < widthCells; x++) {
+          expect(shape(world, floor, x, y), `floor ${floor} cell (${x}, ${y})`).toEqual(
+            shape(alone, floor, x, y),
+          );
+        }
+      }
+    }
+  });
+
+  // The street under the deck: row 6 of the flight's columns, and the deck row.
+  const underDeck: { x: number; y: number }[] = [];
+  // (The pillar is a real post, a bollard.)
+  for (let x = BRIDGE_X0; x <= BRIDGE_X1; x++) {
+    if (x !== BRIDGE_UNDER_PILLAR_X) underDeck.push({ x, y: BRIDGE_DECK_Y });
+  }
+  for (let x = BRIDGE_FLIGHT_X0; x <= BRIDGE_X1; x++) underDeck.push({ x, y: BRIDGE_DECK_Y - 1 });
+
+  it("the open ground under the deck is standable on floor 0 for the player's real body", () => {
+    for (const { x, y } of underDeck) {
+      expect(isCellStandable(world, config, x, y, STREET_FLOOR), `cell (${x}, ${y})`).toBe(true);
+      expect(
+        isBodyClear(world, config, STREET_FLOOR, (x + 0.5) * sub, (y + 0.5) * sub),
+        `body at the centre of (${x}, ${y})`,
+      ).toBe(true);
+    }
+  });
+
+  it("the only floor-0 collider north of the flight's up-anchor is a thin face on the deck row's south edge", () => {
+    const faceTop = BRIDGE_DECK_Y * sub + 14;
+    for (let x = BRIDGE_FLIGHT_X0; x <= BRIDGE_X1; x++) {
+      const centre = (x + 0.5) * sub;
+      expect(isBodyClear(world, config, STREET_FLOOR, centre, faceTop), `(${x}) at the face`).toBe(
+        true,
+      );
+      expect(
+        isBodyClear(world, config, STREET_FLOOR, centre, faceTop + 1),
+        `(${x}) over the face`,
+      ).toBe(false);
+    }
+    // A walker on the deck row cannot step south onto the flight.
+    const from = { x: (BRIDGE_FLIGHT_X0 + 1) * sub, y: faceTop };
+    expect(isBodyClear(world, config, STREET_FLOOR, from.x, from.y + 1)).toBe(false);
   });
 });

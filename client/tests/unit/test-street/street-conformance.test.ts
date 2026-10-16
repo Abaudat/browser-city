@@ -458,6 +458,10 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
    * stairs down are not. */
   // The deck's south rail and its flight's west edge: the ring rects with a sub-cell collider.
   const BRIDGE_RAIL_IDS = [110n, 134n];
+  /** The one floor-0 face under the deck (story 4.26): the flight's up-anchor
+   * refuses a step in from the north (the stairwell rule). A thin strip along
+   * the south edge of the deck row, drawn over by the abutment rows. */
+  const UNDER_DECK_FACE_ID = 137n;
 
   /** Furniture-layer asset rows drawn with no collider, each with its
    * reason. Nothing lands here by default. */
@@ -509,12 +513,16 @@ describe("collision/silhouette conformance (FR117, FR128)", () => {
     expect(failures).toEqual([]);
   });
 
-  it("STREET_BOUNDARY is only the undrawn ring: no rect carries a collider (bar the bridge's two rails, by id), and every cell lies outside every drawn ground pass on its floor", () => {
+  it("STREET_BOUNDARY is only the undrawn ring: no rect carries a collider (bar the bridge's two rails and the under-deck face, by id), and every cell lies outside every drawn ground pass on its floor", () => {
     const failures: string[] = [];
     for (const id of BRIDGE_RAIL_IDS) {
       expect(STREET_BOUNDARY.some((rect) => rect.id === id)).toBe(true);
     }
     for (const rect of STREET_BOUNDARY) {
+      if (rect.id === UNDER_DECK_FACE_ID) {
+        expect(rect.collider).toEqual({ x0: 0, y0: 14, x1: rect.width * 16, y1: 16 });
+        continue;
+      }
       if (rect.collider && !BRIDGE_RAIL_IDS.includes(rect.id)) {
         failures.push(`boundary id ${rect.id} carries its own collider -- the ring is whole cells`);
       }

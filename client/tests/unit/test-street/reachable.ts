@@ -3,7 +3,7 @@
 // golden (`regen-golden.ts`). The bounds are the fixture's own.
 
 import {
-  PLAYER_START,
+  HOME_FLAT_SPAWN,
   STREET_GROUND_TILES,
   STREET_TRANSITIONS,
   streetPlacedRows,
@@ -59,7 +59,7 @@ function onDrawnGround(floor: number, cellX: number, cellY: number): boolean {
 export function reachableCells(
   world: WorldIndex = streetWorldIndex(),
   specs: readonly TransitionSpec[] = STREET_TRANSITIONS,
-  start: { x: number; y: number; floor: number } = PLAYER_START,
+  start: { x: number; y: number; floor: number } = HOME_FLAT_SPAWN,
 ) {
   const config = streetMovementConfig();
   const sub = config.subcellsPerCell;

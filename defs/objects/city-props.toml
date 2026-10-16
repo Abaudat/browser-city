@@ -327,8 +327,8 @@ height = 1
 tags = ["stairs", "bridge", "underfoot", "fixture"]
 
 # The treads over the street cells the stairs' art covers on screen above the
-# flights: drawn and closed, one row each, so a walker never stands in front
-# of treads it is not climbing.
+# flights, one row each. Drawn only: the solid thing on those cells is the
+# deck's underside a storey up, so a walker passes under them.
 [[object]]
 id = 22
 key = "bridge_stairs_abutment"
@@ -337,5 +337,4 @@ layer = "objects"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/20_Subway_and_Train_Station_Singles_16x16/ME_Singles_Subway_and_Train_Station_16x16_Stairs_1.png", x = 0, y = 29, w = 32, h = 16 }
 width = 2
 height = 1
-collider = { x0 = 0, y0 = 0, x1 = 32, y1 = 16 }
-tags = ["stairs", "bridge", "fixture"]
+tags = ["stairs", "bridge", "underfoot", "fixture"]
