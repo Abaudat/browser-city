@@ -151,7 +151,6 @@ export const Dwelling = __t.object("Dwelling", {
   area: __t.u32(),
   askingRent: __t.u64(),
   rank: __t.u64(),
-  openRank: __t.u64(),
   spawnX: __t.i32(),
   spawnY: __t.i32(),
   doorX: __t.i32(),

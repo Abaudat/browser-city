@@ -134,6 +134,9 @@ interface PlayersWiring {
   /** The local character's id, once it exists. */
   readonly characterId: () => string | undefined;
   readonly onMounted: () => void;
+  /** Story 7.1: the scene exists; `relocate` moves its body (an arrival row
+   * that came after the start was chosen). */
+  readonly onSceneReady: (relocate: (x: number, y: number, floor: number) => void) => void;
   /** Story 7.1: where the scene starts -- the caller's stored row when one
    * exists, else `fallback`. Called once, as the scene mounts. */
   readonly arrivalStart: (fallback: { x: number; y: number; floor: number }) => {
@@ -209,6 +212,9 @@ async function main(): Promise<void> {
   // the sender never runs over a spawn the scene did not adopt.
   let arrivalPosition: ReturnType<typeof createArrivalPosition> | undefined;
   let storedRow: WirePosition | undefined;
+  // An arrival row that came between choosing the start and the scene existing.
+  let pendingRelocation: { x: number; y: number; floor: number } | undefined;
+  let relocateScene: ((x: number, y: number, floor: number) => void) | undefined;
   let sceneMounted = false;
   // The sender runs while the connection is `connected` and the caller has a
   // character and the scene a position; it restarts on every `connected`
@@ -305,7 +311,10 @@ async function main(): Promise<void> {
       },
       onStoredPosition: (row) => {
         storedRow = row;
-        arrivalPosition?.stored(row);
+        const to = arrivalPosition?.stored(row);
+        if (!to) return;
+        if (relocateScene) relocateScene(to.x, to.y, to.floor);
+        else pendingRelocation = to;
       },
       onCharacter: (character) => {
         latestCharacter = character;
@@ -482,6 +491,12 @@ async function main(): Promise<void> {
           arrivalPosition = createArrivalPosition(p.unitsPerCell, fallback);
           if (storedRow) arrivalPosition.stored(storedRow);
           return arrivalPosition.mount();
+        },
+        onSceneReady: (relocate) => {
+          relocateScene = relocate;
+          if (!pendingRelocation) return;
+          relocate(pendingRelocation.x, pendingRelocation.y, pendingRelocation.floor);
+          pendingRelocation = undefined;
         },
         onMounted: () => {
           sceneMounted = true;
@@ -831,6 +846,7 @@ async function startStreetScene(
     onHighlightChange: recordHighlightForE2e,
   });
   sceneHandle = handle;
+  players.onSceneReady((x, y, floor) => handle.relocate(x, y, floor));
   exposeContainerViewForE2e({
     containerView: () => {
       const view = handle.containerView();

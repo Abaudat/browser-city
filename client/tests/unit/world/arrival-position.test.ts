@@ -34,18 +34,35 @@ describe("arrival position (story 7.1, FR145)", () => {
     expect(a.senderMayRun()).toBe(true);
   });
 
-  it("a row that arrives after the scene mounted on the fallback is never overwritten", () => {
+  it("a row that arrives after the scene mounted on the fallback is the arrival: the scene moves to it", () => {
     const a = createArrivalPosition(UNITS, FALLBACK);
     a.mount();
-    a.stored(ROW);
-    expect(a.senderMayRun()).toBe(false);
+    expect(a.stored(ROW)).toEqual({ x: 436.5, y: 416.5, floor: 0 });
+    expect(a.senderMayRun()).toBe(true);
+  });
+
+  it("mount on the fallback, then the row, then the sender: the sender starts from the row's position", () => {
+    const a = createArrivalPosition(UNITS, FALLBACK);
+    a.mount();
+    let position: { x: number; y: number; floor: number } = FALLBACK; // what the scene reports
+    const to = a.stored(ROW);
+    if (to) position = to; // the scene is moved, then reports the row's position
+    expect(a.senderMayRun()).toBe(true);
+    expect(position).toEqual({ x: 436.5, y: 416.5, floor: 0 });
+  });
+
+  it("a second row before the sender has run does not move the scene again", () => {
+    const a = createArrivalPosition(UNITS, FALLBACK);
+    a.mount();
+    expect(a.stored(ROW)).toBeDefined();
+    expect(a.stored({ ...ROW, x: 500 })).toBeUndefined();
   });
 
   it("a row that arrives after the scene mounted from the same row changes nothing", () => {
     const a = createArrivalPosition(UNITS, FALLBACK);
     a.stored(ROW);
     a.mount();
-    a.stored({ ...ROW, x: 437 });
+    expect(a.stored({ ...ROW, x: 437 })).toBeUndefined();
     expect(a.senderMayRun()).toBe(true);
   });
 
@@ -53,7 +70,7 @@ describe("arrival position (story 7.1, FR145)", () => {
     const a = createArrivalPosition(UNITS, FALLBACK);
     a.mount();
     expect(a.senderMayRun()).toBe(true);
-    a.stored(ROW);
+    expect(a.stored(ROW)).toBeUndefined();
     expect(a.senderMayRun()).toBe(true);
   });
 });

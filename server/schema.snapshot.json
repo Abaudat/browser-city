@@ -773,15 +773,6 @@
           "indexed": true
         },
         {
-          "name": "open_rank",
-          "ty": "u64",
-          "primary_key": false,
-          "auto_inc": false,
-          "unique": false,
-          "has_default": false,
-          "indexed": true
-        },
-        {
           "name": "spawn_x",
           "ty": "i32",
           "primary_key": false,

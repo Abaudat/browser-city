@@ -39,9 +39,6 @@ pub struct Home {
     pub area: u32,
 }
 
-/// A dwelling's `open_rank` once let: past every rank a vacant one has.
-pub const OCCUPIED: u64 = u64::MAX;
-
 impl Home {
     /// The order flats are let in, lowest first: the edge before the
     /// inside; on the edge the cheapest asked, inside the nearest the
@@ -242,8 +239,7 @@ pub fn dwellings(
 
 /// Picks among the lowest-ranked open homes, drawn from the character id.
 /// `open` yields vacant homes in ascending [`Home::rank`]; only the first
-/// rank group and the one home that ends it are ever pulled, so an index
-/// range read costs the group, never the stock.
+/// rank group and the one home that ends it are ever pulled.
 pub fn plan_assign_ranked(character_id: u64, open: impl IntoIterator<Item = Home>) -> Assignment {
     let mut group: Vec<Home> = Vec::new();
     for h in open {
@@ -287,9 +283,9 @@ pub struct KitPlan {
     pub letter_offset: (u8, u8),
 }
 
-/// The letter's offset in its cell, in sub-cells: off-centre, so it reads
-/// as paper on the box.
-pub const LETTER_OFFSET: (u8, u8) = (8, 2);
+/// The letter's offset in its cell, in sub-cells: centred on the box, whose
+/// body fills the cell.
+pub const LETTER_OFFSET: (u8, u8) = (0, 0);
 
 /// The starting kit's placements for `home`. Pure: the reducer applies it.
 pub fn plan_kit(home: &Home) -> KitPlan {

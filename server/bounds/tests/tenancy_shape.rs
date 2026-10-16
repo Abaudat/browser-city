@@ -76,6 +76,13 @@ fn dwelling_is_one_row_per_building_and_building_stays_narrow() {
             .max_rows
     };
     assert!(max("dwelling") <= max("building"));
+    // Occupancy is the tenancy rows' alone: no copy of it on the let row.
+    assert!(
+        d.columns
+            .iter()
+            .all(|c| !c.name.contains("open") && !c.name.contains("occup")),
+        "dwelling carries a copy of whether it is let"
+    );
 }
 
 #[test]

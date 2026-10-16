@@ -29,6 +29,7 @@ pub const FIRST_POOL_RANK: u32 = 10;
 pub struct CodeTables {
     sets: BTreeMap<String, BTreeMap<String, u32>>,
     layer_ranks: BTreeMap<String, u32>,
+    requirements: std::collections::BTreeSet<String>,
 }
 
 impl CodeTables {
@@ -53,7 +54,31 @@ impl CodeTables {
                 .or_default()
                 .insert(name.to_string(), code);
         }
-        CodeTables { sets, layer_ranks }
+        CodeTables {
+            sets,
+            layer_ranks,
+            requirements: Default::default(),
+        }
+    }
+
+    /// Records the requirement ids named in `docs/requirements.md`: the
+    /// bold `**FR<n>**` / `**NFR<n>**` that opens a requirement's line.
+    pub fn with_requirements(mut self, requirements_text: &str) -> Self {
+        for line in requirements_text.lines() {
+            let Some(rest) = line.strip_prefix("- **") else {
+                continue;
+            };
+            let Some((id, _)) = rest.split_once("**") else {
+                continue;
+            };
+            self.requirements.insert(id.to_string());
+        }
+        self
+    }
+
+    /// Whether `id` (`FR20`, `NFR3`) is a requirement in the requirements file.
+    pub fn has_requirement(&self, id: &str) -> bool {
+        self.requirements.contains(id)
     }
 
     /// Whether `layer` is a flat-pass layer: its golden rank is below
@@ -97,6 +122,7 @@ impl CodeTables {
         CodeTables {
             sets,
             layer_ranks: BTreeMap::new(),
+            requirements: Default::default(),
         }
     }
 

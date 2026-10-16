@@ -1,8 +1,8 @@
 //! Story 7.1 (FR20, FR145): a character's first flat is a tenancy over a
 //! generated dwelling. `sim::housing` decides which flat, where the tenant
 //! stands and where the kit goes (`sim::identity::plan_arrival`,
-//! `sim::housing::plan_kit`); this file reads the `dwelling` rows through
-//! their `open_rank` index, writes the tenancy, the first position and the
+//! `sim::housing::plan_kit`); this file walks the `dwelling` rows by `rank`,
+//! skipping the let ones, writes the tenancy, the first position and the
 //! starting kit in the caller's transaction, and returns `Err` (rolling the
 //! whole `create_character` back) rather than leave a half-made arrival.
 //!
@@ -12,7 +12,7 @@
 
 use sim::codes::actor_kind;
 use sim::generated::defs;
-use sim::housing::{Home, OCCUPIED, Tier, plan_kit};
+use sim::housing::{Home, Tier, plan_kit};
 use sim::identity::plan_arrival;
 use sim::item_instance::Placed;
 use sim::world::checked_chunk_key;
@@ -26,7 +26,7 @@ use super::world::{PlacedObject, placed_object};
 /// itself. `building_id` is the `building` row's id (primary key, one row
 /// per dwelling; absence is "not a dwelling"). Generation facts never
 /// change; `asking_rent` is the landlord's and the market's to move later
-/// (7.6), and `open_rank` is `OCCUPIED` while a tenancy holds the flat.
+/// (7.6). Whether a tenancy holds the flat is the `tenancy` rows' alone.
 #[derive(Clone)]
 #[spacetimedb::table(accessor = dwelling)]
 pub struct Dwelling {
@@ -44,10 +44,6 @@ pub struct Dwelling {
     /// `sim::housing::Home::rank`, fixed at generation.
     #[index(btree)]
     pub rank: u64,
-    /// `rank` while vacant, `OCCUPIED` once let: the assignment reads the
-    /// lowest rank group of this index and nothing else.
-    #[index(btree)]
-    pub open_rank: u64,
     pub spawn_x: i32,
     pub spawn_y: i32,
     pub door_x: i32,
@@ -97,7 +93,6 @@ impl Dwelling {
             area: h.area,
             asking_rent: h.rent,
             rank: h.rank(),
-            open_rank: h.rank(),
             spawn_x: h.spawn.0,
             spawn_y: h.spawn.1,
             door_x: h.door.0,
@@ -133,19 +128,21 @@ pub fn arrive(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
         .db
         .dwelling()
         .rank()
-        .filter(0..=OCCUPIED)
+        .filter(0..=u64::MAX)
         .next()
         .map(|r| (r.door_x, r.door_y))
     else {
         return Ok(());
     };
-    // The open homes in ascending rank: `plan_arrival` pulls the first
-    // rank group and the one row that ends it, never the stock.
+    // The open homes in ascending rank: a flat a tenancy holds is skipped
+    // (one point lookup), and `plan_arrival` stops at the end of the first
+    // rank group with a vacancy.
     let open = ctx
         .db
         .dwelling()
-        .open_rank()
-        .filter(0..OCCUPIED)
+        .rank()
+        .filter(0..=u64::MAX)
+        .filter(|r| ctx.db.tenancy().building_id().find(r.building_id).is_none())
         .filter_map(|r| home_of(&r));
     let arrival = plan_arrival(character_id, open, street);
     write_first_position(ctx, character_id, arrival.spawn.0, arrival.spawn.1, 0)?;
@@ -163,10 +160,6 @@ pub fn arrive(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
         tenant_id: character_id,
         weekly_rent: t.weekly_rent,
         started_at: ctx.timestamp,
-    });
-    ctx.db.dwelling().building_id().update(Dwelling {
-        open_rank: OCCUPIED,
-        ..row
     });
     place_kit(ctx, &home, signed.tenancy_id)
 }

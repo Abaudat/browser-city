@@ -25,6 +25,7 @@ fn files() -> Vec<(PathBuf, String)> {
 
 fn tables() -> CodeTables {
     CodeTables::parse(&fsio::read_codes_golden(&repo_root()).unwrap())
+        .with_requirements(&fsio::read_requirements(&repo_root()).unwrap())
 }
 
 fn defs_from(files: &[(PathBuf, String)]) -> Defs {

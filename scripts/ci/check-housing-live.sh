@@ -13,8 +13,11 @@ set -uo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$REPO_ROOT/scripts/ci/lib/spacetime-instance.sh"
 # The stamped ceiling for the whole generate-and-write reducer, CLI round
-# trip included. A measured 0.5-1.5 s locally; raising this is a decision.
-CREATE_DISTRICT_CEILING_MS=8000
+# trip included: about 3x the 0.8 s CI measures. Raising it is a decision.
+CREATE_DISTRICT_CEILING_MS=2500
+# The starting box's object def id, read from the built defs.
+BOX_DEF="$(jq -r '.balance[] | select(.key == "housing.starting_box_object_id") | .value' "$REPO_ROOT/client/public/defs/defs.json" | tr -d '')"
+case "$BOX_DEF" in ''|*[!0-9]*) echo "check-housing-live: FAIL -- no housing.starting_box_object_id in the built defs" >&2; exit 1 ;; esac
 DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bc-housing-live.XXXXXX")"
 PORT=3995
 URL="http://127.0.0.1:$PORT"
@@ -70,7 +73,7 @@ done
   || fail "the first position is not inside the building area the tenancy names"
 # The box and the agreement stand inside it too.
 BID="$(sql "SELECT building_id FROM tenancy" | head -1)"
-[ "$(sql "SELECT o.object_id FROM placed_object o JOIN building_area a ON o.floor = a.floor WHERE a.building_id = $BID AND o.def_id = 75 AND o.x >= a.x0 AND o.x < a.x1 AND o.y >= a.y0 AND o.y < a.y1" | wc -l)" -ge 1 ] \
+[ "$(sql "SELECT o.object_id FROM placed_object o JOIN building_area a ON o.floor = a.floor WHERE a.building_id = $BID AND o.def_id = $BOX_DEF AND o.x >= a.x0 AND o.x < a.x1 AND o.y >= a.y0 AND o.y < a.y1" | wc -l)" -ge 1 ] \
   || fail "the starting box is not inside the let building"
 [ "$(sql "SELECT i.instance_id FROM item_placed i JOIN building_area a ON i.floor = a.floor WHERE a.building_id = $BID AND i.x >= a.x0 AND i.x < a.x1 AND i.y >= a.y0 AND i.y < a.y1" | wc -l)" -ge 1 ] \
   || fail "the starting agreement is not inside the let building"

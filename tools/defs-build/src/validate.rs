@@ -216,40 +216,24 @@ fn check_balance_key_dupes(entries: &[BalanceEntry]) -> Result<(), DefsError> {
     Ok(())
 }
 
-/// An `economy.*` figure is a seed, not a tuned value: it says so with
-/// `seed = "FR<n>"`, naming the requirement whose figure it seeds, or the
-/// build refuses it.
-fn check_economy_seed_markers(entries: &[BalanceEntry]) -> Result<(), DefsError> {
-    let well_formed = |s: &str| {
-        s.strip_prefix("FR")
-            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
-    };
+/// A balance key that says `seed = "<id>"` is a seed, not a tuned value,
+/// and names the requirement whose figure it seeds: an `FR<n>` / `NFR<n>`
+/// that exists in `docs/requirements.md`, or the build refuses it. Which
+/// keys are seeds is the author's statement, verified here for truth.
+fn check_seed_markers(entries: &[BalanceEntry], code_tables: &CodeTables) -> Result<(), DefsError> {
     for e in entries {
-        let is_economy = e.key.value.starts_with("economy.");
-        match e.seed.as_deref() {
-            None if is_economy => {
-                return Err(DefsError::new(
-                    &e.path,
-                    e.key.line,
-                    1,
-                    format!(
-                        "balance '{}' is a seed value and must carry `seed = \"FR<n>\"` naming its requirement",
-                        e.key.value
-                    ),
-                ));
-            }
-            Some(m) if !well_formed(m) => {
-                return Err(DefsError::new(
-                    &e.path,
-                    e.key.line,
-                    1,
-                    format!(
-                        "balance '{}' has seed marker '{m}', which does not name a requirement (expected `FR<n>`)",
-                        e.key.value
-                    ),
-                ));
-            }
-            _ => {}
+        if let Some(m) = e.seed.as_deref()
+            && !code_tables.has_requirement(m)
+        {
+            return Err(DefsError::new(
+                &e.path,
+                e.key.line,
+                1,
+                format!(
+                    "balance '{}' has seed marker '{m}', which is not a requirement in docs/requirements.md",
+                    e.key.value
+                ),
+            ));
         }
     }
     Ok(())
@@ -3405,7 +3389,7 @@ pub fn validate(
     check_id_key_dupes(&raw.building_types, "building_type")?;
     check_id_key_dupes(&raw.room_types, "room_type")?;
     check_balance_key_dupes(&raw.balance)?;
-    check_economy_seed_markers(&raw.balance)?;
+    check_seed_markers(&raw.balance, code_tables)?;
     check_id_key_dupes(&raw.bodies, "body")?;
     check_id_key_dupes(&raw.eyes, "eyes")?;
     check_id_key_dupes(&raw.hairstyles, "hairstyle")?;

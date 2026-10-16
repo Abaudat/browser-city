@@ -517,14 +517,16 @@ fn a_kit_dropped_outside_the_footprint_fails_the_possessions_invariant() {
 
 // --- bounds: assignment at the district's largest dwelling count ----------
 
-/// Assignment reads the open homes in rank order and stops at the end of
-/// the first rank group: at the building ceiling it touches the group and
-/// one more, never the stock.
+/// Assignment walks the `rank` order, skips a flat a tenancy holds (one
+/// point lookup each) and stops at the end of the first group with a vacancy.
+/// At the dwelling ceiling with every flat but the last group let, the
+/// lookups are the let flats plus that group and the one that ends it --
+/// never more than the stock.
 #[test]
-fn assignment_over_the_largest_stock_touches_only_the_cheapest_group() {
+fn assignment_over_the_largest_stock_looks_up_at_most_the_stock() {
     let max = sim::table_bounds::TABLE_BOUNDS
         .iter()
-        .find(|b| b.accessor == "building")
+        .find(|b| b.accessor == "dwelling")
         .unwrap()
         .max_rows;
     let mut stock: Vec<Home> = (0..max)
@@ -541,18 +543,47 @@ fn assignment_over_the_largest_stock_touches_only_the_cheapest_group() {
         })
         .collect();
     stock.sort_by_key(|h| (h.rank(), h.id));
-    let group = stock.iter().filter(|h| h.rank() == stock[0].rank()).count();
-    let touched = std::cell::Cell::new(0usize);
-    let open = stock
-        .iter()
-        .copied()
-        .inspect(|_| touched.set(touched.get() + 1));
+    let last_rank = stock.last().unwrap().rank();
+    let group = stock.iter().filter(|h| h.rank() == last_rank).count();
+    let lookups = std::cell::Cell::new(0usize);
+    let open = stock.iter().copied().filter(|h| {
+        lookups.set(lookups.get() + 1);
+        h.rank() == last_rank
+    });
     let first = housing::plan_assign_ranked(5, open);
     assert!(matches!(first, Assignment::Edge(_)));
-    assert!(
-        touched.get() <= group + 1,
-        "touched {} homes for a group of {group}",
-        touched.get()
-    );
-    assert!(touched.get() < stock.len() / 10);
+    assert_eq!(lookups.get(), stock.len());
+    assert!(lookups.get() as u64 <= max);
+    assert!(group >= 1);
+}
+
+/// A flat a tenancy holds is never offered, however the stock is ordered:
+/// occupancy is the tenancy rows alone.
+#[test]
+fn a_let_flat_is_skipped_by_the_walk() {
+    let stock: Vec<Home> = (0..6)
+        .map(|id| Home {
+            id,
+            tier: Tier::Edge,
+            density: 10,
+            affluence: 5,
+            rent: 250,
+            spawn: (0, 0),
+            door: (0, 0),
+            kit: (0, 0),
+            area: 30,
+        })
+        .collect();
+    for let_ids in [vec![0u64, 1, 2], vec![0, 1, 2, 3, 4]] {
+        let open = stock.iter().copied().filter(|h| !let_ids.contains(&h.id));
+        match housing::plan_assign_ranked(9, open) {
+            Assignment::Edge(id) | Assignment::Fallback(id) => assert!(!let_ids.contains(&id)),
+            Assignment::NoVacancy => panic!("a vacancy exists"),
+        }
+    }
+    let all = stock.iter().copied().filter(|_| false);
+    assert!(matches!(
+        housing::plan_assign_ranked(9, all),
+        Assignment::NoVacancy
+    ));
 }

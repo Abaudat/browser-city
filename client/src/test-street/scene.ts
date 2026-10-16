@@ -480,6 +480,11 @@ export interface StreetSceneHandle {
    * options-menu slider while an object is marked is visible without a
    * re-hover. */
   setHighlightStrength(strength: number): void;
+  /** Story 7.1: puts the player's body at a cell of the stored arrival row
+   * (the server wrote a new tenant's spawn after the scene mounted), as the
+   * scene would have started there: the camera, the visibility, the region
+   * and `onPlayerMove` follow. */
+  relocate(x: number, y: number, floor: number): void;
   /** Ignores new pointer input (no new hovers, no clicks) until
    * [`resumePointer`], without touching an already-true mark (Derek's
    * direction) -- `main.ts` calls this from the options menu's own
@@ -2141,9 +2146,21 @@ export async function mountStreetScene(
   // current without being rebuilt.
   const allDrawables: readonly Drawable[] = members.map((m) => m.drawable);
 
+  function relocate(x: number, y: number, floor: number): void {
+    walk = { ...initialFloorWalkState(x, y, floor), transitioned: true };
+    playerFlightOffsetPx = placeActor(playerEntry, walk.x, walk.y, walk.floor).flightOffsetPx;
+    lastCellX = walk.cellX;
+    lastCellY = walk.cellY;
+    applyVisibilityFor(walk.cellX, walk.cellY, walk.floor, false);
+    refreshHiddenObjects();
+    onPlayerMove?.(walk.x, walk.y, walk.floor);
+    applyCamera();
+  }
+
   return {
     app,
     playerAppearance: playerTuple,
+    relocate,
     getRenderOrder: () => renderOrder,
     keyboard,
     citizensLayer,

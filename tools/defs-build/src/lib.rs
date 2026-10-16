@@ -296,7 +296,8 @@ pub fn build_from_text_files(
     // `sim::codes::layer`'s single append-only ladder -- never a second,
     // hand-maintained list in this crate.
     let codes_golden = fsio::read_codes_golden(root)?;
-    let code_tables = codes::CodeTables::parse(&codes_golden);
+    let code_tables =
+        codes::CodeTables::parse(&codes_golden).with_requirements(&fsio::read_requirements(root)?);
 
     let output = build(
         text_files,
