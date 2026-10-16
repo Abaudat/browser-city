@@ -16,7 +16,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # trip included: about 3x the 0.8 s CI measures. Raising it is a decision.
 CREATE_DISTRICT_CEILING_MS=2500
 # The starting box's object def id, read from the built defs.
-BOX_DEF="$(jq -r '.balance[] | select(.key == "housing.starting_box_object_id") | .value' "$REPO_ROOT/client/public/defs/defs.json" | tr -d '')"
+BOX_DEF="$(jq -r '.balance[] | select(.key == "housing.starting_box_object_id") | .value' "$REPO_ROOT/client/public/defs/defs.json" | tr -d '\r')"
 case "$BOX_DEF" in ''|*[!0-9]*) echo "check-housing-live: FAIL -- no housing.starting_box_object_id in the built defs" >&2; exit 1 ;; esac
 DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bc-housing-live.XXXXXX")"
 PORT=3995
