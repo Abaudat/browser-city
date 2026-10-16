@@ -125,7 +125,7 @@ test("a first-ever arrival stands in the flat its tenancy names, and its steps a
   page,
 }) => {
   test.setTimeout(180_000);
-  await page.goto(`${base}/?remotePlayers=1`);
+  await page.goto(`${base}/`);
   await expect.poll(() => storedRow() !== undefined, { timeout: 90_000 }).toBe(true);
   const spawn = storedRow() as Row;
 
