@@ -34,11 +34,6 @@ export function chunkKey(x: number, y: number, floor: number): bigint {
   return (cx << (CHUNK_Y_BITS + FLOOR_BITS)) | (cy << FLOOR_BITS) | f;
 }
 
-/** A small integer naming chunk `(cx, cy, floor)`: a cache key for hot
- * lookups, where the `bigint` of [`chunkKey`] would allocate per call. It
- * stays a small integer (a double key would box per call), so it covers
- * `cx`/`cy` in [-512, 512) and `floor` in [-8, 8); `-1` outside, which a
- * caller treats as "do not cache". */
 /** The keys of the floor-`floor` chunks the cell rect `[x0, x1] x [y0, y1]`
  * touches (bounds inclusive, fractional cells allowed). */
 export function chunkKeysCovering(
@@ -57,6 +52,11 @@ export function chunkKeysCovering(
   return out;
 }
 
+/** A small integer naming chunk `(cx, cy, floor)`: a cache key for hot
+ * lookups, where the `bigint` of [`chunkKey`] would allocate per call. It
+ * stays a small integer (a double key would box per call), so it covers
+ * `cx`/`cy` in [-512, 512) and `floor` in [-8, 8); `-1` outside, which a
+ * caller treats as "do not cache". */
 export function chunkSlot(cx: number, cy: number, floor: number): number {
   const x = cx + 512;
   const y = cy + 512;
