@@ -11,6 +11,7 @@ pub mod cadence;
 pub mod cash;
 pub mod codes;
 pub mod container_grid;
+pub mod day;
 pub mod demo_ping;
 pub mod gameplay_metrics;
 pub mod generation;

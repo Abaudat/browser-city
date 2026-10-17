@@ -59,6 +59,9 @@ pub const NAME_MAX_CHARS: i64 = 24;
 /// `sim::time` and the client's `time/city-time.ts`.
 pub const REAL_MS_PER_CITY_MINUTE: i64 = 2500;
 
+/// In-city minutes in one day (FR1: 24 hours of 60).
+pub const CITY_MINUTES_PER_DAY: i64 = 24 * 60;
+
 /// `defs/balance/*.toml`'s own dotted key for the pixels-per-cell scale a
 /// `collider`/`interact_at` sub-cell rect converts against (never
 /// [`COLLIDER_SUBCELLS_PER_CELL`] itself, which stays fixed when art

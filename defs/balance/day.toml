@@ -1,0 +1,17 @@
+# The player's day (story 7.2, FR4). Own time and the commute are outputs
+# (`sim::day`), never keys.
+
+[[balance]]
+key = "day.sleep_minutes"
+value = 480
+min = 0
+max = 1440
+seed = "FR4"
+
+[[balance]]
+# The default shift; the posting names the real one.
+key = "day.shift_minutes"
+value = 480
+min = 0
+max = 1440
+seed = "FR4"

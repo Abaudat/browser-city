@@ -1,0 +1,11 @@
+[[balance]]
+key = "day.sleep_minutes"
+value = 1000
+min = 0
+max = 1440
+
+[[balance]]
+key = "day.shift_minutes"
+value = 480
+min = 0
+max = 1440
