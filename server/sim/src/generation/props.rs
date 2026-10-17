@@ -998,6 +998,7 @@ fn dress_building(
             {
                 continue;
             }
+            let needs_wall = stands_against_north_wall(d);
             let mut anchors: Vec<(i32, i32)> = Vec::new();
             for ax in (f.x - w + 1)..=f.x {
                 for ay in f.y..=(f.y + h - 1) {
@@ -1010,7 +1011,7 @@ fn dress_building(
                                         && !fixture_cells.contains(&(x, y))))
                         })
                     });
-                    let backed = !stands_against_north_wall(d)
+                    let backed = !needs_wall
                         || overhang_cells(
                             &PlacedRow {
                                 floor: 0,

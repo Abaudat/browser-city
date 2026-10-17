@@ -7102,10 +7102,14 @@ fn inv_generation_every_emitted_interior_validates_clean() {
                     );
                 }
             }
+            let beds: Vec<&defs::ObjectDef> = defs::OBJECTS
+                .iter()
+                .filter(|o| sim::generation::props::stands_against_north_wall(o))
+                .collect();
             // Story 4.27: a bed's art is drawn over the cell north of it,
             // so that cell is never floor a walker can stand on.
             for p in d.props.props() {
-                let Some(def) = defs::OBJECTS.iter().find(|o| o.id == p.row.def_id) else {
+                let Some(def) = beds.iter().find(|o| o.id == p.row.def_id) else {
                     continue;
                 };
                 let open =
