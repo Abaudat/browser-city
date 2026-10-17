@@ -2543,8 +2543,8 @@ fn check_object_sprite_sheets(
 /// sprite must agree with the footprint exactly (Tim's direction):
 /// `w == width * tile_size_px` exactly (an object never overhangs
 /// sideways -- that overhang was refused at mount time before this story;
-/// now it is refused here, at authoring time), `h` a whole multiple of
-/// `tile_size_px`, and `h >= height * tile_size_px` (a tall prop may
+/// now it is refused here, at authoring time) and `h >= height *
+/// tile_size_px` (`h` need not be a whole tile: a tall prop may
 /// overhang upward, never downward -- bottom-anchored).
 fn check_object_sprite_matches_footprint(
     entries: &[LoweredObjectEntry],
@@ -2562,17 +2562,6 @@ fn check_object_sprite_matches_footprint(
                 format!(
                     "object '{}' sprite width {} does not equal its footprint width {} * tile_size_px {tile_size_px} ({expected_w}px)",
                     e.key.value, sprite.w, e.width
-                ),
-            ));
-        }
-        if sprite.h % tile_size_px != 0 {
-            return Err(DefsError::new(
-                &e.path,
-                spr.line,
-                spr.col,
-                format!(
-                    "object '{}' sprite height {} is not a whole multiple of tile_size_px {tile_size_px}",
-                    e.key.value, sprite.h
                 ),
             ));
         }
@@ -4046,6 +4035,7 @@ pub fn validate(
             }),
             structure: t.structure,
             placement: t.placement,
+            north_wall: t.north_wall,
         })
         .collect();
     tags.sort_by(|a, b| a.key.cmp(&b.key));
@@ -4792,19 +4782,20 @@ mod tests {
     }
 
     #[test]
-    fn a_sprite_height_not_a_whole_multiple_of_tile_size_is_rejected() {
+    fn a_sprite_height_that_is_not_a_whole_tile_is_accepted_when_it_covers_the_footprint() {
         let f = files(&[
             (
                 "defs/objects/x.toml",
-                "[[object]]\nid = 1\nkey = \"a\"\nname = \"A\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 16, h = 20 }\nwidth = 1\nheight = 1\n",
+                "[[object]]\nid = 1\nkey = \"a\"\nname = \"A\"\nlayer = \"furniture\"\nsprite = { sheet = \"fixtures/objects/test.png\", x = 0, y = 0, w = 16, h = 20 }\nwidth = 1\nheight = 1\ntags = [\"underfoot\", \"fixture\"]\n",
             ),
             ("defs/balance/render.toml", BALANCE_RENDER_TOML),
+            ("defs/tags/x.toml", TAGS_UNDERFOOT_TOML),
         ]);
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();
         dims.insert("fixtures/objects/test.png".to_string(), (16, 20));
-        let err = validate(&raw, &dims, &object_code_tables(), "").unwrap_err();
-        assert!(err.message.contains("whole multiple of tile_size_px"));
+        let r = validate(&raw, &dims, &object_code_tables(), "");
+        assert!(r.is_ok(), "{:?}", r.err());
     }
 
     #[test]
@@ -4834,7 +4825,8 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();
         dims.insert("fixtures/objects/test.png".to_string(), (16, 32));
-        assert!(validate(&raw, &dims, &object_code_tables(), "").is_ok());
+        let r = validate(&raw, &dims, &object_code_tables(), "");
+        assert!(r.is_ok(), "{:?}", r.err());
     }
 
     #[test]
@@ -4864,7 +4856,8 @@ mod tests {
         let raw = parse_all(&f).unwrap();
         let mut dims = object_sheet_dims();
         dims.insert("fixtures/objects/test.png".to_string(), (128, 128));
-        assert!(validate(&raw, &dims, &object_code_tables(), "").is_ok());
+        let r = validate(&raw, &dims, &object_code_tables(), "");
+        assert!(r.is_ok(), "{:?}", r.err());
     }
 
     #[test]

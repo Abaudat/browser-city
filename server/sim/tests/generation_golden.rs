@@ -174,6 +174,7 @@ fn frozen_config() -> GenerationConfig {
         props_ambient_per_100_min: 20,
         props_ambient_per_100_max: 40,
         props_max_solid_percent: 50,
+        tile_size_px: 16,
     }
 }
 
@@ -320,6 +321,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: Some(TagStructure::Wall),
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9302,
@@ -327,6 +329,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: Some(TagStructure::WallRun),
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9303,
@@ -334,6 +337,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: Some(TagStructure::Floor),
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9304,
@@ -341,6 +345,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: Some(TagStructure::Threshold),
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9305,
@@ -348,6 +353,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: Some(TagStructure::Entrance),
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9306,
@@ -355,6 +361,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: Some(TagStructure::Pavement),
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9307,
@@ -362,6 +369,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: Some(TagStructure::Fixture),
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9320,
@@ -369,6 +377,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: None,
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9311,
@@ -376,6 +385,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: None,
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9312,
@@ -383,6 +393,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: None,
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9313,
@@ -390,6 +401,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: None,
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9330,
@@ -397,6 +409,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: None,
         placement: Some(TagPlacement::WallMounted),
+        north_wall: false,
     },
     TagDef {
         id: 9331,
@@ -404,6 +417,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: None,
         placement: Some(TagPlacement::WallBacked),
+        north_wall: false,
     },
     TagDef {
         id: 9340,
@@ -411,6 +425,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: None,
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9341,
@@ -418,6 +433,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: None,
         placement: None,
+        north_wall: false,
     },
     TagDef {
         id: 9342,
@@ -425,6 +441,7 @@ const FROZEN_TAGS: &[TagDef] = &[
         role: None,
         structure: None,
         placement: None,
+        north_wall: false,
     },
 ];
 

@@ -40,7 +40,7 @@ height = 1
 # Story 2.4 (FR128): a bench blocks -- the seat and back where they are
 # drawn (the art starts five rows down), leaving the front lip free to
 # approach from.
-collider = { x0 = 0, y0 = 5, x1 = 32, y1 = 12 }
+collider = { x0 = 0, y0 = 5, x1 = 32, y1 = 15 }
 tags = ["seating", "fixture", "outdoor"]
 
 [[object]]
@@ -264,7 +264,7 @@ layer = "objects"
 sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/22_Post_Office_Singles_16x16/22_Post_Office_16x16_Black_Mailbox_1_Front.png", x = 0, y = 0, w = 16, h = 32 }
 width = 1
 height = 1
-collider = { x0 = 4, y0 = 7, x1 = 14, y1 = 15 }
+collider = { x0 = 4, y0 = 7, x1 = 14, y1 = 16 }
 interact_at = { x0 = -4, y0 = -4, x1 = 20, y1 = 20 }
 tags = ["registry_post", "fixture"]
 

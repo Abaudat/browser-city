@@ -1000,6 +1000,9 @@ pub struct GenerationConfig {
     pub props_ambient_per_100_max: i32,
     /// The most of a room's floor solid colliders may cover.
     pub props_max_solid_percent: i32,
+    /// `render.tile_size_px`: the pixel size of a cell, to measure how far
+    /// a def's art rises above its footprint.
+    pub tile_size_px: i32,
 }
 
 fn get(balance: &[defs::BalanceSeed], key: &str) -> i64 {
@@ -1280,6 +1283,7 @@ impl GenerationConfig {
                 balance,
                 "generation.props.max_solid_percent_of_room_floor",
             ) as i32,
+            tile_size_px: get(balance, "render.tile_size_px") as i32,
         };
 
         if cfg.coarse_cell_size_cells <= 0
@@ -2022,6 +2026,7 @@ mod tests {
                 10,
                 90,
             ),
+            seed("render.tile_size_px", 16, 1, 64),
             seed("generation.neighbourhood.legible_step", 30, 0, 100000),
             seed("generation.neighbourhood.poor_band_max", 25, 0, 100000),
             seed("generation.neighbourhood.min_corners", 3, 0, 100000),

@@ -489,6 +489,30 @@ pub fn extent(row: &PlacedRow, def: &defs::ObjectDef) -> Rect {
     }
 }
 
+/// How many whole cells a def's art rises above its footprint: the sprite's
+/// height past `height * tile_size_px`, rounded up.
+pub fn overhang_rows(def: &defs::ObjectDef, tile_size_px: i32) -> i32 {
+    def.sprite
+        .map_or(0, |s| {
+            (s.h as i32 - def.height as i32 * tile_size_px + tile_size_px - 1) / tile_size_px
+        })
+        .max(0)
+}
+
+/// The cells north of a placed def's footprint that its art is drawn over
+/// (the player stands in front of the art there, so a walker must not be
+/// able to stand on them).
+pub fn overhang_cells(
+    row: &PlacedRow,
+    def: &defs::ObjectDef,
+    tile_size_px: i32,
+) -> Vec<(i32, i32)> {
+    let top = row.y - def.height as i32 + 1;
+    (1..=overhang_rows(def, tile_size_px))
+        .flat_map(|k| (row.x..row.x + def.width as i32).map(move |x| (x, top - k)))
+        .collect()
+}
+
 /// The def of `id` among `objects`.
 pub fn def_of(objects: &[defs::ObjectDef], id: u32) -> Option<&defs::ObjectDef> {
     objects.iter().find(|o| o.id == id)
@@ -525,6 +549,9 @@ struct Catalogue<'a> {
     /// facade dressing a building holding the required fixture owes.
     facade: Vec<(TagId, TagId)>,
     wall: &'a defs::ObjectDef,
+    /// Tags declared `north_wall`: a def carrying one has its art drawn over
+    /// the cell north of it, so it stands against a north wall.
+    north_wall: BTreeSet<TagId>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -661,6 +688,12 @@ impl<'a> Catalogue<'a> {
             distributions,
             facade,
             wall,
+            north_wall: content
+                .tags
+                .iter()
+                .filter(|t| t.north_wall)
+                .map(|t| t.id)
+                .collect(),
         })
     }
 
@@ -884,6 +917,9 @@ fn dress_building(
     let fixture_cells: BTreeSet<(i32, i32)> =
         interior.fixtures.iter().map(|f| (f.x, f.y)).collect();
 
+    // Art that rises above its footprint stands against a wall: the cells it
+    // is drawn over must be wall, never floor a walker could stand on.
+    let walls: BTreeSet<(i32, i32)> = interior.walls().into_iter().collect();
     let mut taken = Occupied {
         cells: BTreeSet::new(),
     };
@@ -963,6 +999,7 @@ fn dress_building(
             {
                 continue;
             }
+            let needs_wall = d.tags.iter().any(|t| cat.north_wall.contains(t));
             let mut anchors: Vec<(i32, i32)> = Vec::new();
             for ax in (f.x - w + 1)..=f.x {
                 for ay in f.y..=(f.y + h - 1) {
@@ -975,7 +1012,22 @@ fn dress_building(
                                         && !fixture_cells.contains(&(x, y))))
                         })
                     });
-                    if fit {
+                    let backed = !needs_wall
+                        || overhang_cells(
+                            &PlacedRow {
+                                floor: 0,
+                                y: ay,
+                                x: ax,
+                                def_id: d.id,
+                                layer: d.layer,
+                                orientation: 0,
+                            },
+                            d,
+                            cfg.tile_size_px,
+                        )
+                        .iter()
+                        .all(|c| walls.contains(c));
+                    if fit && backed {
                         anchors.push((ax, ay));
                     }
                 }

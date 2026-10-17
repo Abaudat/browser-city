@@ -18,7 +18,7 @@
 //! its own artefact only ever carries an already-validated `sprite` rect.
 //! The pixel rule (story 15.3: a collider agrees with the art under it)
 //! is the same kind: `defs.json` carries no pixels and the client never
-//! reads alpha -- `collider-outside-art-span`, `art-base-outside-collider`,
+//! reads alpha -- `collider-outside-art-span`, `art-base-outside-collider`, `collider-short-of-bottom-row`,
 //! `collider-outside-art-rows`, `collider-over-transparent-band` and
 //! `archetype-collider-disagrees-with-art` are build-only. Its second
 //! implementation is the proposer, held to it by
@@ -62,7 +62,6 @@ fn fixture_for(shared_name: &str) -> &'static str {
         "deprecated-layer" => "deprecated-layer",
         "sprite-zero-area" => "sprite-zero-area",
         "sprite-width-mismatches-footprint" => "sprite-width-mismatches-footprint",
-        "sprite-height-not-tile-multiple" => "sprite-height-not-tile-multiple",
         "sprite-shorter-than-footprint" => "sprite-shorter-than-footprint",
         "object-dimension-zero" => "object-dimension-zero",
         "empty-object-name" => "empty-object-name",

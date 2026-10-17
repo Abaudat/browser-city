@@ -460,7 +460,7 @@ impl District {
 
     /// The standable floor cell of the street door's room nearest the
     /// entrance threshold.
-    fn inside_the_door(&self, i: &super::Interior) -> Option<(i32, i32)> {
+    pub fn inside_the_door(&self, i: &super::Interior) -> Option<(i32, i32)> {
         let door = i.entrance()?;
         let room = i.rooms.get(door.room)?;
         let grid = self.walkability(0);

@@ -1204,11 +1204,11 @@ function checkSpriteNonZeroArea(object: ObjectDef): void {
 }
 
 /** FR126's decomposition reads per-cell sub-rects from the sprite, so the
- * sprite must agree with the footprint exactly, the same three checks
+ * sprite must agree with the footprint exactly, the same two checks
  * `tools/defs-build`'s own `validate.rs` enforces at build time: `w`
- * equals `width * tileSizePx` exactly, `h` is a whole multiple of
- * `tileSizePx`, and `h >= height * tileSizePx` (a tall prop may overhang
- * upward, never downward -- bottom-anchored). */
+ * equals `width * tileSizePx` exactly and `h >= height * tileSizePx` (`h`
+ * need not be a whole tile: a tall prop may overhang upward, never
+ * downward -- bottom-anchored). */
 function checkSpriteMatchesFootprint(object: ObjectDef, tileSizePx: number): void {
   const sprite = object.sprite;
   if (sprite === undefined) return;
@@ -1216,11 +1216,6 @@ function checkSpriteMatchesFootprint(object: ObjectDef, tileSizePx: number): voi
   if (sprite.w !== expectedW) {
     fail(
       `object '${object.key}' sprite width ${sprite.w} does not equal its footprint width ${object.width} * tile_size_px ${tileSizePx} (${expectedW}px)`,
-    );
-  }
-  if (sprite.h % tileSizePx !== 0) {
-    fail(
-      `object '${object.key}' sprite height ${sprite.h} is not a whole multiple of tile_size_px ${tileSizePx}`,
     );
   }
   const minH = object.height * tileSizePx;

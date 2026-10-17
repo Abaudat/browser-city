@@ -114,6 +114,9 @@ pub struct Vocabulary<'a> {
     placements: BTreeMap<TagId, defs::TagPlacement>,
     /// Every room type's owed fixture count, by id.
     owed: BTreeMap<u32, i32>,
+    /// Tags whose art stands against the north wall, so a fixture carrying
+    /// one only ever stands on its room's north row.
+    north_row: BTreeSet<TagId>,
 }
 
 impl<'a> Vocabulary<'a> {
@@ -135,6 +138,12 @@ impl<'a> Vocabulary<'a> {
                 })
                 .collect(),
             rooms: content.room_types.iter().map(|r| (r.id, r)).collect(),
+            north_row: content
+                .tags
+                .iter()
+                .filter(|t| t.north_wall)
+                .map(|t| t.id)
+                .collect(),
             placements: content
                 .tags
                 .iter()
@@ -157,6 +166,11 @@ impl<'a> Vocabulary<'a> {
             .get(&tag)
             .copied()
             .expect("an owed fixture tag declares its placement class")
+    }
+
+    /// Whether a fixture carrying `tag` stands on the north row only.
+    fn north_row_only(&self, tag: TagId) -> bool {
+        self.north_row.contains(&tag)
     }
 
     fn room(&self, id: u32) -> &'a defs::RoomTypeDef {
@@ -1548,7 +1562,16 @@ fn place_fixtures(
         let dist = (c.0 - door.inside.0).abs() + (c.1 - door.inside.1).abs();
         (std::cmp::Reverse(dist), keys[i], i)
     });
-    fill_in_order(&mut grid, &reserved_ix, anchor, &by_class, room, &by_lane)
+    let north = |tag: TagId, i: usize| !vocab.north_row_only(tag) || i as i64 / rect.width() == 0;
+    fill_in_order(
+        &mut grid,
+        &reserved_ix,
+        anchor,
+        &by_class,
+        room,
+        &by_lane,
+        &north,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1573,6 +1596,9 @@ fn place_by_class(
             ranked.clear();
             for (i, &key) in keys.iter().enumerate() {
                 if grid.occupied[i] || reserved.contains(&i) {
+                    continue;
+                }
+                if vocab.north_row_only(tag) && grid.cell(i).1 != rect.y0 {
                     continue;
                 }
                 let adjacent = grid
@@ -1619,6 +1645,7 @@ fn fill_in_order(
     owed: &[(TagId, u32)],
     room: usize,
     order: &[usize],
+    allowed: &dyn Fn(TagId, usize) -> bool,
 ) -> Option<Vec<Fixture>> {
     grid.clear();
     let mut out = Vec::new();
@@ -1627,7 +1654,7 @@ fn fill_in_order(
         for _ in 0..count {
             let mut picked = None;
             for &i in order {
-                if grid.occupied[i] || reserved.contains(&i) {
+                if grid.occupied[i] || reserved.contains(&i) || !allowed(tag, i) {
                     continue;
                 }
                 grid.set(i, true);

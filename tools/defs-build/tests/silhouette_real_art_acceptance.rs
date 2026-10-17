@@ -65,12 +65,16 @@ fn every_committed_collider_agrees_with_its_art() {
 /// The real tree built with one line of `defs/objects/city-props.toml`
 /// replaced; the rendered build error.
 fn build_error_with(old: &str, new: &str) -> String {
+    build_error_with_in("defs/objects/city-props.toml", old, new)
+}
+
+fn build_error_with_in(file: &str, old: &str, new: &str) -> String {
     let root = repo_root();
     let mut files = fsio::read_text(&root, &fsio::list_defs_sources(&root).unwrap()).unwrap();
     files.sort_by(|a, b| a.0.cmp(&b.0));
     let mut replaced = 0;
     for (path, text) in &mut files {
-        if path.ends_with("defs/objects/city-props.toml") && text.contains(old) {
+        if path.ends_with(file) && text.contains(old) {
             *text = text.replacen(old, new, 1);
             replaced += 1;
         }
@@ -118,12 +122,12 @@ fn widening_the_counter_collider_names_the_key_and_the_columns() {
 #[test]
 fn raising_the_bench_collider_names_the_key_and_the_rows() {
     let msg = build_error_with(
-        "collider = { x0 = 0, y0 = 5, x1 = 32, y1 = 12 }",
-        "collider = { x0 = 0, y0 = 4, x1 = 32, y1 = 12 }",
+        "collider = { x0 = 0, y0 = 5, x1 = 32, y1 = 15 }",
+        "collider = { x0 = 0, y0 = 4, x1 = 32, y1 = 15 }",
     );
     assert!(
-        msg.contains("object 'park_bench' collider (0, 4)-(32, 12)")
-            && msg.contains("collider rows 4..12 reach outside the solid rows 5.."),
+        msg.contains("object 'park_bench' collider (0, 4)-(32, 15)")
+            && msg.contains("collider rows 4..15 reach outside the solid rows 5.."),
         "{msg}"
     );
 }
@@ -225,4 +229,81 @@ fn the_top_railing_is_an_upright_on_its_foot() {
     );
     let c = o.collider.expect("the top railing has a collider");
     assert_eq!((c.x0, c.y0, c.x1, c.y1), (0, 11, 48, 16));
+}
+
+/// Story 4.27: a bed is solid where it is drawn. Every bed's collider
+/// reaches the footprint's south edge and its sprite's last row is opaque,
+/// so the drawn foot is the footprint's south edge (no strip a walker can
+/// stand in behind the bed's sort anchor).
+#[test]
+fn every_bed_is_drawn_to_its_footprints_south_edge_and_solid_there() {
+    let defs = real_defs();
+    let tile = defs.tile_size_px.unwrap();
+    let bed_tag = defs
+        .tags
+        .iter()
+        .find(|t| t.key == "bed")
+        .expect("the bed tag is declared")
+        .id;
+    let beds: Vec<&ObjectDef> = defs
+        .objects
+        .iter()
+        .filter(|o| o.tags.contains(&bed_tag))
+        .collect();
+    assert!(!beds.is_empty(), "at least one bed");
+    for o in beds {
+        let sprite = o.sprite.as_ref().unwrap();
+        let c = o.collider.unwrap();
+        assert!(
+            sprite.h >= o.height * tile,
+            "{} covers its footprint",
+            o.key
+        );
+        assert_eq!(
+            c.y1 as u32,
+            o.height * tile,
+            "{} collider reaches south",
+            o.key
+        );
+        let bytes = fsio::read_bytes(&repo_root(), &[PathBuf::from(&sprite.sheet)])
+            .unwrap()
+            .remove(0)
+            .1;
+        let (w, _h, rgba) = decode_rgba8(&bytes).unwrap();
+        let last_row_solid = (0..sprite.w)
+            .any(|x| defs_build::alpha::is_opaque(&rgba, w, sprite.x + x, sprite.y + sprite.h - 1));
+        assert!(last_row_solid, "{} sprite's last row is transparent", o.key);
+    }
+}
+
+#[test]
+fn shortening_the_single_bed_collider_at_its_foot_names_the_key_and_the_rows() {
+    let msg = build_error_with_in(
+        "defs/objects/interior-props.toml",
+        "collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 32 }
+tags = [\"bed\"",
+        "collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 31 }
+tags = [\"bed\"",
+    );
+    assert!(
+        msg.contains("object 'bed_single_blue' collider (0, 0)-(16, 31)")
+            && msg.contains("collider rows 0..31 do not cover the bottom solid row's rows 31..32"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn shortening_the_compact_bed_collider_at_its_foot_names_the_key_and_the_rows() {
+    let msg = build_error_with_in(
+        "defs/objects/interior-props.toml",
+        "collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 16 }
+tags = [\"bed\"",
+        "collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 6 }
+tags = [\"bed\"",
+    );
+    assert!(
+        msg.contains("object 'bed_compact' collider (1, 0)-(14, 6)")
+            && msg.contains("collider rows 0..6 do not cover the bottom solid row's rows 15..16"),
+        "{msg}"
+    );
 }

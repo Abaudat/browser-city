@@ -307,6 +307,11 @@ export const PLATFORM_BUILDING_ID = 3n;
 export const HOME_FLAT_BUILDING_ID = 4n;
 /** `defs/objects/interior-props.toml`'s `bed_single_blue`. */
 export const BED_SINGLE_BLUE_DEF_ID = 26;
+/** The flat's bed: a 1x2 footprint on the west wall whose headboard is drawn
+ * over the cell north of it, so it stands against the north wall. */
+export const FLAT_BED_ANCHOR = { x: FLAT_INTERIOR_X0, y: FLAT_INTERIOR_Y0 + 1 } as const;
+/** The wall row the flat's bed backs onto. */
+export const FLAT_NORTH_WALL_ROW = FLAT_NORTH_WALL_Y;
 
 // --- the subway (declared before STREET_BUILDING_AREAS, which references
 // the platform's own footprint) -----------------------------------------
@@ -901,8 +906,8 @@ const STREET_PROP_LIST: StreetProp[] = [
   },
   {
     id: 166n,
-    x: FLAT_INTERIOR_X0,
-    y: FLAT_INTERIOR_Y1,
+    x: FLAT_BED_ANCHOR.x,
+    y: FLAT_BED_ANCHOR.y,
     floor: 0,
     layer: "furniture",
     defId: BED_SINGLE_BLUE_DEF_ID,
