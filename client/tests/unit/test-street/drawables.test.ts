@@ -476,34 +476,11 @@ describe("the player can never walk off the drawn world", () => {
     });
   }
 
-  it("stays on the drawn ground for any input sequence, every step", () => {
-    const probe = sizeProbe({ min: 1, max: 400 });
-    fc.assert(
-      fc.property(
-        probe.over(
-          fc.array(
-            fc.record({
-              dx: fc.integer({ min: -1, max: 1 }),
-              dy: fc.integer({ min: -1, max: 1 }),
-              deltaMs: fc.integer({ min: 1, max: 5_000 }),
-            }),
-            { minLength: 1, maxLength: 400 },
-          ),
-          (a) => a.length,
-        ),
-        (inputs) => {
-          let pos: Vec2 = { x: PLAYER_START.x, y: PLAYER_START.y };
-          expect(isOnDrawnGround(pos)).toBe(true);
-          for (const { dx, dy, deltaMs } of inputs) {
-            pos = step(pos, { x: dx, y: dy }, deltaMs, grid, PLAYER_START.floor, config, 1);
-            expect(isOnDrawnGround(pos), `left the drawn world at (${pos.x}, ${pos.y})`).toBe(true);
-          }
-        },
-      ),
-      { numRuns: 60 },
-    );
-    probe.expectReached(300);
-  });
+  // That a walker never leaves the drawn world, from any start, is proven
+  // exhaustively by the flood in `footbridge.test.ts` ("a walker from the flat
+  // never stands off drawn ground"), over every ground pass including the flat.
+  // A random walk from the shop here only sampled the part of the ring it
+  // happened to touch, and missed the flat's, so it is not kept as a second proof.
 
   it("walking straight south rests against the real trash bin directly south of the door (story 2.13; story 15.2, cycle 2, Quentin's finding 3)", () => {
     // The lamppost no longer shares the door's own column (`LAMPPOST_

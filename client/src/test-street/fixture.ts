@@ -1156,10 +1156,13 @@ export interface StreetBoundaryRect {
  * stairwell's anchor (entering it descends to the subway). One list, read by
  * the reachability unit test and the arrival e2e walk. */
 export const ARRIVAL_DESTINATIONS = [
-  { name: "the front of shop B", x: DOOR_X_B, y: SHOPFRONT_EXIT_Y },
-  { name: "the front of shop A", x: DOOR_X_A, y: SHOPFRONT_EXIT_Y },
-  { name: "the subway stairwell", x: STAIRS_X, y: STAIRS_Y },
+  { name: "the front of shop B", x: DOOR_X_B, y: SHOPFRONT_EXIT_Y, arrive: "stand" },
+  { name: "the front of shop A", x: DOOR_X_A, y: SHOPFRONT_EXIT_Y, arrive: "stand" },
+  { name: "the subway stairwell", x: STAIRS_X, y: STAIRS_Y, arrive: "descend" },
 ] as const;
+/** One of [`ARRIVAL_DESTINATIONS`]: `stand` is reached by standing in the cell,
+ * `descend` by walking into the anchor, which changes floor. */
+export type ArrivalDestination = (typeof ARRIVAL_DESTINATIONS)[number];
 
 /** The edge of the drawn world (FR137 has no world-boundary concept yet):
  * a closed ring of solid, undrawn cells around every street ground pass,
@@ -1172,6 +1175,9 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   // West and east of the pavement (anchored at the span's south end); the
   // east edge runs on past the pavement to the flight's foot row.
   { id: 101n, x: 0, y: PAVEMENT_Y1 + 1, width: 1, height: 4 },
+  // North of the pavement, west of shop A: the span between the west edge and
+  // the shop's west wall.
+  { id: 138n, x: 1, y: SOUTH_WALL_Y - 1, width: WEST_WALL_X - 1, height: 1 },
   {
     id: 102n,
     x: 21,
@@ -1183,7 +1189,7 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   {
     id: 106n,
     x: FLAT_EAST_WALL_X + 1,
-    y: SOUTH_WALL_Y,
+    y: PAVEMENT_Y1,
     width: 1,
     height: PAVEMENT_Y1 - SOUTH_WALL_Y + 1,
   },
@@ -1854,6 +1860,8 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
 /** One stretch of the arrival walk: where a person stops, and the keys to get there. */
 export interface ArrivalWalkLeg {
   readonly name: string;
+  /** The destination the leg ends at, when it ends at one. */
+  readonly destination?: ArrivalDestination;
   readonly segments: readonly StreetWalkSegment[];
 }
 
@@ -1899,6 +1907,7 @@ export function arrivalWalkLegs(inputs: StreetWalkInputs): readonly ArrivalWalkL
     },
     {
       name: shopB.name,
+      destination: shopB,
       segments: [
         {
           label: "arrival-down-to-the-shop-fronts",
@@ -1926,6 +1935,7 @@ export function arrivalWalkLegs(inputs: StreetWalkInputs): readonly ArrivalWalkL
     },
     {
       name: shopA.name,
+      destination: shopA,
       segments: [
         {
           label: "arrival-west-to-shop-a",
@@ -1936,6 +1946,7 @@ export function arrivalWalkLegs(inputs: StreetWalkInputs): readonly ArrivalWalkL
     },
     {
       name: stairwell.name,
+      destination: stairwell,
       segments: [
         {
           label: "arrival-east-to-the-subway-entrance",

@@ -852,10 +852,11 @@ leaning on it inside the deck's own row, the deck flight's west edge (134), a
 sub-cell strip level with the street posts' own collider, and the street
 flight's north face (137), a strip along the south edge of the deck row that
 refuses a step into the up-anchor from the north. The street's standable
-floor-0 cells are one connected region containing `HOME_FLAT_SPAWN`, the shop
-fronts and the subway entrance (`ARRIVAL_DESTINATIONS`);
-`tests/unit/test-street/footbridge.test.ts` floods it from `HOME_FLAT_SPAWN`,
-inside the drawn ground. `client/tests/unit/test-street/street-conformance.test.ts`
+floor-0 cells are one connected region on drawn ground containing
+`HOME_FLAT_SPAWN`, the shop fronts and the subway entrance
+(`ARRIVAL_DESTINATIONS`); `tests/unit/test-street/footbridge.test.ts` floods it
+from `HOME_FLAT_SPAWN`, fails on any reachable cell off drawn ground and on any
+drawn standable cell it does not reach. `client/tests/unit/test-street/street-conformance.test.ts`
 holds this over the whole fixture: every collider cell traces back to a
 drawn prop's own footprint or the ring; no ring rect but ids 110, 134 and 137 carries a
 collider, and none overlaps a drawn ground pass; every `walls`-layer,

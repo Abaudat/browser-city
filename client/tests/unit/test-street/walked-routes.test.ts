@@ -4,12 +4,10 @@
 import { describe, expect, it } from "vitest";
 import { isWithinReach } from "../../../src/input/pick";
 import {
-  ARRIVAL_DESTINATIONS,
   arrivalWalkLegs,
   isDefStreetProp,
   PLAYER_START,
   RELEASE_LAG,
-  STAIRS_X,
   STREET_FLOOR,
   STREET_PROPS,
   SUBWAY_FLOOR,
@@ -110,8 +108,8 @@ describe("the arrival walk (story 4.26)", () => {
         const out = simulateStreetWalk(leg.segments, { ...lag, start: state });
         const end = out[out.length - 1]?.state;
         if (!end) throw new Error(`${leg.name} produced no checkpoint`);
-        const destination = ARRIVAL_DESTINATIONS.find((d) => d.name === leg.name);
-        if (destination && destination.x !== STAIRS_X) {
+        const { destination } = leg;
+        if (destination?.arrive === "stand") {
           expect([end.cellX, end.cellY], leg.name).toEqual([destination.x, destination.y]);
         }
         state = end;

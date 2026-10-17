@@ -8,9 +8,9 @@
 // CI first (`walked-routes.test.ts`, "arrival-walk").
 import type {} from "../../src/net/e2e-hooks";
 import {
-  ARRIVAL_DESTINATIONS,
   arrivalWalkLegs,
   HOME_FLAT_SPAWN,
+  STAIRWELL_FOOTPRINT,
   type StreetWalkSegment,
   SUBWAY_FLOOR,
 } from "../../src/test-street/fixture";
@@ -38,7 +38,8 @@ function distanceCells(
     case "cell":
       return Math.abs(until.x + 0.5 - from.x) + Math.abs(until.y + 0.5 - from.y);
     case "floor":
-      return 8;
+      // Across the stairwell's footprint from the entrance, down its treads.
+      return STAIRWELL_FOOTPRINT.width + 1;
   }
 }
 
@@ -78,8 +79,8 @@ test("a new character walks from the flat to both shop fronts and down the subwa
         }
       }
       const where = await position();
-      const destination = ARRIVAL_DESTINATIONS.find((d) => d.name === leg.name);
-      if (destination && leg.name !== ARRIVAL_DESTINATIONS[2].name) {
+      const { destination } = leg;
+      if (destination?.arrive === "stand") {
         expect([Math.floor(where.x), Math.floor(where.y)], leg.name).toEqual([
           destination.x,
           destination.y,
@@ -99,9 +100,9 @@ test("a new character walks from the flat to both shop fronts and down the subwa
           (
             ownerSql(
               readSpacetimeHandle(),
-              `SELECT * FROM player_position WHERE character_id = ${characterId}`,
+              `SELECT "floor" FROM player_position WHERE character_id = ${characterId}`,
             )[0] as string[] | undefined
-          )?.[4],
+          )?.[0],
         ),
       { timeout: 10_000 },
     )
