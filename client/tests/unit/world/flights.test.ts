@@ -475,7 +475,7 @@ describe("flight construction (FR182)", () => {
 
 describe("the street's own flights (conformance)", () => {
   const defs = committedDefs();
-  const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
+  const _storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
   const flights = buildFlights(
     STREET_TRANSITIONS,
     streetPlacedRows(),
@@ -734,7 +734,7 @@ describe("the street's own flights (conformance)", () => {
     }
     // The exhaustive scan compares exactly this many adjacent pairs. The count
     // changes with the stairs world; re-pin it from the loop's own `pairs`.
-    expect(pairs).toBe(591531);
+    expect(pairs).toBe(587985);
     for (const floor of floors) {
       expect(
         nonZero.get(floor),
@@ -750,7 +750,7 @@ describe("the street's own flights (conformance)", () => {
 // the floor offset plus the flight offset.
 describe("the footbridge flights: the walker is drawn continuously across the floor change (FR182)", () => {
   const defs = committedDefs();
-  const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
+  const _storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
   const flights = buildFlights(
     STREET_TRANSITIONS,
     streetPlacedRows(),
@@ -884,6 +884,7 @@ const NOSINGS: Record<string, { fromOpenEdge: "east" | "west"; xs: number[]; row
 const FRONT_ON: Record<string, { pitch: number; risers: number[] }> = {
   bridge_stairs_tread: { pitch: 8, risers: [6, 14] },
   bridge_stairs_abutment: { pitch: 8, risers: [6, 14] },
+  bridge_stairs_abutment_foot: { pitch: 8, risers: [6, 14] },
 };
 /** The flights that are walk data only: their nosings are the drawn tread rows over their footprint. */
 const UNDRAWN_FLIGHTS = ["bridge_stairs_street", "bridge_stairs_deck"];

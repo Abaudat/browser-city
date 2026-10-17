@@ -668,6 +668,10 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   (FR128); there is no `walkable` flag. Containment inside
   `width*height` sub-cells is enforced by `tools/defs-build` and again by
   `client/src/defs/parse.ts`.
+- A collider belongs to the floor the solid thing stands on. An object drawn
+  over another floor's cells (stairs, decks, balconies, awnings) carries no
+  collider on the floor beneath, except a face a transition rule requires,
+  declared as a thin edge strip and never a whole cell.
 - Walking speed and the player body are balance keys
   (`defs/balance/movement.toml`), read once into a `MovementConfig` by
   `client/src/world/movement-config.ts`. The body is a small rect at the
@@ -837,6 +841,10 @@ A placed solid prop declares one `collider`; the collider lies inside the
 footprint its sprite draws, and the player's grid is built from the
 streamed rows (`world/collision-grid.ts` over `world/world-index.ts`), never from a
 second source.
+The fixture block's standable floor-0 cells are one connected region on drawn
+ground containing its flat, the shop fronts and the subway entrance
+(`ARRIVAL_DESTINATIONS`); `tests/unit/fixture-block/arrival-reach.test.ts` holds it
+and the closed ring.
 
 A frame draws four passes per floor, in this fixed order, declared even
 when a pass is empty: three flat passes -- ground, ground decals, ground

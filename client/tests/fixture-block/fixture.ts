@@ -34,7 +34,7 @@
 import type { PlacedObject } from "../../src/net/bindings/types";
 import { layerCodeByName } from "../../src/render/layer-table";
 import type { ColliderSource } from "../../src/world/collision-grid";
-import { bodyCell, MAX_DELTA_MS } from "../../src/world/movement";
+import { bodyCell } from "../../src/world/movement";
 import type { OwnershipArea } from "../../src/world/ownership";
 import type { TransitionSpec } from "../../src/world/transitions";
 
@@ -167,11 +167,14 @@ export const BRIDGE_POST_COLLIDER = { x0: 5, y0: 0, x1: 12, y1: 16 } as const;
 /** The footbridge's four `defs/objects` rows (story 15.19): the street flight
  * and the deck flight (each an undrawn `flight`, the walk data), and the one
  * staircase drawn on the street floor: the treads where it is walked and the
- * closed abutment over the street cells above them. Which floors the flights join is a `floor_transition` row per column,
+ * abutment drawn over the street cells above them (open ground, no collider).
+ * Which floors the flights join is a `floor_transition` row per column,
  * never a field on the prop. */
 export const BRIDGE_STAIRS_STREET_DEF_ID = 20;
 export const BRIDGE_STAIRS_DECK_DEF_ID = 21;
 export const BRIDGE_STAIRS_ABUTMENT_DEF_ID = 22;
+/** The abutment's last row: the same art with the one thin face under the deck. */
+export const BRIDGE_STAIRS_ABUTMENT_FOOT_DEF_ID = 90;
 export const BRIDGE_STAIRS_TREAD_DEF_ID = 23;
 /** The street stairwell's four `defs/objects` rows (`stairwell_top_railing`,
  * `stairwell_treads`, `stairwell_well`, `stairwell_bottom_railing`): the
@@ -984,9 +987,11 @@ const STREET_PROP_LIST: StreetProp[] = [
   },
   // The one staircase, drawn once, on the street floor: the treads where it
   // is walked (flat, under the walker on both floors), and above them the
-  // abutment over the street cells the art covers on screen (drawn and closed,
-  // so a walker never stands in front of treads it is not climbing). A riser
-  // line falls every 8 px from the foot to the deck.
+  // abutment over the street cells the art covers on screen (drawn only: the
+  // solid thing on them is the deck's underside a storey up, so the street is
+  // open ground under it, except for the one face its last row's def keeps at
+  // the up-anchor's north edge). A riser line falls every 8 px from the foot
+  // to the deck.
   ...Array.from({ length: BRIDGE_FLIGHT_DEPTH }, (_, index) => ({
     id: BigInt(90 + index),
     x: BRIDGE_FLIGHT_X0,
@@ -1003,7 +1008,10 @@ const STREET_PROP_LIST: StreetProp[] = [
     y: BRIDGE_UP_ANCHOR_Y - BRIDGE_ABUTMENT_ROWS + index,
     floor: STREET_FLOOR,
     layer: "objects" as const,
-    defId: BRIDGE_STAIRS_ABUTMENT_DEF_ID,
+    defId:
+      index === BRIDGE_ABUTMENT_ROWS - 1
+        ? BRIDGE_STAIRS_ABUTMENT_FOOT_DEF_ID
+        : BRIDGE_STAIRS_ABUTMENT_DEF_ID,
   })),
   // The street flight's west side: a post on each of its rows, so the flight
   // is entered by its foot and the pavement beside it stays open (a body is
@@ -1148,6 +1156,19 @@ export interface StreetBoundaryRect {
   };
 }
 
+/** Where a real player must be able to walk to from the arrival flat, on
+ * floor 0 (FR117): the cell in front of each shop's door, and the street
+ * stairwell's anchor (entering it descends to the subway). One list, read by
+ * the reachability unit test and the arrival e2e walk. */
+export const ARRIVAL_DESTINATIONS = [
+  { name: "the front of shop B", x: DOOR_X_B, y: SHOPFRONT_EXIT_Y, arrive: "stand" },
+  { name: "the front of shop A", x: DOOR_X_A, y: SHOPFRONT_EXIT_Y, arrive: "stand" },
+  { name: "the subway stairwell", x: STAIRS_X, y: STAIRS_Y, arrive: "descend" },
+] as const;
+/** One of [`ARRIVAL_DESTINATIONS`]: `stand` is reached by standing in the cell,
+ * `descend` by walking into the anchor, which changes floor. */
+export type ArrivalDestination = (typeof ARRIVAL_DESTINATIONS)[number];
+
 /** The edge of the drawn world (FR137 has no world-boundary concept yet):
  * a closed ring of solid, undrawn cells around every street ground pass,
  * so the avatar can never walk off the ground into the void. Every cell
@@ -1159,6 +1180,9 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   // West and east of the pavement (anchored at the span's south end); the
   // east edge runs on past the pavement to the flight's foot row.
   { id: 101n, x: 0, y: PAVEMENT_Y1 + 1, width: 1, height: 4 },
+  // North of the pavement, west of shop A: the span between the west edge and
+  // the shop's west wall.
+  { id: 138n, x: 1, y: SOUTH_WALL_Y - 1, width: WEST_WALL_X - 1, height: 1 },
   {
     id: 102n,
     x: 21,
@@ -1170,7 +1194,7 @@ export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
   {
     id: 106n,
     x: FLAT_EAST_WALL_X + 1,
-    y: SOUTH_WALL_Y,
+    y: PAVEMENT_Y1,
     width: 1,
     height: PAVEMENT_Y1 - SOUTH_WALL_Y + 1,
   },
@@ -1821,6 +1845,117 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
       label: "down-the-subway-stairs",
       key: "ArrowLeft",
       until: { kind: "floor", value: SUBWAY_FLOOR },
+    },
+  ];
+}
+
+/** One stretch of the arrival walk: where a person stops, and the keys to get there. */
+export interface ArrivalWalkLeg {
+  readonly name: string;
+  /** The destination the leg ends at, when it ends at one. */
+  readonly destination?: ArrivalDestination;
+  readonly segments: readonly StreetWalkSegment[];
+}
+
+/** The walk a new character makes from the flat (story 4.26), in legs a
+ * person would take: out of the door onto the pavement, west under the
+ * footbridge, along the shop fronts to both doors, then to the street
+ * stairwell and down it. Row 6 (the pavement's own row, clear of the deck)
+ * carries it west of the flat; row 7 is the shop fronts. */
+export function arrivalWalkLegs(inputs: StreetWalkInputs): readonly ArrivalWalkLeg[] {
+  const [shopB, shopA, stairwell] = ARRIVAL_DESTINATIONS;
+  return [
+    {
+      name: "the flat door",
+      segments: [
+        // Below the bed, into the door column, then out through the door onto
+        // the pavement.
+        {
+          label: "arrival-below-the-bed",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: HOME_FLAT_DOOR.y - 0.2 },
+        },
+        {
+          label: "arrival-to-the-door-column",
+          key: "ArrowLeft",
+          until: { kind: "x-at-most", value: HOME_FLAT_DOOR.x + 0.6 },
+        },
+        {
+          label: "arrival-out-onto-the-pavement",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: HOME_FLAT_DOOR.y + 1.6 },
+        },
+      ],
+    },
+    {
+      name: "under the footbridge",
+      segments: [
+        {
+          label: "arrival-west-under-the-deck",
+          key: "ArrowLeft",
+          until: { kind: "x-at-most", value: BRIDGE_X0 + 0.7 },
+        },
+      ],
+    },
+    {
+      name: shopB.name,
+      destination: shopB,
+      segments: [
+        {
+          label: "arrival-down-to-the-shop-fronts",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: HOME_FLAT_DOOR.y + 2.45 },
+        },
+        // Along the fronts to the wall of shop B's east end, then up against the
+        // walls: the body rests exactly on the front row, clear of the bin.
+        {
+          label: "arrival-west-along-the-shop-fronts",
+          key: "ArrowLeft",
+          until: { kind: "x-at-most", value: EAST_WALL_X_B - 0.5 },
+        },
+        {
+          label: "arrival-up-against-the-shop-walls",
+          key: "ArrowUp",
+          until: { kind: "y-at-most", value: shopB.y + 0.25 },
+        },
+        {
+          label: "arrival-west-to-shop-b",
+          key: "ArrowLeft",
+          until: { kind: "cell", x: shopB.x, y: shopB.y },
+        },
+      ],
+    },
+    {
+      name: shopA.name,
+      destination: shopA,
+      segments: [
+        {
+          label: "arrival-west-to-shop-a",
+          key: "ArrowLeft",
+          until: { kind: "cell", x: shopA.x, y: shopA.y },
+        },
+      ],
+    },
+    {
+      name: stairwell.name,
+      destination: stairwell,
+      segments: [
+        {
+          label: "arrival-east-to-the-subway-entrance",
+          key: "ArrowRight",
+          until: { kind: "x-at-least", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+        },
+        {
+          label: "arrival-onto-the-subway-treads-row",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: inputs.subwayTreadRowY },
+        },
+        {
+          label: "arrival-down-the-subway-stairs",
+          key: "ArrowLeft",
+          until: { kind: "floor", value: SUBWAY_FLOOR },
+        },
+      ],
     },
   ];
 }

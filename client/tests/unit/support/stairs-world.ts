@@ -42,6 +42,7 @@ export const PLATFORM_STAIR_RAILING_DEF_ID = 17;
 export const BRIDGE_STAIRS_STREET_DEF_ID = 20;
 export const BRIDGE_STAIRS_DECK_DEF_ID = 21;
 export const BRIDGE_STAIRS_ABUTMENT_DEF_ID = 22;
+export const BRIDGE_STAIRS_ABUTMENT_FOOT_DEF_ID = 90;
 export const BRIDGE_STAIRS_TREAD_DEF_ID = 23;
 export const WALL_SEGMENT_DEF_ID = 6;
 
@@ -244,7 +245,10 @@ export const STREET_PROPS: readonly StairsProp[] = [
   })),
   ...Array.from({ length: BRIDGE_ABUTMENT_ROWS }, (_, index) => ({
     id: BigInt(200 + index),
-    defId: BRIDGE_STAIRS_ABUTMENT_DEF_ID,
+    defId:
+      index === BRIDGE_ABUTMENT_ROWS - 1
+        ? BRIDGE_STAIRS_ABUTMENT_FOOT_DEF_ID
+        : BRIDGE_STAIRS_ABUTMENT_DEF_ID,
     x: BRIDGE_FLIGHT_X0,
     y: BRIDGE_UP_ANCHOR_Y - BRIDGE_ABUTMENT_ROWS + index,
     floor: STREET_FLOOR,
@@ -294,8 +298,8 @@ const platformWalls = (): Boundary[] => [
 const BOUNDARY: readonly Boundary[] = [
   // The street's ring: north of the pavement, west, east and south.
   { id: 101n, x: 11, y: 4, width: 15, height: 1, floor: STREET_FLOOR },
-  { id: 102n, x: 11, y: 5, width: 1, height: 10, floor: STREET_FLOOR },
-  { id: 103n, x: 25, y: 5, width: 1, height: 10, floor: STREET_FLOOR },
+  { id: 102n, x: 11, y: 14, width: 1, height: 10, floor: STREET_FLOOR },
+  { id: 103n, x: 25, y: 14, width: 1, height: 10, floor: STREET_FLOOR },
   { id: 104n, x: 11, y: 14, width: 15, height: 1, floor: STREET_FLOOR },
   // The street's east edge at the flight's foot rows.
   {

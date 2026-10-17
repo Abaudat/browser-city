@@ -2154,6 +2154,7 @@ describe("the stairs-tagged defs and the stairwell groups are pinned (story 15.1
   it("exactly these defs carry the stairs tag", () => {
     expect(stairsKeys()).toEqual([
       "bridge_stairs_abutment",
+      "bridge_stairs_abutment_foot",
       "bridge_stairs_deck",
       "bridge_stairs_street",
       "bridge_stairs_tread",
@@ -2178,6 +2179,7 @@ describe("the stairs-tagged defs and the stairwell groups are pinned (story 15.1
       } else if (anchor.floor === STREET_FLOOR && anchor.targetFloor === BRIDGE_FLOOR) {
         expect(groupKeys(anchor), where).toEqual([
           "bridge_stairs_abutment",
+          "bridge_stairs_abutment_foot",
           "bridge_stairs_street",
           "bridge_stairs_tread",
         ]);

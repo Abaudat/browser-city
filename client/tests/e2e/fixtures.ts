@@ -47,7 +47,8 @@ async function startAtArrival(target: Page | BrowserContext): Promise<void> {
 export const test = base.extend<{
   arrive: boolean;
   /** Where the player starts: the district's arrival cell the mechanics
-   * specs assume (default), or the flat a new character really arrives in. */
+   * specs assume (default), or the flat a new character really arrives in.
+   * New specs default to `"flat"` unless they really need the arrival cell. */
   startAt: "arrival" | "flat";
   arrivingContexts: undefined;
 }>({

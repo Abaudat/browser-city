@@ -31,6 +31,7 @@ import {
 } from "../../../src/world/transitions";
 import { WorldIndex } from "../../../src/world/world-index";
 import {
+  arrivalWalkLegs,
   BOLLARD_COLLIDER,
   BRIDGE_DECK_Y,
   BRIDGE_FLIGHT_X0,
@@ -41,6 +42,7 @@ import {
   BRIDGE_UNDER_PILLAR_X,
   BRIDGE_X0,
   CUPBOARD_PROP_ID,
+  HOME_FLAT_SPAWN,
   isDefStreetProp,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
@@ -804,6 +806,10 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     const out = simulateStreetWalk(cupboardReachRoute());
     return out[out.length - 1]?.state;
   };
+  const atTheFlat = (): FloorWalkResult => ({
+    ...initialFloorWalkState(HOME_FLAT_SPAWN.x, HOME_FLAT_SPAWN.y, HOME_FLAT_SPAWN.floor),
+    transitioned: false,
+  });
   return [
     { name: "street-walk", segments: streetWalkRoute(inputs), start: fresh },
     { name: "subway-approach", segments: streetSubwayApproachRoute(inputs), start: fresh },
@@ -823,6 +829,11 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     { name: "railing-foot", segments: railingFootRoute(), start: fresh },
     { name: "flight-walk", segments: flightWalkRoute(), start: fresh },
     { name: "footbridge-walk", segments: streetFootbridgeRoute(inputs), start: fresh },
+    {
+      name: "arrival-walk",
+      segments: arrivalWalkLegs(inputs).flatMap((leg) => leg.segments),
+      start: atTheFlat,
+    },
     { name: "block-subway", segments: blockSubwayRoute(), start: at(BLOCK_STARTS.subway) },
     {
       name: "block-footbridge",
@@ -846,7 +857,7 @@ let cachedStreetFlightList: readonly Flight[] | undefined;
 /** The street's own flights, built the way `scene.ts` builds them. */
 export function streetFlightList(): readonly Flight[] {
   if (cachedStreetFlightList) return cachedStreetFlightList;
-  const storey =
+  const _storey =
     committedDefs().balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
   cachedStreetFlightList = buildFlights(
     STREET_TRANSITIONS,

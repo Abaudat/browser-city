@@ -51,6 +51,7 @@ describe("every defId-placed prop draws from a real defs/objects entry", () => {
       "bed_single_blue",
       "bridge_deck",
       "bridge_stairs_abutment",
+      "bridge_stairs_abutment_foot",
       "bridge_stairs_deck",
       "bridge_stairs_street",
       "bridge_stairs_tread",

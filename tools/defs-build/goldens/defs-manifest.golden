@@ -87,6 +87,7 @@ object 86 floor_warm_affluent
 object 87 floor_public_plain
 object 88 floor_public_affluent
 object 89 floor_back_room
+object 90 bridge_stairs_abutment_foot
 item 1 bottle
 item 2 recycled_glass
 item 3 coin_1

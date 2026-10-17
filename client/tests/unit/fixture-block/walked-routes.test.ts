@@ -5,10 +5,13 @@ import { describe, expect, it } from "vitest";
 import { isWithinReach } from "../../../src/input/pick";
 import { initialFloorWalkState } from "../../../src/world/floor-walk";
 import {
+  arrivalWalkLegs,
   isDefStreetProp,
   PLAYER_START,
   RELEASE_LAG,
+  STREET_FLOOR,
   STREET_PROPS,
+  SUBWAY_FLOOR,
   streetWalkUntilMet,
   TRASH_BIN_DEF_ID,
 } from "../../fixture-block/fixture";
@@ -16,6 +19,7 @@ import {
   committedDefs,
   simulateStreetWalk,
   streetMovementConfig,
+  streetWalkInputs,
   walkedRoutes,
 } from "./street-world";
 
@@ -35,6 +39,7 @@ describe("every walked route", () => {
         "railing-foot",
         "flight-walk",
         "footbridge-walk",
+        "arrival-walk",
       ]),
     );
   });
@@ -87,6 +92,30 @@ describe("the bin-reach route", () => {
           streetMovementConfig().subcellsPerCell,
         ),
       ).toBe(true);
+    }
+  });
+});
+
+describe("the arrival walk (story 4.26)", () => {
+  it("each leg ends where it is named for, and the last descends to the subway, at no lag and at RELEASE_LAG", () => {
+    const route = walkedRoutes().find((r) => r.name === "arrival-walk");
+    const legs = arrivalWalkLegs(streetWalkInputs());
+    const start = route?.start();
+    if (!route || !start) throw new Error("no arrival-walk route");
+    for (const lag of [{ releaseLagSteps: 0 }, RELEASE_LAG]) {
+      let state = start;
+      for (const leg of legs) {
+        const out = simulateStreetWalk(leg.segments, { ...lag, start: state });
+        const end = out[out.length - 1]?.state;
+        if (!end) throw new Error(`${leg.name} produced no checkpoint`);
+        const { destination } = leg;
+        if (destination?.arrive === "stand") {
+          expect([end.cellX, end.cellY], leg.name).toEqual([destination.x, destination.y]);
+        }
+        state = end;
+      }
+      expect(state.floor).toBe(SUBWAY_FLOOR);
+      expect(start.floor).toBe(STREET_FLOOR);
     }
   });
 });
