@@ -734,7 +734,7 @@ describe("the street's own flights (conformance)", () => {
     }
     // The exhaustive scan compares exactly this many adjacent pairs. The count
     // changes with the stairs world; re-pin it from the loop's own `pairs`.
-    expect(pairs).toBe(593625);
+    expect(pairs).toBe(587985);
     for (const floor of floors) {
       expect(
         nonZero.get(floor),

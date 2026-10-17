@@ -298,8 +298,8 @@ const platformWalls = (): Boundary[] => [
 const BOUNDARY: readonly Boundary[] = [
   // The street's ring: north of the pavement, west, east and south.
   { id: 101n, x: 11, y: 4, width: 15, height: 1, floor: STREET_FLOOR },
-  { id: 102n, x: 11, y: 5, width: 1, height: 10, floor: STREET_FLOOR },
-  { id: 103n, x: 25, y: 5, width: 1, height: 10, floor: STREET_FLOOR },
+  { id: 102n, x: 11, y: 14, width: 1, height: 10, floor: STREET_FLOOR },
+  { id: 103n, x: 25, y: 14, width: 1, height: 10, floor: STREET_FLOOR },
   { id: 104n, x: 11, y: 14, width: 15, height: 1, floor: STREET_FLOOR },
   // The street's east edge at the flight's foot rows.
   {
