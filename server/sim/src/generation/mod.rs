@@ -2026,6 +2026,7 @@ mod tests {
                 10,
                 90,
             ),
+            seed("render.tile_size_px", 16, 1, 64),
             seed("generation.neighbourhood.legible_step", 30, 0, 100000),
             seed("generation.neighbourhood.poor_band_max", 25, 0, 100000),
             seed("generation.neighbourhood.min_corners", 3, 0, 100000),
