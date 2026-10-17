@@ -20,10 +20,14 @@ check "no other instance script uses its port" 0 test -z "$OTHERS"
 REDUCER_GATE="$(grep -B3 'pub fn debug_write_graph_then_fail' "$DISTRICT")"
 check_contains "the test-only reducer is cfg-gated on time-control" 'feature = "time-control"' "$REDUCER_GATE"
 
-NAMED_IN_CI="$(grep -c 'debug_write_graph_then_fail' "$CI")"
-check "ci.yml holds it out of the production module and requires it in the flavour" 0 test "$NAMED_IN_CI" -ge 2
-check "the authoritative-loop leg refuses it on the production build" 0 \
-  grep -q 'debug_write_graph_then_fail' "$REPO_ROOT/scripts/ci/check-authoritative-loop.sh"
+# The production-absence checks derive their list from the source, so the
+# reducer is held out of the production module and required in the flavour
+# by being in that list and by both checks reading it.
+LISTED="$(bash "$REPO_ROOT/scripts/ci/list-time-control-reducers.sh")"
+check_contains "the derived time-control list names it" 'debug_write_graph_then_fail' "$LISTED"
+USES_IN_CI="$(grep -c 'list-time-control-reducers.sh' "$CI")"
+check "ci.yml holds the derived list out of the production module and requires it in the flavour" 0 test "$USES_IN_CI" -ge 2
+check "the authoritative-loop leg refuses the derived list on the production build" 0   grep -q 'list-time-control-reducers.sh' "$REPO_ROOT/scripts/ci/check-authoritative-loop.sh"
 check "the migrate job runs the script" 0 grep -q 'check-routing-graph-persistence.sh' "$CI"
 
 summary
