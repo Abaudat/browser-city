@@ -1,0 +1,2299 @@
+// The committed, deterministic story 1.6/1.7 street scene (Artie's
+// direction): fixed layout, fixed seed, no randomisation, real LimeZu
+// sprites only -- no coloured rectangles. Pure data, zero PixiJS: shared
+// by the real adapter (`scene.ts`, mounted from `main.ts`) and
+// `client/tests/unit/test-street/drawables.test.ts`'s ordering check, so the
+// comparator and the adapter can never silently disagree about what this
+// scene should look like (Quentin's direction), and by
+// `client/tests/e2e/render-order.spec.ts`/`enclosure.spec.ts`, which read
+// the same order and visibility state back out of a real mounted display
+// list through `window.__bc`.
+//
+// This scene and its asset choices are throwaway harness code (Artie's
+// own framing, and why it lives under `src/test-street/` rather than
+// `src/render/`) -- the sort key, the rank ladder, the storey constant and
+// (story 1.7) the visibility rules are the permanent things these stories
+// add, not this file.
+//
+// Story 1.7 (FR120/FR121/FR122) pays off the shortcut story 1.6 took: the
+// old `wallTileShort` front-wall stub is gone -- near-side retraction now
+// exists, so the street shows it, not a permanently short wall. The terrace
+// is two shops, A and B, sharing one party wall at `PARTY_WALL_X`, each
+// with its own door, its own front window (a real `defs/objects` `window
+// = true` tile, never a `wall_decals` overlay) and its own furniture. A
+// subway stairwell on the pavement leads down to a small platform on
+// floor -1, whose own front wall retracts the same ownership-keyed way a
+// shop's does while the player stands on it.
+//
+// Near-side-ness (FR120) is never hand-authored here: `test-street/drawables.ts`
+// resolves it per cell from `render/visibility.ts`'s `isNearSideWall`, a
+// pure predicate over ownership and cell coordinates. This fixture only
+// states geometry and ownership areas; which walls end up near-side falls
+// out of that shape.
+
+import type { PlacedObject } from "../../src/net/bindings/types";
+import { layerCodeByName } from "../../src/render/layer-table";
+import type { ColliderSource } from "../../src/world/collision-grid";
+import { bodyCell } from "../../src/world/movement";
+import type { OwnershipArea } from "../../src/world/ownership";
+import type { TransitionSpec } from "../../src/world/transitions";
+
+/** The layers a street prop can be on (FR123): the five pool layers plus
+ * `ground_objects`, the flat pass for anything lying on the ground -- the
+ * ladder itself lives in `sim::codes::layer`/`render/layer-table.ts`;
+ * this is just which one each street prop is on. */
+export type StreetLayer =
+  | "ground_objects"
+  | "furniture"
+  | "objects"
+  | "walls"
+  | "wall_decals"
+  | "characters";
+
+/** A prop wide/tall enough to need FR125 decomposition. Orientation
+ * (`PlacedObject.orientation`) is a later story's concern; this fixture
+ * simply states the already-oriented extent a real world generator would
+ * have resolved before calling `decomposeFootprint`. */
+export interface StreetFootprint {
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Every field a placed prop carries regardless of where its art comes
+ * from. `x`/`y` are the anchor cell (world tile coordinates).
+ *
+ * Collision comes from one of two places, never a hand-typed sub-cell
+ * rect: `defId` names a real `defs/objects` entry and uses that entry's
+ * own `collider`; `solid` is street-only geometry (the shops' plain walls,
+ * which are not `defs/` objects) blocking the prop's whole footprint. */
+interface StreetPropBase {
+  readonly id: bigint;
+  readonly x: number;
+  readonly y: number;
+  readonly floor: number;
+  readonly layer: StreetLayer;
+  readonly solid?: true;
+}
+
+/** A prop placed by a real `defs/objects` id (story 2.13): its texture
+ * identity is the def id alone, resolved only through
+ * `render/atlas-pages.ts`'s `AtlasPageLoader.objectCellTexture`.
+ * Never carries `assetKey`/`sourceCol`/`sourceRow` -- a `defId` row that
+ * could still name a raw asset is exactly the shortcut this story
+ * retires. Never carries `footprint` either (Tim's direction, cycle 2):
+ * its extent comes only from the placed object's own `object_def` --
+ * `buildPropDrawables` reads `width`/`height` straight off the resolved
+ * def, so a def that changes its own width (`shop_window`, story 2.13)
+ * can never leave a hand-restated footprint quietly out of step with it
+ * again. */
+export interface StreetPropByDef extends StreetPropBase {
+  readonly defId: number;
+}
+
+/** A prop placed by a hand-picked asset key into `scene.ts`'s own raw
+ * `ModernTileset/` texture table -- street-only harness geometry with no
+ * real `defs/objects` entry behind it (ground tiles, the shops' plain
+ * wall runs, the poster, loose furniture). Never carries `defId`. Only
+ * this variant may declare its own `footprint`: there is no `object_def`
+ * for `buildPropDrawables` to read one from instead. */
+export interface StreetPropByAsset extends StreetPropBase {
+  readonly assetKey: string;
+  readonly footprint?: StreetFootprint;
+  /** The sub-cell collider of a `solid` asset-placed prop, shaped to its
+   * art (`COLLIDER_SUBCELLS_PER_CELL` per cell, relative to the
+   * footprint's own north-west sub-cell origin). Absent means the whole
+   * footprint blocks. */
+  readonly collider?: StreetColliderRect;
+}
+
+/** A half-open sub-cell rect, the same shape as a `defs/objects`
+ * `collider`. */
+export interface StreetColliderRect {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+/** One placed prop in the street scene -- a discriminated union (Tim's/
+ * Quentin's direction, story 2.13): a `defId` row has no `assetKey` field
+ * at all, and an `assetKey` row has no `defId`, so the seam this story
+ * retires cannot regress without a type error. */
+export type StreetProp = StreetPropByDef | StreetPropByAsset;
+
+/** Narrows a [`StreetProp`] to its `defId` variant -- the one place this
+ * module's own discriminant check lives, never repeated as a bare
+ * `"defId" in prop` at each call site. */
+export function isDefStreetProp(prop: StreetProp): prop is StreetPropByDef {
+  return "defId" in prop;
+}
+
+/** `defs/objects/city-props.toml`'s own `lamppost` id -- the street places
+ * it by id so its collider is read from `defs/`, never restated here. */
+export const LAMPPOST_DEF_ID = 4;
+/** `defs/objects/city-props.toml`'s own `trash_bin` id (story 1.9,
+ * FR148): the small interaction target, out on the pavement. Its
+ * `interact_at` reach comes from `defs/` like everything else. */
+export const TRASH_BIN_DEF_ID = 1;
+/** `defs/objects/city-props.toml`'s own `shop_counter` id (story 1.9,
+ * FR148): the wide interaction target -- three cells of counter, reachable
+ * only from the customer side. */
+export const SHOP_COUNTER_DEF_ID = 3;
+/** `defs/objects/containers.toml`'s own `cupboard` id (story 6.10, FR94): a
+ * 4x3 grid, shop A's storage cupboard on the back-wall cell beside the counter. Its prop id is
+ * the id the e2e world seeds as that cupboard's `placed_object` row (the
+ * live street has no such server row, so there it opens empty). The def's
+ * art has no open-door variant. */
+export const CUPBOARD_DEF_ID = 71;
+export const CUPBOARD_PROP_ID = 82n;
+/** `defs/objects/city-props.toml`'s own `shop_window` id (FR121, story
+ * 1.7): a real `[[object]] window = true` entry, never a street-only flag --
+ * every shopfront window places it by id, the same way the lamppost
+ * does. */
+export const WINDOW_DEF_ID = 5;
+/** `defs/objects/city-props.toml`'s own `wall_segment` id (story 1.13):
+ * one plain solid wall cell -- the bridge's own parapet is laid from
+ * these, one cell at a time. */
+export const WALL_SEGMENT_DEF_ID = 6;
+/** `defs/objects/city-props.toml`'s own `bridge_deck` id (story 1.13): a
+ * four-cell walkable span with no collider at all, so the street below
+ * it is unobstructed (FR117/FR128). */
+export const BRIDGE_DECK_DEF_ID = 7;
+/** The post beside each footbridge flight: a bollard's own base, one sub-cell
+ * wider on the east, so no body whose centre is west of the flight's column
+ * can overlap the flight (a transition fires on the body's centre cell). */
+export const BRIDGE_POST_COLLIDER = { x0: 5, y0: 0, x1: 12, y1: 16 } as const;
+
+/** The footbridge's four `defs/objects` rows (story 15.19): the street flight
+ * and the deck flight (each an undrawn `flight`, the walk data), and the one
+ * staircase drawn on the street floor: the treads where it is walked and the
+ * abutment drawn over the street cells above them (open ground, no collider).
+ * Which floors the flights join is a `floor_transition` row per column,
+ * never a field on the prop. */
+export const BRIDGE_STAIRS_STREET_DEF_ID = 20;
+export const BRIDGE_STAIRS_DECK_DEF_ID = 21;
+export const BRIDGE_STAIRS_ABUTMENT_DEF_ID = 22;
+/** The abutment's last row: the same art with the one thin face under the deck. */
+export const BRIDGE_STAIRS_ABUTMENT_FOOT_DEF_ID = 90;
+export const BRIDGE_STAIRS_TREAD_DEF_ID = 23;
+/** The street stairwell's four `defs/objects` rows (`stairwell_top_railing`,
+ * `stairwell_treads`, `stairwell_well`, `stairwell_bottom_railing`): the
+ * player walks between the railings. */
+export const STAIRWELL_TOP_RAILING_DEF_ID = 12;
+export const STAIRWELL_TREADS_DEF_ID = 13;
+export const STAIRWELL_BOTTOM_RAILING_DEF_ID = 14;
+export const STAIRWELL_WELL_DEF_ID = 19;
+/** `wall_face`: the tall interior face of a north or south wall run, one
+ * cell wide. West and east runs are `wall_segment` rows. */
+export const WALL_FACE_DEF_ID = 15;
+/** `floor_pale_stone`: the interior room fill (drawn by the flat ground
+ * pass). */
+export const FLOOR_PALE_STONE_DEF_ID = 24;
+/** `threshold_arch_slate`: the one-cell doorway lintel placed at each
+ * shop door. */
+export const THRESHOLD_ARCH_SLATE_DEF_ID = 25;
+/** The platform's way up: a flat flight and the railing along its south
+ * side (story 15.11). */
+export const PLATFORM_STAIR_FLIGHT_DEF_ID = 16;
+export const PLATFORM_STAIR_RAILING_DEF_ID = 17;
+
+/** Synthetic def ids for street-only geometry (walls, world boundary),
+ * offset far past any real `defs/objects` id so the two never collide in
+ * the one `defId -> collider` map the grid is built from. */
+const STREET_DEF_ID_BASE = 10_000;
+
+export function streetDefId(id: bigint): number {
+  return STREET_DEF_ID_BASE + Number(id);
+}
+
+// Shared storey shape for both ground-floor shops: north (back) wall,
+// four interior rows, south (front) wall.
+const NORTH_WALL_Y = 1;
+const SOUTH_WALL_Y = 6;
+const INTERIOR_Y0 = 2;
+const INTERIOR_Y1 = 5;
+
+// Shop A: west wall, four interior columns, then the party wall it shares
+// with shop B (Artie's direction: the shared wall line has no gap and no
+// doubled wall -- shop B declares no west wall of its own; this column is
+// it). Every front run is door, then a window (`shop_window`'s own def
+// `width`, story 2.13: three cells, read by `buildPropDrawables` straight
+// off the def, never restated here), then a full-height wall pier at the
+// far corner (Artie's cycle-2 direction: a window must never run straight
+// into the corner with no wall pier between it and the next building, or
+// the two shopfronts blur into one continuous glazed strip) --
+// `DOOR_X_A`/`DOOR_X_B` are the only two numbers hand-picked below;
+// everything else (window position, pier position, `PLAYER_START`,
+// `LAMPPOST_CELL`) is derived from them, never a second hand-patched
+// literal.
+const WEST_WALL_X = 3;
+const PARTY_WALL_X = 8;
+const INTERIOR_X0_A = 4;
+const DOOR_X_A = WEST_WALL_X + 1;
+const WINDOW_X_A = DOOR_X_A + 1;
+
+// Shop B: starts immediately east of the party wall, its own four
+// interior columns, its own east wall.
+const INTERIOR_X0_B = 9;
+export const EAST_WALL_X_B = 13;
+const DOOR_X_B = PARTY_WALL_X + 1;
+const WINDOW_X_B = DOOR_X_B + 1;
+
+/** The player's starting position -- continuous world coordinates
+ * (Artie's direction: a character's sort anchor is its continuous feet
+ * position, never a snapped cell), moved by keyboard input in
+ * `scene.ts`. Inside shop A, one tile off the west wall so walking
+ * north/south naturally crosses several of that wall's decomposed
+ * cells -- the near/far occlusion worked example. `x` is `DOOR_X_A + 0.5`
+ * (the door column's own centre): the player has a real body width, so it
+ * must be centred in the one-cell-wide door gap. */
+export const PLAYER_START = { x: DOOR_X_A + 0.5, y: 4, floor: 0 } as const;
+
+// --- The home flat (story 4.6): where a new character is first placed.
+// A bedsit on the same street, east of shop B: four interior columns by
+// three rows, a bed against the west wall, one door in its front wall onto
+// the pavement, and nothing else -- no counter, no stock, nothing placed
+// for the occasion. Throwaway fixture until generated interiors and
+// tenancy (story 7.1).
+// East of the footbridge, on a stretch of pavement the street gains for it
+// (the bridge's raised deck is drawn over everything north of it, so the
+// flat stands clear of it).
+const FLAT_WEST_WALL_X = 22;
+const FLAT_INTERIOR_X0 = FLAT_WEST_WALL_X + 1;
+const FLAT_INTERIOR_X1 = FLAT_INTERIOR_X0 + 3;
+const FLAT_EAST_WALL_X = FLAT_INTERIOR_X1 + 1;
+const FLAT_NORTH_WALL_Y = NORTH_WALL_Y;
+// One row north of the shops' fronts, so the pavement strip along them
+// stays open and the scripted walks that use it are untouched.
+const FLAT_SOUTH_WALL_Y = SOUTH_WALL_Y - 1;
+const FLAT_INTERIOR_Y0 = FLAT_NORTH_WALL_Y + 1;
+const FLAT_INTERIOR_Y1 = FLAT_SOUTH_WALL_Y - 1;
+const FLAT_DOOR_X = FLAT_INTERIOR_X0;
+
+/** A new character's first position: on the flat's floor beside the bed,
+ * the door ahead of them across the room. */
+export const HOME_FLAT_SPAWN = {
+  x: FLAT_INTERIOR_X0 + 1.5,
+  y: FLAT_INTERIOR_Y0 + 1.5,
+  floor: 0,
+} as const;
+/** The flat's own door cell, onto the pavement. */
+export const HOME_FLAT_DOOR = { x: FLAT_DOOR_X, y: FLAT_SOUTH_WALL_Y } as const;
+export const PLAYER_STABLE_ID = 1000n;
+
+/** The anchor cell of the lamppost, out on the pavement -- a real collider
+ * read from `defs/objects/city-props.toml`. Story 2.13 (Artie's
+ * direction): `x` is `PARTY_WALL_X`, in front of the pier between the two
+ * shops, not `DOOR_X_A` -- a 64px-tall lamp at the door's own column would
+ * draw through the awning and across the doorway, and nobody plants a
+ * lamp in front of a door. `y` is unchanged, so everything keyed on its
+ * row (`STAIRS_Y`, `lamppostRestY()`) is untouched. */
+export const LAMPPOST_CELL = { x: PARTY_WALL_X, y: 8 } as const;
+
+/** A bollard's own real base, read off its art
+ * (`Pedestrian_Barrier_Post_1.png`: six sub-cells wide, centred, the
+ * whole cell tall). */
+export const BOLLARD_COLLIDER = { x0: 5, y0: 0, x1: 11, y1: 16 } as const;
+
+/** Story 1.7 ownership ids (Tim's direction): the enclosure key is
+ * `buildingId`, resolved from the ownership index -- never hand-typed on
+ * a per-prop basis. `NO_OWNER` (0n) is `world/ownership.ts`'s own
+ * sentinel; these start at 1 like a real `#[auto_inc]` id would. */
+export const SHOP_A_BUILDING_ID = 1n;
+export const SHOP_B_BUILDING_ID = 2n;
+/** The subway platform's own ownership id (Artie's direction): its front
+ * wall retracts the same ownership-keyed way a shop's does, while the
+ * player stands on it -- otherwise the platform's own front wall would
+ * permanently hide whoever just walked onto it. */
+export const PLATFORM_BUILDING_ID = 3n;
+/** The home flat's ownership id (story 4.6). */
+export const HOME_FLAT_BUILDING_ID = 4n;
+/** `defs/objects/interior-props.toml`'s `bed_single_blue`. */
+export const BED_SINGLE_BLUE_DEF_ID = 26;
+
+// --- the subway (declared before STREET_BUILDING_AREAS, which references
+// the platform's own footprint) -----------------------------------------
+
+export const STREET_FLOOR = 0;
+export const SUBWAY_FLOOR = -1;
+
+/** The street stairwell's own art is four objects on one 3x3 ground
+ * footprint: the top railing and the bottom railing (each drawn one row
+ * taller than its footprint row, overhanging north), and the two flat rows
+ * under them, the treads and the well. */
+export const STAIRWELL_FOOTPRINT = { width: 3, height: 3 } as const;
+
+/** The art row (from its north edge) the treads are drawn on: the rows
+ * above are the finial and the top railing, the row below the bottom
+ * railing. */
+const STAIRWELL_TREAD_ROW = 2;
+
+/** The rows the street stairwell is placed as: anchor row offset from the
+ * art's north edge, the def and its layer (the treads lie flat on the
+ * ground, so they are on the flat pass and never sort over the player). */
+const STAIRWELL_ROWS = [
+  { row: 1, defId: STAIRWELL_TOP_RAILING_DEF_ID, layer: "objects" },
+  { row: STAIRWELL_TREAD_ROW, defId: STAIRWELL_TREADS_DEF_ID, layer: "ground_objects" },
+  { row: 3, defId: STAIRWELL_WELL_DEF_ID, layer: "ground_objects" },
+  { row: 3, defId: STAIRWELL_BOTTOM_RAILING_DEF_ID, layer: "objects" },
+] as const;
+
+/** The demo's own reported entry: walking left (west) into the stairs
+ * (issue #310). `world/transitions.ts`'s `checkTransitionPairSymmetry`
+ * records this same axis as the pairing's own `d`. */
+export const STAIRS_ENTRY_DIRECTION = { x: -1, y: 0 } as const;
+
+/** The street stairwell sits in the pavement's own south edge, east of
+ * shop B: art columns `STAIRWELL_X0..+2`, rows `PAVEMENT_Y1 + 1..+4` (the
+ * first is only the finial's overhang). Its opening is the tread row's
+ * east end; the down anchor is the deepest tread, at the west end. */
+const PAVEMENT_Y1 = LAMPPOST_CELL.y;
+export const STAIRWELL_X0 = EAST_WALL_X_B + 1;
+export const STAIRWELL_Y0 = PAVEMENT_Y1 + 1;
+export const STAIRS_X = STAIRWELL_X0;
+export const STAIRS_Y = STAIRWELL_Y0 + STAIRWELL_TREAD_ROW;
+
+/** The open cells in front of the stairwell's opening: two columns east
+ * of it, from the pavement down to the tread row. */
+export const SUBWAY_ENTRANCE_X0 = STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width;
+const SUBWAY_ENTRANCE_X1 = SUBWAY_ENTRANCE_X0 + 1;
+
+/** The row just outside shop A's own door. */
+export const SHOPFRONT_EXIT_Y = SOUTH_WALL_Y + 1;
+
+/** The platform's own footprint, floor -1. */
+const PLATFORM_X0 = 13;
+const PLATFORM_X1 = 20;
+const PLATFORM_Y0 = 1;
+const PLATFORM_Y1 = 6;
+export const PLATFORM_INTERIOR_X0 = PLATFORM_X0 + 1;
+export const PLATFORM_INTERIOR_X1 = PLATFORM_X1 - 1;
+export const PLATFORM_INTERIOR_Y0 = PLATFORM_Y0 + 1;
+export const PLATFORM_INTERIOR_Y1 = PLATFORM_Y1 - 1;
+
+/** The platform's up-stairs: a flight against the north wall (the walked
+ * row on top, the rest under the railing), climbing east, its up anchor the
+ * east-most tread against the east wall. The flight is `PLATFORM_FLIGHT_WIDTH` cells ending at the anchor;
+ * the entry cell is the one just west of it. */
+export const PLATFORM_UP_ANCHOR_X = PLATFORM_INTERIOR_X1;
+export const PLATFORM_UP_ANCHOR_Y = PLATFORM_INTERIOR_Y0;
+const PLATFORM_FLIGHT_WIDTH = 2;
+/** The flight runs under the railing to its foot: the walked row and the
+ * railing's own row. */
+const PLATFORM_FLIGHT_DEPTH = 2;
+const PLATFORM_FLIGHT_X0 = PLATFORM_UP_ANCHOR_X - PLATFORM_FLIGHT_WIDTH + 1;
+/** The railing closing the flight's south side, one cell wider than the
+ * flight: its extra cell runs along the entry cell. */
+const PLATFORM_RAILING_WIDTH = PLATFORM_FLIGHT_WIDTH + 1;
+const PLATFORM_RAILING_X0 = PLATFORM_UP_ANCHOR_X - PLATFORM_RAILING_WIDTH + 1;
+
+/** Where walking down lands: the up anchor's own neighbour one step
+ * further along `STAIRS_ENTRY_DIRECTION` (the pairing's mirror rule). */
+export const PLATFORM_LANDING_X = PLATFORM_UP_ANCHOR_X + STAIRS_ENTRY_DIRECTION.x;
+export const PLATFORM_LANDING_Y = PLATFORM_UP_ANCHOR_Y + STAIRS_ENTRY_DIRECTION.y;
+
+/** Where climbing back up lands: the down anchor's own neighbour one step
+ * back against `STAIRS_ENTRY_DIRECTION`, on the street treads. */
+export const STREET_EXIT_X = STAIRS_X - STAIRS_ENTRY_DIRECTION.x;
+export const STREET_EXIT_Y = STAIRS_Y - STAIRS_ENTRY_DIRECTION.y;
+
+// --- the footbridge (story 1.13) ---------------------------------------
+//
+// Two floors at one `(x, y)`: the deck spans the pavement one storey up,
+// so `(BRIDGE_X0..BRIDGE_X1, BRIDGE_DECK_Y)` is open pavement on floor 0
+// and walkable deck on floor 1 (FR117).
+
+export const BRIDGE_FLOOR = STREET_FLOOR + 1;
+/** The deck's own row: the first pavement row south of the terrace. */
+export const BRIDGE_DECK_Y = SOUTH_WALL_Y + 1;
+export const BRIDGE_X0 = 17;
+/** Four cells of `bridge_deck`, the def's own declared width. */
+export const BRIDGE_DECK_WIDTH = 4;
+export const BRIDGE_X1 = BRIDGE_X0 + BRIDGE_DECK_WIDTH - 1;
+
+/** The column just west of the deck, where the scripted walk turns north
+ * onto the underpass row against a bollard at its north end. */
+export const BRIDGE_UNDER_CURB_X = BRIDGE_X0 - 1;
+/** The understructure's own support pillar, a real bollard: the
+ * underpass checkpoint's column rest. */
+export const BRIDGE_UNDER_PILLAR_X = BRIDGE_X0 + 1;
+/** The row south of the underpass. */
+export const BRIDGE_UNDER_EXIT_Y = BRIDGE_DECK_Y + 1;
+
+/** The footbridge's one flight (story 15.19), at the deck's east end: two
+ * columns wide, walked along y -- north up from the pavement, south back
+ * down -- and drawn as one front-on staircase of `BRIDGE_FLIGHT_DEPTH` rows
+ * per floor on the same cells: the street's flight under the deck's, the
+ * deck's one storey up. */
+export const BRIDGE_FLIGHT_WIDTH = 2;
+export const BRIDGE_FLIGHT_DEPTH = 2;
+/** The street rows above the flight that the staircase's art covers on
+ * screen (the flight's rows and these are the stack, a riser line every 8 px). */
+export const BRIDGE_ABUTMENT_ROWS = 3;
+export const BRIDGE_FLIGHT_X0 = BRIDGE_X1 - BRIDGE_FLIGHT_WIDTH + 1;
+
+/** The flight's top row, on both floors: entering it from the street climbs
+ * onto the deck, and the deck flight's descent lands on it. */
+export const BRIDGE_UP_ANCHOR_Y = BRIDGE_DECK_Y + 1;
+/** The flight's bottom row: the street flight's first tread, and the deck
+ * flight's last cell, where entering it walks back down. */
+export const BRIDGE_DOWN_ANCHOR_Y = BRIDGE_UP_ANCHOR_Y + BRIDGE_FLIGHT_DEPTH - 1;
+/** The pavement row at the flight's foot, where a walker steps on and off. */
+export const BRIDGE_FOOT_Y = BRIDGE_DOWN_ANCHOR_Y + 1;
+
+/** The floor transition data (Tim's `world/transitions.ts` port): entering
+ * the stairwell cell on the street lands on the platform; entering the
+ * up-stairs' own anchor cell returns to the street, one cell beside the
+ * stairwell. The footbridge's are the same shape, one pair per column of its
+ * flight, one storey up. Never a boolean on the stairs prop -- a
+ * `floor_transition`-shaped row, anchor cell to target cell, exactly like the
+ * server's own model. */
+export const STREET_TRANSITIONS: readonly TransitionSpec[] = [
+  {
+    x: STAIRS_X,
+    y: STAIRS_Y,
+    floor: STREET_FLOOR,
+    targetX: PLATFORM_LANDING_X,
+    targetY: PLATFORM_LANDING_Y,
+    targetFloor: SUBWAY_FLOOR,
+  },
+  {
+    x: PLATFORM_UP_ANCHOR_X,
+    y: PLATFORM_UP_ANCHOR_Y,
+    floor: SUBWAY_FLOOR,
+    targetX: STREET_EXIT_X,
+    targetY: STREET_EXIT_Y,
+    targetFloor: STREET_FLOOR,
+  },
+  ...Array.from({ length: BRIDGE_FLIGHT_WIDTH }, (_, column) => BRIDGE_FLIGHT_X0 + column).flatMap(
+    (x): readonly TransitionSpec[] => [
+      {
+        x,
+        y: BRIDGE_UP_ANCHOR_Y,
+        floor: STREET_FLOOR,
+        targetX: x,
+        targetY: BRIDGE_UP_ANCHOR_Y,
+        targetFloor: BRIDGE_FLOOR,
+      },
+      {
+        x,
+        y: BRIDGE_DOWN_ANCHOR_Y,
+        floor: BRIDGE_FLOOR,
+        targetX: x,
+        targetY: BRIDGE_DOWN_ANCHOR_Y,
+        targetFloor: STREET_FLOOR,
+      },
+    ],
+  ),
+];
+
+/** The ownership areas the street's own `OwnershipIndex` is built from
+ * (mirrors `building_area` rows): each shop's whole footprint, walls
+ * included, on the floor(s) it actually occupies, and the platform's own
+ * footprint on floor -1, which is what lets its own front wall retract
+ * the same way a shop's does. Room ownership is not used this story
+ * (Tim's direction). No shop owns an upper storey here: `isStoreyAboveCulled`
+ * is proven directly, against synthetic drawables, in
+ * `visibility.test.ts` -- it does not need this fixture to carry one. */
+export const STREET_BUILDING_AREAS: readonly OwnershipArea[] = [
+  {
+    ownerId: SHOP_A_BUILDING_ID,
+    floor: 0,
+    rect: { x0: WEST_WALL_X, y0: NORTH_WALL_Y, x1: PARTY_WALL_X + 1, y1: SOUTH_WALL_Y + 1 },
+  },
+  {
+    ownerId: SHOP_B_BUILDING_ID,
+    floor: 0,
+    rect: { x0: PARTY_WALL_X + 1, y0: NORTH_WALL_Y, x1: EAST_WALL_X_B + 1, y1: SOUTH_WALL_Y + 1 },
+  },
+  {
+    ownerId: HOME_FLAT_BUILDING_ID,
+    floor: 0,
+    rect: {
+      x0: FLAT_WEST_WALL_X,
+      y0: FLAT_NORTH_WALL_Y,
+      x1: FLAT_EAST_WALL_X + 1,
+      y1: FLAT_SOUTH_WALL_Y + 1,
+    },
+  },
+  {
+    ownerId: PLATFORM_BUILDING_ID,
+    floor: SUBWAY_FLOOR,
+    rect: { x0: PLATFORM_X0, y0: PLATFORM_Y0, x1: PLATFORM_X1 + 1, y1: PLATFORM_Y1 + 1 },
+  },
+];
+
+export const STREET_ROOM_AREAS: readonly OwnershipArea[] = [];
+
+/** The street stairwell as its four `defs/objects` rows, anchored under
+ * its art (`x` the west column, `artY` the art's north row), top railing
+ * first. */
+function streetStairwellRows(
+  ids: readonly [bigint, bigint, bigint, bigint],
+  x: number,
+  artY: number,
+): readonly StreetPropByDef[] {
+  return STAIRWELL_ROWS.map(({ row, defId, layer }, index) => ({
+    id: ids[index] as bigint,
+    x,
+    y: artY + row,
+    floor: STREET_FLOOR,
+    layer,
+    defId,
+  }));
+}
+
+/** The street stairwell's placed rows. */
+export const STREET_STAIRWELL_ROWS: readonly StreetPropByDef[] = streetStairwellRows(
+  [50n, 53n, 56n, 54n],
+  STAIRWELL_X0,
+  STAIRWELL_Y0,
+);
+
+/** The platform stairwell's placed rows: the flat flight (the player's own
+ * footing, never drawn over them) and the upright railing along its south
+ * side, which carries its own collider. */
+export const PLATFORM_STAIRWELL_ROWS: readonly StreetPropByDef[] = [
+  {
+    id: 51n,
+    x: PLATFORM_FLIGHT_X0,
+    // Anchored on its south row: two cells deep, the walked row on top.
+    y: PLATFORM_UP_ANCHOR_Y + PLATFORM_FLIGHT_DEPTH - 1,
+    floor: SUBWAY_FLOOR,
+    layer: "ground_objects",
+    defId: PLATFORM_STAIR_FLIGHT_DEF_ID,
+  },
+  {
+    id: 55n,
+    x: PLATFORM_RAILING_X0,
+    y: PLATFORM_UP_ANCHOR_Y + 1,
+    floor: SUBWAY_FLOOR,
+    layer: "objects",
+    defId: PLATFORM_STAIR_RAILING_DEF_ID,
+  },
+];
+
+/** The id space `wallRun` hands to every cell after a run's first, kept
+ * clear of every hand-numbered row. */
+const WALL_RUN_CELL_ID_BASE = 1000n;
+
+/** The stable id of a wall run's `index`-th cell: the run's own `id` for
+ * the first, a derived one for each further cell. */
+export function wallRunCellId(id: bigint, index: number): bigint {
+  return index === 0 ? id : WALL_RUN_CELL_ID_BASE + id * 100n + BigInt(index);
+}
+
+/** A wall run as one placed def row per cell (`sprite` never repeats): a
+ * north or south run is `wall_face`, a west or east run `wall_segment`.
+ * `x`/`y` is the run's west end (horizontal) or south end (vertical); the
+ * run's first cell keeps `id`. */
+function wallRun(
+  id: bigint,
+  axis: "horizontal" | "vertical",
+  x: number,
+  y: number,
+  length: number,
+  floor: number,
+): readonly StreetProp[] {
+  return Array.from({ length }, (_, index) => ({
+    id: wallRunCellId(id, index),
+    x: axis === "horizontal" ? x + index : x,
+    y: axis === "horizontal" ? y : y - length + 1 + index,
+    floor,
+    layer: "walls" as const,
+    defId: axis === "horizontal" ? WALL_FACE_DEF_ID : WALL_SEGMENT_DEF_ID,
+  }));
+}
+
+/** The platform's own boundary wall ring -- a real, solid, drawn wall
+ * built from the subway pack's own tiled wall art (Artie's direction),
+ * near-side exactly where `render/visibility.ts`'s `isNearSideWall`
+ * predicate says it is (the front/south run) -- no special-casing here. */
+function platformWalls(): readonly StreetProp[] {
+  const walls: StreetProp[] = [
+    {
+      id: 60n,
+      assetKey: "subwayWall",
+      x: PLATFORM_X0,
+      y: PLATFORM_Y0,
+      floor: SUBWAY_FLOOR,
+      layer: "walls",
+      footprint: { width: PLATFORM_X1 - PLATFORM_X0 + 1, height: 1 },
+      solid: true,
+    },
+    {
+      id: 61n,
+      assetKey: "subwayWall",
+      x: PLATFORM_X0,
+      y: PLATFORM_Y1,
+      floor: SUBWAY_FLOOR,
+      layer: "walls",
+      footprint: { width: PLATFORM_X1 - PLATFORM_X0 + 1, height: 1 },
+      solid: true,
+    },
+    {
+      id: 62n,
+      assetKey: "subwayWall",
+      x: PLATFORM_X0,
+      y: PLATFORM_INTERIOR_Y1,
+      floor: SUBWAY_FLOOR,
+      layer: "walls",
+      footprint: { width: 1, height: PLATFORM_INTERIOR_Y1 - PLATFORM_INTERIOR_Y0 + 1 },
+      solid: true,
+    },
+    {
+      id: 63n,
+      assetKey: "subwayWall",
+      x: PLATFORM_X1,
+      y: PLATFORM_INTERIOR_Y1,
+      floor: SUBWAY_FLOOR,
+      layer: "walls",
+      footprint: { width: 1, height: PLATFORM_INTERIOR_Y1 - PLATFORM_INTERIOR_Y0 + 1 },
+      solid: true,
+    },
+  ];
+  return walls;
+}
+
+/** Every non-player prop in the fixture, fixed and hand-placed. Ids are
+ * small and sequential -- this is fixture data, not a live `object_id`
+ * sequence. */
+const STREET_PROP_LIST: StreetProp[] = [
+  // --- Shop A ----------------------------------------------------------
+  // North (back) wall: full width, never near-side (nothing owned by
+  // shop A sits south of it -- it is the interior itself).
+  ...wallRun(1n, "horizontal", WEST_WALL_X, NORTH_WALL_Y, PARTY_WALL_X - WEST_WALL_X + 1, 0),
+  // South (front) wall, west of the door -- also the SW corner pier where
+  // the west wall (id 4) meets the front run: full-height wall now
+  // (Artie's direction -- retraction exists, so the front facade is a
+  // full wall from outside, not a permanently short stub).
+  ...wallRun(2n, "horizontal", WEST_WALL_X, SOUTH_WALL_Y, DOOR_X_A - WEST_WALL_X, 0),
+  // The shop window (FR121): a real `defs/objects` wall tile, `window =
+  // true`, three cells wide starting right after the door -- its own def
+  // art (story 2.13: `ME_Singles_Office_16x16_Window_1_
+  // Middle_Modular.png`, 48x32px, the def's own `width = 3`) is exactly
+  // that many tiles wide, and `buildPropDrawables` reads that width
+  // straight off the def (Tim's direction, cycle 2), so the footprint can
+  // never fall out of step with the art again -- never overhanging over
+  // the door (Artie's direction). It stops one cell short of the party
+  // wall -- id 40 below is that last cell, a full wall pier, so the
+  // window never runs straight into the corner (Artie's cycle-2
+  // direction). Its collider comes from `defs/`, so it is placed by
+  // `defId` like the lamppost, never `solid: true`.
+  {
+    id: 6n,
+    x: WINDOW_X_A,
+    y: SOUTH_WALL_Y,
+    floor: 0,
+    layer: "walls",
+    defId: WINDOW_DEF_ID,
+  },
+  // West wall: the near/far occlusion worked example -- decomposed
+  // toward the camera (width 1, height 4).
+  ...wallRun(4n, "vertical", WEST_WALL_X, INTERIOR_Y1, INTERIOR_Y1 - INTERIOR_Y0 + 1, 0),
+  // The party wall shop A and shop B share, one cell thick (Artie's
+  // direction: no gap, no doubled wall) -- a side wall, so it is never
+  // near-side and never retracts for either shop.
+  ...wallRun(5n, "vertical", PARTY_WALL_X, INTERIOR_Y1, INTERIOR_Y1 - INTERIOR_Y0 + 1, 0),
+  // Shop A's own front-wall pier at the party-wall corner: the window
+  // (id 6) stops one cell short of it, so a full-height wall pier always
+  // separates the two shopfronts' glass, never a continuous glazed strip
+  // (Artie's cycle-2 direction). Owned by shop A (`STREET_BUILDING_AREAS`'s
+  // rect includes this column), so it retracts with the rest of shop A's
+  // front while the player is inside -- the same corner id 4/id 2 already
+  // form on the west side, just party-wall side.
+  ...wallRun(40n, "horizontal", PARTY_WALL_X, SOUTH_WALL_Y, 1, 0),
+  // Each shop's door: a one-cell threshold in the front wall line, so the
+  // opening reads as a doorway under a lintel rather than a hole. Placed on
+  // `walls` like the run it interrupts, so it retracts with it.
+  {
+    id: 150n,
+    x: DOOR_X_A,
+    y: SOUTH_WALL_Y,
+    floor: 0,
+    layer: "walls",
+    defId: THRESHOLD_ARCH_SLATE_DEF_ID,
+  },
+  {
+    id: 151n,
+    x: DOOR_X_B,
+    y: SOUTH_WALL_Y,
+    floor: 0,
+    layer: "walls",
+    defId: THRESHOLD_ARCH_SLATE_DEF_ID,
+  },
+
+  // A poster mounted flat on the north wall face (wall_decals, FR123's
+  // tens rank above `walls`).
+  {
+    id: 7n,
+    assetKey: "poster",
+    x: PARTY_WALL_X - 1,
+    y: NORTH_WALL_Y,
+    floor: 0,
+    layer: "wall_decals",
+  },
+
+  // The counter (FR125's worked example): real art is 48x64px, exactly
+  // 3 tiles wide -- `buildPropDrawables` reads that width straight off
+  // the def, never a hand-restated `footprint` (Tim's direction, cycle
+  // 2). Story 1.9: placed by `defId` rather than `solid`, so both its
+  // collider and its FR148 reach rect come from `defs/` -- the wide
+  // interaction target, reachable only from the customer side.
+  {
+    id: 8n,
+    x: INTERIOR_X0_A,
+    y: INTERIOR_Y0,
+    floor: 0,
+    layer: "furniture",
+    defId: SHOP_COUNTER_DEF_ID,
+  },
+
+  // A table with a glass on it, right behind the window (Artie's
+  // direction: visible from the pavement through the glass). Its
+  // footprint and collider are the art's own 32x32px (the bottom pixel
+  // row is transparent).
+  {
+    id: 9n,
+    assetKey: "table",
+    x: WINDOW_X_A,
+    y: INTERIOR_Y1,
+    floor: 0,
+    layer: "furniture",
+    footprint: { width: 2, height: 2 },
+    solid: true,
+    collider: { x0: 0, y0: 0, x1: 32, y1: 31 },
+  },
+  { id: 10n, assetKey: "glass", x: WINDOW_X_A, y: INTERIOR_Y1, floor: 0, layer: "objects" },
+
+  // The awning: no collider (FR128's worked example), on the pavement
+  // south of the door.
+  { id: 11n, assetKey: "awning", x: DOOR_X_A, y: SOUTH_WALL_Y + 1, floor: 0, layer: "objects" },
+
+  // Story 1.9's small interaction target (FR148): a real bin on the
+  // pavement, directly south of shop A's own door (story 15.2, cycle 2,
+  // Quentin's finding 3: this column is also where the scripted walk's
+  // own first segment now rests -- its real, art-backed collider replaces
+  // the old, undrawn `SHOPFRONT_EXIT_REST_COLLIDER`, immune to release
+  // lag the same way that invisible rect always was, `shopfrontExitRestY`'s
+  // own doc comment says so). Its collider and its `interact_at` both come
+  // from `defs/objects`'s own `trash_bin`. Story 2.13: the def's own
+  // sprite now names the street's own bin (`Small_Closed_Trash_Can.png`,
+  // Artie's direction), so this row draws through the atlas, never a
+  // `ModernTileset/` import of its own.
+  {
+    id: 15n,
+    x: DOOR_X_A,
+    y: SOUTH_WALL_Y + 1,
+    floor: 0,
+    layer: "objects",
+    defId: TRASH_BIN_DEF_ID,
+  },
+
+  // Story 6.10 (FR94): shop A's storage cupboard, on the back-wall cell
+  // beside the counter -- a container is an object that declares a grid;
+  // click it from within reach and its view opens above it.
+  {
+    id: CUPBOARD_PROP_ID,
+    x: 7,
+    y: 2,
+    floor: 0,
+    layer: "furniture",
+    defId: CUPBOARD_DEF_ID,
+  },
+
+  // The street lamp (story 1.8's known-solid rest point the scripted walk
+  // -- `streetWalkRoute` below -- and `drawables.test.ts` walk the player
+  // into): story 2.13 retargets this row to draw the def's own real
+  // `Street_Lamp_5` art (Artie's direction -- the def always named this
+  // sprite; the street itself was the one borrowing a picnic table over
+  // its pole collider) instead of borrowing `"table"`.
+  {
+    id: 14n,
+    x: LAMPPOST_CELL.x,
+    y: LAMPPOST_CELL.y,
+    floor: 0,
+    layer: "objects",
+    defId: LAMPPOST_DEF_ID,
+  },
+
+  // --- Shop B: a different business, different furniture (Artie's
+  // "grounded city" direction -- two copies of the same shop breaks it):
+  // a grocer, not a second tiki bar. No west wall prop of its own on
+  // either row: the party wall (id 5) closes its interior rows, id 40
+  // (above) closes its front row -- shop B's own door sits immediately
+  // east of that pier, so there is nothing left for a separate "west
+  // segment" prop to cover (cycle-2: `DOOR_X_B` moved from one cell east
+  // of `INTERIOR_X0_B` to the party-wall pier's own neighbour). ---
+  ...wallRun(30n, "horizontal", INTERIOR_X0_B, NORTH_WALL_Y, EAST_WALL_X_B - INTERIOR_X0_B + 1, 0),
+  // The window stops one cell short of the east wall -- id 41 below is
+  // that last cell, the same full-height corner pier shop A's own party
+  // wall side gets (id 40).
+  {
+    id: 32n,
+    x: WINDOW_X_B,
+    y: SOUTH_WALL_Y,
+    floor: 0,
+    layer: "walls",
+    defId: WINDOW_DEF_ID,
+  },
+  ...wallRun(34n, "vertical", EAST_WALL_X_B, INTERIOR_Y1, INTERIOR_Y1 - INTERIOR_Y0 + 1, 0),
+  // Shop B's own front-wall pier at its east corner, the mirror of shop
+  // A's own id 40 (Artie's cycle-2 direction).
+  ...wallRun(41n, "horizontal", EAST_WALL_X_B, SOUTH_WALL_Y, 1, 0),
+  // Shop B's own shelving (a grocery-store display, not a bar counter)
+  // and a produce basket -- different interior furniture from shop A's,
+  // right behind its own window. The shelf stands against the north wall;
+  // its collider is the art's own bottom row (`Grocery_Store_Singles_113`,
+  // x 6..26px). The basket is decoration.
+  {
+    id: 35n,
+    assetKey: "shelf",
+    x: INTERIOR_X0_B,
+    y: INTERIOR_Y0,
+    floor: 0,
+    layer: "furniture",
+    footprint: { width: 2, height: 1 },
+    solid: true,
+    collider: { x0: 6, y0: 0, x1: 26, y1: 16 },
+  },
+  { id: 36n, assetKey: "basket", x: WINDOW_X_B, y: INTERIOR_Y1, floor: 0, layer: "furniture" },
+
+  // --- The home flat (story 4.6): walls on four sides, a door in the front
+  // wall, a bed against the west wall. Ids 160-166 are its own.
+  ...wallRun(
+    160n,
+    "horizontal",
+    FLAT_WEST_WALL_X,
+    FLAT_NORTH_WALL_Y,
+    FLAT_EAST_WALL_X - FLAT_WEST_WALL_X + 1,
+    0,
+  ),
+  ...wallRun(
+    161n,
+    "vertical",
+    FLAT_WEST_WALL_X,
+    FLAT_INTERIOR_Y1,
+    FLAT_INTERIOR_Y1 - FLAT_INTERIOR_Y0 + 1,
+    0,
+  ),
+  ...wallRun(
+    162n,
+    "vertical",
+    FLAT_EAST_WALL_X,
+    FLAT_INTERIOR_Y1,
+    FLAT_INTERIOR_Y1 - FLAT_INTERIOR_Y0 + 1,
+    0,
+  ),
+  ...wallRun(163n, "horizontal", FLAT_WEST_WALL_X, FLAT_SOUTH_WALL_Y, 1, 0),
+  ...wallRun(
+    164n,
+    "horizontal",
+    FLAT_DOOR_X + 1,
+    FLAT_SOUTH_WALL_Y,
+    FLAT_EAST_WALL_X - FLAT_DOOR_X,
+    0,
+  ),
+  {
+    id: 165n,
+    x: FLAT_DOOR_X,
+    y: FLAT_SOUTH_WALL_Y,
+    floor: 0,
+    layer: "walls",
+    defId: THRESHOLD_ARCH_SLATE_DEF_ID,
+  },
+  {
+    id: 166n,
+    x: FLAT_INTERIOR_X0,
+    y: FLAT_INTERIOR_Y1,
+    floor: 0,
+    layer: "furniture",
+    defId: BED_SINGLE_BLUE_DEF_ID,
+  },
+
+  // --- The subway ---------------------------------------------------------
+  // The street stairwell (a real descending stairwell with railings,
+  // Artie's direction): four def rows -- the railings block their own
+  // row, the tread row is walkable from its east opening down to the down
+  // anchor.
+  ...STREET_STAIRWELL_ROWS,
+  // The same flight seen from the platform: its opening faces west and
+  // its treads rise toward the up anchor at the east wall.
+  ...PLATFORM_STAIRWELL_ROWS,
+  ...platformWalls(),
+  // The way-out sign on the platform's north wall face, above the
+  // up-stairs' anchor column.
+  {
+    id: 52n,
+    assetKey: "subwayArrowUp",
+    x: PLATFORM_UP_ANCHOR_X,
+    y: PLATFORM_Y0,
+    floor: SUBWAY_FLOOR,
+    layer: "wall_decals",
+  },
+  // At the platform's own west end, clear of the up-stairs sprite's own
+  // overhang (Artie's cycle-2 direction: the stairs, anchored at
+  // `PLATFORM_UP_ANCHOR_X`, were covering the bench almost completely
+  // when the two sat one cell apart).
+  // --- The footbridge (story 1.13) -------------------------------------
+  // The deck is flat on the ground, so it is on the flat pass like its def:
+  // on the y-sorted pool it would draw over the player standing on it.
+  // The deck itself: story 2.13 (Tim's direction) -- `bridge_deck` is a
+  // one-cell def (a real 16x16 pavement tile, the same city sidewalk tile
+  // the street below it is paved with), not a four-cell def with a
+  // `repeat` axis, so the deck is `BRIDGE_DECK_WIDTH` separate `defId`
+  // placements, one per column, the same shape the parapet just below
+  // already uses. Its "no collider at all" still comes from `defs/objects`
+  // rather than from this fixture choosing not to give it one.
+  ...Array.from({ length: BRIDGE_DECK_WIDTH }, (_, index) => ({
+    id: BigInt(65 + index),
+    x: BRIDGE_X0 + index,
+    y: BRIDGE_DECK_Y,
+    floor: BRIDGE_FLOOR,
+    layer: "ground_objects" as const,
+    defId: BRIDGE_DECK_DEF_ID,
+  })),
+  // The parapet along the deck's own north edge: real `wall_segment`
+  // cells, one per deck column. Owned by no building, so they are never
+  // retracted however close the player stands (FR120 is keyed on
+  // ownership, never proximity).
+  ...Array.from({ length: BRIDGE_DECK_WIDTH }, (_, index) => ({
+    id: BigInt(71 + index),
+    x: BRIDGE_X0 + index,
+    y: BRIDGE_DECK_Y - 1,
+    floor: BRIDGE_FLOOR,
+    layer: "walls" as const,
+    defId: WALL_SEGMENT_DEF_ID,
+  })),
+  // The one flight, at the deck's east end (story 15.19): the street's
+  // flight and the deck's, flat on the ground and anchored on the
+  // flight's bottom row, each two rows deep -- one front-on staircase on two
+  // floors. A walker is drawn over its treads on every frame.
+  {
+    id: 85n,
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_DOWN_ANCHOR_Y,
+    floor: STREET_FLOOR,
+    layer: "ground_objects",
+    defId: BRIDGE_STAIRS_STREET_DEF_ID,
+  },
+  {
+    id: 86n,
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_DOWN_ANCHOR_Y,
+    floor: BRIDGE_FLOOR,
+    layer: "ground_objects",
+    defId: BRIDGE_STAIRS_DECK_DEF_ID,
+  },
+  // The one staircase, drawn once, on the street floor: the treads where it
+  // is walked (flat, under the walker on both floors), and above them the
+  // abutment over the street cells the art covers on screen (drawn only: the
+  // solid thing on them is the deck's underside a storey up, so the street is
+  // open ground under it, except for the one face its last row's def keeps at
+  // the up-anchor's north edge). A riser line falls every 8 px from the foot
+  // to the deck.
+  ...Array.from({ length: BRIDGE_FLIGHT_DEPTH }, (_, index) => ({
+    id: BigInt(90 + index),
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_UP_ANCHOR_Y + index,
+    floor: STREET_FLOOR,
+    layer: "ground_objects" as const,
+    defId: BRIDGE_STAIRS_TREAD_DEF_ID,
+  })),
+  ...Array.from({ length: BRIDGE_ABUTMENT_ROWS }, (_, index) => ({
+    // 200.. -- the ids below 100 are taken, and 82 is the e2e world's
+    // cupboard (`CUPBOARD_PROP_ID`).
+    id: BigInt(200 + index),
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_UP_ANCHOR_Y - BRIDGE_ABUTMENT_ROWS + index,
+    floor: STREET_FLOOR,
+    layer: "objects" as const,
+    defId:
+      index === BRIDGE_ABUTMENT_ROWS - 1
+        ? BRIDGE_STAIRS_ABUTMENT_FOOT_DEF_ID
+        : BRIDGE_STAIRS_ABUTMENT_DEF_ID,
+  })),
+  // The street flight's west side: a post on each of its rows, so the flight
+  // is entered by its foot and the pavement beside it stays open (a body is
+  // wider than the gap between a post and the flight).
+  ...[BRIDGE_UP_ANCHOR_Y, BRIDGE_DOWN_ANCHOR_Y].map((y, index) => ({
+    id: BigInt(87 + index),
+    assetKey: "bollard",
+    x: BRIDGE_FLIGHT_X0 - 1,
+    y,
+    floor: STREET_FLOOR,
+    layer: "objects" as const,
+    solid: true as const,
+    collider: BRIDGE_POST_COLLIDER,
+  })),
+
+  {
+    id: 64n,
+    assetKey: "subwayBench",
+    x: PLATFORM_INTERIOR_X0,
+    y: PLATFORM_INTERIOR_Y0,
+    floor: SUBWAY_FLOOR,
+    layer: "furniture",
+    footprint: { width: 2, height: 1 },
+    solid: true,
+  },
+
+  // --- Street furniture ----------------------------------------------------
+  // A doormat and manhole covers are underfoot decoration (no collider); a
+  // bollard is a real post, collided by its own base (`BOLLARD_COLLIDER`).
+  // The doormat is at shop B's door because nothing upright stands on that
+  // cell: an upright prop on a flat object's cell hides it, so a flat object
+  // that needs to be seen is never placed under one.
+  {
+    id: 120n,
+    assetKey: "doormat",
+    x: DOOR_X_B,
+    y: SOUTH_WALL_Y + 1,
+    floor: STREET_FLOOR,
+    layer: "ground_objects",
+  },
+  // A bollard on the pavement, west of the shopfront, off every scripted
+  // walk's path.
+  {
+    id: 121n,
+    assetKey: "bollard",
+    x: WEST_WALL_X - 1,
+    y: SOUTH_WALL_Y + 1,
+    floor: STREET_FLOOR,
+    layer: "objects",
+    solid: true,
+    collider: BOLLARD_COLLIDER,
+  },
+  // A manhole cover on the pavement crossing -- decoration only.
+  {
+    id: 116n,
+    assetKey: "manhole",
+    x: BRIDGE_UNDER_CURB_X,
+    y: LAMPPOST_CELL.y,
+    floor: STREET_FLOOR,
+    layer: "ground_objects",
+  },
+  // A bollard at the underpass column's north end, on the pavement's
+  // north strip: the underpass checkpoint's row rest.
+  {
+    id: 122n,
+    assetKey: "bollard",
+    x: BRIDGE_UNDER_CURB_X,
+    y: SOUTH_WALL_Y,
+    floor: STREET_FLOOR,
+    layer: "objects",
+    solid: true,
+    collider: BOLLARD_COLLIDER,
+  },
+  // A manhole cover on the underpass row (decoration), and the support
+  // pillar under the deck, a real bollard: the checkpoint's column rest.
+  {
+    id: 117n,
+    assetKey: "manhole",
+    x: BRIDGE_UNDER_CURB_X,
+    y: BRIDGE_DECK_Y,
+    floor: STREET_FLOOR,
+    layer: "ground_objects",
+  },
+  {
+    id: 118n,
+    assetKey: "bollard",
+    x: BRIDGE_UNDER_PILLAR_X,
+    y: BRIDGE_DECK_Y,
+    floor: STREET_FLOOR,
+    layer: "objects",
+    solid: true,
+    collider: BOLLARD_COLLIDER,
+  },
+  // A second manhole cover, one row south and one column west of the pillar
+  // (the post beside the flight stands on the cell south of it), for leaving
+  // the underpass again -- decoration only.
+  {
+    id: 119n,
+    assetKey: "manhole",
+    x: BRIDGE_UNDER_PILLAR_X - 1,
+    y: BRIDGE_UNDER_EXIT_Y,
+    floor: STREET_FLOOR,
+    layer: "ground_objects",
+  },
+];
+
+export const STREET_PROPS: readonly StreetProp[] = STREET_PROP_LIST;
+
+/** Adds one prop to the street before it mounts. Throwaway harness only: the
+ * link offer's carrier (story 4.5) is placed this way, once per session,
+ * when the offer is due -- the fixture itself stays the fixed layout every
+ * spec and baseline reads. */
+export function placeExtraStreetProp(prop: StreetProp): void {
+  STREET_PROP_LIST.push(prop);
+}
+
+/** A collider-only rect, in whole cells, with no sprite and no place in
+ * the depth-sorted pool. `x`/`y` is the anchor cell -- the rect's
+ * smallest x, largest y cell (the object-def anchor convention every
+ * `PlacedObject` shares), not its top-left: it extends east and north
+ * from there. */
+export interface StreetBoundaryRect {
+  readonly id: bigint;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  /** Which floor this stretch of edge closes. Defaults to the street
+   * (`STREET_FLOOR`); the footbridge's own deck needs its own ring one
+   * storey up, since a floor's collision never reaches another (FR117). */
+  readonly floor?: number;
+  /** A sub-cell collider (`COLLIDER_SUBCELLS_PER_CELL` per cell,
+   * relative to the anchor cell's top-left); defaults to the whole rect.
+   * Only the footbridge's south rail (id 110) declares one: a walker
+   * pressed against a whole-cell rail would rest exactly on the deck row's
+   * southern boundary, which reads as the row past it. */
+  readonly collider?: {
+    readonly x0: number;
+    readonly y0: number;
+    readonly x1: number;
+    readonly y1: number;
+  };
+}
+
+/** Where a real player must be able to walk to from the arrival flat, on
+ * floor 0 (FR117): the cell in front of each shop's door, and the street
+ * stairwell's anchor (entering it descends to the subway). One list, read by
+ * the reachability unit test and the arrival e2e walk. */
+export const ARRIVAL_DESTINATIONS = [
+  { name: "the front of shop B", x: DOOR_X_B, y: SHOPFRONT_EXIT_Y, arrive: "stand" },
+  { name: "the front of shop A", x: DOOR_X_A, y: SHOPFRONT_EXIT_Y, arrive: "stand" },
+  { name: "the subway stairwell", x: STAIRS_X, y: STAIRS_Y, arrive: "descend" },
+] as const;
+/** One of [`ARRIVAL_DESTINATIONS`]: `stand` is reached by standing in the cell,
+ * `descend` by walking into the anchor, which changes floor. */
+export type ArrivalDestination = (typeof ARRIVAL_DESTINATIONS)[number];
+
+/** The edge of the drawn world (FR137 has no world-boundary concept yet):
+ * a closed ring of solid, undrawn cells around every street ground pass,
+ * so the avatar can never walk off the ground into the void. Every cell
+ * of it lies outside every drawn ground pass on its floor. The shops'
+ * walls and the stairwell's railings close the rest of the ring;
+ * `drawables.test.ts` proves it closed by walking the real resolver
+ * against it. The platform (floor -1) is closed by its own walls. */
+export const STREET_BOUNDARY: readonly StreetBoundaryRect[] = [
+  // West and east of the pavement (anchored at the span's south end); the
+  // east edge runs on past the pavement to the flight's foot row.
+  { id: 101n, x: 0, y: PAVEMENT_Y1 + 1, width: 1, height: 4 },
+  // North of the pavement, west of shop A: the span between the west edge and
+  // the shop's west wall.
+  { id: 138n, x: 1, y: SOUTH_WALL_Y - 1, width: WEST_WALL_X - 1, height: 1 },
+  {
+    id: 102n,
+    x: 21,
+    y: BRIDGE_FOOT_Y,
+    width: 1,
+    height: BRIDGE_FOOT_Y - BRIDGE_UP_ANCHOR_Y + 1,
+  },
+  // The extended pavement's own edges: east, and south of it.
+  {
+    id: 106n,
+    x: FLAT_EAST_WALL_X + 1,
+    y: PAVEMENT_Y1,
+    width: 1,
+    height: PAVEMENT_Y1 - SOUTH_WALL_Y + 1,
+  },
+  { id: 107n, x: 22, y: PAVEMENT_Y1 + 1, width: FLAT_EAST_WALL_X + 1 - 22 + 1, height: 1 },
+  // South of the pavement, west of the stairwell: the finial row and the
+  // top railing's own row (the railing collides at its foot only, so a
+  // body can walk along its open strip and out past the well's west end).
+  { id: 103n, x: 0, y: STAIRWELL_Y0 + 1, width: STAIRWELL_X0, height: 2 },
+  // North of the pavement, east of the terrace.
+  // East of the terrace, up to the home flat's own front wall.
+  {
+    id: 105n,
+    x: EAST_WALL_X_B + 1,
+    y: SOUTH_WALL_Y - 1,
+    width: 21 - (EAST_WALL_X_B + 1) + 1,
+    height: 1,
+  },
+  // Around the subway entrance: west of the treads and below the entrance
+  // cells. East of them the pavement runs on, along the footbridge flight's
+  // foot row; its south edge is closed below.
+  { id: 130n, x: STAIRWELL_X0 - 1, y: STAIRS_Y, width: 1, height: 1 },
+  {
+    id: 132n,
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_FOOT_Y + 1,
+    width: BRIDGE_FLIGHT_WIDTH,
+    height: 1,
+  },
+  {
+    id: 133n,
+    x: SUBWAY_ENTRANCE_X0,
+    y: STAIRS_Y + 1,
+    width: SUBWAY_ENTRANCE_X1 - SUBWAY_ENTRANCE_X0 + 1,
+    height: 1,
+  },
+  // The footbridge's own ring, one storey up: the deck and its flight are the
+  // only standable things on `BRIDGE_FLOOR`. Its north side is the parapet.
+  // The south rail is solid across its last two sub-cells only, so a
+  // walker leaning on it stays inside the deck's own row (see
+  // `collider` above); it opens across the flight's columns.
+  {
+    id: 110n,
+    x: BRIDGE_X0 - 1,
+    y: BRIDGE_DECK_Y,
+    width: BRIDGE_FLIGHT_X0 - (BRIDGE_X0 - 1),
+    height: 1,
+    floor: BRIDGE_FLOOR,
+    collider: { x0: 0, y0: 14, x1: (BRIDGE_FLIGHT_X0 - (BRIDGE_X0 - 1)) * 16, y1: 16 },
+  },
+  // Either side of the deck's flight and below it.
+  {
+    id: 134n,
+    x: BRIDGE_FLIGHT_X0 - 1,
+    y: BRIDGE_DOWN_ANCHOR_Y,
+    width: 1,
+    height: BRIDGE_FLIGHT_DEPTH,
+    floor: BRIDGE_FLOOR,
+    // Closed along the posts' own east edge (see `BRIDGE_POST_COLLIDER`): a
+    // body that lands on this floor at the position it left the street is clear.
+    collider: { x0: 0, y0: 0, x1: BRIDGE_POST_COLLIDER.x1, y1: BRIDGE_FLIGHT_DEPTH * 16 },
+  },
+  {
+    id: 135n,
+    x: BRIDGE_X1 + 1,
+    y: BRIDGE_DOWN_ANCHOR_Y,
+    width: 1,
+    height: BRIDGE_FLIGHT_DEPTH,
+    floor: BRIDGE_FLOOR,
+  },
+  {
+    id: 136n,
+    x: BRIDGE_FLIGHT_X0,
+    y: BRIDGE_FOOT_Y,
+    width: BRIDGE_FLIGHT_WIDTH,
+    height: 1,
+    floor: BRIDGE_FLOOR,
+  },
+  { id: 111n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
+  { id: 112n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y, width: 1, height: 1, floor: BRIDGE_FLOOR },
+  { id: 113n, x: BRIDGE_X0 - 1, y: BRIDGE_DECK_Y - 1, width: 1, height: 1, floor: BRIDGE_FLOOR },
+  { id: 114n, x: BRIDGE_X1 + 1, y: BRIDGE_DECK_Y - 1, width: 1, height: 1, floor: BRIDGE_FLOOR },
+] as const;
+
+/** One flat-pass ground tile group (FR123: three flat passes before the
+ * sorted pool) -- never depth-sorted, painted once in a fixed grid. Story
+ * 1.7: carries its own `floor` so `scene.ts` can cull it the same way
+ * every other drawable is culled (FR122), through `render/pixi-
+ * visibility.ts`'s `VisibilityApplier`, never a second, ad hoc rule. */
+export type StreetGroundTiles = StreetGroundRect &
+  ({ readonly assetKey: string } | { readonly defId: number });
+
+interface StreetGroundRect {
+  readonly floor: number;
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+/** Label of a ground group, for failure messages. */
+export function groundTilesLabel(tiles: StreetGroundTiles): string {
+  return "assetKey" in tiles ? tiles.assetKey : `def:${tiles.defId}`;
+}
+
+/** Interior floor and exterior pavement are two distinct textures
+ * (Artie's direction: there must be an inside); the platform's own floor
+ * and edge strip are two more, from the subway pack, never the shops'
+ * `floor` crop (Artie's direction: it must read as somewhere new). */
+export const INTERIOR_FLOOR_TILES: StreetGroundTiles = {
+  defId: FLOOR_PALE_STONE_DEF_ID,
+  floor: STREET_FLOOR,
+  x0: WEST_WALL_X,
+  y0: NORTH_WALL_Y,
+  x1: PARTY_WALL_X + 1,
+  y1: SOUTH_WALL_Y,
+};
+
+export const INTERIOR_FLOOR_TILES_FLAT: StreetGroundTiles = {
+  defId: FLOOR_PALE_STONE_DEF_ID,
+  floor: STREET_FLOOR,
+  x0: FLAT_INTERIOR_X0,
+  y0: FLAT_INTERIOR_Y0,
+  x1: FLAT_INTERIOR_X1 + 1,
+  y1: FLAT_SOUTH_WALL_Y,
+};
+
+/** The flat's door sill is the flat's own floor. */
+export const DOOR_SILL_TILES_FLAT: StreetGroundTiles = {
+  defId: FLOOR_PALE_STONE_DEF_ID,
+  floor: STREET_FLOOR,
+  x0: FLAT_DOOR_X,
+  y0: FLAT_SOUTH_WALL_Y,
+  x1: FLAT_DOOR_X + 1,
+  y1: FLAT_SOUTH_WALL_Y + 1,
+};
+
+export const INTERIOR_FLOOR_TILES_B: StreetGroundTiles = {
+  defId: FLOOR_PALE_STONE_DEF_ID,
+  floor: STREET_FLOOR,
+  x0: PARTY_WALL_X + 1,
+  y0: NORTH_WALL_Y,
+  x1: EAST_WALL_X_B + 1,
+  y1: SOUTH_WALL_Y,
+};
+
+/** The sill of each shop door is the shop's floor, not the pavement that
+ * runs under the front wall row. */
+export const DOOR_SILL_TILES_A: StreetGroundTiles = {
+  defId: FLOOR_PALE_STONE_DEF_ID,
+  floor: STREET_FLOOR,
+  x0: DOOR_X_A,
+  y0: SOUTH_WALL_Y,
+  x1: DOOR_X_A + 1,
+  y1: SOUTH_WALL_Y + 1,
+};
+
+export const DOOR_SILL_TILES_B: StreetGroundTiles = {
+  defId: FLOOR_PALE_STONE_DEF_ID,
+  floor: STREET_FLOOR,
+  x0: DOOR_X_B,
+  y0: SOUTH_WALL_Y,
+  x1: DOOR_X_B + 1,
+  y1: SOUTH_WALL_Y + 1,
+};
+
+/** The pavement: every standable street row south of the terrace. */
+export const SIDEWALK_TILES: StreetGroundTiles = {
+  assetKey: "sidewalk",
+  floor: STREET_FLOOR,
+  x0: 1,
+  y0: SOUTH_WALL_Y,
+  x1: 21,
+  y1: PAVEMENT_Y1 + 1,
+};
+
+/** The pavement the home flat's door opens onto: the two rows that join the
+ * street's first stretch to it past the footbridge's flight, and the stretch
+ * itself. */
+export const SIDEWALK_TILES_FLAT_APPROACH: StreetGroundTiles = {
+  assetKey: "sidewalk",
+  floor: STREET_FLOOR,
+  x0: 21,
+  y0: SOUTH_WALL_Y,
+  x1: 22,
+  y1: BRIDGE_DECK_Y + 1,
+};
+
+export const SIDEWALK_TILES_FLAT: StreetGroundTiles = {
+  assetKey: "sidewalk",
+  floor: STREET_FLOOR,
+  x0: 22,
+  y0: SOUTH_WALL_Y,
+  x1: FLAT_EAST_WALL_X + 1,
+  y1: PAVEMENT_Y1 + 1,
+};
+
+/** The subway entrance: the paving under the stairwell down to its tread
+ * row, and the entrance cells east of it. */
+export const SUBWAY_ENTRANCE_TILES: StreetGroundTiles = {
+  assetKey: "sidewalk",
+  floor: STREET_FLOOR,
+  x0: STAIRWELL_X0,
+  y0: STAIRWELL_Y0,
+  x1: SUBWAY_ENTRANCE_X1 + 1,
+  y1: STAIRS_Y + 1,
+};
+
+/** The flight's foot row, east of the subway entrance: the pavement a walker
+ * steps on and off the footbridge's stairs from. */
+export const BRIDGE_FOOT_TILES: StreetGroundTiles = {
+  assetKey: "sidewalk",
+  floor: STREET_FLOOR,
+  x0: BRIDGE_FLIGHT_X0,
+  y0: BRIDGE_FOOT_Y,
+  x1: BRIDGE_X1 + 1,
+  y1: BRIDGE_FOOT_Y + 1,
+};
+
+/** The platform's own floor pass, floor -1 -- Artie's direction: what
+ * surrounds it is plain black (nothing drawn), never a texture, so this
+ * pass paints only the interior the walls enclose, one row short of the
+ * front wall to leave room for the edge strip below. */
+export const PLATFORM_FLOOR_TILES: StreetGroundTiles = {
+  assetKey: "subwayFloor",
+  floor: SUBWAY_FLOOR,
+  x0: PLATFORM_INTERIOR_X0,
+  y0: PLATFORM_INTERIOR_Y0,
+  x1: PLATFORM_INTERIOR_X1 + 1,
+  y1: PLATFORM_INTERIOR_Y1,
+};
+
+/** The platform's own hazard-striped edge, one row along its front wall
+ * (Artie's "a platform edge strip") -- from the subway pack, distinct
+ * from the plain floor tile either side of it. */
+export const PLATFORM_EDGE_TILES: StreetGroundTiles = {
+  assetKey: "subwayEdge",
+  floor: SUBWAY_FLOOR,
+  x0: PLATFORM_INTERIOR_X0,
+  y0: PLATFORM_INTERIOR_Y1,
+  x1: PLATFORM_INTERIOR_X1 + 1,
+  y1: PLATFORM_INTERIOR_Y1 + 1,
+};
+
+/** Every ground tile group `scene.ts` paints, in pass order -- the one
+ * list both the mount code and any future ground-visibility test walk,
+ * so a new group is never forgotten in one place. */
+export const STREET_GROUND_TILES: readonly StreetGroundTiles[] = [
+  INTERIOR_FLOOR_TILES,
+  INTERIOR_FLOOR_TILES_B,
+  INTERIOR_FLOOR_TILES_FLAT,
+  SIDEWALK_TILES,
+  SIDEWALK_TILES_FLAT_APPROACH,
+  SIDEWALK_TILES_FLAT,
+  DOOR_SILL_TILES_A,
+  DOOR_SILL_TILES_B,
+  DOOR_SILL_TILES_FLAT,
+  SUBWAY_ENTRANCE_TILES,
+  BRIDGE_FOOT_TILES,
+  PLATFORM_FLOOR_TILES,
+  PLATFORM_EDGE_TILES,
+];
+
+/** The street's own collider sources, keyed by the synthetic def id
+ * `streetDefId` mints: every solid asset prop's collider and the world
+ * boundary. Anything placed by `defId` is read from `defs/` instead.
+ * `subcellsPerCell` comes from the scene, which reads it from `defs/`. */
+export function streetColliderSources(
+  subcellsPerCell: number,
+): ReadonlyMap<number, ColliderSource> {
+  const sources = new Map<number, ColliderSource>();
+  for (const prop of STREET_PROPS) {
+    if (isDefStreetProp(prop) || !prop.solid) continue;
+    const { width, height } = prop.footprint ?? { width: 1, height: 1 };
+    sources.set(streetDefId(prop.id), {
+      width,
+      height,
+      collider: prop.collider ?? {
+        x0: 0,
+        y0: 0,
+        x1: width * subcellsPerCell,
+        y1: height * subcellsPerCell,
+      },
+    });
+  }
+  for (const rect of STREET_BOUNDARY) {
+    sources.set(streetDefId(rect.id), {
+      width: rect.width,
+      height: rect.height,
+      collider: rect.collider ?? {
+        x0: 0,
+        y0: 0,
+        x1: rect.width * subcellsPerCell,
+        y1: rect.height * subcellsPerCell,
+      },
+    });
+  }
+  return sources;
+}
+
+/** Every collider-bearing placement the street feeds the grid, shaped like
+ * the generated `PlacedObject` binding: the props that declare `defId` or
+ * `solid`, and the undrawn boundary ring. */
+export function streetPlacedRows(): readonly PlacedObject[] {
+  const rows: PlacedObject[] = [];
+  const row = (
+    objectId: bigint,
+    defId: number,
+    x: number,
+    y: number,
+    floor: number,
+    layer: number,
+  ) => rows.push({ objectId, defId, x, y, floor, layer, orientation: 0, chunkKey: 0n });
+  for (const prop of STREET_PROPS) {
+    // The real layer code: story 1.9's footprint index resolves an FR123
+    // rank from it, which decides which of two objects sharing a cell a
+    // click lands on.
+    const layer = layerCodeByName(prop.layer);
+    if (isDefStreetProp(prop)) {
+      row(prop.id, prop.defId, prop.x, prop.y, prop.floor, layer);
+      continue;
+    }
+    if (!prop.solid) continue;
+    row(prop.id, streetDefId(prop.id), prop.x, prop.y, prop.floor, layer);
+  }
+  for (const rect of STREET_BOUNDARY) {
+    row(rect.id, streetDefId(rect.id), rect.x, rect.y, rect.floor ?? STREET_FLOOR, 0);
+  }
+  return rows;
+}
+
+/** A `StreetProp`'s own width, whichever variant it is (story 2.13, Tim's
+ * direction, cycle 2): a `defId` row's own width is read from the
+ * resolved def, never a hand-restated `footprint` it cannot carry;
+ * `objectDefs` is the same shape `buildPropDrawables` already takes
+ * (`world/object-defs.ts`'s `objectDefsById`, or the committed
+ * `defs.json` in a test). Throws naming the def when `objectDefs` has no
+ * entry for it. */
+function streetPropWidth(
+  prop: StreetProp,
+  objectDefs: ReadonlyMap<number, { readonly width: number; readonly height: number }>,
+): number {
+  if (!isDefStreetProp(prop)) return prop.footprint?.width ?? 1;
+  const source = objectDefs.get(prop.defId);
+  if (!source) {
+    throw new Error(`streetPropWidth: objectDefs has no entry for defId ${prop.defId}`);
+  }
+  return source.width;
+}
+
+/** Every `furniture` prop that sits directly behind some window wall tile
+ * (a real `defs/objects` entry with `window = true`, placed by
+ * `WINDOW_DEF_ID`): the same floor, strictly north of that window's own
+ * row, and horizontally overlapping its footprint width. This is the
+ * exact geometric fact FR121's "furniture is visible through a
+ * translucent window" rests on -- computed once from the real prop list,
+ * never a hand-typed id list and never every floor-0 furniture prop
+ * regardless of whether a window is actually in front of it, so this set
+ * can never pass vacuously and a re-laid street that drops the case fails
+ * here rather than only looking wrong on screen. `objectDefs` resolves
+ * both the window's and a `defId`-placed furniture prop's (the counter)
+ * own real width -- see [`streetPropWidth`]. */
+export function furnitureBehindWindows(
+  objectDefs: ReadonlyMap<number, { readonly width: number; readonly height: number }>,
+): readonly bigint[] {
+  const windows = STREET_PROPS.filter(
+    (prop) => isDefStreetProp(prop) && prop.defId === WINDOW_DEF_ID,
+  );
+  const ids = new Set<bigint>();
+  for (const prop of STREET_PROPS) {
+    if (prop.layer !== "furniture") continue;
+    const propWidth = streetPropWidth(prop, objectDefs);
+    for (const window of windows) {
+      if (prop.floor !== window.floor) continue;
+      if (prop.y >= window.y) continue;
+      const windowWidth = streetPropWidth(window, objectDefs);
+      const overlaps = prop.x < window.x + windowWidth && window.x < prop.x + propWidth;
+      if (overlaps) {
+        ids.add(prop.id);
+        break;
+      }
+    }
+  }
+  return [...ids];
+}
+
+// --- the scripted walk (story 1.13) -------------------------------------
+//
+// One route, declared once, here with the geometry it walks (Quentin's
+// direction): `tests/unit/test-street/street-conformance.test.ts` walks it
+// against the real `world/floor-walk.ts` resolver to prove it is
+// collision-feasible at all, and `tests/e2e/test-street.spec.ts` walks the
+// identical list through real `page.keyboard` input. Neither restates a
+// coordinate, so Epic 3 swapping this street's data keeps both.
+
+/** One held movement key, in the same `KeyboardEvent.code`-shaped names
+ * the default bindings use -- never a raw direction vector, because the
+ * e2e walk must go through the real keybindings, not around them. */
+export type StreetWalkKey = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight";
+
+/** When to let a held key go. Declarative on purpose: the same value is
+ * evaluated in node (against a simulated step) and inside the page
+ * (against `window.__bc.playerPosition`/`playerFloor`), so neither side
+ * needs a fixed wait. */
+export type StreetWalkUntil =
+  | { readonly kind: "x-at-least"; readonly value: number }
+  | { readonly kind: "x-at-most"; readonly value: number }
+  | { readonly kind: "y-at-least"; readonly value: number }
+  | { readonly kind: "y-at-most"; readonly value: number }
+  | { readonly kind: "floor"; readonly value: number }
+  /** Arrival at a specific cell, never a coordinate threshold (story
+   * 15.2, Quentin's finding 3): "tests never shape the world" -- a segment
+   * whose own rest collider was an undrawn boundary rect (removed this
+   * story) releases on reaching the real open cell instead, the same way
+   * a real player just walking normally would notice they arrived,
+   * rather than leaning on a phantom collider nobody drew. Never as
+   * precise as a real collider rest (the exact sub-cell position within
+   * the cell is whatever the approach happened to land on), which is
+   * exactly why a segment that still has a real collider to rest against
+   * keeps using one instead. */
+  | { readonly kind: "cell"; readonly x: number; readonly y: number };
+
+export interface StreetWalkSegment {
+  /** The checkpoint this segment ends at -- what the e2e spec asserts
+   * against by name, so a reordered route can never silently assert the
+   * wrong thing at the wrong place. */
+  readonly label: string;
+  readonly key: StreetWalkKey;
+  readonly until: StreetWalkUntil;
+}
+
+/** The most a scripted walk may rest past its release condition: the tick
+ * that crossed it plus `releaseLagSteps` more, each at the resolver's own
+ * delta clamp. The e2e walk helper fails any axis-threshold segment that
+ * rests further past its threshold, and the unit feasibility tests
+ * simulate every walked route at this lag. Measured on the runner (run
+ * 37139923845, attempts 1 to 3, 424 walks): the worst rest past a threshold
+ * was 0.881 clamped steps, and no frame moved after a release. */
+export { RELEASE_LAG } from "../e2e/walk-types";
+
+/** Whether a held key's own release condition is met, for a walker at
+ * `(x, y)` on `floor`. The one rule both the simulated and the real walk
+ * use. */
+export function streetWalkUntilMet(
+  until: StreetWalkUntil,
+  x: number,
+  y: number,
+  floor: number,
+): boolean {
+  switch (until.kind) {
+    case "x-at-least":
+      return x >= until.value;
+    case "x-at-most":
+      return x <= until.value;
+    case "y-at-least":
+      return y >= until.value;
+    case "y-at-most":
+      return y <= until.value;
+    case "floor":
+      return floor === until.value;
+    case "cell": {
+      const cell = bodyCell({ x, y });
+      return cell.x === until.x && cell.y === until.y;
+    }
+  }
+}
+
+/** The direction a held key walks in -- the same mapping the default
+ * keybindings produce, restated here only so the *simulated* walk can run
+ * without a DOM (`input/keyboard.ts` needs real key events). */
+export const STREET_WALK_DIRECTIONS: Readonly<Record<StreetWalkKey, { x: number; y: number }>> = {
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+};
+
+export interface StreetWalkInputs {
+  /** The top face of the trash bin's own base collider, directly south of
+   * shop A's door. */
+  readonly shopfrontExitRestY: number;
+  /** The first column whose body overlaps the lamppost's own base
+   * collider -- a waypoint, leaving the whole overlap window for release
+   * lag. */
+  readonly lamppostApproachX: number;
+  /** The top face of the lamppost's own base collider. */
+  readonly lamppostRestY: number;
+  /** The first column whose body overlaps the underpass bollard's own
+   * collider -- a waypoint, leaving the whole overlap window for release
+   * lag. */
+  readonly underpassTurnX: number;
+  /** Against the underpass bollard's own south face: the deck's row. */
+  readonly onUnderpassRowY: number;
+  /** Against the support pillar's own west face (`BOLLARD_COLLIDER`). */
+  readonly bridgeUnderRestX: number;
+  /** The first `y` in `BRIDGE_UNDER_EXIT_Y` whose body clears the
+   * pillar's own row. */
+  readonly bridgeUnderExitClearY: number;
+  /** The first `y` in the stairwell's tread row whose body clears its
+   * upper railing -- the row a walker can walk west along into the
+   * stairs. */
+  readonly subwayTreadRowY: number;
+  /** The top face of the stairwell's near railing's own collider: where a
+   * body pressed south on the tread row comes to rest. */
+  readonly nearRailingRestY: number;
+  /** The top face of the platform flight's railing collider: where a body
+   * pressed south on the platform's tread row comes to rest. */
+  readonly platformWallRestY: number;
+}
+
+/** Out of shop A's door, onto the pavement and past the lamppost: the
+ * opening every scripted route shares. */
+function shopToPastTheLamppost(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
+  return [
+    // Out of the door, onto the pavement, resting on the bin.
+    {
+      label: "outside-the-shopfront",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.shopfrontExitRestY },
+    },
+    // East to a waypoint overlapping the lamppost's own collider.
+    {
+      label: "east-to-the-lamppost",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: inputs.lamppostApproachX },
+    },
+    // Into the lamppost, resting on its own base collider part-way into
+    // its cell.
+    {
+      label: "part-way-through-the-lamppost",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.lamppostRestY },
+    },
+    // East, clear of the lamppost's own collider.
+    {
+      label: "past-the-lamppost",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: LAMPPOST_CELL.x + 1 },
+    },
+  ];
+}
+
+/**
+ * The scripted walk, in order. It leaves shop A by its door (the
+ * enclosure case), rests part-way through the lamppost (the
+ * pass-partly-through case: inside the footprint, outside the collider),
+ * crosses *under* the bridge deck (the two-floors-at-one-`(x, y)` case),
+ * climbs onto the deck by its stairs (the transition case), walks the
+ * deck's own multi-cell span, and comes back down to the street.
+ *
+ * Every release is a collider rest, a cell arrival, a floor, or a
+ * threshold whose next segment tolerates the crossing tick plus one more
+ * at the resolver's own delta clamp.
+ */
+export function streetWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
+  return [
+    ...shopToPastTheLamppost(inputs),
+    // East along the lamppost's row to a waypoint overlapping the
+    // underpass bollard's own collider.
+    {
+      label: "east-along-the-crossing",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: inputs.underpassTurnX },
+    },
+    // North onto the row the bridge deck spans, resting on that bollard.
+    {
+      label: "on-the-underpass-row",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: inputs.onUnderpassRowY },
+    },
+    // East under the deck, resting on the support pillar: strictly inside
+    // the deck's own span, beneath the drawn deck.
+    {
+      label: "under-the-bridge",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: inputs.bridgeUnderRestX },
+    },
+    // South off the underpass row, clear of the pillar's own row.
+    {
+      label: "leaving-the-underpass",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.bridgeUnderExitClearY },
+    },
+    // South to the flight's foot row, then east along it to the flight.
+    {
+      label: "south-to-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+    {
+      label: "east-of-the-bridge",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_FLIGHT_X0 + 0.35 },
+    },
+    // Up the flight; entering its top row climbs onto the deck.
+    {
+      label: "on-the-bridge-deck",
+      key: "ArrowUp",
+      until: { kind: "floor", value: BRIDGE_FLOOR },
+    },
+    // Along the deck to its west end, back to the flight's column, and down.
+    {
+      label: "along-the-deck",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
+    },
+    {
+      label: "west-along-the-deck",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
+    },
+    {
+      label: "east-along-the-deck",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
+    {
+      label: "back-on-the-street",
+      key: "ArrowDown",
+      until: { kind: "floor", value: STREET_FLOOR },
+    },
+    {
+      label: "off-onto-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+  ];
+}
+
+/** From shop A to the subway platform, the demo's own way in: past the
+ * lamppost, into the subway entrance, then left (west) down the treads. */
+export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
+  return [
+    ...shopToPastTheLamppost(inputs),
+    // East into the entrance's own columns, the body clear of both sides.
+    {
+      label: "east-to-the-subway-entrance",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+    },
+    // South to the tread row.
+    {
+      label: "onto-the-subway-treads-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.subwayTreadRowY },
+    },
+    // West down the treads to the down anchor.
+    {
+      label: "down-the-subway-stairs",
+      key: "ArrowLeft",
+      until: { kind: "floor", value: SUBWAY_FLOOR },
+    },
+  ];
+}
+
+/** One stretch of the arrival walk: where a person stops, and the keys to get there. */
+export interface ArrivalWalkLeg {
+  readonly name: string;
+  /** The destination the leg ends at, when it ends at one. */
+  readonly destination?: ArrivalDestination;
+  readonly segments: readonly StreetWalkSegment[];
+}
+
+/** The walk a new character makes from the flat (story 4.26), in legs a
+ * person would take: out of the door onto the pavement, west under the
+ * footbridge, along the shop fronts to both doors, then to the street
+ * stairwell and down it. Row 6 (the pavement's own row, clear of the deck)
+ * carries it west of the flat; row 7 is the shop fronts. */
+export function arrivalWalkLegs(inputs: StreetWalkInputs): readonly ArrivalWalkLeg[] {
+  const [shopB, shopA, stairwell] = ARRIVAL_DESTINATIONS;
+  return [
+    {
+      name: "the flat door",
+      segments: [
+        // Below the bed, into the door column, then out through the door onto
+        // the pavement.
+        {
+          label: "arrival-below-the-bed",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: HOME_FLAT_DOOR.y - 0.2 },
+        },
+        {
+          label: "arrival-to-the-door-column",
+          key: "ArrowLeft",
+          until: { kind: "x-at-most", value: HOME_FLAT_DOOR.x + 0.6 },
+        },
+        {
+          label: "arrival-out-onto-the-pavement",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: HOME_FLAT_DOOR.y + 1.6 },
+        },
+      ],
+    },
+    {
+      name: "under the footbridge",
+      segments: [
+        {
+          label: "arrival-west-under-the-deck",
+          key: "ArrowLeft",
+          until: { kind: "x-at-most", value: BRIDGE_X0 + 0.7 },
+        },
+      ],
+    },
+    {
+      name: shopB.name,
+      destination: shopB,
+      segments: [
+        {
+          label: "arrival-down-to-the-shop-fronts",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: HOME_FLAT_DOOR.y + 2.45 },
+        },
+        // Along the fronts to the wall of shop B's east end, then up against the
+        // walls: the body rests exactly on the front row, clear of the bin.
+        {
+          label: "arrival-west-along-the-shop-fronts",
+          key: "ArrowLeft",
+          until: { kind: "x-at-most", value: EAST_WALL_X_B - 0.5 },
+        },
+        {
+          label: "arrival-up-against-the-shop-walls",
+          key: "ArrowUp",
+          until: { kind: "y-at-most", value: shopB.y + 0.25 },
+        },
+        {
+          label: "arrival-west-to-shop-b",
+          key: "ArrowLeft",
+          until: { kind: "cell", x: shopB.x, y: shopB.y },
+        },
+      ],
+    },
+    {
+      name: shopA.name,
+      destination: shopA,
+      segments: [
+        {
+          label: "arrival-west-to-shop-a",
+          key: "ArrowLeft",
+          until: { kind: "cell", x: shopA.x, y: shopA.y },
+        },
+      ],
+    },
+    {
+      name: stairwell.name,
+      destination: stairwell,
+      segments: [
+        {
+          label: "arrival-east-to-the-subway-entrance",
+          key: "ArrowRight",
+          until: { kind: "x-at-least", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+        },
+        {
+          label: "arrival-onto-the-subway-treads-row",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: inputs.subwayTreadRowY },
+        },
+        {
+          label: "arrival-down-the-subway-stairs",
+          key: "ArrowLeft",
+          until: { kind: "floor", value: SUBWAY_FLOOR },
+        },
+      ],
+    },
+  ];
+}
+
+/** From the subway entrance onto the tread row, then the stairwell's draw
+ * order is seen from the demo's posture, FR123's worst case. South first,
+ * in the entrance: the body rests on the boundary below the entrance cells,
+ * level with the near railing's top face (`press-south`). West along that
+ * face to the east tread (`west-along-the-near-railing`): the body is in
+ * the tread row there, so the release must come within the measured lag or
+ * the walk goes on down the stairs. Where that walk ends in `x` depends on
+ * the overshoot; the rest in `y` does not. */
+export function streetNearRailingPressRoute(
+  inputs: StreetWalkInputs,
+): readonly StreetWalkSegment[] {
+  const approach = streetSubwayApproachRoute(inputs);
+  const onTreads = approach.findIndex((s) => s.label === "onto-the-subway-treads-row");
+  return [
+    ...approach.slice(0, onTreads + 1),
+    {
+      label: "press-south",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.nearRailingRestY },
+    },
+    {
+      label: "west-along-the-near-railing",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: STAIRWELL_X0 + STAIRWELL_FOOTPRINT.width - 0.5 },
+    },
+  ];
+}
+
+/** Story 15.20: the street flight walked pressed against its bottom
+ * railing (down), then the platform flight pressed against its bottom wall
+ * (back up). Ends on the street floor. */
+export function streetSubwayWallWalkRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
+  const approach = streetSubwayApproachRoute(inputs);
+  const onTreads = approach.findIndex((s) => s.label === "onto-the-subway-treads-row");
+  return [
+    ...approach.slice(0, onTreads + 1),
+    {
+      label: "press-south",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.nearRailingRestY },
+    },
+    {
+      label: "down-the-street-flight-pressed-south",
+      key: "ArrowLeft",
+      until: { kind: "floor", value: SUBWAY_FLOOR },
+    },
+    {
+      label: "press-south-on-the-platform",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.platformWallRestY },
+    },
+    {
+      label: "up-the-platform-flight-pressed-south",
+      key: "ArrowRight",
+      until: { kind: "floor", value: STREET_FLOOR },
+    },
+  ];
+}
+
+/**
+ * The bollard west of the shopfront (`id: 121`), approached to rest on its
+ * south, west and east faces in turn. Every `into-the-*` segment ends
+ * against the post's own collider, so the asserted coordinate is fixed by
+ * a face; every other segment only positions the body, with the post's
+ * columns or rows left overlapped after a fully clamped tick of overshoot.
+ */
+export function streetBollardRoute(
+  inputs: StreetWalkInputs,
+  body: {
+    readonly subcellsPerCell: number;
+    readonly bodyWidthSubcells: number;
+    readonly bodyHeightSubcells: number;
+  },
+): readonly StreetWalkSegment[] {
+  const post = STREET_PROPS.find((p) => p.id === 121n);
+  if (!post) throw new Error("fixture no longer places the west-of-shopfront bollard (id 121)");
+  const sub = body.subcellsPerCell;
+  const x0 = (post.x * sub + BOLLARD_COLLIDER.x0) / sub;
+  const x1 = (post.x * sub + BOLLARD_COLLIDER.x1) / sub;
+  const y1 = (post.y * sub + BOLLARD_COLLIDER.y1) / sub;
+  const halfBody = body.bodyWidthSubcells / 2 / sub;
+  const midRow = post.y + 0.5;
+  const belowRow = post.y + 1.7;
+  return [
+    // Out of the shop, west to the post's east side, south below its row.
+    {
+      label: "outside-the-shopfront",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: inputs.shopfrontExitRestY },
+    },
+    { label: "west-of-the-bin", key: "ArrowLeft", until: { kind: "x-at-most", value: post.x + 1 } },
+    {
+      label: "south-of-the-bollard",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: belowRow },
+    },
+    // South face: under the post's middle, north into it.
+    {
+      label: "under-the-post",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: post.x + 0.5 },
+    },
+    {
+      label: "into-the-south-face",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: y1 + body.bodyHeightSubcells / sub },
+    },
+    // West face: clear of the post to its west, up to its row, east into it.
+    { label: "west-of-the-post", key: "ArrowLeft", until: { kind: "x-at-most", value: x0 - 0.5 } },
+    { label: "beside-the-post-west", key: "ArrowUp", until: { kind: "y-at-most", value: midRow } },
+    {
+      label: "into-the-west-face",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: x0 - halfBody },
+    },
+    // East face: back below the post, east of it, up to its row, west into it.
+    {
+      label: "south-of-the-post-again",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: belowRow },
+    },
+    {
+      label: "east-of-the-post",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: x1 + 0.5 },
+    },
+    { label: "beside-the-post-east", key: "ArrowUp", until: { kind: "y-at-most", value: midRow } },
+    {
+      label: "into-the-east-face",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: x1 + halfBody },
+    },
+  ];
+}
+
+/**
+ * The lap the NFR2 perf harness walks, over and over: north of the bridge,
+ * east to the stairs' abutment, back down to the flight's foot row, up onto
+ * the deck, along it and down again. It starts and ends at exactly the
+ * position [`streetWalkRoute`]'s own last segment leaves the walker in, so
+ * laps chain with nothing to reset between them.
+ *
+ * Every segment ends either against a real collider or a floor
+ * transition, immune to overshoot (walking further into a wall changes
+ * nothing, and a transition fires on entering a whole cell).
+ */
+export function streetBridgeLapRoute(): readonly StreetWalkSegment[] {
+  return [
+    // West along the foot row to the entrance's column.
+    {
+      label: "lap-west-along-the-foot-row",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+    },
+    // North until the pavement's own northern edge stops the walker.
+    {
+      label: "lap-north-of-the-bridge",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y - 0.4 },
+    },
+    // East along the terrace until the stairs' abutment stops it.
+    {
+      label: "lap-east-to-the-abutment",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_FLIGHT_X0 - 0.6 },
+    },
+    {
+      label: "lap-back-west",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+    },
+    // South to the foot row, east to the world's eastern edge, up the flight.
+    {
+      label: "lap-south-to-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+    {
+      label: "lap-east-along-the-foot-row",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
+    {
+      label: "lap-up-onto-the-deck",
+      key: "ArrowUp",
+      until: { kind: "floor", value: BRIDGE_FLOOR },
+    },
+    // West along the deck, back east, down the flight, off onto the foot row.
+    {
+      label: "lap-onto-the-deck",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
+    },
+    {
+      label: "lap-west-along-the-deck",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
+    },
+    {
+      label: "lap-east-along-the-deck",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
+    {
+      label: "lap-down-to-the-street",
+      key: "ArrowDown",
+      until: { kind: "floor", value: STREET_FLOOR },
+    },
+    {
+      label: "lap-off-onto-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+  ];
+}
+
+/**
+ * Story 15.19: up and back down the footbridge's flight at each of its two
+ * columns, for the flight e2e. From the lamppost east to the entrance,
+ * a still beside the stairs' abutment, then the foot row: up the west column
+ * with a reversal on the street flight, over the cut and back down it by the
+ * deck flight, then up the east column, along the deck to its west end and
+ * back, and down again. Every threshold leaves more than the release bound
+ * short of an anchor row (whose entry is the floor change), and the two
+ * walls the route rests on (the abutment, the east edge) are real colliders.
+ * The e2e takes its stills by these labels.
+ */
+export function streetFootbridgeRoute(inputs: StreetWalkInputs): readonly StreetWalkSegment[] {
+  return [
+    ...shopToPastTheLamppost(inputs),
+    {
+      label: "east-to-the-bridge-foot",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+    },
+    // North to the strip under the terrace and east along it to the abutment:
+    // as close to the stairs as a street walker can stand.
+    {
+      label: "up-to-the-north-strip",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y - 0.4 },
+    },
+    {
+      label: "east-to-the-abutment",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_FLIGHT_X0 - 0.6 },
+    },
+    {
+      label: "west-from-the-abutment",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+    },
+    {
+      label: "south-to-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+    {
+      label: "east-along-the-foot-row",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_FLIGHT_X0 + 0.35 },
+    },
+    // The west column: halfway up the street flight and back, then over the cut.
+    {
+      label: "up-the-street-half",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DOWN_ANCHOR_Y + 0.5 },
+    },
+    {
+      label: "street-half-reversal",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+    {
+      label: "up-onto-the-deck",
+      key: "ArrowUp",
+      until: { kind: "floor", value: BRIDGE_FLOOR },
+    },
+    // Up the deck flight, a reversal, and back down over the cut.
+    {
+      label: "up-the-deck-half",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_UP_ANCHOR_Y + 0.1 },
+    },
+    {
+      label: "down-the-deck-half",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_UP_ANCHOR_Y + 0.6 },
+    },
+    {
+      label: "down-off-the-deck",
+      key: "ArrowDown",
+      until: { kind: "floor", value: STREET_FLOOR },
+    },
+    // The east column, hugging the world's edge: up, along the deck, down.
+    {
+      label: "down-to-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+    {
+      label: "east-to-the-east-column",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
+    {
+      label: "up-the-east-column",
+      key: "ArrowUp",
+      until: { kind: "floor", value: BRIDGE_FLOOR },
+    },
+    {
+      label: "onto-the-deck",
+      key: "ArrowUp",
+      until: { kind: "y-at-most", value: BRIDGE_DECK_Y + 0.6 },
+    },
+    {
+      label: "west-along-the-deck",
+      key: "ArrowLeft",
+      until: { kind: "x-at-most", value: BRIDGE_X0 + 0.5 },
+    },
+    {
+      label: "east-along-the-deck",
+      key: "ArrowRight",
+      until: { kind: "x-at-least", value: BRIDGE_X1 + 0.4 },
+    },
+    {
+      label: "down-the-east-column",
+      key: "ArrowDown",
+      until: { kind: "floor", value: STREET_FLOOR },
+    },
+    {
+      label: "off-onto-the-foot-row",
+      key: "ArrowDown",
+      until: { kind: "y-at-least", value: BRIDGE_FOOT_Y + 0.5 },
+    },
+  ];
+}

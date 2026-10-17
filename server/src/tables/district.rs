@@ -5,31 +5,36 @@
 //!
 //! `create_district` is the only path to the generator
 //! (`sim::generation::create` decides, this reducer only reads the rows and
-//! inserts the record). `scripts/ci/check-district-write-path.sh` fails any
-//! other file under `server/src/` that names `generation::` or the
-//! `district` accessor outside the places listed there.
+//! inserts the record, the macro graph and the district's world rows).
+//! `scripts/ci/check-district-write-path.sh` fails any other file under
+//! `server/src/` that names `generation::` or the `district` accessor
+//! outside the places listed there, and any writer of the four region
+//! tables other than this file and `restore.rs`.
 
 use sim::codes::provision;
 use sim::generated::defs;
 use sim::generation::{
-    DistrictRecord, GenerationConfig, GenerationContent, RuleSetVersion, SiteBounds, create,
+    DistrictRecord, GenerationConfig, GenerationContent, GroundConfig, RegionRows, RuleSetVersion,
+    SiteBounds, create,
 };
 use sim::reducer_classes::ReducerClass;
 use sim::routing::graph::{MacroGraph, NodeKind};
 use spacetimedb::{ReducerContext, Table, Timestamp};
+use std::collections::BTreeMap;
 
 use super::housing::{Dwelling, dwelling};
 use super::metrics::count_call;
 use super::ops::require_owner;
+use super::player_position::relocate_stranded;
 use super::routing::{
     RouteEdge, RouteNode, RouteProvision, route_edge, route_node, route_provision,
 };
 use super::stock::{Business, business};
 use super::world::{
-    Building, BuildingArea, Room, RoomArea, building, building_area, room, room_area,
+    Building, BuildingArea, FloorTransition, GroundArea, PlacedObject, RoofArea, Room, RoomArea,
+    building, building_area, floor_transition, ground_area, placed_object, roof_area, room,
+    room_area,
 };
-use super::world::{PlacedObject, placed_object};
-use sim::world::clip_rect_to_chunks;
 
 #[derive(Clone)]
 #[spacetimedb::table(accessor = district)]
@@ -47,15 +52,53 @@ pub struct District {
     pub rng_version: u32,
     pub defs_version: String,
     pub generated_at: Timestamp,
+    /// `District::arrival_cell`, floor 0: where a new character first
+    /// stands. Derived once, at generation, and read back as stored.
+    #[default(0)]
+    pub arrival_x: i32,
+    #[default(0)]
+    pub arrival_y: i32,
 }
 
-/// Generates the district for `seed` over the configured site and records
-/// it, once: a site that already has a record is refused, whatever the
-/// recorded versions.
+/// The city's first district: the one a new character arrives in. The
+/// table's ids start at 1 and are never reused, so the first district ever
+/// created keeps this id for the life of the world.
+pub const FIRST_DISTRICT_ID: u64 = 1;
+
+/// The same cell, read from a view.
+pub fn arrival_cell_in_view(ctx: &spacetimedb::ViewContext) -> Option<(i32, i32)> {
+    ctx.db
+        .district()
+        .district_id()
+        .find(FIRST_DISTRICT_ID)
+        .map(|d| (d.arrival_x, d.arrival_y))
+}
+
+/// Generates the city's district (`city.seed`, never a caller's
+/// argument) over the configured site and records it, once: a site that
+/// already has a record is refused, whatever the recorded versions. Writes
+/// the record, the macro graph and the world rows in one transaction, then
+/// moves every player standing somewhere that is not walkable on the new
+/// district to its arrival cell.
 #[spacetimedb::reducer]
-pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
+pub fn create_district(ctx: &ReducerContext) -> Result<(), String> {
     count_call(ctx, ReducerClass::Operator);
     require_owner(ctx)?;
+    create_district_at(ctx, GroundConfig::city_seed(defs::BALANCE))
+}
+
+/// Test-only (`time-control` flavour, never deployed): the same
+/// generation as [`create_district`] over a caller's `seed`, so a
+/// reviewer can walk any seed on a local instance.
+#[cfg(feature = "time-control")]
+#[spacetimedb::reducer]
+pub fn debug_create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
+    count_call(ctx, ReducerClass::Operator);
+    require_owner(ctx)?;
+    create_district_at(ctx, seed)
+}
+
+fn create_district_at(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
     let existing: Vec<DistrictRecord> = ctx
         .db
         .district()
@@ -79,6 +122,9 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
     let content = GenerationContent::committed();
     let (record, district, graph) =
         create(&existing, seed, &cfg, &content).map_err(|e| e.to_string())?;
+    let arrival = district
+        .arrival_cell(&cfg, &content)
+        .ok_or_else(|| "the district has no arrival cell".to_string())?;
     ctx.db.district().insert(District {
         district_id: 0,
         seed: record.seed,
@@ -90,48 +136,46 @@ pub fn create_district(ctx: &ReducerContext, seed: u64) -> Result<(), String> {
         rng_version: record.version.rng,
         defs_version: record.version.defs,
         generated_at: ctx.timestamp,
+        arrival_x: arrival.0,
+        arrival_y: arrival.1,
     });
     write_graph(ctx, &graph);
-    write_buildings(ctx, &district, &cfg, &content);
+    let ground = GroundConfig::from_balance(defs::BALANCE);
+    let rows = district.region_rows(&ground, &content, &cfg);
+    write_world(ctx, &district, &cfg, &content, &rows);
+    relocate_stranded(ctx, arrival, |x, y, f| {
+        f == 0 && district.is_standable_at(x, y, f)
+    });
     Ok(())
 }
 
-/// One `building` row per laid interior, in plot order, carrying what
-/// `sim::housing` derived for a dwelling; its ownership areas and its
-/// rooms, each clipped to the chunk it lies in. Inside the caller's
-/// transaction, with the graph.
-fn write_buildings(
+/// The one world writer, inside the caller's transaction (`restore.rs` is
+/// the only other writer of these tables): one `building` row per laid
+/// interior, in plot order, carrying what `sim::housing` derived for a
+/// dwelling, and its `room` rows; then every row of `rows`, its ownership
+/// and roof rows keyed on those ids.
+fn write_world(
     ctx: &ReducerContext,
     district: &sim::generation::District,
     cfg: &GenerationConfig,
     content: &GenerationContent,
+    rows: &RegionRows,
 ) {
-    let homes: std::collections::BTreeMap<u32, sim::housing::Home> =
+    let homes: BTreeMap<u32, sim::housing::Home> =
         sim::housing::dwellings(district, cfg, content, defs::BALANCE)
             .into_iter()
             .map(|d| (d.plot, d.home))
             .collect();
-    // Pass 7: every placed row, anchored in its chunk. The same
-    // transaction as the graph and the buildings.
-    for r in district.props.rows() {
-        if let Some(chunk_key) = sim::world::checked_chunk_key(r.x, r.y, r.floor) {
-            ctx.db.placed_object().insert(PlacedObject {
-                object_id: 0,
-                def_id: r.def_id,
-                x: r.x,
-                y: r.y,
-                floor: r.floor,
-                layer: r.layer,
-                orientation: r.orientation,
-                chunk_key,
-            });
-        }
-    }
-    for (plot, _ty, interior) in district.interiors.laid() {
+    // `rows` names a building by its place in laid order and a room by its
+    // place across their rooms, from 1 (`District::region_rows`).
+    let mut building_ids: BTreeMap<u64, u64> = BTreeMap::new();
+    let mut room_ids: BTreeMap<u64, u64> = BTreeMap::new();
+    for (n, (plot, _ty, interior)) in district.interiors.laid().enumerate() {
         let b = ctx.db.building().insert(Building {
             building_id: 0,
             created_at: ctx.timestamp,
         });
+        building_ids.insert(n as u64 + 1, b.building_id);
         if let Some(h) = homes.get(&plot) {
             let home = sim::housing::Home {
                 id: b.building_id,
@@ -139,37 +183,87 @@ fn write_buildings(
             };
             ctx.db.dwelling().insert(Dwelling::of_home(&home));
         }
-        for (piece, chunk_key) in clip_rect_to_chunks(interior.footprint, 0) {
-            ctx.db.building_area().insert(BuildingArea {
-                area_id: 0,
-                building_id: b.building_id,
-                x0: piece.x0,
-                y0: piece.y0,
-                x1: piece.x1,
-                y1: piece.y1,
-                floor: 0,
-                chunk_key,
-            });
-        }
-        for r in &interior.rooms {
+        for _ in &interior.rooms {
             let room = ctx.db.room().insert(Room {
                 room_id: 0,
                 building_id: b.building_id,
                 created_at: ctx.timestamp,
             });
-            for (piece, chunk_key) in clip_rect_to_chunks(r.rect, 0) {
-                ctx.db.room_area().insert(RoomArea {
-                    area_id: 0,
-                    room_id: room.room_id,
-                    x0: piece.x0,
-                    y0: piece.y0,
-                    x1: piece.x1,
-                    y1: piece.y1,
-                    floor: 0,
-                    chunk_key,
-                });
-            }
+            room_ids.insert(room_ids.len() as u64 + 1, room.room_id);
         }
+    }
+    for r in &rows.placed {
+        ctx.db.placed_object().insert(PlacedObject {
+            object_id: 0,
+            def_id: r.def_id,
+            x: r.x,
+            y: r.y,
+            floor: r.floor,
+            layer: r.layer,
+            orientation: r.orientation,
+            chunk_key: r.chunk_key,
+        });
+    }
+    for r in &rows.transitions {
+        ctx.db.floor_transition().insert(FloorTransition {
+            transition_id: 0,
+            x: r.x,
+            y: r.y,
+            floor: r.floor,
+            target_x: r.target_x,
+            target_y: r.target_y,
+            target_floor: r.target_floor,
+            chunk_key: r.chunk_key,
+        });
+    }
+    for r in &rows.building_areas {
+        ctx.db.building_area().insert(BuildingArea {
+            area_id: 0,
+            building_id: building_ids[&r.owner_id],
+            x0: r.x0,
+            y0: r.y0,
+            x1: r.x1,
+            y1: r.y1,
+            floor: r.floor,
+            chunk_key: r.chunk_key,
+        });
+    }
+    for r in &rows.ground {
+        ctx.db.ground_area().insert(GroundArea {
+            area_id: 0,
+            def_id: r.def_id,
+            x0: r.x0,
+            y0: r.y0,
+            x1: r.x1,
+            y1: r.y1,
+            floor: r.floor,
+            chunk_key: r.chunk_key,
+        });
+    }
+    for r in &rows.roofs {
+        ctx.db.roof_area().insert(RoofArea {
+            area_id: 0,
+            building_id: building_ids[&r.building_id],
+            def_id: r.def_id,
+            x0: r.x0,
+            y0: r.y0,
+            x1: r.x1,
+            y1: r.y1,
+            floor: r.floor,
+            chunk_key: r.chunk_key,
+        });
+    }
+    for r in &rows.room_areas {
+        ctx.db.room_area().insert(RoomArea {
+            area_id: 0,
+            room_id: room_ids[&r.owner_id],
+            x0: r.x0,
+            y0: r.y0,
+            x1: r.x1,
+            y1: r.y1,
+            floor: r.floor,
+            chunk_key: r.chunk_key,
+        });
     }
 }
 

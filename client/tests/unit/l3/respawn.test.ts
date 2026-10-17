@@ -2,7 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { CitizenBody, createCitizenFrame, type TransitState } from "../../../src/l3/citizen";
 import { walkFramesPerCycle } from "../../../src/l3/config";
-import { committedDefs } from "../test-street/street-world";
+import { committedDefs } from "../support/committed-defs";
 import { l3Config, lifeDials } from "./defs-config";
 import { CFG, TestGrid } from "./support";
 

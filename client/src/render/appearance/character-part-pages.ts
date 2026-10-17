@@ -23,7 +23,7 @@ import { createRefCountedCache } from "./ref-counted-cache";
 /** Fetches and decodes `file` (a packed character-part page's own
  * content-hashed filename, `defs.atlasPages[n].file`) as a CPU-side
  * `ImageBitmap`, `baseUrl`-relative -- no caching of its own,
- * `loadCharacterPage`/`test-street/compare-pipeline-vs-stack.ts`'s own,
+ * `loadCharacterPage`/`debug/compare-pipeline-vs-stack.ts`'s own,
  * entirely separate cache both call this as their `ref-counted-cache.ts`
  * `load`. Throws, naming the file, when the fetch itself fails. */
 export async function fetchCharacterPageBitmap(

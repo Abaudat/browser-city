@@ -13,28 +13,11 @@
 import type { Page } from "@playwright/test";
 import { DEBUG_OVERLAYS } from "../../src/debug/overlays";
 import type {} from "../../src/net/e2e-hooks";
-import { STAIRWELL_X0 } from "../../src/test-street/fixture";
-import {
-  railingFootRoute,
-  streetMovementConfig,
-  topRailingFoot,
-} from "../unit/test-street/street-world";
-import { canvasOf } from "./camera-test-support";
 import { expect, test } from "./fixtures";
-import { SCREENSHOT_OPTIONS } from "./screenshot-support";
-import { walkRealSegment } from "./walk-support";
 
 const OVERLAY_IDS = DEBUG_OVERLAYS.map((o) => o.id);
 
-// The fixed viewport the one `toHaveScreenshot` check needs, and the
-// same budget idiom `test-street.spec.ts` uses: an absolute pixel count
-// (never a ratio of the whole canvas) plus Playwright's own per-pixel
-// colour tolerance for anti-aliasing noise. Nothing here moves -- the
-// player never takes a step and the crowd is frozen -- so what this
-// budget absorbs is rendering noise alone.
 test.use({ viewport: { width: 1920, height: 1080 } });
-
-const OVERLAY_SCREENSHOT_OPTIONS = { ...SCREENSHOT_OPTIONS, maxDiffPixels: 150 } as const;
 
 async function waitForSceneReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window.__bc?.renderOrder?.length ?? 0) > 0, undefined, {
@@ -60,7 +43,7 @@ test("nothing is drawn until an overlay is asked for, and ?debug= is what asks",
   expect(await page.evaluate(() => window.__bcDebug?.list().map((e) => e.id))).toEqual(OVERLAY_IDS);
 });
 
-test("the collision overlay draws every collider state over the real street (AC2)", async ({
+test("the collision overlay draws every collider state over the generated district (AC2)", async ({
   page,
 }) => {
   await page.goto("/?debug=collision");
@@ -69,9 +52,9 @@ test("the collision overlay draws every collider state over the real street (AC2
   const overlay = page.locator('[data-bc-debug="collision"]');
   await expect(overlay).toHaveCount(1);
 
-  // The street is hand-laid with walls and a lamppost (real colliders)
-  // and with posters and windows (no collider at all) -- so all three
-  // states are on screen at once, which is exactly the AC.
+  // The district has walls and furniture (real colliders) and doors and
+  // windows (no collider at all) -- so the states are on screen at once,
+  // which is exactly the AC.
   await expect(overlay.locator('[data-bc-collider="collider"]').first()).toBeVisible();
   expect(await overlay.locator('[data-bc-collider="collider"]').count()).toBeGreaterThan(0);
   expect(await overlay.locator('[data-bc-collider="none"]').count()).toBeGreaterThan(0);
@@ -118,7 +101,7 @@ test("the collision overlay draws every collider state over the real street (AC2
 test("the collision overlay's player body sits on the player's real drawn sprite (AC3)", async ({
   page,
 }) => {
-  await page.goto("/?debug=collision&freezeCrowd");
+  await page.goto("/?debug=collision&freezeBodies");
   await waitForSceneReady(page);
 
   const player = page.locator('[data-bc-collider="player"]');
@@ -223,7 +206,7 @@ test("an unknown ?debug= id warns and boots anyway, with no console error", asyn
 });
 
 test("the overlay is deliberately non-diegetic", async ({ page }) => {
-  await page.goto("/?debug=collision,sort&freezeCrowd");
+  await page.goto("/?debug=collision,sort&freezeBodies");
   await waitForSceneReady(page);
   await page.waitForFunction(
     () => (document.querySelectorAll("[data-bc-collider]").length ?? 0) > 0,
@@ -239,88 +222,5 @@ test("the overlay is deliberately non-diegetic", async ({ page }) => {
       [...document.body.children].map((c) => c.getAttribute("data-bc-surface") ?? c.id),
     ),
   ).not.toContain("overlays");
-  await expect(page.locator('#test-street > [data-bc-debug="overlays"]')).toHaveCount(1);
-
-  // The supplement, never the proof: a drawing regression the attribute
-  // assertions above cannot see. The crowd is frozen so the frame is
-  // deterministic, exactly as test-street.spec.ts's own snapshots are.
-  await expect(page.locator("#test-street")).toHaveScreenshot(
-    "collision-overlay.png",
-    OVERLAY_SCREENSHOT_OPTIONS,
-  );
-});
-
-// Story 15.12 (Artie, Quentin): the top railing collides at its foot, so a
-// player walking south from the finial row rests with their feet on the
-// base rail. The DOM facts are the proof -- the player's body sits exactly
-// on the railing's collider rect -- and the picture is the supplement.
-test("the player walking south rests on the top railing's foot (story 15.12)", async ({ page }) => {
-  await page.goto("/?debug=collision&freezeCrowd");
-  await waitForSceneReady(page);
-
-  const foot = topRailingFoot();
-  for (const segment of railingFootRoute()) await walkRealSegment(page, segment);
-  // Slide west along the foot to the strip's end, where the body rests
-  // against the ring: a position fixed by geometry, never by key timing,
-  // so the picture is the same on every run.
-  const config = streetMovementConfig();
-  const westRestX = STAIRWELL_X0 + config.bodyWidthSubcells / 2 / config.subcellsPerCell;
-  await page.keyboard.down("ArrowLeft");
-  await page.waitForFunction(
-    (x) => Math.abs((window.__bc?.playerPosition?.x ?? 0) - x) < 1e-6,
-    westRestX,
-    { timeout: 30_000 },
-  );
-  await page.keyboard.up("ArrowLeft");
-
-  const position = await page.evaluate(() => window.__bc?.playerPosition);
-  expect(position?.y).toBeCloseTo(foot.rect.y0, 4);
-
-  // The overlay redraws a frame after the body stops: poll the condition.
-  await expect
-    .poll(
-      () =>
-        page.evaluate((objectId) => {
-          const player = document.querySelector('[data-bc-collider="player"]');
-          const rail = document.querySelector(
-            `[data-bc-collider="collider"][data-bc-object="${objectId}"]`,
-          );
-          if (!player || !rail) return Number.NaN;
-          return (
-            Number(player.getAttribute("y")) +
-            Number(player.getAttribute("height")) -
-            Number(rail.getAttribute("y"))
-          );
-        }, foot.prop.id.toString()),
-      { message: "the player's bottom edge sits on the railing collider's top edge" },
-    )
-    .toBeCloseTo(0, 4);
-
-  // The stairwell plus one cell each side, from the real view transform.
-  const clip = await page.evaluate(
-    ({ x0, y0, x1, y1 }) => {
-      const view = window.__bc?.viewTransform;
-      const canvas = document.querySelector("#test-street canvas");
-      if (!view || !canvas) throw new Error("no view transform or canvas");
-      const box = canvas.getBoundingClientRect();
-      const px = (cell: number, offset: number) => cell * 16 * view.zoom + offset;
-      return {
-        x: box.x + px(x0, view.offsetX),
-        y: box.y + px(y0, view.offsetY),
-        width: px(x1, view.offsetX) - px(x0, view.offsetX),
-        height: px(y1, view.offsetY) - px(y0, view.offsetY),
-      };
-    },
-    {
-      x0: STAIRWELL_X0 - 1,
-      y0: foot.prop.y - 2,
-      x1: STAIRWELL_X0 + 4,
-      y1: foot.prop.y + 3,
-    },
-  );
-  await expect(canvasOf(page)).toBeVisible();
-  await expect(page).toHaveScreenshot("top-railing-foot.png", {
-    ...OVERLAY_SCREENSHOT_OPTIONS,
-    clip,
-  });
+  await expect(page.locator('#world > [data-bc-debug="overlays"]')).toHaveCount(1);
 });

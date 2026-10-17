@@ -6712,6 +6712,16 @@ fn pooled_city(seed: u64) -> PooledCity {
     }
 }
 
+/// How many threads the pool is planned and judged on: `RUST_TEST_THREADS`
+/// when set, else every core.
+fn pool_threads() -> usize {
+    std::env::var("RUST_TEST_THREADS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |p| p.get()))
+}
+
 /// The shared pool, planned once per process across every core.
 fn city_pool() -> &'static [PooledCity] {
     use std::sync::OnceLock;
@@ -6719,9 +6729,7 @@ fn city_pool() -> &'static [PooledCity] {
     static POOL: OnceLock<Vec<PooledCity>> = OnceLock::new();
     POOL.get_or_init(|| {
         let n = city_pool_size();
-        let threads = std::thread::available_parallelism()
-            .map_or(4, |p| p.get())
-            .min(n.max(1) as usize);
+        let threads = pool_threads().min(n.max(1) as usize);
         let next = AtomicU64::new(0);
         let mut cities: Vec<(u64, PooledCity)> = std::thread::scope(|s| {
             let workers: Vec<_> = (0..threads)
@@ -6754,7 +6762,7 @@ fn city_pool() -> &'static [PooledCity] {
 /// as a plain `#[test]`.
 fn over_pool(name: &str, check: impl Fn(&PooledCity) -> Result<(), String> + Sync) {
     let pool = city_pool();
-    let threads = std::thread::available_parallelism().map_or(4, |p| p.get());
+    let threads = pool_threads();
     let chunk = pool.len().div_ceil(threads).max(1);
     let failures: Vec<String> = std::thread::scope(|s| {
         let workers: Vec<_> = pool

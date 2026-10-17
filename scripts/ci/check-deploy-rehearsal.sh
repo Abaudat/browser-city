@@ -13,12 +13,14 @@
 #   4. asserts the epoch a legacy world was repaired to is a moment inside
 #      the post-publish sequence (dawn at repair time), and that an
 #      anonymous `finish_publish` is rejected with the owner-check message.
-#   5. the generate-once record: `create_district` as owner writes exactly
-#      one `district` row carrying this build's three versions (and its
-#      wasm duration is reported), a second call is refused and writes
-#      nothing, an anonymous call is refused, and a republish plus
-#      `finish_publish` and a restart on the same data directory leave the row
-#      byte-identical;
+#   5. the generate-once record: the post-publish sequence's
+#      `ensure-district.sh` writes exactly one `district` row carrying
+#      `city.seed` and this build's three versions, its world rows
+#      (a `room_area` over the arrival cell), and moves a position that was
+#      stranded off the new district to the arrival cell; a second run, a
+#      second `create_district` call (refused), an anonymous call
+#      (refused), a republish plus `finish_publish` and a restart on the
+#      same data directory leave the row byte-identical;
 #
 # Assumption: additivity is transitive for the adds NFR33 allows, so
 # born-sha straight to HEAD stands in for every generation in between.
@@ -108,6 +110,14 @@ run_post_publish() { # <tag>
 # Wall-clock bounds for the repaired epoch, in seconds (this machine's
 # clock is the instance's). One second of slack either side.
 BEFORE_S=$(( $(date +%s) - 1 ))
+# A character standing off the generated site (a cell no generated district
+# makes standable), before any district exists.
+spacetime call "$DB" --server "$SERVER_URL" --no-config -y finish_publish >"$DATA_DIR/pre-finish.log" 2>&1 \
+  || fail "finish_publish failed before the district existed" "$DATA_DIR/pre-finish.log"
+spacetime call "$DB" --server "$SERVER_URL" --no-config -y create_character Rehearsal >"$DATA_DIR/char.log" 2>&1 \
+  || fail "create_character failed" "$DATA_DIR/char.log"
+spacetime call "$DB" --server "$SERVER_URL" --no-config -y set_player_position 700 3 0 0 0 >"$DATA_DIR/pos.log" 2>&1 \
+  || fail "set_player_position failed" "$DATA_DIR/pos.log"
 run_post_publish first
 AFTER_S=$(( $(date +%s) + 1 ))
 
@@ -141,14 +151,23 @@ HEAD_RNG="$(const_of server/sim/src/rng.rs RNG_VERSION)"
 HEAD_DEFS="$(sed -nE 's/^pub const DEFS_VERSION: &str = "([^"]+)";.*/\1/p' "$REPO_ROOT/server/sim/src/generated/defs.rs" | tr -d '\r' | head -1)"
 [ -n "$HEAD_GENERATION" ] && [ -n "$HEAD_RNG" ] && [ -n "$HEAD_DEFS" ] || fail "could not read the three versions out of the source"
 
-[ -z "$(district_rows)" ] || fail "district has rows before create_district was ever called -- nothing may generate a district on publish"
-T0=$(date +%s%3N)
-spacetime call "$DB" --server "$SERVER_URL" --no-config -y create_district 7 >"$DATA_DIR/create-1.log" 2>&1 \
-  || fail "create_district as owner failed" "$DATA_DIR/create-1.log"
-T1=$(date +%s%3N)
-echo "check-deploy-rehearsal: create_district (generation inside one transaction, wasm) took $((T1 - T0)) ms including the CLI round trip" >&2
 ROWS_FIRST="$(district_rows)"
-[ "$(wc -l <<<"$ROWS_FIRST")" -eq 1 ] && [ -n "$ROWS_FIRST" ] || fail "create_district should write exactly one district row, got: $ROWS_FIRST"
+[ "$(wc -l <<<"$ROWS_FIRST")" -eq 1 ] && [ -n "$ROWS_FIRST" ] || fail "the post-publish sequence should leave exactly one district row, got: $ROWS_FIRST"
+CITY_SEED="$(awk '/^key = "city.seed"/ { f = 1; next } f && /^value = / { print $3; exit }' "$REPO_ROOT/defs/balance/city.toml" | tr -d '\r')"
+[ -n "$CITY_SEED" ] || fail "could not read city.seed out of defs/balance/city.toml"
+PLACED="$DATA_DIR/placed.log"
+spacetime sql "$DB" --server "$SERVER_URL" --no-config -y "SELECT arrival_x, arrival_y FROM district" >"$PLACED" 2>&1 \
+  || fail "could not read the arrival cell" "$PLACED"
+ARRIVAL="$(awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$PLACED" | tr -d ' ')"
+AX="${ARRIVAL%%|*}"; AY="${ARRIVAL##*|}"
+spacetime sql "$DB" --server "$SERVER_URL" --no-config -y "SELECT area_id FROM room_area WHERE x0 <= $AX AND x1 > $AX AND y0 <= $AY AND y1 > $AY" >"$PLACED" 2>&1 \
+  || fail "could not read room_area" "$PLACED"
+[ -n "$(awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$PLACED")" ] || fail "no room_area row covers the arrival cell ($AX, $AY)"
+spacetime sql "$DB" --server "$SERVER_URL" --no-config -y "SELECT * FROM player_position" >"$PLACED" 2>&1 \
+  || fail "could not read player_position" "$PLACED"
+# character_id | chunk_key | x | y | floor | ...
+POSITIONS="$(awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$PLACED" | tr -d ' ' | awk -F'|' '{ print $3 "|" $4 "|" $5 }')"
+[ "$POSITIONS" = "$AX|$AY|0" ] || fail "the stranded position was not moved to the arrival cell ($AX, $AY, 0): '$POSITIONS'"
 district_cols() { # seed|generation_version|rng_version|defs_version, one line per row
   local log="$DATA_DIR/district-cols.log"
   spacetime sql "$DB" --server "$SERVER_URL" --no-config -y \
@@ -156,18 +175,18 @@ district_cols() { # seed|generation_version|rng_version|defs_version, one line p
     || fail "could not query district columns" "$log"
   awk '/^[- +|]+$/ { seen=1; next } seen && NF' "$log" | tr -d ' '
 }
-WANT_COLS="7|$HEAD_GENERATION|$HEAD_RNG|\"$HEAD_DEFS\""
+WANT_COLS="$CITY_SEED|$HEAD_GENERATION|$HEAD_RNG|\"$HEAD_DEFS\""
 [ "$(district_cols)" = "$WANT_COLS" ] \
   || fail "the district row's seed and versions are '$(district_cols)', expected exactly '$WANT_COLS'"
 
-if spacetime call "$DB" --server "$SERVER_URL" --no-config -y create_district 8 >"$DATA_DIR/create-2.log" 2>&1; then
+if spacetime call "$DB" --server "$SERVER_URL" --no-config -y create_district >"$DATA_DIR/create-2.log" 2>&1; then
   fail "a second create_district over the same site was accepted" "$DATA_DIR/create-2.log"
 fi
 grep -qF "overlaps an already generated district" "$DATA_DIR/create-2.log" \
   || fail "the second create_district was refused, but not for overlapping an already generated district" "$DATA_DIR/create-2.log"
 [ "$(district_rows)" = "$ROWS_FIRST" ] || fail "a refused create_district changed the district rows"
 
-if spacetime call "$DB" --server "$SERVER_URL" --no-config -y --anonymous create_district 9 >"$DATA_DIR/create-anon.log" 2>&1; then
+if spacetime call "$DB" --server "$SERVER_URL" --no-config -y --anonymous create_district >"$DATA_DIR/create-anon.log" 2>&1; then
   fail "create_district accepted an anonymous caller" "$DATA_DIR/create-anon.log"
 fi
 grep -qF "$OWNER_REJECTION_PATTERN" "$DATA_DIR/create-anon.log" \

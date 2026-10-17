@@ -41,7 +41,7 @@ import { DbConnection } from "spacetimedb";
 import { callReducer } from "../net/bindings";
 import type { Row } from "../net/bindings/types";
 import { Sprite } from "pixi.js";
-import { STREET_PROPS } from "../test-street/fixture";
+import { PROP_DRAWABLES } from "../render/prop-drawables";
 import { step } from "../world/movement";
 import { step } from "../world/movement.js";
 import { stepAndTransition } from "../world/floor-walk";

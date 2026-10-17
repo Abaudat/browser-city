@@ -15,20 +15,11 @@ import { KEYBINDINGS_STORAGE_KEY } from "../../src/input/keybindings-storage";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
 import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
-import {
-  isDefStreetProp,
-  PLAYER_START,
-  SHOP_COUNTER_DEF_ID,
-  STREET_PROPS,
-  TRASH_BIN_DEF_ID,
-} from "../../src/test-street/fixture";
-import { committedDefs } from "../unit/test-street/street-world";
+import { committedDefs } from "../unit/support/committed-defs";
 import { waitForPlayerControllable } from "./boot-test-support";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
+import { arrivalCell, type Interactable, nearestInteractable, walkTo } from "./district-support";
 import { expect, test } from "./fixtures";
-
-const COUNTER_ID = 8n;
-const BIN_ID = 15n;
 
 /** Artie reviews the feel from images, not from a pixel-delta count, so
  * the spec leaves them behind as CI artifacts. */
@@ -42,25 +33,7 @@ function balance(key: string): number {
 
 const TILE_SIZE_PX = balance("render.tile_size_px");
 const STOREY_HEIGHT_PX = balance("render.storey_height_px");
-const SUBCELLS_PER_CELL = committedDefs().colliderSubcellsPerCell;
-
-/** One of the fixture's own props, found by id, so a moved prop moves
- * this spec's clicks with it. */
-function propById(id: bigint, expectedDefId: number) {
-  const prop = STREET_PROPS.find((p) => p.id === id);
-  if (!prop || !isDefStreetProp(prop) || prop.defId !== expectedDefId) {
-    throw new Error(`fixture prop ${id} is no longer placed by defs id ${expectedDefId}`);
-  }
-  return prop;
-}
-
-/** The `interact_at` rect `defs/` declares for a definition -- the reach
- * row this spec waits for is read from that, never from a literal. */
-function interactAtOf(defId: number) {
-  const def = committedDefs().objects.find((o) => o.id === defId);
-  if (!def?.interactAt) throw new Error(`defs object ${defId} declares no interact_at`);
-  return def.interactAt;
-}
+const _SUBCELLS_PER_CELL = committedDefs().colliderSubcellsPerCell;
 
 /** A world pixel inside a cell's own drawn rect: every drawable is
  * bottom-centre anchored on its cell (`cellBottomCentre`, projected
@@ -124,7 +97,7 @@ function playerY(page: Page) {
  */
 async function recordCursorChanges(page: Page): Promise<void> {
   await page.evaluate(() => {
-    const canvas = document.querySelector("#test-street canvas");
+    const canvas = document.querySelector("#world canvas");
     if (!(canvas instanceof HTMLElement)) throw new Error("no street canvas to observe");
     const seen: string[] = [canvas.style.cursor];
     (window as unknown as { __bcCursors: string[] }).__bcCursors = seen;
@@ -139,25 +112,6 @@ function cursorChanges(page: Page): Promise<string[]> {
   return page.evaluate(() => (window as unknown as { __bcCursors?: string[] }).__bcCursors ?? []);
 }
 
-/** Walks the player north until their feet are inside `defId`'s own reach
- * row, read from `defs/` -- never a fixed "settle" sleep, which is what
- * flakes on a loaded runner. */
-async function walkIntoReachOf(page: Page, anchorY: number, defId: number): Promise<void> {
-  const reach = interactAtOf(defId);
-  const reachTopCells = anchorY + reach.y0 / SUBCELLS_PER_CELL;
-  const reachBottomCells = anchorY + reach.y1 / SUBCELLS_PER_CELL;
-  await page.keyboard.down("ArrowUp");
-  await page.waitForFunction(
-    ({ top, bottom }) => {
-      const y = window.__bc?.playerPosition?.y;
-      return y !== undefined && y >= top && y < bottom;
-    },
-    { top: reachTopCells, bottom: reachBottomCells },
-    { timeout: 10_000 },
-  );
-  await page.keyboard.up("ArrowUp");
-}
-
 test.beforeAll(() => {
   mkdirSync(SHOT_DIR, { recursive: true });
 });
@@ -167,18 +121,13 @@ test("a click resolves to an object instance, checks reach, and emits an intent 
 }) => {
   await page.goto("/");
   await ready(page);
-
   await recordCursorChanges(page);
 
-  const counter = propById(COUNTER_ID, SHOP_COUNTER_DEF_ID);
-  // The counter's reach rect is the customer side of it -- the row south
-  // of its own footprint. The player starts one row further south than
-  // that, so it begins out of reach and a short walk north crosses the
-  // boundary, which is the whole point of the fixture placement.
-  expect(
-    PLAYER_START.y >= counter.y + 2,
-    "the fixture must start the player out of the counter's reach",
-  ).toBe(true);
+  // The nearest counter the generator placed, and the cells either side of
+  // its reach rect: found in the district, never typed.
+  const counter: Interactable = nearestInteractable(arrivalCell());
+  const objectId = counter.objectId.toString();
+  await walkTo(page, counter.outOfReachCell);
 
   // Hovering it from out of reach: the cursor says "this is a thing", and
   // withholding the highlight is what says "not from here".
@@ -192,48 +141,38 @@ test("a click resolves to an object instance, checks reach, and emits an intent 
   // `not-allowed` and then returns to the hover cursor on its own.
   await clickCell(page, counter.x, counter.y, counter.floor);
   await canvasOf(page).screenshot({ path: `${SHOT_DIR}/refused-click.png` });
-  await expect.poll(() => ignoredIntents(page)).toEqual([COUNTER_ID.toString()]);
+  await expect.poll(() => ignoredIntents(page)).toEqual([objectId]);
   expect(await intents(page)).toEqual([]);
-
-  // The blip happened at all...
   await expect.poll(() => cursorChanges(page)).toContain("not-allowed");
-  // ...and it ended by itself, without a second click or a mouse move.
-  // The *settled* value is not a transient, so waiting for it is not a
-  // race.
   await expect
-    .poll(() => cursorChanges(page).then((seen) => seen[seen.length - 1]), {
-      // A fixed, generous wait rather than a multiple of the dial: how
-      // long this spec is willing to wait for a settled value is about
-      // the harness, and tuning `IGNORED_CURSOR_MS` down must never
-      // shorten it into a race.
-      timeout: 5_000,
-    })
+    .poll(() => cursorChanges(page).then((seen) => seen[seen.length - 1]), { timeout: 5_000 })
     .toBe("pointer");
-  // It never pulses: the refusal is shown exactly once per refused click.
   expect((await cursorChanges(page)).filter((c) => c === "not-allowed")).toHaveLength(1);
 
-  // Walk into reach *without moving the mouse*: the affordance has to
-  // follow the player, since movement is keyboard-only.
-  await walkIntoReachOf(page, counter.y, SHOP_COUNTER_DEF_ID);
-  await expect.poll(() => highlighted(page)).toBe(COUNTER_ID.toString());
+  // Walk into reach and point at it again (the camera moved with the
+  // player, so the same pixel is no longer the counter): the mark appears.
+  // That a mark follows a player who walks while the mouse is still is
+  // `tests/unit/input/pointer.test.ts`'s `refresh`.
+  await walkTo(page, counter.reachCell);
+  await hoverCell(page, counter.x, counter.y, counter.floor);
+  await expect.poll(() => highlighted(page)).toBe(objectId);
   await canvasOf(page).screenshot({ path: `${SHOT_DIR}/hover-in-reach.png` });
 
-  // AC1: in reach -- exactly one intent, carrying the instance clicked
-  // and the definition it was placed from.
+  // AC1: in reach -- exactly one intent, carrying the instance clicked and
+  // the definition it was placed from.
   await clickCell(page, counter.x, counter.y, counter.floor);
-  await expect
-    .poll(() => intents(page))
-    .toEqual([{ objectId: COUNTER_ID.toString(), defId: SHOP_COUNTER_DEF_ID }]);
+  await expect.poll(() => intents(page)).toEqual([{ objectId, defId: counter.defId }]);
   // The refused click earlier is still the only one ever refused: a click
   // never both emits and ignores.
-  expect(await ignoredIntents(page)).toEqual([COUNTER_ID.toString()]);
+  expect(await ignoredIntents(page)).toEqual([objectId]);
 
-  // Walking back out clears the mark again, mouse still untouched.
-  await page.keyboard.down("ArrowDown");
+  // Walking back out clears the mark again, mouse still untouched: the
+  // pointer is left over the counter, and the player is no longer in reach.
+  await walkTo(page, counter.outOfReachCell);
+  await hoverCell(page, counter.x, counter.y, counter.floor);
   await page.waitForFunction(() => (window.__bc?.highlightedObjectId ?? null) === null, undefined, {
     timeout: 10_000,
   });
-  await page.keyboard.up("ArrowDown");
 });
 
 test("a click on the drawn part of a tall prop hits that prop, not the cell behind it", async ({
@@ -242,20 +181,23 @@ test("a click on the drawn part of a tall prop hits that prop, not the cell behi
   await page.goto("/");
   await ready(page);
 
-  // The bin's art is 16x32 on a 1x1 footprint, so its lid is drawn a
-  // whole cell above its own row -- over the pavement behind it. Clicking
-  // the lid must hit the bin.
-  const bin = propById(BIN_ID, TRASH_BIN_DEF_ID);
-  const lid = worldPixelOfCell(bin.x, bin.y - 1, bin.floor);
-  await canvasOf(page).hover({ position: await canvasOffsetForWorldPx(page, lid) });
-  await canvasOf(page).screenshot({ path: `${SHOT_DIR}/hover-bin-lid.png` });
+  // A counter's art is taller than its 1x1 footprint, so its top is drawn a
+  // whole cell above its own row -- over the cell behind it. Clicking that
+  // part must hit the counter.
+  const tall = nearestInteractable(arrivalCell());
+  const def = committedDefs().objects.find((o) => o.id === tall.defId);
+  expect((def?.sprite?.h ?? 0) > TILE_SIZE_PX * (def?.height ?? 1)).toBe(true);
+  await walkTo(page, tall.outOfReachCell);
+  const top = worldPixelOfCell(tall.x, tall.y - 1, tall.floor);
+  await canvasOf(page).hover({ position: await canvasOffsetForWorldPx(page, top) });
+  await canvasOf(page).screenshot({ path: `${SHOT_DIR}/hover-tall-prop.png` });
   await expect(canvasOf(page)).toHaveCSS("cursor", "pointer");
 
-  await canvasOf(page).click({ position: await canvasOffsetForWorldPx(page, lid) });
+  await canvasOf(page).click({ position: await canvasOffsetForWorldPx(page, top) });
   const seen = await Promise.all([intents(page), ignoredIntents(page)]);
-  const touchedTheBin =
-    seen[0].some((i) => i.objectId === BIN_ID.toString()) || seen[1].includes(BIN_ID.toString());
-  expect(touchedTheBin, "clicking the drawn lid of the bin must resolve to the bin").toBe(true);
+  const id = tall.objectId.toString();
+  const touched = seen[0].some((i) => i.objectId === id) || seen[1].includes(id);
+  expect(touched, "clicking the drawn top of the counter must resolve to the counter").toBe(true);
 });
 
 test("a rebound movement key survives a reload, and the key it replaced stops working", async ({

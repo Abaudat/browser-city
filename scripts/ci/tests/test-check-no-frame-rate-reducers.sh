@@ -28,8 +28,8 @@ plant "$d" "world/movement.ts" 'conn.reducers.sendPing("hi");'
 check "a reducer call under world/ is banned" 1 bash "$CHECK" "$d"
 
 d="$(fake_dir)"
-plant "$d" "test-street/scene.ts" 'conn.reducers.sendPing("hi");'
-check "a reducer call under test-street/ is banned" 1 bash "$CHECK" "$d"
+plant "$d" "render/world-scene.ts" 'conn.reducers.sendPing("hi");'
+check "a reducer call under render/ is banned" 1 bash "$CHECK" "$d"
 
 d="$(fake_dir)"
 plant "$d" "render/highlight.ts" 'this.ticker.add(this.onTick);'
@@ -37,18 +37,18 @@ check "a ticker.add callback with no reducer call, under render/, passes -- tick
 
 d="$(fake_dir)"
 plant "$d" "debug/panel.ts" 'app.ticker.add(() => { doSomethingHarmless(); });'
-check "a ticker.add callback with no reducer call, outside render/world/test-street, passes" 0 bash "$CHECK" "$d"
+check "a ticker.add callback with no reducer call, outside render/world, passes" 0 bash "$CHECK" "$d"
 
 d="$(fake_dir)"
 plant "$d" "debug/panel.ts" 'app.ticker.add((ticker) => {
   conn.reducers.sendPing("hi");
 });'
-check "a reducer call inside a ticker.add callback is banned, even outside render/world/test-street" 1 bash "$CHECK" "$d"
+check "a reducer call inside a ticker.add callback is banned, even outside render/world" 1 bash "$CHECK" "$d"
 
 d="$(fake_dir)"
 plant "$d" "debug/panel.ts" 'conn.reducers.sendPing("hi");
 app.ticker.add(() => { doSomethingHarmless(); });'
-check "a reducer call outside any ticker.add callback, outside render/world/test-street, passes" 0 bash "$CHECK" "$d"
+check "a reducer call outside any ticker.add callback, outside render/world, passes" 0 bash "$CHECK" "$d"
 
 d="$(fake_dir)"
 plant "$d" "debug/panel.ts" 'Ticker.shared.add((ticker) => {

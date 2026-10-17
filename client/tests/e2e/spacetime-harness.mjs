@@ -22,7 +22,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 // The one client mirror of the chunk packing (Node strips the types).
-import { CHUNK_SIZE, chunkKey } from "../../src/world/chunk.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(__dirname, "../../..");
@@ -148,9 +147,90 @@ export async function startSpacetime({ timeControl = false } = {}) {
   }
 
   const handle = { pid: child.pid, port, serverUrl, dbName, dataDir };
-  seedWorld(handle);
+  // The functional e2e world is the city -- generated once, by the module's
+  // own owner-only reducer, from `city.seed` -- with the fixture block
+  // (`fixtures/fixture-block.v1.json`) standing in its north-west corner:
+  // restored first, through the module's own restore path, so its ids are
+  // its own; the district's rows under it are cleared after generation.
+  // The deploy-smoke flavour has neither the block nor the reducer that
+  // clears under it, and walks the city as deployed.
+  if (timeControl) restoreBlock(handle);
+  callReducer(handle, "create_district");
+  if (timeControl) {
+    clearUnderBlock(handle);
+    // The district's ids follow the block's (the restore leaves a gap of
+    // its own after them): the pinned dump's first row is the district's
+    // first placed row, so its id is the shift a spec reading the dump
+    // applies (`district-support.ts`).
+    handle.blockPlaced = firstDistrictId(handle, "placed_object", "object_id", E2E_BLOCK.maxId) - 1;
+    handle.blockGround =
+      firstDistrictId(handle, "ground_area", "area_id", E2E_BLOCK.ground.length) - 1;
+  }
   writeFileSync(STATE_FILE, JSON.stringify(handle), "utf-8");
   return handle;
+}
+
+/** The fixture block as the harness reads it. */
+export const E2E_BLOCK = JSON.parse(
+  readFileSync(path.join(REPO_ROOT, "fixtures", "fixture-block.v1.json"), "utf-8"),
+);
+
+/** The block's cupboard and what is in it, for the container spec. */
+export const E2E_CUPBOARD = E2E_BLOCK.cupboard;
+
+const rowsJson = (rows) => `[${rows.map((r) => `[${r.join(",")}]`).join(",")}]`;
+
+function restoreBlock(handle) {
+  const count = (rows) => String(rows.length);
+  callReducer(handle, "begin_restore");
+  callReducer(handle, "restore_placed_object", rowsJson(E2E_BLOCK.placed), count(E2E_BLOCK.placed));
+  callReducer(
+    handle,
+    "restore_floor_transition",
+    rowsJson(E2E_BLOCK.transitions),
+    count(E2E_BLOCK.transitions),
+  );
+  callReducer(handle, "restore_ground_area", rowsJson(E2E_BLOCK.ground), count(E2E_BLOCK.ground));
+  // The cupboard holds five known items: instance `i` is the cupboard's
+  // `i - 1`th seeded item, held at its slot.
+  const items = E2E_CUPBOARD.items;
+  const instances = items.map((it, i) => `[${i + 1},${it.defId},[0]]`);
+  const held = items.map(
+    (it, i) => `[${i + 1},0,${E2E_CUPBOARD.objectId},${it.slotX},${it.slotY},${it.orientation}]`,
+  );
+  callReducer(
+    handle,
+    "restore_item_instance",
+    `[${instances.join(",")}]`,
+    String(instances.length),
+  );
+  callReducer(handle, "restore_item_held", `[${held.join(",")}]`);
+  callReducer(handle, "finish_restore");
+}
+
+/** The id the module gave the district's first row of `table`: the first id
+ * above the block's own that exists. */
+function firstDistrictId(handle, table, column, blockMax) {
+  for (let id = blockMax + 1; id <= blockMax + 16; id++) {
+    if (ownerSql(handle, `SELECT ${column} FROM ${table} WHERE ${column} = ${id}`).length > 0) {
+      return id;
+    }
+  }
+  throw new Error(`the district's first ${table} row was not found above the block's ids`);
+}
+
+function clearUnderBlock(handle) {
+  const c = E2E_BLOCK.chunks;
+  callReducer(
+    handle,
+    "debug_clear_chunks",
+    String(c.cx0),
+    String(c.cy0),
+    String(c.cx1),
+    String(c.cy1),
+    "0",
+    String(E2E_BLOCK.maxId),
+  );
 }
 
 /** Adds fields to the persisted handle (story 4.5: the local OIDC issuer's
@@ -189,79 +269,6 @@ export function callReducer(handle, reducer, ...args) {
   if (result.status !== 0) {
     throw new Error(`spacetime call ${reducer} failed:\n${result.stdout}\n${result.stderr}`);
   }
-}
-
-/** The seeded e2e world (story 4.3): one `placed_object` and one
- * `actor_location` in every chunk of a `(2 * E2E_WORLD_SPAN + 1)` square
- * block of ground-floor chunks, centred on the chunk the test street's
- * spawn is in -- far larger than any one interest region, so a client
- * that over-subscribes holds more than it should. Written through the
- * module's own owner-only restore path (never a test-only reducer) before
- * any client connects, so every spec sees the same world. Ids are
- * `E2E_WORLD.idOf(cx, cy)`. */
-export const E2E_WORLD = {
-  span: 4,
-  idOf(cx, cy) {
-    const side = 2 * E2E_WORLD.span + 1;
-    return (cx + E2E_WORLD.span) * side + (cy + E2E_WORLD.span) + 1;
-  },
-};
-
-const E2E_WORLD_COUNT = (2 * E2E_WORLD.span + 1) ** 2;
-
-/** Story 6.10: the seeded cupboard and what is in it (`defs/items`:
- * flower_pot 9 and honeycomb 10 (1x1), seed_sack 12 and apron 13 (1x2)).
- * `objectId` is the street's own prop id for it (`CUPBOARD_PROP_ID`) and
- * the `placed_object` id the module gives it. */
-export const E2E_CUPBOARD = {
-  objectId: 82,
-  x: 7,
-  y: 2,
-  items: [
-    { defId: 9, slotX: 0, slotY: 0, orientation: 0 },
-    { defId: 10, slotX: 1, slotY: 0, orientation: 0 },
-    { defId: 12, slotX: 3, slotY: 0, orientation: 0 },
-    { defId: 12, slotX: 0, slotY: 1, orientation: 1 },
-    { defId: 13, slotX: 2, slotY: 1, orientation: 0 },
-  ],
-};
-
-function seedWorld(handle) {
-  const placed = [];
-  const actors = [];
-  for (let cx = -E2E_WORLD.span; cx <= E2E_WORLD.span; cx++) {
-    for (let cy = -E2E_WORLD.span; cy <= E2E_WORLD.span; cy++) {
-      const id = E2E_WORLD.idOf(cx, cy);
-      const key = chunkKey(cx * CHUNK_SIZE, cy * CHUNK_SIZE, 0);
-      placed.push(`[${id},1,${cx * 32 + 5},${cy * 32 + 5},0,3,0,${key}]`);
-      actors.push(`[${id},0,${id},${key},0]`);
-    }
-  }
-  // Story 6.10: shop A's cupboard (def 71, a 4x3 grid) is a real
-  // placed_object -- the one after the chunk objects, so the restore's
-  // gap-free ids hold -- and holds five known items: two 1x1, a 1x2
-  // standing at the east edge, another turned a quarter turn (2x1)
-  // beneath them, and a 1x2 (see `E2E_CUPBOARD`).
-  const cupboardId = E2E_CUPBOARD.objectId;
-  placed.push(
-    `[${cupboardId},71,${E2E_CUPBOARD.x},${E2E_CUPBOARD.y},0,2,0,${chunkKey(E2E_CUPBOARD.x, E2E_CUPBOARD.y, 0)}]`,
-  );
-  const count = placed.length;
-  callReducer(handle, "begin_restore");
-  callReducer(handle, "restore_placed_object", `[${placed.join(",")}]`, String(count));
-  callReducer(handle, "restore_actor_location", `[${actors.join(",")}]`, String(E2E_WORLD_COUNT));
-  const instances = E2E_CUPBOARD.items.map((it, i) => `[${i + 1},${it.defId},[0]]`);
-  const held = E2E_CUPBOARD.items.map(
-    (it, i) => `[${i + 1},0,${cupboardId},${it.slotX},${it.slotY},${it.orientation}]`,
-  );
-  callReducer(
-    handle,
-    "restore_item_instance",
-    `[${instances.join(",")}]`,
-    String(instances.length),
-  );
-  callReducer(handle, "restore_item_held", `[${held.join(",")}]`);
-  callReducer(handle, "finish_restore");
 }
 
 /** Reads a table as the module owner through `spacetime sql`: rows of

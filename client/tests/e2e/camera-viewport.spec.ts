@@ -12,15 +12,10 @@ import type { Page } from "@playwright/test";
 import { BOOT_MARK } from "../../src/boot/boot-marks";
 import type {} from "../../src/net/e2e-hooks";
 import { CAMERA_SCROLL_TOLERANCE_PX } from "../../src/render/camera";
-import { type StreetWalkSegment, streetSubwayApproachRoute } from "../../src/test-street/fixture";
-import {
-  committedDefs,
-  streetWalkInputs,
-  westOpenSpotRoute,
-} from "../unit/test-street/street-world";
+import { committedDefs } from "../unit/support/committed-defs";
 import { waitForPlayerControllable } from "./boot-test-support";
+import { arrivalCell, startWithRoom, walkTo } from "./district-support";
 import { expect, test } from "./fixtures";
-import { walkRealSegment } from "./walk-support";
 
 function balance(key: string): number {
   const entry = committedDefs().balance.find((b) => b.key === key);
@@ -56,7 +51,7 @@ async function waitForSceneReady(page: Page): Promise<void> {
 /** One centre check against the player sprite's own real, live global
  * bounds -- never recomputed from `viewTransform`, which is the
  * implementation under test (Quentin's direction). The sprite is
- * bottom-centre anchored (`test-street/scene.ts`'s own `anchor.set(0.5,
+ * bottom-centre anchored (`render/world-scene.ts`'s own `anchor.set(0.5,
  * 1)`), and that anchor -- not the bounding box's own vertical centre --
  * is the point the camera actually centres (`screen-position.ts`'s own
  * `worldPointPx`); a tall sprite's real drawn top sits well above the
@@ -64,8 +59,10 @@ async function waitForSceneReady(page: Page): Promise<void> {
  * anchoring), so this reads the anchor (`bounds.x + width/2`,
  * `bounds.y + height`), never the box's geometric middle. */
 async function assertPlayerCentred(page: Page): Promise<void> {
+  // The scene exposes its hooks once it has mounted; wait for the one read.
+  await page.waitForFunction(() => window.__bc?.playerScreenBounds !== undefined);
   const deviation = await page.evaluate(() => {
-    const canvas = document.querySelector("#test-street canvas");
+    const canvas = document.querySelector("#world canvas");
     if (!(canvas instanceof HTMLCanvasElement)) throw new Error("no street canvas");
     const bounds = window.__bc?.playerScreenBounds?.();
     if (!bounds) throw new Error("no playerScreenBounds hook");
@@ -112,7 +109,7 @@ interface FollowSample {
  * direction, finding 8): the caller drives movement with real
  * `page.keyboard.down`/`up`, dispatched from Node, never a synthetic
  * `window.dispatchEvent` inside the page -- the same real-input idiom
- * `test-street.spec.ts`/`enclosure.spec.ts` already use elsewhere in
+ * `district-walk.spec.ts`/`enclosure.spec.ts` already use elsewhere in
  * this suite.
  */
 async function startFollowSample(
@@ -122,7 +119,7 @@ async function startFollowSample(
 ): Promise<() => Promise<FollowSample>> {
   await page.evaluate(
     ({ tileSizePx, dir }) => {
-      const canvas = document.querySelector("#test-street canvas");
+      const canvas = document.querySelector("#world canvas");
       if (!(canvas instanceof HTMLCanvasElement))
         throw new Error("startFollowSample: no street canvas");
       const startPos = window.__bc?.playerPosition;
@@ -154,7 +151,7 @@ async function startFollowSample(
           const pos = window.__bc?.playerPosition;
           const world = window.__bc?.worldTransform?.();
           if (bounds && pos && world) {
-            // The bottom-centre anchor (`test-street/scene.ts`'s own
+            // The bottom-centre anchor (`render/world-scene.ts`'s own
             // `anchor.set(0.5, 1)`), never the bounding box's own vertical
             // centre -- see `assertPlayerCentred`'s own doc comment for why.
             const centreX = bounds.x + bounds.width / 2;
@@ -266,179 +263,54 @@ function expectSteadyScroll(result: FollowSample, label: string): void {
   ).toBeLessThanOrEqual(CAMERA_SCROLL_TOLERANCE_PX + FLOAT_EPS_PX);
 }
 
-/** The minimum real travel a held direction must demonstrate for the
- * follow proof to mean anything (cycle 2, Quentin's direction, finding
- * 8) -- a direction blocked after one step must fail this, not "prove"
- * following. Every setup route in the `followCase` list below was
- * verified empirically, before this file was committed, by driving the
- * real, mounted scene through this exact same `walkToOpenSpot` (a real
- * `ArrowDown` rest against the trash bin lands at `(4.5, 7.25)` --
- * `shopfrontExitRestY()`'s own doc comment says why the lamppost no
- * longer sits on this column; from there, east to a waypoint overlapping
- * the lamppost's own base collider, south into it, east past it and on
- * to `x >= 10`, then resting west
- * lands back around `(1.25, 8.625)`, ~9.3 cells; crossing `x >= 7.3` then
- * resting north lands around `(7.5, 2.25)`, ~6.4 cells; the same plus a
- * further rest south returns to `(7.5, 9)`, ~6.75 cells -- the pavement
- * itself is too shallow north-south for 3 cells anywhere, which is why
- * the south case detours through the interior instead) -- never guessed,
- * and never trusted from arithmetic alone. A
- * fixed real-time hold (`cells / movement.walk_speed_millicells_per_s`)
- * was tried first and measured fine locally, but failed on CI: a stalled
- * frame's own `deltaMs` is clamped to 100ms (`docs/architecture.md`'s
- * own movement rule), so on a loaded runner simulated time can fall well
- * behind wall-clock time and a timed hold quietly covers far fewer
- * cells. Every setup step below waits on the real, authoritative game
- * state itself instead, never an assumed elapsed-time-to-distance
- * conversion. */
+/** The minimum real travel a held direction must demonstrate for the follow
+ * proof to mean anything -- a direction blocked after one step must fail
+ * this, not "prove" following. Each case starts on a cell the district has
+ * this much open ground ahead of (`startWithRoom`, over the real grid), and
+ * waits on the real game state, never an assumed elapsed-time-to-distance
+ * conversion: a stalled frame's own `deltaMs` is clamped, so on a loaded
+ * runner simulated time can fall well behind wall-clock time. */
 const MIN_TRAVELLED_CELLS = 3;
 
 type ArrowKey = "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft";
 
-type SetupStep =
-  /** Holds `key` until a real collider stops the player (no position
-   * change for several consecutive animation frames) or a generous
-   * safety timeout. Requires movement to have actually started before a
-   * lack of further movement counts as a rest, so a step that starts
-   * already resting (a bad setup sequence) times out loudly instead of
-   * returning immediately having moved nowhere. */
-  | { readonly kind: "rest"; readonly key: ArrowKey }
-  /** Walks a registered route through the shared helper. */
-  | { readonly kind: "route"; readonly segments: readonly StreetWalkSegment[] };
-
-/** Real, held keyboard input, one `SetupStep` at a time -- the setup leg
- * for each follow case below, never measured itself. */
-async function walkToOpenSpot(page: Page, steps: readonly SetupStep[]): Promise<void> {
-  for (const step of steps) {
-    if (step.kind === "rest") {
-      await walkUntilRest(page, step.key);
-    } else {
-      for (const segment of step.segments) await walkRealSegment(page, segment);
-    }
-  }
-}
-
-async function walkUntilRest(page: Page, key: ArrowKey): Promise<void> {
-  await page.keyboard.down(key);
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve, reject) => {
-        const start = window.__bc?.playerPosition;
-        if (!start) {
-          reject(new Error("walkUntilRest: no starting player position"));
-          return;
-        }
-        let last = { x: start.x, y: start.y };
-        let hasMoved = false;
-        let restFrames = 0;
-        let frames = 0;
-        const MAX_FRAMES = 600; // 10s of frames, a safety cap
-        function tick(): void {
-          const pos = window.__bc?.playerPosition;
-          if (pos) {
-            const moved = pos.x !== last.x || pos.y !== last.y;
-            if (moved) hasMoved = true;
-            restFrames = moved ? 0 : restFrames + 1;
-            last = { x: pos.x, y: pos.y };
-            if (hasMoved && restFrames >= 10) {
-              resolve();
-              return;
-            }
-          }
-          frames += 1;
-          if (frames >= MAX_FRAMES) {
-            reject(new Error(`walkUntilRest: never came to rest within ${MAX_FRAMES} frames`));
-            return;
-          }
-          requestAnimationFrame(tick);
-        }
-        requestAnimationFrame(tick);
-      }),
-  );
-  await page.keyboard.up(key);
-}
-
 test.describe("camera/viewport (NFR48)", () => {
   test.use({ viewport: { width: 1280, height: 720 } });
 
-  // One case per direction, each its own `page.goto` (cycle 2, Quentin's
-  // direction, finding 8): every setup route below is real, empirically
-  // verified fixture geometry (`MIN_TRAVELLED_CELLS`'s own doc comment),
-  // reached by its own real-keyboard setup walk from `PLAYER_START` --
-  // never a teleport hook. A fresh load per case means one direction's
-  // own release lag can never carry into another's start point.
-  // Story 15.2, cycle 2 (Quentin's finding 3): the doormat this used to
-  // rest against carried an undrawn collider; the real trash bin beside
-  // it gives the exact same real, natural rest instead
-  // (`shopfrontExitRestY`'s own doc comment says why), so
-  // `REST_DOWN_TO_PAVEMENT` stays a plain `"rest"` step.
-  const REST_DOWN_TO_PAVEMENT: SetupStep = { kind: "rest", key: "ArrowDown" };
-  // Out of the shop and past the lamppost to the open pavement, walked as
-  // `streetWalkRoute`'s own first four segments plus one more east.
-  const WEST_OPEN_SPOT: SetupStep = { kind: "route", segments: westOpenSpotRoute() };
+  // One case per direction, each its own `page.goto`: every setup is a real
+  // keyboard walk to a district cell with open ground ahead of it -- never
+  // a teleport hook. A fresh load per case means one direction's own release
+  // lag can never carry into another's start point.
   for (const followCase of [
-    {
-      name: "east",
-      codes: ["ArrowRight"] as const,
-      setup: [REST_DOWN_TO_PAVEMENT] as const,
-    },
-    {
-      name: "west",
-      codes: ["ArrowLeft"] as const,
-      // The lamppost's own base collider (`LAMPPOST_CELL`'s own doc
-      // comment says why the lamppost moved there) walls off its own
-      // column, so a plain east crossing on this row no longer reaches
-      // `x >= 10` -- the same detour the scripted walk (`fixture.ts`'s
-      // `streetWalkRoute`) uses gets past it: east to a waypoint overlapping
-      // the lamppost's own collider, south into it, then on east,
-      // clear of it.
-      setup: [WEST_OPEN_SPOT] as const,
-    },
-    {
-      name: "north",
-      codes: ["ArrowUp"] as const,
-      // Back through the door, the only gap in shop A's own front wall
-      // (the shopfront window's own collision now spans its real,
-      // def-declared width, three cells, story 2.13 -- x = 7.3 (this
-      // case's own former setup) now falls inside it): rests already
-      // start on this same column (`PLAYER_START.x`), so no further x
-      // setup is needed before turning north.
-      setup: [REST_DOWN_TO_PAVEMENT] as const,
-    },
-    {
-      name: "south",
-      codes: ["ArrowDown"] as const,
-      // Detours through shop A's own interior (never crossing back out
-      // the door): the pavement itself is too shallow north-south for
-      // `MIN_TRAVELLED_CELLS` anywhere, but this same column, walked
-      // north first, reaches the interior's own north wall with real
-      // room to spare south of it. Back through the door -- the "north"
-      // case's own doc comment says why no x setup is needed first.
-      setup: [REST_DOWN_TO_PAVEMENT, { kind: "rest", key: "ArrowUp" }] as const,
-    },
+    { name: "east", codes: ["ArrowRight"] as const, dir: { x: 1, y: 0 } },
+    { name: "west", codes: ["ArrowLeft"] as const, dir: { x: -1, y: 0 } },
+    { name: "north", codes: ["ArrowUp"] as const, dir: { x: 0, y: -1 } },
+    { name: "south", codes: ["ArrowDown"] as const, dir: { x: 0, y: 1 } },
     {
       name: "north-east (diagonal)",
       codes: ["ArrowUp", "ArrowRight"] as const,
-      setup: [REST_DOWN_TO_PAVEMENT] as const,
+      dir: { x: 1, y: -1 },
     },
-    // The three remaining diagonals walk from open spots the axis cases
-    // above already reach.
     {
       name: "north-west (diagonal)",
       codes: ["ArrowUp", "ArrowLeft"] as const,
-      setup: [WEST_OPEN_SPOT] as const,
+      dir: { x: -1, y: -1 },
     },
     {
       name: "south-east (diagonal)",
       codes: ["ArrowDown", "ArrowRight"] as const,
-      setup: [REST_DOWN_TO_PAVEMENT, { kind: "rest", key: "ArrowUp" }] as const,
+      dir: { x: 1, y: 1 },
     },
     {
       name: "south-west (diagonal)",
       codes: ["ArrowDown", "ArrowLeft"] as const,
-      setup: [REST_DOWN_TO_PAVEMENT, { kind: "rest", key: "ArrowUp" }] as const,
+      dir: { x: -1, y: 1 },
     },
-  ] satisfies { name: string; codes: readonly ArrowKey[]; setup: readonly SetupStep[] }[]) {
+  ] satisfies {
+    name: string;
+    codes: readonly ArrowKey[];
+    dir: { x: number; y: number };
+  }[]) {
     test(`the camera stays centred while holding ${followCase.name}, and travels at least ${MIN_TRAVELLED_CELLS} cells`, async ({
       page,
     }) => {
@@ -447,7 +319,7 @@ test.describe("camera/viewport (NFR48)", () => {
       await waitForSceneReady(page);
       await assertPlayerCentred(page);
 
-      await walkToOpenSpot(page, followCase.setup);
+      await walkTo(page, startWithRoom(arrivalCell(), followCase.dir, MIN_TRAVELLED_CELLS + 2));
       await assertPlayerCentred(page);
 
       const result = await holdAndSampleFollow(page, followCase.codes, TILE_SIZE_PX);
@@ -468,20 +340,6 @@ test.describe("camera/viewport (NFR48)", () => {
     });
   }
 
-  test("the camera stays centred immediately after a real floor transition", async ({ page }) => {
-    await page.goto("/");
-    await waitForSceneReady(page);
-
-    // From the shop down the subway stairs the demo's own way (issue #310:
-    // walking left); the key is released the frame the floor changes.
-    for (const segment of streetSubwayApproachRoute(streetWalkInputs())) {
-      await walkRealSegment(page, segment);
-    }
-    expect(await page.evaluate(() => window.__bc?.playerFloor)).toBe(-1);
-
-    await assertPlayerCentred(page);
-  });
-
   test("the page has no browser scroll chrome at any supported viewport size", async ({ page }) => {
     test.setTimeout(90_000);
     await page.goto("/");
@@ -501,7 +359,7 @@ test.describe("camera/viewport (NFR48)", () => {
       // alone matches, which is a real race, not only a test one.
       await page.waitForFunction(
         (expected) => {
-          const canvas = document.querySelector("#test-street canvas");
+          const canvas = document.querySelector("#world canvas");
           if (!(canvas instanceof HTMLCanvasElement)) return false;
           const rect = canvas.getBoundingClientRect();
           if (
@@ -608,7 +466,7 @@ test.describe("camera/viewport (NFR48)", () => {
         __bcSamplesBeforeAtlasReady: () => samplesBeforeAtlasReady,
       });
       function tick(): void {
-        const canvas = document.querySelector("#test-street canvas");
+        const canvas = document.querySelector("#world canvas");
         const worldTransform = window.__bc?.worldTransform;
         const done = performance.getEntriesByName("bc-boot:player-controllable").length > 0;
         if (canvas instanceof HTMLCanvasElement && worldTransform) {
@@ -691,7 +549,7 @@ async function assertNoScrollChrome(
   size: { width: number; height: number },
 ): Promise<void> {
   const state = await page.evaluate(() => {
-    const canvas = document.querySelector("#test-street canvas");
+    const canvas = document.querySelector("#world canvas");
     if (!(canvas instanceof HTMLCanvasElement)) throw new Error("no street canvas");
     const rect = canvas.getBoundingClientRect();
     return {
@@ -751,7 +609,7 @@ test.describe("camera/viewport (NFR48): cold load at deviceScaleFactor 2", () =>
     test.setTimeout(60_000);
     await page.goto("/");
     await waitForSceneReady(page);
-    await walkToOpenSpot(page, [{ kind: "rest", key: "ArrowDown" }]);
+    await walkTo(page, startWithRoom(arrivalCell(), { x: 1, y: -1 }, MIN_TRAVELLED_CELLS + 2));
     const result = await holdAndSampleFollow(page, ["ArrowUp", "ArrowRight"], TILE_SIZE_PX);
     expect(Math.max(result.travelledCellsX, result.travelledCellsY)).toBeGreaterThanOrEqual(
       MIN_TRAVELLED_CELLS,

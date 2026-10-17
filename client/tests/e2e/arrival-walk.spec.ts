@@ -1,7 +1,7 @@
-// Story 4.26 (FR117, FR128): a new character walks from the flat to every
-// place the street has. The real name prompt places them in the flat; from
-// there only real key presses move them -- no teleport, no position hook --
-// out of the door, under the footbridge, along the shop fronts and down the
+// Story 4.26 (FR117, FR128): a character walks from the fixture block's flat
+// to every place the block has. The harness stands them in the flat once
+// (`enterBlock`: the block is a test fixture beside the generated city, not an
+// arrival); from there only real key presses move them, out of the door, under the footbridge, along the shop fronts and down the
 // street stairwell. Each leg is its own step, named for where it ends, so a
 // blocked leg fails under its own name. Positions and the server's stored
 // row are asserted, never pixels. The same legs are proven feasible in unit
@@ -13,14 +13,12 @@ import {
   STAIRWELL_FOOTPRINT,
   type StreetWalkSegment,
   SUBWAY_FLOOR,
-} from "../../src/test-street/fixture";
-import { streetMovementConfig, streetWalkInputs } from "../unit/test-street/street-world";
-import { waitForPlayerControllable } from "./boot-test-support";
+} from "../fixture-block/fixture";
+import { streetMovementConfig, streetWalkInputs } from "../unit/fixture-block/street-world";
+import { enterBlock } from "./block-support";
 import { expect, test } from "./fixtures";
 import { ownerSql, readSpacetimeHandle } from "./spacetime-harness.mjs";
 import { walkRealSegment } from "./walk-support";
-
-test.use({ startAt: "home" });
 
 /** Cells a segment can have to walk, from where the body is now. */
 function distanceCells(
@@ -43,15 +41,14 @@ function distanceCells(
   }
 }
 
-test("a new character walks from the flat to both shop fronts and down the subway stairs", async ({
+test("a character walks from the block's flat to both shop fronts and down the subway stairs", async ({
   page,
 }) => {
   // The walk is ~45 cells at real speed plus the boot; each segment has its own
   // distance-based timeout, so a blocked leg still fails in seconds.
   test.setTimeout(90_000);
   const { walkSpeedCellsPerMs } = streetMovementConfig();
-  await page.goto("/");
-  await waitForPlayerControllable(page);
+  await enterBlock(page, HOME_FLAT_SPAWN.x, HOME_FLAT_SPAWN.y, HOME_FLAT_SPAWN.floor);
   const start = await page.evaluate(() => window.__bc?.playerPosition);
   expect(start?.x).toBeCloseTo(HOME_FLAT_SPAWN.x, 1);
   expect(start?.y).toBeCloseTo(HOME_FLAT_SPAWN.y, 1);

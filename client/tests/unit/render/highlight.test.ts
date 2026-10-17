@@ -1,5 +1,5 @@
 // `render/highlight.ts`'s own unit tests (Tim/Quentin's direction, story
-// 1.15): moved from `test-street/scene.test.ts`'s `highlightOverlayAlpha`
+// 1.15): moved from `render/world-scene.test.ts`'s `highlightOverlayAlpha`
 // suite now that the function itself lives here, plus the truth-table and
 // property coverage the promotion out of throwaway scaffolding demands.
 import fc from "fast-check";

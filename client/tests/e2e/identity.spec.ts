@@ -10,10 +10,18 @@ import { ARRIVED_FLAG_KEY } from "../../src/identity/arrival-flag";
 import type {} from "../../src/net/e2e-hooks";
 import { ZOOM } from "../../src/render/camera";
 import { cellBottomCentre, worldPointPx } from "../../src/render/screen-position";
-import { LINK_CARRIER_CELL, LINK_CARRIER_PROP_ID } from "../../src/test-street/link-carrier";
-import { committedDefs } from "../unit/test-street/street-world";
+import { committedDefs } from "../unit/support/committed-defs";
 import { waitForPlayerControllable } from "./boot-test-support";
 import { canvasOf, canvasOffsetForWorldPx } from "./camera-test-support";
+import {
+  arrivalCell,
+  blockLocalCells,
+  nearestCell,
+  nearestInteractable,
+  reachPositionOf,
+  walkTo,
+  walkToPosition,
+} from "./district-support";
 import { expect, test } from "./fixtures";
 import { callReducer, readSpacetimeHandle } from "./spacetime-harness.mjs";
 
@@ -286,7 +294,7 @@ const COOLOFF_DAYS = committedDefs().balance.find(
 const MIN_AGE_DAYS = committedDefs().balance.find(
   (b) => b.key === "identity.link_prompt_min_character_age_days",
 )?.value;
-const SUBCELLS = committedDefs().colliderSubcellsPerCell;
+const _SUBCELLS = committedDefs().colliderSubcellsPerCell;
 const FAST_CLOCK_SPEED = 100;
 
 function balanceOf(key: string): number {
@@ -389,6 +397,9 @@ test("the link offer appears a city day after the character, is declined by walk
 
   const decliner = await newPlayerWithCharacter(browser);
   const taker = await newPlayerWithCharacter(browser);
+  // Two scenes drawing at once halve each other's frame rate, and a walk
+  // is only as fast as the frames it is given: the taker waits, undrawn.
+  await taker.goto("about:blank");
 
   // A new character is not offered anything: the offer waits for a natural
   // moment, never the first minutes of play.
@@ -406,44 +417,38 @@ test("the link offer appears a city day after the character, is declined by walk
   }
 });
 
+/** The carrier the page placed for this identity, from the scene's own
+ * report: its object id (as the render order names it) and its cell. */
+async function carrierOf(page: Page): Promise<{ objectId: string; x: number; y: number }> {
+  const props = await page.evaluate(() => window.__bc?.world?.().localProps ?? []);
+  const carrier = props[0];
+  if (!carrier) throw new Error("the page placed no link carrier");
+  return carrier;
+}
+
 async function declineAndTake(decliner: Page, taker: Page): Promise<void> {
   await reloadUntilOffered(decliner);
-  const carrierOrderId = LINK_CARRIER_PROP_ID.toString();
-  expect(await decliner.evaluate(() => window.__bc?.renderOrder ?? [])).toContain(carrierOrderId);
+  const carrier = await carrierOf(decliner);
+  blockLocalCells([carrier]);
+  expect(await decliner.evaluate(() => window.__bc?.renderOrder ?? [])).toContain(carrier.objectId);
 
-  // Decline: simply do not take it. Movement works...
-  const before = await decliner.evaluate(() => window.__bc?.playerPosition);
-  await decliner.keyboard.down("ArrowDown");
-  await decliner.waitForFunction(
-    (y) => (window.__bc?.playerPosition?.y ?? y) > y + 0.5,
-    before?.y ?? 0,
-    { timeout: 10_000 },
+  // Decline: simply do not take it. Movement works (a walk to a street cell
+  // and back)...
+  const home = arrivalCell();
+  await walkTo(decliner, nearestCell(home, false, 40, [carrier]));
+  await walkTo(decliner, home);
+  // ...and an in-reach intent on something else still resolves: walk into
+  // the reach of the nearest counter and click it.
+  const counter = nearestInteractable(home);
+  await walkTo(decliner, counter.reachCell);
+  const counterPos = await canvasOffsetForWorldPx(
+    decliner,
+    worldPixelOfCell(counter.x, counter.y, counter.floor),
   );
-  await decliner.keyboard.up("ArrowDown");
-  await decliner.keyboard.down("ArrowUp");
-  await decliner.waitForFunction(
-    (y) => (window.__bc?.playerPosition?.y ?? 99) <= y + 0.05,
-    before?.y ?? 0,
-    { timeout: 10_000 },
-  );
-  // ...and an in-reach intent on something else still resolves: walk north
-  // into the shop counter's reach row and click it.
-  const counter = committedDefs().objects.find((o) => o.key === "shop_counter");
-  const reach = counter?.interactAt;
-  expect(reach).toBeDefined();
-  const counterAnchorY = 2;
-  const reachBottom = counterAnchorY + (reach?.y1 ?? 0) / SUBCELLS;
-  await decliner.waitForFunction(
-    (bottom) => (window.__bc?.playerPosition?.y ?? 99) < bottom,
-    reachBottom,
-    { timeout: 10_000 },
-  );
-  await decliner.keyboard.up("ArrowUp");
-  const counterPos = await canvasOffsetForWorldPx(decliner, worldPixelOfCell(4, counterAnchorY, 0));
   await canvasOf(decliner).click({ position: counterPos });
   await expect
     .poll(() => decliner.evaluate(() => window.__bc?.intents?.map((i) => i.objectId) ?? []))
-    .toEqual(["8"]);
+    .toEqual([counter.objectId.toString()]);
 
   // Nothing was withheld, and a reload inside the cool-off shows no second
   // offer.
@@ -451,31 +456,21 @@ async function declineAndTake(decliner: Page, taker: Page): Promise<void> {
   await sceneReady(decliner);
   expect(await linkOfferPlaced(decliner)).toBe(false);
   expect(await decliner.evaluate(() => window.__bc?.renderOrder ?? [])).not.toContain(
-    carrierOrderId,
+    carrier.objectId,
   );
   await decliner.context().close();
 
   // Taking it: the other player walks to the carrier, uses it, and comes back
   // linked.
+  await taker.goto("/");
   await reloadUntilOffered(taker);
-  await taker.keyboard.down("ArrowUp");
-  await taker.waitForFunction(
-    (y) => (window.__bc?.playerPosition?.y ?? 99) < y,
-    LINK_CARRIER_CELL.y + 1,
-    { timeout: 10_000 },
-  );
-  await taker.keyboard.up("ArrowUp");
-  await taker.keyboard.down("ArrowRight");
-  await taker.waitForFunction(
-    (x) => (window.__bc?.playerPosition?.x ?? 0) >= x,
-    LINK_CARRIER_CELL.x - 0.2,
-    { timeout: 10_000 },
-  );
-  await taker.keyboard.up("ArrowRight");
-  const carrierPos = await canvasOffsetForWorldPx(
-    taker,
-    worldPixelOfCell(LINK_CARRIER_CELL.x, LINK_CARRIER_CELL.y, LINK_CARRIER_CELL.floor),
-  );
+  const mine = await carrierOf(taker);
+  blockLocalCells([mine]);
+  const here = await taker.evaluate(() => window.__bc?.playerPosition);
+  if (!here) throw new Error("no player position");
+  // A fitting cell beside the carrier, from which it is in reach.
+  await walkToPosition(taker, reachPositionOf(CARRIER_DEF_ID, mine.x, mine.y));
+  const carrierPos = await canvasOffsetForWorldPx(taker, worldPixelOfCell(mine.x, mine.y, 0));
   await taker.evaluate(() => {
     (window as unknown as { __preLink?: boolean }).__preLink = true;
   });

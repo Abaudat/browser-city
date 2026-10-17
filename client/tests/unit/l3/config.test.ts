@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadL3Config } from "../../../src/l3/config";
-import { committedDefs } from "../test-street/street-world";
+import { committedDefs } from "../support/committed-defs";
 
 describe("loadL3Config", () => {
   it("reads every dial from the committed defs", () => {

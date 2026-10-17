@@ -3,8 +3,8 @@
 # string `keyup` appears only in walk-watcher.ts (and boot-marks.spec.ts,
 # which measures input latency, not a walk); a walk call never takes an
 # inline segment literal (the route lives in `walkedRoutes()`); and the
-# release lag is given a non-zero literal only in client/src/test-street/
-# fixture.ts. A mechanical grep, run by `client-check`.
+# release lag is given a non-zero literal only in client/tests/e2e/
+# walk-types.ts. A mechanical grep, run by `client-check`.
 set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # An optional first argument overrides the client directory --
@@ -38,9 +38,9 @@ if [ -n "$UNTIL" ]; then
 fi
 
 LAG="$(grep -rnE 'releaseLagSteps[[:space:]]*:[[:space:]]*[1-9]' "$CLIENT_DIR/tests" "$CLIENT_DIR/src" --include='*.ts' 2>/dev/null \
-  | grep -vE '/src/test-street/fixture\.ts:' || true)"
+  | grep -vE '/tests/e2e/walk-types.ts:' || true)"
 if [ -n "$LAG" ]; then
-  echo "check-one-walk-helper: FAIL -- releaseLagSteps is given a literal outside src/test-street/fixture.ts; import RELEASE_LAG:" >&2
+  echo "check-one-walk-helper: FAIL -- releaseLagSteps is given a literal outside tests/e2e/walk-types.ts; import RELEASE_LAG:" >&2
   echo "$LAG" >&2
   FAIL=1
 fi

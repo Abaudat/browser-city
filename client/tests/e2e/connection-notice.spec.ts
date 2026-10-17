@@ -44,7 +44,7 @@ async function waitForSceneReady(page: Page): Promise<void> {
  * "before" capture goes unmasked while an "after" one is, and the two
  * become incomparable for exactly the region under test. */
 function canvasScreenshot(page: Page): Promise<Buffer> {
-  return page.locator("#test-street canvas").screenshot();
+  return page.locator("#world canvas").screenshot();
 }
 
 /** The notice's own rect, relative to the canvas's top-left -- read once
@@ -57,7 +57,7 @@ async function noticeRectRelativeToCanvas(
   page: Page,
 ): Promise<{ x: number; y: number; width: number; height: number }> {
   const rect = await page.evaluate(() => {
-    const canvas = document.querySelector("#test-street canvas");
+    const canvas = document.querySelector("#world canvas");
     const el = document.querySelector("[data-bc-notice]");
     if (!canvas || !el) throw new Error("canvas or notice element missing");
     const c = canvas.getBoundingClientRect();
@@ -130,7 +130,7 @@ test("the DOM UI surface is an exact allowlist: every top-level surface but the 
   await waitForSceneReady(page);
 
   const surfaces = await page.evaluate(() => {
-    const canvasMount = document.getElementById("test-street");
+    const canvasMount = document.getElementById("world");
     return (
       [...document.body.children]
         // The canvas mount and the entry-point `<script type="module">` tag
@@ -170,11 +170,11 @@ test("a drop after a successful connect shows 'Connection lost' within 2s, and t
     serverRoute = ws.connectToServer();
   });
 
-  // `?freezeCrowd=1` holds the street crowd's own walk-cycle ticker
+  // `?freezeBodies=1` holds the street crowd's own walk-cycle ticker
   // paused, so the two screenshots below differ only by whatever the
   // drop itself changed on screen -- never by which frame of which
   // citizen's animation happened to be current at each capture.
-  await page.goto("/?freezeCrowd=1");
+  await page.goto("/?freezeBodies=1");
   await waitForSceneReady(page);
 
   // Healthy: the notice is not up before the drop.
@@ -202,7 +202,7 @@ test("a drop after a successful connect shows 'Connection lost' within 2s, and t
   // untouched -- a screenshot taken now must match the one taken right
   // before the drop pixel-for-pixel outside the notice's own rect
   // (modulo rendering noise).
-  await expect(page.locator("#test-street canvas")).toBeAttached();
+  await expect(page.locator("#world canvas")).toBeAttached();
   await expect
     .poll(() => page.evaluate(() => window.__bc?.frameTimings?.length ?? 0), { timeout: 5_000 })
     .toBeGreaterThan(framesBeforeDrop);
@@ -234,7 +234,7 @@ test("a route that aborts at boot shows 'Connecting…', then 'Connection lost' 
   // path were never wired at all, because a plain "connecting" status
   // sitting past the debounce showed a notice on its own either way.
   await expect(notice(page)).toHaveText("Connection lost");
-  await expect(page.locator("#test-street canvas")).toBeAttached({ timeout: 20_000 });
+  await expect(page.locator("#world canvas")).toBeAttached({ timeout: 20_000 });
   // The client keeps retrying, but on the backoff schedule and not in a
   // tight loop: the first retries wait up to 1 s, 2 s, 4 s.
   await expect.poll(() => attempts, { timeout: 15_000 }).toBeGreaterThan(1);
@@ -253,7 +253,7 @@ test("a route that aborts at boot shows 'Connecting…', then 'Connection lost' 
   const rendered = await canvasScreenshot(page);
   const renderedPng = PNG.sync.read(rendered);
   const blankPng = new PNG({ width: renderedPng.width, height: renderedPng.height });
-  const [r, g, b] = [0x28, 0x40, 0x28]; // test-street/scene.ts's own `app.init({ background: "#284028" })`.
+  const [r, g, b] = [0x28, 0x40, 0x28]; // render/world-scene.ts's own `app.init({ background: "#284028" })`.
   for (let i = 0; i < blankPng.data.length; i += 4) {
     blankPng.data[i] = r;
     blankPng.data[i + 1] = g;

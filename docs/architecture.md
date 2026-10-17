@@ -392,8 +392,8 @@ and an OIDC identity on the same character.
   `identity.link_prompt_cooloff_days`; evaluated once per session as the scene
   mounts (`identity/link-offer.ts`), recording the city day when shown. The
   offer has no DOM and no canvas text: it is the `[[object]]` carrying the
-  `registry_post` tag, placed in the test street (`test-street/link-carrier.ts`,
-  throwaway) when due, and an in-reach intent on it starts `offerLink`. A
+  `registry_post` tag, drawn by the world scene beside the player as a pick-only sprite (`placeCarrier`: no row, no collider)
+  when due, and an in-reach intent on it starts `offerLink`. A
   character's age is its real creation instant read on the city clock, so
   the e2e harness (which publishes the `time-control` flavour) ages it with
   `set_clock_speed`, never `jump_clock`.
@@ -524,12 +524,12 @@ walkability grid is never a table, a column or a wire message
   `checkTransitionPairSymmetry`, pairing transitions one to one
   (`pairTransitions`, never a plain `find` that lets two forwards claim
   one reverse) and exposing each pairing's own `d` so a caller
-  (`street-conformance.test.ts`'s own "one entrance" geometry check) never
+  (the district's own "one entrance" geometry check) never
   re-derives which neighbour is the entry side. This half is pure (no
   grid) and runs on every `TransitionIndex` construction by default --
   never an opt-in, so a subscription that hands this class real
-  transitions is checked the same way the committed street's own fixture
-  is. The standability half (both cells a pairing's own reverse
+  transitions is checked the same way the streamed district's own rows
+  are. The standability half (both cells a pairing's own reverse
   introduces must be standable for the real body) runs additionally when
   `isStandable` is supplied. `skipPairSymmetry` is the named, visible
   escape hatch a test double uses to construct an intentionally invalid
@@ -616,7 +616,7 @@ fixture is checked from the client side too
 The client holds only the world around the player. Subscriptions are client-issued queries over public, chunk-keyed tables.
 
 - A query is one pure equality, `WHERE chunk_key = <key>`, built with the typed query builder. The engine parameterises, prunes and shares only that shape; a range, an `OR` or an extra `AND` is re-evaluated on every write to its table. Never a SQL string, never a whole table beyond the three singletons (`demo_ping`, `module_version`, `world_clock`) and the per-sender `my_character` view.
-- One handle per (chunk column, floor band), holding the equality for every floor of the band on every table in `REGION_QUERIES` (`net/region-subscription.ts`, the one place a region table is declared): `placed_object`, `floor_transition`, `building_area`, `room_area`, `actor_location`, `player_position`. Columns are disjoint, so a shifting region re-sends nothing.
+- One handle per (chunk column, floor band), holding the equality for every floor of the band on every table in `REGION_QUERIES` (`net/region-subscription.ts`, the one place a region table is declared): `placed_object`, `floor_transition`, `building_area`, `room_area`, `ground_area`, `roof_area`, `actor_location`, `player_position`. Columns are disjoint, so a shifting region re-sends nothing.
 - `world/region.ts` declares the constants once and plans the region as a pure function of the player's cell and floor: wanted within `REGION_RADIUS_CHUNKS` (2) Chebyshev distance of the player's column, released only beyond `REGION_RADIUS_CHUNKS + REGION_HYSTERESIS_CHUNKS` (1). No timer. `REGION_MAX_HANDLES` bounds what is held. The radius covers a maximum half-viewport, `REGION_BODY_MARGIN_CELLS`, `MAX_FOOTPRINT_CELLS` and, to the south, `MAX_FLOOR * storey_height_px / tile_size_px`; a unit test holds it to that.
 - A band is the floors co-visible with the player's: `0..=MAX_FLOOR` or `MIN_FLOOR..=-1`. A band change adds the new band's handles; the old band's leave by the distance rule.
 - The region is recomputed only when the player's chunk column or band changes, never per frame. A handle is released only once applied (`unsubscribe()` throws on a pending or ended handle); a handle no longer wanted while pending is released on its `onApplied`. A handle ends on `onEnded` or `onError`, whichever comes first, and `onError` can come in any state. A region `onError` goes through `onStatus("disconnected")`. A reconnect is a new `connect()` and a new manager, built around the current position.
@@ -625,7 +625,7 @@ The client holds only the world around the player. Subscriptions are client-issu
 - `actor_location` (`actor_kind`, `actor_id`, `chunk_key`, `floor`) says which chunk an actor is in, and exists solely so a chunk filter is expressible as a subscription; no `x` or `y` is ever added. `actor_kind` is a code set (`character`, `citizen`) in `sim::codes`; a citizen names its table in `sim::actor_location::ACTOR_TABLES`, and a character never has an `actor_location` row (its chunk is `player_position.chunk_key`). The row is rewritten only when the actor's chunk or floor changes, decided by `sim::actor_location::plan_move`, which derives the chunk through `sim::world::chunk_key`. `tables/actor.rs`'s `place_actor(ctx, kind, id, x, y, floor)` is the one writer (no write when unchanged, an update in place on a chunk or floor change, an insert the first time); `scripts/ci/check-actor-location-path.sh` holds the accessor to that file, `restore.rs` and `metrics.rs`, and `bounds/tests/actor_location_shape.rs`'s `no_second_presence_table` fails on any other table carrying an actor id with a `chunk_key` (`player_position` is the character's own row).
 - A citizen has one pending scheduled event: its next arrival or its next chunk crossing, whichever is sooner. A crossing does one thing: `place_actor`, then schedule the next event. `sim::actor_location::crossings(route, t_depart, t_arrive, start)` is the pure plan: instants from L3's waypoint rule (`leg_instants`, pinned with the client by `fixtures/leg-instants.v1.json`), placements from `plan_move`. Crossing calls count under `ReducerClass::Scheduled`.
 - A table is split by how often it is written, not by the entity it describes: anything rewritten more often than a chunk change is its own table, joined through `actor_id`.
-- `placed_object`, `floor_transition`, `building_area` and `room_area` are public; `item_placed`, `building` and `room` stay private until a client reader exists.
+- `placed_object`, `floor_transition`, `building_area`, `room_area`, `ground_area` and `roof_area` are public; `item_placed`, `building` and `room` stay private until a client reader exists.
 - An open container's contents are a per-view handle, never part of the region: `net/container-subscription.ts` issues `item_held WHERE container_id = <id>` and a typed-builder semijoin from those rows onto `item_instance` (for each row's `def_id`) when a view opens and releases the one handle when it closes (`unsubscribe()` only once applied). It is the third file allowed to call `.subscribe(`.
 - `scripts/ci/check-subscription-shape.sh` holds the query shape (`.subscribe(` only in `net/connection.ts`, `net/region-subscription.ts` and `net/container-subscription.ts`, no `SELECT` literal under `client/src`, the whole-table set exactly the three singletons); `scripts/ci/check-interest-region.sh` proves it against a real instance.
 
@@ -704,16 +704,16 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   strict half-open comparisons and no epsilon. Candidates come only from
   the cells the swept body spans, never a row query.
 - `world/**` may not import `pixi.js`, values from `net/` (only
-  `net/bindings` types, type-only) or `test-street/`, and may not touch `window`
+  `net/bindings` types, type-only), and may not touch `window`
   or `document`; DOM input lives in `client/src/input/`.
 - The server's `FloorCollision` stays tile-granular and never consumes a
   `collider`.
 - Scripted e2e walks go through `client/tests/e2e/walk-support.ts`. Its
   watcher (`walk-watcher.ts`) is armed before the key goes down and
   releases it in the page. Overshoot is bounded by `RELEASE_LAG`
-  (`test-street/fixture.ts`), asserted by the helper on every walk and by
+  (`tests/e2e/walk-types.ts`), asserted by the helper on every walk and by
   the unit feasibility tests over every walked route (`walkedRoutes`,
-  `tests/unit/test-street/`); `scripts/ci/check-one-walk-helper.sh`
+  `tests/unit/district/`); `scripts/ci/check-one-walk-helper.sh`
   enforces it.
 
 ## Input (client)
@@ -725,7 +725,7 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   action, no kind. Emission is one injected sink plus one `onIgnored`
   callback; there is no event bus.
 - `src/input/**` may not import `pixi.js`, `net/` (bindings included),
-  `test-street/`, or any procedure or interaction module -- enforced by
+  or any procedure or interaction module -- enforced by
   `client/biome.json`'s override and by
   `scripts/ci/check-input-boundary.sh`.
 - Picking never uses PixiJS hit-testing: one `pointerdown`/`pointermove`
@@ -817,53 +817,34 @@ surface's own per-surface rule injector.
   anywhere under `client/src/`); `client/biome.json`'s `src/ui/**`
   override (nothing below `ui/` can import it; `ui/**` itself cannot
   reach `net/**` except `net/connection-status`, nor `render/**`,
-  `world/**`, `test-street/**`, `pixi.js`); `noRestrictedGlobals` banning
+  `world/**`, `pixi.js`); `noRestrictedGlobals` banning
   `document` in `render/**`, `net/**`, `defs/**` and `boot/**` (`window`
-  stays allowed) -- DOM creation is only possible in `ui/`, `input/`,
-  `test-street/` and `main.ts`.
+  stays allowed) -- DOM creation is only possible in `ui/`, `input/`
+  and `main.ts`.
 
 ## Rendering
 
-`client/src/render/` holds the permanent rendering modules -- the ones
-the next story that builds a real, subscribed drawable pool reaches for.
-`client/src/test-street/` holds the one hand-laid scene the client is
-proven against: a committed, deterministic fixture, throwaway harness
-code by design, replaced wholesale by Epic 3's generator. There is never
-more than one such directory. Imports flow test-street -> render/world/
-input, never the reverse (`client/biome.json` enforces it on `render/**`,
-`world/**` and `input/**`), so deleting the street is one directory and
-one import in `main.ts`. `sort-key.ts`, `decompose.ts`, `layer-ranks.ts`,
-`layer-table.ts`, `sort-units.ts`, `screen-position.ts`,
-`floor-stacks.ts` and `pixi-order.ts` all live under `render/`; nothing
-under `test-street/` is held to the coverage bar the permanent modules
-are, though it is still exercised by real tests
-(`client/vitest.config.ts`'s coverage `include`/`exclude`).
+`client/src/render/` holds the rendering modules. The scene
+(`render/world-scene.ts`) draws the world from the rows the region
+subscription streams: `world/chunk-store.ts` holds them per chunk,
+`render/chunk-residency.ts` keeps drawn the chunks within the viewport and
+a margin and drops the rest, and `render/prop-drawables.ts` turns a
+placed row into its drawable from its def. There is no hand-laid scene:
+`scripts/ci/check-no-test-street.sh` refuses one. Debug-only crowds
+live under `client/src/debug/`, reached only through `main.ts`'s
+DEV-gated dynamic import. `sort-key.ts`, `decompose.ts`,
+`layer-ranks.ts`, `layer-table.ts`, `sort-units.ts`,
+`screen-position.ts`, `floor-stacks.ts` and `pixi-order.ts` all live
+under `render/`.
 
-The street contributes no collider that is not drawn on the same floor
-(story 15.2): every `STREET_PROPS` row that carries a `solid` flag or a
-`defId` also carries a real sprite at that same footprint, and its
-collider lies inside that footprint. An asset-placed solid prop declares
-one `collider`.
-`STREET_BOUNDARY` is exactly one thing: the undrawn ring that closes the
-edge of the drawn world, in whole cells, every one outside every drawn
-ground pass on its floor. The exemptions are the footbridge's two rails and
-one face, by id: the south rail (110), a sub-cell strip that keeps a walker
-leaning on it inside the deck's own row, the deck flight's west edge (134), a
-sub-cell strip level with the street posts' own collider, and the street
-flight's north face (137), a strip along the south edge of the deck row that
-refuses a step into the up-anchor from the north. The street's standable
-floor-0 cells are one connected region on drawn ground containing
-`HOME_FLAT_SPAWN`, the shop fronts and the subway entrance
-(`ARRIVAL_DESTINATIONS`); `tests/unit/test-street/footbridge.test.ts` floods it
-from `HOME_FLAT_SPAWN`, fails on any reachable cell off drawn ground and on any
-drawn standable cell it does not reach. `client/tests/unit/test-street/street-conformance.test.ts`
-holds this over the whole fixture: every collider cell traces back to a
-drawn prop's own footprint or the ring; no ring rect but ids 110, 134 and 137 carries a
-collider, and none overlaps a drawn ground pass; every `walls`-layer,
-`furniture`-layer or `solid` row collides in its own footprint (all of
-it, unless it declares its own shape), bar an explicit, reasoned
-allow-list; and each subway stairwell's footprint is non-standable
-everywhere but its tread path.
+A placed solid prop declares one `collider`; the collider lies inside the
+footprint its sprite draws, and the player's grid is built from the
+streamed rows (`world/collision-grid.ts` over `world/world-index.ts`), never from a
+second source.
+The fixture block's standable floor-0 cells are one connected region on drawn
+ground containing its flat, the shop fronts and the subway entrance
+(`ARRIVAL_DESTINATIONS`); `tests/unit/fixture-block/arrival-reach.test.ts` holds it
+and the closed ring.
 
 A frame draws four passes per floor, in this fixed order, declared even
 when a pass is empty: three flat passes -- ground, ground decals, ground
@@ -908,7 +889,7 @@ is positioned on screen. Occlusion between floors is entirely
 Every drawable's position and the camera anchor snap to a whole screen
 pixel through `render/screen-position.ts`'s `snapToScreenPx` (an integer
 `ZOOM` only), so the camera offset is a whole pixel and the world scrolls
-in whole screen pixels. Nothing under `test-street/` rounds a position
+in whole screen pixels. Nothing in the scene modules rounds a position
 (`scripts/ci/check-no-scene-rounding.sh`), and `computeCamera`'s own
 round only absorbs an odd viewport's half pixel.
 
@@ -981,9 +962,8 @@ path keeps walking pace (FR183), and the walk frame is fed the drawn-surface
 distance (`FlightIndex.drawnDistance`); neither reaches the sort key,
 collision or picking.
 
-Only a test-street row with no `object_def` reads its art straight out of
-the repo-root `ModernTileset/` at runtime (`new URL(..., import.meta.url)`
-asset imports), not out of `client/public/`. A row placed by a real
+Every placed row draws through its packed `atlas` rect
+(`AtlasPageLoader`), never a `ModernTileset/` import of its own. A row placed by a real
 `object_def` draws only through its packed `atlas` rect (`AtlasPageLoader`),
 never a `ModernTileset/` import of its own. Character part sheets are never
 read the raw-import way either: they are packed, at build time, into
@@ -1016,6 +996,13 @@ reorders a pool member.
   owned by the viewer's own building is hidden; a building's floors above
   the viewer's own current floor are hidden the same way while the viewer
   is inside it.
+- Roofs: a building's `roof_area` rects draw as near-side `walls`
+  drawables of that building, each a mesh of its def's rooftop panel cut in
+  16x16 cells and laid nine-slice over the building's whole roof outline
+  (`render/ground-mesh.ts` `roofPieces`), never stretched (so retraction hides them from inside), sorted
+  at the roof's south edge; anything else owned by a building whose roof is
+  drawn is hidden from a viewer outside that building (`isUnderRoof`), and
+  its windows are opaque on the near side and hidden on a far side.
 - Windows: an `[[object]]` with `window = true` in `defs/` draws at
   `render.window_alpha` percent (`defs/balance/render.toml`, never a
   TypeScript literal) once it is not hidden; masks, filters, render
@@ -1042,7 +1029,7 @@ FR173's affordance mark: one additive overlay copy of each visible
 drawable of the hovered, in-reach object, inserted as a sibling directly
 above its own source sprite in the pool container -- never a pool member,
 never a separate top layer. Re-attached by the one wrapper that calls
-`applyDepthOrder` (`test-street/scene.ts`'s `reorderFloor`); no other call
+`applyDepthOrder` (`render/world-scene.ts`'s `reorderFloor`); no other call
 site touches it after a re-sort. Its overlay tracks its source every frame
 it is alive -- position, scale, anchor, texture, visibility and alpha all
 mirrored -- never a snapshot taken at hover start.
@@ -1900,8 +1887,30 @@ the build if the committed files and a fresh render ever disagree.
   them by value.
 - The `create_district` reducer (operator class) is the only caller of
   `generation::`; `check-district-write-path.sh` enforces it.
-- No workflow and no `scripts/ops` file calls `create_district`;
-  `init` and `finish_publish` never generate.
+- `create_district` materialises the district's world rows in the same
+  transaction as the record (`District::region_rows`): the generated props
+  as `placed_object`, the `building_area`, `room_area` and
+  `floor_transition` rows, the ground as `ground_area` rects and each
+  building's roof as `roof_area` rects (its interior net and its north rim
+  but a door cell, all keyed on the chunk of the net's south-west cell). The
+  client draws a chunk's ground as one static mesh per atlas page
+  (`render/ground-mesh.ts`), never a sprite per cell. Ground is never a row per cell: the
+  street's pavement and carriageway (carried `city.ground.margin_cells`
+  past a site edge they meet), each built plot's yard and forecourt, each
+  footprint's floor (under its wall ring) and every room's floor, each def chosen by tag (the `city.ground.*_tag_id`
+  balance keys name the tags) from what the cell is; a cell no rect covers
+  is open ground, the client's default. A dwelling's roof is chosen by its
+  building-age band. The seed is the `city.seed` balance key.
+- The district's `arrival_*` columns hold the arrival cell
+  (`District::arrival_cell`: a floor-0 standable cell inside a dwelling,
+  poor-band dwellings preferred, a viewport in from the site edge);
+  `relocate_stranded` moves a stored position that no longer stands
+  there, and the `my_start` view hands every caller that cell (where a
+  scene with no stored `my_position` mounts, before its tenancy exists).
+  The city's first district (id 1) is the one a character arrives in.
+- `scripts/ops/ensure-district.sh` is the deploy step that creates the
+  district when none exists and `scripts/ops/assert-world-invariants.sh`
+  then asserts the rows; `init` and `finish_publish` never generate.
 
 ## Housing
 
@@ -1914,7 +1923,7 @@ the build if the committed files and a fresh render ever disagree.
 - `asking_rent` is a function of neighbourhood affluence: `economy.rent.edge_flat_per_week` in the bottom band, plus `economy.rent.per_affluence_point_percent` per point above it. A balance key that says `seed = "FR<n>"` names a requirement that exists in `docs/requirements.md`, or `defs-build` refuses it; the 45 per cent rent share is derived in `server/sim/tests/tenancy.rs`, never stored.
 - The opening commute (about an hour, as a route cost over the macro graph from the flat's entrance node) is `routing::commute::leg`; the opening workplace is `routing::commute::opening_workplace` from that node, among the businesses whose building type employs `routing.commute.opening_profession_id`. Story 7.4 adds the hire as the twin of `tenancy` (actor kind, actor id, business id, `started_at`; private; authored by the employer), writes it in `create_character`'s transaction right after the flat, and places the letter of engagement on the box through the generic document kind and a `tenancy_document`-shaped row. The flat and the job are chosen together: the first group's vacant flats are tried in character-id-drawn order, at most `housing.opening_max_flats`, and the first whose `opening_workplace` pick lands in band is let; failing that, the tried flat nearest the target. A flat with no in-band workplace stays in the stock for a later let.
 - Vacancy is `dwelling` rows less `tenancy` rows, both sampled by the table sampler.
-- The client starts its scene at `my_position` (the caller's stored `player_position`) before the position sender runs (`world/arrival-position.ts`); the test street's flat is the fallback only while no row exists.
+- The client starts its scene at `my_position` (the caller's stored `player_position`) before the position sender runs (`world/arrival-position.ts`); `my_start` (the district's arrival cell) is the fallback only while no row exists.
 - `placed_object` has three writers: `create_district`, `tables/housing.rs` and the restore reducers (`scripts/ci/check-placed-object-path.sh`).
 
 ## Routing
@@ -1960,18 +1969,18 @@ the build if the committed files and a fresh render ever disagree.
 - `l3/seed.ts` is the only id-to-number source: `seedOf(id, ...salts)` (u32) and `unitOf`, integer arithmetic only. One named salt per feature (`SALTS`: flavour, flavourStart, flavourOffset, glanceFacing, idlePhase); the gait phase is the unsalted draw.
 - A value two clients must agree on is a pure function of replicated L2 state, the city time handed in, stable ids and the collision grid. No frame count, frame delta, spawn order or per-body history.
 - Flavour (`l3/flavour.ts`) applies only to a standing body (`At`, and a transit before depart or after arrive). The idle row plays on city time with an id-seeded phase (`l3.idle_frame_milliminutes`). A flavour is a row of the catalogue (`L3Config.flavourRows`: id, weight percent, duration, the appearance-layout animation it plays, facing rule `away` or `rest`); a row is eligible for a citizen only if its animation is in the frames of the citizen's layout. The draw is a weighted pick over the eligible rows, nothing the remainder, from `seedOf(id, flavour, bucket)` with `bucket = (t + id offset) div l3.flavour_bucket_milliminutes`. A flavour starts at a seeded point in its bucket, fits inside it, returns to the rest facing and is not drawn if it would not end before the next departure. It writes animation, frame and facing, never position. Players get no flavour gesture.
-- Every body driven by a ledger leg is built with `LifeDials` (flavour and ramp) and posed through `test-street/street-life.ts`'s `StreetLife` (`solve(t)`), so none is drawn outside avoidance and flavour.
+- Every body driven by a ledger leg is built with `LifeDials` (flavour and ramp) and posed through `render/street-life.ts`'s `StreetLife` (`solve(t)`), so none is drawn outside avoidance and flavour.
 - Avoidance (`l3/avoidance.ts`) is a draw-only lateral offset from the ledger pose, a closed form of the base poses and straight-line velocities (`CitizenFrame.speed`, `heading`) of the bodies within `l3.avoid_radius_millicells` at city time `t`, never of history. The side of a pass is decided from the closest-approach miss of the two bodies' motion, which holds for the whole encounter: when it is within `l3.avoid_tie_band_millicells` of the walker's line the walker passes on its right (two walkers running alongside on one line spread by id order, converging or crossing paths take the right-hand rule); otherwise each steps away from the other's side; a miss of `l3.avoid_clearance_millicells` or more walks straight. Two walkers share the clearance and a walker passing a standing body gives it whole; a standing body is never displaced. A walker passing a standing body takes the side with room for the clearance, decided at the point abeam of it (walls and the other standing bodies count as obstacles, with a slope of one in three along the walk) and swung smoothly. The offset is zero at every corner of the walked path and both ends of a leg (`l3.avoid_ramp_millicells`, never reaching past the middle of a straight run; a waypoint the path runs straight through is not a corner). A walking neighbour is treated as standing at its anchor, the nearest corner or end of its path, in proportion to how little its ramp has come in, so everything that picks a side is constant while both bodies are on straight edges and every change happens where a weight is zero. At most `l3.avoid_max_neighbours` nearest neighbours (ties by id) count, summed in (x, id) order; neighbours come from a grid of cells of the radius, so the pair work is the neighbours in nine cells per body, and a pile of m bodies in one cell costs m squared. The walls are scanned once per cell and grid revision, `(2 * scanSpan + 1)` squared `walkable` lookups (441 at the shipped dials), however many bodies and neighbours ask. Two bodies walking the same way and converging shallowly (under about 35 degrees) are left alone, since lateral steps move them together as much as apart; two such bodies that arrive together are not guaranteed to open to a body's width. Gaps are compared to the tie band on a grid far coarser than float noise, so one encounter lands on one side. Facing, walk frame and arrival never read the offset; the drawn depth does, equal depths going by stable id.
 - The held predicate is the body zone's, for every caller: a body is resolved only when the 3x3 chunks of `ceil(l3.avoid_radius)` cells round it lie inside the spawn rect less `l3.path_box_margin_cells` (`StreetLife.solve`, `zoneHoldsChunk`). Every citizen inside the spawn rect has a body on every client, so such an offset does not depend on the bubble; a body outside it walks its ledger line, off screen in the margin. No body zone (the from-scratch agreement sample) holds everything.
 - The L3 frame window is bracketed only in the crowd ticker (`onL3Work` around `StreetLife.solve` and `CitizensLayer.update`; `l3/` reads no clock). `client/tests/e2e/l3-budget.spec.ts` gates it on the runner with 200 rush-hour bodies in one bubble: L3's percentiles against the recorded finding (`RECORDED_P95_RATIO` and kin, normalised by a fixed calibration workload, +25%, lowered and never raised), zero major GCs and the allocation ceiling (`MAX_L3_ALLOC_BYTES_PER_FRAME`). A miss of the NFR11 budget is never absorbed by fewer agents, moved dials or a looser gate. D-L3 is open; `docs/spikes/5.4-l3-frame-budget.md` is the reference.
 - The e2e hook `l3Agreement(t)` computes every street citizen's agreed state from scratch; `l3-agreement.spec.ts` compares two clients on exactly the list below. It feeds nothing from the viewport, so it guards mount order and wiring; the bubble guard is `inv_l3_avoidance_is_bubble_independent`.
 - An NPC is a member of the depth-sorted pool on the `characters` rank, placed through `positionSprite` with the flight offset of its position, and culled by floor like the player.
 - The L3 debug overlay (`?debug=l3`) reads each live body's straight-line fallbacks, out-of-band pace, sidestep, avoidance cap and blocked-tile hits, and a standing body's flavour.
-- Until L2 exists, `test-street/timetable.ts` supplies the legs as data (including the avoidance staging in `test-street/citizens.ts`); story 5.5 deletes it.
+- Until L2 exists, `l3/interim-timetable.ts` supplies the legs as data; story 5.5 deletes it.
 
 ### L3 -- must agree
 
-Every client agrees on, for a citizen at a city time: the segment and ledger position (gross position), the activity (walk, idle, a flavour), the walk frame, the idle frame, the facing, the appearance (the five stored indices and the uniform override), the arrival instant, and the avoidance offset of a body in a fully held region. A divergence on this list is a defect.
+Every client agrees on, for a citizen at a city time: the segment and ledger position (gross position), the activity (walk, idle, a flavour), the walk frame, the idle frame, the facing, the appearance (the five stored indices and the uniform override), the arrival instant, and the avoidance offset of a body in a fully held region -- every chunk its neighbours (the radius plus a pose's stray) and its wall scan span can reach lies in the body zone, which the region subscription covers, so the collision grid it reads is the same on every client. A divergence on this list is a defect.
 
 Nobody checks: render-only easing and snapping, anything not listed.
 

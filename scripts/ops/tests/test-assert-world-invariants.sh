@@ -17,7 +17,7 @@ make_stub() { # -> prints the stub dir; rows per table are files in $d/rows
 [ "\$1" = "sql" ] || { echo "stub: unhandled \$*" >&2; exit 1; }
 q="\${@: -1}"
 [ -f "$d/fail" ] && { echo "Error: boom" >&2; exit 1; }
-t="\${q##* FROM }"
+t="\${q##* FROM }"; t="\${t%% WHERE*}"
 col="\${q#SELECT }"; col="\${col%% *}"
 echo " \$col "
 echo "-------"
@@ -65,6 +65,16 @@ check "a liveness row with fires=0 fails" 1 bash -c "exit $CODE"
 D="$(make_stub)"; : > "$D/rows/cadence_liveness"
 OUT="$(run "$D")"; CODE=$?
 check "an empty cadence_liveness is tolerated" 0 bash -c "exit $CODE"
+
+D="$(make_stub)"; : > "$D/rows/district"
+OUT="$(run "$D")"; CODE=$?
+check "a world with no district fails" 1 bash -c "exit $CODE"
+check_contains "names the district" "district" "$OUT"
+
+D="$(make_stub)"; : > "$D/rows/room_area"
+OUT="$(run "$D")"; CODE=$?
+check "no room floor under the arrival cell fails" 1 bash -c "exit $CODE"
+check_contains "names room_area" "room_area" "$OUT"
 
 D="$(make_stub)"; touch "$D/fail"
 OUT="$(run "$D")"; CODE=$?

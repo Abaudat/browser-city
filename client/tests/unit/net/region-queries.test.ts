@@ -42,6 +42,8 @@ describe("regionQueries", () => {
         "floor_transition",
         "building_area",
         "room_area",
+        "ground_area",
+        "roof_area",
         "actor_location",
         "player_position",
       ]),

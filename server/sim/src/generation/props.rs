@@ -332,6 +332,52 @@ impl StreetEdge {
     }
 }
 
+/// The street's ground as rects: every edge's whole footprint (the
+/// pavement, under the carriageway) and every edge's carriageway, an edge
+/// that meets the site boundary carried `margin` cells beyond it, so a
+/// street never ends at the line the site stops at. Painted in this order
+/// -- pavements, then carriageways -- a junction's road wins.
+pub fn street_surface_rects(
+    skeleton: &Skeleton,
+    cfg: &GenerationConfig,
+    margin: i32,
+) -> (Vec<Rect>, Vec<Rect>) {
+    let site = skeleton.plots.site();
+    let mut pavement = Vec::new();
+    let mut road = Vec::new();
+    for e in skeleton.streets.edges() {
+        let mut r = e.rect();
+        let mut c = e.carriageway(cfg);
+        let (lo, hi) = match e.axis {
+            Axis::Vertical => (e.from <= site.y0, e.to >= site.y1),
+            Axis::Horizontal => (e.from <= site.x0, e.to >= site.x1),
+        };
+        for rect in [&mut r, &mut c] {
+            match e.axis {
+                Axis::Vertical => {
+                    if lo {
+                        rect.y0 -= margin;
+                    }
+                    if hi {
+                        rect.y1 += margin;
+                    }
+                }
+                Axis::Horizontal => {
+                    if lo {
+                        rect.x0 -= margin;
+                    }
+                    if hi {
+                        rect.x1 += margin;
+                    }
+                }
+            }
+        }
+        pavement.push(r);
+        road.push(c);
+    }
+    (pavement, road)
+}
+
 /// The two pavement bands of `e`: low-coordinate side first.
 fn bands(e: &StreetEdge, cfg: &GenerationConfig) -> Vec<Band> {
     let p = e.pavement_cells(cfg);
@@ -577,11 +623,15 @@ impl<'a> Catalogue<'a> {
             }
         }
         // What a placed def owes beside itself: a distribution row over a
-        // tag an object def (no room, no street cell) carries, whose
-        // subject an object def carries too -- one subject per row.
+        // tag a placeable object def (one with a side tag; no room, no street
+        // cell) carries, whose subject an object def carries too -- one
+        // subject per row. A ground or roof def is never placed, so the
+        // building-type tags it carries owe nothing.
         let mut attendants: Vec<(TagId, TagId, u32, i32)> = Vec::new();
         for d in &distributions {
-            let object_per = objects.iter().any(|o| o.tags.contains(&d.per));
+            let object_per = objects
+                .iter()
+                .any(|o| o.tags.contains(&d.per) && o.tags.iter().any(|t| side_tags.contains(t)));
             let room_per = content
                 .room_types
                 .iter()

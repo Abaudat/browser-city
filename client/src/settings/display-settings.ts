@@ -1,7 +1,7 @@
 // The options menu's Display section (Artie's direction, story 1.11):
 // the U1 dial (`docs/ux.md` accessibility floor) -- object-highlight
 // strength -- as a persisted slider, wired live into
-// `test-street/scene.ts`'s affordance overlay (`highlightOverlayAlpha`).
+// `render/world-scene.ts`'s affordance overlay (`highlightOverlayAlpha`).
 //
 // The range is [20, 100], not [0, 100], and the default is 60, not 100
 // (Artie's direction, cycle 2): zero would mean no affordance at all,

@@ -1,4 +1,9 @@
 {
+  "env": {
+    "CARGO_BUILD_JOBS": "6",
+    "RUST_TEST_THREADS": "6",
+    "VITEST_MAX_WORKERS": "6"
+  },
   "extraKnownMarketplaces": {
     "spacetimedb-plugins": {
       "source": {

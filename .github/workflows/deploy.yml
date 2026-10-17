@@ -377,6 +377,11 @@ jobs:
           OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
         run: if [ -n "$OIDC_AUTHORITY" ] && [ -n "$OIDC_CLIENT_ID" ]; then spacetime call --server maincloud --no-config -y "$BACKUP_DATABASE" accept_oidc_issuer "$OIDC_AUTHORITY" "$OIDC_CLIENT_ID"; fi
 
+      - name: ensure the city's district (story 3.16) -- generates it once, only while the district table is empty; a no-op on every later deploy
+        env:
+          BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}
+        run: bash scripts/ops/ensure-district.sh "$BACKUP_DATABASE" --server maincloud
+
       - name: assert the live world is consistent -- a deploy is red the instant it is not
         env:
           BACKUP_DATABASE: ${{ vars.BACKUP_DATABASE }}

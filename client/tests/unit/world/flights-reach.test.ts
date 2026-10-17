@@ -7,20 +7,21 @@ import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { snapToScreenPx, worldPointPx } from "../../../src/render/screen-position";
-import { toSortUnits } from "../../../src/render/sort-units";
 import {
   buildCharacterDrawable,
   updateCharacterDrawable,
-} from "../../../src/test-street/drawables";
-import { STREET_TRANSITIONS, streetPlacedRows } from "../../../src/test-street/fixture";
+} from "../../../src/render/prop-drawables";
+import { snapToScreenPx, worldPointPx } from "../../../src/render/screen-position";
+import { toSortUnits } from "../../../src/render/sort-units";
 import { buildFlights, FlightIndex } from "../../../src/world/flights";
 import {
   committedDefs,
+  STREET_TRANSITIONS,
   streetMovementConfig,
   streetObjectSources,
+  streetPlacedRows,
   streetStandable,
-} from "../test-street/street-world";
+} from "../support/stairs-world";
 
 const SRC = fileURLToPath(new URL("../../../src/", import.meta.url));
 const TILE = 16;
@@ -38,22 +39,26 @@ function sourceFiles(dir: string): string[] {
 
 describe("the flight offset is draw-only (FR182)", () => {
   it("only the scene, the walk step and the remote gait read flights; only the walk step scales a step", () => {
+    const sources = sourceFiles(SRC).map((file) => ({
+      name: relative(SRC, file).split(sep).join("/"),
+      text: readFileSync(file, "utf-8"),
+    }));
     const readers = (pattern: RegExp) =>
-      sourceFiles(SRC)
-        .filter((file) => pattern.test(readFileSync(file, "utf-8")))
-        .map((file) => relative(SRC, file).split(sep).join("/"))
+      sources
+        .filter((source) => pattern.test(source.text))
+        .map((source) => source.name)
         .sort();
     expect(readers(/from\s+"[^"]*world\/flights"|from\s+"\.\/flights"/)).toEqual([
-      "test-street/scene.ts",
+      "render/world-scene.ts",
       "world/floor-walk.ts",
     ]);
-    expect(readers(/\.offsetPx\(/)).toEqual(["test-street/scene.ts"]);
+    expect(readers(/\.offsetPx\(/)).toEqual(["render/world-scene.ts"]);
     // The scale reaches the step through `stepAndTransition` alone, and the
     // remote walk frame reads the drawn distance.
     expect(readers(/\.stepScale\(/)).toEqual(["world/floor-walk.ts"]);
     expect(readers(/\.drawnDistance\(/)).toEqual([
-      "test-street/remote-players-layer.ts",
-      "test-street/scene.ts",
+      "render/remote-players-layer.ts",
+      "render/world-scene.ts",
     ]);
   });
 
@@ -63,7 +68,7 @@ describe("the flight offset is draw-only (FR182)", () => {
     // scan above and 15.13's mounted render-order assertion on the tread row.
     expect(updateCharacterDrawable.length).toBe(4);
     const defs = committedDefs();
-    const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
+    const _storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
     const flights = buildFlights(
       STREET_TRANSITIONS,
       streetPlacedRows(),

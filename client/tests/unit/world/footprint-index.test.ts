@@ -54,6 +54,24 @@ function indexWith(defs: ReadonlyMap<number, FootprintSource>): FootprintIndex {
 }
 
 describe("FootprintIndex", () => {
+  it("answers across chunks, an absent one repeatedly, and after a change retires the cache", () => {
+    const index = indexWith(new Map([[1, ONE_CELL]]));
+    expect(index.objectsAt(0, 100, 100)).toEqual([]);
+    expect(index.objectsAt(0, 101, 100)).toEqual([]);
+    index.insert(row({ objectId: 1n, x: 100, y: 100 }));
+    expect(index.objectsAt(0, 100, 100)).toHaveLength(1);
+    index.delete(row({ objectId: 1n, x: 100, y: 100 }));
+    expect(index.objectsAt(0, 100, 100)).toEqual([]);
+  });
+
+  it("answers for a chunk too far out for the cache, and for a negative one", () => {
+    const index = indexWith(new Map([[1, ONE_CELL]]));
+    index.insert(row({ objectId: 2n, x: 40_000, y: 0 }));
+    index.insert(row({ objectId: 3n, x: -5, y: -5 }));
+    expect(index.objectsAt(0, 40_000, 0)).toHaveLength(1);
+    expect(index.objectsAt(0, -5, -5)).toHaveLength(1);
+  });
+
   it("indexes an object with no collider at all -- a footprint is not a collider", () => {
     const index = indexWith(new Map([[1, ONE_CELL]]));
     index.insert(row({ objectId: 7n, x: 4, y: 5 }));

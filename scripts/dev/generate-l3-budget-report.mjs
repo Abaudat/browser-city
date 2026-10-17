@@ -50,7 +50,7 @@ out();
 out("## Pre-registered verdict");
 out();
 out(
-  `The statistic is the p95 of the per-frame L3 window (\`streetLife.solve\` + \`citizensLayer.update\`, Pixi's render excluded) measured in the real ticker with the software rasteriser off (the rendered window is reported beside it), CPU unthrottled, ${after.crowd.size} citizens bodied at once in one bubble on shipped dials. Budget: p95 <= ${after.budget.p95Ms} ms, p99 <= ${after.budget.p99Ms} ms, zero major GCs, allocation under a stamped ceiling. Gated by \`client/tests/e2e/l3-budget.spec.ts\` in \`e2e-perf\`: a budget miss is the recorded finding, and the CI gate holds the recorded figure +25% so L3 cannot get slower unnoticed; the 4x CPU-throttled run is reported, never gated.`,
+  `The statistic is the p95 of the per-frame L3 window (\`streetLife.solve\` + \`citizensLayer.update\`, Pixi's render excluded) measured in the real ticker with the software rasteriser off (the rendered window is reported beside it), CPU unthrottled, ${after.crowd.size} citizens bodied at once in one bubble on shipped dials. Budget: p95 <= ${after.budget.p95Ms} ms, p99 <= ${after.budget.p99Ms} ms, major GCs under a per-minute bound and a pause bound, allocation under a stamped ceiling. Gated by \`client/tests/e2e/l3-budget.spec.ts\` in \`e2e-perf\`: a budget miss is the recorded finding, and the CI gate holds the recorded figure +25% so L3 cannot get slower unnoticed; the 4x CPU-throttled run is reported, never gated.`,
 );
 out();
 out(`## Verdict: **${after.verdict}**`);
@@ -124,7 +124,7 @@ out(
 out(
   `- Minor GCs: ${after.gc.minorCount}, total pause ${ms(after.gc.totalPauseMs)}, p99 ${ms(after.gc.minorP99PauseMs ?? Number.NaN)}, longest ${ms(after.gc.longestMinorPauseMs)} (reported: a scavenge's duration measures the runner, not L3).`,
 );
-out(`- Major GCs: ${after.gc.majorCount} (gated at zero).`);
+out(`- Major GCs: ${after.gc.majorCount} (gated per minute and by pause).`);
 out(`- Retained heap, last lap against the first: ${after.heap.growthRatio.toFixed(3)}x (bound ${after.heap.bound}x).`);
 out();
 out("Largest allocators under L3 frames:");

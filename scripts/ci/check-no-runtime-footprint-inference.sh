@@ -54,12 +54,10 @@ done
 
 for dir in "$CLIENT_SRC" "$SERVER_DIR"; do
   [ -d "$dir" ] || continue
-  # `test-street/` (docs/architecture.md: "the one hand-laid scene the
-  # client is not code-generated from") is a dev-only harness, never a
-  # runtime module a real player's session loads -- excluded the same
-  # way `check-input-boundary.sh` treats it as its own thing, distinct
-  # from the runtime client.
-  MATCHES="$(grep -rliE 'archetype' "$dir" --include='*.ts' --include='*.rs' --exclude-dir=bindings --exclude-dir=test-street 2>/dev/null || true)"
+  # `debug/` (DEV-only modules the production build never loads, kept
+  # apart by `check-debug-boundary.sh`) is a dev-only harness, never a
+  # runtime module a real player's session loads -- excluded.
+  MATCHES="$(grep -rliE 'archetype' "$dir" --include='*.ts' --include='*.rs' --exclude-dir=bindings --exclude-dir=debug 2>/dev/null || true)"
   if [ -n "$MATCHES" ]; then
     echo "check-no-runtime-footprint-inference: FAIL -- 'archetype' appears under $dir (never a runtime source):" >&2
     echo "$MATCHES" >&2
@@ -90,10 +88,10 @@ fi
 
 for dir in "$CLIENT_SRC" "$SERVER_DIR"; do
   [ -d "$dir" ] || continue
-  # `test-street/` excluded, same reasoning as above -- it is the one
+  # `debug/` excluded, same reasoning as above -- it is the one
   # place this repo already has a legitimate `getImageData` call (a
   # dev-only pixel comparison harness), unrelated to footprint inference.
-  MATCHES="$(grep -rliE 'propose::|defs[_-]propose|getImageData|alpha[_-]?coverage' "$dir" --include='*.ts' --include='*.rs' --exclude-dir=bindings --exclude-dir=test-street 2>/dev/null || true)"
+  MATCHES="$(grep -rliE 'propose::|defs[_-]propose|getImageData|alpha[_-]?coverage' "$dir" --include='*.ts' --include='*.rs' --exclude-dir=bindings --exclude-dir=debug 2>/dev/null || true)"
   if [ -n "$MATCHES" ]; then
     echo "check-no-runtime-footprint-inference: FAIL -- a footprint-proposer or alpha-coverage identifier appears under $dir:" >&2
     echo "$MATCHES" >&2

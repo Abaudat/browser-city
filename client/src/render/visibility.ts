@@ -24,10 +24,12 @@ export type VisibilityState = "hidden" | "translucent" | "normal";
 export interface VisibilityViewer {
   readonly floor: number;
   readonly buildingId: bigint;
+  /** The buildings whose roof is drawn (story 3.16). */
+  readonly roofed?: ReadonlySet<bigint>;
 }
 
 /** The minimal shape [`computeVisibility`] needs from a drawable --
- * structural, so a caller's own richer drawable type (`test-street/drawables.ts`'s
+ * structural, so a caller's own richer drawable type (`render/prop-drawables.ts`'s
  * `PropDrawable`) can be passed directly with no adapter object. */
 export interface VisibilityDrawable {
   readonly floor: number;
@@ -44,7 +46,7 @@ export interface VisibilityDrawable {
    * camera in this 3/4 view (Artie's direction) -- side walls, party
    * walls and the back wall are never near-side and never retract. */
   readonly isNearSide: boolean;
-  /** The FR120 wall-stub companion (`test-street/drawables.ts`'s `STUB_ID_OFFSET`
+  /** The FR120 wall-stub companion (`render/prop-drawables.ts`'s `STUB_ID_OFFSET`
    * pool member): the *inverse* of its own parent wall's retraction,
    * never the same rule a normal drawable follows. A stub sits behind its
    * parent wall at a lower rank -- while the wall is drawn (not
@@ -131,16 +133,34 @@ export function isStoreyAboveCulled(
   return drawable.floor > viewer.floor;
 }
 
+/** Whether the viewer stands outside the roofed building that owns `drawable`. */
+function isOutsideRoofed(viewer: VisibilityViewer, drawable: VisibilityDrawable): boolean {
+  if (drawable.ownerBuildingId === NO_OWNER) return false;
+  if (drawable.ownerBuildingId === viewer.buildingId) return false;
+  return viewer.roofed?.has(drawable.ownerBuildingId) ?? false;
+}
+
+/** Story 3.16: what stands inside a roofed building other than the
+ * viewer's is under its roof, so hidden -- a tall fixture against the
+ * north wall would otherwise show above the roof's edge. The building's
+ * walls and windows stay: they are its outside. */
+export function isUnderRoof(viewer: VisibilityViewer, drawable: VisibilityDrawable): boolean {
+  if (drawable.layerCode === WALLS_LAYER_CODE) return false;
+  return isOutsideRoofed(viewer, drawable);
+}
+
 /**
  * The one function every one of FR120/FR121/FR122's rules is decided by,
  * in a fixed order: floor culling first (a drawable on a co-invisible
  * floor is simply `hidden`, regardless of anything else about it), then
- * storey-above culling, then a stub's own inverse-of-retraction rule (a
+ * storey-above culling, then the under-a-roof rule, then a stub's own inverse-of-retraction rule (a
  * stub is `normal` exactly when its parent wall would retract, `hidden`
  * otherwise -- never `translucent`, and never subject to the ordinary
  * retraction/window rules below, which are a real wall's own), then
  * retraction (a retracted near-side wall is `hidden`), then the window
- * rule (a non-hidden window drawable is `translucent`) -- anything else
+ * rule (a non-hidden window drawable is `translucent`; a roofed building's
+ * seen from outside is `normal` on its near side, `hidden` on a far side)
+ * -- anything else
  * is `normal`.
  */
 export function computeVisibility(
@@ -149,8 +169,15 @@ export function computeVisibility(
 ): VisibilityState {
   if (isFloorCulled(viewer.floor, drawable.floor)) return "hidden";
   if (isStoreyAboveCulled(viewer, drawable)) return "hidden";
+  if (isUnderRoof(viewer, drawable)) return "hidden";
   if (drawable.isStub) return isNearSideOwnedByViewer(viewer, drawable) ? "normal" : "hidden";
   if (isRetracted(viewer, drawable)) return "hidden";
-  if (drawable.isWindow) return "translucent";
+  if (drawable.isWindow) {
+    // Story 3.16: from outside a roofed building its interior is hidden, so
+    // a window is a solid object in its wall: the front's opaque, a far
+    // side's (facing away, under the roof) hidden.
+    if (isOutsideRoofed(viewer, drawable)) return drawable.isNearSide ? "normal" : "hidden";
+    return "translucent";
+  }
   return "normal";
 }

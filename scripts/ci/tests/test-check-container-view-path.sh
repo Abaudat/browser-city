@@ -27,9 +27,9 @@ plant() { # <file> <content>
 d="$(tree)"
 check "the view module alone building and attaching passes" 0 bash "$CHECK" "$d"
 
-d="$(plant test-street/other.ts 'const v = new PixiContainerView(opts);')"
+d="$(plant render/other.ts 'const v = new PixiContainerView(opts);')"
 check "constructing a view elsewhere fails" 1 bash "$CHECK" "$d"
-check_contains "names the file" "test-street/other.ts" "$(bash "$CHECK" "$d" 2>&1)"
+check_contains "names the file" "render/other.ts" "$(bash "$CHECK" "$d" 2>&1)"
 
 d="$(plant render/other.ts 'stacks.attachTransient(0, container);')"
 check "attaching a transient view elsewhere fails" 1 bash "$CHECK" "$d"

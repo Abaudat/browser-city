@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { CHUNK_SIZE, chunkKey } from "../../../src/world/chunk";
+import { CHUNK_SIZE, chunkKey, chunkKeysCovering, chunkSlot } from "../../../src/world/chunk";
 
 describe("chunkKey", () => {
   it("two cells in the same chunk pack to the same key", () => {
@@ -38,5 +38,53 @@ describe("chunkKey", () => {
         },
       ),
     );
+  });
+});
+
+import { chunkKey as chunkKeyOf, unpackChunkKey } from "../../../src/world/chunk";
+
+describe("unpackChunkKey (story 3.16)", () => {
+  it("inverts chunkKey for positive and negative chunks and floors", () => {
+    for (const [x, y, f] of [
+      [0, 0, 0],
+      [95, 31, 0],
+      [-1, -33, -1],
+      [-200, 700, 2],
+    ] as const) {
+      const k = unpackChunkKey(chunkKeyOf(x, y, f));
+      expect(k).toEqual({ cx: Math.floor(x / 32), cy: Math.floor(y / 32), floor: f });
+    }
+  });
+});
+
+describe("chunkKeysCovering (story 3.16)", () => {
+  it("lists every chunk a cell rect touches, negative cells and fractions included", () => {
+    const keys = chunkKeysCovering(-0.5, 3, CHUNK_SIZE + 0.2, 4, 0);
+    expect(keys).toEqual([
+      chunkKey(-CHUNK_SIZE, 0, 0),
+      chunkKey(0, 0, 0),
+      chunkKey(CHUNK_SIZE, 0, 0),
+    ]);
+    expect(chunkKeysCovering(1, 1, 2, 2, 1)).toEqual([chunkKey(0, 0, 1)]);
+  });
+});
+
+describe("chunkSlot", () => {
+  it("is -1 outside the cached range, so the caller falls back", () => {
+    expect(chunkSlot(600, 0, 0)).toBe(-1);
+    expect(chunkSlot(0, -600, 0)).toBe(-1);
+    expect(chunkSlot(0, 0, 20)).toBe(-1);
+  });
+
+  it("names a chunk and floor uniquely, negative coordinates included", () => {
+    const seen = new Map<number, string>();
+    for (const cx of [-3, -1, 0, 1, 200])
+      for (const cy of [-2, 0, 5, 300])
+        for (const floor of [-2, 0, 1, 3]) {
+          const slot = chunkSlot(cx, cy, floor);
+          const id = `${cx},${cy},${floor}`;
+          expect(seen.get(slot) ?? id).toBe(id);
+          seen.set(slot, id);
+        }
   });
 });

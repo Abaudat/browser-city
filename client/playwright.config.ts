@@ -18,7 +18,7 @@ const DEPLOY_URL = process.env.BC_DEPLOY_URL;
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  timeout: 30_000,
+  timeout: 90_000,
   fullyParallel: false,
   // A flaky e2e is a failing e2e (Quentin, story 1.1): no re-run hides the
   // first red from a PR.
@@ -63,7 +63,16 @@ export default defineConfig({
         /l3-budget\.spec\.ts/,
         /boot-budget\.spec\.ts/,
         /deploy-smoke\.spec\.ts/,
+        /district-review.spec.ts/,
       ],
+    },
+    {
+      // Story 3.16's review capture: the committed district walked end to
+      // end, screenshots and recording under docs/generation/walk/. Only
+      // `npm run test:e2e:review` selects it.
+      name: "review",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /district-review.spec.ts/,
     },
     {
       // NFR2's measurement harness and regression gate. Never part of

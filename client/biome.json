@@ -42,7 +42,10 @@
         "!src/render/pixi-highlight.ts",
         "!src/render/atlas-pages.ts",
         "!src/render/appearance/composite-pages.ts",
-        "!src/render/appearance/appearance-texture.ts"
+        "!src/render/appearance/appearance-texture.ts",
+        "!src/render/world-scene.ts",
+        "!src/render/citizens-layer.ts",
+        "!src/render/remote-players-layer.ts"
       ],
       "linter": {
         "rules": {
@@ -52,13 +55,7 @@
               "options": {
                 "patterns": [
                   {
-                    "group": [
-                      "pixi.js",
-                      "../test-street/*",
-                      "../test-street/**",
-                      "../ui/*",
-                      "../ui/**"
-                    ]
+                    "group": ["pixi.js", "../ui/*", "../ui/**"]
                   }
                 ]
               }
@@ -117,15 +114,7 @@
               "options": {
                 "patterns": [
                   {
-                    "group": [
-                      "pixi.js",
-                      "../net/*",
-                      "../net/**",
-                      "../test-street/*",
-                      "../test-street/**",
-                      "../ui/*",
-                      "../ui/**"
-                    ]
+                    "group": ["pixi.js", "../net/*", "../net/**", "../ui/*", "../ui/**"]
                   }
                 ]
               }
@@ -171,8 +160,8 @@
               "level": "error",
               "options": {
                 "deniedGlobals": {
-                  "window": "world/** is the pure movement/collision layer -- DOM access belongs in src/input/ or src/test-street/",
-                  "document": "world/** is the pure movement/collision layer -- DOM access belongs in src/input/ or src/test-street/"
+                  "window": "world/** is the pure movement/collision layer -- DOM access belongs in src/input/",
+                  "document": "world/** is the pure movement/collision layer -- DOM access belongs in src/input/"
                 }
               }
             },
@@ -185,8 +174,6 @@
                       "pixi.js",
                       "../net/*",
                       "!../net/bindings/types",
-                      "../test-street/*",
-                      "../test-street/**",
                       "../ui/*",
                       "../ui/**"
                     ]
@@ -214,9 +201,7 @@
                       "../net/**",
                       "!../net/connection-status",
                       "../render/**",
-                      "../world/**",
-                      "../test-street/*",
-                      "../test-street/**"
+                      "../world/**"
                     ]
                   }
                 ]
@@ -235,8 +220,7 @@
         "src/net/**",
         "src/defs/**",
         "src/boot/**",
-        "src/settings/**",
-        "src/test-street/**"
+        "src/settings/**"
       ],
       "linter": {
         "rules": {
@@ -256,7 +240,7 @@
       }
     },
     {
-      "includes": ["src/debug/**"],
+      "includes": ["src/debug/**", "!src/debug/compare-pipeline-vs-stack.ts"],
       "linter": {
         "rules": {
           "style": {
@@ -270,8 +254,6 @@
                       "../net/*",
                       "../net/**",
                       "!../net/bindings/types",
-                      "../test-street/*",
-                      "../test-street/**",
                       "../ui/*",
                       "../ui/**"
                     ]
@@ -292,7 +274,7 @@
               "level": "error",
               "options": {
                 "deniedGlobals": {
-                  "document": "DOM creation belongs in src/ui/, src/input/, src/test-street/ or main.ts -- window stays allowed (e2e-hooks.ts, pixel-snapshot.ts use it)"
+                  "document": "DOM creation belongs in src/ui/, src/input/ or main.ts -- window stays allowed (e2e-hooks.ts, pixel-snapshot.ts use it)"
                 }
               }
             }

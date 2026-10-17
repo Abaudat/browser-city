@@ -11,8 +11,8 @@ CHECK="$REPO_ROOT/scripts/ci/check-remote-actor-path.sh"
 plant() { # <content> -- a fresh client tree holding the layer with that content
   local d
   d="$(fake_dir)"
-  mkdir -p "$d/src/test-street"
-  printf '%s\n' "$1" > "$d/src/test-street/remote-players-layer.ts"
+  mkdir -p "$d/src/render"
+  printf '%s\n' "$1" > "$d/src/render/remote-players-layer.ts"
   printf '%s' "$d"
 }
 
@@ -38,7 +38,7 @@ plant_scene() { # <content> -- a clean layer plus a scene.ts with that content
   local d
   d="$(plant 'd.handle.place(pose.x, pose.y, pose.floor);')"
   printf '%s
-' "$1" > "$d/src/test-street/scene.ts"
+' "$1" > "$d/src/render/world-scene.ts"
   printf '%s' "$d"
 }
 

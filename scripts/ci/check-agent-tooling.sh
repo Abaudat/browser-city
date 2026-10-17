@@ -219,7 +219,7 @@ if [ "$SETTINGS_OK" -eq 1 ] && [ -f "$SETTINGS" ]; then
   # reference -- an invented or misspelled key (like a prior cycle's
   # `disabledMcpServers`, which does not exist) must fail loudly rather than
   # sit there silently doing nothing while the doc claims it works
-  ALLOWED_SETTINGS_KEYS=(extraKnownMarketplaces enabledPlugins deniedMcpServers enabledMcpjsonServers)
+  ALLOWED_SETTINGS_KEYS=(env extraKnownMarketplaces enabledPlugins deniedMcpServers enabledMcpjsonServers)
   while IFS= read -r key; do
     [ -n "$key" ] || continue
     allowed=0

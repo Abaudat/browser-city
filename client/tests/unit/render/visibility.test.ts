@@ -12,6 +12,7 @@ import {
   isNearSideWall,
   isRetracted,
   isStoreyAboveCulled,
+  isUnderRoof,
   type VisibilityDrawable,
   type VisibilityViewer,
 } from "../../../src/render/visibility";
@@ -64,7 +65,14 @@ describe("isRetracted (FR120)", () => {
   it("never retracts a non-wall layer", () => {
     const v = viewer({ buildingId: 1n });
     expect(
-      isRetracted(v, drawable({ layerCode: FURNITURE, isNearSide: true, ownerBuildingId: 1n })),
+      isRetracted(
+        v,
+        drawable({
+          layerCode: FURNITURE,
+          isNearSide: true,
+          ownerBuildingId: 1n,
+        }),
+      ),
     ).toBe(false);
   });
 
@@ -85,14 +93,28 @@ describe("isRetracted (FR120)", () => {
   it("never retracts an unowned wall", () => {
     const v = viewer({ buildingId: 1n });
     expect(
-      isRetracted(v, drawable({ layerCode: WALLS, isNearSide: true, ownerBuildingId: NO_OWNER })),
+      isRetracted(
+        v,
+        drawable({
+          layerCode: WALLS,
+          isNearSide: true,
+          ownerBuildingId: NO_OWNER,
+        }),
+      ),
     ).toBe(false);
   });
 
   it("a viewer outside any building (NO_OWNER) never retracts anything", () => {
     const v = viewer({ buildingId: NO_OWNER });
     expect(
-      isRetracted(v, drawable({ layerCode: WALLS, isNearSide: true, ownerBuildingId: NO_OWNER })),
+      isRetracted(
+        v,
+        drawable({
+          layerCode: WALLS,
+          isNearSide: true,
+          ownerBuildingId: NO_OWNER,
+        }),
+      ),
     ).toBe(false);
   });
 });
@@ -132,7 +154,10 @@ describe("computeVisibility: the full matrix", () => {
           for (const layerCode of layers) {
             for (const isNearSide of [true, false]) {
               for (const isWindow of [true, false]) {
-                const v = viewer({ floor: viewerFloor, buildingId: viewerBuilding });
+                const v = viewer({
+                  floor: viewerFloor,
+                  buildingId: viewerBuilding,
+                });
                 const d = drawable({
                   floor: drawableFloor,
                   ownerBuildingId: drawableBuilding,
@@ -181,25 +206,41 @@ describe("a wall-stub companion's own visibility (isStub, story 1.7 cycle 2)", (
   // `isWindow` says (a stub is never itself a window).
   it("normal when near-side and owned by the viewer's own building -- the parent would be retracted", () => {
     const v = viewer({ buildingId: 1n });
-    const stub = drawable({ isStub: true, isNearSide: true, ownerBuildingId: 1n });
+    const stub = drawable({
+      isStub: true,
+      isNearSide: true,
+      ownerBuildingId: 1n,
+    });
     expect(computeVisibility(v, stub)).toBe("normal");
   });
 
   it("hidden when not near-side -- the parent would never retract", () => {
     const v = viewer({ buildingId: 1n });
-    const stub = drawable({ isStub: true, isNearSide: false, ownerBuildingId: 1n });
+    const stub = drawable({
+      isStub: true,
+      isNearSide: false,
+      ownerBuildingId: 1n,
+    });
     expect(computeVisibility(v, stub)).toBe("hidden");
   });
 
   it("hidden when owned by a different building -- the parent shows, from this viewer", () => {
     const v = viewer({ buildingId: 1n });
-    const stub = drawable({ isStub: true, isNearSide: true, ownerBuildingId: 2n });
+    const stub = drawable({
+      isStub: true,
+      isNearSide: true,
+      ownerBuildingId: 2n,
+    });
     expect(computeVisibility(v, stub)).toBe("hidden");
   });
 
   it("hidden when unowned (NO_OWNER) -- the parent never retracts for anyone", () => {
     const v = viewer({ buildingId: NO_OWNER });
-    const stub = drawable({ isStub: true, isNearSide: true, ownerBuildingId: NO_OWNER });
+    const stub = drawable({
+      isStub: true,
+      isNearSide: true,
+      ownerBuildingId: NO_OWNER,
+    });
     expect(computeVisibility(v, stub)).toBe("hidden");
   });
 
@@ -216,13 +257,23 @@ describe("a wall-stub companion's own visibility (isStub, story 1.7 cycle 2)", (
 
   it("floor culling still wins over a stub's own inverse rule", () => {
     const v = viewer({ floor: 0, buildingId: 1n });
-    const stub = drawable({ floor: -1, isStub: true, isNearSide: true, ownerBuildingId: 1n });
+    const stub = drawable({
+      floor: -1,
+      isStub: true,
+      isNearSide: true,
+      ownerBuildingId: 1n,
+    });
     expect(computeVisibility(v, stub)).toBe("hidden");
   });
 
   it("storey-above culling still wins over a stub's own inverse rule", () => {
     const v = viewer({ floor: 0, buildingId: 1n });
-    const stub = drawable({ floor: 1, isStub: true, isNearSide: true, ownerBuildingId: 1n });
+    const stub = drawable({
+      floor: 1,
+      isStub: true,
+      isNearSide: true,
+      ownerBuildingId: 1n,
+    });
     expect(computeVisibility(v, stub)).toBe("hidden");
   });
 
@@ -254,7 +305,12 @@ describe("a wall-stub companion's own visibility (isStub, story 1.7 cycle 2)", (
 describe("windows (FR121)", () => {
   it("a window that is not hidden is translucent", () => {
     const v = viewer({ floor: 0, buildingId: NO_OWNER });
-    const d = drawable({ floor: 0, layerCode: WALLS, isWindow: true, isNearSide: true });
+    const d = drawable({
+      floor: 0,
+      layerCode: WALLS,
+      isWindow: true,
+      isNearSide: true,
+    });
     expect(computeVisibility(v, d)).toBe("translucent");
   });
 
@@ -272,7 +328,11 @@ describe("windows (FR121)", () => {
 
   it("furniture on a normal (non-window, non-wall) layer stays normal even when it is behind a window", () => {
     const v = viewer({ floor: 0, buildingId: NO_OWNER });
-    const furniture = drawable({ floor: 0, layerCode: FURNITURE, isWindow: false });
+    const furniture = drawable({
+      floor: 0,
+      layerCode: FURNITURE,
+      isWindow: false,
+    });
     expect(computeVisibility(v, furniture)).toBe("normal");
   });
 });
@@ -307,6 +367,64 @@ function terraceAreas(shopCount: number): readonly OwnershipArea[] {
   }
   return areas;
 }
+
+describe("isUnderRoof (story 3.16)", () => {
+  const roofed = new Set([1n]);
+  it("hides what stands inside a roofed building from a viewer outside it", () => {
+    const lamp = drawable({ layerCode: FURNITURE, ownerBuildingId: 1n });
+    expect(isUnderRoof(viewer({ roofed }), lamp)).toBe(true);
+    expect(isUnderRoof(viewer({ roofed, buildingId: 2n }), lamp)).toBe(true);
+    expect(computeVisibility(viewer({ roofed }), lamp)).toBe("hidden");
+  });
+
+  it("shows it to a viewer inside that building", () => {
+    const lamp = drawable({ layerCode: FURNITURE, ownerBuildingId: 1n });
+    expect(computeVisibility(viewer({ roofed, buildingId: 1n }), lamp)).toBe("normal");
+  });
+
+  it("never hides a wall, a window, the street's own furniture or an unroofed building's", () => {
+    const v = viewer({ roofed });
+    expect(isUnderRoof(v, drawable({ layerCode: WALLS, ownerBuildingId: 1n }))).toBe(false);
+    expect(
+      isUnderRoof(v, drawable({ layerCode: WALLS, ownerBuildingId: 1n, isWindow: true })),
+    ).toBe(false);
+    expect(isUnderRoof(v, drawable({ layerCode: OBJECTS, ownerBuildingId: NO_OWNER }))).toBe(false);
+    expect(isUnderRoof(v, drawable({ layerCode: OBJECTS, ownerBuildingId: 2n }))).toBe(false);
+    expect(isUnderRoof(viewer(), drawable({ layerCode: OBJECTS, ownerBuildingId: 1n }))).toBe(
+      false,
+    );
+  });
+});
+
+describe("a roofed building's windows (story 3.16)", () => {
+  const roofed = new Set([1n]);
+  const front = drawable({
+    layerCode: WALLS,
+    isWindow: true,
+    isNearSide: true,
+    ownerBuildingId: 1n,
+  });
+  const back = drawable({
+    layerCode: WALLS,
+    isWindow: true,
+    isNearSide: false,
+    ownerBuildingId: 1n,
+  });
+  it("is a solid object in its wall from outside: the front's opaque, the far side's hidden", () => {
+    expect(computeVisibility(viewer({ roofed }), front)).toBe("normal");
+    expect(computeVisibility(viewer({ roofed, buildingId: 2n }), front)).toBe("normal");
+    expect(computeVisibility(viewer({ roofed }), back)).toBe("hidden");
+  });
+
+  it("is translucent only to a viewer inside its building, the front retracting", () => {
+    expect(computeVisibility(viewer({ roofed, buildingId: 1n }), back)).toBe("translucent");
+    expect(computeVisibility(viewer({ roofed, buildingId: 1n }), front)).toBe("hidden");
+  });
+
+  it("an unroofed building's windows keep FR121's translucency from outside", () => {
+    expect(computeVisibility(viewer(), front)).toBe("translucent");
+  });
+});
 
 describe("isNearSideWall (FR120)", () => {
   it("the terrace's own front (south) row is near-side for every building, including its corners", () => {
@@ -380,9 +498,19 @@ describe("property invariants (docs/trace-matrix.md)", () => {
           const ownerB = ownership.ownershipAt(posB.x, posB.y, TERRACE_FLOOR).buildingId;
           fc.pre(ownerA !== NO_OWNER && ownerA === ownerB);
 
-          const vA: VisibilityViewer = { floor: TERRACE_FLOOR, buildingId: ownerA };
-          const vB: VisibilityViewer = { floor: TERRACE_FLOOR, buildingId: ownerB };
-          const d = drawable({ floor: drawableFloor, ...dShape, ownerBuildingId: ownerA });
+          const vA: VisibilityViewer = {
+            floor: TERRACE_FLOOR,
+            buildingId: ownerA,
+          };
+          const vB: VisibilityViewer = {
+            floor: TERRACE_FLOOR,
+            buildingId: ownerB,
+          };
+          const d = drawable({
+            floor: drawableFloor,
+            ...dShape,
+            ownerBuildingId: ownerA,
+          });
           expect(computeVisibility(vA, d)).toBe(computeVisibility(vB, d));
         },
       ),
@@ -450,7 +578,10 @@ describe("property invariants (docs/trace-matrix.md)", () => {
           isNearSide: fc.boolean(),
         }),
         (viewerFloor, drawableFloor, dShape) => {
-          const v: VisibilityViewer = { floor: viewerFloor, buildingId: dShape.ownerBuildingId };
+          const v: VisibilityViewer = {
+            floor: viewerFloor,
+            buildingId: dShape.ownerBuildingId,
+          };
           const d = drawable({ floor: drawableFloor, ...dShape });
           expect(computeVisibility(v, d)).toBe("hidden");
         },
@@ -467,7 +598,10 @@ describe("property invariants (docs/trace-matrix.md)", () => {
           isNearSide: fc.boolean(),
         }),
         (viewerFloor, drawableFloor, dShape) => {
-          const v: VisibilityViewer = { floor: viewerFloor, buildingId: dShape.ownerBuildingId };
+          const v: VisibilityViewer = {
+            floor: viewerFloor,
+            buildingId: dShape.ownerBuildingId,
+          };
           const d = drawable({ floor: drawableFloor, ...dShape });
           expect(computeVisibility(v, d)).toBe("hidden");
         },
@@ -484,7 +618,10 @@ describe("property invariants (docs/trace-matrix.md)", () => {
         fc.integer({ min: 0, max: 7 }),
         (shopCount, occupiedRaw) => {
           const occupied = 1 + (occupiedRaw % shopCount); // 1..shopCount
-          const v: VisibilityViewer = { floor: 0, buildingId: BigInt(occupied) };
+          const v: VisibilityViewer = {
+            floor: 0,
+            buildingId: BigInt(occupied),
+          };
           for (let shop = 1; shop <= shopCount; shop++) {
             const wall = drawable({
               floor: 0,

@@ -36,6 +36,7 @@ jobs:
       - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
       - run: spacetime call --server maincloud --no-config -y "$DB" finish_publish
       - run: spacetime call --server maincloud --no-config -y "$DB" accept_oidc_issuer "${{ vars.OIDC_AUTHORITY }}" "${{ vars.OIDC_CLIENT_ID }}"
+      - run: bash scripts/ops/ensure-district.sh "$DB" --server maincloud
       - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud
 
   deploy-client:
@@ -209,6 +210,7 @@ jobs:
       - run: spacetime publish --server maincloud --no-config -y "$DB" --module-path server
       - run: spacetime call --server maincloud --no-config -y "$DB" finish_publish
       - run: spacetime call --server maincloud --no-config -y "$DB" accept_oidc_issuer "${{ vars.OIDC_AUTHORITY }}" "${{ vars.OIDC_CLIENT_ID }}"
+      - run: bash scripts/ops/ensure-district.sh "$DB" --server maincloud
       - run: bash scripts/ops/assert-world-invariants.sh "$DB" --server maincloud
     needs: [backup]
 
@@ -455,20 +457,32 @@ sed -i '/VITE_OIDC_CLIENT_ID/d' "$D31/deploy.yml"
 OUT="$(bash "$CHECK" "$D31/deploy.yml" 2>&1)"; CODE=$?
 check "a client build that is not handed the client id fails" 1 bash -c "exit $CODE"
 
-# No workflow and no ops script may call create_district: the live world
-# gets no generated district until the story that picks its seed says so.
+# create_district has one caller, scripts/ops/ensure-district.sh, run after
+# finish_publish and before the invariants assertion (story 3.16).
 R1="$(fake_dir)"; mkdir -p "$R1/.github/workflows" "$R1/scripts/ops"
 check "a tree that never names create_district passes" 0 bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml" "$R1"
+printf 'spacetime call "$1" create_district
+' > "$R1/scripts/ops/ensure-district.sh"
+check "ensure-district.sh may name create_district" 0 bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml" "$R1"
+rm "$R1/scripts/ops/ensure-district.sh"
 printf 'jobs: {}
-# spacetime call "$DB" create_district 7
+# spacetime call "$DB" create_district
 ' > "$R1/.github/workflows/x.yml"
 OUT="$(bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml" "$R1" 2>&1)"; CODE=$?
 check "a workflow naming create_district fails" 1 bash -c "exit $CODE"
 check "names the reducer" 0 bash -c "printf '%s' \"\$1\" | grep -qF 'create_district'" _ "$OUT"
 rm "$R1/.github/workflows/x.yml"
-printf 'spacetime call "$1" create_district 7
+printf 'spacetime call "$1" create_district
 ' > "$R1/scripts/ops/seed.sh"
 check "an ops script naming create_district fails" 1 bash "$CHECK" "$D13/deploy.yml" "$D13/backup-last.yml" "$R1"
+
+# The ensure step must sit between finish_publish and the assert.
+D41="$(fake_dir)"
+write_good_workflow "$D41/deploy.yml"
+grep -v 'ensure-district.sh' "$D41/deploy.yml" > "$D41/d.yml"
+check "a publish-module with no ensure-district step fails" 1 bash "$CHECK" "$D41/d.yml"
+awk '/ensure-district.sh/ { held = $0; next } { print } /assert-world-invariants.sh/ { print held }' "$D41/deploy.yml" > "$D41/e.yml"
+check "an ensure-district step after the assert fails" 1 bash "$CHECK" "$D41/e.yml"
 
 summary
 exit $?
