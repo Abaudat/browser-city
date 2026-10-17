@@ -2037,6 +2037,8 @@
 <rect x="8" y="406" width="16" height="16" fill="#37474f"/>
 <rect x="24" y="406" width="16" height="16" fill="#37474f"/>
 <rect x="72" y="406" width="16" height="16" fill="#37474f"/>
+<rect x="88" y="390" width="16" height="32" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
+<rect x="88" y="390" width="16" height="32" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="136" y="406" width="16" height="16" fill="#37474f"/>
 <rect x="184" y="406" width="16" height="16" fill="#37474f"/>
 <rect x="232" y="406" width="16" height="16" fill="#37474f"/>
@@ -2085,8 +2087,6 @@
 <rect x="632" y="422" width="16" height="16" fill="#37474f"/>
 <rect x="24" y="438" width="16" height="16" fill="#37474f"/>
 <rect x="72" y="438" width="16" height="16" fill="#37474f"/>
-<rect x="88" y="422" width="16" height="32" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
-<rect x="88" y="422" width="16" height="32" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="136" y="438" width="16" height="16" fill="#37474f"/>
 <rect x="184" y="438" width="16" height="16" fill="#37474f"/>
 <rect x="232" y="438" width="16" height="16" fill="#37474f"/>
@@ -2361,11 +2361,11 @@
 <rect x="53" y="849" width="18" height="18" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
 <rect x="55" y="853" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="71" y="858" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
+<rect x="17" y="858" width="9" height="18" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
+<rect x="17" y="858" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="89" y="867" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_dark</title></rect>
 <rect x="89" y="867" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="98" y="867" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
-<rect x="17" y="867" width="9" height="18" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
-<rect x="17" y="867" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <text x="200" y="801" font-family="sans-serif" font-size="9">terrace_house 9x12</text>
 <rect x="200" y="804" width="81" height="108" fill="#37474f"/>
 <rect x="236" y="813" width="36" height="90" fill="#ffe0b2"/>
@@ -2385,10 +2385,10 @@
 <rect x="254" y="831" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="254" y="840" width="18" height="18" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
 <rect x="256" y="844" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="209" y="858" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="263" y="858" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
-<rect x="218" y="867" width="9" height="18" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
-<rect x="218" y="867" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="209" y="858" width="9" height="18" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
+<rect x="209" y="858" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="209" y="894" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <text x="392" y="801" font-family="sans-serif" font-size="9">terrace_house 11x10</text>
 <rect x="392" y="804" width="99" height="90" fill="#37474f"/>
 <rect x="401" y="813" width="45" height="72" fill="#ffe0b2"/>
@@ -2429,8 +2429,8 @@
 <rect x="629" y="813" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>toilet_white</title></rect>
 <rect x="630" y="813" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="638" y="813" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
-<rect x="593" y="822" width="9" height="18" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
-<rect x="593" y="822" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="593" y="813" width="9" height="18" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
+<rect x="593" y="813" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="629" y="831" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin</title></rect>
 <rect x="630" y="832" width="5" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="593" y="849" width="9" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_blue</title></rect>
@@ -2519,12 +2519,12 @@
 <rect x="245" y="1015" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="263" y="1015" width="9" height="9" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_yellow</title></rect>
 <rect x="272" y="1015" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
+<rect x="236" y="1015" width="9" height="18" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
+<rect x="236" y="1015" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="209" y="1033" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin</title></rect>
 <rect x="210" y="1034" width="5" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="263" y="1024" width="18" height="18" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_oak</title></rect>
 <rect x="265" y="1028" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="245" y="1033" width="9" height="18" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
-<rect x="245" y="1033" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="272" y="1042" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
 <rect x="227" y="1060" width="9" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_blue</title></rect>
 <rect x="227" y="1060" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2550,15 +2550,15 @@
 <rect x="411" y="1015" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="437" y="1015" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="473" y="1015" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
+<rect x="428" y="1015" width="9" height="18" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
+<rect x="428" y="1015" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
+<rect x="464" y="1015" width="9" height="18" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
+<rect x="464" y="1015" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="401" y="1033" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin_white</title></rect>
 <rect x="402" y="1034" width="5" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="428" y="1024" width="9" height="18" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
-<rect x="428" y="1024" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="401" y="1051" width="9" height="9" fill="#e53935" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_stool</title></rect>
 <rect x="401" y="1051" width="9" height="8" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="428" y="1051" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
-<rect x="473" y="1042" width="9" height="18" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
-<rect x="473" y="1042" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="437" y="1078" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
 <rect x="455" y="1078" width="9" height="9" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>cooker_hob_blue</title></rect>
 <rect x="455" y="1078" width="9" height="6" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -2581,9 +2581,9 @@
 <rect x="656" y="1015" width="9" height="9" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>toilet_white</title></rect>
 <rect x="657" y="1015" width="6" height="5" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="665" y="1015" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
+<rect x="593" y="1015" width="9" height="18" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_white</title></rect>
+<rect x="593" y="1015" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="620" y="1024" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>chair_green</title></rect>
-<rect x="593" y="1024" width="9" height="18" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_single_blue</title></rect>
-<rect x="593" y="1024" width="9" height="18" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="629" y="1024" width="18" height="18" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>table_round_red</title></rect>
 <rect x="631" y="1028" width="13" height="13" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="665" y="1033" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>pedestal_basin_white</title></rect>
@@ -3438,12 +3438,12 @@
 <rect x="227" y="2235" width="9" height="9" fill="#ffffff"/>
 <rect x="218" y="2163" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_blue</title></rect>
 <rect x="254" y="2163" width="9" height="9" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>glass_lamp</title></rect>
+<rect x="263" y="2163" width="9" height="9" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact</title></rect>
+<rect x="263" y="2163" width="7" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="209" y="2190" width="9" height="9" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>shelf_compact_cream</title></rect>
 <rect x="209" y="2190" width="9" height="3" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="227" y="2199" width="9" height="9" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>desk_school_papers</title></rect>
 <rect x="227" y="2199" width="9" height="4" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
-<rect x="263" y="2199" width="9" height="9" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>bed_compact_green</title></rect>
-<rect x="263" y="2199" width="7" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
 <rect x="236" y="2244" width="9" height="9" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>standing_lamp_red</title></rect>
 <rect x="209" y="2253" width="9" height="9" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"><title>counter_compact</title></rect>
 <rect x="209" y="2253" width="8" height="9" fill="url(#collider-hatch)" stroke="#000" stroke-width="0.4"/>
@@ -3761,18 +3761,18 @@
 <rect x="508" y="2593" width="12" height="12" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2604" font-family="sans-serif" font-size="11">lamppost (951)</text>
 <rect x="758" y="2593" width="12" height="12" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2604" font-family="sans-serif" font-size="11">shop_window (183)</text>
 <rect x="1008" y="2593" width="12" height="12" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2604" font-family="sans-serif" font-size="11">bed_single_blue (248)</text>
-<rect x="8" y="2611" width="12" height="12" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2622" font-family="sans-serif" font-size="11">bed_single_white (234)</text>
-<rect x="258" y="2611" width="12" height="12" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2622" font-family="sans-serif" font-size="11">bed_compact (120)</text>
-<rect x="508" y="2611" width="12" height="12" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2622" font-family="sans-serif" font-size="11">cooker_hob_dark (301)</text>
-<rect x="758" y="2611" width="12" height="12" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2622" font-family="sans-serif" font-size="11">cooker_hob_blue (319)</text>
-<rect x="1008" y="2611" width="12" height="12" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2622" font-family="sans-serif" font-size="11">vanity_basin_wood (67)</text>
-<rect x="8" y="2629" width="12" height="12" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2640" font-family="sans-serif" font-size="11">vanity_basin_pale (75)</text>
-<rect x="258" y="2629" width="12" height="12" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2640" font-family="sans-serif" font-size="11">pedestal_basin (171)</text>
-<rect x="508" y="2629" width="12" height="12" fill="#00acc1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2640" font-family="sans-serif" font-size="11">toilet_cream (247)</text>
-<rect x="758" y="2629" width="12" height="12" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2640" font-family="sans-serif" font-size="11">toilet_white (268)</text>
-<rect x="1008" y="2629" width="12" height="12" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2640" font-family="sans-serif" font-size="11">table_round_oak (291)</text>
-<rect x="8" y="2647" width="12" height="12" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2658" font-family="sans-serif" font-size="11">table_round_red (298)</text>
-<rect x="258" y="2647" width="12" height="12" fill="#e53935" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2658" font-family="sans-serif" font-size="11">table_stool (280)</text>
+<rect x="8" y="2611" width="12" height="12" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2622" font-family="sans-serif" font-size="11">bed_single_white (220)</text>
+<rect x="258" y="2611" width="12" height="12" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2622" font-family="sans-serif" font-size="11">bed_compact (119)</text>
+<rect x="508" y="2611" width="12" height="12" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2622" font-family="sans-serif" font-size="11">cooker_hob_dark (307)</text>
+<rect x="758" y="2611" width="12" height="12" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2622" font-family="sans-serif" font-size="11">cooker_hob_blue (313)</text>
+<rect x="1008" y="2611" width="12" height="12" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2622" font-family="sans-serif" font-size="11">vanity_basin_wood (68)</text>
+<rect x="8" y="2629" width="12" height="12" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2640" font-family="sans-serif" font-size="11">vanity_basin_pale (77)</text>
+<rect x="258" y="2629" width="12" height="12" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2640" font-family="sans-serif" font-size="11">pedestal_basin (168)</text>
+<rect x="508" y="2629" width="12" height="12" fill="#00acc1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2640" font-family="sans-serif" font-size="11">toilet_cream (242)</text>
+<rect x="758" y="2629" width="12" height="12" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2640" font-family="sans-serif" font-size="11">toilet_white (273)</text>
+<rect x="1008" y="2629" width="12" height="12" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2640" font-family="sans-serif" font-size="11">table_round_oak (290)</text>
+<rect x="8" y="2647" width="12" height="12" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2658" font-family="sans-serif" font-size="11">table_round_red (294)</text>
+<rect x="258" y="2647" width="12" height="12" fill="#e53935" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2658" font-family="sans-serif" font-size="11">table_stool (282)</text>
 <rect x="508" y="2647" width="12" height="12" fill="#8e24aa" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2658" font-family="sans-serif" font-size="11">workbench_table_pale (16)</text>
 <rect x="758" y="2647" width="12" height="12" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2658" font-family="sans-serif" font-size="11">workbench_table_orange (40)</text>
 <rect x="1008" y="2647" width="12" height="12" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2658" font-family="sans-serif" font-size="11">workbench_compact (84)</text>
@@ -3782,22 +3782,22 @@
 <rect x="758" y="2665" width="12" height="12" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2676" font-family="sans-serif" font-size="11">till_counter_white (120)</text>
 <rect x="1008" y="2665" width="12" height="12" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2676" font-family="sans-serif" font-size="11">till_counter_glass (112)</text>
 <rect x="8" y="2683" width="12" height="12" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2694" font-family="sans-serif" font-size="11">counter_compact (37)</text>
-<rect x="258" y="2683" width="12" height="12" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2694" font-family="sans-serif" font-size="11">standing_lamp_blue (1212)</text>
-<rect x="508" y="2683" width="12" height="12" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2694" font-family="sans-serif" font-size="11">standing_lamp_red (1222)</text>
+<rect x="258" y="2683" width="12" height="12" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2694" font-family="sans-serif" font-size="11">standing_lamp_blue (1222)</text>
+<rect x="508" y="2683" width="12" height="12" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2694" font-family="sans-serif" font-size="11">standing_lamp_red (1211)</text>
 <rect x="758" y="2683" width="12" height="12" fill="#00acc1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2694" font-family="sans-serif" font-size="11">city_bench (18)</text>
 <rect x="1008" y="2683" width="12" height="12" fill="#43a047" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2694" font-family="sans-serif" font-size="11">plane_tree (45)</text>
 <rect x="8" y="2701" width="12" height="12" fill="#c0ca33" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2712" font-family="sans-serif" font-size="11">round_tree (48)</text>
 <rect x="258" y="2701" width="12" height="12" fill="#f4511e" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2712" font-family="sans-serif" font-size="11">planter_pot_clay (146)</text>
 <rect x="508" y="2701" width="12" height="12" fill="#e53935" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2712" font-family="sans-serif" font-size="11">planter_pot_stone (154)</text>
 <rect x="758" y="2701" width="12" height="12" fill="#8e24aa" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2712" font-family="sans-serif" font-size="11">flower_bush_small (163)</text>
-<rect x="1008" y="2701" width="12" height="12" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2712" font-family="sans-serif" font-size="11">glass_lamp (1208)</text>
+<rect x="1008" y="2701" width="12" height="12" fill="#3949ab" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2712" font-family="sans-serif" font-size="11">glass_lamp (1200)</text>
 <rect x="8" y="2719" width="12" height="12" fill="#039be5" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2730" font-family="sans-serif" font-size="11">desk_papers_grey (83)</text>
 <rect x="258" y="2719" width="12" height="12" fill="#00897b" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2730" font-family="sans-serif" font-size="11">desk_papers_wood (76)</text>
-<rect x="508" y="2719" width="12" height="12" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2730" font-family="sans-serif" font-size="11">chair_yellow (574)</text>
-<rect x="758" y="2719" width="12" height="12" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2730" font-family="sans-serif" font-size="11">chair_green (589)</text>
+<rect x="508" y="2719" width="12" height="12" fill="#7cb342" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2730" font-family="sans-serif" font-size="11">chair_yellow (568)</text>
+<rect x="758" y="2719" width="12" height="12" fill="#fdd835" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2730" font-family="sans-serif" font-size="11">chair_green (587)</text>
 <rect x="1008" y="2719" width="12" height="12" fill="#fb8c00" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="1024" y="2730" font-family="sans-serif" font-size="11">shelf_compact_cream (368)</text>
 <rect x="8" y="2737" width="12" height="12" fill="#6d4c41" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="24" y="2748" font-family="sans-serif" font-size="11">desk_school_book (173)</text>
 <rect x="258" y="2737" width="12" height="12" fill="#546e7a" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="274" y="2748" font-family="sans-serif" font-size="11">desk_school_papers (167)</text>
-<rect x="508" y="2737" width="12" height="12" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2748" font-family="sans-serif" font-size="11">bed_compact_green (124)</text>
+<rect x="508" y="2737" width="12" height="12" fill="#d81b60" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="524" y="2748" font-family="sans-serif" font-size="11">bed_compact_green (133)</text>
 <rect x="758" y="2737" width="12" height="12" fill="#5e35b1" fill-opacity="0.75" stroke="#000" stroke-width="0.5"/><text x="774" y="2748" font-family="sans-serif" font-size="11">pedestal_basin_white (202)</text>
 </svg>

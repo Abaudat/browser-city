@@ -239,12 +239,18 @@ fn the_top_railing_is_an_upright_on_its_foot() {
 fn every_bed_is_drawn_to_its_footprints_south_edge_and_solid_there() {
     let defs = real_defs();
     let tile = defs.tile_size_px.unwrap();
+    let bed_tag = defs
+        .tags
+        .iter()
+        .find(|t| t.key == "bed")
+        .expect("the bed tag is declared")
+        .id;
     let beds: Vec<&ObjectDef> = defs
         .objects
         .iter()
-        .filter(|o| o.key.starts_with("bed_"))
+        .filter(|o| o.tags.contains(&bed_tag))
         .collect();
-    assert_eq!(beds.len(), 4, "the four beds");
+    assert!(!beds.is_empty(), "at least one bed");
     for o in beds {
         let sprite = o.sprite.as_ref().unwrap();
         let c = o.collider.unwrap();

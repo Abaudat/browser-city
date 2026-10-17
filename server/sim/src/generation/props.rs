@@ -489,6 +489,41 @@ pub fn extent(row: &PlacedRow, def: &defs::ObjectDef) -> Rect {
     }
 }
 
+/// The tag whose art must stand against a north wall: a bed's headboard is
+/// drawn over the cell north of it.
+pub const NORTH_WALL_TAG_KEY: &str = "bed";
+
+/// Whether `def` carries [`NORTH_WALL_TAG_KEY`].
+pub fn stands_against_north_wall(def: &defs::ObjectDef) -> bool {
+    defs::TAGS
+        .iter()
+        .any(|t| t.key == NORTH_WALL_TAG_KEY && def.tags.contains(&t.id))
+}
+
+/// How many whole cells a def's art rises above its footprint: the sprite's
+/// height past `height * tile`, rounded up.
+pub fn overhang_rows(def: &defs::ObjectDef) -> i32 {
+    let tile = defs::BALANCE
+        .iter()
+        .find(|b| b.key == "render.tile_size_px")
+        .map_or(16, |b| b.value as i32);
+    def.sprite
+        .map_or(0, |s| {
+            (s.h as i32 - def.height as i32 * tile + tile - 1) / tile
+        })
+        .max(0)
+}
+
+/// The cells north of a placed def's footprint that its art is drawn over
+/// (the player stands in front of the art there, so a walker must not be
+/// able to stand on them).
+pub fn overhang_cells(row: &PlacedRow, def: &defs::ObjectDef) -> Vec<(i32, i32)> {
+    let top = row.y - def.height as i32 + 1;
+    (1..=overhang_rows(def))
+        .flat_map(|k| (row.x..row.x + def.width as i32).map(move |x| (x, top - k)))
+        .collect()
+}
+
 /// The def of `id` among `objects`.
 pub fn def_of(objects: &[defs::ObjectDef], id: u32) -> Option<&defs::ObjectDef> {
     objects.iter().find(|o| o.id == id)
@@ -884,6 +919,9 @@ fn dress_building(
     let fixture_cells: BTreeSet<(i32, i32)> =
         interior.fixtures.iter().map(|f| (f.x, f.y)).collect();
 
+    // Art that rises above its footprint stands against a wall: the cells it
+    // is drawn over must be wall, never floor a walker could stand on.
+    let walls: BTreeSet<(i32, i32)> = interior.walls().into_iter().collect();
     let mut taken = Occupied {
         cells: BTreeSet::new(),
     };
@@ -975,7 +1013,21 @@ fn dress_building(
                                         && !fixture_cells.contains(&(x, y))))
                         })
                     });
-                    if fit {
+                    let backed = !stands_against_north_wall(d)
+                        || overhang_cells(
+                            &PlacedRow {
+                                floor: 0,
+                                y: ay,
+                                x: ax,
+                                def_id: d.id,
+                                layer: d.layer,
+                                orientation: 0,
+                            },
+                            d,
+                        )
+                        .iter()
+                        .all(|c| walls.contains(c));
+                    if fit && backed {
                         anchors.push((ax, ay));
                     }
                 }

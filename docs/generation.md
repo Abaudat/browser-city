@@ -724,7 +724,8 @@ and the unit tests on hand-built samples, not by the proptest.
   two fixtures in adjacent cells where the room allows. *Wall-backed*
   (bed, cooker, basin, toilet, desk, workbench, stock): along the north wall,
   then the side walls, centred first, in a corner only in a room two
-  cells wide. *Free-standing* (table set): on the open floor away from
+  cells wide; a bed stands on the north row only, and pass 7 anchors it
+  with the cell its art is drawn over north of it a wall. *Free-standing* (table set): on the open floor away from
   every wall, nearest the centre, in a room three or more cells each way.
   *Wall-mounted* (light): on the north wall row, centred, never in a
   corner. *Facing the door* (counter): on the wall across from the

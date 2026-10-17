@@ -207,7 +207,7 @@ pub const INV_GENERATION_PROFESSION_DEPTH_NEVER_COLLAPSES_IN_ONE_CITY: &str = "f
 pub const INV_GENERATION_BARISTA_HAS_AT_LEAST_MIN_EMPLOYERS: &str = "for any seed, the barista profession (an FR14 launch job, posted only at cafes) is held by at least min_employers_per_profession distinct placed workplaces in that one city (story 15.9)";
 pub const INV_GENERATION_BUILDING_TYPE_INDEPENDENT_OF_ENVELOPE_ORDER: &str = "shuffling pass 4's own placed-envelope order and re-running pass 5 over the shuffled list never changes any envelope's own assigned type, for any seed (story 3.4, NFR25)";
 pub const INV_GENERATION_INTERIOR_CELLS_LIE_INSIDE_THEIR_OWN_ENVELOPE: &str = "every emitted interior cell (wall, floor, threshold, fixture) lies inside its own building's pass-4 footprint in world coordinates on the same tilemap, the interior carries the envelope's own footprint and front, the entrance is the envelope's own front cell, and no cell is claimed by two buildings, in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED) (story 3.5 AC1, FR110, FR113)";
-pub const INV_GENERATION_EVERY_EMITTED_INTERIOR_VALIDATES_CLEAN: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), every emitted interior is accepted by the committed rule set (the per-building verdict) and the finished district by the whole of it, story 2.4's enclosed_regions and narrow_passages at the player body report nothing over its wall and fixture colliders seeded at the street, a cell beside every fixture is reachable, the cell inside the street door is standable, and every room is at least two walkable cells either way (story 3.5 AC2, FR112, story 2.4 AC5, story 4.27)";
+pub const INV_GENERATION_EVERY_EMITTED_INTERIOR_VALIDATES_CLEAN: &str = "in every city of the shared pool (96 by default, world seeds salted with the run's PROPTEST_RNG_SEED), every emitted interior is accepted by the committed rule set (the per-building verdict) and the finished district by the whole of it, story 2.4's enclosed_regions and narrow_passages at the player body report nothing over its wall and fixture colliders seeded at the street, a cell beside every fixture is reachable, every bed's art is drawn over wall, never standable floor, and every room is at least two walkable cells either way (story 3.5 AC2, FR112, story 2.4 AC5, story 4.27 AC1)";
 pub const INV_GENERATION_DISTRICT_SITE_ANSWERS_AS_THE_REFERENCE_SITE: &str = "any sequence of set, set_rect and merge on the dense DistrictSite builder answers tags_at, areas_containing and subjects_in_area exactly as sim::rules::testing's map-backed site fed the same cells, and evaluate over the committed rules finds the same violations in both (story 3.5, Tim's direction)";
 pub const INV_GENERATION_A_BEDROOM_OPENS_ONLY_ONTO_A_BATHROOM_AND_A_BATHROOM_IS_NO_WAY_THROUGH:
     &str = "in every city of the shared pool, a room owing sleeping has nothing behind it but a washing room, and a washing room has nothing behind it (story 3.5, Artie's direction)";
@@ -7101,17 +7101,69 @@ fn inv_generation_every_emitted_interior_validates_clean() {
                         "plot {plot}: nobody can stand at a fixture"
                     );
                 }
-                // Story 4.27: a bed (or any fixture) never blocks the cell
-                // just inside the street door, where a new character stands.
-                let inside = d.inside_the_door(interior);
+            }
+            // Story 4.27: a bed's art is drawn over the cell north of it,
+            // so that cell is never floor a walker can stand on.
+            for p in d.props.props() {
+                let Some(def) = defs::OBJECTS.iter().find(|o| o.id == p.row.def_id) else {
+                    continue;
+                };
+                let open =
+                    bed_overhang_floor(&p.row, def, &|x, y| d.walkability(0).is_standable(x, y));
                 ensure!(
-                    inside.is_some_and(|(x, y)| d.walkability(0).is_standable(x, y)),
-                    "plot {plot}: the cell inside the street door is not standable"
+                    open.is_empty(),
+                    "{} at ({}, {}) is drawn over standable floor {open:?}",
+                    def.key,
+                    p.row.x,
+                    p.row.y
                 );
             }
             c.rules.clone()
         },
     );
+}
+
+/// The cells a bed's art is drawn over that a walker could stand on; empty
+/// for anything that is not a bed.
+fn bed_overhang_floor(
+    row: &sim::generation::PlacedRow,
+    def: &defs::ObjectDef,
+    standable: &dyn Fn(i32, i32) -> bool,
+) -> Vec<(i32, i32)> {
+    if !sim::generation::props::stands_against_north_wall(def) {
+        return Vec::new();
+    }
+    sim::generation::props::overhang_cells(row, def)
+        .into_iter()
+        .filter(|&(x, y)| standable(x, y))
+        .collect()
+}
+
+/// Proves the bed check has teeth: a bed with floor north of it is refused,
+/// the same bed against a wall passes, and a non-bed is never judged.
+#[test]
+fn the_bed_overhang_check_refuses_a_bed_with_floor_north_of_it() {
+    let single = defs::OBJECTS
+        .iter()
+        .find(|o| o.key == "bed_single_blue")
+        .unwrap();
+    let row = sim::generation::PlacedRow {
+        floor: 0,
+        y: 10,
+        x: 5,
+        def_id: single.id,
+        layer: single.layer,
+        orientation: 0,
+    };
+    // A 1x2 bed anchored at y = 10 covers rows 9..=10; its headboard is
+    // drawn over (5, 8).
+    assert_eq!(bed_overhang_floor(&row, single, &|_, _| true), vec![(5, 8)]);
+    assert!(bed_overhang_floor(&row, single, &|_, y| y != 8).is_empty());
+    let other = defs::OBJECTS
+        .iter()
+        .find(|o| !o.tags.is_empty() && !sim::generation::props::stands_against_north_wall(o))
+        .unwrap();
+    assert!(bed_overhang_floor(&row, other, &|_, _| true).is_empty());
 }
 
 /// Proves [`body_findings`] has teeth: a generated interior whose inner
