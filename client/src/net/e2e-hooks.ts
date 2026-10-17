@@ -224,6 +224,21 @@ declare global {
       /** The local player's sprite point in world pixels -- the same space a
        * remote's `drawn()` screen point is in. */
       playerDrawnPoint?: () => { x: number; y: number };
+      /** DEV only: stands the player at a point and draws what is there. */
+      teleport?: (x: number, y: number, floor: number) => void;
+      /** Story 3.16: the streamed world as the scene holds it right now --
+       * how many chunks are drawn, how many sprites they hold, and the
+       * building and room the player's own cell is in. A callable read
+       * fresh each call. */
+      world?: () => {
+        drawnChunks: number;
+        liveSprites: number;
+        buildingId: string;
+        roomId: string;
+        localProps: { objectId: string; x: number; y: number }[];
+        /** Atlas page sources reachable from the display list right now. */
+        boundAtlasPages: number;
+      };
       /** Story 5.2: every street citizen's agreed L3 state at a given city
        * time, computed from scratch -- never read from what was drawn. */
       l3Agreement?: (cityMilli: number) => readonly {
@@ -254,27 +269,6 @@ declare global {
           agreed: boolean;
         }[];
       };
-      /** Story 5.1: the L3 commuter as last drawn -- a callable read fresh
-       * each call, `undefined` while it is not on screen. */
-      commuterDrawn?: () =>
-        | {
-            cityMilli: number;
-            legKey: number;
-            departAt: number;
-            arriveAt: number;
-            distance: number;
-            x: number;
-            y: number;
-            floor: number;
-            orderIndex: number;
-            lamppostOrderIndex: number;
-            screenX: number;
-            screenY: number;
-            animation: string;
-            direction: string;
-            frameIndex: number;
-          }
-        | undefined;
       /** Cycle 2 (Quentin's direction, finding 2): the world container's
        * own real, live `scale`/`position` -- a callable, read fresh every
        * call from the real, mounted `Container`, never a value recorded
@@ -574,6 +568,16 @@ export function exposePlayerScreenBoundsForE2e(
   window.__bc = bucket;
 }
 
+/** The e2e harness's way to stand the player somewhere, DEV only. */
+export function exposeTeleportForE2e(
+  teleport: NonNullable<NonNullable<Window["__bc"]>["teleport"]>,
+): void {
+  if (!import.meta.env.DEV) return;
+  const bucket = window.__bc ?? { pings: [] };
+  bucket.teleport = teleport;
+  window.__bc = bucket;
+}
+
 /** Story 4.9: the local player's drawn point, read live. */
 export function exposePlayerDrawnPointForE2e(
   getter: NonNullable<NonNullable<Window["__bc"]>["playerDrawnPoint"]>,
@@ -606,13 +610,11 @@ export function exposeL3AgreementForE2e(
   window.__bc = bucket;
 }
 
-/** Story 5.1: the same idiom, for the L3 commuter's last drawn state. */
-export function exposeCommuterDrawnForE2e(
-  getter: NonNullable<NonNullable<Window["__bc"]>["commuterDrawn"]>,
-): void {
+/** Story 3.16: the same idiom, for the streamed world's own counters. */
+export function exposeWorldForE2e(getter: NonNullable<NonNullable<Window["__bc"]>["world"]>): void {
   if (!import.meta.env.DEV) return;
   const bucket = window.__bc ?? { pings: [] };
-  bucket.commuterDrawn = getter;
+  bucket.world = getter;
   window.__bc = bucket;
 }
 
@@ -690,11 +692,13 @@ export function exposeIdentityActionsForE2e(actions: {
   window.__bc = bucket;
 }
 
-/** Story 4.6: a spec that assumes the pre-flat start (the shop, `PLAYER_START`)
- * says so with `window.__bcStart = "shop"` before the page's scripts run;
- * everyone else, and every production build, starts in the home flat. */
-export function e2eStartsInShop(): boolean {
-  return import.meta.env.DEV && (window as { __bcStart?: string }).__bcStart === "shop";
+/** Stories 4.6, 7.1, 3.16: a spec that assumes the fixed start (the
+ * district's arrival cell, `my_start`) says so with
+ * `window.__bcStart = "arrival"` before the page's scripts run: its scene
+ * stays there instead of moving to the flat a tenancy assigns. Everyone
+ * else, and every production build, starts in its own flat. */
+export function e2eStartsAtArrival(): boolean {
+  return import.meta.env.DEV && (window as { __bcStart?: string }).__bcStart === "arrival";
 }
 
 /** Story 4.1: exposes the client's derived in-city time as a callable. */

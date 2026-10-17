@@ -1,5 +1,5 @@
 // The options every committed visual baseline shares (`toHaveScreenshot`
-// in test-street, debug-overlays and enclosure specs). Each spec adds its
+// in the district-view and debug-overlays specs). Each spec adds its
 // own absolute `maxDiffPixels`, sized to the object it guards.
 export const SCREENSHOT_OPTIONS = {
   animations: "disabled",

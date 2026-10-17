@@ -296,7 +296,7 @@ describe("HighlightApplier", () => {
       expect(container.children).toHaveLength(3); // a, a's overlay, b (no overlay: hidden)
       const overlayOfA = container.children.find((c) => c !== a && c !== b) as Sprite;
 
-      // The real sequence `test-street/scene.ts`'s `reorderFloor` runs:
+      // The real sequence `render/world-scene.ts`'s `reorderFloor` runs:
       // `applyDepthOrder` calls `removeChildren()` then re-adds only the
       // members it owns -- orphaning every overlay along with anything
       // else it does not itself own (their own `.parent` becomes `null`;

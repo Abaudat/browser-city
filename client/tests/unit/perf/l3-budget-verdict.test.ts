@@ -89,8 +89,14 @@ describe("L3 budget verdict (NFR11)", () => {
     expect(v.gateFailures.join()).toContain("B/frame");
   });
 
-  it("FAILS on a major GC and on heap growth, but never on a scavenge's duration", () => {
-    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1 } }).met).toBe(false);
+  it("FAILS on a churn of major GCs, a long one and heap growth, but never on one short major or a scavenge's duration", () => {
+    expect(
+      verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 3 } }).met,
+    ).toBe(true);
+    expect(verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 30 } }).met).toBe(false);
+    expect(
+      verdict({ ...GOOD, gc: { ...GOOD.gc, majorCount: 1, longestMajorPauseMs: 12 } }).met,
+    ).toBe(false);
     expect(verdict({ ...GOOD, heapGrowthRatio: 1.6 }).met).toBe(false);
     const slowScavenges = { ...GOOD.gc, minorPausesMs: [4.5, 5], longestMinorPauseMs: 9 };
     expect(verdict({ ...GOOD, gc: slowScavenges }).met).toBe(true);
@@ -160,9 +166,9 @@ describe("allocation attribution", () => {
 
   it("sums samples whose stack runs through l3/ or the crowd adapters", () => {
     const head = node("", 0, [
-      node("http://x/src/test-street/scene.ts", 100, [
+      node("http://x/src/render/world-scene.ts", 100, [
         node("http://x/src/l3/avoidance.ts", 40, [node("http://x/node_modules/a.js", 8)]),
-        node("http://x/src/test-street/citizens-layer.ts", 10),
+        node("http://x/src/render/citizens-layer.ts", 10),
         node("http://x/src/render/body-sprite.ts", 500),
       ]),
     ]);

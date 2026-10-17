@@ -18,6 +18,10 @@ name = "regen-city-clock-fixture"
 path = "src/bin/regen_city_clock_fixture.rs"
 
 [[bin]]
+name = "regen-district-fixture"
+path = "src/bin/regen_district_fixture.rs"
+
+[[bin]]
 name = "dump-generation"
 path = "src/bin/dump_generation.rs"
 

@@ -15,13 +15,20 @@ import { fileURLToPath } from "node:url";
 import type { Browser, Page } from "@playwright/test";
 import { parseDefs } from "../../src/defs/parse";
 import type {} from "../../src/net/e2e-hooks";
-import { BRIDGE_FLOOR, STREET_FLOOR, streetWalkRoute } from "../../src/test-street/fixture";
 import { CHUNK_SIZE } from "../../src/world/chunk";
 import { REGION_LEAVE_RADIUS_CHUNKS, REGION_RADIUS_CHUNKS } from "../../src/world/region";
-import { streetWalkInputs } from "../unit/test-street/street-world";
+import { BLOCK_STARTS, blockFootbridgeDeckRoute } from "../unit/fixture-block/street-world";
+import {
+  BRIDGE_FLIGHT_X0,
+  BRIDGE_FLOOR,
+  BRIDGE_FOOT_Y,
+  STREET_FLOOR,
+} from "../unit/support/stairs-world";
+import { standInBlock } from "./block-support";
+import { walkFreeCells } from "./district-support";
 import { expect, test } from "./fixtures";
 import { readSpacetimeHandle } from "./spacetime-harness.mjs";
-import { walkRealCells, walkRealSegment } from "./walk-support";
+import { walkRealSegment } from "./walk-support";
 
 const DEFS = parseDefs(
   JSON.parse(
@@ -36,7 +43,8 @@ const balance = (key: string): number => {
 const HZ = balance("net.player_position_hz");
 const QUANTUM = 1 / DEFS.positionUnitsPerCell;
 const WALK_CELLS = 2.5;
-const HOP_CELLS = 0.2;
+/** The one floor the generated city has. */
+const GROUND_FLOOR = 0;
 
 /** A page whose position writes are counted from the first frame it sends. */
 async function countedPage(browser: Browser): Promise<{ page: Page; sends: () => number }> {
@@ -52,7 +60,7 @@ async function countedPage(browser: Browser): Promise<{ page: Page; sends: () =>
       sends += text.match(/set_player_position/g)?.length ?? 0;
     });
   });
-  await page.goto("/?freezeCrowd=1&remotePlayers=1");
+  await page.goto("/?freezeBodies=1&remotePlayers=1");
   await page.waitForFunction(() => window.__bc?.playerAppearance !== undefined, undefined, {
     timeout: 60_000,
   });
@@ -87,6 +95,37 @@ async function createCharacter(page: Page): Promise<string> {
 // These specs own when a character exists, so none arrives by itself.
 test.use({ arrive: false });
 
+/** Waits until `viewer` draws `id` where `walker`'s own scene stands: a
+ * new character's server row is its flat's spawn until its sender's first
+ * send, and a trace started before that would record the jump. */
+async function drawnWhereItStands(viewer: Page, walker: Page, id: string): Promise<void> {
+  const at = await walker.evaluate(() => window.__bc?.playerPosition);
+  if (!at) throw new Error("no position");
+  await viewer.waitForFunction(
+    ({ cid, x, y, q }) => {
+      const p = window.__bc?.remotePlayers?.poses()[cid];
+      return p !== undefined && Math.abs(p.x - x) <= q && Math.abs(p.y - y) <= q;
+    },
+    { cid: id, x: at.x, y: at.y, q: QUANTUM },
+    { timeout: 20_000 },
+  );
+}
+
+/** The axis a straight walk travelled most along, from the received samples. */
+function walkedAxis(samples: readonly { x: number; y: number }[]): "x" | "y" {
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  if (!first || !last) return "x";
+  return Math.abs(last.x - first.x) >= Math.abs(last.y - first.y) ? "x" : "y";
+}
+
+/** Never changes direction: non-decreasing or non-increasing throughout. */
+function isMonotonic(values: readonly number[]): boolean {
+  const up = values.every((v, i) => i === 0 || v >= (values[i - 1] ?? v));
+  const down = values.every((v, i) => i === 0 || v <= (values[i - 1] ?? v));
+  return up || down;
+}
+
 test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a standing player costs nothing", async ({
   browser,
 }) => {
@@ -119,12 +158,13 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
         (r?.inserts[`playerPosition:${cid}`] ?? 0) + (r?.updates[`playerPosition:${cid}`] ?? 0)
       );
     }, id);
+  await drawnWhereItStands(b.page, a.page, characterId);
   const updatesBefore = await rowUpdates(characterId);
 
   await b.page.evaluate(() => window.__bc?.remotePlayers?.startTrace());
   const sendsBefore = a.sends();
   const startedAt = Date.now();
-  await walkRealCells(a.page, "east", WALK_CELLS, true);
+  await walkFreeCells(a.page, "walk", WALK_CELLS);
   const walkMs = Date.now() - startedAt;
 
   // B converges to A's own rest position within one quantum.
@@ -147,17 +187,19 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   expect(received.length, "B received nothing of A").toBeGreaterThan(1);
   expect((await rowUpdates(characterId)) - updatesBefore).toBeGreaterThan(0);
 
-  // On a straight walk it never steps backwards.
-  for (let i = 1; i < drawn.length; i++) {
-    expect(drawn[i]?.x ?? 0).toBeGreaterThanOrEqual(drawn[i - 1]?.x ?? 0);
-  }
+  // On a straight walk it never steps backwards, along whichever axis the
+  // walk took (the player walks wherever the district leaves room).
+  const axis = walkedAxis(received);
+  expect(isMonotonic(drawn.map((f) => f[axis])), "drawn positions stepped backwards").toBe(true);
   // It interpolates rather than snaps: at least one drawn position lies
   // strictly between two consecutive samples B received. Holds at any frame
   // pacing that draws a frame while a segment is being walked.
   const between = drawn.some((f) =>
     received.some((s, i) => {
       const next = received[i + 1];
-      return next !== undefined && s.x < f.x && f.x < next.x;
+      if (next === undefined) return false;
+      const [lo, hi] = [Math.min(s[axis], next[axis]), Math.max(s[axis], next[axis])];
+      return lo < f[axis] && f[axis] < hi;
     }),
   );
   expect(between, "no drawn position fell between two received samples").toBe(true);
@@ -186,8 +228,9 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   await a.page.waitForFunction((id) => window.__bc?.remotePlayers?.poses()[id] !== undefined, bId, {
     timeout: 20_000,
   });
+  await drawnWhereItStands(a.page, b.page, bId);
   await a.page.evaluate(() => window.__bc?.remotePlayers?.startTrace());
-  await walkRealCells(b.page, "east-b", WALK_CELLS, true);
+  await walkFreeCells(b.page, "walk-b", WALK_CELLS);
   const bRest = await b.page.evaluate(() => window.__bc?.playerPosition);
   if (!bRest) throw new Error("no rest position for B");
   await a.page.waitForFunction(
@@ -203,9 +246,10 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
   );
   const bDrawn = seen.frames[bId] ?? [];
   expect(bDrawn.length, "A drew nothing of B").toBeGreaterThan(0);
-  for (let i = 1; i < bDrawn.length; i++) {
-    expect(bDrawn[i]?.x ?? 0).toBeGreaterThanOrEqual(bDrawn[i - 1]?.x ?? 0);
-  }
+  const bAxis = walkedAxis(seen.samples[bId] ?? []);
+  expect(isMonotonic(bDrawn.map((f) => f[bAxis])), "B's drawn positions stepped backwards").toBe(
+    true,
+  );
 
   // Lazy despawn (AC2), through the real handle release: with B's region
   // centred where A's column is inside the leave radius but outside the enter
@@ -219,7 +263,7 @@ test("a walk is drawn smoothly on a second page, sent at the dial's rate, and a 
     page.evaluate(([cx, cy, floor]) => window.__bc?.region?.moveTo(cx, cy, floor), [
       x,
       aRest.y,
-      STREET_FLOOR,
+      GROUND_FLOOR,
     ] as [number, number, number]);
   const drawnByB = (cid: string) =>
     b.page.evaluate((id) => window.__bc?.remotePlayers?.poses()[id] !== undefined, cid);
@@ -291,13 +335,14 @@ test("a player on the footbridge deck is drawn on floor 1, in the deck's stack, 
     id,
     { timeout: 20_000 },
   );
-  // Out of the shop, under the bridge, up the flight and a little along the deck.
-  const route = streetWalkRoute(streetWalkInputs());
-  const alongTheDeck = route.findIndex((segment) => segment.label === "along-the-deck");
-  if (alongTheDeck < 0) throw new Error("the street walk has no along-the-deck segment");
-  for (const segment of route.slice(0, alongTheDeck + 1)) {
-    await walkRealSegment(a.page, segment);
-  }
+  // Both stand at the fixture block: B must hold the chunks A is in to see
+  // A at all, and each is the other's remote.
+  await standInBlock(b.page, BRIDGE_FLIGHT_X0 + 0.5, BRIDGE_FOOT_Y + 1.5, STREET_FLOOR);
+  // Up the fixture block's footbridge flight and a little along the deck.
+  const foot = BLOCK_STARTS.footbridge;
+  await standInBlock(a.page, foot.x, foot.y, foot.floor);
+  for (const segment of blockFootbridgeDeckRoute()) await walkRealSegment(a.page, segment);
+
   const rest = await a.page.evaluate(() => window.__bc?.playerPosition);
   if (!rest) throw new Error("no rest position");
   await b.page.waitForFunction(

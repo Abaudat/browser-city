@@ -57,7 +57,7 @@ check "importing TextStyleOptions from pixi.js" 1 bash "$CHECK" "$d"
 
 # The real hole Tim's direction (cycle 2) found: a formatter-wrapped
 # multi-line import, exactly the shape Biome's own 100-column line width
-# produces for any non-trivial pixi.js import (test-street/scene.ts is
+# produces for any non-trivial pixi.js import (render/world-scene.ts is
 # one real example).
 d="$(plant 'import {
   Container,

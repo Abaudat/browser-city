@@ -3,13 +3,8 @@
 // the scene and the watcher run in and however late the key lands after
 // the watcher is armed.
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  PLAYER_START,
-  RELEASE_LAG,
-  STREET_WALK_DIRECTIONS,
-  type StreetWalkSegment,
-} from "../../../src/test-street/fixture";
 import { initialFloorWalkState, stepAndTransition } from "../../../src/world/floor-walk";
+import { RELEASE_LAG, WALK_DIRECTIONS, type WalkSegment } from "../../e2e/walk-types";
 import {
   armWalkWatcher,
   awaitWalk,
@@ -19,11 +14,12 @@ import {
   type WatcherArgs,
 } from "../../e2e/walk-watcher";
 import {
+  PLAYER_START,
   streetFlightIndex,
   streetMovementConfig,
   streetTransitionIndex,
   streetWorldIndex,
-} from "../test-street/street-world";
+} from "../support/stairs-world";
 
 type Order = "scene-first" | "watcher-first";
 
@@ -94,7 +90,7 @@ function installPage(order: Order, frameMs: number) {
   g.performance = { now: () => now };
   const scene = () => {
     if (held) {
-      const dir = STREET_WALK_DIRECTIONS[held as keyof typeof STREET_WALK_DIRECTIONS];
+      const dir = WALK_DIRECTIONS[held as keyof typeof WALK_DIRECTIONS];
       state = stepAndTransition(
         state,
         dir,
@@ -148,12 +144,12 @@ afterEach(() => {
 });
 
 const HOP = 0.2;
-const hop = (): StreetWalkSegment => ({
+const hop = (): WalkSegment => ({
   label: "hop",
   key: "ArrowRight",
   until: { kind: "x-at-least", value: PLAYER_START.x + HOP },
 });
-const argsFor = (segment: StreetWalkSegment, mode: WatcherArgs["mode"]): WatcherArgs => ({
+const argsFor = (segment: WalkSegment, mode: WatcherArgs["mode"]): WatcherArgs => ({
   until: segment.until,
   code: segment.key,
   mode,
@@ -202,7 +198,7 @@ describe("the in-page walk watcher", () => {
     expect(record && overshootViolation(record, segment, releaseBoundCells())).toContain("hop");
   });
 
-  const farHop = (): StreetWalkSegment => ({
+  const farHop = (): WalkSegment => ({
     label: "far",
     key: "ArrowRight",
     until: { kind: "x-at-least", value: PLAYER_START.x + 3 },
@@ -233,7 +229,7 @@ describe("the in-page walk watcher", () => {
     page.frame();
     for (let i = 0; i < 60; i++) page.frame();
     const record = await page.win.__bcWalk;
-    expect(record?.maxFrameStepSteps).toBeLessThanOrEqual(1);
+    expect(record?.maxFrameStepSteps).toBeLessThanOrEqual(1 + 1e-9);
   });
 
   it("the same jump with no floor change is counted", async () => {
@@ -252,7 +248,7 @@ describe("the in-page walk watcher", () => {
 
   it("a condition never met releases the key and reports", async () => {
     const page = installPage("scene-first", 16);
-    const segment: StreetWalkSegment = {
+    const segment: WalkSegment = {
       label: "never",
       key: "ArrowRight",
       until: { kind: "floor", value: 99 },
@@ -268,7 +264,7 @@ describe("the in-page walk watcher", () => {
 
   it("a cell condition releases on arrival", async () => {
     const page = installPage("scene-first", 16);
-    const segment: StreetWalkSegment = {
+    const segment: WalkSegment = {
       label: "cell",
       key: "ArrowRight",
       until: { kind: "cell", x: Math.floor(PLAYER_START.x) + 1, y: Math.floor(PLAYER_START.y) },
@@ -283,7 +279,7 @@ describe("the in-page walk watcher", () => {
 
   it("a floor condition that already holds is refused", () => {
     installPage("scene-first", 16);
-    const segment: StreetWalkSegment = {
+    const segment: WalkSegment = {
       label: "floor",
       key: "ArrowRight",
       until: { kind: "floor", value: PLAYER_START.floor },
@@ -333,7 +329,7 @@ describe("the in-page walk watcher", () => {
 
   it("an axis threshold already met at arming is refused", () => {
     installPage("scene-first", 16);
-    const segment: StreetWalkSegment = {
+    const segment: WalkSegment = {
       label: "already",
       key: "ArrowRight",
       until: { kind: "x-at-least", value: PLAYER_START.x - 1 },

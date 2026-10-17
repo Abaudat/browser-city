@@ -5,7 +5,7 @@ import { conformanceView, countingView } from "./support";
 
 function mount(options: Partial<Parameters<typeof mountDebugOverlays>[0]> = {}) {
   const host = document.createElement("div");
-  host.id = "test-street";
+  host.id = "world";
   document.body.appendChild(host);
   return mountDebugOverlays({
     mount: host,
@@ -24,7 +24,7 @@ describe("mountDebugOverlays", () => {
   it("mounts one SVG inside the canvas mount, never in document.body (FR151)", () => {
     const handle = mount();
     const root = document.querySelector('[data-bc-debug="overlays"]');
-    expect(root?.parentElement?.id).toBe("test-street");
+    expect(root?.parentElement?.id).toBe("world");
     // FR151's allowlist is checked against document.body's own children;
     // nothing here may look like one of the three DOM UI surfaces.
     expect(document.querySelectorAll("[data-bc-surface]")).toHaveLength(0);
@@ -187,7 +187,7 @@ describe("mountDebugOverlays", () => {
 
   it("positions itself against the canvas mount rather than the page", () => {
     const host = document.createElement("div");
-    host.id = "test-street";
+    host.id = "world";
     document.body.appendChild(host);
     const handle = mountDebugOverlays({
       mount: host,

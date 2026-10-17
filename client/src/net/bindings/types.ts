@@ -140,6 +140,8 @@ export const District = __t.object("District", {
   rngVersion: __t.u32(),
   defsVersion: __t.string(),
   generatedAt: __t.timestamp(),
+  arrivalX: __t.i32(),
+  arrivalY: __t.i32(),
 });
 export type District = __Infer<typeof District>;
 
@@ -192,6 +194,18 @@ export const GameplayMetricSample = __t.object("GameplayMetricSample", {
   sampleSize: __t.u64(),
 });
 export type GameplayMetricSample = __Infer<typeof GameplayMetricSample>;
+
+export const GroundArea = __t.object("GroundArea", {
+  areaId: __t.u64(),
+  defId: __t.u32(),
+  x0: __t.i32(),
+  y0: __t.i32(),
+  x1: __t.i32(),
+  y1: __t.i32(),
+  floor: __t.i8(),
+  chunkKey: __t.u64(),
+});
+export type GroundArea = __Infer<typeof GroundArea>;
 
 export const GrowthSchedule = __t.object("GrowthSchedule", {
   scheduledId: __t.u64(),
@@ -294,6 +308,15 @@ export const MyCharacter = __t.object("MyCharacter", {
 });
 export type MyCharacter = __Infer<typeof MyCharacter>;
 
+export const MyStart = __t.object("MyStart", {
+  x: __t.i32(),
+  y: __t.i32(),
+  floor: __t.i8(),
+  fracX: __t.u8(),
+  fracY: __t.u8(),
+});
+export type MyStart = __Infer<typeof MyStart>;
+
 export const NodeKind = __t.object("NodeKind", {
   code: __t.u32(),
   name: __t.string(),
@@ -364,6 +387,19 @@ export const RestoreState = __t.object("RestoreState", {
   open: __t.bool(),
 });
 export type RestoreState = __Infer<typeof RestoreState>;
+
+export const RoofArea = __t.object("RoofArea", {
+  areaId: __t.u64(),
+  buildingId: __t.u64(),
+  defId: __t.u32(),
+  x0: __t.i32(),
+  y0: __t.i32(),
+  x1: __t.i32(),
+  y1: __t.i32(),
+  floor: __t.i8(),
+  chunkKey: __t.u64(),
+});
+export type RoofArea = __Infer<typeof RoofArea>;
 
 export const Room = __t.object("Room", {
   roomId: __t.u64(),

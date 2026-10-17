@@ -144,6 +144,51 @@ pub struct RoomArea {
     pub chunk_key: u64,
 }
 
+/// One axis-aligned rectangle of ground (story 3.16): the object `def_id`
+/// tiles the rect, on the ground pass. A cell no `ground_area` covers is
+/// open ground -- the client's default, never a row. Rows overlap; the
+/// lowest `area_id` is painted first and a later row covers an earlier
+/// one. Clipped so the rect lies inside the chunk `chunk_key` names, as
+/// `building_area` is.
+#[derive(Clone)]
+#[spacetimedb::table(accessor = ground_area, public)]
+pub struct GroundArea {
+    #[primary_key]
+    #[auto_inc]
+    pub area_id: u64,
+    pub def_id: u32,
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+    pub floor: i8,
+    #[index(btree)]
+    pub chunk_key: u64,
+}
+
+/// One axis-aligned rectangle of a building's roof (story 3.16): the object
+/// `def_id` tiles the rect above everything inside the footprint, and the
+/// client hides it while its viewer is inside `building_id`. Clipped like
+/// `building_area`.
+#[derive(Clone)]
+#[spacetimedb::table(accessor = roof_area, public)]
+pub struct RoofArea {
+    // bc:wide-table: `building_area`'s rect and owner plus the roof tile's def
+    #[primary_key]
+    #[auto_inc]
+    pub area_id: u64,
+    #[index(btree)]
+    pub building_id: u64,
+    pub def_id: u32,
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+    pub floor: i8,
+    #[index(btree)]
+    pub chunk_key: u64,
+}
+
 /// The `layer` code's companion data table (NFR36): `rank` (FR123's depth
 /// sort key) lives here, on the code's own row, never on a per-cell
 /// column -- read by story 1.6, not by anything in this one.

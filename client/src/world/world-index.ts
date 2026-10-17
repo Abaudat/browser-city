@@ -70,6 +70,9 @@ export interface PlacedObjectView {
 export class WorldIndex implements CollisionGridQuery, FootprintQuery {
   private readonly grid: CollisionGrid;
   private readonly footprints: FootprintIndex;
+  /** Page-owned objects (the link carrier): pickable, never collided
+   * with, never a streamed row. */
+  private readonly pickOnly: FootprintIndex;
   private readonly objectDefs: ReadonlyMap<number, ColliderSource>;
 
   /** `subcellsPerCell` is `defs/`'s own generated
@@ -79,12 +82,20 @@ export class WorldIndex implements CollisionGridQuery, FootprintQuery {
   constructor(subcellsPerCell: number, objectDefs: ReadonlyMap<number, ColliderSource>) {
     this.grid = new CollisionGrid(subcellsPerCell, objectDefs);
     this.footprints = new FootprintIndex(objectDefs);
+    this.pickOnly = new FootprintIndex(objectDefs);
     this.objectDefs = objectDefs;
   }
 
   insert(row: PlacedObject): void {
     this.grid.insert(row);
     this.footprints.insert(row);
+  }
+
+  /** Registers a page-owned object for picking only: it enters no collision
+   * cell and no streamed chunk, so the player's grid stays the streamed
+   * rows' alone. */
+  insertPickOnly(row: PlacedObject): void {
+    this.pickOnly.insert(row);
   }
 
   delete(row: PlacedObject): void {
@@ -109,7 +120,9 @@ export class WorldIndex implements CollisionGridQuery, FootprintQuery {
 
   /** FR148's pick read (`input/pick.ts`). */
   objectsAt(floor: number, cellX: number, cellY: number): readonly FootprintEntry[] {
-    return this.footprints.objectsAt(floor, cellX, cellY);
+    const own = this.pickOnly.objectsAt(floor, cellX, cellY);
+    const streamed = this.footprints.objectsAt(floor, cellX, cellY);
+    return own.length === 0 ? streamed : [...streamed, ...own];
   }
 
   /**

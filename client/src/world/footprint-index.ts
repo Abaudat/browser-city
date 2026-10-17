@@ -14,7 +14,7 @@
 // always fed by the same call.
 
 import type { PlacedObject } from "../net/bindings/types";
-import { CHUNK_SIZE, chunkKey } from "./chunk";
+import { CHUNK_SIZE, chunkKey, chunkSlot } from "./chunk";
 import { footprintOrigin } from "./footprint";
 
 /** The minimal shape this index needs from an object's definition -- the
@@ -77,13 +77,21 @@ const NO_ENTRIES: readonly FootprintEntry[] = [];
  */
 export class FootprintIndex implements FootprintQuery {
   private readonly floors = new Map<number, Map<bigint, Chunk>>();
+  /** Chunks resolved so far, by `chunkSlot` (a lookup builds no `bigint`);
+   * retired by any `insert`/`delete`. */
+  private readonly resolved = new Map<number, Chunk | undefined>();
 
   /** `objectDefs` is resolved once, at construction -- `insert` does one
    * map lookup per row, never per frame. */
   constructor(private readonly objectDefs: ReadonlyMap<number, FootprintSource>) {}
 
   objectsAt(floor: number, cellX: number, cellY: number): readonly FootprintEntry[] {
-    const chunk = this.floors.get(floor)?.get(chunkKey(cellX, cellY, floor));
+    const slot = chunkSlot(Math.floor(cellX / CHUNK_SIZE), Math.floor(cellY / CHUNK_SIZE), floor);
+    let chunk = slot < 0 ? undefined : this.resolved.get(slot);
+    if (chunk === undefined && (slot < 0 || !this.resolved.has(slot))) {
+      chunk = this.floors.get(floor)?.get(chunkKey(cellX, cellY, floor));
+      if (slot >= 0) this.resolved.set(slot, chunk);
+    }
     return chunk?.cells[localIndex(cellX, cellY)] ?? NO_ENTRIES;
   }
 
@@ -100,6 +108,7 @@ export class FootprintIndex implements FootprintQuery {
    * object whose definition the client has not got cannot be drawn
    * either, so it can never be under the pointer. */
   insert(row: PlacedObject): void {
+    this.resolved.clear();
     const entry: FootprintEntry = {
       objectId: row.objectId,
       defId: row.defId,
@@ -135,6 +144,7 @@ export class FootprintIndex implements FootprintQuery {
    * leaves the index exactly as it was, down to which chunks are
    * allocated. */
   delete(row: PlacedObject): void {
+    this.resolved.clear();
     this.forEachFootprintCell(row, (cellX, cellY) => {
       const byChunk = this.floors.get(row.floor);
       const key = chunkKey(cellX, cellY, row.floor);

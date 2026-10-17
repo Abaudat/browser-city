@@ -8,7 +8,7 @@
 // split). `tests/unit/render/atlas-pages.test.ts` mocks `pixi.js` itself
 // to prove the caching, eviction-on-rejection and error-naming behaviour
 // without a real browser Image-decode runtime; the shop counter
-// (`test-street/scene.ts`) is this loader's first real caller.
+// (`render/world-scene.ts`) is this loader's first real caller.
 
 import { Assets, type Container, Rectangle, Sprite, Texture, type TextureSource } from "pixi.js";
 import type { AtlasPageDef, Defs, ItemDef, ObjectDef } from "../defs/types";

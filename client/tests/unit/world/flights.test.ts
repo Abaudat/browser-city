@@ -9,6 +9,12 @@ import fc from "fast-check";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import { floorOffsetPx, snapToScreenPx, worldPointPx } from "../../../src/render/screen-position";
+import { buildFlights, FlightIndex } from "../../../src/world/flights";
+import { initialFloorWalkState, stepAndTransition } from "../../../src/world/floor-walk";
+import { bodyRect, type MovementConfig } from "../../../src/world/movement";
+import { isBodyClear } from "../../../src/world/standable";
+import { pairTransitions, type TransitionSpec } from "../../../src/world/transitions";
+import { fixtureExtent, fixtureFloors } from "../support/reachable";
 import {
   BRIDGE_DECK_DEF_ID,
   BRIDGE_FLIGHT_DEPTH,
@@ -16,30 +22,21 @@ import {
   BRIDGE_FLIGHT_X0,
   BRIDGE_FLOOR,
   BRIDGE_UP_ANCHOR_Y,
-  isDefStreetProp,
+  committedDefs,
   STAIRS_X,
   STAIRS_Y,
   STREET_FLOOR,
   STREET_PROPS,
   STREET_TRANSITIONS,
   SUBWAY_FLOOR,
-  streetPlacedRows,
-} from "../../../src/test-street/fixture";
-import { buildFlights, FlightIndex } from "../../../src/world/flights";
-import { initialFloorWalkState, stepAndTransition } from "../../../src/world/floor-walk";
-import { bodyRect, type MovementConfig } from "../../../src/world/movement";
-import { isBodyClear } from "../../../src/world/standable";
-import { pairTransitions, type TransitionSpec } from "../../../src/world/transitions";
-import { fixtureExtent, fixtureFloors } from "../test-street/reachable";
-import {
-  committedDefs,
   streetFlightIndex,
   streetMovementConfig,
   streetObjectSources,
+  streetPlacedRows,
   streetStandable,
   streetTransitionIndex,
   streetWorldIndex,
-} from "../test-street/street-world";
+} from "../support/stairs-world";
 
 /** Synthetic geometry: no far-end cell is a body's to stand in, so only the anchors are checked. */
 const noStandableFarEnd = () => false;
@@ -736,8 +733,8 @@ describe("the street's own flights (conformance)", () => {
       }
     }
     // The exhaustive scan compares exactly this many adjacent pairs. The count
-    // changes with the street fixture; re-pin it from the loop's own `pairs`.
-    expect(pairs).toBe(532169);
+    // changes with the stairs world; re-pin it from the loop's own `pairs`.
+    expect(pairs).toBe(591531);
     for (const floor of floors) {
       expect(
         nonZero.get(floor),
@@ -1102,28 +1099,15 @@ describe("no actor on a flight is drawn under a higher floor (FR124)", () => {
    * footprint's south edge, or an asset prop's footprint cells. */
   const drawn = STREET_PROPS.flatMap((prop) => {
     const floorOffset = floorOffsetPx(prop.floor, storey);
-    if (isDefStreetProp(prop)) {
-      const sprite = defs.objects.find((o) => o.id === prop.defId)?.sprite;
-      if (!sprite) return []; // an undrawn flight
-      const bottom = (prop.y + 1) * TILE + floorOffset;
-      return [
-        {
-          floor: prop.floor,
-          x0: prop.x * TILE,
-          x1: prop.x * TILE + sprite.w,
-          y0: bottom - sprite.h,
-          y1: bottom,
-        },
-      ];
-    }
-    const { width, height } = prop.footprint ?? { width: 1, height: 1 };
+    const sprite = defs.objects.find((o) => o.id === prop.defId)?.sprite;
+    if (!sprite) return []; // an undrawn flight
     const bottom = (prop.y + 1) * TILE + floorOffset;
     return [
       {
         floor: prop.floor,
         x0: prop.x * TILE,
-        x1: (prop.x + width) * TILE,
-        y0: bottom - height * TILE,
+        x1: prop.x * TILE + sprite.w,
+        y0: bottom - sprite.h,
         y1: bottom,
       },
     ];

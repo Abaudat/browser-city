@@ -50,7 +50,7 @@ fi
 #     Container,
 #     Text,
 #   } from "pixi.js";
-# (Tim's direction, cycle 2 -- `test-street/scene.ts` already imports
+# (Tim's direction, cycle 2 -- `render/world-scene.ts` already imports
 # from `pixi.js` in exactly this shape). `perl -0777` reads each whole
 # file as one string so the import clause is matched regardless of how
 # many lines it spans; the import list also bans `TextStyle`/

@@ -4,8 +4,7 @@
 // e2e's (`player-position.spec.ts`); there is no timer.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { REMOTE_STABLE_ID_BASE } from "../../../src/test-street/drawables";
-import { STREET_PROPS } from "../../../src/test-street/fixture";
+import { REMOTE_STABLE_ID_BASE } from "../../../src/render/prop-drawables";
 import { CHUNK_SIZE } from "../../../src/world/chunk";
 import {
   bandOf,
@@ -15,6 +14,7 @@ import {
   planRegion,
   REGION_LEAVE_RADIUS_CHUNKS,
 } from "../../../src/world/region";
+import { STREET_PROPS } from "../support/stairs-world";
 
 type Pos = { x: number; y: number; floor: number };
 

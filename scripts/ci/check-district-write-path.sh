@@ -6,8 +6,10 @@
 # Under server/src/:
 #
 #   - `generation::` (the generator) is named only in tables/district.rs.
-#   - each accessor -- `district`, `route_node`, `route_edge`, `route_provision` -- is called
-#     only in tables/district.rs (`district`: `create_district` only;
+#   - each accessor -- `district`, `route_node`, `route_edge`,
+#     `route_provision` -- is called
+#     only in tables/district.rs (`district`: `create_district`, and the
+#     two arrival readers `arrival_cell_of`/`arrival_cell_in_view`;
 #     the graph rows: `create_district`'s own writer `write_graph` and the
 #     test-only `debug_write_graph_then_fail`, which calls it), in
 #     tables/restore.rs (inside `begin_restore` and the accessor's own
@@ -31,10 +33,16 @@ flat() { code "$1" | tr '\n' ' '; }
 
 # <accessor>:<declaring module>:<fns of district.rs that may name it>:<fns of restore.rs>
 ACCESSORS=(
-  "district:district:create_district:begin_restore restore_district"
-  "route_node:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_node"
-  "route_edge:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_edge"
-  "route_provision:routing:create_district write_graph debug_write_graph_then_fail:begin_restore restore_route_provision"
+  "district:district:create_district create_district_at arrival_cell_in_view:begin_restore restore_district"
+  "route_node:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_node"
+  "route_edge:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_edge"
+  "route_provision:routing:create_district create_district_at write_graph debug_write_graph_then_fail:begin_restore restore_route_provision"
+  "placed_object:world:write_world:begin_restore restore_placed_object"
+  "floor_transition:world:write_world:begin_restore restore_floor_transition"
+  "building_area:world:write_world:begin_restore restore_building_area"
+  "room_area:world:write_world:begin_restore restore_room_area"
+  "ground_area:world:write_world:begin_restore restore_ground_area"
+  "roof_area:world:write_world:begin_restore restore_roof_area"
 )
 GEN='(^|[^_[:alnum:]])generation([^_[:alnum:]]|$)'
 
@@ -91,6 +99,39 @@ while IFS= read -r f; do
       if flat "$f" | grep -Eq '\.[[:space:]]*(insert|delete|update)[[:space:]]*\('; then
         note "$rel: writes a row (it declares the tables and reads them by index; district.rs and restore.rs write)"
       fi
+      if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
+      continue ;;
+    tables/housing.rs)
+      # Story 7.1: a tenancy's starting box is a placed object, written in
+      # `place_kit` alone; housing names no other world accessor, the
+      # district, the graph or the generator.
+      for spec in "${ACCESSORS[@]}"; do
+        IFS=: read -r acc _rest <<<"$spec"
+        if [ "$acc" = placed_object ]; then
+          OUT="$(calls_outside "$f" "$acc" place_kit)"
+          [ -z "$OUT" ] || note "$rel: names the $acc accessor outside place_kit (in: $(echo "$OUT" | tr '
+' ' '))"
+        elif flat "$f" | grep -Eq ".[[:space:]]*$acc[[:space:]]*()"; then
+          note "$rel: names the $acc accessor"
+        fi
+      done
+      if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
+      continue ;;
+    tables/time_control.rs)
+      # The time-control flavour's one world writer: it clears district-written
+      # rows under a hand-laid block (e2e only; the flavour is never
+      # deployed). It names the world accessors inside `debug_clear_chunks`
+      # and nothing else, and never the district, the graph or the generator.
+      for spec in "${ACCESSORS[@]}"; do
+        IFS=: read -r acc mod _rest <<<"$spec"
+        if [ "$mod" = world ]; then
+          OUT="$(calls_outside "$f" "$acc" debug_clear_chunks)"
+          [ -z "$OUT" ] || note "$rel: names the $acc accessor outside debug_clear_chunks (in: $(echo "$OUT" | tr '
+' ' '))"
+        elif flat "$f" | grep -Eq ".[[:space:]]*$acc[[:space:]]*()"; then
+          note "$rel: names the $acc accessor"
+        fi
+      done
       if [ "$names_generator" -eq 1 ]; then note "$rel: names the generator"; fi
       continue ;;
     tables/metrics.rs)

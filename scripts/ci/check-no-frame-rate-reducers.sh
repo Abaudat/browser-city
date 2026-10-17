@@ -3,10 +3,10 @@
 # today there is no reducer call anywhere under client/src/): no reducer
 # call may be wired to the render frame loop. `client/src/net/` calls a
 # reducer at its own measured rate; the frame loop (`render/`, `world/`,
-# `test-street/`, or any `ticker.add` callback anywhere) never does.
+# or any `ticker.add` callback anywhere) never does.
 #
-#   - No `.reducers.` call anywhere under `client/src/render/**`,
-#     `client/src/world/**` or `client/src/test-street/**`.
+#   - No `.reducers.` call anywhere under `client/src/render/**` or
+#     `client/src/world/**`.
 #   - No `.reducers.` call inside a frame-loop callback, anywhere under
 #     client/src/ -- `ticker.add(`, `Ticker.shared.add(` (PixiJS's own
 #     shared ticker, the same frame loop under a different spelling) or a
@@ -29,14 +29,14 @@ FAILED=0
 
 # --- no reducer call under the frame-loop directories -----------------------
 FRAME_LOOP_DIRS=""
-for d in render world test-street; do
+for d in render world; do
   [ -d "$SRC_DIR/$d" ] && FRAME_LOOP_DIRS="$FRAME_LOOP_DIRS $SRC_DIR/$d"
 done
 if [ -n "$FRAME_LOOP_DIRS" ]; then
   # shellcheck disable=SC2086
   MATCHES="$(grep -rnF '.reducers.' $FRAME_LOOP_DIRS --include='*.ts' --exclude-dir=bindings 2>/dev/null || true)"
   if [ -n "$MATCHES" ]; then
-    echo "check-no-frame-rate-reducers: FAIL -- a reducer call (.reducers.) was found under client/src/render|world|test-street/ -- a reducer call must go through net/, never the frame loop:" >&2
+    echo "check-no-frame-rate-reducers: FAIL -- a reducer call (.reducers.) was found under client/src/render|world/ -- a reducer call must go through net/, never the frame loop:" >&2
     echo "$MATCHES" >&2
     FAILED=1
   fi
@@ -89,5 +89,5 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "check-no-frame-rate-reducers: no reducer call under render/world/test-street, and none inside any ticker.add/Ticker.shared.add/requestAnimationFrame callback (story 4.2 AC2)" >&2
+echo "check-no-frame-rate-reducers: no reducer call under render/world, and none inside any ticker.add/Ticker.shared.add/requestAnimationFrame callback (story 4.2 AC2)" >&2
 exit 0

@@ -17,7 +17,7 @@ import type { Locator, Page } from "@playwright/test";
 import type {} from "../../src/net/e2e-hooks";
 
 export function canvasOf(page: Page): Locator {
-  return page.locator("#test-street canvas");
+  return page.locator("#world canvas");
 }
 
 export async function canvasOffsetForWorldPx(
@@ -29,7 +29,7 @@ export async function canvasOffsetForWorldPx(
     if (!view) {
       throw new Error("canvasOffsetForWorldPx: the scene has not recorded a view transform yet");
     }
-    const canvas = document.querySelector("#test-street canvas");
+    const canvas = document.querySelector("#world canvas");
     if (!(canvas instanceof HTMLCanvasElement)) {
       throw new Error("canvasOffsetForWorldPx: no street canvas");
     }

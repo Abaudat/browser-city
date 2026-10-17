@@ -1,15 +1,14 @@
-// Story 7.1 (FR145): a first-ever arrival on a database that has a generated
-// district. The shared e2e instance has none (and giving it one would move
-// every other spec's spawn), so this spec publishes a second database on the
-// same instance, generates a district in it as owner, and serves the client
-// against that database from its own Vite server.
+// Story 7.1 (FR145): a first-ever arrival on a database whose district was
+// just generated: this spec publishes a second database on the shared
+// instance, generates the city's district in it as owner, and serves the
+// client against that database from its own Vite server, so no other spec's
+// character holds a flat there first.
 //
-// The real name-prompt first boot runs: the scene mounts on the test
-// street's flat, `create_character` writes the tenancy and the first
-// `player_position` inside the flat's `building_area`, and the scene is moved
-// to that row. Then a few real steps prove the position sender is alive.
-// Positions and rows are asserted, never pixels: the client still draws the
-// test street until story 3.16.
+// The real name-prompt first boot runs: the scene mounts at the district's
+// arrival cell (`my_start`), `create_character` writes the tenancy and the
+// first `player_position` inside the flat's `building_area`, and the scene
+// is moved to that row. Then a few real steps prove the position sender is
+// alive. Positions and rows are asserted, never pixels.
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -33,8 +32,7 @@ const DEFS = parseDefs(
 );
 const UNITS = DEFS.positionUnitsPerCell;
 
-// The test street's own flat is the fallback; the district's flat is not it.
-test.use({ startAt: "home" });
+test.use({ startAt: "flat" });
 test.describe.configure({ mode: "serial" });
 
 let vite: ChildProcess | undefined;
@@ -61,7 +59,7 @@ test.beforeAll(async () => {
   );
   if (publish.status !== 0)
     throw new Error(`publish failed:\n${publish.stdout}\n${publish.stderr}`);
-  callReducer(handle, "create_district", "7");
+  callReducer(handle, "create_district");
 
   const port = await findFreePort();
   const viteBin = path.join(REPO_ROOT, "client", "node_modules", ".bin", "vite");

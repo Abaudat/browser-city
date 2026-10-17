@@ -12,7 +12,7 @@ import { conformanceView } from "./support";
 
 function mount(overlays?: readonly DebugOverlay[]) {
   const host = document.createElement("div");
-  host.id = "test-street";
+  host.id = "world";
   document.body.appendChild(host);
   return mountDebugOverlays({
     mount: host,

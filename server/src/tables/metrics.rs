@@ -58,7 +58,8 @@ use super::schedules::{
 };
 use super::stock::{business, stock};
 use super::world::{
-    building, building_area, floor_transition, layer_code, placed_object, room, room_area,
+    building, building_area, floor_transition, ground_area, layer_code, placed_object, roof_area,
+    room, room_area,
 };
 
 /// One table's figures at one fire. Private tables: read as the owner over
@@ -502,6 +503,8 @@ fn sample_all_tables(ctx: &ReducerContext, now: Timestamp) {
     sample!(route_provision);
     sample!(edge_kind);
     sample!(room_area);
+    sample!(ground_area);
+    sample!(roof_area);
     sample!(citizen_transition_schedule);
     sample!(metrics_sample_schedule);
     sample!(budget_review_schedule);

@@ -31,8 +31,10 @@ import type {
   ActorLocation,
   BuildingArea,
   FloorTransition,
+  GroundArea,
   PlacedObject,
   PlayerPosition,
+  RoofArea,
   RoomArea,
 } from "./bindings/types";
 
@@ -59,7 +61,11 @@ export interface RegionBackend {
 export interface RegionListener {
   /** A region subscription failed -- routed to the connection status. */
   onError(message: string): void;
-  onApplied?(key: HandleKey): void;
+  /** A handle's rows have all arrived; `chunkKeys` are the chunks it
+   * covers, one per floor of its band. */
+  onApplied?(key: HandleKey, chunkKeys: bigint[]): void;
+  /** A handle was released: its chunks are no longer complete. */
+  onReleased?(key: HandleKey, chunkKeys: bigint[]): void;
   /** Every handle the first position asked for has applied: the initial
    * region is in. Fires once per manager. */
   onInitialApplied?(): void;
@@ -167,7 +173,7 @@ export class RegionSubscriptions {
     if (this.entries.get(id) !== entry) return;
     entry.state = "applied";
     if (entry.releaseWhenApplied) this.unsubscribe(id, entry);
-    else this.listener.onApplied?.(entry.key);
+    else this.listener.onApplied?.(entry.key, chunkKeysOfHandle(entry.key, this.range));
     // A first-region handle settles when it applies, wanted or not.
     if (this.initial?.delete(id) && this.initial.size === 0) this.listener.onInitialApplied?.();
   }
@@ -176,6 +182,7 @@ export class RegionSubscriptions {
     if (!entry.handle) throw new Error(`region handle ${id} applied before it was returned`);
     this.entries.delete(id);
     this.ending.add(entry);
+    this.listener.onReleased?.(entry.key, chunkKeysOfHandle(entry.key, this.range));
     entry.handle.unsubscribe();
   }
 
@@ -234,6 +241,8 @@ export const REGION_QUERIES = {
   floorTransition: (k: bigint) => tables.floorTransition.where((r) => r.chunkKey.eq(k)).build(),
   buildingArea: (k: bigint) => tables.buildingArea.where((r) => r.chunkKey.eq(k)).build(),
   roomArea: (k: bigint) => tables.roomArea.where((r) => r.chunkKey.eq(k)).build(),
+  groundArea: (k: bigint) => tables.groundArea.where((r) => r.chunkKey.eq(k)).build(),
+  roofArea: (k: bigint) => tables.roofArea.where((r) => r.chunkKey.eq(k)).build(),
   actorLocation: (k: bigint) => tables.actorLocation.where((r) => r.chunkKey.eq(k)).build(),
   playerPosition: (k: bigint) => tables.playerPosition.where((r) => r.chunkKey.eq(k)).build(),
 } as const;
@@ -253,6 +262,8 @@ export interface RegionRows {
   floorTransition: FloorTransition;
   buildingArea: BuildingArea;
   roomArea: RoomArea;
+  groundArea: GroundArea;
+  roofArea: RoofArea;
   actorLocation: ActorLocation;
   playerPosition: PlayerPosition;
 }
@@ -265,6 +276,8 @@ export const REGION_KEY_COLUMNS: { [K in RegionTableName]: keyof RegionRows[K] &
   floorTransition: "transitionId",
   buildingArea: "areaId",
   roomArea: "areaId",
+  groundArea: "areaId",
+  roofArea: "areaId",
   actorLocation: "locationId",
   playerPosition: "characterId",
 };

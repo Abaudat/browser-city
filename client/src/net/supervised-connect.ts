@@ -122,6 +122,7 @@ export function superviseConnect(
       onHandshake: guard(options.onHandshake),
       onIdentity: guard(options.onIdentity),
       onCharacter: guard(options.onCharacter),
+      onStart: guard(options.onStart),
       onStoredPosition: guard(options.onStoredPosition),
       onSession: (s) => {
         if (live()) session ??= s;
@@ -129,6 +130,8 @@ export function superviseConnect(
       clock: clock && { ...clock, onClock: guard(clock.onClock) },
       region: region && {
         ...region,
+        onHandleApplied: guard(region.onHandleApplied),
+        onHandleReleased: guard(region.onHandleReleased),
         controller: {
           attach: (backend, listener) => {
             if (live()) region.controller.attach(backend, listener);

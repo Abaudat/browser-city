@@ -6,7 +6,7 @@ import {
   type TransitState,
 } from "../../../src/l3/citizen";
 import { walkFramesPerCycle } from "../../../src/l3/config";
-import { committedDefs } from "../test-street/street-world";
+import { committedDefs } from "../support/committed-defs";
 import { l3Config, lifeDials, quietLife } from "./defs-config";
 import { CFG, TestGrid } from "./support";
 

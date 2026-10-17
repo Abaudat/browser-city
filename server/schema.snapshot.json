@@ -699,6 +699,24 @@
           "unique": false,
           "has_default": false,
           "indexed": false
+        },
+        {
+          "name": "arrival_x",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
+        },
+        {
+          "name": "arrival_y",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": true,
+          "indexed": false
         }
       ]
     },
@@ -1014,6 +1032,87 @@
           "unique": false,
           "has_default": false,
           "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "ground_area",
+      "struct_name": "GroundArea",
+      "public": true,
+      "scheduled_reducer": null,
+      "wide_table_waiver": null,
+      "columns": [
+        {
+          "name": "area_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "def_id",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "x0",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "y0",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "x1",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "y1",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "floor",
+          "ty": "i8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "chunk_key",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
         }
       ]
     },
@@ -1869,6 +1968,96 @@
           "unique": false,
           "has_default": false,
           "indexed": false
+        }
+      ]
+    },
+    {
+      "accessor": "roof_area",
+      "struct_name": "RoofArea",
+      "public": true,
+      "scheduled_reducer": null,
+      "wide_table_waiver": "`building_area`'s rect and owner plus the roof tile's def",
+      "columns": [
+        {
+          "name": "area_id",
+          "ty": "u64",
+          "primary_key": true,
+          "auto_inc": true,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "building_id",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
+        },
+        {
+          "name": "def_id",
+          "ty": "u32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "x0",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "y0",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "x1",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "y1",
+          "ty": "i32",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "floor",
+          "ty": "i8",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": false
+        },
+        {
+          "name": "chunk_key",
+          "ty": "u64",
+          "primary_key": false,
+          "auto_inc": false,
+          "unique": false,
+          "has_default": false,
+          "indexed": true
         }
       ]
     },

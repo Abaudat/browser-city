@@ -22,16 +22,16 @@ check "a frame lookup in render/body-sprite.ts passes" 0 bash "$CHECK" "$d"
 d="$(plant src/render/appearance/appearance-texture.ts 'return this.frame(a, d, i);')"
 check "a frame lookup in render/appearance/ passes" 0 bash "$CHECK" "$d"
 
-d="$(plant src/test-street/remote-players-layer.ts 'sprite.texture = frames.frame("idle", facing, 0);')"
+d="$(plant src/render/remote-players-layer.ts 'sprite.texture = frames.frame("idle", facing, 0);')"
 check "a frame lookup in a layer" 1 bash "$CHECK" "$d"
 
-d="$(plant src/test-street/scene.ts 'const t = playerFrames.frame("idle", "down", 0);')"
+d="$(plant src/render/world-scene.ts 'const t = playerFrames.frame("idle", "down", 0);')"
 check "a frame lookup in the scene" 1 bash "$CHECK" "$d"
 
-d="$(plant src/test-street/scene.ts 'playerSprite.texture = other;')"
+d="$(plant src/render/world-scene.ts 'playerSprite.texture = other;')"
 check "a character sprite texture assignment in the scene" 1 bash "$CHECK" "$d"
 
-d="$(plant src/test-street/scene.ts 'if (playerSprite.texture === other) return;')"
+d="$(plant src/render/world-scene.ts 'if (playerSprite.texture === other) return;')"
 check "a texture comparison is not an assignment" 0 bash "$CHECK" "$d"
 
 d="$(fake_dir)"

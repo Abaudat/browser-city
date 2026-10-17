@@ -11,7 +11,7 @@ CHECK="$REPO_ROOT/scripts/ci/check-one-walk-helper.sh"
 plant() { # <relative file> <content> -- a fresh client tree with that one file
   local d
   d="$(fake_dir)"
-  mkdir -p "$d/tests/e2e" "$d/src/test-street" "$(dirname "$d/$1")"
+  mkdir -p "$d/tests/e2e" "$(dirname "$d/$1")"
   printf '%s\n' "$2" > "$d/$1"
   printf '%s' "$d"
 }
@@ -58,8 +58,8 @@ check "a walk call over a route is never a false positive" 0 bash "$CHECK" "$d"
 d="$(plant tests/e2e/other.spec.ts "await page.keyboard.up('ArrowRight');")"
 check "page.keyboard.up is never a false positive" 0 bash "$CHECK" "$d"
 
-d="$(plant src/test-street/fixture.ts 'export const RELEASE_LAG = { stepMs: 100, releaseLagSteps: 1 } as const;')"
-check "the literal lag in fixture.ts passes" 0 bash "$CHECK" "$d"
+d="$(plant tests/e2e/walk-types.ts 'export const RELEASE_LAG = { stepMs: 100, releaseLagSteps: 1 } as const;')"
+check "the literal lag in walk-types.ts passes" 0 bash "$CHECK" "$d"
 
 d="$(plant tests/unit/some.test.ts 'simulateStreetWalk(route, { releaseLagSteps: 2 });')"
 check "a literal lag in a unit test" 1 bash "$CHECK" "$d"

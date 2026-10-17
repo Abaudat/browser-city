@@ -121,6 +121,13 @@ pub fn my_character(ctx: &ViewContext) -> Vec<MyCharacter> {
     }]
 }
 
+/// Where a scene with no stored position starts
+/// (`player_position::start_of`): the district's arrival cell.
+#[view(accessor = my_start, public)]
+pub fn my_start(ctx: &ViewContext) -> Vec<super::player_position::MyStart> {
+    super::player_position::start_of(ctx)
+}
+
 fn issuer_rows(ctx: &ReducerContext) -> Vec<IssuerRow> {
     ctx.db
         .oidc_issuer()

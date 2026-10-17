@@ -88,14 +88,14 @@ check "contact_sheet.rs calling get_px fails" 1 \
 
 d="$(plant)"
 printf 'const { data } = ctx.getImageData(0, 0, 1, 1);\n' >> "$d/client/src/render/draw.ts"
-check "'getImageData' under client/src/ (outside test-street) fails" 1 \
+check "'getImageData' under client/src/ (outside debug) fails" 1 \
   bash "$CHECK" "$d"
 
 d="$(plant)"
-mkdir -p "$d/client/src/test-street"
+mkdir -p "$d/client/src/debug"
 printf 'const { data } = ctx.getImageData(0, 0, 1, 1);\n' \
-  > "$d/client/src/test-street/compare.ts"
-check "'getImageData' under client/src/test-street/ is never a false positive" 0 \
+  > "$d/client/src/debug/compare.ts"
+check "'getImageData' under client/src/debug/ is never a false positive" 0 \
   bash "$CHECK" "$d"
 
 # --- story 15.3: pixels may refuse a build, never shape an artefact --------

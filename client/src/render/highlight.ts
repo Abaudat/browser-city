@@ -1,4 +1,4 @@
-// FR173's affordance mark, promoted out of `test-street/scene.ts` into a
+// FR173's affordance mark, promoted out of `render/world-scene.ts` into a
 // permanent module (Tim/Quentin's direction, story 1.15): the pure half of
 // the mark, in the same split `visibility.ts`/`pixi-visibility.ts` already
 // established. Zero PixiJS -- every field below is a plain number or a

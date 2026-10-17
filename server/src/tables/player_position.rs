@@ -4,8 +4,9 @@
 
 use sim::player_position::{Write, plan_position};
 use sim::reducer_classes::ReducerClass;
-use spacetimedb::{ReducerContext, Table, Timestamp};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, Timestamp, ViewContext};
 
+use super::district::arrival_cell_in_view;
 use super::identity::{character_of, viewer_character};
 use super::metrics::count_call;
 
@@ -30,6 +31,33 @@ pub struct PlayerPosition {
     pub frac_y: u8,
     /// The server's `ctx.timestamp` of the write.
     pub updated_at: Timestamp,
+}
+
+/// Where a scene with no stored position starts: the district's arrival
+/// cell, mid-cell. Empty before a district exists. A stored position is
+/// `my_position`.
+#[derive(SpacetimeType, Clone, Debug, PartialEq, Eq)]
+pub struct MyStart {
+    pub x: i32,
+    pub y: i32,
+    pub floor: i8,
+    pub frac_x: u8,
+    pub frac_y: u8,
+}
+
+/// The `my_start` row.
+pub fn start_of(ctx: &ViewContext) -> Vec<MyStart> {
+    let half = (sim::generated::defs::POSITION_UNITS_PER_CELL / 2) as u8;
+    arrival_cell_in_view(ctx)
+        .map(|(x, y)| MyStart {
+            x,
+            y,
+            floor: 0,
+            frac_x: half,
+            frac_y: half,
+        })
+        .into_iter()
+        .collect()
 }
 
 /// Writes the caller's own character's position: the reducer takes no
@@ -126,4 +154,41 @@ pub fn my_position(ctx: &spacetimedb::ViewContext) -> Vec<PlayerPosition> {
         .find(character_id)
         .into_iter()
         .collect()
+}
+
+/// Moves, in place, every position whose cell `standable` refuses to
+/// `arrival` (floor 0, the middle of the cell). An update, never a delete;
+/// idempotent.
+pub fn relocate_stranded(
+    ctx: &ReducerContext,
+    arrival: (i32, i32),
+    standable: impl Fn(i32, i32, i8) -> bool,
+) {
+    let stranded: Vec<PlayerPosition> = ctx
+        .db
+        .player_position()
+        .iter()
+        .filter(|p| !standable(p.x, p.y, p.floor))
+        .collect();
+    let half = (sim::generated::defs::POSITION_UNITS_PER_CELL / 2) as u8;
+    for p in stranded {
+        let Ok(Write::Update(r) | Write::Insert(r)) =
+            plan_position(true, arrival.0, arrival.1, 0, half, half)
+        else {
+            continue;
+        };
+        ctx.db
+            .player_position()
+            .character_id()
+            .update(PlayerPosition {
+                character_id: p.character_id,
+                chunk_key: r.chunk_key,
+                x: r.x,
+                y: r.y,
+                floor: r.floor,
+                frac_x: r.frac_x,
+                frac_y: r.frac_y,
+                updated_at: ctx.timestamp,
+            });
+    }
 }

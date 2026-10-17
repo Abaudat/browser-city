@@ -4,7 +4,7 @@
 // `character-part-pages.ts`'s `CharacterPartPageLoader` is the one
 // production instance (`load` resolves and fetches a packed character
 // atlas page, `close` calls `ImageBitmap.close()`);
-// `test-street/compare-pipeline-vs-stack.ts` builds its own, entirely separate
+// `debug/compare-pipeline-vs-stack.ts` builds its own, entirely separate
 // instance over the same `fetchCharacterPageBitmap` function, so the e2e
 // harness never shares cache state with the production pipeline it is
 // checking.
