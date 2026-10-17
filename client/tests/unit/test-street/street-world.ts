@@ -11,12 +11,14 @@ import { fileURLToPath } from "node:url";
 import { parseDefs } from "../../../src/defs/parse";
 import type { Defs } from "../../../src/defs/types";
 import {
+  arrivalWalkLegs,
   BOLLARD_COLLIDER,
   BRIDGE_DECK_Y,
   BRIDGE_UNDER_CURB_X,
   BRIDGE_UNDER_EXIT_Y,
   BRIDGE_UNDER_PILLAR_X,
   CUPBOARD_PROP_ID,
+  HOME_FLAT_SPAWN,
   isDefStreetProp,
   LAMPPOST_CELL,
   LAMPPOST_DEF_ID,
@@ -715,6 +717,10 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     const out = simulateStreetWalk(cupboardReachRoute());
     return out[out.length - 1]?.state;
   };
+  const atTheFlat = (): FloorWalkResult => ({
+    ...initialFloorWalkState(HOME_FLAT_SPAWN.x, HOME_FLAT_SPAWN.y, HOME_FLAT_SPAWN.floor),
+    transitioned: false,
+  });
   return [
     { name: "street-walk", segments: streetWalkRoute(inputs), start: fresh },
     { name: "subway-approach", segments: streetSubwayApproachRoute(inputs), start: fresh },
@@ -734,6 +740,11 @@ export function walkedRoutes(): readonly WalkedRoute[] {
     { name: "railing-foot", segments: railingFootRoute(), start: fresh },
     { name: "flight-walk", segments: flightWalkRoute(), start: fresh },
     { name: "footbridge-walk", segments: streetFootbridgeRoute(inputs), start: fresh },
+    {
+      name: "arrival-walk",
+      segments: arrivalWalkLegs(inputs).flatMap((leg) => leg.segments),
+      start: atTheFlat,
+    },
   ];
 }
 

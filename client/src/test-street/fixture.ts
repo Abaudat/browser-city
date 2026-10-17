@@ -1851,6 +1851,112 @@ export function streetSubwayApproachRoute(inputs: StreetWalkInputs): readonly St
   ];
 }
 
+/** One stretch of the arrival walk: where a person stops, and the keys to get there. */
+export interface ArrivalWalkLeg {
+  readonly name: string;
+  readonly segments: readonly StreetWalkSegment[];
+}
+
+/** The walk a new character makes from the flat (story 4.26), in legs a
+ * person would take: out of the door onto the pavement, west under the
+ * footbridge, along the shop fronts to both doors, then to the street
+ * stairwell and down it. Row 6 (the pavement's own row, clear of the deck)
+ * carries it west of the flat; row 7 is the shop fronts. */
+export function arrivalWalkLegs(inputs: StreetWalkInputs): readonly ArrivalWalkLeg[] {
+  const [shopB, shopA, stairwell] = ARRIVAL_DESTINATIONS;
+  return [
+    {
+      name: "the flat door",
+      segments: [
+        // Below the bed, into the door column, then out through the door onto
+        // the pavement.
+        {
+          label: "arrival-below-the-bed",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: HOME_FLAT_DOOR.y - 0.2 },
+        },
+        {
+          label: "arrival-to-the-door-column",
+          key: "ArrowLeft",
+          until: { kind: "x-at-most", value: HOME_FLAT_DOOR.x + 0.6 },
+        },
+        {
+          label: "arrival-out-onto-the-pavement",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: HOME_FLAT_DOOR.y + 1.6 },
+        },
+      ],
+    },
+    {
+      name: "under the footbridge",
+      segments: [
+        {
+          label: "arrival-west-under-the-deck",
+          key: "ArrowLeft",
+          until: { kind: "x-at-most", value: BRIDGE_X0 + 0.7 },
+        },
+      ],
+    },
+    {
+      name: shopB.name,
+      segments: [
+        {
+          label: "arrival-down-to-the-shop-fronts",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: HOME_FLAT_DOOR.y + 2.45 },
+        },
+        // Along the fronts to the wall of shop B's east end, then up against the
+        // walls: the body rests exactly on the front row, clear of the bin.
+        {
+          label: "arrival-west-along-the-shop-fronts",
+          key: "ArrowLeft",
+          until: { kind: "x-at-most", value: EAST_WALL_X_B - 0.5 },
+        },
+        {
+          label: "arrival-up-against-the-shop-walls",
+          key: "ArrowUp",
+          until: { kind: "y-at-most", value: shopB.y + 0.25 },
+        },
+        {
+          label: "arrival-west-to-shop-b",
+          key: "ArrowLeft",
+          until: { kind: "cell", x: shopB.x, y: shopB.y },
+        },
+      ],
+    },
+    {
+      name: shopA.name,
+      segments: [
+        {
+          label: "arrival-west-to-shop-a",
+          key: "ArrowLeft",
+          until: { kind: "cell", x: shopA.x, y: shopA.y },
+        },
+      ],
+    },
+    {
+      name: stairwell.name,
+      segments: [
+        {
+          label: "arrival-east-to-the-subway-entrance",
+          key: "ArrowRight",
+          until: { kind: "x-at-least", value: SUBWAY_ENTRANCE_X0 + 0.5 },
+        },
+        {
+          label: "arrival-onto-the-subway-treads-row",
+          key: "ArrowDown",
+          until: { kind: "y-at-least", value: inputs.subwayTreadRowY },
+        },
+        {
+          label: "arrival-down-the-subway-stairs",
+          key: "ArrowLeft",
+          until: { kind: "floor", value: SUBWAY_FLOOR },
+        },
+      ],
+    },
+  ];
+}
+
 /** From the subway entrance onto the tread row, then the stairwell's draw
  * order is seen from the demo's posture, FR123's worst case. South first,
  * in the entrance: the body rests on the boundary below the entrance cells,

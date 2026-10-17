@@ -47,7 +47,8 @@ async function startInShop(target: Page | BrowserContext): Promise<void> {
 export const test = base.extend<{
   arrive: boolean;
   /** Where the player starts: the shop the pre-flat specs assume (default),
-   * or the home flat a new character really arrives in. */
+   * or the home flat a new character really arrives in. New specs default to
+   * `"home"` unless they really need the shop. */
   startAt: "shop" | "home";
   arrivingContexts: undefined;
 }>({

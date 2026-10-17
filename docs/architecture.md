@@ -668,6 +668,10 @@ code under `client/src/world/`, driven by collider data in `defs/`.
   (FR128); there is no `walkable` flag. Containment inside
   `width*height` sub-cells is enforced by `tools/defs-build` and again by
   `client/src/defs/parse.ts`.
+- A collider belongs to the floor the solid thing stands on. An object drawn
+  over another floor's cells (stairs, decks, balconies, awnings) carries no
+  collider on the floor beneath, except a face a transition rule requires,
+  declared as a thin edge strip and never a whole cell.
 - Walking speed and the player body are balance keys
   (`defs/balance/movement.toml`), read once into a `MovementConfig` by
   `client/src/world/movement-config.ts`. The body is a small rect at the
@@ -842,12 +846,18 @@ collider lies inside that footprint. An asset-placed solid prop declares
 one `collider`.
 `STREET_BOUNDARY` is exactly one thing: the undrawn ring that closes the
 edge of the drawn world, in whole cells, every one outside every drawn
-ground pass on its floor. The exemptions are the footbridge's two rails, by
-id: the south rail (110), a sub-cell strip that keeps a walker leaning on it
-inside the deck's own row, and the deck flight's west edge (134), a sub-cell
-strip level with the street posts' own collider. `client/tests/unit/test-street/street-conformance.test.ts`
+ground pass on its floor. The exemptions are the footbridge's two rails and
+one face, by id: the south rail (110), a sub-cell strip that keeps a walker
+leaning on it inside the deck's own row, the deck flight's west edge (134), a
+sub-cell strip level with the street posts' own collider, and the street
+flight's north face (137), a strip along the south edge of the deck row that
+refuses a step into the up-anchor from the north. The street's standable
+floor-0 cells are one connected region containing `HOME_FLAT_SPAWN`, the shop
+fronts and the subway entrance (`ARRIVAL_DESTINATIONS`);
+`tests/unit/test-street/footbridge.test.ts` floods it from `HOME_FLAT_SPAWN`,
+inside the drawn ground. `client/tests/unit/test-street/street-conformance.test.ts`
 holds this over the whole fixture: every collider cell traces back to a
-drawn prop's own footprint or the ring; no ring rect but ids 110 and 134 carries a
+drawn prop's own footprint or the ring; no ring rect but ids 110, 134 and 137 carries a
 collider, and none overlaps a drawn ground pass; every `walls`-layer,
 `furniture`-layer or `solid` row collides in its own footprint (all of
 it, unless it declares its own shape), bar an explicit, reasoned
