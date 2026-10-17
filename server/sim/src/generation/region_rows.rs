@@ -243,9 +243,10 @@ impl District {
             paint(&mut out, strip, forecourt_def);
         }
         // Room floors: by what the room is, the neighbourhood's affluence
-        // choosing between a plain tile and its affluent twin.
+        // choosing between a plain tile and its affluent twin on the rich
+        // band the neighbourhood guarantees are judged on.
         let nb = &cfg.neighbourhood;
-        let rich_from = nb.affluence_min + (nb.affluence_max - nb.affluence_min) * 2 / 3;
+        let rich_from = nb.rich_from();
         let rooms: BTreeMap<u32, &defs::RoomTypeDef> =
             content.room_types.iter().map(|r| (r.id, r)).collect();
         let types: BTreeMap<u32, &defs::BuildingTypeDef> =
@@ -306,11 +307,16 @@ impl District {
                     push_area(&mut out.room_areas, owner, cell(t.x, t.y));
                 }
             }
-            // The roof: the family's tile, the dwelling's by age band
-            // (the age dial runs newer to older).
+            // The roof: the family's tile, the dwelling's by the age bands
+            // the neighbourhood guarantees are judged on (mid is neither).
             let age = plots.get(plot as usize).map_or(0, |p| p.building_age);
-            let span = (nb.building_age_max - nb.building_age_min + 1).max(1);
-            let band = ((age - nb.building_age_min) * 3 / span).clamp(0, 2) as usize;
+            let band = if age <= nb.new_to() {
+                0
+            } else if age >= nb.old_from() {
+                2
+            } else {
+                1
+            };
             let mut want: Vec<u32> = types.get(&ty).map(|t| t.tags.to_vec()).unwrap_or_default();
             want.push(age_tags[band]);
             let roof = def_by_tags(content, role_roof, &want, t_affluent, false)

@@ -73,3 +73,70 @@ export function groundQuads(
   }
   return out;
 }
+
+/** A cell rect `[x0, x1) x [y0, y1)`. */
+export interface CellRect {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+/** A roof cell: where it lies in its rect, and which cell of the rooftop
+ * panel it shows. */
+export interface RoofPiece {
+  readonly lx: number;
+  readonly ly: number;
+  readonly col: number;
+  readonly row: number;
+}
+
+/** The panel cell along one axis for the cell at offset `i` of an outline
+ * `n` cells long, from a panel `p` cells long: the first and last cells
+ * are the panel's ends, the cells between repeat its inner cells in order. */
+function pieceAlong(i: number, n: number, p: number): number {
+  if (p < 3 || i === 0) return 0;
+  if (i === n - 1) return p - 1;
+  return 1 + ((i - 1) % (p - 2));
+}
+
+/** The cells of `rect`, each with the cell of a `panelW` x `panelH` rooftop
+ * panel it shows, nine-slice over the building's whole roof `outline`
+ * (corners the panel's corners, edges and fill its inner cells repeated,
+ * never stretched). */
+export function roofPieces(
+  rect: CellRect,
+  outline: CellRect,
+  panelW: number,
+  panelH: number,
+): RoofPiece[] {
+  const out: RoofPiece[] = [];
+  const w = outline.x1 - outline.x0;
+  const h = outline.y1 - outline.y0;
+  for (let y = rect.y0; y < rect.y1; y++) {
+    for (let x = rect.x0; x < rect.x1; x++) {
+      out.push({
+        lx: x - rect.x0,
+        ly: y - rect.y0,
+        col: pieceAlong(x - outline.x0, w, panelW),
+        row: pieceAlong(y - outline.y0, h, panelH),
+      });
+    }
+  }
+  return out;
+}
+
+/** Quads for cells that each carry their own frame, grouped by page. */
+export function framedQuads(
+  cells: readonly { readonly lx: number; readonly ly: number; readonly frame: GroundFrame }[],
+  tileSizePx: number,
+): Map<unknown, GroundQuads> {
+  let next = 0;
+  const frames = new Map<number, GroundFrame>();
+  const keyed = cells.map((c) => {
+    const id = next++;
+    frames.set(id, c.frame);
+    return { defId: id, lx: c.lx, ly: c.ly };
+  });
+  return groundQuads(keyed, (id) => frames.get(id) as GroundFrame, tileSizePx);
+}

@@ -317,7 +317,8 @@ echo "check-authoritative-loop: (e) the production build must carry no time-cont
 DESCRIBE_JSON="$DATA_DIR/describe.json"
 spacetime describe --json "$DB_NAME" "${SERVER_ARGS[@]}" --no-config -y >"$DESCRIBE_JSON" 2>&1   || fail "spacetime describe --json failed" "$DESCRIBE_JSON"
 grep -q "run_maintenance" "$DESCRIBE_JSON"   || fail "spacetime describe --json does not list the module's reducers -- this leg would pass vacuously" "$DESCRIBE_JSON"
-for reducer in jump_clock set_clock_speed debug_write_graph_then_fail debug_create_district; do
+TIME_CONTROL_REDUCERS="$(bash "$REPO_ROOT/scripts/ci/list-time-control-reducers.sh")"   || fail "could not list the time-control reducers"
+for reducer in $TIME_CONTROL_REDUCERS; do
   if grep -q "$reducer" "$DESCRIBE_JSON"; then
     fail "the production build exposes the dev-only reducer $reducer (FR163: it must not exist)" "$DESCRIBE_JSON"
   fi
@@ -327,7 +328,7 @@ for reducer in jump_clock set_clock_speed debug_write_graph_then_fail debug_crea
   fi
   grep -qF "No such reducer" "$TC_LOG"     || fail "calling $reducer on the production build was refused, but not as a nonexistent reducer" "$TC_LOG"
 done
-ok "the production build carries no jump_clock/set_clock_speed/debug_write_graph_then_fail/debug_create_district, and a call to any is refused as a nonexistent reducer"
+ok "the production build carries none of the time-control reducers ($(echo $TIME_CONTROL_REDUCERS)), and a call to any is refused as a nonexistent reducer"
 
 echo "check-authoritative-loop: the authoritative loop fires with zero clients, holds its per-fire and non-compounding drift budget, rejects a direct call cleanly, rebuilds idempotently, and carries no time control" >&2
 exit 0

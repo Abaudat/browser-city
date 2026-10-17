@@ -286,7 +286,6 @@ fn a_dwelling_roof_reads_the_building_age_band() {
     let content = GenerationContent::committed();
     let plots = district.skeleton.plots.plots();
     let nb = &cfg.neighbourhood;
-    let span = nb.building_age_max - nb.building_age_min + 1;
     let dwelling = content
         .tags
         .iter()
@@ -299,19 +298,64 @@ fn a_dwelling_roof_reads_the_building_age_band() {
         if !def.tags.contains(&dwelling) {
             continue;
         }
-        let band =
-            ((plots[plot as usize].building_age - nb.building_age_min) * 3 / span).clamp(0, 2);
+        // The bands every neighbourhood guarantee is judged on.
+        let age = plots[plot as usize].building_age;
+        let want = if age >= nb.old_from() {
+            "aged_old"
+        } else if age <= nb.new_to() {
+            "aged_new"
+        } else {
+            "aged_mid"
+        };
         let id = n as u64 + 1;
         let roof = rows.roofs.iter().find(|r| r.building_id == id).unwrap();
         let tags = tag_keys(&content, roof.def_id);
-        let want = ["aged_new", "aged_mid", "aged_old"][band as usize];
-        assert!(tags.contains(&want), "band {band}: roof tags {tags:?}");
+        assert!(tags.contains(&want), "age {age}: roof tags {tags:?}");
         seen.insert(want);
     }
     assert!(
         seen.len() >= 2,
         "the committed city shows more than one age band: {seen:?}"
     );
+}
+
+#[test]
+fn a_room_floor_is_the_affluent_twin_exactly_in_the_rich_band() {
+    let (district, rows, cfg) = world();
+    let content = GenerationContent::committed();
+    let plots = district.skeleton.plots.plots();
+    let rich_from = cfg.neighbourhood.rich_from();
+    // (room kind, rich band?) -> whether its floor is the affluent twin.
+    let mut seen: std::collections::BTreeMap<(u32, bool), std::collections::BTreeSet<bool>> =
+        Default::default();
+    for (plot, _, i) in district.interiors.laid() {
+        let rich = plots[plot as usize].affluence >= rich_from;
+        for room in &i.rooms {
+            let def = painted(&rows, room.rect.x0, room.rect.y0).expect("a room cell is painted");
+            let affluent = tag_keys(&content, def).contains(&"affluent");
+            seen.entry((room.room_type, rich))
+                .or_default()
+                .insert(affluent);
+        }
+    }
+    let mut twins = 0;
+    for ((kind, rich), floors) in &seen {
+        // Outside the rich band no floor is affluent; inside it, a kind with
+        // an affluent twin always lays it.
+        if !rich {
+            assert!(
+                !floors.contains(&true),
+                "room kind {kind} is affluent outside the rich band"
+            );
+        } else if floors.contains(&true) {
+            assert!(
+                !floors.contains(&false),
+                "room kind {kind} lays both floors in the rich band"
+            );
+            twins += 1;
+        }
+    }
+    assert!(twins > 0, "the committed city lays some affluent twin");
 }
 
 #[test]

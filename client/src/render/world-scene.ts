@@ -76,7 +76,13 @@ import {
 } from "./citizens-layer";
 import { decomposeFootprint } from "./decompose";
 import { assertStageIsWorld, FloorStacks } from "./floor-stacks";
-import { type GroundFrame, groundQuads, paintedCells } from "./ground-mesh";
+import {
+  framedQuads,
+  type GroundFrame,
+  groundQuads,
+  paintedCells,
+  roofPieces,
+} from "./ground-mesh";
 import {
   openGroundDefId as findOpenGroundDefId,
   NO_GROUND,
@@ -98,6 +104,7 @@ import {
   type PropDrawable,
   REMOTE_STABLE_ID_BASE,
   roofBottoms,
+  roofOutlines,
   STUB_ID_OFFSET,
   updateCharacterDrawable,
 } from "./prop-drawables";
@@ -585,7 +592,7 @@ interface PoolEntry extends OrderedMember<PropDrawable>, VisibilityMember<PropDr
    * texture or a nudge; `resolvePropTexture`/`assetNudgePx` do that from
    * the drawable itself. */
   readonly label: string;
-  readonly view: Sprite;
+  readonly view: Sprite | Mesh;
 }
 
 /** The two sprite properties `VisibilityApplier` ever writes -- read back
@@ -884,9 +891,12 @@ export async function mountWorldScene(
     }
     return t;
   }
-  function groundFrameOf(defId: number): GroundFrame {
-    const t = cellTexture(defId, 0, 0);
+  function frameOfCell(defId: number, col: number, row: number): GroundFrame {
+    const t = cellTexture(defId, col, row);
     return { page: t.source, u0: t.uvs.x0, v0: t.uvs.y0, u1: t.uvs.x2, v1: t.uvs.y2 };
+  }
+  function groundFrameOf(defId: number): GroundFrame {
+    return frameOfCell(defId, 0, 0);
   }
 
   function cellTexture(defId: number, col: number, row: number): Texture {
@@ -1323,7 +1333,7 @@ export async function mountWorldScene(
     // Per-object drawn rects, from the real sprites just built.
     for (const entry of [...entries, ...flatEntries]) {
       const objectId = ownerRow(entry);
-      const sprite = entry.view;
+      const sprite = entry.view as Sprite;
       const left = sprite.x - sprite.width * sprite.anchor.x;
       const top = sprite.y - sprite.height * sprite.anchor.y;
       const held = drawnRects.get(objectId);
@@ -1394,36 +1404,36 @@ export async function mountWorldScene(
     stacks.stackFor(floor).ground.addChild(groundLayer);
 
     const { entries, flatEntries } = drawPropRows(propRows, floor);
-    // Roofs: one stretched tile per roof rect, in the pool behind the
-    // front wall's face and over what stands inside (`buildRoofDrawable`).
-    // A building's roof rects are all one chunk's rows: each sorts at the
-    // building's roof bottom.
+    // Roofs: each rect a mesh of its rooftop panel's 16x16 cells, laid
+    // nine-slice over the building's whole roof outline, in the pool behind
+    // the front wall's face and over what stands inside
+    // (`buildRoofDrawable`). A building's roof rects are all one chunk's
+    // rows: each sorts at the building's roof bottom.
     const bottoms = roofBottoms(data.roofs.values());
     for (const id of bottoms.keys()) roofedBuildings.add(id);
+    const outlines = roofOutlines(data.roofs.values());
     for (const roof of data.roofs.values()) {
       const drawable = buildRoofDrawable(roof, WALLS_RANK, bottoms.get(roof.buildingId));
-      const sprite = createSprite(cellTexture(roof.defId, 0, 0));
-      sprite.width = (roof.x1 - roof.x0) * tileSizePx;
-      sprite.height = (roof.y1 - roof.y0) * tileSizePx;
-      positionSprite(
-        sprite,
-        (roof.x0 + roof.x1) / 2,
-        roof.y1,
-        floor,
-        tileSizePx,
-        storeyHeightPx,
-        0,
-        0,
-      );
-      const entry: PoolEntry = {
-        drawable,
-        view: sprite,
-        label: `roof:${roof.defId}`,
-      };
-      entries.push(entry);
-      poolMembersOf(floor).push(entry);
-      stacks.stackFor(floor).pool.addChild(sprite);
-      allVisibilityMembers.push(entry);
+      const panel = objectDefs.get(roof.defId);
+      const outline = outlines.get(roof.buildingId) ?? roof;
+      const pieces = roofPieces(roof, outline, panel?.width ?? 1, panel?.height ?? 1).map((p) => ({
+        lx: p.lx,
+        ly: p.ly,
+        frame: frameOfCell(roof.defId, p.col, p.row),
+      }));
+      for (const [page, quads] of framedQuads(pieces, tileSizePx)) {
+        const mesh = new Mesh({
+          geometry: new MeshGeometry(quads),
+          texture: pageTexture(page as Texture["source"]),
+        });
+        mesh.x = snapToScreenPx(roof.x0 * tileSizePx, ZOOM);
+        mesh.y = snapToScreenPx(roof.y0 * tileSizePx + offset, ZOOM);
+        const entry: PoolEntry = { drawable, view: mesh, label: `roof:${roof.defId}` };
+        entries.push(entry);
+        poolMembersOf(floor).push(entry);
+        stacks.stackFor(floor).pool.addChild(mesh);
+        allVisibilityMembers.push(entry);
+      }
     }
     drawnChunks.set(key, {
       key,

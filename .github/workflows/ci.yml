@@ -456,14 +456,14 @@ jobs:
       - run: rustup toolchain install
       - name: the module actually has to compile for the thing it runs on
         run: cargo build --target wasm32-unknown-unknown --release -p browser_city
-      # FR163 (story 4.3): the dev-only clock reducers exist only behind
-      # the `time-control` feature. The production build must not carry
-      # them; the feature build must -- a sentinel nobody has proven present
-      # guards nothing.
+      # FR163 (story 4.3): the dev-only reducers exist only behind the
+      # `time-control` feature. The production build must not carry them;
+      # the feature build must -- a sentinel nobody has proven present
+      # guards nothing. The list is derived from the source (story 3.16).
       - name: the time-control reducers are absent from the production module
         run: |
           wasm=target/wasm32-unknown-unknown/release/browser_city.wasm
-          for s in jump_clock set_clock_speed debug_write_graph_then_fail; do
+          for s in $(bash "$GITHUB_WORKSPACE/scripts/ci/list-time-control-reducers.sh"); do
             if grep -aq "$s" "$wasm"; then echo "production module contains $s"; exit 1; fi
           done
       - name: the time-control flavour compiles and carries the reducers
@@ -471,7 +471,7 @@ jobs:
           cargo clippy --target wasm32-unknown-unknown -p browser_city --features time-control -- -D warnings
           cargo build --features time-control --target wasm32-unknown-unknown --release -p browser_city
           wasm=target/wasm32-unknown-unknown/release/browser_city.wasm
-          for s in jump_clock set_clock_speed debug_write_graph_then_fail; do
+          for s in $(bash "$GITHUB_WORKSPACE/scripts/ci/list-time-control-reducers.sh"); do
             grep -aq "$s" "$wasm" || { echo "time-control module lacks $s"; exit 1; }
           done
       # A pin check that orders a re-run at the next version bump guards

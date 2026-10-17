@@ -53,18 +53,21 @@ width = 1
 height = 1
 tags = ["underfoot", "ground", "backyard"]
 
-# Roof tiles (`roof_area`): one per family, the dwelling's in three age
-# bands (old dark taupe, middle beige, new blue-grey). Each is a flat fill
-# from a rooftop panel of `4_Generic_Buildings`, stretched over the roof
-# rect. Drawn above everything inside the footprint, hidden from within.
+# Roofs (`roof_area`): each a whole rooftop panel, cut into 16x16 tiles from
+# the panel's own corner and laid nine-slice over a roof rect, never
+# stretched. A dwelling's is the rooftop of its age band's condo set, part of
+# that set's facade art (old `Condo_6`, middle `Condo_3`, new `Condo_5`); the
+# trade roof is a `9_Shopping_Center_and_Markets` store's, the works roof the
+# hardware store's flat roof. Drawn above everything inside the footprint,
+# hidden from within.
 [[object]]
 id = 78
 key = "roof_dwelling_old"
 name = "Dwelling Roof (old)"
 layer = "ground"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 64, y = 440, w = 16, h = 16 }
-width = 1
-height = 1
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 224, y = 2067, w = 96, h = 80 }
+width = 6
+height = 5
 tags = ["underfoot", "ground", "roof", "dwelling", "aged_old"]
 
 [[object]]
@@ -72,9 +75,9 @@ id = 79
 key = "roof_dwelling_mid"
 name = "Dwelling Roof (middle)"
 layer = "ground"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 416, y = 826, w = 16, h = 16 }
-width = 1
-height = 1
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 48, y = 473, w = 80, h = 80 }
+width = 5
+height = 5
 tags = ["underfoot", "ground", "roof", "dwelling", "aged_mid"]
 
 [[object]]
@@ -82,9 +85,9 @@ id = 80
 key = "roof_dwelling_new"
 name = "Dwelling Roof (new)"
 layer = "ground"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 218, y = 32, w = 16, h = 16 }
-width = 1
-height = 1
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 368, y = 1401, w = 96, h = 48 }
+width = 6
+height = 3
 tags = ["underfoot", "ground", "roof", "dwelling", "aged_new"]
 
 [[object]]
@@ -92,9 +95,9 @@ id = 81
 key = "roof_trade"
 name = "Trade Roof"
 layer = "ground"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 10, y = 32, w = 16, h = 16 }
-width = 1
-height = 1
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/9_Shopping_Center_and_Markets_16x16.png", x = 256, y = 406, w = 80, h = 64 }
+width = 5
+height = 4
 tags = ["underfoot", "ground", "roof", "shop", "cafe", "market", "office"]
 
 [[object]]
@@ -102,7 +105,7 @@ id = 82
 key = "roof_works"
 name = "Works Roof"
 layer = "ground"
-sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 28, y = 2042, w = 16, h = 16 }
-width = 1
-height = 1
+sprite = { sheet = "ModernTileset/modernexteriors-win/Modern_Exteriors_16x16/ME_Theme_Sorter_16x16/4_Generic_Buildings_16x16.png", x = 0, y = 2562, w = 128, h = 96 }
+width = 8
+height = 6
 tags = ["underfoot", "ground", "roof", "workshop", "warehouse", "municipal_service"]

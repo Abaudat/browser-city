@@ -5,8 +5,8 @@
 //     the browser's own keydown, and the walk sends nothing but the position
 //     sender's frames, at the dial's rate;
 //   - FR120/FR121: inside, the building's front walls are retracted; out on
-//     the street they are drawn again and every window drawn is translucent
-//     at exactly `render.window_alpha`;
+//     the street they are drawn again and every window is a solid object in
+//     its wall (opaque on a front, hidden on a far side);
 //   - FR123: the mounted pool order of the building's drawables is the order
 //     the comparator demands for where the player stands;
 //   - FR61: the avatar is the same five parts after the walk and a reload;
@@ -214,13 +214,13 @@ test("one walk out of the arrival dwelling onto its street: latency, retraction,
   // The walls are back the moment the player is outside the enclosure.
   for (const id of walls) expect(outside.visibility[id], `wall ${id}`).toBe("normal");
 
-  // FR121: seen from the street, a shopfront window is translucent at
-  // exactly `render.window_alpha`. The nearest window is a long walk away
+  // Story 3.16 (FR121): seen from the street, a roofed building's window is
+  // a solid object in its wall -- opaque on the front, hidden on a far side
+  // under the roof; translucency (`render.window_alpha`) is for a viewer
+  // inside (`visibility.test.ts`). The nearest window is a long walk away
   // (the crossing speed is `district-walk.spec.ts`'s claim), so the player is
   // stood on the pavement before it with the DEV hook, as the server's start
   // would.
-  const windowAlpha =
-    (committedDefs().balance.find((b) => b.key === "render.window_alpha")?.value as number) / 100;
   const windowRows = district.objects.filter(
     (o) => committedWindowDefIds().has(o.defId) && o.floor === 0,
   );
@@ -249,9 +249,10 @@ test("one walk out of the arrival dwelling onto its street: latency, retraction,
     .filter((id) => seen.visibility[id] !== undefined);
   expect(windows.length).toBeGreaterThan(0);
   for (const id of windows) {
-    expect(seen.visibility[id], `window ${id}`).toBe("translucent");
-    expect(seen.alpha[id]).toBeCloseTo(windowAlpha, 5);
+    expect(["normal", "hidden"], `window ${id}`).toContain(seen.visibility[id]);
+    if (seen.visibility[id] === "normal") expect(seen.alpha[id]).toBe(1);
   }
+  expect(windows.some((id) => seen.visibility[id] === "normal")).toBe(true);
   // Back where the walk ended, for the order and the frame budget below.
   await page.evaluate(
     ([x, y]) => window.__bc?.teleport?.(x as number, y as number, 0),

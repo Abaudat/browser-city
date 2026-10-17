@@ -97,16 +97,10 @@ const DENSE_BODIES = 120;
  * includes peak density. Compared on the live field each client solved from
  * the bodies it holds -- what a bubble can change -- not on the from-scratch
  * sample above. Disagreement is written to the report; any is a defect. */
-// FINDING (story 3.16, recorded in docs/generation.md): in the generated
-// district two clients with different bubbles do NOT agree on the sidestep of
-// every shared body of the crowd -- the offsets of bodies both clients have
-// resolved differ in a few hundred samples per sweep, which the hand-laid
-// street never showed. The unit property of the same claim
-// (`tests/unit/debug/rush-crowd.test.ts`, "two bubbles agree") holds on an
-// open field, so the divergence comes from the generated geometry (walls
-// beside the crowd) or from the live field's history. Not isolated in this
-// story; the test stays in the suite, fixme'd by name, so the finding is
-// visible in every report until story 5.5 (L2) reopens the scoping rule.
+// Story 3.16: a body is resolved only when its whole reach is held -- the
+// wall scan reads further than the avoid radius (`HeldRect`) -- and the
+// sampling hook solves at an instant with the bodies a frame there would hold
+// (`StreetLife.liveAt`).
 test("two clients with different bubbles agree on every shared body of the 200-body crowd", async ({
   browser,
 }) => {

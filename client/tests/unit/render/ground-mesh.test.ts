@@ -2,7 +2,7 @@
 // a sprite per cell.
 
 import { describe, expect, it } from "vitest";
-import { groundQuads, paintedCells } from "../../../src/render/ground-mesh";
+import { groundQuads, paintedCells, roofPieces } from "../../../src/render/ground-mesh";
 
 /** Two pages; def 1 and 2 on page "a", def 3 on page "b". */
 const frames = new Map([
@@ -41,5 +41,37 @@ describe("groundQuads", () => {
 
   it("draws nothing for no cells", () => {
     expect(groundQuads([], () => undefined as never, 16).size).toBe(0);
+  });
+});
+
+describe("roofPieces", () => {
+  // A 5x4-cell roof outline from a 3x3 panel: corners are the panel's
+  // corners, edges and fill repeat the panel's inner cells, never stretched.
+  const outline = { x0: 10, y0: 20, x1: 15, y1: 24 };
+  it("lays corners, edges and fill of the panel over the whole outline", () => {
+    const cells = roofPieces({ x0: 10, y0: 20, x1: 15, y1: 24 }, outline, 3, 3);
+    const at = (x: number, y: number) => cells.find((c) => c.lx === x - 10 && c.ly === y - 20);
+    expect(at(10, 20)).toMatchObject({ col: 0, row: 0 });
+    expect(at(14, 20)).toMatchObject({ col: 2, row: 0 });
+    expect(at(10, 23)).toMatchObject({ col: 0, row: 2 });
+    expect(at(14, 23)).toMatchObject({ col: 2, row: 2 });
+    expect(at(12, 20)).toMatchObject({ col: 1, row: 0 });
+    expect(at(10, 21)).toMatchObject({ col: 0, row: 1 });
+    expect(at(12, 22)).toMatchObject({ col: 1, row: 1 });
+    expect(cells).toHaveLength(20);
+  });
+
+  it("repeats a wider panel's inner cells in order", () => {
+    const cells = roofPieces({ x0: 0, y0: 0, x1: 8, y1: 3 }, { x0: 0, y0: 0, x1: 8, y1: 3 }, 4, 3);
+    expect(cells.filter((c) => c.ly === 1).map((c) => c.col)).toEqual([0, 1, 2, 1, 2, 1, 2, 3]);
+  });
+
+  it("reads a rect of the outline by its place in the outline, from the rect's own origin", () => {
+    // The north rim strip west of a door: the outline's top row.
+    const cells = roofPieces({ x0: 10, y0: 20, x1: 12, y1: 21 }, outline, 3, 3);
+    expect(cells).toEqual([
+      { lx: 0, ly: 0, col: 0, row: 0 },
+      { lx: 1, ly: 0, col: 1, row: 0 },
+    ]);
   });
 });

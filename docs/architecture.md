@@ -988,9 +988,12 @@ reorders a pool member.
   the viewer's own current floor are hidden the same way while the viewer
   is inside it.
 - Roofs: a building's `roof_area` rects draw as near-side `walls`
-  drawables of that building (so retraction hides them from inside), sorted
+  drawables of that building, each a mesh of its def's rooftop panel cut in
+  16x16 cells and laid nine-slice over the building's whole roof outline
+  (`render/ground-mesh.ts` `roofPieces`), never stretched (so retraction hides them from inside), sorted
   at the roof's south edge; anything else owned by a building whose roof is
-  drawn is hidden from a viewer outside that building (`isUnderRoof`).
+  drawn is hidden from a viewer outside that building (`isUnderRoof`), and
+  its windows are opaque on the near side and hidden on a far side.
 - Windows: an `[[object]]` with `window = true` in `defs/` draws at
   `render.window_alpha` percent (`defs/balance/render.toml`, never a
   TypeScript literal) once it is not hidden; masks, filters, render

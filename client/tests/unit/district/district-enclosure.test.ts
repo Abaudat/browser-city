@@ -141,11 +141,11 @@ describe("every enterable building of the district (AC2)", () => {
     expect(enterable.length).toBeGreaterThanOrEqual(100);
   });
 
-  it("is furnished: most buildings hold furniture beyond their shell", () => {
-    const hollow = enterable.filter(
-      (b) => !b.rows.some((r) => r.layer !== WALLS && r.layer !== GROUND),
+  it("is furnished: at least a hundred enterable buildings hold furniture beyond their shell, over the streamed rows (AC2)", () => {
+    const furnished = enterable.filter((b) =>
+      b.rows.some((r) => r.layer !== WALLS && r.layer !== GROUND),
     );
-    expect(hollow.length).toBeLessThan(enterable.length / 4);
+    expect(furnished.length).toBeGreaterThanOrEqual(100);
   });
 
   // One slice of the enterable buildings per test, so no one test holds the

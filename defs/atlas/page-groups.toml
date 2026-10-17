@@ -115,3 +115,7 @@ group = "shared"
 [[page_group]]
 theme = "generic_buildings_16x16.png"
 group = "shared"
+
+[[page_group]]
+theme = "shopping_center_and_markets_16x16.png"
+group = "shared"

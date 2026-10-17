@@ -133,15 +133,20 @@ export function isStoreyAboveCulled(
   return drawable.floor > viewer.floor;
 }
 
+/** Whether the viewer stands outside the roofed building that owns `drawable`. */
+function isOutsideRoofed(viewer: VisibilityViewer, drawable: VisibilityDrawable): boolean {
+  if (drawable.ownerBuildingId === NO_OWNER) return false;
+  if (drawable.ownerBuildingId === viewer.buildingId) return false;
+  return viewer.roofed?.has(drawable.ownerBuildingId) ?? false;
+}
+
 /** Story 3.16: what stands inside a roofed building other than the
  * viewer's is under its roof, so hidden -- a tall fixture against the
  * north wall would otherwise show above the roof's edge. The building's
  * walls and windows stay: they are its outside. */
 export function isUnderRoof(viewer: VisibilityViewer, drawable: VisibilityDrawable): boolean {
   if (drawable.layerCode === WALLS_LAYER_CODE) return false;
-  if (drawable.ownerBuildingId === NO_OWNER) return false;
-  if (drawable.ownerBuildingId === viewer.buildingId) return false;
-  return viewer.roofed?.has(drawable.ownerBuildingId) ?? false;
+  return isOutsideRoofed(viewer, drawable);
 }
 
 /**
@@ -153,7 +158,9 @@ export function isUnderRoof(viewer: VisibilityViewer, drawable: VisibilityDrawab
  * otherwise -- never `translucent`, and never subject to the ordinary
  * retraction/window rules below, which are a real wall's own), then
  * retraction (a retracted near-side wall is `hidden`), then the window
- * rule (a non-hidden window drawable is `translucent`) -- anything else
+ * rule (a non-hidden window drawable is `translucent`; a roofed building's
+ * seen from outside is `normal` on its near side, `hidden` on a far side)
+ * -- anything else
  * is `normal`.
  */
 export function computeVisibility(
@@ -165,6 +172,12 @@ export function computeVisibility(
   if (isUnderRoof(viewer, drawable)) return "hidden";
   if (drawable.isStub) return isNearSideOwnedByViewer(viewer, drawable) ? "normal" : "hidden";
   if (isRetracted(viewer, drawable)) return "hidden";
-  if (drawable.isWindow) return "translucent";
+  if (drawable.isWindow) {
+    // Story 3.16: from outside a roofed building its interior is hidden, so
+    // a window is a solid object in its wall: the front's opaque, a far
+    // side's (facing away, under the roof) hidden.
+    if (isOutsideRoofed(viewer, drawable)) return drawable.isNearSide ? "normal" : "hidden";
+    return "translucent";
+  }
   return "normal";
 }

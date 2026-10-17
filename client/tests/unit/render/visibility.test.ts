@@ -396,6 +396,36 @@ describe("isUnderRoof (story 3.16)", () => {
   });
 });
 
+describe("a roofed building's windows (story 3.16)", () => {
+  const roofed = new Set([1n]);
+  const front = drawable({
+    layerCode: WALLS,
+    isWindow: true,
+    isNearSide: true,
+    ownerBuildingId: 1n,
+  });
+  const back = drawable({
+    layerCode: WALLS,
+    isWindow: true,
+    isNearSide: false,
+    ownerBuildingId: 1n,
+  });
+  it("is a solid object in its wall from outside: the front's opaque, the far side's hidden", () => {
+    expect(computeVisibility(viewer({ roofed }), front)).toBe("normal");
+    expect(computeVisibility(viewer({ roofed, buildingId: 2n }), front)).toBe("normal");
+    expect(computeVisibility(viewer({ roofed }), back)).toBe("hidden");
+  });
+
+  it("is translucent only to a viewer inside its building, the front retracting", () => {
+    expect(computeVisibility(viewer({ roofed, buildingId: 1n }), back)).toBe("translucent");
+    expect(computeVisibility(viewer({ roofed, buildingId: 1n }), front)).toBe("hidden");
+  });
+
+  it("an unroofed building's windows keep FR121's translucency from outside", () => {
+    expect(computeVisibility(viewer(), front)).toBe("translucent");
+  });
+});
+
 describe("isNearSideWall (FR120)", () => {
   it("the terrace's own front (south) row is near-side for every building, including its corners", () => {
     const shopCount = 4;

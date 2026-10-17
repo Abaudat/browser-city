@@ -91,9 +91,9 @@ screen (unless that would leave fewer patches than the corners need).
 | Parameter | Unit | Range | Visible carrier |
 | --- | --- | --- | --- |
 | Density | plots per unit street length, integer | `generation.land_use.density_min`..`density_max` | plot packing along `2_City_Terrains`/`1_Terrains_and_Fences` ground coverage, and street-prop cadence (bins, benches, lamps, trees) from `3_City_Props` -- more plots and more props per screen at the high end, wide gaps and few props at the low end; it bands dwelling *form class* (low / mid / high) and only density does |
-| Building age | integer, newer to older | `generation.neighbourhood.building_age_min`..`building_age_max` | facade variant *within* `4_Generic_Buildings`, never family choice. Older end: `Condo_9` (exposed pipes, posters and flyers, a stained base course), the `Condo_8` fire-escape/balcony/flyer dressing on a tenement body as assembled in `Condo_Example`, `Condo_4` (red brick, arched entrances, bay fronts, white cornices) and `Condo_6` (grey stone, round-arched windows). Newer end: `Condo_5` (flat teal panel block, ribbon windows, canopy entrance) and `Condo_1`/`Condo_2` (flat rendered facades, plain rectangular windows, no ornament). `Condo_3` and `Condo_7` sit mid-range. No set has an aged variant of itself, so age reads through architectural style and applied dressing alone, never a building visibly ageing in place. `5_Floor_Modular_Buildings` varies by ground-floor shop type, not by age; `9_Shopping_Center_and_Markets` ships one building style and `7_Villas` two (the large timber-fronted houses with a porch, `villa`'s carrier, and the small red-roofed rendered houses, `cottage`'s) -- none carries an age range. Age never gates a building type |
-| Affluence | integer, poorer to richer | `generation.neighbourhood.affluence_min`..`affluence_max` | the commercial frontage: shop-type mix and the share of shuttered units (`[[building_type]]` `affluence_min`/`affluence_max` bands, the density band's own shape and the one eligibility filter), and later plot dressing (`17_Garden`, `1_Terrains_and_Fences`, `6_Garage_Sales`, `3_City_Props`) and the `moderninteriors` theme (e.g. `26_Condominium_Singles` vs the plain `1_Generic`); prop density is a generator output, never a sprite variant. Affluence picks the dwelling type *within* a form class (`villa` rich, `cottage` poor, both `form_low`); the form class itself is Density's |
-| Land-use mix | four shares (residential / commercial / industrial / institutional), integer, summing to a whole | `generation.land_use.share_*_pct`, each within `share_tolerance_pct` | which family appears at all along a street: `4_Generic_Buildings`/`5_Floor_Modular_Buildings`/`7_Villas` (residential), `9_Shopping_Center_and_Markets`/`16_Office` (commercial), `8_Worksite` (industrial -- the only dedicated industrial family the tileset ships; the industrial end of this range is thin by construction, not by design choice), institutional families per FR116 once a later story adds them |
+| Building age | integer, newer to older | `generation.neighbourhood.building_age_min`..`building_age_max` | facade variant *within* `4_Generic_Buildings`, roof and front elevation, never family choice: a dwelling's roof is the rooftop of its age band's set (`old_from`/`new_to`; old `Condo_6`, middle `Condo_3`, new `Condo_5`), the front elevation the same set's. Older end: `Condo_9` (exposed pipes, posters and flyers, a stained base course), the `Condo_8` fire-escape/balcony/flyer dressing on a tenement body as assembled in `Condo_Example`, `Condo_4` (red brick, arched entrances, bay fronts, white cornices) and `Condo_6` (grey stone, round-arched windows). Newer end: `Condo_5` (flat teal panel block, ribbon windows, canopy entrance) and `Condo_1`/`Condo_2` (flat rendered facades, plain rectangular windows, no ornament). `Condo_3` and `Condo_7` sit mid-range. No set has an aged variant of itself, so age reads through architectural style and applied dressing alone, never a building visibly ageing in place. `5_Floor_Modular_Buildings` varies by ground-floor shop type, not by age; `9_Shopping_Center_and_Markets` ships one building style and `7_Villas` two (the large timber-fronted houses with a porch, `villa`'s carrier, and the small red-roofed rendered houses, `cottage`'s) -- none carries an age range. Age never gates a building type |
+| Affluence | integer, poorer to richer | `generation.neighbourhood.affluence_min`..`affluence_max` | the commercial frontage: shop-type mix and the share of shuttered units (`[[building_type]]` `affluence_min`/`affluence_max` bands, the density band's own shape and the one eligibility filter), and later plot dressing (`17_Garden`, `1_Terrains_and_Fences`, `6_Garage_Sales`, `3_City_Props`) and the `moderninteriors` theme (e.g. `26_Condominium_Singles` vs the plain `1_Generic`) -- a room's floor is its kind's affluent twin in the rich band (`rich_from`); prop density is a generator output, never a sprite variant. Affluence picks the dwelling type *within* a form class (`villa` rich, `cottage` poor, both `form_low`); the form class itself is Density's |
+| Land-use mix | four shares (residential / commercial / industrial / institutional), integer, summing to a whole | `generation.land_use.share_*_pct`, each within `share_tolerance_pct` | which family appears at all along a street: `4_Generic_Buildings`/`5_Floor_Modular_Buildings`/`7_Villas` (residential), `9_Shopping_Center_and_Markets`/`16_Office` (commercial), `8_Worksite` (industrial -- the only dedicated industrial family the tileset ships; the industrial end of this range is thin by construction, not by design choice), institutional families per FR116 once a later story adds them; each non-residential family's roof is its own tile (trade: a `9_Shopping_Center_and_Markets` store roof; works: the hardware store's flat roof), never a dwelling's age roof, so no carrier is shared |
 
 Affluence reads as a swing: shuttered units are plainly present in the
 bottom third (at least `shuttered_bottom_third_min_percent` of its
@@ -1343,11 +1343,11 @@ is disposed to a row or a task.
 
 **Verdict on the generator, apart from the empty city: the layout rules
 hold.** On foot at the shipped 2.2 cells/s, the site's west edge (2, 296)
-to the core (168, 296) took 100.7 s: 218 steps in 8 key-held runs, so
-99.1 s of walking and 1.6 s of turning. That is 2.16 steps/s. The edge-to-core-to-edge crossing
+to the core (168, 296) took 100.0 s: 218 steps in 8 key-held runs, so
+99.1 s of walking and 0.9 s of turning. That is 2.18 steps/s. The edge-to-core-to-edge crossing
 is 527 steps for a 509-cell line (stretch 1.04, `district_world.rs`), so
-on foot it is about 243 s against the 233 s of a straight 512-cell line:
-6.5 s from the route's length and 3.9 s from turning. Every one of 944 laid buildings is
+on foot it is about 242 s against the 233 s of a straight 512-cell line:
+6.5 s from the route's length and 2.2 s from turning. Every one of 944 laid buildings is
 enterable, furnished (each room holds the fixtures its room program owes,
 each a placed row), reachable from the arrival and walkable into every
 room (`district_world.rs`; fresh seeds weekly, `district_explore.rs`).
@@ -1375,10 +1375,10 @@ Findings that remain, each disposed:
   are the same Room Builder cell with no wall face; the wall face is drawn
   above its cell like a facade, and goes with the same carrier.
 - **Building age reads on the roof** (`07-age-step`, sharpest age step 82
-  at (158, 381)). An old dwelling's roof is dark taupe and a new one's is
-  blue-grey, and they differ 100% across that arterial
+  at (158, 381)). An old dwelling's roof is the grey `Condo_6` rooftop with its
+  vents, a new one's the teal `Condo_5` panel, and they differ 100% across that arterial
   (`across_the_sharpest_arterial_each_dial_changes_what_the_district_is_made_of`).
-  Nothing else reads age. The front elevation is #458.
+  The roof is part of the facade variant; the front elevation is #458.
 - **Affluence does not read from the street** (`04-affluence-step`, sharpest
   affluence step 71 at (329, 256)). Room floors differ 93% across the arterial,
   but they are under the roofs. What stands on the pavement differs by 2%. In
@@ -1405,8 +1405,8 @@ Findings that remain, each disposed:
 - **A new character's first screen can be the site edge**. It is the flat
   its tenancy assigns (story 7.1: edge tier first, cheapest asked), and some
   of the first flats let stand within a viewport of the north edge, e.g.
-  (425, 5). *Reopens* the let order against the arrival rule: a lead
-  decision between stories 7.1 and 3.16, raised on #455.
+  (425, 5). *Decided* (Derek): the let order stands; the edge reads as the
+  end of the world only because the margin does, which *reopens* as #461.
 - **Core direction is legible only by density and road width**. *Accepted*:
   density is the design's only core cue. No minimap and no marker.
 - **No container, stair or floor transition exists in the district**.

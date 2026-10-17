@@ -93,6 +93,28 @@ export function roofBottoms(rows: Iterable<RoofRowView>): Map<bigint, number> {
   return out;
 }
 
+/** Each building's whole roof outline: the bounding rect of its roof rects. */
+export function roofOutlines(
+  rows: Iterable<RoofRowView>,
+): Map<bigint, { x0: number; y0: number; x1: number; y1: number }> {
+  const out = new Map<bigint, { x0: number; y0: number; x1: number; y1: number }>();
+  for (const r of rows) {
+    const held = out.get(r.buildingId);
+    out.set(
+      r.buildingId,
+      held
+        ? {
+            x0: Math.min(held.x0, r.x0),
+            y0: Math.min(held.y0, r.y0),
+            x1: Math.max(held.x1, r.x1),
+            y1: Math.max(held.y1, r.y1),
+          }
+        : { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 },
+    );
+  }
+  return out;
+}
+
 /** The drawable of one roof rect (story 3.16). It sorts half a cell south
  * of its building's roof bottom edge (`bottom`, the rect's own by default),
  * so a north-rim strip sorts with the net it borders: after every fixture and body inside the
