@@ -174,6 +174,7 @@ fn frozen_config() -> GenerationConfig {
         props_ambient_per_100_min: 20,
         props_ambient_per_100_max: 40,
         props_max_solid_percent: 50,
+        tile_size_px: 16,
     }
 }
 

@@ -993,7 +993,7 @@ block is reproducible bar thread count and wall-clock.
 
 ```text
 
-detour-bounds sweep at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 1000000 seeds, 32 threads, passes 1-2 only
+detour-bounds sweep at GENERATION_VERSION=15 fingerprint=0f16a21aef7e1830: 1000000 seeds, 32 threads, passes 1-2 only
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   detour max()-contract (14-node sample): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
@@ -1034,7 +1034,7 @@ detour_ratio_pct_sampled_at_or_beyond_takeover (400 cells) top 10 per-seed worst
   171% at seed 4929245716913353663
   178% at seed 4832727318219098284
   189% at seed 4059475806152703678
-detour-bounds sweep wall-clock: 192.0s (0.192ms/seed)
+detour-bounds sweep wall-clock: 380.2s (0.380ms/seed)
 ```
 
 ### band sweep
@@ -1043,7 +1043,7 @@ detour-bounds sweep wall-clock: 192.0s (0.192ms/seed)
 
 ```text
 
-band sweep at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 1000000 seeds, all five passes (salt 0xb0f05ee4)
+band sweep at GENERATION_VERSION=15 fingerprint=0f16a21aef7e1830: 1000000 seeds, all five passes (salt 0xb0f05ee4)
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
 land_use_share_commercial deviation from its key (18%), permille of the site: min=-17 p1=-14 p50=-1 p99=13 max=17 mean=-0.6 stddev=6.0
   5.5-sigma share tolerance implied: 3.32 percentage points
@@ -1086,7 +1086,7 @@ largest_institutional_pocket_share_basis_points: min=87 p1=117 p50=205 p99=234 m
 profession_depth_per_city: min=44 p1=55 p50=61 p99=67 max=67 mean=61.4 stddev=2.3
   profession_count_per_city_min = 36: 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 4096-case CI failure probability <= 1.2213%)
-band sweep wall-clock: 131.0s (0.131ms/seed)
+band sweep wall-clock: 268.3s (0.268ms/seed)
 ```
 
 ### exhaustive loop
@@ -1094,7 +1094,7 @@ band sweep wall-clock: 131.0s (0.131ms/seed)
 `cargo run -p bounds --release --bin measure-generation`
 
 ```text
-exhaustive loop at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 50000 seeds at 512x512 cells
+exhaustive loop at GENERATION_VERSION=15 fingerprint=0f16a21aef7e1830: 50000 seeds at 512x512 cells
 building_count: min=778 p1=829 p50=889 p99=949 max=990 mean=889.2 stddev=25.6
 building_count extremes: min 778 at seed 11805315485014167829, max 990 at seed 11123925265906853341 (pin both in invariants.rs's PINNED_BUILDING_COUNT_SEEDS)
 rejected_percent: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
@@ -1192,7 +1192,7 @@ ad hoc presence tags (never distributed) -- seeds with 0 placed:
 
 ```text
 
-rows sweep at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 1000000 seeds, 32 threads
+rows sweep at GENERATION_VERSION=15 fingerprint=0f16a21aef7e1830: 1000000 seeds, 32 threads
 CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
   committed rules hold (inv_generation_committed_rules_hold_for_any_seed): 0 of 1000000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 1000000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.000300% (implied 96-case CI failure probability <= 0.0288%)
@@ -1210,7 +1210,7 @@ CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 
 ```text
 
-region-loss sweep at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
+region-loss sweep at GENERATION_VERSION=15 fingerprint=0f16a21aef7e1830: 1000000 seeds, passes 1-2 only (salt 0xb0f05ee5)
 CI judges these ceilings at 4096 cases in the test job and 256 in the coverage job
   seeds with any region carried by no block: 20769 of 1000000 (first: Some(11091164158115210688)) -- by design, a block takes its majority use
   every institutional region carried by no block (inv_generation_an_institutional_region_is_carried_by_a_block): 0 of 1000000 misses (rate 0.000000%), implied 4096-case CI failure probability 0.000000%, offending seeds: []
@@ -1222,7 +1222,7 @@ CI judges these ceilings at 4096 cases in the test job and 256 in the coverage j
 `cargo run -p bounds --release --bin measure-generation -- pooled`
 
 ```text
-pooled evidence at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: seeds 0..256 pooled, evidence seeds 1, 2, 3
+pooled evidence at GENERATION_VERSION=15 fingerprint=0f16a21aef7e1830: seeds 0..256 pooled, evidence seeds 1, 2, 3
 pooled low-band / high-band mean block area over seeds 0..256: 289% (peripheral_pooled_min_ratio_percent = 150%)
 pooled chopped share of low-band blocks over seeds 0..256: 1886 of 5600 (33%)
 evidence seed 1: low-band / high-band mean block area 2.65x (Artie's bar 2x)
@@ -1240,14 +1240,14 @@ pooled core over city mean screen: 190% (busy_core_over_city_min_percent = 150%)
 `cargo run -p bounds --release --bin measure-generation -- interiors`
 
 ```text
-interiors sweep at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: 30000 seeds, 32 threads (salt 0xb0f05ee7)
+interiors sweep at GENERATION_VERSION=15 fingerprint=0f16a21aef7e1830: 30000 seeds, 32 threads (salt 0xb0f05ee7)
 CI judges these ceilings at 96 cases in the test job and 8 in the coverage job
 enterable_count: min=766 p1=805 p50=868 p99=932 max=973 mean=868.5 stddev=27.3
 enterable_share_percent: min=92 p1=95 p50=97 p99=99 max=100 mean=97.2 stddev=1.2
 shell_count: min=0 p1=3 p50=20 p99=44 max=61 mean=20.6 stddev=10.4
 rejected_count: min=0 p1=0 p50=0 p99=0 max=1 mean=0.0 stddev=0.0
 rejected_percent_of_attempted: min=0 p1=0 p50=0 p99=0 max=0 mean=0.0 stddev=0.0
-max_layout_attempts_used: min=4 p1=6 p50=8 p99=8 max=8 mean=7.9 stddev=0.4
+max_layout_attempts_used: min=4 p1=8 p50=8 p99=8 max=8 mean=8.0 stddev=0.1
 max_room_aspect_x100: min=300 p1=300 p50=300 p99=300 max=300 mean=300.0 stddev=0.0
 dwelling_enterable_percent_of_placed: min=99 p1=100 p50=100 p99=100 max=100 mean=100.0 stddev=0.0
 dwelling_percent_of_enterable_set: min=50 p1=56 p50=63 p99=70 max=75 mean=62.7 stddev=2.9
@@ -1257,14 +1257,14 @@ cafe_enterable_percent_of_placed: min=100 p1=100 p50=100 p99=100 max=100 mean=10
 cafe_percent_of_enterable_set: min=0 p1=1 p50=1 p99=1 max=1 mean=1.0 stddev=0.0
 back_room_enterable_percent_of_placed: min=100 p1=100 p50=100 p99=100 max=100 mean=100.0 stddev=0.0
 back_room_percent_of_enterable_set: min=2 p1=4 p50=7 p99=10 max=13 mean=7.3 stddev=1.4
-wall_cells_per_city: min=39113 p1=42377 p50=47077 p99=51252 max=53747 mean=47020.5 stddev=1905.7
-floor_cells_per_city: min=45667 p1=50780 p50=57694 p99=63777 max=67731 mean=57601.3 stddev=2815.3
-threshold_cells_per_city: min=3162 p1=3422 p50=3807 p99=4155 max=4403 mean=3802.9 stddev=157.3
-fixture_cells_per_city: min=7892 p1=8489 p50=9379 p99=10190 max=10797 mean=9371.8 stddev=365.5
-layout attempts needed (u32::MAX = rejected): {1: 23646369, 2: 1202362, 3: 547904, 4: 286316, 5: 158236, 6: 90868, 7: 51550, 8: 72092, 4294967295: 2}
+wall_cells_per_city: min=39073 p1=42350 p50=47047 p99=51209 max=53721 mean=46989.6 stddev=1902.0
+floor_cells_per_city: min=45723 p1=50809 p50=57733 p99=63841 max=67807 mean=57642.8 stddev=2819.5
+threshold_cells_per_city: min=3153 p1=3414 p50=3796 p99=4140 max=4395 mean=3792.0 stddev=156.2
+fixture_cells_per_city: min=7864 p1=8475 p50=9357 p99=10161 max=10781 mean=9350.0 stddev=363.5
+layout attempts needed (u32::MAX = rejected): {1: 23326769, 2: 1149923, 3: 554191, 4: 315045, 5: 191461, 6: 120857, 7: 75969, 8: 321419, 4294967295: 65}
 check-chain failures by verdict: {}
-buildings laid with a program shorter than the longest that fit, by type (of laid): {"bottling_plant": 35, "builders_yard": 40, "clinic": 35, "condo_block": 2491, "cottage": 10855, "depot": 47, "fire_station": 451, "food_plant": 35, "market_hall": 1, "police_station": 413, "print_works": 18, "recycling_facility": 38, "terrace_house": 18502, "transit_office": 488, "vehicle_repair_garage": 26, "villa": 8293, "warehouse": 190, "welfare_office": 1, "workshop": 22} of {"bakery": 304085, "bank_branch": 139940, "bookshop": 140286, "bottling_plant": 358074, "builders_yard": 429241, "butcher": 304450, "cafe": 314739, "cinema": 315041, "clinic": 283919, "clothes_shop": 163106, "condo_block": 1775470, "corner_shop": 690317, "cottage": 3339704, "council": 30001, "depot": 30001, "fire_station": 283606, "food_plant": 393850, "general_retail": 507954, "greengrocer": 303759, "gym": 116090, "hairdresser": 305948, "hardware_shop": 227505, "hospital": 30001, "hotel": 144552, "launderette": 146405, "library": 281999, "market_hall": 199992, "office_block": 304326, "pharmacy": 228774, "police_station": 284134, "post_office": 252848, "print_works": 250522, "pub": 180935, "recycling_facility": 428587, "restaurant": 116298, "school": 283885, "shelter": 159589, "supermarket": 315662, "terrace_house": 8360021, "transit_office": 283443, "vehicle_repair_garage": 267069, "villa": 2306992, "warehouse": 80809, "welfare_office": 105674, "workshop": 286094}
-buildings rejected, by type: {"corner_shop": 2}
+buildings laid with a program shorter than the longest that fit, by type (of laid): {"bottling_plant": 35, "builders_yard": 40, "clinic": 35, "condo_block": 9576, "cottage": 69829, "depot": 47, "fire_station": 451, "food_plant": 35, "market_hall": 1, "police_station": 413, "print_works": 18, "recycling_facility": 38, "terrace_house": 139384, "transit_office": 488, "vehicle_repair_garage": 26, "villa": 51436, "warehouse": 190, "welfare_office": 1, "workshop": 22} of {"bakery": 304085, "bank_branch": 139940, "bookshop": 140286, "bottling_plant": 358074, "builders_yard": 429241, "butcher": 304450, "cafe": 314739, "cinema": 315041, "clinic": 283919, "clothes_shop": 163106, "condo_block": 1775470, "corner_shop": 690317, "cottage": 3339682, "council": 30001, "depot": 30001, "fire_station": 283606, "food_plant": 393850, "general_retail": 507954, "greengrocer": 303759, "gym": 116090, "hairdresser": 305948, "hardware_shop": 227505, "hospital": 30001, "hotel": 144552, "launderette": 146405, "library": 281999, "market_hall": 199992, "office_block": 304326, "pharmacy": 228774, "police_station": 284134, "post_office": 252848, "print_works": 250522, "pub": 180935, "recycling_facility": 428587, "restaurant": 116298, "school": 283885, "shelter": 159589, "supermarket": 315662, "terrace_house": 8360001, "transit_office": 283443, "vehicle_repair_garage": 267069, "villa": 2306971, "warehouse": 80809, "welfare_office": 105674, "workshop": 286094}
+buildings rejected, by type: {"corner_shop": 2, "cottage": 22, "terrace_house": 20, "villa": 21}
   generate succeeds (check chain): 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
   layout attempts at most max_layout_attempts = 8: 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
@@ -1279,10 +1279,10 @@ buildings rejected, by type: {"corner_shop": 2}
     zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
   an enterable dwelling in the lowest density band: 0 of 30000 misses (rate 0.000000%), implied 96-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 30000 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.010000% (implied 96-case CI failure probability <= 0.9555%)
-pooled_enterable_share_x1000_per_96_city_pool: min=97360 p1=97414 p50=97680 p99=97951 max=98033 mean=97678.6 stddev=118.3
+pooled_enterable_share_x1000_per_96_city_pool: min=97360 p1=97414 p50=97680 p99=97951 max=98032 mean=97678.3 stddev=118.3
   pooled enterable share within [97.000, 99.000]% (96-city pools; enterable_target_percent = 98% +- 1% at 96): 0 of 312 misses (rate 0.000000%), implied 1-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 312 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.961538% (implied 1-case CI failure probability <= 0.9615%)
-pooled_enterable_share_x1000_per_8_city_pool: min=96042 p1=96691 p50=97683 p99=98588 max=99082 mean=97678.1 stddev=415.5
+pooled_enterable_share_x1000_per_8_city_pool: min=96042 p1=96691 p50=97682 p99=98588 max=99082 mean=97677.9 stddev=415.5
   pooled enterable share within [94.536, 101.464]% (8-city pools; enterable_target_percent = 98% +- 1% at 96): 0 of 3750 misses (rate 0.000000%), implied 1-case CI failure probability 0.000000%, offending seeds: []
     zero observed misses over 3750 seeds is a bound, not a zero rate -- rule-of-three upper bound on the per-seed miss probability: 0.080000% (implied 1-case CI failure probability <= 0.0800%)
 ```
@@ -1292,9 +1292,9 @@ pooled_enterable_share_x1000_per_8_city_pool: min=96042 p1=96691 p50=97683 p99=9
 `cargo run -p bounds --release --bin measure-generation -- graph`
 
 ```text
-macro graph at GENERATION_VERSION=15 fingerprint=b948478a3d2ddea3: seeds 0..32 at the committed site, 0..4 at 1024
+macro graph at GENERATION_VERSION=15 fingerprint=0f16a21aef7e1830: seeds 0..32 at the committed site, 0..4 at 1024
 committed site (512 x 512, 32 seeds): nodes min 1697 mean 1843 max 1963; edges min 1744 mean 1895 max 2016; internal nodes 13% of entrances
-growth target (1024 x 1024, 4 seeds): nodes min 7086 mean 7371 max 7730; edges min 7309 mean 7604 max 8002; internal nodes 13% of entrances
+growth target (1024 x 1024, 4 seeds): nodes min 7086 mean 7372 max 7731; edges min 7309 mean 7605 max 8003; internal nodes 13% of entrances
 ```
 
 ## Density is per screen

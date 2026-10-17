@@ -489,24 +489,12 @@ pub fn extent(row: &PlacedRow, def: &defs::ObjectDef) -> Rect {
     }
 }
 
-/// Whether `def` carries a tag declared `north_wall`: its art is drawn over
-/// the cell north of it, so it stands against a north wall.
-pub fn stands_against_north_wall(def: &defs::ObjectDef) -> bool {
-    defs::TAGS
-        .iter()
-        .any(|t| t.north_wall && def.tags.contains(&t.id))
-}
-
 /// How many whole cells a def's art rises above its footprint: the sprite's
-/// height past `height * tile`, rounded up.
-pub fn overhang_rows(def: &defs::ObjectDef) -> i32 {
-    let tile = defs::BALANCE
-        .iter()
-        .find(|b| b.key == "render.tile_size_px")
-        .map_or(16, |b| b.value as i32);
+/// height past `height * tile_size_px`, rounded up.
+pub fn overhang_rows(def: &defs::ObjectDef, tile_size_px: i32) -> i32 {
     def.sprite
         .map_or(0, |s| {
-            (s.h as i32 - def.height as i32 * tile + tile - 1) / tile
+            (s.h as i32 - def.height as i32 * tile_size_px + tile_size_px - 1) / tile_size_px
         })
         .max(0)
 }
@@ -514,9 +502,13 @@ pub fn overhang_rows(def: &defs::ObjectDef) -> i32 {
 /// The cells north of a placed def's footprint that its art is drawn over
 /// (the player stands in front of the art there, so a walker must not be
 /// able to stand on them).
-pub fn overhang_cells(row: &PlacedRow, def: &defs::ObjectDef) -> Vec<(i32, i32)> {
+pub fn overhang_cells(
+    row: &PlacedRow,
+    def: &defs::ObjectDef,
+    tile_size_px: i32,
+) -> Vec<(i32, i32)> {
     let top = row.y - def.height as i32 + 1;
-    (1..=overhang_rows(def))
+    (1..=overhang_rows(def, tile_size_px))
         .flat_map(|k| (row.x..row.x + def.width as i32).map(move |x| (x, top - k)))
         .collect()
 }
@@ -557,6 +549,9 @@ struct Catalogue<'a> {
     /// facade dressing a building holding the required fixture owes.
     facade: Vec<(TagId, TagId)>,
     wall: &'a defs::ObjectDef,
+    /// Tags declared `north_wall`: a def carrying one has its art drawn over
+    /// the cell north of it, so it stands against a north wall.
+    north_wall: BTreeSet<TagId>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -693,6 +688,12 @@ impl<'a> Catalogue<'a> {
             distributions,
             facade,
             wall,
+            north_wall: content
+                .tags
+                .iter()
+                .filter(|t| t.north_wall)
+                .map(|t| t.id)
+                .collect(),
         })
     }
 
@@ -998,7 +999,7 @@ fn dress_building(
             {
                 continue;
             }
-            let needs_wall = stands_against_north_wall(d);
+            let needs_wall = d.tags.iter().any(|t| cat.north_wall.contains(t));
             let mut anchors: Vec<(i32, i32)> = Vec::new();
             for ax in (f.x - w + 1)..=f.x {
                 for ay in f.y..=(f.y + h - 1) {
@@ -1022,6 +1023,7 @@ fn dress_building(
                                 orientation: 0,
                             },
                             d,
+                            cfg.tile_size_px,
                         )
                         .iter()
                         .all(|c| walls.contains(c));

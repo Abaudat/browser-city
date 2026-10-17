@@ -7102,16 +7102,21 @@ fn inv_generation_every_emitted_interior_validates_clean() {
                     );
                 }
             }
+            // Beds are selected by the `bed` tag itself, never by the flag
+            // the generator obeys, so the check cannot switch itself off.
+            let bed = tag_id("bed");
             let beds: Vec<&defs::ObjectDef> = defs::OBJECTS
                 .iter()
-                .filter(|o| sim::generation::props::stands_against_north_wall(o))
+                .filter(|o| o.tags.contains(&bed))
                 .collect();
+            let mut checked = 0;
             // Story 4.27: a bed's art is drawn over the cell north of it,
             // so that cell is never floor a walker can stand on.
             for p in d.props.props() {
                 let Some(def) = beds.iter().find(|o| o.id == p.row.def_id) else {
                     continue;
                 };
+                checked += 1;
                 let open =
                     bed_overhang_floor(&p.row, def, &|x, y| d.walkability(0).is_standable(x, y));
                 ensure!(
@@ -7122,29 +7127,32 @@ fn inv_generation_every_emitted_interior_validates_clean() {
                     p.row.y
                 );
             }
+            ensure!(checked > 0, "the city places no bed, so nothing was judged");
             c.rules.clone()
         },
     );
 }
 
-/// The cells a bed's art is drawn over that a walker could stand on; empty
-/// for anything that is not a bed.
+/// The cells a def's art is drawn over that a walker could stand on; the
+/// caller decides which defs are beds.
 fn bed_overhang_floor(
     row: &sim::generation::PlacedRow,
     def: &defs::ObjectDef,
     standable: &dyn Fn(i32, i32) -> bool,
 ) -> Vec<(i32, i32)> {
-    if !sim::generation::props::stands_against_north_wall(def) {
-        return Vec::new();
-    }
-    sim::generation::props::overhang_cells(row, def)
+    let tile = defs::BALANCE
+        .iter()
+        .find(|b| b.key == "render.tile_size_px")
+        .expect("the committed balance declares the tile size")
+        .value as i32;
+    sim::generation::props::overhang_cells(row, def, tile)
         .into_iter()
         .filter(|&(x, y)| standable(x, y))
         .collect()
 }
 
 /// Proves the bed check has teeth: a bed with floor north of it is refused,
-/// the same bed against a wall passes, and a non-bed is never judged.
+/// the same bed against a wall passes, and a def with no overhang is never judged.
 #[test]
 fn the_bed_overhang_check_refuses_a_bed_with_floor_north_of_it() {
     let single = defs::OBJECTS
@@ -7163,11 +7171,12 @@ fn the_bed_overhang_check_refuses_a_bed_with_floor_north_of_it() {
     // drawn over (5, 8).
     assert_eq!(bed_overhang_floor(&row, single, &|_, _| true), vec![(5, 8)]);
     assert!(bed_overhang_floor(&row, single, &|_, y| y != 8).is_empty());
-    let other = defs::OBJECTS
+    // A def that rises no higher than its footprint has nothing to judge.
+    let flat = defs::OBJECTS
         .iter()
-        .find(|o| !o.tags.is_empty() && !sim::generation::props::stands_against_north_wall(o))
+        .find(|o| o.sprite.is_some_and(|s| s.h == o.height * 16))
         .unwrap();
-    assert!(bed_overhang_floor(&row, other, &|_, _| true).is_empty());
+    assert!(bed_overhang_floor(&row, flat, &|_, _| true).is_empty());
 }
 
 /// Proves [`body_findings`] has teeth: a generated interior whose inner

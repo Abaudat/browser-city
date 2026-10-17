@@ -479,8 +479,7 @@ fn tag_line(t: &TagDef) -> String {
         role,
         structure,
         placement,
-        // Not a classification a sweep's figures are read from.
-        north_wall: _,
+        north_wall,
     } = *t;
     let role = role.map_or_else(
         || "-".to_string(),
@@ -507,7 +506,9 @@ fn tag_line(t: &TagDef) -> String {
         TagPlacement::WallMounted => "wall_mounted",
         TagPlacement::FacingDoor => "facing_door",
     });
-    format!("tag.{id}:{key}:role={role}:structure={structure}:placement={placement}\n")
+    format!(
+        "tag.{id}:{key}:role={role}:structure={structure}:placement={placement}:north_wall={north_wall}\n"
+    )
 }
 
 /// FNV-1a (64-bit) over the sorted canonical lines of every input the
@@ -1424,7 +1425,13 @@ mod tests {
                 "placement",
                 TagDef {
                     placement: None,
-                    north_wall: false,
+                    ..t
+                },
+            ),
+            (
+                "north_wall",
+                TagDef {
+                    north_wall: !t.north_wall,
                     ..t
                 },
             ),
