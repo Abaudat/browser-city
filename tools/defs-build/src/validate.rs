@@ -4035,6 +4035,7 @@ pub fn validate(
             }),
             structure: t.structure,
             placement: t.placement,
+            north_wall: t.north_wall,
         })
         .collect();
     tags.sort_by(|a, b| a.key.cmp(&b.key));

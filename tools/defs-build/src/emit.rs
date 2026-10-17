@@ -441,17 +441,18 @@ pub const MAX_ITEMS_PER_CONTAINER: u64 = {MAX_ITEMS_PER_CONTAINER};
     );
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     out.push_str(
-        "pub struct TagDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub role: Option<RoleDef>,\n    pub structure: Option<TagStructure>,\n    pub placement: Option<TagPlacement>,\n}\n\n",
+        "pub struct TagDef {\n    pub id: u32,\n    pub key: &'static str,\n    pub role: Option<RoleDef>,\n    pub structure: Option<TagStructure>,\n    pub placement: Option<TagPlacement>,\n    pub north_wall: bool,\n}\n\n",
     );
     out.push_str("pub const TAGS: &[TagDef] = &[\n");
     for t in &defs.tags {
         out.push_str(&format!(
-            "    TagDef {{ id: {}, key: {:?}, role: {}, structure: {}, placement: {} }},\n",
+            "    TagDef {{ id: {}, key: {:?}, role: {}, structure: {}, placement: {}, north_wall: {} }},\n",
             t.id,
             t.key,
             fmt_role_rust(&t.role),
             fmt_structure_rust(t.structure),
-            fmt_placement_rust(t.placement)
+            fmt_placement_rust(t.placement),
+            t.north_wall
         ));
     }
     out.push_str("];\n\n");
@@ -1413,6 +1414,7 @@ mod tests {
                     role: None,
                     structure: None,
                     placement: None,
+                    north_wall: false,
                 },
                 TagDef {
                     id: 2,
@@ -1420,6 +1422,7 @@ mod tests {
                     role: None,
                     structure: None,
                     placement: None,
+                    north_wall: false,
                 },
             ],
             rules: vec![RuleDef {
@@ -1777,10 +1780,10 @@ mod tests {
         let out = emit_rust(&sample(), "v1");
         assert!(out.contains("pub const TAGS: &[TagDef] = &["));
         assert!(out.contains(
-            "TagDef { id: 1, key: \"waste\", role: None, structure: None, placement: None }"
+            "TagDef { id: 1, key: \"waste\", role: None, structure: None, placement: None, north_wall: false }"
         ));
         assert!(out.contains(
-            "TagDef { id: 2, key: \"seating\", role: None, structure: None, placement: None }"
+            "TagDef { id: 2, key: \"seating\", role: None, structure: None, placement: None, north_wall: false }"
         ));
         assert!(out.contains("pub const RULES: &[crate::rules::RuleDef] = &["));
         assert!(out.contains(

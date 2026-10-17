@@ -1008,6 +1008,10 @@ pub struct RawTag {
     /// -- the closed vocabulary `sim::generation::interiors` places by.
     #[serde(default)]
     pub placement: Option<RawPlacement>,
+    /// A fixture carrying this tag is drawn over the cell north of it, so
+    /// it stands on its room's north row against the wall.
+    #[serde(default)]
+    pub north_wall: bool,
 }
 
 /// The closed set of fixture placement classes [`RawTag::placement`]
@@ -1479,6 +1483,7 @@ pub struct TagEntry {
     pub role: Option<RawRole>,
     pub structure: Option<RawStructure>,
     pub placement: Option<RawPlacement>,
+    pub north_wall: bool,
 }
 
 #[derive(Debug)]
@@ -1886,6 +1891,8 @@ pub struct TagDef {
     pub structure: Option<RawStructure>,
     /// Where a fixture carrying this tag stands, when it is one.
     pub placement: Option<RawPlacement>,
+    /// Whether a fixture carrying this tag stands against the north wall.
+    pub north_wall: bool,
 }
 
 /// One resolved (tag key -> id) [`RawNeighbourTerm`].

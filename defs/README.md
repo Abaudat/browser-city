@@ -59,7 +59,9 @@ A `[[tag]]` row may name the structural part it is with `structure =
 "fixture"`; once any does, exactly one tag names each. A tag a room
 owes as a fixture names where the layout pass stands it, with
 `placement = "wall_backed" | "free_standing" | "wall_mounted" |
-"facing_door"`.
+"facing_door"`. A tag may also carry `north_wall = true`: a fixture
+carrying it is drawn over the cell north of it, so it stands on its
+room's north row and is placed where that cell is wall.
 
 ## Items
 

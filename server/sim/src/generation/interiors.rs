@@ -141,7 +141,7 @@ impl<'a> Vocabulary<'a> {
             north_row: content
                 .tags
                 .iter()
-                .filter(|t| t.key == super::props::NORTH_WALL_TAG_KEY)
+                .filter(|t| t.north_wall)
                 .map(|t| t.id)
                 .collect(),
             placements: content

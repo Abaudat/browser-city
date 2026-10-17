@@ -479,6 +479,8 @@ fn tag_line(t: &TagDef) -> String {
         role,
         structure,
         placement,
+        // Not a classification a sweep's figures are read from.
+        north_wall: _,
     } = *t;
     let role = role.map_or_else(
         || "-".to_string(),
@@ -1422,6 +1424,7 @@ mod tests {
                 "placement",
                 TagDef {
                     placement: None,
+                    north_wall: false,
                     ..t
                 },
             ),

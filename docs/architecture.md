@@ -1447,7 +1447,8 @@ closed vocabulary `sim::generation::interiors` builds from, resolved to
 names each. A tag a room owes as a fixture carries `placement =
 "<class>"`, one of wall_backed, free_standing, wall_mounted,
 facing_door -- the closed vocabulary the layout pass stands fixtures by,
-resolved to `defs::TagDef::placement`; the build refuses an owed fixture
+resolved to `defs::TagDef::placement`; a tag with `north_wall = true`
+(`defs::TagDef::north_wall`) stands on the north row only; the build refuses an owed fixture
 tag without one. `sim::rules::evaluate_local` is `evaluate` over every kind
 except Distribution (whole-site by construction), the verdict one
 building's own site can be given; `RuleDef::as_requirement` reads a

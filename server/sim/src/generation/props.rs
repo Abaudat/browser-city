@@ -489,15 +489,12 @@ pub fn extent(row: &PlacedRow, def: &defs::ObjectDef) -> Rect {
     }
 }
 
-/// The tag whose art must stand against a north wall: a bed's headboard is
-/// drawn over the cell north of it.
-pub const NORTH_WALL_TAG_KEY: &str = "bed";
-
-/// Whether `def` carries [`NORTH_WALL_TAG_KEY`].
+/// Whether `def` carries a tag declared `north_wall`: its art is drawn over
+/// the cell north of it, so it stands against a north wall.
 pub fn stands_against_north_wall(def: &defs::ObjectDef) -> bool {
     defs::TAGS
         .iter()
-        .any(|t| t.key == NORTH_WALL_TAG_KEY && def.tags.contains(&t.id))
+        .any(|t| t.north_wall && def.tags.contains(&t.id))
 }
 
 /// How many whole cells a def's art rises above its footprint: the sprite's

@@ -72,6 +72,7 @@ placement = "wall_backed"
 id = 49
 key = "bed"
 placement = "wall_backed"
+north_wall = true
 
 [[tag]]
 id = 50
