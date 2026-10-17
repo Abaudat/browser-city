@@ -45,6 +45,9 @@ function distanceCells(
 test("a new character walks from the flat to both shop fronts and down the subway stairs", async ({
   page,
 }) => {
+  // The walk is ~45 cells at real speed plus the boot; each segment has its own
+  // distance-based timeout, so a blocked leg still fails in seconds.
+  test.setTimeout(90_000);
   const { walkSpeedCellsPerMs } = streetMovementConfig();
   await page.goto("/");
   await waitForPlayerControllable(page);
