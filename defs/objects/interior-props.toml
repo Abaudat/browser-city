@@ -5,6 +5,9 @@
 # natural ones do not fit falls back to. Colliders sit inside the
 # footprint (FR128), at the cells the art actually occupies; the art
 # overhangs upward past the footprint like every other tall prop.
+# A bed's sprite rect is cropped to its opaque rows so the drawn foot is
+# the footprint's south edge: transparent rows under the art are a sort
+# hazard the player can stand in, not harmless padding.
 # Sprites are the plain-shadow `Theme_Sorter_Singles` family only.
 
 [[object]]
@@ -12,10 +15,10 @@ id = 26
 key = "bed_single_blue"
 name = "Single Bed (blue)"
 layer = "furniture"
-sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_140.png", x = 0, y = 0, w = 16, h = 48 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_140.png", x = 0, y = 0, w = 16, h = 38 }
 width = 1
-height = 3
-collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 38 }
+height = 2
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 32 }
 tags = ["bed", "indoor", "fixture"]
 
 [[object]]
@@ -23,10 +26,10 @@ id = 27
 key = "bed_single_white"
 name = "Single Bed (white)"
 layer = "furniture"
-sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_147.png", x = 0, y = 0, w = 16, h = 48 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_147.png", x = 0, y = 0, w = 16, h = 38 }
 width = 1
-height = 3
-collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 38 }
+height = 2
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 32 }
 tags = ["bed", "indoor", "fixture"]
 
 [[object]]
@@ -34,10 +37,10 @@ id = 28
 key = "bed_compact"
 name = "Compact Bed"
 layer = "furniture"
-sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/20_Japanese_Interiors_Singles/Japanese_Interiors_Singles_69.png", x = 0, y = 0, w = 16, h = 32 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/20_Japanese_Interiors_Singles/Japanese_Interiors_Singles_69.png", x = 0, y = 0, w = 16, h = 22 }
 width = 1
 height = 1
-collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 6 }
+collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 16 }
 tags = ["bed", "indoor", "fixture"]
 
 [[object]]
@@ -397,7 +400,7 @@ layer = "furniture"
 sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/5_Classroom_and_Library_Singles/Classroom_and_Library_Singles_8.png", x = 0, y = 0, w = 16, h = 32 }
 width = 1
 height = 1
-collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 7 }
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 8 }
 tags = ["desk", "indoor", "fixture"]
 
 [[object]]
@@ -408,7 +411,7 @@ layer = "furniture"
 sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/5_Classroom_and_Library_Singles/Classroom_and_Library_Singles_10.png", x = 0, y = 0, w = 16, h = 32 }
 width = 1
 height = 1
-collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 7 }
+collider = { x0 = 0, y0 = 0, x1 = 16, y1 = 8 }
 tags = ["desk", "indoor", "fixture"]
 
 [[object]]
@@ -416,10 +419,10 @@ id = 69
 key = "bed_compact_green"
 name = "Compact Bed (green)"
 layer = "furniture"
-sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/20_Japanese_Interiors_Singles/Japanese_Interiors_Singles_71.png", x = 0, y = 0, w = 16, h = 32 }
+sprite = { sheet = "ModernTileset/moderninteriors-win/1_Interiors/16x16/Theme_Sorter_Singles/20_Japanese_Interiors_Singles/Japanese_Interiors_Singles_71.png", x = 0, y = 0, w = 16, h = 22 }
 width = 1
 height = 1
-collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 6 }
+collider = { x0 = 1, y0 = 0, x1 = 14, y1 = 16 }
 tags = ["bed", "indoor", "fixture"]
 
 [[object]]

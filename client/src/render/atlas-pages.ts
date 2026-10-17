@@ -194,8 +194,8 @@ export class AtlasPageLoader {
    *
    * A def several rows tall is cut one row per call (`sourceRow`, north
    * row first), cached per `(object id, column, row)`; its sprite must be
-   * exactly `height * tileSizePx` tall, else this rejects naming the object
-   * (never a silent crop of an overhanging several-row sprite).
+   * at least `height * tileSizePx` tall, else this rejects naming the object;
+   * the rows hang off its foot and the north row takes any overhang.
    */
   objectCellTexture(
     defs: Defs,
@@ -207,10 +207,10 @@ export class AtlasPageLoader {
     if (!object.atlas) {
       return Promise.reject(new Error(`atlas-pages: object '${object.key}' is undrawn`));
     }
-    if (object.height > 1 && object.atlas.h !== object.height * tileSizePx) {
+    if (object.height > 1 && object.atlas.h < object.height * tileSizePx) {
       return Promise.reject(
         new Error(
-          `atlas-pages: object '${object.key}' is ${object.height} cells tall but its sprite is ${object.atlas.h}px, not ${object.height * tileSizePx}px -- only art exactly its footprint tall is cut row by row`,
+          `atlas-pages: object '${object.key}' is ${object.height} cells tall but its sprite is ${object.atlas.h}px, under ${object.height * tileSizePx}px -- art shorter than its footprint cannot be cut row by row`,
         ),
       );
     }

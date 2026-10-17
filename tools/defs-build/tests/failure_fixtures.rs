@@ -700,14 +700,6 @@ fn a_sprite_width_mismatching_the_footprint_is_named() {
     assert!(err.message.contains("does not equal its footprint width"));
 }
 
-/// A sprite height that is not a whole multiple of `tile_size_px` is
-/// refused.
-#[test]
-fn a_sprite_height_not_a_tile_multiple_is_named() {
-    let err = build_err("sprite-height-not-tile-multiple");
-    assert!(err.message.contains("whole multiple of tile_size_px"));
-}
-
 /// A sprite shorter than its own footprint's height is refused -- a tall
 /// prop may only overhang upward, never come up short.
 #[test]
@@ -939,6 +931,14 @@ fn a_collider_narrower_than_the_bottom_row_is_named_with_both_spans() {
 }
 
 #[test]
+fn a_collider_short_of_the_lowest_solid_row_is_named_with_both_spans() {
+    assert_eq!(
+        build_err("collider-short-of-bottom-row").to_string(),
+        "defs/objects/city-props.toml:9:12: object 'trash_bin' collider (4, 4)-(12, 11): collider rows 4..11 do not cover the bottom solid row's rows 11..12 (sub-cells)"
+    );
+}
+
+#[test]
 fn a_collider_taller_than_the_art_is_named_with_both_spans() {
     assert_eq!(
         build_err("collider-outside-art-rows").to_string(),
@@ -996,7 +996,8 @@ fn is_pixel_rule_message(message: &str) -> bool {
     message.contains("footprint band") || message.contains("bottom solid row")
 }
 
-const PIXEL_CATEGORIES: [&str; 5] = [
+const PIXEL_CATEGORIES: [&str; 6] = [
+    "collider-short-of-bottom-row",
     "collider-outside-art-span",
     "art-base-outside-collider",
     "collider-outside-art-rows",
@@ -1232,7 +1233,6 @@ fn every_known_category_has_a_fixture_directory() {
         "sprite-zero-area",
         "sprite-outside-sheet-bounds",
         "sprite-width-mismatches-footprint",
-        "sprite-height-not-tile-multiple",
         "sprite-shorter-than-footprint",
         "object-dimension-zero",
         "object-grid-zero",
@@ -1301,6 +1301,7 @@ fn every_known_category_has_a_fixture_directory() {
         "upright-without-collider",
         "collider-outside-art-span",
         "art-base-outside-collider",
+        "collider-short-of-bottom-row",
         "collider-outside-art-rows",
         "collider-over-transparent-band",
         "commute-floor-zero",

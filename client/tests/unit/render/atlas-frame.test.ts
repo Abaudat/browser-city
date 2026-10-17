@@ -66,3 +66,15 @@ describe("defCellFrameRect, several rows", () => {
     ]);
   });
 });
+
+describe("defCellFrameRect, several rows with art overhanging north", () => {
+  const TILE_SIZE_PX = 16;
+  it("anchors the rows to the sprite's foot and gives the north row the overhang", () => {
+    // A 2-cell bed drawn 38px tall: 6px of headboard above the 32px footprint.
+    const whole = { x: 10, y: 20, width: 16, height: 38 };
+    expect([0, 1].map((row) => defCellFrameRect(whole, 0, TILE_SIZE_PX, row, 2))).toEqual([
+      { x: 10, y: 20, width: TILE_SIZE_PX, height: TILE_SIZE_PX + 6 },
+      { x: 10, y: 20 + 22, width: TILE_SIZE_PX, height: TILE_SIZE_PX },
+    ]);
+  });
+});

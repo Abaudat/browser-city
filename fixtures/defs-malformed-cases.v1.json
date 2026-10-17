@@ -23,7 +23,6 @@
   "deprecated-layer",
   "sprite-zero-area",
   "sprite-width-mismatches-footprint",
-  "sprite-height-not-tile-multiple",
   "sprite-shorter-than-footprint",
   "object-dimension-zero",
   "empty-object-name",

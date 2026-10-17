@@ -915,10 +915,11 @@ sub-rect, never optional. Extent comes from the placed object's
 `object_def` (`defs/`), never a hardcoded number, and is capped at
 approximately 8x8 (FR127). A per-cell sub-rect is only ever legal on
 whole-tile boundaries: either the source art is already exactly one tile
-long on the decomposed axis (every cell repeats it whole) or exactly
-`cells * tile_size_px` long (sliced into equal whole-pixel cells) --
-anything else, including any horizontal overhang, is refused at mount
-rather than drawn stretched or fractional. A def-placed prop's per-cell
+long on the decomposed axis (every cell repeats it whole) or at least
+`cells * tile_size_px` long (sliced into whole-pixel cells off the foot,
+the north row taking any art above the footprint) -- anything else,
+including any horizontal overhang, is refused at mount rather than drawn
+stretched or fractional. A def-placed prop's per-cell
 sub-rect is cut from its own packed `atlas` rect
 (`render/atlas-pages.ts`'s `AtlasPageLoader.objectCellTexture`), never
 from a raw `ModernTileset/` import.
@@ -1297,12 +1298,11 @@ to `layer`, `sprite` and the art under `collider`: `layer` resolves
 against the codes golden (an unknown or deprecated name is refused,
 naming the accepted set); `sprite` fits entirely inside its own sheet's
 real `IHDR` bounds; `sprite` agrees with the footprint exactly (`w ==
-width * tile_size_px`, `h` a whole multiple of `tile_size_px` and `h >=
-height * tile_size_px` -- a tall prop may overhang upward, never sideways
-or downward); and a `collider`'s columns and rows lie inside the opaque
+width * tile_size_px`, `h >= height * tile_size_px` -- a tall prop may
+overhang upward, never sideways or downward); and a `collider`'s columns and rows lie inside the opaque
 column and row spans of the sprite's footprint band (its bottom `height *
 tile_size_px` rows), and the band's lowest opaque row lies inside the
-collider's columns. Opaque is alpha at or above `ALPHA_OPAQUE_THRESHOLD`,
+collider. Opaque is alpha at or above `ALPHA_OPAQUE_THRESHOLD`,
 declared once in `tools/defs-build/src/alpha.rs`. A fourth clause applies
 to objects tagged `upright` (`defs/tags/city.toml`): the collider's rows
 lie inside the foot of an archetype declared `foot = true`. An upright

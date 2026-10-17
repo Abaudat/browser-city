@@ -2045,13 +2045,15 @@ describe("a stairwell is drawn whole (story 15.14, FR126)", () => {
     ).toBeGreaterThanOrEqual(1);
   });
 
-  it("every committed object meets the atlas loader's row precondition: one row, or a sprite exactly its footprint tall", () => {
+  it("every committed object meets the atlas loader's row precondition: one row, or a sprite at least its footprint tall", () => {
     const tile = committedDefs().balance.find((b) => b.key === "render.tile_size_px")?.value;
     if (tile === undefined) throw new Error("no render.tile_size_px balance");
     const several = committedDefs().objects.filter((o) => o.height > 1 && o.atlas);
     expect(several.length, "the platform flight is a several-row def").toBeGreaterThan(0);
     for (const o of several) {
-      expect(o.atlas?.h, `${o.key} is ${o.height} rows tall`).toBe(o.height * tile);
+      expect(o.atlas?.h, `${o.key} is ${o.height} rows tall`).toBeGreaterThanOrEqual(
+        o.height * tile,
+      );
     }
   });
 

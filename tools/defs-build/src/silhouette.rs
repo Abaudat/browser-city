@@ -10,7 +10,8 @@
 //! `x * tile_size_px`), never rounding:
 //!
 //! 1. the collider's columns lie inside the band's solid column span;
-//! 2. the band's lowest solid row's columns lie inside the collider's;
+//! 2. the band's lowest solid row lies inside the collider (its columns
+//!    inside the collider's, and its row inside the collider's rows);
 //! 3. the collider's rows lie inside the band's solid row span;
 //! 4. only for an upright (tag `upright`): the collider's rows lie inside
 //!    the foot -- the rows an archetype declares with `foot = true`. An
@@ -44,6 +45,11 @@ pub enum Disagreement {
         collider: (i32, i32),
         art: (i64, i64),
     },
+    /// Clause 2, rows: the lowest solid row is not inside the collider.
+    BottomRowBelowCollider {
+        collider: (i32, i32),
+        art: (i64, i64),
+    },
     /// Clause 3.
     ColliderRowsOutsideArt {
         collider: (i32, i32),
@@ -71,6 +77,11 @@ impl std::fmt::Display for Disagreement {
             Disagreement::BottomRowOutsideCollider { collider, art } => write!(
                 f,
                 "collider columns {}..{} do not cover the bottom solid row's columns {}..{} (sub-cells)",
+                collider.0, collider.1, art.0, art.1
+            ),
+            Disagreement::BottomRowBelowCollider { collider, art } => write!(
+                f,
+                "collider rows {}..{} do not cover the bottom solid row's rows {}..{} (sub-cells)",
                 collider.0, collider.1, art.0, art.1
             ),
             Disagreement::ColliderRowsOutsideArt { collider, art } => write!(
@@ -151,7 +162,7 @@ pub fn check_collider_against_art_with_foot(
     };
     let cols = (collider.x0, collider.x1);
     let rows = (collider.y0, collider.y1);
-    let (Some(col_span), Some(row_span), Some((_, bottom))) = (
+    let (Some(col_span), Some(row_span), Some((bottom_row, bottom))) = (
         opaque_column_span(rgba, band),
         opaque_row_span(rgba, band),
         bottom_opaque_row(rgba, band),
@@ -168,6 +179,12 @@ pub fn check_collider_against_art_with_foot(
         return Err(Disagreement::BottomRowOutsideCollider {
             collider: cols,
             art: span_in_subcells(bottom, tile_size_px),
+        });
+    }
+    if !px_inside_subcells((bottom_row, bottom_row + 1), rows, tile_size_px) {
+        return Err(Disagreement::BottomRowBelowCollider {
+            collider: rows,
+            art: span_in_subcells((bottom_row, bottom_row + 1), tile_size_px),
         });
     }
     if !subcells_inside_px(rows, row_span, tile_size_px) {
@@ -408,32 +425,25 @@ mod tests {
 
     #[test]
     fn a_collider_one_subcell_outside_the_foot_on_either_side_fails_naming_both() {
-        // Art rows 4..16, so clause 3 never refuses these.
-        let tall = sheet(16, 16, |x, y| {
-            if in_block(x, y, (4, 12), (4, 16)) {
-                SOLID
-            } else {
-                0
-            }
-        });
-        let run_tall = |c| {
+        // Art rows 4..12, so clauses 2 and 3 never refuse these.
+        let run_at = |c, foot| {
             check_collider_against_art_with_foot(
-                &tall,
+                &block_sheet(),
                 16,
                 &sprite(0, 0, 16, 16),
                 1,
                 16,
                 c,
-                Some((8, 12)),
+                Some(foot),
             )
         };
-        assert_eq!(run_tall(rect(4, 8, 12, 12)), Ok(()));
-        for c in [rect(4, 7, 12, 12), rect(4, 8, 12, 13)] {
+        assert_eq!(run_at(rect(4, 8, 12, 12), (8, 12)), Ok(()));
+        for (c, foot) in [(rect(4, 7, 12, 12), (8, 12)), (rect(4, 8, 12, 12), (8, 11))] {
             assert_eq!(
-                run_tall(c),
+                run_at(c, foot),
                 Err(Disagreement::ColliderOutsideFoot {
                     collider: (c.y0, c.y1),
-                    foot: (8, 12)
+                    foot
                 })
             );
         }
@@ -445,8 +455,31 @@ mod tests {
     }
 
     #[test]
-    fn a_collider_shorter_than_the_art_passes_since_only_the_outside_is_refused() {
-        assert_eq!(run(rect(4, 6, 12, 10)), Ok(()));
+    fn a_collider_short_at_the_top_passes_since_only_the_foot_must_be_solid() {
+        assert_eq!(run(rect(4, 6, 12, 12)), Ok(()));
+    }
+
+    #[test]
+    fn a_collider_one_subcell_short_of_the_lowest_solid_row_fails_naming_both() {
+        assert_eq!(
+            run(rect(4, 4, 12, 11)),
+            Err(Disagreement::BottomRowBelowCollider {
+                collider: (4, 11),
+                art: (11, 12)
+            })
+        );
+        // The collider starting below the lowest solid row misses it too.
+        assert_eq!(
+            run(rect(4, 12, 12, 13)),
+            Err(Disagreement::BottomRowBelowCollider {
+                collider: (12, 13),
+                art: (11, 12)
+            })
+        );
+        assert_eq!(
+            run(rect(4, 4, 12, 11)).unwrap_err().to_string(),
+            "collider rows 4..11 do not cover the bottom solid row's rows 11..12 (sub-cells)"
+        );
     }
 
     #[test]
@@ -718,6 +751,7 @@ mod tests {
     enum Kind {
         Columns,
         BottomRow,
+        BottomRowRows,
         Rows,
         Foot,
         Pass,
@@ -820,6 +854,14 @@ mod tests {
                     art: (ci as i64, di as i64),
                 }),
             )
+        } else if y1 < r2i || y0 > r2i - 1 {
+            (
+                Kind::BottomRowRows,
+                Err(Disagreement::BottomRowBelowCollider {
+                    collider: (y0, y1),
+                    art: (r2i as i64 - 1, r2i as i64),
+                }),
+            )
         } else if y0 < r0i || y1 > r2i {
             (
                 Kind::Rows,
@@ -867,6 +909,7 @@ mod tests {
         for kind in [
             Kind::Columns,
             Kind::BottomRow,
+            Kind::BottomRowRows,
             Kind::Rows,
             Kind::Foot,
             Kind::Pass,

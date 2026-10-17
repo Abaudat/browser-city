@@ -867,10 +867,6 @@ and the unit tests on hand-built samples, not by the proptest.
   building re-placed with compact fixtures, a table with no free cell for
   its chair, a shopfront with no clear stretch of
   street wall, a street piece with no fitting cell. None fails generation.
-- **Known debt, for the story that makes a district live:** a bed is 1x3
-  over 16x48 art because the atlas loader refuses a several-row sprite
-  that is not exactly its footprint tall; a 1x2 bed with the headboard
-  overhanging the wall needs that overhang supported client-side.
 - **Not in this story:** upper storeys and anything above floor 0, dressing
   beyond the toilet and a table's chairs (a fridge, a wardrobe, a sofa, a
   bath), litter and every other consequence state, named signage and
