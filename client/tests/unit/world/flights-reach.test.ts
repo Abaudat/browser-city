@@ -68,7 +68,7 @@ describe("the flight offset is draw-only (FR182)", () => {
     // scan above and 15.13's mounted render-order assertion on the tread row.
     expect(updateCharacterDrawable.length).toBe(4);
     const defs = committedDefs();
-    const _storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
+    const storey = defs.balance.find((b) => b.key === "render.storey_height_px")?.value ?? 0;
     const flights = buildFlights(
       STREET_TRANSITIONS,
       streetPlacedRows(),

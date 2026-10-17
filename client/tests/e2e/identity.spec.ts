@@ -294,7 +294,7 @@ const COOLOFF_DAYS = committedDefs().balance.find(
 const MIN_AGE_DAYS = committedDefs().balance.find(
   (b) => b.key === "identity.link_prompt_min_character_age_days",
 )?.value;
-const _SUBCELLS = committedDefs().colliderSubcellsPerCell;
+const SUBCELLS = committedDefs().colliderSubcellsPerCell;
 const FAST_CLOCK_SPEED = 100;
 
 function balanceOf(key: string): number {

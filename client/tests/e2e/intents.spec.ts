@@ -33,7 +33,7 @@ function balance(key: string): number {
 
 const TILE_SIZE_PX = balance("render.tile_size_px");
 const STOREY_HEIGHT_PX = balance("render.storey_height_px");
-const _SUBCELLS_PER_CELL = committedDefs().colliderSubcellsPerCell;
+const SUBCELLS_PER_CELL = committedDefs().colliderSubcellsPerCell;
 
 /** A world pixel inside a cell's own drawn rect: every drawable is
  * bottom-centre anchored on its cell (`cellBottomCentre`, projected
